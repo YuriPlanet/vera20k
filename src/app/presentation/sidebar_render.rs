@@ -742,6 +742,18 @@ pub(crate) fn minimap_shown(state: &AppState) -> bool {
             .is_none_or(|ra| ra.is_minimap_visible())
 }
 
+/// Whether the cursor is over the radar's map gadget (`0x00B04A10`): the
+/// aperture, online or not. [`is_cursor_over_minimap`] is its image.
+pub(crate) fn is_cursor_over_radar_gadget(state: &AppState) -> bool {
+    let (x, y) = sidebar_cursor(state);
+    state
+        .match_state
+        .match_presentation
+        .sidebar_layout_spec
+        .shows(crate::ui::sidebar::SidebarPart::Radar)
+        && active_minimap_screen_rect(state).contains(x, y)
+}
+
 pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
     // Minimap interaction disabled when radar is not online.
     if !minimap_shown(state) {

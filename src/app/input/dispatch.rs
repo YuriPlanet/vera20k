@@ -433,11 +433,11 @@ pub(crate) enum LeftUp {
     /// release resolves its own pick and action (`0x00693271..0x0069328B`).
     Tactical,
     /// The radar's release (`0x00653D58`): `GetObjectAtRadarPixel`'s pick
-    /// and whether the action the radar kept is a superweapon's
+    /// and, when the action the radar kept is a superweapon's, that action
     /// ([`crate::app::input::radar`]).
     Radar {
         target: crate::render::radar::NativeRadarInputTarget,
-        super_weapon: bool,
+        super_weapon: Option<crate::app::input::commands::PlaceAction<'static>>,
     },
 }
 
@@ -488,8 +488,15 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
     // Cell. Trigger: a kept superweapon, or a Cell Harvest, Guard or Attack,
     // in Planning Mode. Effect: that record's third target. Frequency: rare.
     try_queue_context_order(state, ContextOrderTarget::Radar(target), true);
-    if super_weapon && let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
-        crate::app::input::commands::launch_super_weapon_at_cell(state, &section, target.cell);
+    if let Some(action) = super_weapon
+        && let Some(armed) = state.armed_super_weapon_type().map(str::to_owned)
+    {
+        crate::app::input::commands::launch_super_weapon_at_cell(
+            state,
+            &armed,
+            action,
+            target.cell,
+        );
     }
 }
 

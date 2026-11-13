@@ -155,14 +155,13 @@ fn find_cursor_feedback_kind(
     ) {
         return kind;
     }
-    if state.match_state.input.minimap_press_active()
-        || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
-    {
-        // The radar's own action draws its row's mini set
-        // ([`crate::app::input::radar::cursor`]).
-        return Some(CursorFeedbackKind::Minimap(
-            crate::app::input::radar::cursor(state),
-        ));
+    if let Some(radar) = crate::app::input::radar::cursor(state) {
+        use crate::app::input::radar::RadarCursor;
+        return match radar {
+            RadarCursor::Kept => state.match_state.input.shown_cursor(),
+            RadarCursor::Arrow => None,
+            RadarCursor::Mini(id) => Some(CursorFeedbackKind::Minimap(id)),
+        };
     }
     if current_sidebar_view_hit(state) {
         return state.match_state.input.sidebar_cursor();

@@ -406,30 +406,88 @@ fn planning_mode_needs_a_selection_that_takes_waypoints() {
 }
 
 /// The radar maps the armed index, not the type's `Action=`, and
-/// SPECIAL_PLACE names the first type whose `Action=` is that action
+/// SPECIAL_PLACE names the first type whose `Action=` is the release's action
 /// (`SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`, against
 /// `CCINIClass::ReadAction @ 0x00474EE0`'s case-insensitive name). In retail
-/// rules each kept index's own type is that first type, so the radar
-/// launches the armed type.
+/// rules every type is the first of its action, so both releases launch the
+/// armed type: the tactical one with its own action, the radar's with each
+/// kept index's.
 #[test]
-fn retail_kept_indices_are_the_first_type_of_their_action() {
+fn retail_special_place_launches_the_armed_type() {
+    use crate::app::input::commands::special_place_type;
     let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
     let rules = &battle.rules;
     let mut kept = 0;
-    for index in 0..rules.super_weapon_order.len() {
-        let Armed::Kept(super_weapon) = armed_action(index) else {
-            continue;
-        };
-        let first = rules.super_weapon_order.iter().position(|section| {
-            rules
-                .super_weapon(section)
-                .and_then(|super_weapon| super_weapon.action.as_deref())
-                .is_some_and(|name| name.eq_ignore_ascii_case(super_weapon.action_name()))
-        });
-        assert_eq!(first, Some(index), "{super_weapon:?}");
-        kept += 1;
+    for (index, section) in rules.super_weapon_order.iter().enumerate() {
+        let own = rules
+            .super_weapon(section)
+            .and_then(|super_weapon| super_weapon.action.as_deref())
+            .unwrap_or("None");
+        let armed = Some(section.as_str());
+        assert_eq!(
+            special_place_type(rules, section, PlaceAction::Stock(own)),
+            armed
+        );
+        if let Armed::Kept(super_weapon) = armed_action(index) {
+            let radar = PlaceAction::Stock(super_weapon.action_name());
+            assert_eq!(special_place_type(rules, section, radar), armed);
+            kept += 1;
+        }
     }
     assert_eq!(kept, 7);
+}
+
+/// `RadarClass::Action` writes no cursor with the left button held
+/// (`0x006539D8`), with the radar not online (`0x006539E6`) or on the empty
+/// pick (`0x00653AC6`), so the last one stays; off the image it sets the
+/// normal arrow (`0x00653EE2`).
+#[test]
+fn the_radar_keeps_the_cursor_where_its_action_writes_none() {
+    let nuke = || Some(CursorId::NukeMini);
+    assert_eq!(written_cursor(true, true, true, nuke), RadarCursor::Kept);
+    assert_eq!(written_cursor(false, false, true, nuke), RadarCursor::Kept);
+    assert_eq!(
+        written_cursor(false, true, true, || None),
+        RadarCursor::Kept
+    );
+    assert_eq!(written_cursor(false, true, false, nuke), RadarCursor::Arrow);
+    assert_eq!(
+        written_cursor(false, true, true, nuke),
+        RadarCursor::Mini(CursorId::NukeMini)
+    );
+}
+
+/// SPECIAL_PLACE names the first type whose `Action=` is the release's action
+/// (`0x004AC20C`, `FindFirstOfAction @ 0x006CEEB0`), not the armed type: the
+/// radar's index 0 is Nuke whatever type it lists. With Ares on (hook
+/// `0x4AC20C`) the armed type launches, as before.
+#[test]
+fn special_place_names_the_first_type_of_the_release_action() {
+    use crate::app::input::commands::special_place_type;
+    let read = |ares_key: &str| {
+        let ini = format!(
+            "[SuperWeaponTypes]\n0=Storm\n1=Bomb\n2=Bomb2\n\
+            [Storm]\nType=LightningStorm\nAction=LightningStorm\n\
+            [Bomb]\nType=Nuke\nAction=Nuke\n\
+            [Bomb2]\nType=Nuke\nAction=nuke\n{ares_key}"
+        );
+        RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&ini)).unwrap()
+    };
+    let nuke = PlaceAction::Stock(RadarSuperWeapon::Nuke.action_name());
+    let paradrop = PlaceAction::Stock(RadarSuperWeapon::ParaDrop.action_name());
+    // A build with the `ares` feature reads every game the Ares way
+    // (`ares_switch::reading_mode`).
+    if !cfg!(feature = "ares") {
+        let stock = read("");
+        assert!(!stock.ares());
+        assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
+        assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
+        assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
+    }
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ares = read("SW.Deferment=1\n");
+    assert!(ares.ares());
+    assert_eq!(special_place_type(&ares, "Bomb2", nuke), Some("Bomb2"));
 }

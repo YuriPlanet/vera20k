@@ -548,9 +548,9 @@ pub(crate) fn place_ready_building_at_cell(
 /// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` queues the SPECIAL_PLACE event
 /// (`0x12`), and keeps the selection: Launch's tail clears or moves it
 /// (`match_runtime::super_selection`). Pointer action admission runs first;
-/// the sim's ClickFire still owns instance admission. The event names the first
-/// type whose `Action=` is the click's action (`SuperWeaponTypeClass::FindFirstOfAction`); retail
-/// types' actions are unique, so that is the selected one.
+/// the sim's ClickFire still owns instance admission. The click's action is
+/// the armed type's `Action=` (`SuperWeaponTypeClass::GetAction @
+/// 0x006CEF80`), which [`special_place_type`] maps to the type it names.
 pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str) {
     // Guard: arming click's RELEASE lands on the cameo. Don't fire the SW
     // at a bogus off-map cell behind the sidebar panel; leave the mode
@@ -574,17 +574,77 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    launch_super_weapon_at_cell(state, section, cell);
+    let Some(action) = state
+        .rules()
+        .and_then(|rules| rules.super_weapon(section))
+        .map(|super_weapon| super_weapon.action.as_deref().unwrap_or("None").to_owned())
+    else {
+        return;
+    };
+    launch_super_weapon_at_cell(state, section, PlaceAction::Stock(&action), cell);
 }
 
-/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `section` at the clicked
-/// `(rx, ry)`: the tactical click's Cell, or the radar release's
-/// (`0x00653D58`), whose action names no pointer target to admit.
+/// The superweapon action a release hands `BandBox_LeftUp`'s SPECIAL_PLACE
+/// (`0x004AC20C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaceAction<'a> {
+    /// A stock action, by its ActionType name (`0x007E4C50`).
+    Stock(&'a str),
+    /// An Ares superweapon action, above `SuperWeaponDisallowed`, which
+    /// only the radar's Ares superweapon answer hands over.
+    #[cfg(feature = "ares")]
+    Ares,
+}
+
+/// The type `BandBox_LeftUp`'s SPECIAL_PLACE names for `action`, with
+/// `armed` the armed type (`0x004AC20C..0x004AC21A`): the first
+/// `[SuperWeaponTypes]` entry whose `Action=` it is
+/// ([`crate::sim::superweapon::first_super_type_with_action`]), or none, and
+/// none queues no event (`0x004AC294`). Ares replaces that lookup (hook
+/// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0, resuming at
+/// `0x4AC21C` or `0x4AC294`): its own actions name the armed type, and so
+/// does a stock one that is the armed type's `Action=`.
+///
+/// RESIDUAL: with Ares on, a stock action that is not the armed type's
+/// `Action=` names the armed type here, where Ares names none. The radar
+/// hands over its index map's stock action for an Ares-handled type wherever
+/// its Ares hook (`0x653B3A`) is not on the switch, and Ares answers its own
+/// action there. Trigger: an Ares game whose armed type sits at a kept radar
+/// index with another `Action=`, released on the radar. Effect: it launches
+/// where Ares launches nothing. Frequency: mods only.
+pub(crate) fn special_place_type<'a>(
+    rules: &'a crate::rules::ruleset::RuleSet,
+    armed: &'a str,
+    action: PlaceAction<'_>,
+) -> Option<&'a str> {
+    match action {
+        _ if rules.ares() => Some(armed),
+        #[cfg(feature = "ares")]
+        PlaceAction::Ares => Some(armed),
+        PlaceAction::Stock(action) => {
+            crate::sim::superweapon::first_super_type_with_action(rules, action)
+        }
+    }
+}
+
+/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `action`, with `armed`
+/// the armed type, at the clicked `(rx, ry)`: the tactical click's Cell, or
+/// the radar release's (`0x00653D58`), whose action names no pointer target
+/// to admit.
 pub(crate) fn launch_super_weapon_at_cell(
     state: &mut AppState,
-    section: &str,
+    armed: &str,
+    action: PlaceAction<'_>,
     (rx, ry): (u16, u16),
 ) {
+    let Some(section) = state
+        .rules()
+        .and_then(|rules| special_place_type(rules, armed, action))
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let section = section.as_str();
     let Some(owner) = preferred_local_owner(state) else {
         return;
     };

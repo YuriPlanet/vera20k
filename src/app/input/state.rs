@@ -435,6 +435,12 @@ impl MatchInputState {
         self.shown_cursor.set(kind);
     }
 
+    /// The cursor the last drawn frame showed, which stays where nothing
+    /// writes one.
+    pub(crate) fn shown_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
+        self.shown_cursor.get()
+    }
+
     /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
     /// 6A4C12) and SelectClass::Action 6AAD00 (6AAD61) set the normal cursor,
     /// but their masks take LEFTUP and no LEFTHELD: with the left button held
