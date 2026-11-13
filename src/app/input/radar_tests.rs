@@ -461,8 +461,8 @@ fn the_radar_keeps_the_cursor_where_its_action_writes_none() {
 
 /// SPECIAL_PLACE names the first type whose `Action=` is the release's action
 /// (`0x004AC20C`, `FindFirstOfAction @ 0x006CEEB0`), not the armed type: the
-/// radar's index 0 is Nuke whatever type it lists. With Ares on (hook
-/// `0x4AC20C`) the armed type launches, as before.
+/// radar's index 0 is Nuke whatever type it lists. With the Ares superweapons
+/// on (hook `0x4AC20C`) the armed type launches, as before.
 #[test]
 fn special_place_names_the_first_type_of_the_release_action() {
     use crate::app::input::commands::special_place_type;
@@ -481,13 +481,13 @@ fn special_place_names_the_first_type_of_the_release_action() {
     // (`ares_switch::reading_mode`).
     if !cfg!(feature = "ares") {
         let stock = read("");
-        assert!(!stock.ares());
+        assert!(!stock.ares_super_weapons());
         assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
     }
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ares = read("SW.Deferment=1\n");
-    assert!(ares.ares());
+    assert!(ares.ares_super_weapons());
     assert_eq!(special_place_type(&ares, "Bomb2", nuke), Some("Bomb2"));
 }

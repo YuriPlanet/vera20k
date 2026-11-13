@@ -471,12 +471,8 @@ pub(crate) fn place_ready_building_at_cell(
     let (rx, ry) = origin;
     // Visibility1181 is latched by UpdateFoundationCenter4A94DA. LeftUp
     // checks it after the freshly recomputed proximity1180(4ABAA4/4ABAB2).
-    // RESIDUAL: gamemd latches it from the tactical gadget only
-    // (`0x004AAC10` calls `0x004A91B0` at `0x004AAD04`); this preview follows
-    // the cursor's screen point over the sidebar too. Trigger: a radar
-    // placement (`0x00653D58`) in a shrouded game. Effect: it tests the Cell
-    // behind the radar rather than the last tactical one, so it may refuse
-    // or admit differently. Frequency: rare.
+    // Over the radar the centre is the last tactical one
+    // ([`crate::app::match_runtime::sim_tick::FoundationCentre::Tactical`]).
     let visible = state
         .match_state
         .input
@@ -603,22 +599,27 @@ pub(crate) enum PlaceAction<'a> {
 /// none queues no event (`0x004AC294`). Ares replaces that lookup (hook
 /// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0, resuming at
 /// `0x4AC21C` or `0x4AC294`): its own actions name the armed type, and so
-/// does a stock one that is the armed type's `Action=`.
+/// does a stock one that is the armed type's `Action=`. It is superweapon
+/// code, so it follows [`RuleSet::ares_super_weapons`].
 ///
-/// RESIDUAL: with Ares on, a stock action that is not the armed type's
-/// `Action=` names the armed type here, where Ares names none. The radar
-/// hands over its index map's stock action for an Ares-handled type wherever
-/// its Ares hook (`0x653B3A`) is not on the switch, and Ares answers its own
-/// action there. Trigger: an Ares game whose armed type sits at a kept radar
-/// index with another `Action=`, released on the radar. Effect: it launches
-/// where Ares launches nothing. Frequency: mods only.
+/// RESIDUAL: with the Ares superweapons on, a stock action that is not the
+/// armed type's `Action=` names the armed type here, where Ares names none.
+/// The radar's Ares hooks (`0x653B3A`, `0x653CA6`) sit on the Ares cursor
+/// code (`ares_cursor`, `CursorId::Ares`), which only the `ares` build
+/// compiles; a build without it that reads an Ares mod's Rules the Ares way
+/// hands over the radar index map's stock action for an Ares-handled type.
+/// Trigger: such a game whose armed type sits at a kept radar index with
+/// another `Action=`, released on the radar. Effect: it launches where Ares
+/// launches nothing. Frequency: Ares mods only.
+///
+/// [`RuleSet::ares_super_weapons`]: crate::rules::ruleset::RuleSet::ares_super_weapons
 pub(crate) fn special_place_type<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     armed: &'a str,
     action: PlaceAction<'_>,
 ) -> Option<&'a str> {
     match action {
-        _ if rules.ares() => Some(armed),
+        _ if rules.ares_super_weapons() => Some(armed),
         #[cfg(feature = "ares")]
         PlaceAction::Ares => Some(armed),
         PlaceAction::Stock(action) => {

@@ -1737,8 +1737,11 @@ pub(crate) enum ActionDistanceTarget {
 /// cell centre at height 0 when a cell was supplied, else to the target
 /// object's GetCoords.
 ///
-/// RESIDUAL: score 1 comes from the EMP counter (`+0x504`) alone; VERA has no
-/// producer for a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
+/// DORMANT: score 1 comes from the EMP counter (`+0x504`) alone. A Unit's
+/// death-frame counter (`+0x6D8`) leaves -1 only in the art `DeathFrames=`
+/// deferred death (UnitClass::ReceiveDamage `0x00737DBF`, counted in
+/// UnitClass::AI `0x0073635B`), which no retail ARTMD/RULESMD sets and VERA
+/// does not port (`destruction_effects`).
 pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
