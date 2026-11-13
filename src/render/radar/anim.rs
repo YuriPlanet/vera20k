@@ -349,8 +349,15 @@ impl RadarPresentation {
     }
     /// One `653100` draw: whether the housing finished opening or closing in
     /// it, where native ends the radar's sound loop (`0x00653267` at frame 0,
-    /// `0x0065328C` at frame 32).
-    fn draw(&mut self, wall_ms: u64) -> bool {
+    /// `0x0065328C` at frame 32). `RenderFrame_main @ 0x004F4480` reaches
+    /// Draw (GScreenClass vt+0x40) only in a tactical composite, inside its
+    /// chrono-screen test, so a picture that owes none (`composites` 0) does
+    /// not draw the housing: offline it steps once per Main_Tick, on the first
+    /// tick four buckets on.
+    fn draw(&mut self, composites: u32, wall_ms: u64) -> bool {
+        if composites == 0 {
+            return false;
+        }
         let moving = self.housing_moving();
         self.advance_draw(wall_ms);
         moving && !self.housing_moving()
@@ -609,10 +616,11 @@ impl RadarAnimState {
     pub fn housing_moving(&self) -> bool {
         self.presentation.housing_moving()
     }
-    /// Native 653100 samples wall time once per draw, independent of game speed.
-    /// Returns whether the housing finished opening or closing in this draw.
-    pub fn tick(&mut self, wall_ms: u64) -> bool {
-        self.presentation.draw(wall_ms)
+    /// Native 653100 samples wall time once per draw that `composites`, see
+    /// [`RadarPresentation::draw`]. Returns whether the housing finished
+    /// opening or closing in this draw.
+    pub fn tick(&mut self, composites: u32, wall_ms: u64) -> bool {
+        self.presentation.draw(composites, wall_ms)
     }
     /// Keep the online draw: the minimap's `map` picture through `map_quads`,
     /// then `white` tinted through the solid quads, as drawn from `origin`.
@@ -930,6 +938,18 @@ mod tests {
         radar.restore_availability(false);
         assert_eq!(radar.set_has_radar(true), Some(RadarAvailabilityCue::On));
     }
+    /// Offline, Draw runs once per Main_Tick, so at GameSpeed 3 (a tick every
+    /// 48 ms) each opening step waits for the first tick four buckets on
+    /// (`0x006531F0..0x00653230`): 96 ms, however often the display redraws.
+    #[test]
+    fn the_housing_steps_only_in_a_draw_that_composites() {
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = radar.set_has_radar(true);
+        for draw in 0..60u64 {
+            radar.draw(u32::from(draw % 3 == 0), draw * 16);
+        }
+        assert_eq!(radar.animation.frame, 10);
+    }
     /// Executed6531DB controls for native phase4/5: at100+3 buckets no
     ///movement; at100+4,25->26 and31->32/phase1. Synthetic colors here only
     ///exercise the owner, never certify retail shape/pixel equivalence.
@@ -1073,9 +1093,9 @@ mod tests {
                 last_bucket: 100,
                 duration: 4,
             };
-            assert!(!radar.draw(1_663), "not due");
-            assert!(radar.draw(1_664), "{phase:?} settles");
-            assert!(!radar.draw(1_728), "settled housing stays");
+            assert!(!radar.draw(1, 1_663), "not due");
+            assert!(radar.draw(1, 1_664), "{phase:?} settles");
+            assert!(!radar.draw(1, 1_728), "settled housing stays");
         }
     }
     /// Native656DF0 suppresses equal availability before direction admission;
