@@ -553,7 +553,7 @@ fn next_building<'r>(
     // being rebuilt instead — measured, a 1v7 held its army in the yard for
     // the whole match because `base_defended` was false in 24 of 59 samples.
     if !base_defended(rules, obs, census) {
-        if let Some((ty, type_id)) = defense_building(rules, obs) {
+        if let Some((ty, type_id)) = defense_building(rules, obs, census) {
             return Some(plan::Chosen {
                 step: None,
                 item: Item::Defense,
@@ -716,57 +716,167 @@ pub(super) fn base_defenses<'r>(rules: &'r RuleSet, obs: &Observation<'_>) -> &'
         .map_or(&[], |side| rules.base_defense_types(side))
 }
 
+/// What a defensive building's own weapons can reach.
+///
+/// The wishlist's "防御建筑不太会造防空…建议评估防御设施本身的主武器能力". The
+/// answer is in the rules, not in a name list: a weapon names a projectile, and
+/// the projectile carries `AA=` and `AG=` — the same pair the fire error reads
+/// to decide whether a shot is legal (`weapon_class_bits`,
+/// `src/sim/combat/combat_weapon.rs`). A mod that gives its tower an
+/// anti-aircraft missile is answered without another table here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Armed {
+    /// At least one firing slot reaches aircraft (`AA=yes`).
+    pub(super) anti_air: bool,
+    /// At least one firing slot reaches ground (`AG=yes`).
+    pub(super) anti_ground: bool,
+    /// The longest `Range=` among the firing slots, in cells: how far the
+    /// structure covers without moving.
+    pub(super) range: i32,
+}
+
+/// The `Armed` reading of one building type, from its own weapon slots.
+pub(super) fn armament(rules: &RuleSet, ty: &ObjectType) -> Armed {
+    let mut armed = Armed::default();
+    for slot in 0..ty.weapon_record_count() {
+        let Some(weapon) = ty.weapon_at(slot).and_then(|name| rules.weapon(name)) else {
+            continue;
+        };
+        // `NeverUse=` is a scanner, not a weapon: a dog's jaw beside its
+        // `NeverUse` scanner is how the scanner is told apart from the bite.
+        if weapon.never_use {
+            continue;
+        }
+        // `Range=` is in leptons — `256` per cell, `LEPTONS_PER_CELL_I32` —
+        // and the tower's reach in cells is what the aim compares against a
+        // Chebyshev distance. Rounded up, so a target in the cell the weapon's
+        // edge falls in is still inside.
+        armed.range = armed.range.max(
+            (weapon.range_leptons.max(0) + crate::util::lepton::LEPTONS_PER_CELL_I32 - 1)
+                / crate::util::lepton::LEPTONS_PER_CELL_I32,
+        );
+        match rules.weapon_projectile(weapon) {
+            // A weapon naming no projectile section reads the reader's
+            // defaults (AA=no, AG=yes), the same way the fire error does.
+            None => armed.anti_ground = true,
+            Some(projectile) => {
+                armed.anti_air |= projectile.aa;
+                armed.anti_ground |= projectile.ag;
+            }
+        }
+    }
+    armed
+}
+
 /// The defensive building the house should put up now.
 ///
-/// The `[AI]` list is the native answer and it is empty for some sides (a
-/// player's own side in a mod, or a side the list does not name), which left
-/// the house with no towers at all. When it is empty, any buildable building
-/// whose `Primary=` is a weapon is the answer: that key is the rules' own
-/// statement that the structure fires.
+/// Two answers, in the order the base needs them.
+///
+/// **The sky, while it is open.** A tower that cannot shoot up does nothing
+/// about a bomber, and a base whose towers are all prism towers loses its
+/// refinery to the first aircraft that arrives. So the ring is held to a mix:
+/// while the house has fewer anti-air towers than one in [`ANTI_AIR_SHARE`] of
+/// its ring, the pick is an anti-air one — the one that also shoots ground,
+/// when the rules offer one.
+///
+/// **Otherwise the dearest thing the tech allows.** The `[AI]` list is the
+/// native answer and it is empty for some sides (a player's own side in a mod,
+/// or a side the list does not name), which left the house with no towers at
+/// all. When it is empty, any buildable building whose `Primary=` is a weapon
+/// is the answer: that key is the rules' own statement that the structure
+/// fires.
+///
+/// The list's order is not a priority: for the Americans it names the pillbox
+/// and the prism tower both, and taking the first buildable one bought a
+/// pillbox every time for a whole match — the wishlist's "光棱塔 never appears".
+/// A prism tower costs 1500 against a pillbox's 200 and needs `RADAR`, so the
+/// dear one is what the tech level is asking for; the pillbox is the answer
+/// before the radar stands and the fallback when nothing better is buildable.
+///
+/// `CanBuild` has already filtered by prerequisite and owner, so "buildable"
+/// here means the house has the tree for it: the escalation is the tech, not a
+/// guess about it.
 pub(super) fn defense_building<'r>(
     rules: &'r RuleSet,
     obs: &Observation<'_>,
+    census: &Census,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    // The `[AI]` list is the native answer, and its order is not a priority: for
-    // the Americans it names the pillbox and the prism tower both, and taking the
-    // first buildable one bought a pillbox every time for a whole match — the
-    // wishlist's "光棱塔 never appears". A prism tower costs 1500 against a
-    // pillbox's 200 and needs `RADAR`, so the dear one is the one the tech level
-    // is asking for; the pillbox is the answer before the radar stands and the
-    // fallback when nothing better is buildable.
-    //
-    // `CanBuild` has already filtered by prerequisite and owner, so "buildable"
-    // here means the house has the tree for it: the escalation is the tech, not
-    // a guess about it.
     let listed = base_defenses(rules, obs);
-    if let Some(found) = dearest_buildable(rules, obs, listed) {
-        return Some(found);
+    let candidates: Vec<(&ObjectType, InternedId)> = if listed.is_empty() {
+        class_types(rules, obs, ObjectCategory::Building)
+            .filter(|(ty, _)| ty.weapon_at(0).is_some())
+            .collect()
+    } else {
+        listed
+            .iter()
+            .filter_map(|name| {
+                let ty = rules.object(name)?;
+                let type_id = obs.type_id(name)?;
+                (obs.can_build(rules, ty, true) != CanBuild::No && house_owns(rules, obs, ty))
+                    .then_some((ty, type_id))
+            })
+            .collect()
+    };
+    if candidates.is_empty() {
+        return None;
     }
-    class_types(rules, obs, ObjectCategory::Building)
-        .filter(|(ty, _)| ty.weapon_at(0).is_some())
+    let (anti_air_towers, ring) = armed_defenses(rules, obs, census);
+    // The sky has to be a real threat before the base pays for AA. `[NASAM]` is
+    // 1500 credits and its missile has `AG=no`, so a house that buys one against
+    // an enemy with no aircraft has spent the price of a prism tower on nothing
+    // — and the wishlist asks for defences chosen by what they can shoot, not by
+    // a quota. Once the enemy has shown aircraft, the mix holds.
+    let enemy_air = census.threat[crate::rules::unit_role::Role::AntiAir.index()] > 0;
+    // Fewer than one anti-air tower per `ANTI_AIR_SHARE` defences: buy one.
+    if enemy_air
+        && anti_air_towers * ANTI_AIR_SHARE <= ring
+        && let Some(found) = candidates
+            .iter()
+            .filter(|(ty, _)| armament(rules, ty).anti_air)
+            // A tower that shoots both ways is worth more than one that only
+            // shoots up, and both are worth more than nothing.
+            .max_by_key(|(ty, _)| {
+                let armed = armament(rules, ty);
+                (armed.anti_ground, obs.cost_of(rules, ty))
+            })
+    {
+        return Some(*found);
+    }
+    candidates
+        .into_iter()
         .max_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
 }
 
-/// The dearer of the listed types the house can build, when any is buildable.
-///
-/// The same admission `first_buildable` applies — `CanBuild` and the house's own
-/// country — and only the choice differs: the tech level decides which tower the
-/// base wants, not the order the `[AI]` list happens to name them in.
-fn dearest_buildable<'r>(
-    rules: &'r RuleSet,
-    obs: &Observation<'_>,
-    names: &[String],
-) -> Option<(&'r ObjectType, InternedId)> {
-    names
-        .iter()
-        .filter_map(|name| {
-            let ty = rules.object(name)?;
-            let type_id = obs.type_id(name)?;
-            (obs.can_build(rules, ty, true) != CanBuild::No && house_owns(rules, obs, ty))
-                .then_some((ty, type_id))
-        })
-        .max_by_key(|(ty, _)| obs.cost_of(rules, ty))
+/// How many defences the house has, and how many of them can shoot at aircraft.
+fn armed_defenses(rules: &RuleSet, obs: &Observation<'_>, census: &Census) -> (usize, usize) {
+    let mut anti_air = 0;
+    let mut ring = 0;
+    for unit in &census.units {
+        let Some(ty) = obs.object_type(rules, unit.type_id) else {
+            continue;
+        };
+        // Only armed structures are defences. The yard's own gun is not one: it
+        // is where the house lives, not part of the ring around it.
+        if ty.category != ObjectCategory::Building
+            || ty.construction_yard
+            || ty.weapon_at(0).is_none()
+        {
+            continue;
+        }
+        ring += 1;
+        if armament(rules, ty).anti_air {
+            anti_air += 1;
+        }
+    }
+    (anti_air, ring)
 }
+
+/// How many ground defences one anti-air tower is worth.
+///
+/// One in three: a ring of prism towers with one patriot beside it answers both
+/// a tank push and a bombing run, and a ring of patriots answers only the
+/// second.
+pub(super) const ANTI_AIR_SHARE: usize = 3;
 
 /// How many defensive structures the house has: the `[AI]` list's types, or
 /// a building that shoots when the list names none.
@@ -1056,6 +1166,28 @@ mod tests {
     /// barracks is the cheaper production building and the one the engineer and
     /// the dog come out of, and the tree is unlocked before a second line or a
     /// second tower is bought.
+    #[test]
+    fn a_towers_armament_comes_from_its_own_weapons() {
+        let Some((_sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        // The prism tower's `Primary=PrismShot` names `InvisibleHigh`, whose
+        // `AA=` is no: it is a ground weapon, and the reading has to say so.
+        let prism = rules.object("ATESLA").expect("the prism tower");
+        let prism = armament(&rules, prism);
+        assert!(prism.anti_ground, "the prism tower shoots ground");
+        assert!(!prism.anti_air, "and it does not shoot aircraft");
+        assert_eq!(prism.range, 8, "`Range=8` is eight cells");
+
+        // The patriot's `Primary=RedEye2` names `AAHeatSeeker`, whose `AA=` is
+        // yes: the anti-air tower the mix asks for.
+        let patriot = rules.object("NASAM").expect("the patriot");
+        let patriot = armament(&rules, patriot);
+        assert!(patriot.anti_air, "the patriot shoots aircraft");
+        assert!(!patriot.anti_ground, "and `AAHeatSeeker` is air-only");
+        assert_eq!(patriot.range, 12, "`Range=12` is twelve cells");
+    }
+
     #[test]
     fn the_opening_is_power_then_barracks_then_income_then_tech() {
         let Some((mut sim, rules)) = arena(0xA17) else {

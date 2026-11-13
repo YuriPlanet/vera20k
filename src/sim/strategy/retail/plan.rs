@@ -578,7 +578,7 @@ fn pick<'r>(
         Item::Purifier => build::ore_purifier_building(rules, obs),
         Item::Barracks => build::first_buildable(rules, obs, &rules.build_barracks_types),
         Item::Weapons => build::first_buildable(rules, obs, &rules.build_weapons_types),
-        Item::Defense => build::defense_building(rules, obs),
+        Item::Defense => build::defense_building(rules, obs, census),
         Item::Radar => build::first_buildable(rules, obs, &rules.build_radar_types),
         // The lab that authorises a power the house will actually fire.
         Item::Tech => build::tech_building(rules, obs),
