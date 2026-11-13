@@ -196,11 +196,12 @@ impl App {
             .match_state
             .session
             .enter_network(NetworkReturnContext::LanLobby);
-        let owner = &state.frontend.multiplayer_shell_runtime;
+        let owner = &mut state.frontend.multiplayer_shell_runtime;
         let local = owner.local_participant();
         // The name box shows the name as typed; the lobby row shows it as
         // every other player sees it.
-        let mut runtime = LanShellRuntime::new(&owner.handle_text(), owner.lan_observer());
+        let name = owner.open_lan_name_box();
+        let mut runtime = LanShellRuntime::new(&name, owner.lan_observer());
         runtime
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
@@ -557,7 +558,10 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             .multiplayer_shell_runtime
             .set_lan_observer(value),
         LanLobbyAction::NameChanged(value) => {
-            state.frontend.multiplayer_shell_runtime.set_handle(&value);
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .set_lan_name(&value);
             // The row shows the name as sent, as the service's rebuild does.
             let name = state
                 .frontend
