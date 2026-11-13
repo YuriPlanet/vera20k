@@ -22,15 +22,14 @@ struct WeaponSlotGeometry {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(not(feature = "ares"), derive(Copy))]
 pub(crate) struct WeaponOffsets {
     // TechnoType710AF0, clears7116E6..71173A: both WeaponStruct arrays.
     base: [WeaponSlotGeometry; WEAPON_SLOT_COUNT],
     elite: [WeaponSlotGeometry; WEAPON_SLOT_COUNT],
     alternate: [[i32; 3]; 5],
-    #[cfg(feature = "ares")]
+    // Ares extension slots past the original eighteen; only a read the Ares
+    // way fills them.
     extra_base: Vec<WeaponSlotGeometry>,
-    #[cfg(feature = "ares")]
     extra_elite: Vec<WeaponSlotGeometry>,
 }
 
@@ -41,10 +40,7 @@ impl WeaponOffsets {
     pub(crate) fn read_pass(&mut self, art: &IniSection, turret_count: i32, weapon_count: i32) {
         if turret_count > 0 {
             let count = usize::try_from(weapon_count).unwrap_or(0);
-            #[cfg(not(feature = "ares"))]
-            let count = count.min(WEAPON_SLOT_COUNT);
-            #[cfg(feature = "ares")]
-            {
+            let count = if crate::rules::ares_switch::ares_way() {
                 // Ares10040020/resize10040AF0: extension tails are destroyed
                 // on shrink; regrown WeaponStruct geometry starts at zero.
                 // LoadWeapons reads this art block itself, so
@@ -54,12 +50,15 @@ impl WeaponOffsets {
                 self.extra_base.resize(extra, WeaponSlotGeometry::default());
                 self.extra_elite
                     .resize(extra, WeaponSlotGeometry::default());
-            }
+                count
+            } else {
+                count.min(WEAPON_SLOT_COUNT)
+            };
             for slot in 0..count {
                 if slot < WEAPON_SLOT_COUNT {
                     Self::read_numbered(art, slot, &mut self.base[slot], &mut self.elite[slot]);
                 } else {
-                    #[cfg(feature = "ares")]
+                    // Only a read the Ares way gets past the eighteen slots.
                     Self::read_numbered(
                         art,
                         slot,
@@ -115,23 +114,24 @@ impl WeaponOffsets {
         elite: &mut WeaponSlotGeometry,
     ) {
         //715B3B..715D6E reads each base/elite record in order. The installed
-        // Ares10040020 hook replaces that path with its own integer parser.
-        #[cfg(feature = "ares")]
+        // Ares10040020 hook replaces that path with its own integer parser
+        // when the Rules are read the Ares way.
+        let ares = crate::rules::ares_switch::ares_way();
         let read_int = |key: &str, current| {
-            crate::rules::ares_switch::not_ares_read(|| art.read_ares_int(key, current))
+            if ares {
+                crate::rules::ares_switch::not_ares_read(|| art.read_ares_int(key, current))
+            } else {
+                art.read_int(key, current)
+            }
         };
-        #[cfg(not(feature = "ares"))]
-        let read_int = |key: &str, current| art.read_int(key, current);
-        #[cfg(feature = "ares")]
-        {
-            base.flh = crate::rules::ares_switch::not_ares_read(|| {
-                art.read_ares_coord3(&format!("Weapon{}FLH", slot + 1), base.flh)
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            base.flh = art.read_coord3(&format!("Weapon{}FLH", slot + 1), base.flh);
-        }
+        let read_coord3 = |key: &str, current| {
+            if ares {
+                crate::rules::ares_switch::not_ares_read(|| art.read_ares_coord3(key, current))
+            } else {
+                art.read_coord3(key, current)
+            }
+        };
+        base.flh = read_coord3(&format!("Weapon{}FLH", slot + 1), base.flh);
         base.barrel_length = read_int(
             &format!("Weapon{}BarrelLength", slot + 1),
             base.barrel_length,
@@ -140,16 +140,7 @@ impl WeaponOffsets {
             &format!("Weapon{}BarrelThickness", slot + 1),
             base.barrel_thickness,
         );
-        #[cfg(feature = "ares")]
-        {
-            elite.flh = crate::rules::ares_switch::not_ares_read(|| {
-                art.read_ares_coord3(&format!("EliteWeapon{}FLH", slot + 1), base.flh)
-            });
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            elite.flh = art.read_coord3(&format!("EliteWeapon{}FLH", slot + 1), base.flh);
-        }
+        elite.flh = read_coord3(&format!("EliteWeapon{}FLH", slot + 1), base.flh);
         elite.barrel_length = read_int(
             &format!("EliteWeapon{}BarrelLength", slot + 1),
             base.barrel_length,
@@ -171,7 +162,6 @@ impl WeaponOffsets {
         } else {
             self.base.get(slot)
         };
-        #[cfg(feature = "ares")]
         let coordinate = coordinate.or_else(|| {
             let extra = slot.checked_sub(WEAPON_SLOT_COUNT)?;
             if elite {
@@ -188,7 +178,6 @@ impl WeaponOffsets {
 
     /// Ares Prism SupportWeapon reader `100103F0`: `slot` takes AlternateFLH0
     /// (base) or AlternateFLH1 (elite), else that array's slot-0 coordinate.
-    #[cfg(feature = "ares")]
     pub(crate) fn copy_support_flh(&mut self, slot: usize, elite: bool) {
         let alternate = self.alternate[usize::from(elite)];
         let slots = if elite {
@@ -309,9 +298,9 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_extra_barrels_use_the_extension_reader_and_regrow_zeroed() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut layers = RulesLayerStack::new(IniFile::from_str(
             "[VehicleTypes]\n0=T\n[T]\nImage=A\nTurretCount=1\nWeaponCount=19\n",
         ));

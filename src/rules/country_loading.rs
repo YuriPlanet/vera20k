@@ -148,7 +148,6 @@ pub fn stock_country_loading(index: usize) -> Option<&'static CountryLoadingDefa
 /// Ares1001C107..1001C135: the stored ID compared (case-insensitively)
 /// against the literal name table at 0x10097FC8. `None` takes the unknown
 /// branch 0x1001C413, whatever the Country's registry position.
-#[cfg(feature = "ares")]
 pub(crate) fn stock_country_by_id(id: &str) -> Option<&'static CountryLoadingDefaults> {
     STOCK.iter().find(|entry| entry.id.eq_ignore_ascii_case(id))
 }
@@ -156,7 +155,6 @@ pub(crate) fn stock_country_by_id(id: &str) -> Option<&'static CountryLoadingDef
 /// CountryExt+2C/+4C, three CSF label records, and signed ColorScheme+11C.
 /// Cached native CSF pointers are deliberately absent: save10076570 writes
 /// labels only; load100764D0 resolves them against the fixed process catalog.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AresCountryLoading {
     file: String,
@@ -167,14 +165,12 @@ pub struct AresCountryLoading {
     color: i32,
 }
 
-#[cfg(feature = "ares")]
 impl Default for AresCountryLoading {
     fn default() -> Self {
         Self::for_country_id("")
     }
 }
 
-#[cfg(feature = "ares")]
 impl AresCountryLoading {
     /// Constructor1001B767 and initializer1001C0F0 compare stored ID literals,
     /// regardless of the current registry position or Side.

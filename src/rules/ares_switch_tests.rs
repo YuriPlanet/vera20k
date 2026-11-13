@@ -72,11 +72,11 @@ fn retail_modes_and_maps_keep_ares_off() {
     assert!(!rules.ares());
 }
 
-/// A map's `ImmuneToEMP=` (Ares' EMP reader alone reads it) turns Ares on,
-/// and with it Ares' Cloakable building (BuildingClass_Init_Cloakable,
-/// 1005C4F0, hook 0x442CE0): the building's AI visit runs its cloak producer.
-/// The stock `Cloakable=` alone leaves both off, as gamemd ignores it on a
-/// building.
+/// A map's `ImmuneToAbduction=` (Ares' TechnoTypeExt reader alone reads it,
+/// in a game read either way) turns Ares on, and with it Ares' Cloakable
+/// building (BuildingClass_Init_Cloakable, 1005C4F0, hook 0x442CE0): the
+/// building's AI visit runs its cloak producer. The stock `Cloakable=` alone
+/// leaves both off, as gamemd ignores it on a building.
 #[test]
 fn a_maps_ares_key_turns_ares_on() {
     let Some((_, assets)) = retail_assets() else {
@@ -101,10 +101,10 @@ fn a_maps_ares_key_turns_ares_on() {
     let ares = skirmish(
         &mut owner,
         None,
-        &IniFile::from_str("[GAPOWR]\nCloakable=yes\n[HTNK]\nImmuneToEMP=yes\n"),
+        &IniFile::from_str("[GAPOWR]\nCloakable=yes\n[HTNK]\nImmuneToAbduction=yes\n"),
     );
-    assert_eq!(ares.ares(), crate::rules::ARES_BUILD);
-    assert_eq!(cloaks(&ares), crate::rules::ARES_BUILD);
+    assert!(ares.ares());
+    assert!(cloaks(&ares));
 }
 
 /// `ares.mix` mounted at startup (Load_Bootstrap_AresMIX, hook 0x0053029E)

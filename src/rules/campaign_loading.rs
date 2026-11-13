@@ -110,8 +110,8 @@ pub struct CampaignLoadingMetadata {
     background_palette_name: String,
     /// Ares `LoadScreenText.Color` of the MISSION section, the colour scheme
     /// name INIClass_ReadScenario_CacheSP (1002F680, hook 0x686D7F) looks up
-    /// for the campaign loading text.
-    #[cfg(feature = "ares")]
+    /// for the campaign loading text. Read in every game; only Ares' loading
+    /// text consumes it.
     load_text_color: String,
 }
 
@@ -136,8 +136,8 @@ impl CampaignLoadingMetadata {
         // Ares 1002F680 (hook 0x686D7F, after MISSIONMD is read) defaults the
         // key by the file name's first three letters, case-blind, and reads
         // it into its 0x800 buffer whether or not the section exists.
-        #[cfg(feature = "ares")]
         {
+            let _ares = crate::rules::ares_switch::ares_reads();
             let prefix = |name: &str| {
                 filename
                     .get(..3)
@@ -225,7 +225,6 @@ impl CampaignLoadingMetadata {
 
     /// The colour scheme name Ares 1002F680 finds (shade count 1, case-blind)
     /// for SideExt::CurrentLoadTextColor; a name no scheme has leaves it -1.
-    #[cfg(feature = "ares")]
     pub fn load_text_color(&self) -> &str {
         &self.load_text_color
     }
@@ -361,7 +360,6 @@ mod tests {
                 background_name_640: "Prior".into(),
                 background_name_800: "Prior".into(),
                 background_palette_name: "Prior".into(),
-                #[cfg(feature = "ares")]
                 load_text_color: String::new(),
             };
             let filename = row["filename"].as_str().unwrap();
@@ -430,9 +428,9 @@ mod tests {
     /// Ares INIClass_ReadScenario_CacheSP (1002F680, hook 0x686D7F): the
     /// MISSION section's `LoadScreenText.Color`, else a default by the file
     /// name's first three letters, also when the section is absent.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_campaign_load_text_color_defaults_by_the_scenario_prefix() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str("[sov01.map]\nLoadScreenText.Color=Gold\n");
         let color = |filename: &str| {
             let mut metadata = CampaignLoadingMetadata::default();

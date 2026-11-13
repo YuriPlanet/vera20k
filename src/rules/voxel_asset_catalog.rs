@@ -405,9 +405,9 @@ mod tests {
     /// Ares ObjectTypeClass_Load3DArt_NoSpawnAlt1 (10041280, hook 0x5F8277):
     /// a NoSpawnAlt unit whose <Image>WO pair is missing fails its whole
     /// voxel load, where the stock loader treats the WO pair as optional.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_no_spawn_alt_unit_needs_its_wo_pair() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::RulesLayerStack;
         let Some((_, retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
@@ -466,14 +466,16 @@ mod tests {
             )
             .unwrap();
             // Ares ObjectTypeClass_Load3DArt_NoSpawnAlt1 (10041280, hook
-            // 0x5F8277): SOURCE's NoSpawnAlt=yes needs its <Image>WO pair.
-            #[cfg(feature = "ares")]
-            for image in ["MTNK", "ALT"] {
-                std::fs::write(
-                    directory.path().join(format!("{image}WO.{extension}")),
-                    retail.get_ref(&format!("MTNK.{extension}")).unwrap(),
-                )
-                .unwrap();
+            // 0x5F8277): SOURCE's NoSpawnAlt=yes needs its <Image>WO pair
+            // when the Rules are read the Ares way.
+            if crate::rules::ares_switch::ares_way() {
+                for image in ["MTNK", "ALT"] {
+                    std::fs::write(
+                        directory.path().join(format!("{image}WO.{extension}")),
+                        retail.get_ref(&format!("MTNK.{extension}")).unwrap(),
+                    )
+                    .unwrap();
+                }
             }
         }
         let assets = AssetManager::from_loose_root_for_test(directory.path());

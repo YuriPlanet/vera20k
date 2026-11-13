@@ -366,9 +366,9 @@ impl VoxelModelPlan {
         // whatever its Turret=, and a missing or unreadable pair fails the
         // whole load (LoadVoxel 1003F4E0 with missingOk false). The unit draw
         // reads that pair by name (`unit_atlas_variants`), so only the
-        // outcome joins the failure flag here.
-        #[cfg(feature = "ares")]
-        if input.unit && input.no_spawn_alt {
+        // outcome joins the failure flag here. Only Rules read the Ares way
+        // take this load.
+        if crate::rules::ares_switch::ares_way() && input.unit && input.no_spawn_alt {
             let image = format!("{}WO", input.image);
             let present = self.probe(LibraryKind::Vxl, &image, false);
             let vxl_valid = self.probe(LibraryKind::Vxl, &image, true);
@@ -387,8 +387,9 @@ impl VoxelModelPlan {
             }
             // Ares ObjectTypeClass_Load3DArt_NoSpawnAlt2 (100413A0, hook
             // 0x5F848C) skips this stock WO load to the barrel tests at
-            // 0x5F8844; the pair is loaded above instead.
-            if input.no_spawn_alt && !cfg!(feature = "ares") {
+            // 0x5F8844; the pair is loaded above instead when the Rules are
+            // read the Ares way.
+            if input.no_spawn_alt && !crate::rules::ares_switch::ares_way() {
                 let e = self.optional_pair(
                     &mut slots.auxiliary,
                     &format!("{}WO", input.image),

@@ -141,6 +141,7 @@ mod tests {
 
     #[test]
     fn bounty_readers_retain_layers_rank_overrides_and_noninherited_country_gate() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let root = "[Countries]\n0=PARENT\n1=CHILD\n[PARENT]\nGivesBounty=no\n\
             [CHILD]\nParentCountry=PARENT\n[VehicleTypes]\n0=HUNTER\n1=TARGET\n\
             [BuildingTypes]\n0=BANK\n[General]\nBountyEnablers=BANK,UNKNOWN,BANK\n\

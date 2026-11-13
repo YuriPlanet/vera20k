@@ -310,6 +310,9 @@ fn load_with_assets(
         )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
         .into_parts();
+    // The game's later readers (ARTMD, the asset closures) follow the way its
+    // Rules were read (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     let bound_scenario_prefix = scenario_prefix_plan
         .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;

@@ -320,6 +320,7 @@ mod tests {
     /// failed later read keeps the earlier value; `none` clears a warhead.
     #[test]
     fn tiberium_ext_reads_retain_and_fall_back_like_the_getters() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut ext = TiberiumExtRules::default();
         assert_eq!(ext.damage(25), 2);
         assert_eq!(ext.damage(5), 1);

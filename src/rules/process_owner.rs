@@ -144,7 +144,6 @@ enum NativeRulesRegistryOwner {
     /// Full_Init's E_multi has run, but its first Draw still reads this live
     /// registry before Type reset. The owner retains the constructor chronology
     /// until the matching loading attempt finishes or explicitly retires it.
-    #[cfg(feature = "ares")]
     PreparedNonCampaign {
         trace: NativeTypeConstructionTrace,
         identity: Arc<()>,
@@ -159,7 +158,6 @@ impl NativeRulesRegistryOwner {
             Self::Preview(processed) | Self::Scenario(processed) => {
                 processed.native_registry_state()
             }
-            #[cfg(feature = "ares")]
             Self::PreparedNonCampaign { trace, .. } => trace.registry_state(),
         }
     }
@@ -190,7 +188,6 @@ impl NativeRulesRegistryOwner {
                 .into_ini_and_native_type_construction_trace()
                 .1
                 .into_registry_state_discarding_events(),
-            #[cfg(feature = "ares")]
             Self::PreparedNonCampaign { .. } => {
                 panic!("prepared Rules prefix requires its loading attempt's ticket")
             }
@@ -212,7 +209,6 @@ pub struct NativeRulesProcessOwner {
 /// This ticket contains no Rules state or constructor events. Pointer identity
 /// binds it to the exact preparation, including across different process owners;
 /// allocating this presentation capability consumes no simulation RNG or IDs.
-#[cfg(feature = "ares")]
 #[derive(Debug)]
 #[must_use = "a prepared Rules prefix must be consumed or explicitly cancelled"]
 pub struct NativeNonCampaignPrefixPreparation {
@@ -291,7 +287,6 @@ pub enum NativeScenarioRulesPrefix<'a> {
     RandomMap(Option<&'a IniFile>),
     /// Ordinary E_multi already ran before the first loading frame. Consume
     /// its exact chronology without clearing classes or reading root again.
-    #[cfg(feature = "ares")]
     PreparedNonCampaign {
         preparation: NativeNonCampaignPrefixPreparation,
         mode_rules_override: Option<&'a IniFile>,
@@ -316,7 +311,9 @@ impl NativeScenarioRulesLoad {
 }
 
 impl NativeRulesProcessOwner {
-    /// Enter native cold startup from the already-selected INI snapshots.
+    /// Enter native cold startup from the already-selected INI snapshots, for
+    /// the fixture game `ares_switch::game_ships_ares` says; the game's
+    /// startup says whether `ares.mix` ships (`RetailRulesSources::into_owner`).
     ///
     /// gamemd provenance: `Load_Game_Rules @ 0x0052CD70` followed by
     /// `Init_Game @ 0x0052BA60`.
@@ -335,11 +332,15 @@ impl NativeRulesProcessOwner {
             fixed_eva,
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
             PersonalRules::default(),
+            crate::rules::ares_switch::game_ships_ares(false),
         )
     }
 
     /// Preserve the selector's actual logical names beside the frozen inputs.
     /// These diagnostic labels do not alter Rules processing or saved state.
+    /// `ships_ares`: startup mounted `ares.mix` (`AssetManager::ships_ares`),
+    /// so Ares plays and the registry reads every Rules pass the Ares way
+    /// (`rules::ares_switch`).
     pub(crate) fn from_named_cold_start_sources(
         selected_rules_root: IniFile,
         langrule: Option<NativeLangRuleSource>,
@@ -348,6 +349,7 @@ impl NativeRulesProcessOwner {
         fixed_eva: Arc<EvaRegistry>,
         rules_art_names: [String; 2],
         personal_rules: PersonalRules,
+        ships_ares: bool,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -366,7 +368,7 @@ impl NativeRulesProcessOwner {
             None | Some(NativeLangRuleRead::Absent | NativeLangRuleRead::SelectionFailed) => None,
         };
         let cold_trace = process_native_rules_cold_start(
-            NativeRulesRegistryState::default(),
+            NativeRulesRegistryState::new(ships_ares),
             &selected_rules_root,
             &fixed_art,
             startup_langrule.as_ref(),
@@ -383,20 +385,32 @@ impl NativeRulesProcessOwner {
                 fixed_sounds,
                 fixed_eva,
                 personal_rules,
-                // The game's startup sets it (`RetailRulesSources::into_owner`);
-                // an `ares` test build's fixture owners stand for the Ares
-                // game, as `RulesLayerStack::new` says.
-                ships_ares: cfg!(all(feature = "ares", any(test, feature = "test-support"))),
+                ships_ares,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
     }
 
-    /// Record whether startup mounted `ares.mix` (`AssetManager::ships_ares`),
-    /// before any Process call reads its layers.
-    pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
-        self.sources.ships_ares = ships_ares;
-        self
+    /// The same cold start for a game that ships `ares.mix` (or not): it
+    /// plays Ares and reads its Rules the Ares way. Call it on a fresh owner,
+    /// before any later Process call, which the cold start it redoes drops.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ares_mix(self, ships_ares: bool) -> Self {
+        if ships_ares == self.sources.ships_ares {
+            return self;
+        }
+        let sources = self.sources;
+        Self::from_named_cold_start_sources(
+            sources.selected_rules_root,
+            sources.langrule,
+            sources.fixed_art,
+            sources.fixed_sounds,
+            sources.fixed_eva,
+            sources.rules_art_names,
+            sources.personal_rules,
+            ships_ares,
+        )
+        .expect("the same sources cold-started once already")
     }
 
     /// Session6980C0/475540 against the retained process INI. This mutates the
@@ -444,7 +458,6 @@ impl NativeRulesProcessOwner {
 
     /// Every retained country's Ares `File.Flag=` (stock/unknown defaults
     /// included), deduplicated case-insensitively for shell atlas loading.
-    #[cfg(feature = "ares")]
     pub fn country_flag_files(&self) -> Vec<String> {
         let state = self
             .registry
@@ -469,7 +482,6 @@ impl NativeRulesProcessOwner {
     /// Rows consumed by the Ares weighted country picker: registry ID, Name,
     /// Multiplay gate and both weights. Values come from the same retained
     /// Country extension as the shell flag/status projection.
-    #[cfg(feature = "ares")]
     pub fn country_random_rows(&self) -> Vec<(&str, Option<&str>, bool, i32, i32)> {
         let state = self
             .registry
@@ -494,7 +506,7 @@ impl NativeRulesProcessOwner {
     /// The live registry's SideExt for a side index: `None` for a negative or
     /// unallocated side, where the native hooks skip (`Scenario+0x34B8` < 0).
     /// The score shells read it before any match Rules projection exists.
-    #[cfg(feature = "ares")]
+    /// Rules read the stock way have none.
     fn side_extension(
         &self,
         side: i32,
@@ -509,21 +521,14 @@ impl NativeRulesProcessOwner {
     }
 
     /// The side's score theme, or `None` where gamemd pushes its literal
-    /// `SCORE` name (`0x0082FEBC`): a stock build or a side with no SideExt.
+    /// `SCORE` name (`0x0082FEBC`): Rules read the stock way or a side with
+    /// no SideExt.
     pub fn side_score_theme(
         &self,
         side: i32,
         theme: crate::rules::ruleset::ScoreTheme,
     ) -> Option<&str> {
-        #[cfg(feature = "ares")]
-        {
-            return self.side_extension(side)?.score_theme(theme);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = (side, theme);
-            None
-        }
+        self.side_extension(side)?.score_theme(theme)
     }
 
     /// The side's `DialogBackground.Image/.Palette` names for the shell dialog
@@ -532,33 +537,22 @@ impl NativeRulesProcessOwner {
     /// leaves either name unset.
     ///
     /// [`AresSideExtension::dialog_background`]: crate::rules::ares_side_extension::AresSideExtension::dialog_background
-    #[cfg(feature = "ares")]
     pub fn side_dialog_background(&self, side: i32) -> Option<(&str, &str)> {
         self.side_extension(side)?.dialog_background()
     }
 
-    /// The side's seven score-screen file names (SideExt `+0x98..+0x158`). A
-    /// stock build and a negative or unallocated side leave every field
-    /// `None`, so the callers keep their fixed tables.
+    /// The side's seven score-screen file names (SideExt `+0x98..+0x158`).
+    /// Rules read the stock way and a negative or unallocated side leave every
+    /// field `None`, so the callers keep their fixed tables.
     pub fn side_score_art(&self, side: i32) -> crate::rules::ruleset::SideScoreArt<'_> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .side_extension(side)
-                .map(|extension| extension.score_art())
-                .unwrap_or_default();
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = side;
-            Default::default()
-        }
+        self.side_extension(side)
+            .map(|extension| extension.score_art())
+            .unwrap_or_default()
     }
 
     /// `Game_GetFlagSurface @ 0x1001DCE0` for a shell HouseType country index:
     /// that country's `File.Flag`, or the `rani.pcx` null-surface branch when
     /// the file is cleared. `None` when no Country holds that index.
-    #[cfg(feature = "ares")]
     pub fn country_flag_surface(&self, index: u16) -> Option<&str> {
         let id = self.country_name(i32::from(index))?;
         let state = self
@@ -586,7 +580,6 @@ impl NativeRulesProcessOwner {
 
     /// Ares loading hooks read the actual retained Country before Full_Init
     /// destroys the registry. Consumers clone this view once per loading attempt.
-    #[cfg(feature = "ares")]
     pub fn country_loading(
         &self,
         index: crate::rules::ruleset::CountryIdx,
@@ -604,7 +597,6 @@ impl NativeRulesProcessOwner {
     /// from CCINI_Rules887048 before Read_Scenario684620. These names use
     /// ReadTheme4758F0's ReadString128; ThemeRuntime owns name/default binding.
     /// Mode/map Process projections and ParentCountry are not read here.
-    #[cfg(feature = "ares")]
     pub fn loading_theme_names(
         &self,
         country: crate::rules::ruleset::CountryIdx,
@@ -636,7 +628,6 @@ impl NativeRulesProcessOwner {
     /// Early Ares6847B7 loading color, resolved against this same retained
     /// registry before E_multi or the later mode/map Rules reset can change it.
     /// `None` when the Country sets no color, leaving the stock side color.
-    #[cfg(feature = "ares")]
     pub fn country_loading_text_hsv(
         &self,
         index: crate::rules::ruleset::CountryIdx,
@@ -650,13 +641,15 @@ impl NativeRulesProcessOwner {
     }
 
     /// Refresh derived frontend country/side fields without replaying Process
-    /// or allocating through the compatibility RuleSet.
+    /// or allocating through the compatibility RuleSet. The projection follows
+    /// the way the registry's Rules were read (`ares_switch::ares_way`).
     pub fn project_multiplayer_countries(&self, rules: &mut RuleSet) {
         let registry = self
             .registry
             .as_ref()
             .expect("Rules transition reentered")
             .registry_state();
+        let _ares_way = crate::rules::ares_switch::read_ares_way(registry.reads_ares_way());
         rules.refresh_country_side_projection(
             registry.country_projection(),
             registry.side_projection(),
@@ -670,11 +663,16 @@ impl NativeRulesProcessOwner {
         &self.sources.fixed_sounds
     }
 
+    /// Finish the projection's sound and EVA bindings, read the way the
+    /// processed Rules were read (`ares_switch::ares_way`).
     pub(crate) fn bind_type_audio_references(
         &self,
         rules: &mut RuleSet,
         processed: &ProcessedRulesLayers,
     ) {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(
+            processed.native_registry_state().reads_ares_way(),
+        );
         rules.bind_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_terrain_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_type_eva_references(processed.ini(), &self.sources.fixed_eva);
@@ -759,7 +757,6 @@ impl NativeRulesProcessOwner {
             NativeRulesRegistryOwner::BeforeReset(_)
             | NativeRulesRegistryOwner::Live(_)
             | NativeRulesRegistryOwner::Preview(_) => None,
-            #[cfg(feature = "ares")]
             NativeRulesRegistryOwner::PreparedNonCampaign { .. } => None,
         }
     }
@@ -851,7 +848,7 @@ impl NativeRulesProcessOwner {
         self.startup_layers(langrule.as_ref())
             .process_with_fixed_art_and_registry_state_recovering(
                 &self.sources.fixed_art,
-                NativeRulesRegistryState::default(),
+                NativeRulesRegistryState::new(self.sources.ships_ares),
                 RulesProcessContext::Ordinary,
                 &self.sources.fixed_eva,
                 &self.sources.fixed_sounds,
@@ -979,7 +976,6 @@ impl NativeRulesProcessOwner {
     /// Ares6847B7/1002F8F0 color and552D58/1001E0E0 PAL consumers run earlier.
     /// The app must transfer any retired scene's runtime Rules writes first.
     /// Generated RMG saved-DL admission deliberately keeps its existing path.
-    #[cfg(feature = "ares")]
     pub fn prepare_noncampaign_scenario_prefix(&mut self) -> NativeNonCampaignPrefixPreparation {
         let state = self.take_pre_reset_state(true);
         let trace =
@@ -997,7 +993,6 @@ impl NativeRulesProcessOwner {
     /// Keep the actual post-prefix registry, including consumed Country parent
     /// flags. Its unconsumed constructor chronology belongs to this cancelled
     /// attempt and must not be replayed by the next Scenario's numeric cursor.
-    #[cfg(feature = "ares")]
     pub fn cancel_prepared_noncampaign_scenario_prefix(
         &mut self,
         preparation: NativeNonCampaignPrefixPreparation,
@@ -1009,7 +1004,6 @@ impl NativeRulesProcessOwner {
     }
 
     fn assert_no_prepared_prefix(&self) {
-        #[cfg(feature = "ares")]
         assert!(
             !matches!(
                 self.registry.as_ref(),
@@ -1024,28 +1018,21 @@ impl NativeRulesProcessOwner {
     /// cannot drop the pending trace or leave the owner empty during unwinding.
     fn take_pre_reset_state(&mut self, clear_classes: bool) -> NativeRulesRegistryState {
         self.assert_no_prepared_prefix();
-        let state = self
+        let mut state = self
             .registry
             .take()
             .expect("native Rules registry transition may not be re-entered")
             .into_registry_state();
-        #[cfg(feature = "ares")]
-        let state = {
-            let mut state = state;
-            // Full_Init686B5D/686B65 clears classes before the early map/rules
-            // pass on ordinary loads. Generated RMG retains RulesExt, and the
-            // later TypeReset6686C0 is a separate, retaining transaction.
-            if clear_classes {
-                state.clear_scenario_global_controls();
-            }
-            state
-        };
-        #[cfg(not(feature = "ares"))]
-        let _ = clear_classes;
+        // Full_Init686B5D/686B65 clears classes before the early map/rules
+        // pass on ordinary loads. Generated RMG retains RulesExt, and the
+        // later TypeReset6686C0 is a separate, retaining transaction. Only
+        // Rules read the Ares way have a RulesExt.
+        if clear_classes && state.reads_ares_way() {
+            state.clear_scenario_global_controls();
+        }
         state
     }
 
-    #[cfg(feature = "ares")]
     fn take_prepared_noncampaign_trace(
         &mut self,
         preparation: NativeNonCampaignPrefixPreparation,
@@ -1140,7 +1127,6 @@ impl NativeRulesProcessOwner {
                     mode,
                 )
             }
-            #[cfg(feature = "ares")]
             NativeScenarioRulesPrefix::PreparedNonCampaign {
                 preparation,
                 mode_rules_override,
@@ -1316,15 +1302,15 @@ impl NativeRulesProcessOwner {
 #[path = "session_country_tests.rs"]
 mod session_country_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "ares_eva_process_tests.rs"]
 mod ares_eva_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "process_owner_global_controls_tests.rs"]
 mod global_controls_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "country_loading_prefix_tests.rs"]
 mod country_loading_prefix_tests;
 

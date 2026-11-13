@@ -101,7 +101,9 @@ fn fixture(path: &'static str) -> &'static Fixture {
 /// For fixture values that depend only on `key` and on inputs that do not
 /// change while tests run (the checkout's files, `ini/`, `RA2_DIR`), so every
 /// later build would make the same value. Concurrent first callers wait for
-/// one build; a build that panics is retried.
+/// one build; a build that panics is retried. A value built while the thread
+/// reads Rules the Ares way (`rules::ares_switch::ares_way`) is kept apart
+/// from the stock-way one.
 pub fn once_per_process<K, T>(key: K, load: impl FnOnce() -> Option<T>) -> Option<T>
 where
     K: Ord + Send + 'static,
@@ -116,10 +118,11 @@ where
         let mut slots = SLOTS.lock().unwrap_or_else(PoisonError::into_inner);
         let by_key = slots
             .entry(TypeId::of::<(K, T)>())
-            .or_insert_with(|| Box::new(BTreeMap::<K, Arc<OnceLock<Option<T>>>>::new()))
-            .downcast_mut::<BTreeMap<K, Arc<OnceLock<Option<T>>>>>()
+            .or_insert_with(|| Box::new(BTreeMap::<(K, bool), Arc<OnceLock<Option<T>>>>::new()))
+            .downcast_mut::<BTreeMap<(K, bool), Arc<OnceLock<Option<T>>>>>()
             .expect("slot map type follows its TypeId");
-        Arc::clone(by_key.entry(key).or_default())
+        let ares_way = crate::rules::ares_switch::ares_way();
+        Arc::clone(by_key.entry((key, ares_way)).or_default())
     };
     slot.get_or_init(load).clone()
 }

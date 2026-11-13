@@ -2,8 +2,6 @@
 //! tag reader1002EC00 and scalar save/load1002D516/1002D2EE. The native corpus
 //! covers component reads and one framed scalar, not an entire Side savefile.
 
-#![cfg(feature = "ares")]
-
 use super::*;
 use crate::rules::ares_side_extension::AresSideExtension;
 use crate::util::save_codec;
@@ -37,6 +35,7 @@ fn catalog() -> EvaRegistry {
 
 #[test]
 fn side_constructor_defaults_and_retained_phases_match_native_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let eva = catalog();
     for row in controls("side_default") {
         let mut state = AresSideState::default();
@@ -99,6 +98,7 @@ fn side_constructor_defaults_and_retained_phases_match_native_controls() {
 
 #[test]
 fn side_tag_history_retains_missing_empty_unknown_and_resolves_none_after_lookup() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let eva = catalog();
     let mut state = AresSideState::default();
     read(&mut state, "SyntheticSide", &IniFile::empty(), &eva);
@@ -155,6 +155,7 @@ fn side_tag_history_retains_missing_empty_unknown_and_resolves_none_after_lookup
 
 #[test]
 fn retained_side_save_roundtrip_preserves_native_signed_eva_scalars_without_catalog_clamp() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // VERA's enclosing serde format is its own save format. Only this retained
     // signed field's value and four payload bytes are compared with native;
     // the native extension framing and entire Side/OLE record are excluded.
