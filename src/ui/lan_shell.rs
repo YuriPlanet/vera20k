@@ -577,12 +577,15 @@ impl LanLobbyState {
         Some(LanLobbyAction::NameChanged(value))
     }
 
-    /// BB's name edit takes bytes only, 16 of them: gamemd is an ANSI program,
-    /// so typed text reaches the edit as code-page bytes, a Chinese character
-    /// as two. VERA gets the text instead and keeps it, as the skirmish name
-    /// box does: a character goes in as the code page passes it (`?` for one
-    /// it cannot hold) while the name's code-page bytes still fit in 16. A
-    /// character that takes two UTF-16 units, such as an emoji, stays out, so
+    /// BB's name edit takes 16 bytes: BB switches on its byte-only filter
+    /// (`0x4D1` at `0x5DE0E3`), which drops units from 0x100 up
+    /// (`0x61525E..0x61526A`). Typed keys reach gamemd, an ANSI program, as
+    /// code-page bytes and get in, but input-method characters arrive widened
+    /// (`0x6151F6..0x61520C`) and stay out; VERA offers no input method here
+    /// either. VERA gets keys as text, so it keeps the text and saves it
+    /// through the code page: a character goes in as the code page passes it
+    /// (`?` for one it cannot hold) while the name's code-page bytes fit in
+    /// 16. A character of two UTF-16 units, such as an emoji, stays out, so
     /// the edit's one-unit keys never split one.
     fn insert_name_char(&mut self, character: char) -> bool {
         let Ok(unit) = u16::try_from(u32::from(character)) else {

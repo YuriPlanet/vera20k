@@ -210,6 +210,9 @@ pub(crate) struct MultiplayerShellRuntime {
     settings_ini: Vec<u8>,
     /// Observer preference AC10C8, read as an integer by 5EE190.
     lan_observer_mode: i32,
+    /// The handle's bytes when the LAN lobby's name box opened on them
+    /// ([`Self::open_lan_name_box`]). Not saved.
+    lan_name_opened: Vec<u8>,
     /// The taunt command's process-static rate clock `[0x00825C88]`.
     taunt_clock: crate::app::input::taunt::TauntClock,
     scenario_start_header: crate::map::preview::ScenarioStartHeader,
@@ -442,18 +445,31 @@ impl MultiplayerShellRuntime {
         crate::util::native_string::acp_decode(&self.local_preferences.handle_bytes)
     }
 
-    /// The handle the skirmish name box saves for `text`. While the box still
-    /// shows what [`Self::hydrate_shell`] put there, the handle keeps its own
-    /// bytes, so a name nobody edited is not re-encoded, not even one that
-    /// another code page wrote and this one cannot spell.
-    fn handle_bytes_for(&self, text: &str) -> Vec<u8> {
-        let mut bytes = if text == PlayerNameEditState::with_name(&self.handle_text()).text {
-            self.local_preferences.handle_bytes.clone()
+    /// The handle a name box saves for `text`. gamemd's name boxes hold the
+    /// handle's own bytes, one per character (`0x735120`, then `0x4B2`: BB at
+    /// `0x5DE0F2..0x5DE113`, Skirmish at `0x6AE716..0x6AE729`), so a name
+    /// nobody changed, or whose edits were undone, keeps them. VERA's boxes
+    /// hold text: while one shows `opened_text`, the name it opened with, the
+    /// handle gets back `opened`, the bytes it opened on, even ones this code
+    /// page cannot spell. Other text is saved through the code page.
+    fn name_box_bytes(text: &str, opened_text: &str, opened: &[u8]) -> Vec<u8> {
+        let mut bytes = if text == opened_text {
+            opened.to_vec()
         } else {
             crate::util::native_string::acp_encode(text)
         };
         bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
         bytes
+    }
+
+    /// The handle the skirmish name box saves for `text`; the box opened on
+    /// the handle as [`Self::hydrate_shell`] put it there.
+    fn handle_bytes_for(&self, text: &str) -> Vec<u8> {
+        Self::name_box_bytes(
+            text,
+            &PlayerNameEditState::with_name(&self.handle_text()).text,
+            &self.local_preferences.handle_bytes,
+        )
     }
 
     fn network_snapshot(&self, profile: SetupProfile) -> &MultiplayerSetupSnapshot {
@@ -756,8 +772,24 @@ impl MultiplayerShellRuntime {
         });
     }
 
-    /// Session handle `[0xA8B380]`: BB's name edit, and the WOL nickname
-    /// after a successful login (`0x007864C0`).
+    /// The LAN lobby's name box opens on the handle: the text it shows. The
+    /// handle's bytes stay here for [`Self::set_lan_name`].
+    pub(crate) fn open_lan_name_box(&mut self) -> String {
+        self.lan_name_opened = self.local_preferences.handle_bytes.clone();
+        self.handle_text()
+    }
+
+    /// Session handle `[0xA8B380]` from the LAN lobby's name box, which BB
+    /// copies there on each change (`0x5DDE4A..0x5DDE78`).
+    pub(crate) fn set_lan_name(&mut self, name: &str) {
+        let opened = &self.lan_name_opened;
+        let opened_text = crate::util::native_string::acp_decode(opened);
+        self.local_preferences.handle_bytes = Self::name_box_bytes(name, &opened_text, opened);
+        self.local_preferences.handle_source = HandleSource::Native;
+    }
+
+    /// Session handle `[0xA8B380]`: the WOL nickname after a successful login
+    /// (`0x007864C0`).
     pub(crate) fn set_handle(&mut self, name: &str) {
         self.local_preferences.handle_source = HandleSource::Native;
         self.local_preferences.handle_bytes = crate::util::native_string::acp_encode(name);
@@ -981,6 +1013,7 @@ impl MultiplayerShellRuntime {
             local_preferences,
             settings_ini,
             lan_observer_mode,
+            lan_name_opened: Vec::new(),
             taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
@@ -2276,6 +2309,7 @@ mod tests {
             local_preferences: LocalMultiplayerPreferences::default(),
             settings_ini: Vec::new(),
             lan_observer_mode: 0,
+            lan_name_opened: Vec::new(),
             taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
@@ -2310,6 +2344,7 @@ mod tests {
             local_preferences: LocalMultiplayerPreferences::default(),
             settings_ini: Vec::new(),
             lan_observer_mode: 0,
+            lan_name_opened: Vec::new(),
             taunt_clock: Default::default(),
             scenario_rng: SimRng::new(u64::from(seed)),
             random_map_options: crate::map::rmg::RmgOptions::default(),
@@ -3612,16 +3647,19 @@ WOLTaunts=junk
         }
     }
 
-    /// The skirmish name box reads the handle as its code page wrote it, and a
-    /// visit that leaves the name alone keeps the handle's bytes, even ones
-    /// another code page wrote (`玩家` in GBK). An edited name is encoded anew.
+    /// The name boxes read the handle as its code page wrote it, and while one
+    /// shows that name again the handle gets its own bytes back, as gamemd's
+    /// byte boxes keep them, even bytes another code page wrote (`玩家` in
+    /// GBK). An edited name is encoded anew.
     #[test]
-    fn name_box_shows_the_handle_and_an_unedited_visit_keeps_its_bytes() {
+    fn name_boxes_give_back_the_handle_bytes_of_an_unchanged_name() {
         use crate::util::native_string::{acp_encode, acp_round_trip};
+        let gbk = vec![0xcd, 0xe6, 0xbc, 0xd2];
         let mut runtime = runtime(
             MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
             5,
         );
+        // Skirmish: a visit that leaves the name alone.
         let mut visit = |handle: Vec<u8>| {
             runtime.local_preferences.handle_bytes = handle.clone();
             let mut shell = SkirmishShellState::default();
@@ -3631,7 +3669,15 @@ WOLTaunts=junk
             shell.player_name_edit.text
         };
         assert_eq!(visit(acp_encode("Hélène")), acp_round_trip("Hélène"));
-        visit(vec![0xcd, 0xe6, 0xbc, 0xd2]);
+        visit(gbk.clone());
+        // LAN lobby: a letter typed, then deleted.
+        let name = runtime.open_lan_name_box();
+        let typed = format!("{name}x");
+        runtime.set_lan_name(&typed);
+        assert_eq!(runtime.local_preferences.handle_bytes, acp_encode(&typed));
+        runtime.set_lan_name(&name);
+        assert_eq!(runtime.local_preferences.handle_bytes, gbk);
+        // Skirmish: an edited name.
         let mut shell = SkirmishShellState::default();
         shell.player_name_edit = PlayerNameEditState::with_name("Zoë");
         runtime.pack_durable_state(&shell, &[map()], &[mode()]);
