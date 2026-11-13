@@ -338,8 +338,17 @@ fn find_cursor_feedback_kind(
         |kind: CursorFeedbackKind| super::ares_cursor::tactical(kind, selected.len(), query.rules);
     #[cfg(not(feature = "ares"))]
     let ares = |kind: CursorFeedbackKind| kind;
+    // Over a shrouded or fogged Cell no object is offered, and the Cell's
+    // What_Action answers, drawn through the shrouded switch over shroud.
     if !query.cell_visible(cell) {
-        return Some(ares(query.hidden_cell(cell)));
+        let shrouded = query.cell_shrouded(cell);
+        return query.selection_action(cell, None).map(|kind| {
+            ares(if shrouded {
+                shrouded_cell_feedback(kind, query.lead_moves_to_shroud())
+            } else {
+                kind
+            })
+        });
     }
     let owner = preferred_local_owner_name(state)?;
     let hover_object = targets.hover;
@@ -417,7 +426,7 @@ impl<'a> ActionQuery<'a> {
     }
 
     /// Whether the local player sees `cell`. Over a shrouded or fogged Cell
-    /// no object is offered and [`Self::hidden_cell`] answers.
+    /// no object is offered and the Cell's What_Action answers.
     pub(crate) fn cell_visible(&self, (rx, ry): (u16, u16)) -> bool {
         crate::app::presentation::instances::cell_visibility_for_local_owner(
             self.viewer,
@@ -429,20 +438,39 @@ impl<'a> ActionQuery<'a> {
         ) == CellVisibilityState::Visible
     }
 
-    /// The action over a Cell the local player does not see: the empty-cell
-    /// ladder of the object resolved for its centre, where Foot's shroud
-    /// rung bars a type without MoveToShroud.
-    pub(crate) fn hidden_cell(&self, cell: (u16, u16)) -> CursorFeedbackKind {
-        let best_id = select_best_for_action(
-            self.sim,
-            self.selected,
-            ActionDistanceTarget::CellCentre(cell.0, cell.1),
-            self.rules,
-        );
-        // Ares 1004C920 (hook 0x700600): the Cell What_Action's entry.
-        #[cfg(feature = "ares")]
-        super::ares_cursor::what_action_entry(self, best_id, None);
-        self.empty_cell(best_id, cell)
+    /// Whether the local player's map shrouds `cell`
+    /// (`MapClass::IsShrouded @ 0x00586360`), which the tactical cursor
+    /// (`0x00692480`) and the radar (`0x00653B1E`) hand SetCursorFromAction.
+    /// Nothing is shrouded under the sandbox's full visibility.
+    pub(crate) fn cell_shrouded(&self, cell: (u16, u16)) -> bool {
+        !self.full_visibility
+            && self
+                .viewer
+                .is_some_and(|viewer| self.sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+    }
+
+    /// Whether the first selected object's type has MoveToShroud, which the
+    /// shrouded switch reads for NoMove (`0x004AB3EC..0x004AB42B`).
+    pub(crate) fn lead_moves_to_shroud(&self) -> bool {
+        self.selected.first().is_some_and(|&id| {
+            self.sim.entities().get(id).is_some_and(|entity| {
+                self.rules
+                    .and_then(|rules| self.sim.interner().object_type(entity.type_ref(), rules))
+                    .is_some_and(|object| object.move_to_shroud)
+            })
+        })
+    }
+
+    /// Whether `FootClass::What_Action_OnCell @ 0x004DDDE0` takes object
+    /// `id`'s answer back over `cell`: over a Cell centre its player's map
+    /// shrouds, a Foot turns any answer but 0 into Move or NoMove
+    /// (`0x004DDE64..0x004DDEBE`), as the empty-cell ladder answers there. The
+    /// Building wrapper (`0x00447540`) has no shroud test, so a building
+    /// keeps its Attack.
+    fn foot_over_shroud(&self, id: u64, cell: (u16, u16)) -> bool {
+        self.sim.entities().get(id).is_some_and(|entity| {
+            entity.category() != crate::map::entities::EntityCategory::Structure
+        }) && self.cell_shrouded(cell)
     }
 
     /// The best selected object's What_Action on `hover_object`, or on the
@@ -576,7 +604,10 @@ impl<'a> ActionQuery<'a> {
         // every ACTION_ATTACK arm when it fails. It consults ONE weapon slot, so
         // `Primary=`/`Secondary=` is the wrong test for a `TurretCount>0` type —
         // it hid the force-fire cursor for the Prism Tank and the Gattling Cannon.
-        if forced {
+        // Over a shrouded Cell a Foot's wrapper takes the shot back to its Move
+        // rungs; a Building keeps it.
+        let foot_shrouded = best_id.is_some_and(|id| self.foot_over_shroud(id, (cell_rx, cell_ry)));
+        if forced && !foot_shrouded {
             let target = combat::TargetKind::Cell(cell_rx, cell_ry);
             if let Some(feedback) = best_id.and_then(|id| {
                 force_fire_feedback(sim, id, &target, selected.len(), self.rules, self.overlays)
@@ -586,7 +617,7 @@ impl<'a> ActionQuery<'a> {
         }
         if let Some(feedback) = unforced_cell_attack_feedback(
             sim,
-            self.viewer,
+            foot_shrouded,
             best_id,
             (cell_rx, cell_ry),
             modifier,
@@ -684,15 +715,14 @@ pub(crate) fn terrain_object_feedback(
 /// rungs, so it answers under every chord but Ctrl (the forced rung above)
 /// and Ctrl+Alt. Its tail is the forced shot's; an answer other than Attack
 /// or a healing Unit's AttackSupport (the arrow, `0x007404FD`) falls through
-/// to the Move rungs. Foot's shroud wrapper turns it back into
-/// Move or NoMove over a shrouded Cell (`0x004DDE64..0x004DDEBE`); the
-/// Building wrapper (`0x00447540`) keeps a building's Attack there.
+/// to the Move rungs. `foot_shrouded` is Foot's shroud wrapper turning it
+/// back into Move or NoMove ([`ActionQuery::foot_over_shroud`]).
 ///
 /// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
 #[allow(clippy::too_many_arguments)]
 fn unforced_cell_attack_feedback(
     sim: &crate::sim::world::Simulation,
-    viewer: Option<crate::sim::intern::InternedId>,
+    foot_shrouded: bool,
     best_id: Option<u64>,
     cell: (u16, u16),
     modifier: crate::app::input::context_order::OrderModifier,
@@ -702,15 +732,10 @@ fn unforced_cell_attack_feedback(
 ) -> Option<CursorFeedbackKind> {
     use crate::app::input::context_order::OrderModifier;
     let id = best_id?;
-    let foot = sim
-        .entities()
-        .get(id)
-        .is_some_and(|entity| entity.category() != crate::map::entities::EntityCategory::Structure);
     if matches!(
         modifier,
         OrderModifier::ForceFire | OrderModifier::GuardArea
-    ) || (foot
-        && viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true)))
+    ) || foot_shrouded
         || !sim.cell_attack_rung_admits(id, cell, rules?, overlay_registry)
     {
         return None;
@@ -1763,6 +1788,27 @@ pub(crate) fn select_best_for_action(
         }
     }
     best_id
+}
+
+/// `DisplayClass::SetCursorFromAction @ 0x004AAE90`'s shrouded switch (byte
+/// table `0x004AB838`, jump table `0x004AB7D0`, entered at `0x004AB35A`) for
+/// the tactical cursor over a Cell its player's map shrouds, as the answer
+/// whose main row it draws: Attack (5) takes Move's row 18, Enter, Harvest
+/// and Sabotage row 0, and NoMove row 18 when the first selected object's
+/// type has MoveToShroud (`0x004AB3EC..0x004AB42B`). Move, GuardArea and
+/// attack-move keep their rows. The radar draws the same switch with its
+/// mini set ([`crate::app::input::radar::RadarAction::cursor`]).
+pub(crate) fn shrouded_cell_feedback(
+    kind: CursorFeedbackKind,
+    lead_moves_to_shroud: bool,
+) -> CursorFeedbackKind {
+    use CursorFeedbackKind as Kind;
+    match kind {
+        Kind::EnemyUnit | Kind::EnemyStructure | Kind::EnemyOutOfRange => Kind::Move,
+        Kind::Invalid if lead_moves_to_shroud => Kind::Move,
+        Kind::Enter | Kind::Harvest | Kind::Demolish => Kind::Default,
+        other => other,
+    }
 }
 
 /// Map a game-state cursor intent to the visual CursorId to display.
@@ -3012,7 +3058,7 @@ mod tests {
         let feedback = |cell, modifier| {
             super::unforced_cell_attack_feedback(
                 &sim,
-                Some(owner),
+                false,
                 Some(tank),
                 cell,
                 modifier,

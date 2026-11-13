@@ -257,9 +257,9 @@ const fn armed_action(index: usize) -> Armed {
 ///
 /// Without a listed superweapon the selection's best object answers
 /// (`SelectBestObjectForAction @ 0x005353D0`): its What_Action on the picked
-/// Techno (vt+0x74) or on the Cell (vt+0x70, mouse-over 0). A Cell the player
-/// does not see offers no object to the cursor's port, which answers its
-/// empty-cell ladder there ([`ActionQuery::hidden_cell`]).
+/// Techno (vt+0x74) or on the Cell (vt+0x70, mouse-over 0), shrouded or not:
+/// with Ctrl an armed building's Attack stays over shroud (`0x00447540`),
+/// which the shrouded switch draws with the Move mini (`0x004AB35A`).
 pub(crate) fn action(
     query: &ActionQuery<'_>,
     armed: Option<usize>,
@@ -283,12 +283,7 @@ pub(crate) fn action(
         Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
         Armed::Dropped => None,
         Armed::Unlisted if query.selected.is_empty() => None,
-        Armed::Unlisted => match object {
-            Some(object) => query.selection_action(cell, Some(object)),
-            None if query.cell_visible(cell) => query.selection_action(cell, None),
-            None => Some(query.hidden_cell(cell)),
-        }
-        .and_then(|kind| {
+        Armed::Unlisted => query.selection_action(cell, object).and_then(|kind| {
             // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
             // 0x653CA6).
             #[cfg(feature = "ares")]
@@ -351,23 +346,11 @@ fn hover(state: &AppState) -> Option<Hover> {
     let armed = state
         .armed_super_weapon_type()
         .and_then(|section| state.rules()?.super_weapon_index(section));
-    let shrouded = !query.full_visibility
-        && query
-            .viewer
-            .is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, target.cell) == Ok(true));
-    let lead_moves_to_shroud = selected.first().is_some_and(|&id| {
-        sim.entities().get(id).is_some_and(|entity| {
-            state
-                .rules()
-                .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
-                .is_some_and(|object| object.move_to_shroud)
-        })
-    });
     Some(Hover {
         target,
         action: action(&query, armed, target.cell, object),
-        shrouded,
-        lead_moves_to_shroud,
+        shrouded: query.cell_shrouded(target.cell),
+        lead_moves_to_shroud: query.lead_moves_to_shroud(),
     })
 }
 

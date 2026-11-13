@@ -45,6 +45,13 @@ fn planning<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) ->
     }
 }
 
+fn ctrl<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> ActionQuery<'a> {
+    ActionQuery {
+        modifier: OrderModifier::ForceFire,
+        ..query(sim, rules, selected)
+    }
+}
+
 /// A tracked object's pick: its Cell and the Techno What_Action sees.
 fn dot(sim: &Simulation, id: u64) -> ((u16, u16), Option<HoverObject>) {
     let entity = sim.entities().get(id).expect("tracked object");
@@ -181,6 +188,49 @@ fn a_forced_ivan_over_a_bombed_dot_has_no_radar_action() {
     assert_eq!(
         action(&query(&sim, &rules, &selected), None, cell, object),
         Some(RadarAction::NoMove)
+    );
+}
+
+/// Ctrl over a shrouded Cell: Techno What_Action (`0x00700600`) answers an
+/// armed pillbox's forced Attack before any shroud test and the Building
+/// wrapper (`0x00447540`) keeps it, so the radar keeps it and its release
+/// fires as the tactical click does, while the tactical cursor's shrouded
+/// switch draws it as Move (`0x004AB35A`). A tank's Foot wrapper
+/// (`0x004DDDE0`) turns it into Move, unless the sandbox shows every Cell.
+#[test]
+fn ctrl_over_shroud_keeps_a_buildings_attack() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let pillbox = spawn(&mut sim, &rules, "GAPILL", (12, 5));
+    let tank = spawn(&mut sim, &rules, "MTNK", (4, 6));
+    *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
+    let (pillboxes, tanks) = ([pillbox], [tank]);
+    assert!(!ctrl(&sim, &rules, &pillboxes).cell_visible(GROUND));
+    assert_eq!(
+        action(&ctrl(&sim, &rules, &pillboxes), None, GROUND, None),
+        Some(RadarAction::Attack)
+    );
+    assert_eq!(
+        action(&ctrl(&sim, &rules, &tanks), None, GROUND, None),
+        Some(RadarAction::Move)
+    );
+    let tactical = ActionQuery {
+        mouse_over: true,
+        ..ctrl(&sim, &rules, &pillboxes)
+    };
+    let kind = tactical.selection_action(GROUND, None).unwrap();
+    assert_eq!(
+        crate::app::input::cursor::shrouded_cell_feedback(kind, tactical.lead_moves_to_shroud()),
+        CursorFeedbackKind::Move
+    );
+    let revealed = ActionQuery {
+        full_visibility: true,
+        ..ctrl(&sim, &rules, &tanks)
+    };
+    assert_eq!(
+        action(&revealed, None, GROUND, None),
+        Some(RadarAction::Attack)
     );
 }
 
