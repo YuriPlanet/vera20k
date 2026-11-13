@@ -425,6 +425,9 @@ impl SimHost {
 /// A question about the live world a draw asks every frame (a cursor's
 /// preview, a hover): answered while the world is home and the answer kept
 /// in `kept`, which the draws beside a lent tick read (docs/sim-thread.md).
+/// Each one is also asked before a tick leaves
+/// (`cursor::answer_kept_questions`), so a kept answer is one tick old at
+/// most even when every frame is lent.
 pub(crate) fn home_answer<T: Clone>(
     host: &SimHost,
     kept: &std::cell::RefCell<T>,

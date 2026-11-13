@@ -120,6 +120,18 @@ pub(crate) fn current_cursor_feedback_kind(
     )
 }
 
+/// Ask, with the world home, every question a draw answers from a kept
+/// answer beside a lent tick (`sim_host::home_answer`): the cursor's targets
+/// and action, the ferry's armed drop and the planning hover. Asked before
+/// each tick leaves (`sim_tick::advance_one_simulation_frame`), when no draw
+/// may find the world home until the ticks stop being lent.
+pub(crate) fn answer_kept_questions(state: &AppState) {
+    let targets = CursorTargets::read(state);
+    current_cursor_feedback_kind(state, &targets);
+    crate::app::input::ferry::armed_click_accepted(state);
+    crate::app::input::planning_mode::hover_node(state);
+}
+
 fn find_cursor_feedback_kind(
     state: &AppState,
     targets: &CursorTargets,
