@@ -151,8 +151,14 @@ pub(super) fn deploy_yard_maker(
     // below happens to pick. Two captured MCVs were marked one at a time, so
     // the second was never recalled at all and sat in the enemy's base until
     // it was destroyed — the wishlist's "占领了俩基地只拉回一个".
+    //
+    // A maker that is not orderable is not on the map: a fresh one sits in the
+    // factory's limbo at `(0, 0)` until PLACE puts it down, and counting that
+    // as a sighting recalled every MCV the house built. It then tried to walk
+    // home from `(0, 0)` — a cell it is not on — and the second base was never
+    // founded. That is the "新 MCV 四处打转不找地方部署".
     for unit in &brain.census.units {
-        if !unit.traits.yard_maker || unit.hand {
+        if !unit.traits.yard_maker || unit.hand || !unit.orderable {
             continue;
         }
         let at_home = brain
@@ -174,7 +180,7 @@ pub(super) fn deploy_yard_maker(
         .census
         .units
         .iter()
-        .filter(|unit| unit.traits.yard_maker && !unit.hand)
+        .filter(|unit| unit.traits.yard_maker && !unit.hand && unit.orderable)
         .filter_map(|unit| {
             let ty = obs.object_type(rules, unit.type_id)?;
             let yard = rules.object(ty.deploys_into.as_deref()?)?;
