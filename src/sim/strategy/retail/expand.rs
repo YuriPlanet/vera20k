@@ -54,6 +54,12 @@ const EXPAND_FIRST_STRUCTURE: i32 = 200;
 /// avoid.
 const EXPAND_MIN_CELLS: i32 = 10;
 
+/// How close to the base a retrieved maker has to be before it counts as home.
+///
+/// `rally_near` answers on rings 2..4, so six cells is the whole answer plus a
+/// cell of slack: a maker inside it has arrived, not "arriving forever".
+const RETRIEVE_ARRIVED_CELLS: i32 = 6;
+
 /// How far out that search looks, in cells.
 ///
 /// A second base goes to the next patch of ground that takes a yard, which
@@ -179,12 +185,41 @@ pub(super) fn deploy_yard_maker(
         // Contested, and reading that as "flee" sent the house's own MCV
         // shuffling around its own walls under fire — the wishlist's
         // "主基地车会收缩".
-        let beyond_the_line = home.is_some_and(|home| {
-            cell_distance(cell, home) > EXPAND_MIN_CELLS * EXPAND_MIN_CELLS * 4
-        });
+        //
+        // The radius is in cells, because `cell_distance` is Chebyshev. The
+        // previous spelling multiplied `EXPAND_MIN_CELLS` by itself and by four,
+        // which reads as a 400-cell radius on a map that is under 200 wide: `far`
+        // was never true, so no maker was ever asked to come home and the arm
+        // below only ever ran on the `exposed` half.
+        let beyond_the_line =
+            home.is_some_and(|home| cell_distance(cell, home) > EXPAND_MIN_CELLS * 2);
         let exposed = matches!(ground, super::terrain::Ground::Enemy)
             || (matches!(ground, super::terrain::Ground::Contested) && beyond_the_line);
         let far = beyond_the_line;
+        // A maker that came from outside — captured, or out of a crate — has one
+        // errand, and it is not "found a second base here".
+        //
+        // [`deploy_second_yard`] asks where a second base goes: away from home,
+        // buildable, admitted. A captured maker standing beside the enemy's own
+        // yard answers all three, so it deployed there; and because the cell it
+        // admires changes as the admission flips, it walked between two answers
+        // first. The wishlist's "占领后的 MCV 反复踱步，然后在野外展开了".
+        //
+        // The two kinds of maker are told apart by where they were first seen, not
+        // by where they are now: the house's own maker appears at its own factory,
+        // which is inside the base, and a captured one appears in the enemy's
+        // base. `far` cannot make that distinction — the second base's maker is
+        // meant to be far, and that is the whole point of it.
+        //
+        // The intent is sticky: once a maker is recalled it keeps coming home
+        // even through the house's own safe ground. Releasing it the moment it
+        // reaches safety hands it straight back to the second-base search, which
+        // is the same walk again, one turn of the loop later.
+        let at_home = home.is_some_and(|home| cell_distance(cell, home) <= RETRIEVE_ARRIVED_CELLS);
+        if brain.seen_makers.insert(entity_id) && !at_home {
+            brain.retrieve_makers.insert(entity_id);
+            log::info!("auto play: maker {entity_id} first seen at {cell:?}, recalling it");
+        }
         // The one line that says why a maker is not coming home, on a term: a
         // report of "the captured MCV never arrived" needs to distinguish "it was
         // never asked", "it was asked and refused" and "it is walking".
@@ -194,33 +229,50 @@ pub(super) fn deploy_yard_maker(
                 obs.destination(entity_id)
             );
         }
-        // Re-aim whenever the current walk leads further from home, not only when
-        // the maker stands still: a maker whose last order sent it outward is
-        // already walking, and "it has a destination" would leave it walking
-        // away for the rest of the match.
+        // The walk home, and no other errand until it is home.
+        //
+        // `deploy_second_yard` is what a maker runs when the house wants a second
+        // base, and a captured maker is not that maker: it must reach the first
+        // base before anything else, or the house pays 2500 credits to hand the
+        // enemy a yard beside their own.
         let dest = obs.destination(entity_id);
         let walking_away = dest.is_some_and(|(dx, dy)| {
             home.is_some_and(|home| cell_distance((dx, dy), home) > cell_distance(cell, home))
         });
-        if (exposed || far) && (dest.is_none() || walking_away) {
-            let Some(target) =
-                super::census::rally_near(obs, home.unwrap_or(cell), &brain.census.home_cells)
-            else {
+        if brain.retrieve_makers.contains(&entity_id) {
+            let Some(home) = home else {
+                // No base to come home to: the maker waits rather than deploying
+                // into ground the house does not hold.
                 return;
             };
-            if target != cell
-                && !super::orders::issue(
-                    brain,
-                    out,
-                    rules,
-                    obs,
-                    entity_id,
-                    Goal::Move { cell: target },
-                )
-            {
-                brain.expansion_probe = None;
+            if cell_distance(cell, home) <= RETRIEVE_ARRIVED_CELLS {
+                brain.retrieve_makers.remove(&entity_id);
+                log::info!("auto play: maker home at {cell:?}");
+            } else {
+                // The rally cell, and the base itself when every ring around it
+                // is built over: a maker with nowhere to stand is a maker that
+                // never arrives.
+                let target =
+                    super::census::rally_near(obs, home, &brain.census.home_cells).unwrap_or(home);
+                if target != cell
+                    && (dest.is_none() || walking_away)
+                    && !super::orders::issue(
+                        brain,
+                        out,
+                        rules,
+                        obs,
+                        entity_id,
+                        Goal::Move { cell: target },
+                    )
+                {
+                    // The walk was refused, so the maker stays where it is and
+                    // the next frame asks again: clearing the retrieve entry here
+                    // would only send it out as a second base on ground it cannot
+                    // even reach home from.
+                    log::info!("auto play: maker {entity_id} cannot reach home from {cell:?}");
+                }
+                return;
             }
-            return;
         }
         deploy_second_yard(brain, rules, obs, out, entity_id, cell, yard);
         return;
@@ -790,6 +842,49 @@ mod tests {
         assert!(
             !is_a_second_base_cell(&homes, (14, 10)),
             "and a cell beside the first yard is not"
+        );
+    }
+
+    /// A maker first seen away from the base is a captured (or crated) one, and
+    /// it comes home instead of deploying where it stands.
+    ///
+    /// The second-base search accepts the cell it was captured on — away from
+    /// home, walkable, a yard fits — so without this the maker deployed beside
+    /// the enemy's own yard, after walking between two answers for a while.
+    #[test]
+    fn a_captured_maker_comes_home_instead_of_deploying_where_it_stands() {
+        let Some((mut sim, rules, owner)) = arena(0xA17) else {
+            return;
+        };
+        let _ = sim.spawn_object("GACNST", "Americans", 16, 16, 255, &rules);
+        // Far enough that it is not "at home", on ground a yard could take.
+        let maker = sim
+            .spawn_object("AMCV", "Americans", 24, 12, 255, &rules)
+            .expect("a captured maker");
+
+        let obs = Observation::new(&sim, owner);
+        let mut brain = RetailBrain::new(0xA17);
+        brain.rebuild_census(&rules, &obs);
+        let mut out = Outbox::default();
+        deploy_yard_maker(&mut brain, &rules, &obs, &mut out);
+
+        assert!(
+            brain.retrieve_makers.contains(&maker),
+            "a maker first seen away from the base has one errand: coming home"
+        );
+        assert!(
+            out.orders
+                .iter()
+                .any(|order| order.actor == maker && matches!(order.goal, Goal::Move { .. })),
+            "it is walked home: {:?}",
+            out.orders
+        );
+        assert!(
+            !out.orders
+                .iter()
+                .any(|order| order.actor == maker && matches!(order.goal, Goal::Deploy)),
+            "and it does not deploy where it was captured: {:?}",
+            out.orders
         );
     }
 }

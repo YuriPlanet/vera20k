@@ -338,6 +338,13 @@ pub struct RetailBrain {
     /// base that lost its ground can qualify a dozen buildings in one frame and
     /// a dozen refunds at once is a windfall the wishlist did not ask for.
     pub(super) sale_at: u64,
+    /// Makers that must come home before anything else: a captured MCV, or one out
+    /// of a crate. Sticky — see [`expand::deploy_yard_maker`].
+    pub(super) retrieve_makers: std::collections::BTreeSet<u64>,
+    /// Makers already seen, so the first sighting is the one that decides where
+    /// a maker came from: a house-made one appears at its own factory, a
+    /// captured one appears in the enemy's base.
+    pub(super) seen_makers: std::collections::BTreeSet<u64>,
     /// Infiltration classes the house has already unlocked: a barracks, a war
     /// factory, a lab. One of each is the whole unlock, and a second spy buys
     /// nothing.
@@ -433,6 +440,8 @@ impl RetailBrain {
             capturable_last: BTreeSet::new(),
             push_gate: "none",
             sale_at: 0,
+            retrieve_makers: std::collections::BTreeSet::new(),
+            seen_makers: std::collections::BTreeSet::new(),
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
             ore_scan: None,
