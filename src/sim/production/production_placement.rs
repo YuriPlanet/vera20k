@@ -871,6 +871,13 @@ pub fn is_within_build_area(
     false
 }
 
+/// ([`is_within_build_area`]), not a hand-picked spacing.
+pub fn build_area_reach_cells(obj: &ObjectType) -> i32 {
+    let (width, height) = obj.foundation.dimensions();
+    let span = i32::from(width.max(height)).saturating_sub(1);
+    obj.adjacent.saturating_add(1).saturating_add(span)
+}
+
 fn cell_in_build_area_ring(
     placed: (u16, u16, u16, u16),
     provider_cell: (u16, u16),

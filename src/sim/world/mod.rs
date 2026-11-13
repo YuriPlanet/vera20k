@@ -3703,6 +3703,13 @@ impl Simulation {
         &self.houses
     }
 
+    /// Trigger-runtime read access for external observers. Every mutation
+    /// stays with the trigger owners; see [`TriggerRuntime`]'s view
+    /// accessors.
+    pub fn trigger_runtime(&self) -> &TriggerRuntime {
+        &self.trigger_runtime
+    }
+
     pub fn zone_grid(&self) -> Option<&ZoneGrid> {
         self.zone_grid.as_ref()
     }

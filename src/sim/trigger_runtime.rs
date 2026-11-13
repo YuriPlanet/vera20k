@@ -5904,6 +5904,169 @@ fn count_techtype(sim: &Simulation, object: &crate::rules::object_type::ObjectTy
         .count()
 }
 
+// Observer read surface over the definitions and live instances above. The
+// views are read-only: every mutation keeps its existing owner, and no view
+// reconstructs a reference from a raw authored token — resolved identities
+// come straight from this runtime's own definition registries.
+
+/// One trigger event's observer view: the condition kind and its
+/// materialized value. The predicate's typed name/team fields stay with the
+/// evaluation owner; a wave-timing observer needs kind and value only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerEventView {
+    pub kind: i32,
+    pub value: i32,
+}
+
+/// One trigger action's observer view. `team_type` is the TeamType id the
+/// action's definition reference resolved to (the reinforcement and
+/// create-team actions 4/7/80/107 carry one); `waypoint` is the action's
+/// materialized `TAction+44` destination.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerActionView {
+    pub kind: i32,
+    pub team_type: Option<String>,
+    pub value: Option<i32>,
+    pub waypoint: Option<u32>,
+    /// The trigger an action 53 (enable trigger) names, when the loaded
+    /// entry resolved one — the indirect outcome hop a defense persona's
+    /// protected-target walk follows (a solo defense map's statue carries
+    /// destroyed -> enable the trigger whose action announces the loss).
+    pub enable_trigger: Option<String>,
+}
+
+/// One trigger's definition chain: the head trigger's events and actions,
+/// followed by every linked trigger's, walked exactly like the definition
+/// getters (`TagType6E61F0` -> `TriggerType7271E0`, the `has_event`/
+/// `has_action` link traversal) with a cycle guard.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TriggerDefinitionView {
+    pub events: Vec<TriggerEventView>,
+    pub actions: Vec<TriggerActionView>,
+}
+
+/// One armed (registered, live) trigger instance's observer view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArmedTriggerView {
+    /// The chain head's TriggerType id (exact case).
+    pub trigger_id: String,
+    pub enabled: bool,
+    /// The per-event completion bits the poll consumes.
+    pub completed_event_bits: u32,
+    /// The live timer's remaining frames when the chain head's own events
+    /// carry an elapsed-time event (13/51): the timer owner starts it at the
+    /// instance's construction (`value * 15` logic frames) and re-arms it
+    /// on every repeat fire. `None` when the head carries none — the read
+    /// never invents a deadline. Event 47 (elapsed scenario time) has no
+    /// timer; an observer computes its deadline from the event view's value.
+    pub timer_remaining_frames: Option<i32>,
+    /// The head chain's events and actions.
+    pub definition: TriggerDefinitionView,
+}
+
+impl TriggerRuntime {
+    /// Walk `head`'s definition chain (linked triggers included) into an
+    /// observer view.
+    fn definition_view(&self, head: Option<usize>) -> TriggerDefinitionView {
+        let mut view = TriggerDefinitionView::default();
+        let mut next = head;
+        let mut visited = BTreeSet::new();
+        while let Some(index) = next {
+            if !visited.insert(index) {
+                break;
+            }
+            let typ = &self.definitions.trigger_types[index];
+            view.events
+                .extend(typ.events.iter().map(|event| TriggerEventView {
+                    kind: event.kind,
+                    value: event.value,
+                }));
+            view.actions
+                .extend(typ.actions.iter().map(|action| TriggerActionView {
+                    kind: action.entry.kind,
+                    team_type: match action.reference {
+                        Some(DefinitionReference::Team(team)) => {
+                            Some(self.definitions.team_types[team].clone())
+                        }
+                        _ => None,
+                    },
+                    value: action.value,
+                    waypoint: action.entry.waypoint_index,
+                    enable_trigger: match action.reference {
+                        Some(DefinitionReference::Trigger(trigger)) => {
+                            Some(self.definitions.trigger_types[trigger].id.clone())
+                        }
+                        _ => None,
+                    },
+                }));
+            next = typ.linked;
+        }
+        view
+    }
+
+    /// Every registered live trigger instance, in registry order, read at
+    /// `current_frame`.
+    pub fn armed_trigger_views(&self, current_frame: i32) -> Vec<ArmedTriggerView> {
+        self.trigger_order
+            .iter()
+            .filter_map(|&index| {
+                let live = self.trigger(index)?;
+                let typ = &self.definitions.trigger_types[live.type_index];
+                let has_timer_event = typ.events.iter().any(|event| matches!(event.kind, 13 | 51));
+                Some(ArmedTriggerView {
+                    trigger_id: typ.id.clone(),
+                    enabled: live.enabled,
+                    completed_event_bits: live.completed,
+                    timer_remaining_frames: has_timer_event
+                        .then(|| live.timer.remaining(current_frame)),
+                    definition: self.definition_view(Some(live.type_index)),
+                })
+            })
+            .collect()
+    }
+
+    /// One trigger definition's observer view, found by its authored id —
+    /// registered or not: a lose trigger may carry no tag anywhere, so no
+    /// live instance ever exists for it, while an enable-trigger hop (the
+    /// defense persona's protected-target walk) still reads its outcome.
+    pub fn trigger_definition_view(&self, trigger_id: &str) -> Option<TriggerDefinitionView> {
+        let index = self
+            .definitions
+            .trigger_types
+            .iter()
+            .position(|typ| typ.id == trigger_id)?;
+        Some(self.definition_view(Some(index)))
+    }
+
+    /// The definition chains attached to `object` (the retained Object
+    /// attachment funnel's registrations), each walked through its linked
+    /// triggers. An object with no attached Tag yields an empty vec.
+    pub fn object_tag_definition_views(&self, object: u64) -> Vec<TriggerDefinitionView> {
+        match self.attachments.get(&TagAttachment::Object(object)) {
+            Some(&tag) => self
+                .tag(tag)
+                .map(|live| {
+                    vec![self.definition_view(self.definitions.tag_types[live.type_index].trigger)]
+                })
+                .unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
+
+    /// A global trigger variable's current value. Out-of-range indices read
+    /// clear, never panic.
+    pub fn global_variable_is_set(&self, index: u32) -> bool {
+        self.globals_set.contains(&index)
+    }
+
+    /// A local trigger variable's current value. Out-of-range indices read
+    /// clear, never panic.
+    pub fn local_variable_is_set(&self, index: u32) -> bool {
+        self.locals_set.contains(&index)
+    }
+}
+
+
 #[path = "trigger_runtime_ares.rs"]
 mod ares;
 
