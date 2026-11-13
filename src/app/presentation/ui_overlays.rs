@@ -561,35 +561,37 @@ pub(crate) fn control_group_status_labels(
     if slot_by_id.is_empty() {
         return Vec::new();
     }
-
+    let labelled = |stable_id: u64| {
+        let slot = *slot_by_id.get(&stable_id)?;
+        let entity = frame.object(stable_id)?;
+        if entity.sinking.is_active()
+            || entity.passenger_role.is_inside_transport()
+            || !entity_status_pips_drawable(sim, entity, hovered_entity_id, current_house_id, rules)
+            || (entity.category() == EntityCategory::Structure
+                && !status_entity_visible_plain(
+                    current_house_id,
+                    sim.fog(),
+                    &entity.position,
+                    entity.owner(),
+                    ignore_visibility,
+                ))
+        {
+            return None;
+        }
+        let digit = char::from(b'0' + slot as u8);
+        Some((stable_id, digit))
+    };
+    // A digit shows only on a member the admission passes, a selected or
+    // hovered one. With none, as on most draws, no Display member is walked.
+    if !slot_by_id
+        .keys()
+        .any(|&stable_id| labelled(stable_id).is_some())
+    {
+        return Vec::new();
+    }
     sim.display_layers()
         .ordered_ids()
-        .filter_map(|&stable_id| {
-            let slot = *slot_by_id.get(&stable_id)?;
-            let entity = frame.object(stable_id)?;
-            if entity.sinking.is_active()
-                || entity.passenger_role.is_inside_transport()
-                || !entity_status_pips_drawable(
-                    sim,
-                    entity,
-                    hovered_entity_id,
-                    current_house_id,
-                    rules,
-                )
-                || (entity.category() == EntityCategory::Structure
-                    && !status_entity_visible_plain(
-                        current_house_id,
-                        sim.fog(),
-                        &entity.position,
-                        entity.owner(),
-                        ignore_visibility,
-                    ))
-            {
-                return None;
-            }
-            let digit = char::from(b'0' + slot as u8);
-            Some((stable_id, digit))
-        })
+        .filter_map(|&stable_id| labelled(stable_id))
         .collect()
 }
 
@@ -907,9 +909,11 @@ pub(crate) fn build_building_status_render_instances(
     for entity in structures {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         //requires selected, including when the object is also hovered.
-        if !body_opportunities.contains(&entity.stable_id())
+        // The record's own flags first: all three only read, and few
+        // buildings on a map are selected.
+        if !entity.selection.is_selected()
             || !entity.lifecycle.cell_marked()
-            || !entity.selection.is_selected()
+            || !body_opportunities.contains(&entity.stable_id())
         {
             continue;
         }

@@ -450,19 +450,10 @@ pub(crate) fn build_display_effect_instances(
         let Some(atlas) = input.atlas else {
             continue;
         };
-        // Paradrop creates a retained Anim, whose GetCoords resolves its
-        // owner-relative75-lepton lift. Draw it at its own Display encounter.
-        let is_parachute = parachute_types
-            .iter()
-            .copied()
-            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
-        let type_name: &str = sim.interner().resolve(anim.type_id());
-        let config = input.rules.art().anim_runtime_config(type_name);
-        if config
-            .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
-        {
-            continue;
-        }
+        // The draw point first: it reads only the Anim and the frame, and
+        // every Anim off the view stops here, before its type is looked up
+        // by name. The tests up to the detail latch below only read, so
+        // their order changes nothing.
         let Some(AnimDrawPoint {
             center: [center_x, center_y],
             cell: (rx, ry),
@@ -478,6 +469,19 @@ pub(crate) fn build_display_effect_instances(
         else {
             continue;
         };
+        // Paradrop creates a retained Anim, whose GetCoords resolves its
+        // owner-relative75-lepton lift. Draw it at its own Display encounter.
+        let is_parachute = parachute_types
+            .iter()
+            .copied()
+            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
+        let type_name: &str = sim.interner().resolve(anim.type_id());
+        let config = input.rules.art().anim_runtime_config(type_name);
+        if config
+            .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
+        {
+            continue;
+        }
         let is_building_anim = anim.is_building_anim();
         if !crate::sim::anim_class::anim_draw_detail_visible(
             crate::sim::anim_class::AnimDrawDetailInput {
