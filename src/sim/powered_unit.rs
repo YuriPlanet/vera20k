@@ -365,7 +365,6 @@ impl Simulation {
     /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
     /// membership is derived by its existing owner; transitions use the same
     /// Deactivate/Reactivate owners as power and EMP recovery.
-    #[cfg(feature = "ares")]
     pub(crate) fn update_ares_operator_operability(
         &mut self,
         id: u64,
@@ -433,7 +432,6 @@ impl Simulation {
     /// operator update: a Unit with a NavCom, held by no Magnetron (+2B0),
     /// whose locomotor still moves (ILocomotion+10) drops the destination
     /// (vt+0x480(0, 1)) and stops its driver (vt+0x500).
-    #[cfg(feature = "ares")]
     pub(crate) fn stop_ares_deactivated_unit_driving(
         &mut self,
         id: u64,

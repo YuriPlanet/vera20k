@@ -12,7 +12,6 @@ pub(crate) struct AttachedSuper {
     pub sw_type: InternedId,
 }
 
-#[cfg(feature = "ares")]
 impl crate::sim::world::Simulation {
     /// Fly Acquire_Hunter_Seeker_Target (Ares 0x1004D770), delegated to
     /// TechnoExt::AcquireHunterSeekerTarget 0x10042E40..0x10043171. Installed
@@ -159,7 +158,6 @@ impl crate::sim::world::Simulation {
 
 /// What the Ares Horizontal_Step hook (1004DC30, hook 0x4CF3D0) leaves the
 /// stock height block of `0x004CEFB0`.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HunterSeekerHeight {
     /// Return 0: the stock height computation runs.
@@ -171,16 +169,12 @@ pub(crate) enum HunterSeekerHeight {
 }
 
 /// The lowest descending FlightLevel 1004DC30 keeps.
-#[cfg(feature = "ares")]
 const DESCEND_MIN_LEVEL: i32 = 10;
 /// 1004DC30's look-ahead: the current cell and up to 10 more steps.
-#[cfg(feature = "ares")]
 const LOOK_AHEAD_STEPS: i32 = 10;
 /// `CellClass::GetCoordsWithBridge`: a bridge cell (flag 0x100) adds 0x1A0.
-#[cfg(feature = "ares")]
 const BRIDGE_DECK_Z: i32 = 0x1A0;
 
-#[cfg(feature = "ares")]
 impl crate::sim::world::Simulation {
     fn is_hunter_seeker(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
         self.substrate
@@ -565,7 +559,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod tests {
     use super::HunterSeekerHeight;
     use crate::rules::ini_parser::IniFile;
@@ -581,6 +575,7 @@ mod tests {
     /// below 10; farther over flat ground the stock height block runs.
     #[test]
     fn ares_hunter_seeker_detonates_and_descends_inside_its_proximities() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nHunterSeekerDetonateProximity=100\nHunterSeekerDescendProximity=1000\n\
              [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=PREY\n\

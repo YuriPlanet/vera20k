@@ -35,12 +35,14 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, actor: u64, frame: u32) {
 
 #[test]
 fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, actor) = scene(true);
     visit(&mut sim, &rules, actor, 100);
     assert_eq!(
         sim.entities()
             .get(actor)
             .unwrap()
+            .ares
             .attach_effects
             .self_effect,
         SelfEffectState::Pending(1)
@@ -50,6 +52,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .ares
             .attach_effects
             .self_effect,
         SelfEffectState::Pending(0)
@@ -60,9 +63,9 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         .sim;
     visit(&mut sim, &rules, actor, 102);
     let entity = sim.entities().get(actor).unwrap();
-    assert_eq!(entity.attach_effects.entries[0].remaining, 3);
+    assert_eq!(entity.ares.attach_effects.entries[0].remaining, 3);
     assert_eq!(
-        entity.attach_effects.self_effect,
+        entity.ares.attach_effects.self_effect,
         SelfEffectState::Applied(0)
     );
     assert!(entity.stealth_ability.active(false));
@@ -83,9 +86,9 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
     visit(&mut sim, &rules, actor, 104);
     visit(&mut sim, &rules, actor, 105);
     let entity = sim.entities().get(actor).unwrap();
-    assert!(entity.attach_effects.entries.is_empty());
+    assert!(entity.ares.attach_effects.entries.is_empty());
     assert_eq!(
-        entity.attach_effects.self_effect,
+        entity.ares.attach_effects.self_effect,
         SelfEffectState::Pending(1),
         "expiry consumes the first repeat-wait tick in the same head"
     );
@@ -100,13 +103,20 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .ares
             .attach_effects
             .self_effect,
         SelfEffectState::Pending(0)
     );
     visit(&mut sim, &rules, actor, 107);
     assert_eq!(
-        sim.entities().get(actor).unwrap().attach_effects.entries[0].remaining,
+        sim.entities()
+            .get(actor)
+            .unwrap()
+            .ares
+            .attach_effects
+            .entries[0]
+            .remaining,
         3
     );
     sim.validate_attached_stats_after_restore(&rules).unwrap();
@@ -125,6 +135,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
 
 #[test]
 fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibition() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, actor) = scene(false);
     hit(&mut sim, &rules, actor);
     assert!(

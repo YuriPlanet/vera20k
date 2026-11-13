@@ -15,7 +15,9 @@ use crate::util::fixed_math::SimFixed;
 /// The fixture's burst word (7) after a NULL target: Assign_Target resets it
 /// (`0x006FCF5B`); Ares TechnoClass_SetTarget_Burst (1005D320, hook
 /// 0x6FCF53) keeps it.
-const CLEARED: i32 = if cfg!(feature = "ares") { 7 } else { 0 };
+fn cleared(rules: &RuleSet) -> i32 {
+    if rules.ares() { 7 } else { 0 }
+}
 
 struct WallScene {
     sim: Simulation,
@@ -166,7 +168,7 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
         let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
         assert_eq!(
             entity.weapon_burst.index(),
-            if blocked { CLEARED } else { 7 }
+            if blocked { cleared(&scene.rules) } else { 7 }
         );
         assert_eq!(
             entity.mission, before,
@@ -220,7 +222,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
             .unwrap()
             .weapon_burst
             .index(),
-        CLEARED
+        cleared(&scene.rules)
     );
     scene
         .sim
@@ -282,7 +284,7 @@ fn generic_retaliation_archives_and_overrides_before_wall_target_admission() {
         );
         assert_eq!(
             entity.weapon_burst.index(),
-            if blocked { CLEARED } else { 7 }
+            if blocked { cleared(&scene.rules) } else { 7 }
         );
     }
 }
@@ -314,7 +316,7 @@ fn canonical_restore_rechecks_a_wall_added_after_the_target_was_archived() {
     );
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
-    assert_eq!(entity.weapon_burst.index(), CLEARED);
+    assert_eq!(entity.weapon_burst.index(), cleared(&scene.rules));
     assert_eq!(
         entity.mission.current(),
         MissionId::from_known(MissionType::Guard)

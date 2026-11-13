@@ -148,6 +148,7 @@ pub(super) fn missions(sim: &Simulation, id: u64) -> (Option<MissionType>, Optio
 /// DisableEMPEffect100627F0's computer branch queues Hunt for it.
 #[test]
 fn ares_emp_stops_a_walking_computer_infantryman_until_it_hunts() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -182,6 +183,7 @@ fn ares_emp_stops_a_walking_computer_infantryman_until_it_hunts() {
 /// saved mission again, Enter for a saved Guard, instead of nothing.
 #[test]
 fn ares_emp_miners_restart_their_saved_mission() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -220,6 +222,7 @@ fn ares_emp_miners_restart_their_saved_mission() {
 /// Yuri took is deactivated, stays his and hunts for his computer House.
 #[test]
 fn ares_emp_keeps_a_mind_controlled_tank_with_its_controller() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -262,6 +265,7 @@ fn ares_emp_keeps_a_mind_controlled_tank_with_its_controller() {
 /// arm of10062320, and it lands offline until the counter runs out.
 #[test]
 fn ares_emp_falling_paratrooper_lands_offline() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut rules) = rules() else {
         return;
     };
@@ -310,6 +314,7 @@ fn ares_emp_falling_paratrooper_lands_offline() {
 /// hunt once the counter ends.
 #[test]
 fn ares_emp_stops_hover_and_ship_movers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -373,6 +378,7 @@ fn ares_emp_stops_hover_and_ship_movers() {
 /// own updateSpawnManager10063070 cannot take the rocket first.
 #[test]
 fn ares_emp_downs_a_v3_rocket_on_its_launcher() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -432,6 +438,7 @@ fn ares_emp_downs_a_v3_rocket_on_its_launcher() {
 /// go dark and come back with it.
 #[test]
 fn ares_emp_darkens_a_spy_satellite_uplink_until_expiry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -478,6 +485,7 @@ fn ares_emp_darkens_a_spy_satellite_uplink_until_expiry() {
 /// line. `Malicious=no` keeps the damage path's warnings out.
 #[test]
 fn ares_emp_announces_the_players_miner_and_base() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };

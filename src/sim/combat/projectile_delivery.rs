@@ -153,8 +153,7 @@ fn classify_projectile_type(
             gravity: projectile.gravity(),
             elasticity_bits: projectile.elasticity.to_bits(),
             arcing: projectile.arcing,
-            #[cfg(feature = "ares")]
-            subject_to_solid: projectile.bullet_type_ext.subject_to_solid,
+            subject_to_solid: rules.ares() && projectile.bullet_type_ext.subject_to_solid,
         },
         ballistic,
         vertical: projectile
@@ -460,7 +459,6 @@ impl Simulation {
     /// weapon (`1001ABF0`, hooks `0x46A5B2`/`0x46AA27`): a `FlakScatter=`
     /// Inviso child takes Fire's flak placement with that weapon's `Range=`
     /// ([`inviso_fire_placement`]), two Scenario draws.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_shrapnel_flak_placement(
         &mut self,
         bullet_id: u64,

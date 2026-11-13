@@ -1789,6 +1789,18 @@ impl Simulation {
         }
     }
 
+    /// Saved Ares state (a delivery base override, an attached superweapon)
+    /// loads only into a game Ares plays in; the player load checks it with
+    /// the loading game's switch before restoring.
+    pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
+        for (_, entity) in self.substrate.entities.iter_sorted() {
+            entity
+                .validate_ares_build_compatibility(ares)
+                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        }
+        Ok(())
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,
@@ -1804,9 +1816,6 @@ impl Simulation {
                     object_id: entity.stable_id(),
                 });
             }
-            entity
-                .validate_ares_build_compatibility()
-                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
@@ -7595,8 +7604,7 @@ mod tests {
             .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(9_999),
-            ),
-        ));
+            )));
         let mut manager = SpawnManagerState::for_test(
             sim.interner.intern("HORNET"),
             vec![

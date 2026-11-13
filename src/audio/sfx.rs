@@ -2178,7 +2178,6 @@ impl SfxPlayer {
         self.vox.set_side(side, rules);
     }
     /// Ares trigger action 148's voice selection ([`super::vox::VoxQueue::set_trigger_voice`]).
-    #[cfg(feature = "ares")]
     pub(crate) fn set_trigger_eva_voice(&mut self, index: i32, registry: &EvaRegistry) {
         self.vox.set_trigger_voice(index, registry);
     }
@@ -4226,14 +4225,18 @@ mod tests {
         player.visit_unit_voice(3, definitions.sounds());
         player.queue_unit_voice(3, "GIMove");
         player.visit_unit_voice(3, definitions.sounds());
-        let line = player.arbiter.validate_loop_handle(HandleOwner::UnitVoice(3));
+        let line = player
+            .arbiter
+            .validate_loop_handle(HandleOwner::UnitVoice(3));
         assert!(line.is_some());
 
         player.move_unit_voice(3, 9);
         player.destroy_unit_voice(3);
 
         assert_eq!(
-            player.arbiter.validate_loop_handle(HandleOwner::UnitVoice(9)),
+            player
+                .arbiter
+                .validate_loop_handle(HandleOwner::UnitVoice(9)),
             line,
             "the unit's destructor must not stop the line the building took"
         );

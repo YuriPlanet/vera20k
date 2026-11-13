@@ -561,13 +561,12 @@ fn assert_retail_wall_fire_profile(
         // (HouseExt::GetTypeToProduce 100216A0, hooks 0x4FEA60/0x4FEEE0/
         // 0x4FF210) where stock draws `RandomRanged(0, 0x7FFFFFFE)`, so the
         // other Houses' Scenario draws move it; only the stock stream pins it.
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            inline_child_admission_seen,
-            "ordinary AP reaches stage two beside a pristine same-type child"
-        );
-        #[cfg(feature = "ares")]
-        let _ = inline_child_admission_seen;
+        if !scene.runtime.resources.rules.ares() {
+            assert!(
+                inline_child_admission_seen,
+                "ordinary AP reaches stage two beside a pristine same-type child"
+            );
+        }
         let house = scene.sim().houses.get(&owner).unwrap();
         assert_eq!(house.economy().credits(), 8500);
         assert_eq!(house.economy().spent_credits(), 1500);

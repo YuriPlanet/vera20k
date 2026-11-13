@@ -3482,9 +3482,9 @@ fn structures_field_11_sets_the_building_lights_behaviour() {
 
 /// Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584): the
 /// turret's controller turns at `TurretROT=`, the body at `ROT=`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_turret_rot_sets_the_secondary_rate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nTurret=yes\nROT=5\nTurretROT=2\n",
     ))

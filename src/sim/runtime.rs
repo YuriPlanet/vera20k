@@ -1464,10 +1464,12 @@ pub fn finalize_constructed_scenario(
     // is only the fallback for callers that never populated one.
     let mut overlay_grid = sim.take_overlay_grid_for_load().unwrap_or(overlay_grid);
     // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
-    // fresh Set_Defaults true (0x00683610); Ares' visceroid reads it.
-    #[cfg(feature = "ares")]
-    sim.session
-        .read_map_tiberium_death_to_visceroid(map_data.basic.tiberium_death_to_visceroid);
+    // fresh Set_Defaults true (0x00683610); only Ares' visceroid reads it,
+    // so a game without Ares keeps the default.
+    if rules.ares() {
+        sim.session
+            .read_map_tiberium_death_to_visceroid(map_data.basic.tiberium_death_to_visceroid);
+    }
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.

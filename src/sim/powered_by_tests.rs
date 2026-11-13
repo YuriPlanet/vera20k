@@ -32,6 +32,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
 
 #[test]
 fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_owners() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, pwr, drone) = scene();
     // ValidateThings100677B0: PoweredBy replaces the stock PoweredUnit flag.
     assert!(!rules.object("DRONE").unwrap().powered_unit);
@@ -42,6 +43,7 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
         .entities
         .get(drone)
         .unwrap()
+        .ares
         .powered_by
         .unwrap();
     assert_eq!((state.last_scan(), state.powered()), (15, true));
@@ -64,7 +66,7 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
     visit(&mut sim, &rules, drone, 30);
     let entity = sim.substrate.entities.get(drone).unwrap();
     assert!(entity.deactivated.is_offline());
-    assert!(!entity.powered_by.unwrap().powered());
+    assert!(!entity.ares.powered_by.unwrap().powered());
     assert!(!sim.ares_is_powered(drone, &rules));
     assert_eq!(
         entity.mission.current().known(),
@@ -89,6 +91,7 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
 
 #[test]
 fn ares_deactivated_units_spark_only_without_power() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _, drone) = scene();
     sim.substrate
         .entities
@@ -109,7 +112,12 @@ fn ares_deactivated_units_spark_only_without_power() {
     };
     // No scan yet: IsPowered100454F0 answers true, like an EMP victim.
     assert_eq!(draws_over_a_cycle(&mut sim), (0, false));
-    sim.substrate.entities.get_mut(drone).unwrap().powered_by = Some(PoweredBySource {
+    sim.substrate
+        .entities
+        .get_mut(drone)
+        .unwrap()
+        .ares
+        .powered_by = Some(PoweredBySource {
         last_scan: 0,
         powered: false,
     });
@@ -122,6 +130,7 @@ fn ares_deactivated_units_spark_only_without_power() {
 /// that timer when the power returns.
 #[test]
 fn ares_powered_by_power_loss_updates_team_selection_and_slaves() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, pwr, drone) = scene();
     visit(&mut sim, &rules, drone, 15);
     crate::sim::team_script_vm::join_team_for_test(&mut sim, &[drone], false, false);

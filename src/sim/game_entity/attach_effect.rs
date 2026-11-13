@@ -128,7 +128,7 @@ impl GameEntity {
         let mut armor = self.crate_multipliers.crate_armor();
         let mut cloak = false;
         let mut rof = NativeF64Bits::ONE;
-        for entry in &self.attach_effects.entries {
+        for entry in &self.ares.attach_effects.entries {
             let settings = entry
                 .origin
                 .settings(rules, interner)
@@ -181,18 +181,19 @@ impl GameEntity {
         self.stealth_ability.set_attached(stats.cloak);
         // RecalculateStats10046130..10046134 commits Ext+78. The reload
         // consumer samples it on a later GetROF; existing timers stay intact.
-        self.attach_effects.rof_multiplier = stats.rof;
+        self.ares.attach_effects.rof_multiplier = stats.rof;
         if self.category().is_foot() {
             self.foot_speed.set_attached_speed(stats.speed);
         }
     }
 
     pub(crate) fn attached_rof_multiplier(&self) -> NativeF64Bits {
-        self.attach_effects.rof_multiplier
+        self.ares.attach_effects.rof_multiplier
     }
 
     pub(crate) fn attached_effect_anims(&self) -> impl Iterator<Item = u64> + '_ {
-        self.attach_effects
+        self.ares
+            .attach_effects
             .entries
             .iter()
             .filter_map(|entry| entry.animation)
@@ -207,27 +208,28 @@ impl GameEntity {
         anim: u64,
         _: crate::sim::entity_store::AnimHolderAuthority,
     ) -> Option<u64> {
-        self.attach_effects
+        self.ares
+            .attach_effects
             .entries
             .get_mut(index)
             .and_then(|entry| entry.animation.replace(anim))
     }
     pub(crate) fn attached_effect_anim_expired(&mut self, expired: u64) {
         //10058770 clears the held pointer, without restarting or erasing the effect.
-        for entry in &mut self.attach_effects.entries {
+        for entry in &mut self.ares.attach_effects.entries {
             if entry.animation == Some(expired) {
                 entry.animation = None;
             }
         }
     }
     pub(crate) fn hash_attach_effects<H: Hasher>(&self, hasher: &mut H) {
-        if !self.attach_effects.entries.is_empty()
-            || self.attach_effects.animations_hidden
-            || self.attach_effects.self_effect != SelfEffectState::default()
-            || self.attach_effects.rof_multiplier != NativeF64Bits::ONE
+        if !self.ares.attach_effects.entries.is_empty()
+            || self.ares.attach_effects.animations_hidden
+            || self.ares.attach_effects.self_effect != SelfEffectState::default()
+            || self.ares.attach_effects.rof_multiplier != NativeF64Bits::ONE
         {
             b"ares-attach-effects-v1".hash(hasher);
-            self.attach_effects.hash(hasher);
+            self.ares.attach_effects.hash(hasher);
         }
         if self.foot_speed.effective_multiplier() != self.foot_speed.crate_multiplier() {
             b"ares-foot-effective-speed-v1".hash(hasher);
@@ -293,6 +295,7 @@ mod tests {
 
     #[test]
     fn attach_effect_native_histories_cover_reapply_pointer_limbo_and_retirement() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/rules_oracle/ares_attach_effect.json",
         ))
@@ -337,7 +340,13 @@ mod tests {
                             .set_state_for_test(if step["action"] == "cloak_on" { 1 } else { 0 });
                     }
                     "pointer_expiry" => {
-                        let held = sim.entities().get(target).unwrap().attach_effects.entries[0]
+                        let held = sim
+                            .entities()
+                            .get(target)
+                            .unwrap()
+                            .ares
+                            .attach_effects
+                            .entries[0]
                             .animation
                             .unwrap();
                         sim.notify_anim_pointer_expired(held);
@@ -348,7 +357,7 @@ mod tests {
                     "dtor" => sim.destroy_ares_attach_effects(target, &rules),
                     action => panic!("unknown native action {action}"),
                 }
-                let state = &sim.entities().get(target).unwrap().attach_effects;
+                let state = &sim.entities().get(target).unwrap().ares.attach_effects;
                 let label = format!("{} {}", row["name"], step["action"]);
                 assert_eq!(
                     serde_json::json!(
@@ -423,6 +432,7 @@ mod tests {
 
     #[test]
     fn attach_effect_parent_bullet_actual_ai_snapshot_and_limbo_use_one_owner() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::combat::{TargetKind, world_fire::FireVisit};
         let (mut sim, rules, target, source) = scene(false, false);
         sim.commit_fire_visit(
@@ -441,13 +451,13 @@ mod tests {
             sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
         }
         let victim = sim.entities().get(target).unwrap();
-        assert_eq!(victim.attach_effects.entries[0].remaining, 5);
-        let anim = victim.attach_effects.entries[0].animation.unwrap();
+        assert_eq!(victim.ares.attach_effects.entries[0].remaining, 5);
+        let anim = victim.ares.attach_effects.entries[0].animation.unwrap();
         assert_eq!(
             sim.anim(anim).unwrap().owner_house(),
             Some(sim.entities().get(source).unwrap().owner())
         );
-        let attachments_before = victim.attach_effects.clone();
+        let attachments_before = victim.ares.attach_effects.clone();
         let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "AE", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
@@ -457,7 +467,7 @@ mod tests {
         // order before hashing or resuming an actor (AnimObject::hash_state).
         restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
-            restored.entities().get(target).unwrap().attach_effects,
+            restored.entities().get(target).unwrap().ares.attach_effects,
             attachments_before
         );
         // Ordinary native load reseeds Scenario RNG and rebuilds navigation
@@ -486,6 +496,7 @@ mod tests {
                 .entities()
                 .get(target)
                 .unwrap()
+                .ares
                 .attach_effects
                 .entries[0]
                 .remaining,
@@ -497,6 +508,7 @@ mod tests {
                 .entities()
                 .get(target)
                 .unwrap()
+                .ares
                 .attach_effects
                 .entries[0]
                 .animation
@@ -509,6 +521,7 @@ mod tests {
                 .entities()
                 .get(target)
                 .unwrap()
+                .ares
                 .attach_effects
                 .entries[0]
                 .remaining,
@@ -521,7 +534,6 @@ mod tests {
     }
 }
 
-#[cfg(feature = "ares")]
 mod receiver {
     use super::*;
     use crate::rules::{ruleset::RuleSet, warhead_type::WarheadType};
@@ -629,6 +641,7 @@ mod receiver {
                         .entities
                         .get(target)
                         .unwrap()
+                        .ares
                         .attach_effects
                         .entries
                         .iter()
@@ -637,15 +650,15 @@ mod receiver {
                 .flatten();
             if let Some(index) = repeated {
                 let victim = self.substrate.entities.get_mut(target).unwrap();
-                victim.attach_effects.entries[index].remaining = settings.duration();
+                victim.ares.attach_effects.entries[index].remaining = settings.duration();
                 //100585BB preserves the first source House on reapplication.
                 if settings.animation().is_some() && settings.anim_reset_on_reapply() {
                     self.create_attached_effect_anim(target, index, rules);
                 }
             } else {
                 let victim = self.substrate.entities.get_mut(target).unwrap();
-                let index = victim.attach_effects.entries.len();
-                victim.attach_effects.entries.push(AttachedEffect {
+                let index = victim.ares.attach_effects.entries.len();
+                victim.ares.attach_effects.entries.push(AttachedEffect {
                     origin,
                     animation: None,
                     remaining: duration,
@@ -699,7 +712,7 @@ mod receiver {
             ) {
                 return;
             }
-            let Some(entry) = victim.attach_effects.entries.get(index) else {
+            let Some(entry) = victim.ares.attach_effects.entries.get(index) else {
                 return;
             };
             let source = entry.source_house;
@@ -750,7 +763,7 @@ mod receiver {
                 .substrate
                 .entities
                 .get_mut(target)
-                .and_then(|victim| victim.attach_effects.entries.get_mut(index))
+                .and_then(|victim| victim.ares.attach_effects.entries.get_mut(index))
                 .and_then(|entry| entry.animation.take());
             if let Some(anim) = anim {
                 self.destroy_anim_with_context(anim, rules);
@@ -769,9 +782,9 @@ mod receiver {
             {
                 return;
             }
-            if victim.attach_effects.entries.is_empty()
+            if victim.ares.attach_effects.entries.is_empty()
                 && !matches!(
-                    victim.attach_effects.self_effect,
+                    victim.ares.attach_effects.self_effect,
                     SelfEffectState::Pending(_)
                 )
             {
@@ -784,10 +797,10 @@ mod receiver {
                 victim.cloak.as_ref().map(|cloak| cloak.state()),
                 Some(1 | 2)
             );
-            if !victim.attach_effects.entries.is_empty()
-                && hidden != victim.attach_effects.animations_hidden
+            if !victim.ares.attach_effects.entries.is_empty()
+                && hidden != victim.ares.attach_effects.animations_hidden
             {
-                let len = victim.attach_effects.entries.len();
+                let len = victim.ares.attach_effects.entries.len();
                 for index in 0..len {
                     if hidden {
                         self.retire_attached_effect_anim(target, index, rules);
@@ -799,6 +812,7 @@ mod receiver {
                     .entities
                     .get_mut(target)
                     .unwrap()
+                    .ares
                     .attach_effects
                     .animations_hidden = hidden;
             }
@@ -811,7 +825,7 @@ mod receiver {
                 let Some(victim) = self.substrate.entities.get_mut(target) else {
                     break;
                 };
-                let effects = &mut victim.attach_effects;
+                let effects = &mut victim.ares.attach_effects;
                 let Some(entry) = effects.entries.get_mut(index) else {
                     break;
                 };
@@ -835,6 +849,7 @@ mod receiver {
                         .entities
                         .get_mut(target)
                         .unwrap()
+                        .ares
                         .attach_effects
                         .entries
                         .remove(index);
@@ -854,7 +869,7 @@ mod receiver {
                 .substrate
                 .entities
                 .get(target)
-                .map(|victim| victim.attach_effects.self_effect)
+                .map(|victim| victim.ares.attach_effects.self_effect)
             else {
                 return;
             };
@@ -866,6 +881,7 @@ mod receiver {
                     .entities
                     .get_mut(target)
                     .unwrap()
+                    .ares
                     .attach_effects
                     .self_effect = SelfEffectState::Disabled(saved_delay);
                 return;
@@ -883,6 +899,7 @@ mod receiver {
                     .entities
                     .get_mut(target)
                     .unwrap()
+                    .ares
                     .attach_effects
                     .self_effect = SelfEffectState::Pending(delay - 1);
             } else if delay == 0 && !deactivated {
@@ -898,6 +915,7 @@ mod receiver {
                         .entities
                         .get_mut(target)
                         .unwrap()
+                        .ares
                         .attach_effects
                         .self_effect = SelfEffectState::Applied(saved_delay);
                 }
@@ -917,18 +935,19 @@ mod receiver {
                 return;
             };
             let origin = EffectOrigin::TechnoType(victim.category().into(), old_type);
-            let delay = match victim.attach_effects.self_effect {
+            let delay = match victim.ares.attach_effects.self_effect {
                 SelfEffectState::Pending(delay)
                 | SelfEffectState::Applied(delay)
                 | SelfEffectState::Disabled(delay) => delay,
             };
-            victim.attach_effects.self_effect = SelfEffectState::Pending(delay);
+            victim.ares.attach_effects.self_effect = SelfEffectState::Pending(delay);
             let animation = victim
+                .ares
                 .attach_effects
                 .entries
                 .iter()
                 .position(|entry| entry.origin == origin)
-                .and_then(|index| victim.attach_effects.entries.remove(index).animation);
+                .and_then(|index| victim.ares.attach_effects.entries.remove(index).animation);
             if let Some(animation) = animation {
                 self.destroy_anim_with_context(animation, rules);
             }
@@ -940,14 +959,15 @@ mod receiver {
             let Some(victim) = self.substrate.entities.get(target) else {
                 return;
             };
-            if victim.attach_effects.entries.is_empty() {
+            if victim.ares.attach_effects.entries.is_empty() {
                 return;
             }
-            let len = victim.attach_effects.entries.len();
+            let len = victim.ares.attach_effects.entries.len();
             self.substrate
                 .entities
                 .get_mut(target)
                 .unwrap()
+                .ares
                 .attach_effects
                 .animations_hidden = true;
             for index in 0..len {
@@ -955,7 +975,7 @@ mod receiver {
             }
             let interner = &self.interner;
             let victim = self.substrate.entities.get_mut(target).unwrap();
-            victim.attach_effects.entries.retain(|entry| {
+            victim.ares.attach_effects.entries.retain(|entry| {
                 !entry
                     .origin
                     .settings(rules, interner)
@@ -963,7 +983,7 @@ mod receiver {
             });
             //100588E0's removal result gates1004B197. Merely hiding held
             //animations leaves the previously committed stats untouched.
-            if victim.attach_effects.entries.len() != len {
+            if victim.ares.attach_effects.entries.len() != len {
                 victim.recompute_ares_attached_stats(rules, interner);
             }
         }
@@ -974,12 +994,12 @@ mod receiver {
                 .substrate
                 .entities
                 .get(target)
-                .map_or(0, |victim| victim.attach_effects.entries.len());
+                .map_or(0, |victim| victim.ares.attach_effects.entries.len());
             for index in 0..len {
                 self.retire_attached_effect_anim(target, index, rules);
             }
             if let Some(victim) = self.substrate.entities.get_mut(target) {
-                victim.attach_effects.entries.clear();
+                victim.ares.attach_effects.entries.clear();
             }
         }
 

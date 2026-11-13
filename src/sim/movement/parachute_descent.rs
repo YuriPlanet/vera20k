@@ -95,6 +95,7 @@ impl crate::sim::world::Simulation {
                     self.interner
                         .try_resolve(entity.type_ref())
                         .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
+                    rules.ares(),
                 );
             }
         }
@@ -410,6 +411,7 @@ impl crate::sim::world::Simulation {
                     self.interner
                         .try_resolve(entity.type_ref())
                         .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
+                    rules.ares(),
                 );
             }
             return false;

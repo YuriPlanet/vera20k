@@ -707,7 +707,7 @@ impl TeamScriptState {
     }
 
     /// The team's mission target, for cross-module script tests.
-    #[cfg(all(feature = "ares", any(test, feature = "test-support")))]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn mission_target_for_test(&self) -> Option<TeamTarget> {
         self.mission_target
     }

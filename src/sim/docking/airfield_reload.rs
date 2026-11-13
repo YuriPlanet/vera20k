@@ -122,14 +122,12 @@ pub(crate) fn reload_visit(reload_rate: f64, host: &mut impl ReloadHost) -> i32 
 /// slot, the frame its docker next reloads, -1 once it was released. Ares
 /// grows the vector to the slot count before each visit; a slot it never
 /// wrote reads 0 here.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct DockReloadTimers {
     frames: Vec<i32>,
 }
 
-#[cfg(feature = "ares")]
 impl DockReloadTimers {
     pub(crate) fn is_empty(&self) -> bool {
         self.frames.is_empty()
@@ -278,7 +276,7 @@ impl AresReloadHost for WorldReload<'_> {
 
     fn timers(&mut self) -> &mut DockReloadTimers {
         match self.sim.substrate.entities.get_mut(self.dock) {
-            Some(building) => &mut building.ares_dock_reload_timers,
+            Some(building) => &mut building.ares.ares_dock_reload_timers,
             None => &mut self.detached_timers,
         }
     }

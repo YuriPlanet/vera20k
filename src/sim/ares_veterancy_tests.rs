@@ -39,6 +39,7 @@ fn board(sim: &mut Simulation, transport: u64, passengers: Vec<u64>) {
 /// detector does none of these for a veteran.
 #[test]
 fn promotion_converts_adds_experience_flashes_and_promotes_passengers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[AudioVisual]\nVeteranFlashTimer=7\n\
          [VehicleTypes]\n0=APC\n1=APC2\n[InfantryTypes]\n0=E1\n1=DOG\n\
@@ -92,6 +93,7 @@ fn promotion_converts_adds_experience_flashes_and_promotes_passengers() {
 /// Experience.AirstrikeModifier; without the key the kill pays nobody.
 #[test]
 fn airstrike_kill_credits_the_designator_scaled() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for from_airstrike in [true, false] {
         let rules = rules(&format!(
             "[InfantryTypes]\n0=BORIS\n1=DRONE\n2=VICTIM\n\
@@ -145,6 +147,7 @@ fn airstrike_kill_credits_the_designator_scaled() {
 /// which never reaches its own AI sample, is promoted at once, without flash.
 #[test]
 fn elite_ifv_kill_promotes_its_gunner_immediately() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[VehicleTypes]\n0=IFV\n[InfantryTypes]\n0=E1\n1=VICTIM\n\
          [IFV]\nStrength=100\nSpeed=4\nCost=900\nGunner=yes\nPassengers=1\n\
@@ -192,6 +195,7 @@ fn elite_ifv_kill_promotes_its_gunner_immediately() {
 /// capture moves the bonus to the captor, and a Limbo takes it away.
 #[test]
 fn academy_bonus_follows_placement_capture_and_limbo() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[BuildingTypes]\n0=ACAD\n[InfantryTypes]\n0=E1\n1=E2\n\
          [ACAD]\nStrength=500\nAcademy.InfantryVeterancy=1.5\nAcademy.Ignore=E2\n\

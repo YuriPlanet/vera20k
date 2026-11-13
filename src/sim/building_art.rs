@@ -66,7 +66,6 @@ pub struct BuildingArt {
     actually_placed: bool,
     /// Ares BuildingExt `FreeUnits_Done` (`+0xC`): a Place has reached the
     /// free-unit block (BuildingClass_Place_SkipFreeUnits, `10036860`).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     free_units_done: bool,
     /// Derived draw cache from UpdateAnimation, before this object's Techno
@@ -201,7 +200,6 @@ impl BuildingArt {
     }
 
     /// Whether a Place has reached the free-unit block (hashed).
-    #[cfg(feature = "ares")]
     pub(crate) fn free_units_done(&self) -> bool {
         self.free_units_done
     }
@@ -287,7 +285,6 @@ impl Default for BuildingArt {
             storage: BuildingStorage::default(),
             stuff_enabled: true,
             actually_placed: false,
-            #[cfg(feature = "ares")]
             free_units_done: false,
             tint_sample: None,
         }
@@ -551,9 +548,10 @@ impl Simulation {
         }
         // Ares 3.0 BuildingClass_Place_InitialPayload (10048EB0, hook
         // 0x446EE2), where every reached opening resumes past the free unit:
-        // the building's InitialPayload, once.
-        #[cfg(feature = "ares")]
-        self.create_ares_initial_payload(id, rules, registry, effects);
+        // the building's InitialPayload, once, when Ares plays.
+        if rules.ares() {
+            self.create_ares_initial_payload(id, rules, registry, effects);
+        }
     }
     fn building_anim_config(
         &self,
@@ -923,7 +921,6 @@ impl Simulation {
     /// Whether the building's type names an anim for `slot`, the first-byte
     /// test of the anim name (`+0x11F4` for the SpecialAnim) the Ares Prism
     /// charge makes before it swaps anims (`100169A0`, `10017970`).
-    #[cfg(feature = "ares")]
     pub(crate) fn building_has_anim(&self, id: u64, slot: u8, rules: &RuleSet) -> bool {
         self.building_anim_config(id, slot, rules)
             .is_some_and(|config| !config.anim_type.is_empty())
@@ -934,7 +931,6 @@ impl Simulation {
     /// Special (`+0x584`) or SpecialTwo (`+0x588`) slot, not through
     /// `0x00451890`: no other slot or the damage flag changes, and the anim
     /// keeps its constructor's offsets (`sim::ares_firestorm`).
-    #[cfg(feature = "ares")]
     pub(crate) fn install_ares_firewall_anim(&mut self, id: u64, slot: u8, anim: u64) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;

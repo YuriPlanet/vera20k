@@ -565,7 +565,6 @@ pub struct FootSpeedState {
     /// TechnoExt+90 crate baseline above. None denotes an unchanged baseline.
     /// The attachment owner updates it synchronously after native mutations;
     /// snapshot restore validates it against that owner's ordered vector.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     attached_speed: Option<crate::util::native_x87::NativeF64Bits>,
     /// Foot+6B5, constructor0 at4D3444. Drive's straight/CrusherAll
@@ -580,7 +579,6 @@ impl Default for FootSpeedState {
         Self {
             applied_fraction: crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
             crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
-            #[cfg(feature = "ares")]
             attached_speed: None,
             crush_slowdown: false,
         }
@@ -616,14 +614,12 @@ impl FootSpeedState {
     /// Live Foot+580. Crate eligibility continues to read the permanent
     /// baseline; GetCurrentSpeed reads this derived value under Ares.
     pub fn effective_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
-        #[cfg(feature = "ares")]
         if let Some(multiplier) = self.attached_speed {
             return multiplier;
         }
         self.crate_multiplier
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn set_attached_speed(
         &mut self,
         multiplier: crate::util::native_x87::NativeF64Bits,

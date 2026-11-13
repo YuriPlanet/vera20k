@@ -141,8 +141,8 @@ fn a_retail_spy_starts_disguised_as_its_sides_infantry() {
 }
 
 /// Ares 3.0 `[Side] DefaultDisguise=` and the fourth-side Allied fallback.
-#[cfg(feature = "ares")]
 fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let text = format!("{RULES}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}");
     let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
         .process()
@@ -150,9 +150,9 @@ fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
     RuleSet::from_processed_rules(&processed).expect("fourth-side disguise projection")
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fourth_side_perma_disguise_uses_side_extension_default_or_override() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (fourth, worn) in [("", "E1"), ("DefaultDisguise=E2\n", "E2")] {
         let rules = ares_fourth_side_rules(fourth);
         let mut sim = Simulation::with_seed(3);

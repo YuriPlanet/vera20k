@@ -94,6 +94,7 @@ fn owner(sim: &Simulation, id: u64) -> &str {
 /// until it is empty again.
 #[test]
 fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, _grid) = arena(&rules);
     let bunker = spawn(&mut sim, &rules, "BNK", "Russians", 10, 10);
@@ -132,6 +133,7 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
 /// `UC.DamageMultiplier=50%` of its damage, and the building takes none.
 #[test]
 fn a_shot_passes_through_to_an_occupant() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, grid) = arena(&rules);
     let bunker = spawn(&mut sim, &rules, "BNK", "Russians", 10, 10);
@@ -178,6 +180,7 @@ fn a_shot_passes_through_to_an_occupant() {
 /// emptied raided trench goes back to its house (evalRaidStatus).
 #[test]
 fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let text = RULES.replace("0=BNK\n", "0=BNK\n1=TRN\n2=TRX\n")
         + "[TRN]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
            IsTrench=Sand\nBunker.Raidable=yes\n\

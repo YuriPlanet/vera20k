@@ -278,7 +278,7 @@ fn add_produce_cash_display(
         .object_type(entity.type_ref(), rules)
         .is_some_and(|object| object.building_type_ext().produce_cash_display())
     {
-        entity.bounty_display.queue(amount);
+        entity.ares.bounty_display.queue(amount);
     }
 }
 
@@ -1709,6 +1709,6 @@ mod tests {
         assert_eq!(step(&mut sim, 109), 5);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         assert_eq!(entity.produce_cash.upgrades[0], CdTimer::started(109, 11));
-        assert_eq!(entity.bounty_display.take_pending_for_test(), 25);
+        assert_eq!(entity.ares.bounty_display.take_pending_for_test(), 25);
     }
 }

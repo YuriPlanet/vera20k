@@ -53,11 +53,9 @@ pub(crate) struct CrateMultipliers {
     #[serde(default = "one")]
     firepower: NativeF64Bits,
     /// Ares derived Techno+160; None retains the permanent Ext+80 baseline.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     attached_firepower: Option<NativeF64Bits>,
     /// Ares derived Techno+158; None retains the permanent Ext+88 baseline.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     attached_armor: Option<NativeF64Bits>,
 }
@@ -72,9 +70,7 @@ impl Default for CrateMultipliers {
         Self {
             armor: NativeF64Bits::ONE,
             firepower: NativeF64Bits::ONE,
-            #[cfg(feature = "ares")]
             attached_firepower: None,
-            #[cfg(feature = "ares")]
             attached_armor: None,
         }
     }
@@ -83,7 +79,6 @@ impl Default for CrateMultipliers {
 impl CrateMultipliers {
     /// `Techno+0x158`.
     pub(crate) const fn armor(self) -> NativeF64Bits {
-        #[cfg(feature = "ares")]
         if let Some(value) = self.attached_armor {
             return value;
         }
@@ -95,14 +90,12 @@ impl CrateMultipliers {
         self.armor
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn set_attached_armor(&mut self, value: NativeF64Bits) {
         self.attached_armor = (value != self.armor).then_some(value);
     }
 
     /// Effective Techno+160, read by both FireAt and EstimateDamage.
     pub(crate) const fn firepower(self) -> NativeF64Bits {
-        #[cfg(feature = "ares")]
         if let Some(value) = self.attached_firepower {
             return value;
         }
@@ -114,7 +107,6 @@ impl CrateMultipliers {
         self.firepower
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn set_attached_firepower(&mut self, value: NativeF64Bits) {
         self.attached_firepower = (value != self.firepower).then_some(value);
     }

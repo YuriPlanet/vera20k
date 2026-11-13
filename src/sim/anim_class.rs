@@ -720,7 +720,6 @@ impl AnimObject {
     /// Ares `BuildingExt::ExtData::UpdateFirewall @ 10013280` stores its
     /// own anims in `building`'s `slot` and sets only Anim+0x118: the
     /// constructor's ZAdjust and YSortAdjust stay.
-    #[cfg(feature = "ares")]
     pub(crate) fn enter_ares_firewall_slot(&mut self, building: u64, slot: u8) {
         self.building_anim = true;
         self.building_slot = Some((building, slot));
@@ -989,7 +988,6 @@ impl AnimStore {
 
     /// Drop the anim's Convert (`Anim+0xD4 = 0`): Ares
     /// InfantryClass_ReceiveDamage_InfantryVirus2 (10025F50, hook 0x51887B).
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_anim_remap(&mut self, id: AnimId) -> bool {
         let Some(anim) = self.get_mut(id) else {
             return false;

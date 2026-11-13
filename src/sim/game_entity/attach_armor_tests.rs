@@ -102,6 +102,7 @@ fn armor_crate(sim: &mut Simulation, rules: &RuleSet, victim: u64) -> bool {
 
 #[test]
 fn attached_armor_parent_hit_changes_received_damage_then_expires() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, emitter, victim) = scene();
     shoot(&mut sim, &rules, emitter, victim, 0);
     assert_eq!(armor(&sim, victim), 2.0);
@@ -125,6 +126,7 @@ fn attached_armor_parent_hit_changes_received_damage_then_expires() {
 
 #[test]
 fn attached_armor_refresh_stack_and_crates_keep_the_permanent_baseline() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, emitter, victim) = scene();
     hit(&mut sim, &rules, emitter, victim, "AE");
     assert_eq!(armor(&sim, victim), 2.0);
@@ -163,6 +165,7 @@ fn attached_armor_refresh_stack_and_crates_keep_the_permanent_baseline() {
 
 #[test]
 fn attached_armor_restore_checks_both_values_and_discard_recovers_the_crate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, emitter, victim) = scene();
     assert!(armor_crate(&mut sim, &rules, victim));
     hit(&mut sim, &rules, emitter, victim, "AE");

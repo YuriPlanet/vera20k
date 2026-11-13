@@ -37,16 +37,29 @@ use std::hash::{Hash, Hasher};
 
 const LAST_FRAME: i32 = 79;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct IonBlast {
     coord: [i32; 3],
     frame: i32,
     skip_forces: bool,
     /// Ares `WarheadTypeExt::IonExt` (saved with the Ares globals,
     /// 100523D0): the warhead whose applyRipples (10051AE0) raised the blast.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_warhead: Option<crate::sim::intern::InternedId>,
+}
+
+/// The stock fields hash as the derived hash did; an Ares warhead adds its
+/// own fold, so a stock game's state hash keeps its stream.
+impl Hash for IonBlast {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.coord.hash(state);
+        self.frame.hash(state);
+        self.skip_forces.hash(state);
+        if let Some(warhead) = self.ares_warhead {
+            b"ares-ion-blast-warhead-v1".hash(state);
+            warhead.hash(state);
+        }
+    }
 }
 
 pub(super) fn save<S: serde::Serializer>(
@@ -72,7 +85,6 @@ impl Simulation {
             coord,
             frame: 0,
             skip_forces: true,
-            #[cfg(feature = "ares")]
             ares_warhead: None,
         });
     }
@@ -87,7 +99,6 @@ impl Simulation {
             coord,
             frame: 0,
             skip_forces: false,
-            #[cfg(feature = "ares")]
             ares_warhead: None,
         });
         true
@@ -98,7 +109,6 @@ impl Simulation {
     /// `IonCannon` or positive `Ripple.Radius` warhead constructs a blast,
     /// with DisableIonBeam (+0x10, the flag that skips the beam and the
     /// ripple forces) set unless `IonCannon=yes`, and maps it to the warhead.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_apply_ripples(
         &mut self,
         coord: [i32; 3],
@@ -125,15 +135,14 @@ impl Simulation {
     /// IonBlastClass_Update_Duration (hook 0x53CBF5, installed 100541B0)
     /// takes a mapped warhead's `Ripple.Radius + 1` when lower.
     fn ion_blast_lifetime(&self, blast: &IonBlast, rules: &RuleSet) -> i32 {
-        #[cfg(feature = "ares")]
-        if let Some(ion) = self.ares_ion_cannon(blast, rules) {
+        if rules.ares()
+            && let Some(ion) = self.ares_ion_cannon(blast, rules)
+        {
             return ion.blast_lifetime();
         }
-        let _ = (blast, rules);
         LAST_FRAME
     }
 
-    #[cfg(feature = "ares")]
     fn ares_ion_cannon<'r>(
         &self,
         blast: &IonBlast,
@@ -203,9 +212,11 @@ impl Simulation {
         let coord = blast.coord;
         let general = &rules.general;
         let ion_cannon_warhead = rules.bridge_warheads.ion_cannon_name.as_str();
-        #[cfg(feature = "ares")]
-        let ares = self.ares_ion_cannon(blast, rules);
-        #[cfg(feature = "ares")]
+        let ares = if rules.ares() {
+            self.ares_ion_cannon(blast, rules)
+        } else {
+            None
+        };
         let (blast_anim, beam_anim, warhead_name, damage, rock) = match ares {
             Some(ion) => (
                 ion.blast(&general.ion_blast_anim),
@@ -222,14 +233,6 @@ impl Simulation {
                 true,
             ),
         };
-        #[cfg(not(feature = "ares"))]
-        let (blast_anim, beam_anim, warhead_name, damage, rock) = (
-            Some(general.ion_blast_anim.as_str()),
-            Some(general.ion_beam_anim.as_str()),
-            Some(ion_cannon_warhead),
-            general.ion_cannon_damage,
-            true,
-        );
         let impact = ProjectileCoord::new(coord[0], coord[1], coord[2]);
         //53CC63..53CD14 selects raw cell land, not overlay/nav passability.
         let anim = if detonation_anim::land_at(self, impact) == 2 {

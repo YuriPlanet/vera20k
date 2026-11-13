@@ -3336,7 +3336,7 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
     let target = spawn(&mut sim, &rules, "HTNK", "Russians", 20, 20);
     let attacker = spawn(&mut sim, &rules, "CLEG", "Americans", 22, 20);
     sim.update_ares_radar_jammer(target, &rules);
-    assert!(!entity(&sim, target).radar_jam.is_default());
+    assert!(!entity(&sim, target).ares.radar_jam.is_default());
     chain(&mut sim, target, &[attacker], 1_000_000);
     sim.temporal_update_head(
         attacker,
@@ -3344,7 +3344,7 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    assert!(entity(&sim, target).radar_jam.is_default());
+    assert!(entity(&sim, target).ares.radar_jam.is_default());
 }
 
 /// A tank with no head of its own that is neither warped out nor warping in

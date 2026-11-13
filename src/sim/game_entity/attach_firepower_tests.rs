@@ -123,6 +123,7 @@ fn firepower_crate(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> bool {
 
 #[test]
 fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rules_oracle/ares_attach_firepower.json",
     ))
@@ -210,6 +211,7 @@ fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
             assert_eq!(
                 serde_json::json!(
                     actor
+                        .ares
                         .attach_effects
                         .entries
                         .iter()
@@ -239,6 +241,7 @@ fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
 
 #[test]
 fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, firer, emitter, dummy) = scene(true, false);
     let parent = shoot(&mut sim, &rules, emitter, firer, 0);
     sim.object_ai_visit_one(parent, Some(&rules), ObjectAiCtx::default());
@@ -246,6 +249,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         sim.entities()
             .get(firer)
             .unwrap()
+            .ares
             .attach_effects
             .entries
             .len(),

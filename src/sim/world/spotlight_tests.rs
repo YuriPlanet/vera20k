@@ -38,7 +38,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         assert!(sim.building_spotlight(id, None, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
         sim.substrate
-            .spotlights_pointer_expired(p, true, crate::rules::ARES_BUILD);
+            .spotlights_pointer_expired(p, true, rules.ares());
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert!(
             sim.substrate
@@ -547,9 +547,9 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
 /// `HasSpotlight=` vehicle gets its light when it is put on the map, and a
 /// building keeps exactly one (BuildingClass_Put_DontSpawnSpotlight
 /// 1004EA10, hook 0x441163).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_spotlighted_technos_get_their_light_at_unlimbo() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nHasSpotlight=yes\n\
          [BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",

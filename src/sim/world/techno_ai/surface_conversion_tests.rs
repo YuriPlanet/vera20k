@@ -42,21 +42,13 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
     let actor = sim.entities().get(id).unwrap();
     assert_eq!(
         sim.interner.resolve(actor.type_ref()),
-        if cfg!(feature = "ares") {
-            "WATER"
-        } else {
-            "LAND"
-        }
+        if rules.ares() { "WATER" } else { "LAND" }
     );
-    assert_eq!(
-        actor.health.current(),
-        if cfg!(feature = "ares") { 200 } else { 100 }
-    );
+    assert_eq!(actor.health.current(), if rules.ares() { 200 } else { 100 });
     assert_eq!(actor.owner(), owner);
     assert_eq!(sim.entities().len(), 1);
     assert!(!actor.locomotor.as_ref().unwrap().is_powered());
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         assert_eq!(
             actor.crate_multipliers.firepower(),
             crate::util::native_x87::NativeF64Bits::from_bits(3.0_f64.to_bits())
@@ -98,11 +90,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
         let actor = sim.entities().get(id).unwrap();
         assert_eq!(
             sim.interner.resolve(actor.type_ref()),
-            if cfg!(feature = "ares") {
-                expected
-            } else {
-                "LAND"
-            }
+            if rules.ares() { expected } else { "LAND" }
         );
         assert_eq!(actor.owner(), owner);
         assert!(!actor.locomotor.as_ref().unwrap().is_powered());

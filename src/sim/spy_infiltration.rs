@@ -133,12 +133,10 @@ pub struct AresInfiltrationArms {
 /// player's HouseType index (`Type+0x34`), which Ares' house-index bits
 /// match only where the two indices agree; VERA leaves that arm out, so a
 /// spied building's pips stay hidden. Presentation only.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct DisplayProductionTo(std::collections::BTreeSet<InternedId>);
 
-#[cfg(feature = "ares")]
 impl DisplayProductionTo {
     pub(crate) fn contains(&self, house: InternedId) -> bool {
         self.0.contains(&house)
@@ -444,7 +442,7 @@ impl Simulation {
         if (spy.reveal_production || spy.reveal_radar)
             && let Some(building) = self.substrate.entities.get_mut(building_id)
         {
-            building.display_production_to.add(infiltrator);
+            building.ares.display_production_to.add(infiltrator);
         }
         arms
     }

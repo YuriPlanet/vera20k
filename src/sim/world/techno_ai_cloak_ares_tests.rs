@@ -94,6 +94,7 @@ fn cloak_then_deactivate(rules: &RuleSet, kind: &str) -> (Simulation, u32, u32) 
 
 #[test]
 fn ares_cloak_stages_and_sounds_follow_the_type_before_rules() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     // Hook703A79 divides by Cloakable.Stages=3: progress 2 is already
     // VisualCharacter 3, against progress 5 for the general 9 stages.
@@ -110,6 +111,7 @@ fn ares_cloak_stages_and_sounds_follow_the_type_before_rules() {
 
 #[test]
 fn ares_cloakable_deployed_and_cloak_height_gate_self_and_generator_cloak() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let facts = |rules: &RuleSet, deployed: bool, field: bool| {
         let (mut sim, id) = scene(rules, "GHOST");
         if deployed {

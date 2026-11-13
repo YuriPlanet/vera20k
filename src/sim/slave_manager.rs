@@ -260,7 +260,6 @@ impl SlaveManager {
     /// SlaveManagerClass::SuspendWork as Ares inlines it (EnableEMPEffect2
     /// 10062980, the driver change 100458F3..10045953): the AI timer's start
     /// becomes -1 and keeps its duration, a duration of 0 raised to 1.
-    #[cfg(feature = "ares")]
     pub(crate) fn suspend_work(&mut self) {
         let duration = self.ai_timer.duration();
         self.ai_timer = CdTimer::from_raw(-1, if duration == 0 { 1 } else { duration });
@@ -268,7 +267,6 @@ impl SlaveManager {
 
     /// SlaveManagerClass::ResumeWork as Ares inlines it (DisableEMPEffect2
     /// 10062650, the driver change): a -1 start becomes `now`.
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_work(&mut self, now: i32) {
         self.ai_timer.resume(now);
     }
@@ -1799,7 +1797,6 @@ impl Simulation {
 
     /// Ares100458F3..10045953: FreeSlaves, then100038E0 clears every node,
     /// reattach the owner and pause/resume its AI clock before ChangeOwner.
-    #[cfg(feature = "ares")]
     pub(crate) fn free_slaves_for_driver_change(
         &mut self,
         master: u64,

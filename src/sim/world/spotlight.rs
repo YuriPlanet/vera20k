@@ -238,17 +238,17 @@ impl Simulation {
         {
             return None;
         }
-        #[cfg(feature = "ares")]
-        if parent
-            .cloak
-            .as_ref()
-            .is_some_and(|cloak| cloak.state() >= 2)
-            || parent.deactivated.is_offline()
-            || parent.is_warped_out()
-            || crate::sim::movement::air_movement::current_fly_height(
-                parent,
-                self.resolved_terrain.as_ref(),
-            ) < -10
+        if rules.ares()
+            && (parent
+                .cloak
+                .as_ref()
+                .is_some_and(|cloak| cloak.state() >= 2)
+                || parent.deactivated.is_offline()
+                || parent.is_warped_out()
+                || crate::sim::movement::air_movement::current_fly_height(
+                    parent,
+                    self.resolved_terrain.as_ref(),
+                ) < -10)
         {
             // BuildingLightDraw_Start1004EB42..1004EB96 (hook 0x435BFA) hides the beam,
             // retaining its child through cloak, EMP and underground travel.
@@ -259,8 +259,7 @@ impl Simulation {
         // 1004EA40; hooks 0x436072, 0x4360D8, 0x4360FF) offset the three
         // heights from `Spotlight.StartHeight`; Draw_Spotlight (1004EAC0,
         // hook 0x435CD3) sets the colour flags.
-        #[cfg(feature = "ares")]
-        let (start_height, middle_height, edge_height, glow_flags) =
+        let (start_height, middle_height, edge_height, glow_flags) = if rules.ares() {
             self.entity_object_type(parent, rules).map_or(
                 (start_height, middle_height, edge_height, glow_flags),
                 |object| {
@@ -273,7 +272,10 @@ impl Simulation {
                         options.glow_flags(),
                     )
                 },
-            );
+            )
+        } else {
+            (start_height, middle_height, edge_height, glow_flags)
+        };
         let p = coords(parent, self);
         let coord = light.coord;
         let params = rules.general.spotlight;
@@ -438,10 +440,10 @@ impl Simulation {
     /// (BuildingClass::PointerExpired @ 0x0044E93A); the light leaves Display
     /// and Logic, dies and keeps its 8B4190 slot until the drain deletes it.
     /// A Foot's light is Ares' own and keeps its direct delete. So does a
-    /// building's in an Ares build: its hook 0x441163 skips the stock
+    /// building's while Ares plays: its hook 0x441163 skips the stock
     /// construction that stores Building+0x600 and Ares owns the light, so
     /// whether this stock arm still runs there is not established (Ares'
-    /// 1004EDE0 was not read). RESIDUAL for Ares builds only: the light is
+    /// 1004EDE0 was not read). RESIDUAL only while Ares plays: the light is
     /// deleted at once, which decides the sweep direction of a light
     /// constructed before that frame's drain.
     pub(super) fn uninit_spotlight_for_parent_limbo(
@@ -630,8 +632,7 @@ impl Simulation {
         let mut lost_target = false;
         match light.mode {
             1 => {
-                #[cfg(feature = "ares")]
-                let params = if parent.category().is_foot() {
+                let params = if rules.ares() && parent.category().is_foot() {
                     // BuildingLight_AI1004EC10..1004EDD2: both endpoint
                     // and pivot follow the current Foot facing, not its old
                     // construction cell; the native angle bound becomes0.
@@ -737,12 +738,12 @@ impl Simulation {
                 // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
                 // 0x4368C9): then 66 (in spotlight) on the same object while
                 // it is alive.
-                #[cfg(feature = "ares")]
-                if self
-                    .substrate
-                    .entities
-                    .get(parent_id)
-                    .is_some_and(|parent| parent.lifecycle.object_alive())
+                if rules.ares()
+                    && self
+                        .substrate
+                        .entities
+                        .get(parent_id)
+                        .is_some_and(|parent| parent.lifecycle.object_alive())
                 {
                     self.dispatch_object_tag_event(parent_id, 66, Some(parent_id), None, context);
                 }

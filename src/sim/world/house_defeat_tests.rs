@@ -673,8 +673,8 @@ fn fourth_base_unit_survival_reaches_the_production_defeat_gate() {
         .spawn_object_limbo_at_height("TANK", "house0", 10, 10, 0, 0, &rules)
         .unwrap();
     sim.check_defeat(Some(&rules), None);
-    assert_eq!(sim.houses[&owner].is_defeated(), !crate::rules::ARES_BUILD);
-    if crate::rules::ARES_BUILD {
+    assert_eq!(sim.houses[&owner].is_defeated(), !rules.ares());
+    if rules.ares() {
         sim.uninit_with_rules(extra_mcv, &rules);
         sim.flush_pending_delete();
         sim.check_defeat(Some(&rules), None);
@@ -696,19 +696,16 @@ fn explicit_keep_alive_false_reaches_both_production_mode_arms() {
         sim.spawn_object_limbo_at_height("MARKER", "house0", 10, 10, 0, 0, &rules)
             .unwrap();
         sim.check_defeat(Some(&rules), None);
-        assert_eq!(
-            sim.houses[&houses[0]].is_defeated(),
-            crate::rules::ARES_BUILD
-        );
+        assert_eq!(sim.houses[&houses[0]].is_defeated(), rules.ares());
     }
 }
 
 /// Rebuild only the native gate's supplied counter/object boundary, then use
 /// the real World presence query and House rung. Parasite input is an allocated
 /// class, not a victim/eater link; this is not a whole parasite lifecycle test.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_normal_defeat_gate_matches_executed_object_array_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = crate::test_fixture::json("tools/spatial_oracle/ares_house_survival.json");
     for row in corpus["survival_cases"].as_array().unwrap() {
         let input = &row["input"];
@@ -1386,9 +1383,9 @@ fn garrisonable_civilian_buildings_share_one_house_walk_in_a_pass() {
 /// tech building captured from a passive house goes back to it, without its
 /// engineer and disabled, instead of dying with its holder's Blowup_All;
 /// `Returnable=no` keeps the original death.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (returnable, returned) in [("", true), ("Returnable=no\n", false)] {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
             "[General]\nReturnStructures=yes\n[CombatDamage]\nC4Warhead=Super\n\

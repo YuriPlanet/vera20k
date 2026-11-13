@@ -163,7 +163,6 @@ fn await_impact_anim(
 /// Ares's impact hook (467E59, 10036960) for a bullet of `warhead` whose
 /// BulletExt NukeSW is `nuke_sw`: see [`crate::sim::projectile::AresNukeBall`].
 /// The flash's `Light.Enabled` gate is the superweapon type's.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_nuke_ball(
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,

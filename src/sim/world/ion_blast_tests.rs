@@ -20,7 +20,6 @@ fn update_all_matches_native() {
                 coord: [index as i32, 0, 0],
                 frame: frame.as_i64().unwrap() as i32,
                 skip_forces: true,
-                #[cfg(feature = "ares")]
                 ares_warhead: None,
             });
         }
@@ -196,7 +195,6 @@ fn positive_ripple_stops_and_lifts_shp_foot_before_the_voxel_gate() {
             coord: [5248, 5248, 0],
             frame: 7,
             skip_forces: false,
-            #[cfg(feature = "ares")]
             ares_warhead: None,
         },
         &rules,
@@ -256,7 +254,6 @@ fn retail_loaded_tank_uses_the_shared_numeric_kernel_and_frame_table() {
             coord: [5248, 5248, 0],
             frame: 7,
             skip_forces: false,
-            #[cfg(feature = "ares")]
             ares_warhead: None,
         },
         &rules,
@@ -288,7 +285,6 @@ fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
         coord: [128, 128, 0],
         frame: 8,
         skip_forces: false,
-        #[cfg(feature = "ares")]
         ares_warhead: None,
     });
     let hash = sim.state_hash();
@@ -390,9 +386,9 @@ fn ion_rules_use_current_defaults_case_and_registry_handoff() {
 /// `IonCannon.Warhead`/`.Damage` (Update_Beam 10053F10); `Ripple.Radius=3`
 /// ends it after four frames (Update_Duration 100541B0); a Ripple-only
 /// warhead raises a flagged blast that builds and damages nothing.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_ion_cannon_warhead_replaces_the_blast_and_its_lifetime() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = IniFile::from_str(
         "[RING1]\nRate=1\nEnd=8\n[IONBEAM]\nRate=1\nEnd=8\n[ALTBEAM]\nRate=1\nEnd=8\n",
     );

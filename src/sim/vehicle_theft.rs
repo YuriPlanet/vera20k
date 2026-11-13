@@ -180,7 +180,7 @@ impl Simulation {
         actor
             .building_entry
             .set_nearest_occupiable_seek(best.is_some());
-        actor.vehicle_driver.set_vehicle_seek(best.is_some());
+        actor.ares.vehicle_driver.set_vehicle_seek(best.is_some());
         let Some((_, _, target)) = best else {
             return false;
         };
@@ -348,10 +348,11 @@ impl Simulation {
             .map(|actor| (actor.owner(), actor.health.current(), actor.veterancy.raw()))
             .ok_or("vehicle captor retired before metadata commit")?;
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.vehicle_driver.restore_driver();
+            target.ares.vehicle_driver.restore_driver();
             if mode == VehicleCaptureMode::Hijack {
                 target.capture_infantry_type_index.record(captor_index);
                 target
+                    .ares
                     .vehicle_driver
                     .record_captor(captor.0, captor.1, captor.2);
             }
@@ -631,7 +632,7 @@ mod tests {
             Some(crate::sim::components::NavTargetRef::object(host))
         );
         assert!(seeking.building_entry.should_enter_nearest_occupiable());
-        assert!(seeking.vehicle_driver.vehicle_seek());
+        assert!(seeking.ares.vehicle_driver.vehicle_seek());
         sim.change_owner_with_rules(host, no_drive, &rules, None, FrameEffects::default());
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
         assert_eq!(
@@ -648,6 +649,6 @@ mod tests {
         assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, None, FrameEffects::default()));
         let stopped = sim.substrate.entities.get(driver).unwrap();
         assert!(!stopped.building_entry.should_enter_nearest_occupiable());
-        assert!(!stopped.vehicle_driver.vehicle_seek());
+        assert!(!stopped.ares.vehicle_driver.vehicle_seek());
     }
 }

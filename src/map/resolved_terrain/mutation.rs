@@ -125,7 +125,6 @@ impl ResolvedTerrainGrid {
     /// unchanged, with the object list's building arm answered by the caller
     /// ([`super::recalc_zone_type_with_buildings`]). Answers whether the
     /// class changed.
-    #[cfg(feature = "ares")]
     pub(crate) fn recalc_zone_type_with_buildings_at(
         &mut self,
         (rx, ry): (u16, u16),

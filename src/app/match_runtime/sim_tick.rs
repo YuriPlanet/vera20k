@@ -3037,7 +3037,6 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
-            #[cfg(feature = "ares")]
             TriggerEffect::EvaVoice { index } => {
                 if let (Some(sfx), Some(catalog)) = (
                     state.audio.sfx_player.as_mut(),

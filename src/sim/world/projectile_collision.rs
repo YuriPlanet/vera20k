@@ -24,7 +24,6 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub rules: &'a RuleSet,
     pub map_size: Option<(i32, i32)>,
     /// The Houses whose Ares firestorm is up (`sim::ares_firestorm`).
-    #[cfg(feature = "ares")]
     pub ares_firestorm: &'a crate::sim::ares_firestorm::FirestormHouses,
 }
 
@@ -145,7 +144,6 @@ impl ProjectileCollisionWorld<'_> {
                     self.impact_ladder(projectile, candidate),
                 ))
             }
-            #[cfg(feature = "ares")]
             ProjectileCollisionPhase::AresFirestorm => self
                 .ares_firestorm(projectile, candidate)
                 .then_some(ProjectileCollisionResponse::AresFirestorm),
@@ -157,7 +155,6 @@ impl ProjectileCollisionWorld<'_> {
     /// burns at `candidate` when its cell's building (MapClass::GetCellAt,
     /// CellClass::GetBuilding) is an active firestorm wall not of its
     /// firer's House.
-    #[cfg(feature = "ares")]
     fn ares_firestorm(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
         if !self.ares_firestorm.any_active()
             || projectile
@@ -509,10 +506,7 @@ impl ProjectileCollisionWorld<'_> {
         // Ares BulletClass_ShouldDetonate_Obstacle 1001AB10 (hook 0x468BE2)
         // adds SubjectToBuildings to the gate and passes the bullet's owner
         // and target to GetObstacle 1006E540.
-        #[cfg(feature = "ares")]
-        let solid = projectile.collision().subject_to_solid;
-        #[cfg(not(feature = "ares"))]
-        let solid = false;
+        let solid = self.rules.ares() && projectile.collision().subject_to_solid;
         if (projectile.collision().subject_to_cliffs
             || projectile.collision().subject_to_walls
             || solid)
@@ -623,6 +617,8 @@ impl ProjectileCollisionWorld<'_> {
             overlay_grid: self.overlays,
             overlay_registry: self.overlay_registry,
             alliances: Some(self.alliances),
+            // Ares' building test moves to the switch with combat's
+            // line-of-fire walk (`line_of_fire::ares_obstacle`).
             #[cfg(feature = "ares")]
             buildings: Some(crate::sim::combat::line_of_fire::CellBuildings {
                 occupancy: self.occupancy,
@@ -751,7 +747,6 @@ fn map_size_contains((width, height): (i32, i32), x: i32, y: i32) -> bool {
 impl Simulation {
     /// `MapClass::CoordinatesLegal @ 0x00568350` for a lepton coordinate; a
     /// world without a map Size admits every coordinate.
-    #[cfg(feature = "ares")]
     pub(crate) fn map_coordinates_legal(&self, x: i32, y: i32) -> bool {
         self.map_size_diamond()
             .is_none_or(|map_size| map_size_contains(map_size, x, y))
@@ -781,7 +776,6 @@ mod tests {
             overlay_registry: None,
             rules: crate::rules::ruleset::RuleSet::empty_for_test(),
             map_size: Some((2, 3)),
-            #[cfg(feature = "ares")]
             ares_firestorm: &sim.ares_firestorm,
         }
     }
@@ -1409,8 +1403,8 @@ mod tests {
 
     /// A flat 8x8 map with building 2 (`SolidHeight=1`) on cell (4, 2), and
     /// the `SubjectToBuildings=` projectile `PROBE`.
-    #[cfg(feature = "ares")]
     fn solid_building_scene() -> (Simulation, RuleSet) {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(
@@ -1451,9 +1445,9 @@ mod tests {
     /// a `SubjectToBuildings=` bullet detonates in a cell whose building's
     /// `SolidHeight=` reaches it (`GetObstacle 1006E540`), but not over its
     /// own target building, nor above that height.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_shared_probe_stops_at_a_solid_building_except_its_target() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (sim, rules) = solid_building_scene();
         let detonates = |target, z| {
             let mut spawn = gsi_05_02_projectile(1, None);
@@ -1480,9 +1474,12 @@ mod tests {
     /// Ares `BulletClass_SetMovement_Obstacle 1001A940` (hook 0x4688BD): an
     /// Inviso bullet stands on the first obstacle between its launch and its
     /// placement, at that cell's vt+0x48 (`FindFirstObstacle 1006E2B0`).
+    // Moves to the switch with combat's line-of-fire walk
+    // (`Simulation::ares_inviso_obstacle`).
     #[cfg(feature = "ares")]
     #[test]
     fn ares_inviso_bullet_stands_on_the_first_solid_building() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules) = solid_building_scene();
         let placement = ProjectileCoord::new(7 * 256 + 128, 2 * 256 + 128, 0);
         let mut admit = |id, projectile_type: &str| {

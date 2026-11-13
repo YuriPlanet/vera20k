@@ -7556,7 +7556,6 @@ impl RuleSet {
 
     /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`). Ares
     /// asks the type's `PrismForwarding=` instead (`rules::ares_prism_forwarding`).
-    #[cfg(not(feature = "ares"))]
     pub(crate) fn is_prism_type(&self, object: &ObjectType) -> bool {
         self.general
             .prism_type

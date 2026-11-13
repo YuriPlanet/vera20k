@@ -211,9 +211,9 @@ fn fireat_rearm_copy_matches_original_normal_and_disk_writers() {
 
 /// Ares `PassengerTurret` (TechnoClass_Update 1004B320, hook 0x6F9E50):
 /// the current turret is the passenger count, capped by `TurretCount - 1`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_passenger_turret_follows_the_passenger_count() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=IFV\n[IFV]\nPassengers=5\nTurretCount=3\nPassengerTurret=yes\n",
     ))

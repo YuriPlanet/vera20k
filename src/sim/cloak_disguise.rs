@@ -14,7 +14,8 @@ use crate::sim::timer::CdTimer;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StealthAbility {
     granted: bool,
-    #[cfg(feature = "ares")]
+    /// The Ares attached-effect cloak ([`Self::set_attached`]). Only Ares
+    /// code writes it, so in a game Ares doesn't play in it stays false.
     #[serde(default)]
     attached: bool,
 }
@@ -39,7 +40,6 @@ pub(crate) fn type_seeds_stealth(
 
 impl StealthAbility {
     pub(crate) fn active(self, type_seed: bool) -> bool {
-        #[cfg(feature = "ares")]
         if self.attached {
             return true;
         }
@@ -53,13 +53,11 @@ impl StealthAbility {
     pub(crate) fn granted(self) -> bool {
         self.granted
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn attached(self) -> bool {
         self.attached
     }
     /// RecalculateStats1004617D/1004613B ORs descriptor+38 into the
     /// raw capability, without replacing permanent crate Ext+98.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_attached(&mut self, value: bool) {
         self.attached = value;
     }

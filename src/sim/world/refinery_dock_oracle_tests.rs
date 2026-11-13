@@ -849,14 +849,13 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         "{context}: balance"
     );
     // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
-    #[cfg(feature = "ares")]
-    let _ = score;
-    #[cfg(not(feature = "ares"))]
-    assert_eq!(
-        score,
-        expected["score"].as_i64().unwrap(),
-        "{context}: score"
-    );
+    if !s.rules.ares() {
+        assert_eq!(
+            score,
+            expected["score"].as_i64().unwrap(),
+            "{context}: score"
+        );
+    }
 }
 
 /// Assert the dispatch delay: the native delay minus its draw is the Rate
@@ -1083,11 +1082,12 @@ fn mission_unload_matches_the_original_harvester_branch() {
         let context = input["name"].as_str().unwrap().to_string();
         // Ares hook 0x0073DF66 replaces the East window these two rows
         // probe (`ares_mission_unload_faces_the_dock_exactly`).
-        #[cfg(feature = "ares")]
-        if matches!(
-            context.as_str(),
-            "unload_window_low_edge" | "unload_facing_west_latch"
-        ) {
+        if crate::rules::ares_switch::ares_way()
+            && matches!(
+                context.as_str(),
+                "unload_window_low_edge" | "unload_facing_west_latch"
+            )
+        {
             continue;
         }
         let mut s = scene(input);
@@ -1111,9 +1111,9 @@ fn mission_unload_matches_the_original_harvester_branch() {
 /// stock window's low edge turns and waits as the outside row does, and a
 /// mid-swing turret counts as facing it, so the latched west row arms the
 /// unload as the first pass does.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_mission_unload_faces_the_dock_exactly() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rows = corpus()["mission_unload"].as_array().unwrap();
     for (name, waits) in [
         ("unload_window_low_edge", true),
