@@ -1626,6 +1626,12 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
+        //0x4D3CBF, 0x4D3DF1 and 0x4D3FBB pass Map[cell] (0x5657A0) to
+        //vt+0x480: a cell with no allocation stamps the shared Dummy, whose
+        //coordinate the setter's Move_To then reads.
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            terrain.native_cell_identity(cell);
+        }
         let requested = crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
         self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
             .map_err(|cause| format!("Find_Path redirect: {cause}"))
