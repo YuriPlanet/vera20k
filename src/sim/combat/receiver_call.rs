@@ -408,7 +408,7 @@ pub(crate) fn receiver_divisors(
         house_type_armor: crate::util::native_x87::NativeF32Bits::from_bits(
             house_type_armor.to_bits(),
         ),
-        unit_armor: target.crate_multipliers.armor(),
+        unit_armor: target.armor_multiplier(),
         ae_armor,
         rank_armor,
     }

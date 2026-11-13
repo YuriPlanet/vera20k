@@ -356,8 +356,7 @@ impl Simulation {
                 // with DiskLaserAnimEnabled, the warhead's damage animation
                 // over Clear land (AnimClass(type, coords, 0, 1, 0x600, 0)),
                 // then always the warhead's flash at the hit.
-                #[cfg(feature = "ares")]
-                {
+                if rules.ares() {
                     if rules.ares_general().disk_laser_anim_enabled()
                         && let Some(anim) = crate::sim::combat::detonation_anim::select(
                             self,

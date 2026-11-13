@@ -1003,9 +1003,11 @@ fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
 /// (1003A270, hook 0x6EF8A1) gathers its argument plus `AISafeDistance`
 /// from the enemy's base: each lands where the same total distance alone
 /// does, and not where `AISafeDistance` alone does.
+// Runs again once the team script VM's gather actions moves to the switch.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_gather_actions_add_their_argument_to_the_distance() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let target = |general: &str, script: &str| {
         let (mut sim, rules, team_id, _, _) = team_fixture(
             &format!(

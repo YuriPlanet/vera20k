@@ -434,7 +434,6 @@ impl TeleportRuntime {
     /// Ares 3.0 InfantryClass_Remove_Teleport (1005CD50, hook 0x51DF27):
     /// Limbo resets `+0x28` to the null coordinate, so the next REMOVE leaves
     /// the Location's occupation instead of the old Marked one.
-    #[cfg(feature = "ares")]
     pub(crate) fn forget_resolved_destination(&mut self) {
         self.resolved = None;
     }

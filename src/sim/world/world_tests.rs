@@ -2585,11 +2585,13 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         "the outer crater must observe the already-cleared overlay cell"
     );
     let mut expected_rng = crate::sim::rng::SimRng::new(1);
-    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the spread walk
-    // rolls RandomRanged(0, 99) for the ChainReaction ore before its
-    // reduction; with Power 0 a reaction deals nothing and the ore clears.
-    #[cfg(feature = "ares")]
-    let _ = expected_rng.next_range_i32_inclusive(0, 99);
+    // When Ares plays, Ares 3.0 CellChainReact (10050DD0, hook 0x48964F):
+    // the spread walk rolls RandomRanged(0, 99) for the ChainReaction ore
+    // before its reduction; with Power 0 a reaction deals nothing and the
+    // ore clears.
+    if rules.ares() {
+        let _ = expected_rng.next_range_i32_inclusive(0, 99);
+    }
     let _ = expected_rng.next_range_u32(1);
     assert_eq!(sim.scenario_rng.state(), expected_rng.state());
 }
@@ -2651,11 +2653,12 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
     sim.substrate.entities.insert(missile);
     sim.reveal(1);
     let mut expected_rng = sim.scenario_rng.clone();
-    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the ChainReaction
-    // ore's RandomRanged(0, 99) roll in the spread walk; with Power 0 a
-    // reaction deals nothing and the ore still clears.
-    #[cfg(feature = "ares")]
-    let _ = expected_rng.next_range_i32_inclusive(0, 99);
+    // When Ares plays, Ares 3.0 CellChainReact (10050DD0, hook 0x48964F):
+    // the ChainReaction ore's RandomRanged(0, 99) roll in the spread walk;
+    // with Power 0 a reaction deals nothing and the ore still clears.
+    if rules.ares() {
+        let _ = expected_rng.next_range_i32_inclusive(0, 99);
+    }
 
     sim.process_rocket(
         1,
@@ -3506,13 +3509,12 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     let event = sonic_fire_event(&mut sim, &rules, dolphin, yard);
     let wave = sim.prepare_fired_wave(&rules, &event, 0).unwrap();
     // Ares CreateWave passes the launch source first instead.
-    #[cfg(not(feature = "ares"))]
-    assert_eq!(
-        wave.source(),
-        crate::sim::projectile::ProjectileCoord::new(centre.x + 300, centre.y + 200, centre.z,)
-    );
-    #[cfg(feature = "ares")]
-    let _ = (wave, centre);
+    if !rules.ares() {
+        assert_eq!(
+            wave.source(),
+            crate::sim::projectile::ProjectileCoord::new(centre.x + 300, centre.y + 200, centre.z,)
+        );
+    }
     admit_test_wave(&mut sim, &rules, &event);
     let id = sim.active_wave_links[&dolphin];
     assert_eq!(
@@ -3524,8 +3526,8 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     );
 }
 
-#[cfg(feature = "ares")]
 fn ares_sonic_rules(weapon_keys: &str) -> RuleSet {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\nElitePrimary=SonicZapE\n\n\
@@ -3541,9 +3543,9 @@ fn ares_sonic_rules(weapon_keys: &str) -> RuleSet {
 /// Ares WaveClass_Update_Beam (Ares.dll 10057290, hook 0x762B62): a Sonic
 /// wave keeps tracking within its weapon's Range (here ten cells, beyond the
 /// stock 2172 leptons) and draws from the target end for a reversing class.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_wave_tracks_within_weapon_range_and_reverses_by_target_class() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for reverse in [false, true] {
         let rules = ares_sonic_rules(if reverse {
             "Wave.ReverseAgainstVehicles=yes"
@@ -3577,9 +3579,9 @@ fn ares_wave_tracks_within_weapon_range_and_reverses_by_target_class() {
 /// WaveClass_DamageCell (10056FA0, hook 0x75F38F): the recorded cells take
 /// the fired weapon's AmbientDamage, not the elite owner's GetWeapon(0), and
 /// a weapon without AmbientDamage damages nothing.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for ambient in [10, 0] {
         let rules = ares_sonic_rules(&format!("AmbientDamage={ambient}"));
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E6);
@@ -3623,9 +3625,11 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
 /// `Wave.IsBigLaser` shot creates a TS laser wave of type 1 or 2, whose
 /// AmbientDamage strikes the cells under the beam on each of its 22 updates
 /// (nLaserIntensity 160, less 6 each, leaves below 32), and then it leaves.
+// Runs again once combat's wave creation in FireAt moves to the switch.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (key, wave_type) in [("Wave.IsLaser", 1), ("Wave.IsBigLaser", 2)] {
         let Some(patched) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
             &IniFile::from_str(&format!(
@@ -8249,6 +8253,10 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
 /// readers (the blocker plane, the kept Ground keys and the expiry listener
 /// index) re-read every object named, so when each walk borrowed every
 /// entity, a 20k-object world was re-read almost whole every frame.
+// A build that still carries Ares behind its feature sleeps nothing
+// (`Simulation::extension_steps_unsorted`), so this runs once that
+// feature is gone.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn idle_objects_stay_out_of_the_touch_logs() {
     use crate::sim::entity_store::TouchReader;

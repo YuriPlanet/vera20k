@@ -443,9 +443,7 @@ pub struct HouseAiActivationLatches {
 /// (`0x004F5855..0x004F586D`); `BuildingClass::Infiltrate @ 0x004571E0` is
 /// their only writer (operand census of each offset, 2026-10-12) and never
 /// clears one.
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct SpyGains {
     /// `+0x2BC`: the third side's technology, read by CanBuild for
     /// `RequiresStolenThirdTech=` (`0x004F79DA`).
@@ -463,17 +461,32 @@ struct SpyGains {
     /// Ares HouseExt `+0x48`: veteran `Naval=` units, from
     /// `SpyEffect.NavalVeterancy` (`BuildingExt::ExtData::InfiltratedBy @
     /// 10012000`), never cleared.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     naval_veterancy: bool,
     /// Ares HouseExt `+0x49`: veteran aircraft (`SpyEffect.AircraftVeterancy`).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     aircraft_veterancy: bool,
     /// Ares HouseExt `+0x4A`: veteran buildings (`SpyEffect.BuildingVeterancy`).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     building_veterancy: bool,
+}
+
+// The five native bytes fold as a derive would; the Ares bytes only once
+// one is set, so a house in a game without Ares folds what it always did.
+impl std::hash::Hash for SpyGains {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.third_tech.hash(state);
+        self.soviet_tech.hash(state);
+        self.allied_tech.hash(state);
+        self.veteran_infantry.hash(state);
+        self.veteran_units.hash(state);
+        if self.naval_veterancy || self.aircraft_veterancy || self.building_veterancy {
+            b"ares-spy-veterancy-v1".hash(state);
+            self.naval_veterancy.hash(state);
+            self.aircraft_veterancy.hash(state);
+            self.building_veterancy.hash(state);
+        }
+    }
 }
 
 /// The veterancy one Ares infiltration gives its house
@@ -595,7 +608,7 @@ pub struct HouseState {
     country: Option<InternedId>,
     /// Ares3.0 HouseExt+4C: ordered permanent Country plans. Constructor
     ///10021072 leaves it empty; live factory ownership is a separate source.
-    #[cfg(feature = "ares")]
+    #[serde(default)]
     permanent_factory_plans: Vec<crate::rules::ruleset::CountryIdx>,
     /// Native HouseClass `IsHuman` byte.
     is_human: bool,
@@ -856,7 +869,6 @@ pub struct HouseState {
     /// `HouseExt::UpdateAcademy` (`10022760`) appended them. Placement
     /// (hook `0x00446366`) adds, Limbo (`0x00445905`) and a capture's old
     /// owner (`0x00448AB2`) remove, the captor (`0x004491D5`) adds.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_academies: Vec<u64>,
     /// Ares HouseExt `+0x34` ReverseEngineered: the TechnoTypes this house
@@ -865,7 +877,6 @@ pub struct HouseState {
     /// (AresMap find-or-insert `10020250`). RequirementsMet (`10021FF0`)
     /// answers Overridden for a listed type and trigger event 78 reads it;
     /// `SpyEffect.UndoReverseEngineer` (`10012000`) empties it.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_reverse_engineered: Vec<crate::rules::superweapon_type::TechnoTypeReference>,
     /// Ares HouseExt `+0x40` StolenTech (constructor 0): the bits of every
@@ -1513,14 +1524,12 @@ impl HouseState {
         self.country
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn permanent_factory_plans(&self) -> &[crate::rules::ruleset::CountryIdx] {
         &self.permanent_factory_plans
     }
 
     ///10021130 checks membership before appending. Selling/capture/loss does
     /// not revoke a plan, and this append does not write tech-recheck/timers.
-    #[cfg(feature = "ares")]
     pub(crate) fn acquire_factory_plan(&mut self, country: crate::rules::ruleset::CountryIdx) {
         if !self.permanent_factory_plans.contains(&country) {
             self.permanent_factory_plans.push(country);
@@ -1529,7 +1538,6 @@ impl HouseState {
 
     /// House.ReadINI500CC5 ->100244C9..10024516 appends without a dedupe
     /// guard. Only the scenario reader invokes this; CreateHouses does not.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_scenario_factory_plan(
         &mut self,
         country: Option<crate::rules::ruleset::CountryIdx>,
@@ -2120,7 +2128,6 @@ impl HouseState {
 
     /// SW_EMPulse::Activate (Ares 3.0 `100711C0`) and the EMP cannon's
     /// Missile hook (`10036570`, hook 0x44CCE7) aim the cannons at `cell`.
-    #[cfg(feature = "ares")]
     pub(crate) fn aim_emp_cannons(&mut self, cell: (u16, u16)) {
         self.super_weapon_targets.emp_target = cell;
     }
@@ -2326,21 +2333,18 @@ impl HouseState {
 
     /// Ares HouseExt `+0x48`, read by the Unit constructor and InitFromType
     /// hooks (`0x00735678`, `0x0074689B`) and `CameoIsElite @ 1003D800`.
-    #[cfg(feature = "ares")]
     pub fn naval_veterancy(&self) -> bool {
         self.spy_gains.naval_veterancy
     }
 
     /// Ares HouseExt `+0x49`, read by `AircraftClass_Init_Academy`
     /// (`0x00413FD2`) and `CameoIsElite`.
-    #[cfg(feature = "ares")]
     pub fn aircraft_veterancy(&self) -> bool {
         self.spy_gains.aircraft_veterancy
     }
 
     /// Ares HouseExt `+0x4A`, read by `BuildingClass_Init_Academy`
     /// (`0x00442D1B`) and `CameoIsElite`.
-    #[cfg(feature = "ares")]
     pub fn building_veterancy(&self) -> bool {
         self.spy_gains.building_veterancy
     }
@@ -2394,13 +2398,11 @@ impl HouseState {
             std::hash::Hash::hash(&self.spy_gains, hasher);
         }
         // The other veterancy grant a house holds, folded while it has one.
-        #[cfg(feature = "ares")]
         if !self.ares_academies.is_empty() {
             std::hash::Hash::hash(b"ares-house-academies-v1", hasher);
             std::hash::Hash::hash(&self.ares_academies, hasher);
         }
         // The technology a house took at its grinders, folded while it has any.
-        #[cfg(feature = "ares")]
         if !self.ares_reverse_engineered.is_empty() {
             std::hash::Hash::hash(b"ares-house-reverse-engineered-v1", hasher);
             std::hash::Hash::hash(&self.ares_reverse_engineered, hasher);
@@ -2432,7 +2434,6 @@ impl HouseState {
     /// The list half of `HouseExt::ExtData::ReverseEngineer` (`10022360`):
     /// append `reversed` unless it is listed (AresMap find-or-insert
     /// `10020250`). Answers whether it was appended.
-    #[cfg(feature = "ares")]
     pub(crate) fn record_ares_reverse_engineered(
         &mut self,
         reversed: &crate::rules::superweapon_type::TechnoTypeReference,
@@ -2447,7 +2448,6 @@ impl HouseState {
     /// Whether this house reverse engineered the type `id` of `category`
     /// (HouseExt `+0x34`), as RequirementsMet (`10021FF0`) and trigger event
     /// 78 ask. Both sides hold the Rules registry's stored IDs.
-    #[cfg(feature = "ares")]
     pub(crate) fn has_ares_reverse_engineered(
         &self,
         category: crate::rules::object_type::ObjectCategory,
@@ -2468,7 +2468,6 @@ impl HouseState {
 
     /// `HouseExt::ExtData::UpdateAcademy` (`10022760`): append an academy
     /// not yet listed, or remove a listed one; anything else is a no-op.
-    #[cfg(feature = "ares")]
     pub(crate) fn update_ares_academy(&mut self, building: u64, added: bool) {
         let listed = self.ares_academies.iter().position(|&id| id == building);
         match (added, listed) {
@@ -2481,7 +2480,6 @@ impl HouseState {
     }
 
     /// Ares HouseExt Academies, which `ApplyAcademy` (`10020750`) walks.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_academies(&self) -> &[u64] {
         &self.ares_academies
     }
@@ -2980,7 +2978,6 @@ impl HouseState {
             initial_techno_records: Vec::new(),
             side_index: side_index.into(),
             country,
-            #[cfg(feature = "ares")]
             permanent_factory_plans: Vec::new(),
             is_human,
             player_control: is_human,
@@ -3024,9 +3021,7 @@ impl HouseState {
             produced_type_counts: Default::default(),
             lost_building: None,
             spy_gains: SpyGains::default(),
-            #[cfg(feature = "ares")]
             ares_academies: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_reverse_engineered: Vec::new(),
             #[cfg(feature = "ares")]
             ares_stolen_tech: 0,

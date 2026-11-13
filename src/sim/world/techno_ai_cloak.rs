@@ -42,22 +42,19 @@ fn has_stealth_ability(
     object: &crate::rules::object_type::ObjectType,
     ares: bool,
 ) -> bool {
-    entity
-        .stealth_ability
-        .active(crate::sim::cloak_disguise::type_seeds_stealth(
-            entity.category(),
-            object,
-            ares,
-        ))
+    entity.cloak_ability_active(crate::sim::cloak_disguise::type_seeds_stealth(
+        entity.category(),
+        object,
+        ares,
+    ))
         || entity.phobos_cloakable()
 }
 
-/// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) in Ares builds:
+/// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) while Ares plays:
 /// HasStealthAbility unless a `CloakStop=` type is moving, which
 /// FootClass_IsCloakable_CloakStop (Ares.dll 10048250) asks ILocomotion+10,
 /// not stock +80. `None` for a Foot without a locomotor, an invalid native
 /// state.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_foot_is_cloakable(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
@@ -101,21 +98,22 @@ fn stock_cloak_tick_facts(
     // the locomotor's ILocomotion+0x80 at `0x004DBDDD`, asked only under
     // CloakStop.
     // The Building's +288 (`0x0070C5A0`) is the raw +3D2 byte alone.
-    #[cfg(feature = "ares")]
-    let is_cloakable = if is_building {
-        intrinsic_cloak
+    let is_cloakable = if rules.ares() {
+        if is_building {
+            intrinsic_cloak
+        } else {
+            ares_foot_is_cloakable(entity, object, rules.ares())?
+        }
     } else {
-        ares_foot_is_cloakable(entity, object, rules.ares())?
+        intrinsic_cloak
+            && !(object.cloak_stop
+                && !is_building
+                && crate::sim::movement::motion_query::is_moving_now(
+                    entity,
+                    crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+                    sim.session.binary_frame(),
+                ))
     };
-    #[cfg(not(feature = "ares"))]
-    let is_cloakable = intrinsic_cloak
-        && !(object.cloak_stop
-            && !is_building
-            && crate::sim::movement::motion_query::is_moving_now(
-                entity,
-                crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
-                sim.session.binary_frame(),
-            ));
 
     // The gate the state-0 head of `CloakingTick @ 0x006FB757..0x006FB7F7`
     // actually applies, read from the disassembly:
@@ -139,29 +137,24 @@ fn stock_cloak_tick_facts(
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     // Ares ShouldNotCloak10043A40 applies the same blockers to rank cloak
     // and raw ability, and rejects parachutes and deactivated self-cloakers.
-    #[cfg(feature = "ares")]
-    let driver_allows_self_cloak = !entity.driver_killed();
-    #[cfg(not(feature = "ares"))]
-    let driver_allows_self_cloak = true;
     let active_cloak = if rules.ares() {
         // ShouldNotCloak10043A97 falls back to the generator-cell test at
         //10043B04 when driverless; it does not reject generator cloak.
         (is_cloakable || rank_cloak)
             && !entity.deactivated.is_offline()
-            && driver_allows_self_cloak
+            && !entity.driver_killed()
             && ares_self_cloak_condition_holds(sim, id, object, rules)
     } else {
         is_cloakable || intrinsic_cloak || rank_cloak
     };
     // CloakDisallowed10043A40 also refuses while the SonarTimer runs.
-    #[cfg(feature = "ares")]
-    let sonar_active = entity.sonar_timer.start_frame() != -1
+    let sonar_active = rules.ares()
+        && entity.ares.sonar_timer.start_frame() != -1
         && entity
+            .ares
             .sonar_timer
             .remaining(sim.session.binary_frame() as i32)
             > 0;
-    #[cfg(not(feature = "ares"))]
-    let sonar_active = false;
     let ares_admission = !rules.ares()
         || (object.cloak_allowed()
             && entity.parachute_animation().is_none()
@@ -201,14 +194,17 @@ fn stock_cloak_tick_facts(
     // Ares CloakDisallowed10043A40's passive arm: a generator ignores an
     // object above `[General]CloakHeight` (HoverHeight when unset). This
     // replaces stock CanAutoCloak's `GetHeight() < 1` gate below.
-    #[cfg(feature = "ares")]
-    let cloaked_by_own_house = cloaked_by_own_house
-        && crate::sim::movement::air_movement::current_fly_height(
-            entity,
-            sim.resolved_terrain.as_ref(),
-        ) <= rules
-            .ares_cloak_power()
-            .cloak_height(rules.general.hover_height);
+    let cloaked_by_own_house = if rules.ares() {
+        cloaked_by_own_house
+            && crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            ) <= rules
+                .ares_cloak_power()
+                .cloak_height(rules.general.hover_height)
+    } else {
+        cloaked_by_own_house
+    };
 
     // TechnoClass::CanAutoCloak @006FBDC0 reads raw Techno+3D2:
     // the type seed and permanent crate grant share this capability owner.
@@ -828,8 +824,7 @@ pub(crate) fn emit_configured_cloak_sound(
     decloak: bool,
 ) {
     let general = rules.general.cloak_sound.as_deref();
-    #[cfg(feature = "ares")]
-    let general = {
+    let general = if rules.ares() {
         let fallback = if decloak {
             rules
                 .general
@@ -842,9 +837,9 @@ pub(crate) fn emit_configured_cloak_sound(
         object
             .and_then(|object| object.cloak_sound_override(decloak))
             .unwrap_or(fallback)
+    } else {
+        general
     };
-    #[cfg(not(feature = "ares"))]
-    let _ = (object, decloak);
     let Some(sound_name) = general else {
         return;
     };
@@ -916,13 +911,11 @@ pub(crate) fn cloak_producer_ticks(
     object: &crate::rules::object_type::ObjectType,
     ares: bool,
 ) -> bool {
-    entity
-        .stealth_ability
-        .active(crate::sim::cloak_disguise::type_seeds_stealth(
-            entity.category(),
-            object,
-            ares,
-        ))
+    entity.cloak_ability_active(crate::sim::cloak_disguise::type_seeds_stealth(
+        entity.category(),
+        object,
+        ares,
+    ))
         || has_weapon_ability(
             rank_from_u16(entity.veterancy.rank()),
             object,
@@ -1074,8 +1067,7 @@ fn ares_self_cloak_condition_holds(
     object: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         let Some(entity) = sim.substrate.entities.get(id) else {
             return false;
         };
@@ -1088,10 +1080,7 @@ fn ares_self_cloak_condition_holds(
             }
             _ => true,
         }
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (sim, id, object, rules);
+    } else {
         true
     }
 }
@@ -1100,7 +1089,7 @@ fn ares_self_cloak_condition_holds(
 #[path = "techno_ai_cloak_tests.rs"]
 mod tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "techno_ai_cloak_ares_tests.rs"]
 mod ares_tests;
 

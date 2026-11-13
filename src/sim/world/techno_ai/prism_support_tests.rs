@@ -19,9 +19,9 @@
 //! emission path, where [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus) runs only for a
 //! launched bullet.
 //!
-//! Ares builds replace the stock arm (`ares_prism_forwarding`): its oracle
-//! rows run in default builds only, and the `ares_prism_*` tests below cover
-//! the replacement with the same fixture.
+//! A game where Ares plays replaces the stock arm (`ares_prism_forwarding`):
+//! its oracle rows run in default builds only, and the `ares_prism_*` tests
+//! below cover the replacement with the same fixture.
 #![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -355,7 +355,8 @@ impl Fixture {
                     },
                 )),
                 other => panic!("mode {other} has no VERA state"),
-            });
+            },
+        );
     }
 
     /// The target's Location `east` leptons east of [`ORIGIN`].
@@ -1128,9 +1129,9 @@ fn prism_general_reader_matches_the_original() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers =
         RulesLayerStack::new(IniFile::from_str("[General]\nPrismSupportModifier=125%\n"));
     layers.push(
@@ -1158,6 +1159,7 @@ fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
             .entities
             .get_mut(master)
             .unwrap()
+            .ares
             .ares_prism
             .set_modifier_reserve_for_test(modifier);
     };
@@ -1181,7 +1183,6 @@ fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
 }
 
 /// Ares: the building's Prism network.
-#[cfg(feature = "ares")]
 fn network(fixture: &Fixture, id: u64) -> crate::sim::world::AresPrismForwarding {
     fixture
         .sim
@@ -1189,12 +1190,12 @@ fn network(fixture: &Fixture, id: u64) -> crate::sim::world::AresPrismForwarding
         .entities
         .get(id)
         .unwrap()
+        .ares
         .ares_prism
         .clone()
 }
 
 /// Ares: Mission_Attack's OK arm for `id` at the fixture's target.
-#[cfg(feature = "ares")]
 fn ares_attack(fixture: &mut Fixture, id: u64) {
     let target = TargetKind::Entity(fixture.target);
     attack_arm(
@@ -1210,7 +1211,6 @@ fn ares_attack(fixture: &mut Fixture, id: u64) {
 }
 
 /// Ares: one ProcessDelayedFire visit of each building, in order.
-#[cfg(feature = "ares")]
 fn ares_visit(fixture: &mut Fixture, ids: &[u64]) {
     for &id in ids {
         process_delayed_fire(
@@ -1224,7 +1224,6 @@ fn ares_visit(fixture: &mut Fixture, ids: &[u64]) {
 }
 
 /// Ares: the support beams born so far, as (width, supported).
-#[cfg(feature = "ares")]
 fn ares_beams(fixture: &Fixture) -> Vec<(i32, bool)> {
     fixture
         .sim
@@ -1247,9 +1246,9 @@ fn ares_beams(fixture: &Fixture) -> Vec<(i32, bool)> {
 /// Each supporter's beam (Update_Prism 100169A0) adds PrismSupportModifier
 /// to the master's reserve, which its shot takes as
 /// ((3 * 150 + 100) * 256) / 100.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let input = serde_json::json!({"towers": [
         {"name": "far", "offset": [2304, 0, 0]},
         {"name": "near", "offset": [512, 0, 0]},
@@ -1343,9 +1342,9 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
 /// SupportingPrisms counts the links behind each tower (10017970). The
 /// middle tower passes its supporter's reserve on with its own (100169A0),
 /// and its beam, one link supported, thickens by Intensity -2 (10016490).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_prism_chains_relay_their_reserves_to_the_master() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let input = serde_json::json!({
         "tower_keys": "PrismForwarding.MaxChainLength=2\n",
         "towers": [
@@ -1375,10 +1374,16 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .sim;
     for id in [master, link, end] {
         let entity = restored.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.ares_prism, network(&fixture, id));
+        assert_eq!(entity.ares.ares_prism, network(&fixture, id));
     }
     let hash = restored.state_hash();
-    restored.substrate.entities.get_mut(end).unwrap().ares_prism = Default::default();
+    restored
+        .substrate
+        .entities
+        .get_mut(end)
+        .unwrap()
+        .ares
+        .ares_prism = Default::default();
     assert_ne!(restored.state_hash(), hash);
     // `end` beams after its countdown, `link` one frame later.
     for _ in 0..=DELAY {
@@ -1400,9 +1405,11 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
 /// master out of its network at once (RemoveFromNetwork 10018BB0): the other
 /// supporter, already charging, keeps its countdown but feeds nobody, and
 /// goes idle without a beam.
+// Runs again once combat's `BreakSupport` fire check moves to the switch.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_prism_break_support_and_a_sale_break_up_the_network() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let input = serde_json::json!({
         "tower_keys": "PrismForwarding.BreakSupport=yes\n",
         "towers": [

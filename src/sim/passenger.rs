@@ -395,7 +395,6 @@ impl BuildingOccupants {
     }
     /// Ares 3.0 doTraverseTo (`100130E0`): `Occupants.RemoveItem(0)`, the
     /// head shifted out without changing +69C.
-    #[cfg(feature = "ares")]
     pub(crate) fn remove_head(&mut self) -> Option<u64> {
         (!self.ids.is_empty()).then(|| self.ids.remove(0))
     }
@@ -518,7 +517,6 @@ impl Simulation {
     /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
     /// takes the same steps with VocClass::VoicesEnabled cleared around
     /// AddPassenger (`voices` false). Answers whether the hold took it.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_abduct_into_hold(
         &mut self,
         passenger: u64,
@@ -1540,7 +1538,6 @@ impl Simulation {
     /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
     /// The caller retains ownership of the passenger's carrier link until
     /// its placement or UnInit; this operation only changes the Cargo list.
-    #[cfg(feature = "ares")]
     pub(crate) fn remove_cargo_passenger(
         &mut self,
         transport_id: u64,

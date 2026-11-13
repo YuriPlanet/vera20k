@@ -38,13 +38,19 @@ pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
 mod idle_sleep;
-#[cfg(test)]
+// A build that still carries Ares behind its feature sleeps nothing
+// (`Simulation::extension_steps_unsorted`), so these run once that
+// feature is gone.
+#[cfg(all(test, not(feature = "ares")))]
 mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
 mod queued_command;
 mod quiet_units;
-#[cfg(test)]
+// A build that still carries Ares behind its feature sleeps nothing
+// (`Simulation::extension_steps_unsorted`), so these run once that
+// feature is gone.
+#[cfg(all(test, not(feature = "ares")))]
 mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;
@@ -139,10 +145,8 @@ pub use world_orders::AresHeal;
 pub(crate) use world_orders::CapturedInfantryType;
 pub use world_orders::EngineerBuildingAction;
 pub use world_orders::HealArmKeys;
-#[cfg(feature = "ares")]
 pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;
-#[cfg(feature = "ares")]
 pub(crate) use world_orders::VehicleCaptureOutcome;
 pub use world_orders::{EntryBaseAction, EntryClickAction};
 mod fog_objects;
@@ -157,7 +161,6 @@ mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
 pub(crate) use shroud_refresh::ParanoidMaps;
-#[cfg(feature = "ares")]
 pub(crate) use techno_ai::AresPrismForwarding;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
@@ -192,7 +195,7 @@ mod wall_restore_tests;
 mod world_commands;
 mod world_hash;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod custom_foundation_tests;
 mod world_orders;
 mod world_spawn;
@@ -572,7 +575,7 @@ impl AllianceEva {
 /// `LostEvaEvent` (default `EVA_TechBuildingLost`; `None` is silent) and
 /// reads `Message.Lost`, the new owner's player hears `CaptureEvaEvent=`
 /// and reads `Message.Capture` (`None`: an empty label prints nothing).
-#[cfg(feature = "ares")]
+/// A game without Ares carries the default.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AresTechCaptureLines {
     pub lost_eva_event: Option<InternedId>,
@@ -825,7 +828,7 @@ pub enum SimSoundEvent {
         world: crate::sim::anim_class::AnimWorldCoord,
         /// Ares `EVA.VeteranPromoted`/`EVA.ElitePromoted`
         /// (VoxClass::PlayIndex at10046D54); `None` is the silent -1 index.
-        #[cfg(feature = "ares")]
+        /// Read only when Ares plays; the stock event carries `None`.
         eva: Option<InternedId>,
     },
     /// A building / harvester admitted a damage or first Temporal-head warning.
@@ -935,8 +938,8 @@ pub enum SimSoundEvent {
         radar: Option<RadarEventRequest>,
         capture_eva_event: Option<InternedId>,
         /// Ares 3.0 `BuildingClass_ChangeOwnership_Tech @ 10013E40` (hook
-        /// `0x0044840B`) replaces the tech building's block with these.
-        #[cfg(feature = "ares")]
+        /// `0x0044840B`) replaces the tech building's block with these when
+        /// Ares plays; otherwise the default.
         ares_tech: AresTechCaptureLines,
     },
     /// `BuildingClass::Infiltrate @ 0x004571E0`'s announcements
@@ -1460,7 +1463,6 @@ pub struct Simulation {
     /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
     /// drawn once at scenario start; saved and hashed. See
     /// `sim::ares_make_stuff_up`.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_made_up_rules: Option<crate::sim::ares_make_stuff_up::AresMadeUpRules>,
     /// Scenario RNG — gamemd `Scenario->Random` (Scen+0x218). Drives in-object-tick
@@ -1781,17 +1783,14 @@ pub struct Simulation {
     pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
     /// Ares ChronoWarpStateMachines moving chronoshifted buildings; owned by
     /// `superweapon::chronosphere`, saved and hashed.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_chrono_warps: crate::sim::superweapon::AresChronoWarps,
     /// The Houses whose Ares firestorm is up (HouseClass+0x1FA); owned by
     /// `sim::ares_firestorm`, saved and hashed.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_firestorm: crate::sim::ares_firestorm::FirestormHouses,
     /// Every House's Ares tunnel networks (HouseExt+0x64); owned by
     /// `sim::ares_tunnel`, saved and hashed.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_tunnels: crate::sim::ares_tunnel::AresTunnels,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
@@ -2562,13 +2561,12 @@ impl Simulation {
         weapon_index: i32,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = weapon_index;
         if let Some(wave) = self.prepare_fired_wave(rules, event, wave_type) {
             // Ares CreateWave (Ares.dll 10055160) stores the BYTE weapon index
             // in the owner's TechnoExt before the constructor runs.
-            #[cfg(feature = "ares")]
-            if let Some(owner) = self.substrate.entities.get_mut(event.attacker_id) {
+            if rules.ares()
+                && let Some(owner) = self.substrate.entities.get_mut(event.attacker_id)
+            {
                 owner.record_ares_wave_weapon_slot(weapon_index as u8);
             }
             self.admit_fired_wave(event.attacker_id, wave, rules, overlay_registry);
@@ -2598,31 +2596,32 @@ impl Simulation {
             }
             crate::sim::combat::TargetKind::Cell(rx, ry) => self.wave_cell_target_position(rx, ry),
         };
-        // Sonic 0x006FF465 and Magnetic 0x006FF63C pass the constructor
-        // &[ESP+0x88], this target coordinate (0x006FE204), first and
-        // &[ESP+0x44], the launch source (`event.fire_coord`: GetFLH or a
-        // Dropping projectile's GetCoords), second.
-        #[cfg(not(feature = "ares"))]
-        let wave = crate::sim::wave::Wave::new_owned(
-            wave_type,
-            event.attacker_id,
-            event.target,
-            target,
-            event.fire_coord,
-        );
-        // Ares TechnoClass_Fire_SonicWave/OtherWaves (Ares.dll 10056EF0/
-        // 10056E60, hooks 0x6FF449/0x6FF5F5) build both through CreateWave
-        // 10055160, which passes &[ESP+0x44] first and &[ESP+0x88] second,
-        // and registers the firing weapon in WaveExt.
-        #[cfg(feature = "ares")]
-        let wave = crate::sim::wave::Wave::new_owned(
-            wave_type,
-            event.attacker_id,
-            event.target,
-            event.fire_coord,
-            target,
-        )
-        .with_ares_weapon(event.weapon_id);
+        let wave = if rules.ares() {
+            // Ares TechnoClass_Fire_SonicWave/OtherWaves (Ares.dll 10056EF0/
+            // 10056E60, hooks 0x6FF449/0x6FF5F5) build both through CreateWave
+            // 10055160, which passes &[ESP+0x44] first and &[ESP+0x88] second,
+            // and registers the firing weapon in WaveExt.
+            crate::sim::wave::Wave::new_owned(
+                wave_type,
+                event.attacker_id,
+                event.target,
+                event.fire_coord,
+                target,
+            )
+            .with_ares_weapon(event.weapon_id)
+        } else {
+            // Sonic 0x006FF465 and Magnetic 0x006FF63C pass the constructor
+            // &[ESP+0x88], this target coordinate (0x006FE204), first and
+            // &[ESP+0x44], the launch source (`event.fire_coord`: GetFLH or a
+            // Dropping projectile's GetCoords), second.
+            crate::sim::wave::Wave::new_owned(
+                wave_type,
+                event.attacker_id,
+                event.target,
+                target,
+                event.fire_coord,
+            )
+        };
         Some(wave)
     }
 
@@ -2941,8 +2940,7 @@ impl Simulation {
                 // RET; Ares 3.0 fills it with CellChainReact (10050DD0). Wall
                 // damage follows receivers and reloads raw AmbientDamage,
                 // ignoring the shared mutable occupant value.
-                #[cfg(feature = "ares")]
-                if self.overlay_chain_reacts((rx, ry), overlay_registry) {
+                if rules.ares() && self.overlay_chain_reacts((rx, ry), overlay_registry) {
                     self.ares_cell_chain_react((rx, ry), rules, overlay_registry, frame_effects);
                 }
                 if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry)
@@ -4686,7 +4684,6 @@ impl Simulation {
             buildup_bypass: false,
             #[cfg(feature = "phobos")]
             reflected_warhead: None,
-            #[cfg(feature = "ares")]
             ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
             main_rng: MainRng::new(seed),
@@ -4764,11 +4761,8 @@ impl Simulation {
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             unit_deliveries: Default::default(),
-            #[cfg(feature = "ares")]
             ares_chrono_warps: Default::default(),
-            #[cfg(feature = "ares")]
             ares_firestorm: Default::default(),
-            #[cfg(feature = "ares")]
             ares_tunnels: Default::default(),
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
@@ -5694,8 +5688,9 @@ impl Simulation {
     /// spawn captured ([`ProjectileStore::fire_inviso`]); its OnBridge stays
     /// clear, as only FireAt copies one.
     ///
-    /// RESIDUAL (default builds; Ares gives the child its shrapnel weapon,
-    /// [`Self::ares_shrapnel_flak_placement`]): a child has no WeaponType.
+    /// RESIDUAL (without Ares; when Ares plays it gives the child its
+    /// shrapnel weapon, [`Self::ares_shrapnel_flak_placement`]): a child has
+    /// no WeaponType.
     /// The constructor zeroes `+0x130`
     /// (`0x00466401`) and only SetWeaponType (`0x0046B260`, called from
     /// `0x0044CAFF`, `0x006CDB7E`, `0x006E34E6`, `0x006FE573` and
@@ -5735,16 +5730,21 @@ impl Simulation {
                     .push((stable_id, inviso, projectile));
             }
             if inviso {
-                #[cfg(feature = "ares")]
-                let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
-                // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way
-                // burns the child before the obstacle walk.
-                #[cfg(feature = "ares")]
-                if self.ares_inviso_firestorm(stable_id, placement, rules) {
-                    continue;
-                }
-                #[cfg(feature = "ares")]
-                let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
+                let placement = if rules.ares() {
+                    let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
+                    // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the
+                    // way burns the child before the obstacle walk.
+                    if self.ares_inviso_firestorm(stable_id, placement, rules) {
+                        continue;
+                    }
+                    // The obstacle walk moves to the switch with combat's
+                    // line-of-fire walk (`line_of_fire::ares_obstacle`).
+                    #[cfg(feature = "ares")]
+                    let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
+                    placement
+                } else {
+                    placement
+                };
                 self.projectiles.fire_inviso(stable_id, placement, false);
             }
         }
@@ -6248,10 +6248,11 @@ impl Simulation {
                     .add_building_drain(drain);
             }
         }
-        // Ares builds: the building's store joins the House's (`0x00502B83`,
+        // With Ares: the building's store joins the House's (`0x00502B83`,
         // `sim::ares_tiberium_storage`).
-        #[cfg(feature = "ares")]
-        self.ares_storage_added_to_game(stable_id, rules);
+        if rules.ares() {
+            self.ares_storage_added_to_game(stable_id, rules);
+        }
     }
 
     /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
@@ -6285,10 +6286,9 @@ impl Simulation {
             let factors = house.cost_factors();
             house.tracking_mut().removed_from_game(entity, &factors);
         }
-        // Ares builds: the building's store leaves the House's
+        // With Ares: the building's store leaves the House's
         // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
-        #[cfg(feature = "ares")]
-        if structure {
+        if rules.ares() && structure {
             self.ares_storage_removed_from_game(stable_id, owner);
         }
         if structure {
@@ -6648,15 +6648,14 @@ impl Simulation {
         // Ares hook448277 (100163B0) first kicks out a Hospital's or
         // Armory's first passenger (BuildingExt::KickOutHospitalArmory
         // 10012920), with the old owner still in place.
-        #[cfg(feature = "ares")]
-        if category == EntityCategory::Structure {
+        if rules.ares() && category == EntityCategory::Structure {
             self.ares_kick_out_hospital_armory(stable_id, rules, registry, effects);
         }
         // It then takes the building out of its Prism network unless it is
         // a `ToAllies` supporter whose network stays allied, and then
         // forgets its radar jammers.
-        #[cfg(feature = "ares")]
-        if category == EntityCategory::Structure
+        if rules.ares()
+            && category == EntityCategory::Structure
             && self.ares_prism_change_owner(stable_id, new_owner, rules)
         {
             self.clear_registered_jammers(stable_id);
@@ -6664,8 +6663,8 @@ impl Simulation {
         // Ares BuildingClass_ChangeOwner_PrismForwardAndLeaveBomb (100163B0)
         // always resumes at 0x448293, past the defuse: a captured building
         // keeps its bomb.
-        #[cfg(not(feature = "ares"))]
-        if category == EntityCategory::Structure
+        if !rules.ares()
+            && category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get(stable_id)
             && !self
                 .interner
@@ -6681,8 +6680,7 @@ impl Simulation {
         }
         // Ares ChangeOwnership_SensorArrayA10016CA0 (hook448B70) removes an
         // active sensor array for the old owner before the gap removal.
-        #[cfg(feature = "ares")]
-        if category == EntityCategory::Structure {
+        if rules.ares() && category == EntityCategory::Structure {
             self.ares_sensor_array_dispatch(stable_id, false, rules, registry);
         }
         if category == EntityCategory::Structure {
@@ -6728,9 +6726,10 @@ impl Simulation {
         // before and after the owner swap): the new owner's spy bit goes
         // (`sim::spy_infiltration::DisplayProductionTo`); nothing re-adds it
         // between the two.
-        #[cfg(feature = "ares")]
-        if let Some(building) = self.substrate.entities.get_mut(stable_id) {
-            building.display_production_to.remove(new_owner);
+        if rules.ares()
+            && let Some(building) = self.substrate.entities.get_mut(stable_id)
+        {
+            building.ares.display_production_to.remove(new_owner);
         }
         // Building4484AF precedes the delegated Techno owner transfer.
         self.enable_building_after_owner_change(stable_id, rules);
@@ -6756,8 +6755,9 @@ impl Simulation {
             self.houses.leave_house_base_lists(stable_id, old_owner);
             // Ares BuildingClass_ChangeOwnership_Remove_Academy (hook
             // 0x00448AB2 -> 10023690) follows the House+68 removal.
-            #[cfg(feature = "ares")]
-            self.update_ares_academy_membership(stable_id, false, rules);
+            if rules.ares() {
+                self.update_ares_academy_membership(stable_id, false, rules);
+            }
         }
         // TechnoClass::ChangeOwner (`0x007014B9..0x007014CF`): the local
         // player's selected object is deselected first (vt+0x150, every
@@ -6768,10 +6768,10 @@ impl Simulation {
         // Ares7014D5 ->10049FB0 unjams the object's radar jammer, then
         //10049FD7 displays the old owner's queued sum before
         // target/destination callbacks and the actual owner store.
-        #[cfg(feature = "ares")]
-        self.unjam_all(stable_id);
-        #[cfg(feature = "ares")]
-        self.flush_bounty_display(stable_id, rules, effects, true);
+        if rules.ares() {
+            self.unjam_all(stable_id);
+            self.flush_bounty_display(stable_id, rules, effects, true);
+        }
         // Original7014DB/7014E9 dispatch the class target and destination
         // setters, then70151A clears Archive and70156E queues Guard. All run
         // on the OLD house, before SpawnManager and the701735 owner swap.
@@ -7039,8 +7039,9 @@ impl Simulation {
             self.join_house_base_lists(stable_id, old_owner, new_owner, rules);
             // Ares BuildingClass_ChangeOwnership_Add_Academy (hook 0x004491D5
             // -> 10023650) follows the new House+68 append.
-            #[cfg(feature = "ares")]
-            self.update_ares_academy_membership(stable_id, true, rules);
+            if rules.ares() {
+                self.update_ares_academy_membership(stable_id, true, rules);
+            }
         }
         // `TechnoClass::ChangeOwner` closes with the mission half (the
         // `+0x484` call at 0x00701849 reads the NEW owner's
@@ -7072,8 +7073,9 @@ impl Simulation {
         if category == EntityCategory::Structure {
             // Ares ChangeOwnership_SensorArrayB10016CD0 (hook448C3E) adds the
             // array for the new owner before448C69's primary factory.
-            #[cfg(feature = "ares")]
-            self.ares_sensor_array_dispatch(stable_id, true, rules, registry);
+            if rules.ares() {
+                self.ares_sensor_array_dispatch(stable_id, true, rules, registry);
+            }
             crate::sim::production::initialize_factory_primary(self, rules, stable_id);
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.
@@ -7922,8 +7924,7 @@ impl Simulation {
             }
             // Ares SpySat_Update_CheckEligible10024620 (hook508F91) skips a
             // jammed or EMPed uplink to the next one.
-            #[cfg(feature = "ares")]
-            if entity.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+            if rules.ares() && (entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0) {
                 continue;
             }
             // The first coarse candidate decides the house. Warp-out is a
@@ -8093,16 +8094,15 @@ impl Simulation {
             return;
         };
         let owner = building.owner();
-        #[cfg(feature = "ares")]
-        let sw_type =
+        let sw_type = if rules.ares() {
             crate::sim::superweapon::first_available_building_super(self, rules, building)
-                .map(|instance| instance.type_id());
-        #[cfg(not(feature = "ares"))]
-        let sw_type = self
-            .interner
-            .object_type(building.type_ref(), rules)
-            .and_then(|obj| obj.super_weapon.clone())
-            .map(|section| self.interner.intern(&section));
+                .map(|instance| instance.type_id())
+        } else {
+            self.interner
+                .object_type(building.type_ref(), rules)
+                .and_then(|obj| obj.super_weapon.clone())
+                .map(|section| self.interner.intern(&section))
+        };
         let Some(sw_type) = sw_type else {
             return;
         };

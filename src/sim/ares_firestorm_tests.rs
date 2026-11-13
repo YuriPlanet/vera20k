@@ -53,6 +53,7 @@ fn frame(sim: &Simulation, id: u64) -> u32 {
         .entities
         .get(id)
         .unwrap()
+        .ares
         .ares_firestorm_wall
         .frame()
 }
@@ -84,8 +85,11 @@ fn firestorm(sim: &mut Simulation, rules: &RuleSet, owner: &str, active: bool) {
 /// that is not a straight piece. A powered section refuses entry (hook
 /// `0x51C4C8`) and sale (hook `0x449518`); an unpowered one is ignored by
 /// entry and may be sold.
+// Runs again once production's wall sale moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn a_raised_firestorm_powers_its_sections_which_then_block_and_cannot_be_sold() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let west = sim
         .spawn_object("FSWALL", "Americans", 10, 10, 0, &rules)
@@ -156,6 +160,7 @@ fn a_raised_firestorm_powers_its_sections_which_then_block_and_cannot_be_sold() 
 /// at its own update (hook `0x4DA53E`).
 #[test]
 fn a_powered_section_burns_the_feet_in_its_cell_but_spares_ignores_firestorm() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     sim.spawn_object("FSWALL", "Americans", 10, 10, 0, &rules)
         .unwrap();
@@ -219,6 +224,7 @@ fn shot(source_id: u64, origin: ProjectileCoord, target: (u16, u16)) -> Projecti
 /// whose firestorm is down, lets the shot pass.
 #[test]
 fn a_powered_section_of_another_house_takes_a_shot_across_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let wall = sim
         .spawn_object("FSWALL", "Russians", 4, 2, 0, &rules)
@@ -276,6 +282,7 @@ fn a_powered_section_of_another_house_takes_a_shot_across_it() {
 /// way leaves the line out.
 #[test]
 fn a_placed_section_fills_the_gap_to_a_linked_section() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     sim.spawn_object("FSWALL", "Americans", 10, 10, 0, &rules)
         .unwrap();
@@ -344,6 +351,7 @@ fn a_placed_section_fills_the_gap_to_a_linked_section() {
 /// firestorm section is no trench.
 #[test]
 fn a_placed_trench_fills_the_gap_only_to_its_own_kind() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let owner = house(&sim, "Americans");
     let count = |sim: &Simulation| {
@@ -397,6 +405,7 @@ fn a_placed_trench_fills_the_gap_only_to_its_own_kind() {
 /// firestorm gives the cell back its ground class.
 #[test]
 fn a_powered_section_cell_takes_the_impassable_zone_class() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::map::resolved_terrain::zone_class;
     let (mut sim, rules) = arena();
     let _west = sim

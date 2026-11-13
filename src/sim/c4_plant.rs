@@ -401,7 +401,6 @@ impl Simulation {
     /// Answering false, it has rearmed ([`Self::rearm_c4_planter`]) and the
     /// caller turns it away (`0x0051A03E`). RNG: the rearm's GetROF draw;
     /// timers: the fuse and the rearm.
-    #[cfg(feature = "ares")]
     pub(crate) fn infantry_per_cell_sabotage(
         &mut self,
         id: u64,

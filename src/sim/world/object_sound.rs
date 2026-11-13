@@ -130,8 +130,7 @@ impl Simulation {
         // Ares 3.0 TActionClass_PlayAudioAtRandomWP (10039B60, hook 0x6E1780,
         // #1004906) replaces the scan: every defined slot is a candidate,
         // without the 400 cap, and no candidate means no draw and no sound.
-        #[cfg(feature = "ares")]
-        let cell = {
+        let cell = if rules.ares() {
             let candidates: Vec<i32> = (0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32)
                 .filter(|&index| self.session.waypoint_is_valid(index))
                 .collect();
@@ -149,9 +148,7 @@ impl Simulation {
                 return true;
             };
             cell
-        };
-        #[cfg(not(feature = "ares"))]
-        let cell = {
+        } else {
             let mut candidates = Vec::new();
             for index in 0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32 {
                 if self.session.waypoint_is_valid(index) {

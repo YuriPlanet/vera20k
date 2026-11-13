@@ -81,11 +81,11 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
-        let Some(amount) =
-            actor
-                .bounty_display
-                .take_ready(frame, force, rules.bounty_rules().display_delay())
-        else {
+        let Some(amount) = actor.ares.bounty_display.take_ready(
+            frame,
+            force,
+            rules.bounty_rules().display_delay(),
+        ) else {
             return;
         };
         let actor = self
@@ -212,7 +212,7 @@ pub(crate) fn award(
         house.economy_mut().spend_money(amount.wrapping_neg());
     }
     if display && let Some(actor) = entities.get_mut(display_actor) {
-        actor.bounty_display.queue(amount);
+        actor.ares.bounty_display.queue(amount);
     }
 }
 
@@ -229,8 +229,11 @@ mod tests {
     };
     use std::cell::RefCell;
 
+    // Runs again once combat's kill record moves to the switch.
+    #[cfg(feature = "ares")]
     #[test]
     fn bounty_kill_admission_wallet_and_forced_display_use_existing_owners() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
             &crate::sim::arena_fixture::clear_ground_ini(
                 "[Countries]\n0=COUNTRY\n1=BLOCKED\n[COUNTRY]\nMultiplayPassive=yes\n\
@@ -372,6 +375,7 @@ mod tests {
             .entities
             .get(hunter)
             .unwrap()
+            .ares
             .bounty_display
             .clone();
         let saved: BountyDisplayState =

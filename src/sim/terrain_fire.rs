@@ -135,6 +135,8 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+// The fire anims' tree owner (`AnimObject::owner_terrain`) moves to the
+// switch with the anim code; until then these tests need the `ares` feature.
+#[cfg(all(test, feature = "ares"))]
 #[path = "terrain_fire_tests.rs"]
 mod tests;

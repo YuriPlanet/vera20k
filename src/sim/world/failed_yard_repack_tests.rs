@@ -172,9 +172,9 @@ fn assert_retained(sim: &Simulation, owner: InternedId, id: u64) {
     assert_eq!(tracked.buildings(), 0);
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_forces_the_repacked_mcv_onto_the_water_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut runtime, yard)) = scene() else {
         return;
     };

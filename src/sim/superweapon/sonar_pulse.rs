@@ -67,8 +67,9 @@ pub(super) fn launch(
             object.cloaking_stages(rules.general.cloaking_stages)
         });
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        let left = entity.sonar_timer.remaining(frame);
+        let left = entity.ares.sonar_timer.remaining(frame);
         entity
+            .ares
             .sonar_timer
             .start(frame, left.max(launch.sonar_delay()));
         if let Some(cloak) = entity.cloak.as_mut()

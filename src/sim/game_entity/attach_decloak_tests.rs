@@ -52,6 +52,7 @@ fn cloak(sim: &Simulation, target: u64) -> CloakRuntime {
 
 #[test]
 fn attached_force_decloak_new_hit_and_refresh_preserve_the_transition_clock() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, target, source) = scene();
     sim.substrate
         .entities
@@ -82,6 +83,7 @@ fn attached_force_decloak_new_hit_and_refresh_preserve_the_transition_clock() {
         sim.entities()
             .get(target)
             .unwrap()
+            .ares
             .attach_effects
             .entries
             .len(),
@@ -92,6 +94,7 @@ fn attached_force_decloak_new_hit_and_refresh_preserve_the_transition_clock() {
 
 #[test]
 fn attached_force_decloak_reverses_cloaking_but_not_visible_or_flag_off_targets() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, target, source) = scene();
     sim.substrate
         .entities
@@ -126,6 +129,7 @@ fn attached_force_decloak_reverses_cloaking_but_not_visible_or_flag_off_targets(
         sim.entities()
             .get(target)
             .unwrap()
+            .ares
             .attach_effects
             .entries
             .is_empty()

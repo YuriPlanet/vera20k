@@ -8,13 +8,11 @@ use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 /// Techno+270/278: GoOnline can set it while a Temporal chain still exists.
 /// Steam gamemd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(not(feature = "ares"), serde(transparent))]
 pub(crate) struct BuildingOnline {
     online: bool,
     /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`, constructor true):
     /// the state the last GoOnline/GoOffline left, which a Temporal release
     /// restores instead of forcing the latch on.
-    #[cfg(feature = "ares")]
     toggle_power_has_power: bool,
 }
 
@@ -22,7 +20,6 @@ impl Default for BuildingOnline {
     fn default() -> Self {
         Self {
             online: true,
-            #[cfg(feature = "ares")]
             toggle_power_has_power: true,
         }
     }
@@ -50,7 +47,6 @@ impl BuildingOnline {
     }
 
     /// Whether the last GoOffline is still in force (hashed with the latch).
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_toggled_off(&self) -> bool {
         !self.toggle_power_has_power
     }
@@ -195,7 +191,6 @@ impl Simulation {
     /// queue order or another refresh in between reads the old hold.
     ///
     /// [`ObjectSubstrate::set_building_online_for_temporal`]: crate::sim::world::ObjectSubstrate::set_building_online_for_temporal
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_refresh_temporal_factories(
         &mut self,
         rules: &RuleSet,
@@ -213,7 +208,6 @@ impl Simulation {
     /// refresh above, and Ares Activate `1004CCB0` / Deactivate `1004CDC0`
     /// on a Building's transition (`Simulation::techno_reactivate`,
     /// `Simulation::techno_deactivate`).
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_update_factory_queues(
         &mut self,
         id: u64,

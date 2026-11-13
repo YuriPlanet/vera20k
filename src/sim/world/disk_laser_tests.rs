@@ -786,9 +786,9 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
 /// DISK's hit always asks for the warhead's flash, and with
 /// `[AudioVisual] DiskLaserAnimEnabled=yes` also plays DiskWH's damage
 /// animation (90 damage selects XGRYMED1).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for enabled in [false, true] {
         let patch = crate::rules::ini_parser::IniFile::from_str(if enabled {
             "[AudioVisual]\nDiskLaserAnimEnabled=yes\n"

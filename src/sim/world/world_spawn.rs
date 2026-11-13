@@ -1442,7 +1442,6 @@ impl Simulation {
     /// building, which the caller has given a queued Construction, builds up
     /// through the ordinary Unlimbo and is then DiscoveredBy its owner with
     /// its ready byte (`+0x6DD`) set.
-    #[cfg(feature = "ares")]
     pub(crate) fn reveal_delivered_object_at_coord(
         &mut self,
         stable_id: u64,
@@ -2370,7 +2369,14 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((category, veterancy, in_playfield, type_ref, stealth_ability)) =
+        let Some((
+            category,
+            veterancy,
+            in_playfield,
+            type_ref,
+            stealth_ability,
+            attached_cloak,
+        )) =
             substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.category(),
@@ -2378,6 +2384,7 @@ impl Simulation {
                     entity.in_playfield(),
                     entity.type_ref(),
                     entity.stealth_ability,
+                    entity.cloak_attached(),
                 )
             })
         else {
@@ -2391,7 +2398,7 @@ impl Simulation {
             return;
         };
         let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
-        let intrinsic_cloak = stealth_ability.active(object.cloakable);
+        let intrinsic_cloak = attached_cloak || stealth_ability.active(object.cloakable);
         if !intrinsic_cloak && !rank_cloak {
             return;
         }
@@ -2943,8 +2950,7 @@ impl Simulation {
         // leaves; the refinery's own fresh slaves are freed.
         // Ares UnitClass_Deploy_Transfer (10048E90 -> 10045A80): the bomb,
         // then the original owner.
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             self.transfer_ivan_bomb(stable_id, new_sid);
             self.transfer_factory_country(stable_id, new_sid);
         }
@@ -3185,16 +3191,16 @@ impl Simulation {
             unit.veterancy.inherit(&veterancy);
         }
         // Ares BuildingClass_Mi_Selling_Transfer (10048E90 -> 10045A80).
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             self.transfer_ivan_bomb(sid, new_sid);
             self.transfer_factory_country(sid, new_sid);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
         // Ares hook 0x44A04C (10053D60), right after that handover: the unit
         // takes the building's EMP counter and sparkle.
-        #[cfg(feature = "ares")]
-        self.copy_ares_emp_to_undeployed(sid, new_sid, rules);
+        if rules.ares() {
+            self.copy_ares_emp_to_undeployed(sid, new_sid, rules);
+        }
         // BuildingClass::Mission_Selling 0x0044A0D4..0x0044A115: the unit
         // takes the building's voice handle and latch.
         self.move_unit_voice(sid, new_sid);

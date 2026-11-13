@@ -35,12 +35,14 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, actor: u64, frame: u32) {
 
 #[test]
 fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, actor) = scene(true);
     visit(&mut sim, &rules, actor, 100);
     assert_eq!(
         sim.entities()
             .get(actor)
             .unwrap()
+            .ares
             .attach_effects
             .self_effect,
         SelfEffectState::Pending(1)
@@ -50,6 +52,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .ares
             .attach_effects
             .self_effect,
         SelfEffectState::Pending(0)
@@ -60,12 +63,12 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         .sim;
     visit(&mut sim, &rules, actor, 102);
     let entity = sim.entities().get(actor).unwrap();
-    assert_eq!(entity.attach_effects.entries[0].remaining, 3);
+    assert_eq!(entity.ares.attach_effects.entries[0].remaining, 3);
     assert_eq!(
-        entity.attach_effects.self_effect,
+        entity.ares.attach_effects.self_effect,
         SelfEffectState::Applied(0)
     );
-    assert!(entity.stealth_ability.active(false));
+    assert!(entity.cloak_ability_active(false));
     assert_eq!(
         entity.cloak.as_deref().unwrap().state(),
         1,
@@ -83,13 +86,13 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
     visit(&mut sim, &rules, actor, 104);
     visit(&mut sim, &rules, actor, 105);
     let entity = sim.entities().get(actor).unwrap();
-    assert!(entity.attach_effects.entries.is_empty());
+    assert!(entity.ares.attach_effects.entries.is_empty());
     assert_eq!(
-        entity.attach_effects.self_effect,
+        entity.ares.attach_effects.self_effect,
         SelfEffectState::Pending(1),
         "expiry consumes the first repeat-wait tick in the same head"
     );
-    assert!(!entity.stealth_ability.active(false));
+    assert!(!entity.cloak_ability_active(false));
     assert_eq!(
         entity.cloak.as_deref().unwrap().state(),
         3,
@@ -100,13 +103,20 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         sim.entities()
             .get(actor)
             .unwrap()
+            .ares
             .attach_effects
             .self_effect,
         SelfEffectState::Pending(0)
     );
     visit(&mut sim, &rules, actor, 107);
     assert_eq!(
-        sim.entities().get(actor).unwrap().attach_effects.entries[0].remaining,
+        sim.entities()
+            .get(actor)
+            .unwrap()
+            .ares
+            .attach_effects
+            .entries[0]
+            .remaining,
         3
     );
     sim.validate_attached_stats_after_restore(&rules).unwrap();
@@ -123,17 +133,14 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
     );
 }
 
+// Runs again once the crates' pickup eligibility moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibition() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, actor) = scene(false);
     hit(&mut sim, &rules, actor);
-    assert!(
-        sim.entities()
-            .get(actor)
-            .unwrap()
-            .stealth_ability
-            .active(false)
-    );
+    assert!(sim.entities().get(actor).unwrap().cloak_ability_active(false));
     assert_eq!(
         crate::sim::crates::multiplayer_eligible_slot(&sim, &rules, actor, 0, 3),
         3,
@@ -148,9 +155,9 @@ fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibiti
     sim.update_ares_attach_effects(actor, &rules);
     sim.update_ares_attach_effects(actor, &rules);
     let entity = sim.entities().get(actor).unwrap();
-    assert!(!entity.stealth_ability.attached());
+    assert!(!entity.cloak_attached());
     assert!(
-        entity.stealth_ability.active(false),
+        entity.cloak_ability_active(false),
         "expiry keeps the permanent grant"
     );
     assert_eq!(

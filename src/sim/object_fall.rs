@@ -61,14 +61,12 @@ impl ObjectFallState {
 
     /// Ares 3.0 ObjectClass_SpawnParachuted_Animation (10047C60, hook
     /// 0x5F5ADD) raises +8F alone for an `IsBomb` Foot's paradrop.
-    #[cfg(feature = "ares")]
     pub(crate) fn mark_bomb(&mut self) {
         self.dropped_as_bomb = true;
     }
 
     /// Ares 3.0 LogicClass_Update_1000 (100680F0, hook 0x55AFB3) under
     /// CanMakeStuffUp: FallRate +2C becomes 0 and +8F rises.
-    #[cfg(feature = "ares")]
     pub(crate) fn drop_parachute_as_bomb(&mut self) {
         self.rate = 0;
         self.dropped_as_bomb = true;
@@ -122,7 +120,6 @@ impl ObjectFallState {
     /// (+0x88) in place of +84 selects the type's `FallRate.*` step and cap
     /// (`rules_caps` the Rules `ParachuteMaxFallRate` and
     /// `NoParachuteMaxFallRate`), `max(cap, FallRate - step)`.
-    #[cfg(feature = "ares")]
     pub(crate) fn advance_techno_rate(
         &mut self,
         fall: &crate::rules::ares_techno_type::FallRateTypeRules,

@@ -143,13 +143,11 @@ impl Simulation {
             online: entity.building_online(),
             tesla_chargers: entity.building.tesla_charge.chargers().len() as i32,
             charger_bypass: {
-                #[cfg(feature = "ares")]
-                let keep = self
-                    .power_states
-                    .get(&entity.owner())
-                    .is_some_and(|state| state.keeps_online(&object.id));
-                #[cfg(not(feature = "ares"))]
-                let keep = false;
+                let keep = rules.ares()
+                    && self
+                        .power_states
+                        .get(&entity.owner())
+                        .is_some_and(|state| state.keeps_online(&object.id));
                 if keep { 0 } else { 2 }
             },
             emp_remaining: entity.emp_remaining(),
@@ -259,8 +257,7 @@ impl Simulation {
         self.powered_center_edge(id, operational, rules, frame_effects);
         // Ares hook4549F8 (10016E30) updates a sensor array on the on edge
         // right after that arm.
-        #[cfg(feature = "ares")]
-        if operational {
+        if rules.ares() && operational {
             self.update_ares_sensor_array(id, rules, registry);
         }
         // The `0x004549B0` off edge frees a Psychic Tower's captives
@@ -268,12 +265,14 @@ impl Simulation {
         if !operational {
             // Ares BuildingClass_UpdatePowered_PrismForward (10016950, hook
             // 0x454B3D) takes the building out of its Prism network first.
-            #[cfg(feature = "ares")]
-            self.substrate.ares_prism_remove_from_network(id, true);
+            if rules.ares() {
+                self.substrate.ares_prism_remove_from_network(id, true);
+            }
             self.free_all_captures(id, rules, registry, frame_effects);
             // Ares hook454B5F (10016E30) on the off edge.
-            #[cfg(feature = "ares")]
-            self.update_ares_sensor_array(id, rules, registry);
+            if rules.ares() {
+                self.update_ares_sensor_array(id, rules, registry);
+            }
         }
         if let Some((_, radius)) = self.gap_operational_state(id, rules) {
             // `0x00454B91..0x00454BEB`: the off edge's removal (`+0x269` set)

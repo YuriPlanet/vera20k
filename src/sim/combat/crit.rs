@@ -585,7 +585,7 @@ fn current_firepower_multiplier(
     use crate::rules::object_type::Ability;
     use crate::util::native_x87::NativeF64Bits;
     let f64_bits = |bits: NativeF64Bits| f64::from_bits(bits.bits());
-    let mut multiplier = f64_bits(entity.crate_multipliers.firepower());
+    let mut multiplier = f64_bits(entity.firepower_multiplier());
     multiplier *= world
         .houses
         .get(&entity.owner())

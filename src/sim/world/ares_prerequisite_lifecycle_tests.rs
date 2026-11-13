@@ -5,7 +5,6 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::house_state::HouseState;
-#[cfg(feature = "ares")]
 use crate::sim::production::ProductionCategory;
 
 fn fixture(category: &str, declared: bool) -> (Simulation, RuleSet, InternedId, InternedId, u64) {
@@ -110,8 +109,7 @@ fn reached_alternate_events_match_executed_hook_controls() {
         for (house, field) in [(owner, "old_house_recheck"), (other, "new_house_recheck")] {
             assert_eq!(
                 sim.houses[&house].tech_recheck_pending(),
-                vanilla_building_capture
-                    || (crate::rules::ARES_BUILD && row[field].as_bool().unwrap()),
+                vanilla_building_capture || (rules.ares() && row[field].as_bool().unwrap()),
                 "{} {field}",
                 row["name"],
             );
@@ -142,10 +140,7 @@ fn alternate_dtor_rechecks_with_another_copy_and_obeys_game_state_gate() {
             sim.houses[&owner].tracking().owned_count(category, type_id),
             1
         );
-        assert_eq!(
-            sim.houses[&owner].tech_recheck_pending(),
-            crate::rules::ARES_BUILD
-        );
+        assert_eq!(sim.houses[&owner].tech_recheck_pending(), rules.ares());
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
         sim.finalize_and_remove_common(second, UninitContext::with_rules(&rules), 0x100);
         assert!(
@@ -169,10 +164,7 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
             .discovery
             .classify_owner(current == owner);
         assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
-        assert_eq!(
-            sim.houses[&owner].tech_recheck_pending(),
-            crate::rules::ARES_BUILD
-        );
+        assert_eq!(sim.houses[&owner].tech_recheck_pending(), rules.ares());
         assert!(
             !sim.houses[&other].tech_recheck_pending(),
             "the live owner is the receiver"
@@ -184,8 +176,8 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
 }
 
 #[test]
-#[cfg(feature = "ares")]
 fn alternate_membership_uses_actual_class_when_type_names_collide() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 
     // The first pass resolves SHARED to its only reached class, Vehicle.
@@ -232,9 +224,11 @@ fn alternate_membership_uses_actual_class_when_type_names_collide() {
     }
 }
 
-#[test]
+// Runs again once production's generic and alternate prerequisites move to the switch.
 #[cfg(feature = "ares")]
+#[test]
 fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(
             "[Countries]\n0=C0\n[C0]\nSide=GDI\n\

@@ -819,7 +819,6 @@ impl Simulation {
     /// deploying or undeploying object's bomb moves to the object it becomes
     /// when that one carries none, with its BombVisible (`+0x68`). The
     /// record keeps its fuse; the app restarts its loop on the new carrier.
-    #[cfg(feature = "ares")]
     pub(crate) fn transfer_ivan_bomb(&mut self, from: u64, to: u64) {
         if self
             .substrate

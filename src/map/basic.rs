@@ -54,8 +54,7 @@ pub struct BasicSection {
     /// in `ScenarioClass::Read_INI_Basic @ 0x00689E90` between
     /// IceGrowthEnabled and FreeRadar; `Set_Defaults @ 0x00683610` resets it
     /// to true. Only Ares reads the byte (`TechnoExt::SpawnVisceroid @
-    /// 100468B0`), so other builds do not keep it.
-    #[cfg(feature = "ares")]
+    /// 100468B0`), so only a game Ares plays in stores it in the Scenario.
     pub tiberium_death_to_visceroid: Option<bool>,
     /// Scenario+34A5, current-default ReadBool68A235..68A24D; fresh false.
     pub train_crate: Option<bool>,
@@ -241,7 +240,6 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         tiberium_growth_enabled: section.read_bool_value("TiberiumGrowthEnabled"),
         ice_growth_enabled: section.read_bool_value("IceGrowthEnabled"),
         vein_growth_enabled: section.read_bool_value("VeinGrowthEnabled"),
-        #[cfg(feature = "ares")]
         tiberium_death_to_visceroid: section.read_bool_value("TiberiumDeathToVisceroid"),
         train_crate: section.read_bool_value("TrainCrate"),
         truck_crate: section.read_bool_value("TruckCrate"),

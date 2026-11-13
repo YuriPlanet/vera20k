@@ -272,6 +272,7 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
             .entities
             .get(id)
             .unwrap()
+            .ares
             .sonar_timer
             .remaining(500)
     };

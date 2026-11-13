@@ -1074,7 +1074,7 @@ fn firepower_stages(
             .and_then(|firer| houses.get(&firer.owner()))
             .map_or(NativeF64Bits::ONE, |house| house.firepower_bias()),
         unit_firepower: firer.map_or(NativeF64Bits::ONE, |firer| {
-            firer.crate_multipliers.firepower()
+            firer.firepower_multiplier()
         }),
         rank_firepower: obj
             .filter(|obj| {
@@ -3708,7 +3708,7 @@ pub(crate) fn estimated_damage_on(
                 .houses
                 .get(&attacker.owner())
                 .map_or(NativeF64Bits::ONE, |house| house.firepower_bias()),
-            unit_firepower: attacker.crate_multipliers.firepower(),
+            unit_firepower: attacker.firepower_multiplier(),
             rank_firepower,
             occupied: None,
             bunkered: None,
@@ -3720,7 +3720,7 @@ pub(crate) fn estimated_damage_on(
         },
         divisors: damage::DefenceDivisors {
             house_type_armor: NativeF32Bits::from_bits(house_type_armor.to_bits()),
-            unit_armor: attacker.crate_multipliers.armor(),
+            unit_armor: attacker.armor_multiplier(),
             // Phobos 0x006FDC87 divides by `CalculateArmorMultipliers(pTarget,
             // warhead, pThis->Owner)`: the target's effects, not the firer's.
             // RESIDUAL: this read-only estimate uses the cached unrestricted

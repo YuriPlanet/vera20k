@@ -205,16 +205,16 @@ fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
     );
     let first = scene.shot(infantry, target);
     assert_eq!(scene.count(infantry), 0);
-    #[cfg(feature = "ares")]
-    assert_eq!(
-        (
-            scene.reload(infantry).start_frame(),
-            scene.reload(infantry).duration()
-        ),
-        (first, 12)
-    );
-    #[cfg(not(feature = "ares"))]
-    let _ = first;
+    let ares = scene.0.resources.rules.ares();
+    if ares {
+        assert_eq!(
+            (
+                scene.reload(infantry).start_frame(),
+                scene.reload(infantry).duration()
+            ),
+            (first, 12)
+        );
+    }
     let mut fired_again = false;
     for _ in 0..100 {
         if fired(&scene.frame(), infantry) {
@@ -223,8 +223,7 @@ fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
         }
     }
     assert_eq!(
-        fired_again,
-        cfg!(feature = "ares"),
+        fired_again, ares,
         "Ares adds the Infantry reload visit; stock does not"
     );
 }
@@ -385,9 +384,11 @@ fn fraidycat_last_round_does_not_use_fearless_gate() {
     assert_eq!(scene.actor(infantry).mission.queued().raw(), 5);
 }
 
+// Runs again once combat's `Ammo=` weapon cost moves to the switch.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let weapon =
         "[AmmoProbe]\nDamage=1\nROF=15\nRange=6\nProjectile=InvisibleLow\nWarhead=SA\nAmmo=";
     let Some(mut free) = Scene::new(&format!(
@@ -491,9 +492,9 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
 /// building other than a Hospital or Armory reloads through
 /// TechnoClass::Reload, by `ReloadAmount` on its reload clock, where the
 /// stock visit refills an empty magazine at once.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_building_reloads_by_reload_amount_on_its_clock() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut scene) = Scene::new(
         "[GAPILL]\nAmmo=4\nInitialAmmo=0\nReloadAmount=3\nReload=10\nEmptyReload=10\n\
          CanPassiveAquire=no\n",

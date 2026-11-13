@@ -130,7 +130,6 @@ pub enum DeathAnimFollowUp {
     /// victim: InfDeath (10025DE0, hook 0x5185C8) and the InfantryVirus and
     /// InfantryMutate arms (10025F50, 10025EB0) also as invoker, the other
     /// anim arms (10025D20) none.
-    #[cfg(feature = "ares")]
     AresMakeInfOwner {
         invoker: Option<InternedId>,
         victim: InternedId,
@@ -149,7 +148,6 @@ pub enum DeathAnimFollowUp {
 }
 
 /// What an Ares death-anim producer does after SetMakeInfOwner.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AresMakeInfTail {
     None,
@@ -281,7 +279,6 @@ impl Simulation {
             Some(DeathAnimFollowUp::Remap(remap)) => {
                 self.substrate.anims.set_anim_remap(anim, remap);
             }
-            #[cfg(feature = "ares")]
             Some(DeathAnimFollowUp::AresMakeInfOwner {
                 invoker,
                 victim,
@@ -323,7 +320,6 @@ impl Simulation {
     /// finds becomes the anim's owner (`+0x180`), and for a `MakeInfantry=`
     /// type its colour scheme's Convert the anim's remap (`+0xD4`). Answers
     /// the type's `MakeInfantryOwner`.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_set_make_inf_owner(
         &mut self,
         anim: crate::sim::anim_class::AnimId,
@@ -574,7 +570,7 @@ impl Simulation {
         // its production to nobody (`sim::spy_infiltration`).
         #[cfg(feature = "ares")]
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.display_production_to.clear();
+            building.ares.display_production_to.clear();
         }
         // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
         // sensor array ahead of the gap and RevealToAll steps.

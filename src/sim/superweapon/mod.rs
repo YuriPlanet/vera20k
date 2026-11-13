@@ -14,7 +14,6 @@ pub(crate) mod ai_fire;
 pub mod cell_grid;
 pub mod chrono_screen;
 mod chronosphere;
-#[cfg(feature = "ares")]
 pub(crate) use chronosphere::AresChronoWarps;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 #[cfg(feature = "ares")]
@@ -50,7 +49,6 @@ mod charge_native_tests;
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
-#[cfg(feature = "ares")]
 pub(crate) mod drop_pod;
 #[cfg(all(test, feature = "ares"))]
 mod drop_pod_tests;
@@ -511,7 +509,6 @@ impl SuperWeaponInstance {
     /// The timer arm of `10014A90` (`+0x30`/`+0x38`): GetTimeLeft less
     /// `amount`, at least 0, restarts at `frame`. A draining Super's drain
     /// ends sooner; a charging one charges sooner.
-    #[cfg(feature = "ares")]
     fn shorten_for_firestorm_hit(&mut self, frame: i32, amount: i32) {
         let left = self.charge_timer().remaining(frame);
         self.store_charge_timer(CdTimer::started(frame, left.wrapping_sub(amount).max(0)));
@@ -1909,7 +1906,6 @@ pub(crate) fn construct_house_supers(
 /// `Type=Firestorm` Super (HouseClass::FindSuperWeapon, in
 /// `[SuperWeaponTypes]` order) has `amount` frames taken off its charge
 /// timer, which restarts now ([`SuperWeaponInstance::shorten_for_firestorm_hit`]).
-#[cfg(feature = "ares")]
 pub(crate) fn shorten_ares_firestorm_drain(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -2211,7 +2207,6 @@ pub(crate) fn type_super_weapons(
 /// BuildingTypeExt::GetSuperWeapon1000D610: primary, secondary and additional
 /// definitions, first available instance; no granted/charge admission and no
 /// second Super store. The House constructor owns every retained instance.
-#[cfg(feature = "ares")]
 pub(crate) fn first_available_building_super<'a>(
     sim: &'a Simulation,
     rules: &RuleSet,

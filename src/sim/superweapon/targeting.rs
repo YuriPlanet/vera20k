@@ -7,10 +7,11 @@ use crate::map::entities::EntityCategory;
 #[cfg(feature = "ares")]
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_targeting::HouseMask;
 use crate::rules::superweapon_targeting::TargetReject;
 #[cfg(feature = "ares")]
 use crate::rules::superweapon_targeting::{
-    HouseMask, LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
+    LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
 };
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::intern::InternedId;
@@ -442,7 +443,6 @@ fn emp_pulse_site_range(
     )
 }
 
-#[cfg(feature = "ares")]
 impl Simulation {
     /// Ares's house relation (10021440): the same house is the owner, then
     /// the owner's directed IsAlliedWith(other) makes an ally; any other

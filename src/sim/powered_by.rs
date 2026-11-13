@@ -193,7 +193,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return true;
         };
-        let state = entity.powered_by.get_or_insert(PoweredBySource::new());
+        let state = entity.ares.powered_by.get_or_insert(PoweredBySource::new());
         if frame.wrapping_sub(state.last_scan) < SCAN_INTERVAL {
             return true;
         }
@@ -203,6 +203,7 @@ impl Simulation {
             return true;
         }
         entity
+            .ares
             .powered_by
             .as_mut()
             .expect("installed above")
@@ -217,7 +218,12 @@ impl Simulation {
         let busy = busy(entity.mission.current().known()) || busy(entity.mission.queued().known());
         let has_power = busy || self.powered_by_source_online(id, rules);
         let entity = self.substrate.entities.get_mut(id).expect("same object");
-        entity.powered_by.as_mut().expect("installed above").powered = has_power;
+        entity
+            .ares
+            .powered_by
+            .as_mut()
+            .expect("installed above")
+            .powered = has_power;
         let entity = self.substrate.entities.get(id).expect("same object");
         let offline = entity.deactivated.is_offline();
         if has_power {
@@ -311,7 +317,7 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.powered_unit)
         {
-            return entity.powered_by.is_none_or(PoweredBySource::powered);
+            return entity.ares.powered_by.is_none_or(PoweredBySource::powered);
         }
         // No second building registry: the existing House+6C order.
         self.houses.get(&entity.owner()).is_some_and(|house| {

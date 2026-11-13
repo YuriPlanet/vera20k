@@ -63,7 +63,6 @@ impl Health {
     /// ObjectClass::SetHealthFraction5F5C80..5F5CC5, called by installed
     /// Ares conversion10043745 through10046400. The stored double must be
     /// positive and ordered; only a zero integer product is raised to one.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_fraction(&mut self, fraction: NativeF64Bits, strength: i32) {
         let fraction = X87::load_f64(fraction);
         self.current = if X87::compare(fraction, X87::load_i32(0)) == MaskedX87Ordering::Greater {

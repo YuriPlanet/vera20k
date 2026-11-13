@@ -141,7 +141,6 @@ pub enum TriggerEffect {
     /// Ares trigger action 148 (TActionExt::Execute 100396C0) selects the
     /// announcer voice, VoxClass::EVAIndex: a process cache the client's
     /// announcer owns, which applies the voice-count bound.
-    #[cfg(feature = "ares")]
     EvaVoice {
         index: i32,
     },
@@ -1142,14 +1141,12 @@ struct TagEventInput {
     cell: (i16, i16),
     force: bool,
     /// A non-Techno object Ares passes in the Techno source slot.
-    #[cfg(feature = "ares")]
     ares_source: Option<AresEventSource>,
 }
 
 /// What Ares 3.0 passes as RaiseEvent's `TechnoClass*` source when it is not
 /// a Techno. TEventExt::HasOccured (1004F7A0) reads it only for the kind it
 /// was raised with.
-#[cfg(feature = "ares")]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum AresEventSource {
     /// A HouseClass: an abductee's previous owner (74) or a destroyer's
@@ -5907,7 +5904,6 @@ fn count_techtype(sim: &Simulation, object: &crate::rules::object_type::ObjectTy
         .count()
 }
 
-#[cfg(feature = "ares")]
 #[path = "trigger_runtime_ares.rs"]
 mod ares;
 
