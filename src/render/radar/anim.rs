@@ -339,6 +339,34 @@ impl RadarPresentation {
             _ => RadarMovieCommand::None,
         }
     }
+    /// One of the radar's own passes over a clip the queue no longer holds:
+    /// `5BF450` emptied it and kept Mode and MovieStage, and a failed load
+    /// keeps the match. `PlayRadarMovie @ 0x006578F0` stage 1 waits for the
+    /// announcement, then moves on without a clip to start
+    /// (`0x00657992..0x006579A0`); stage 2 skips the ready check
+    /// (`0x0065790C..0x00657913`), sets Mode 3 and plays MovieOn
+    /// (`0x00657935..0x0065796F`), and the same frame's `PerFrameMovieUpdate
+    /// @ 0x006579E0` finds no clip and takes its movie-done arm
+    /// (`0x00657BFA..0x00657C71`). A clip in playback takes that arm at once.
+    /// Returns, once the arm ran, whether stage 2 ran in the same pass.
+    fn wind_down_retired(&mut self, ai_runs: bool, selected_done: bool) -> Option<bool> {
+        let movie_on = match self.movie {
+            Some(MovieStage::WaitAnnouncement) => {
+                if ai_runs && selected_done {
+                    self.movie = Some(MovieStage::WaitStreams);
+                }
+                return None;
+            }
+            Some(MovieStage::WaitStreams) if ai_runs => {
+                let _ = self.movie_step(true, true);
+                true
+            }
+            Some(MovieStage::Playback) => false,
+            _ => return None,
+        };
+        self.finish_movie(false);
+        Some(movie_on)
+    }
     fn finish_movie(&mut self, has_next: bool) {
         if has_next {
             //657BEE writes phase4/frame25; no second IncomingTransmission.
@@ -557,6 +585,14 @@ impl RadarAnimState {
     }
     pub fn finish_movie(&mut self, has_next: bool) {
         self.presentation.finish_movie(has_next);
+    }
+    /// Whether the radar still holds a clip's stage.
+    pub fn has_movie(&self) -> bool {
+        self.presentation.movie.is_some()
+    }
+    /// See `RadarPresentation::wind_down_retired`.
+    pub fn wind_down_retired_movie(&mut self, ai_runs: bool, selected_done: bool) -> Option<bool> {
+        self.presentation.wind_down_retired(ai_runs, selected_done)
     }
     pub fn retire_movies(&mut self) -> bool {
         let suspended = matches!(
@@ -878,6 +914,29 @@ mod tests {
         radar.finish_movie(false);
         assert!(!radar.movie_pause_latch);
         assert_eq!(radar.animation.phase, RadarAnimPhase::Closing);
+    }
+    /// After `5BF450` empties the queue mid-announcement, the radar waits for
+    /// the announcement, takes one pass to reach stage 2, then winds down
+    /// there (`0x006579A0`, `0x00657935..0x0065796F`, `0x00657BFA`).
+    #[test]
+    fn a_retired_clip_winds_down_on_the_radars_own_passes() {
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = radar.set_has_radar(true);
+        radar.animation.phase = RadarAnimPhase::Online;
+        radar.animation.frame = 32;
+        assert!(radar.admit_movie());
+        assert_eq!(radar.movie_step(true, true), RadarMovieCommand::Announce);
+        assert_eq!(radar.wind_down_retired(true, false), None);
+        assert_eq!(radar.wind_down_retired(false, true), None);
+        assert_eq!(radar.movie, Some(MovieStage::WaitAnnouncement));
+        assert_eq!(radar.wind_down_retired(true, true), None);
+        assert_eq!(radar.wind_down_retired(true, true), Some(true));
+        assert_eq!(radar.movie, None);
+        assert_eq!(
+            (radar.animation.phase, radar.animation.frame),
+            (RadarAnimPhase::MovieOpening, 25)
+        );
+        assert_eq!(radar.wind_down_retired(true, true), None);
     }
     /// `653100` ends the radar's sound loop only on the draw that finishes
     /// the housing: MovieOpening reaching 32 (`0x0065328C`) and Closing

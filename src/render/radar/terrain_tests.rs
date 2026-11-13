@@ -296,6 +296,39 @@ fn cell_updates_match_full_generation_of_the_final_state() {
     assert_eq!(surface.generated_rgb565(), full.generated_rgb565());
 }
 
+/// `ProcessDirtyCells` stores a changed left-edge cell's right colour in raw
+/// pixel 1, its neighbour's left half, and leaves pixel 0 as the full fill
+/// wrote it (`0x006553A9..0x006553CD`).
+#[test]
+fn a_changed_left_edge_cell_writes_its_right_colour_one_pixel_on() {
+    let geometry = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 4, 2).unwrap();
+    let cells = [(0, 1), (1, 0)].map(|cell| NativeRadarCellColors {
+        cell,
+        left: [cell.0 as u8, 10, 0],
+        right: [cell.0 as u8, 20, 0],
+    });
+    let (edge, neighbour) = (cells[0], cells[1]);
+    assert_eq!(geometry.cell_to_raw_pixel(edge.cell), (-1, 1));
+    assert_eq!(geometry.cell_to_raw_pixel(neighbour.cell), (1, 1));
+    let mut surface = NativeRadarTerrainSurface::new(
+        geometry,
+        cells.to_vec(),
+        BTreeMap::new(),
+        1.0,
+        Default::default(),
+    );
+    assert_eq!(&surface.raw_rgb()[4..6], &[edge.right, neighbour.left]);
+    let changed = NativeRadarCellColors {
+        right: [99, 99, 99],
+        ..edge
+    };
+    assert!(surface.set_cell_states([NativeRadarCellUpdate {
+        base: changed,
+        override_color: None,
+    }]));
+    assert_eq!(&surface.raw_rgb()[4..6], &[edge.right, [99, 99, 99]]);
+}
+
 /// `RenderCellPixel @ 0x00655C50` raises a pixel's Cell centre to the ground
 /// (`0x00655D06..0x00655D38`) before `IsShrouded @ 0x00586360` and
 /// `IsFogged @ 0x005864A0` read it: half the level up the lattice, and for an

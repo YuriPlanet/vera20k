@@ -143,35 +143,17 @@ fn find_cursor_feedback_kind(
     if state.match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
-    // `ScrollClass::Action` (`0x006922E0`) runs UpdateMouseScrolling, which
-    // writes the pan, capture and edge cursors, before `TabClass::Action`
-    // reaches `RadarClass::AI` through `SidebarClass::Action` (`0x006A7780`)
-    // and `PowerClass::AnimationTick` (`0x00640391`), so the radar's arrow
-    // over its top buttons is the frame's last cursor write.
-    if over_radar_top_button(state) {
-        return Some(CursorFeedbackKind::Default);
-    }
-    // `ScrollClass__UpdateMouseScrolling` 0x00692F30 writes the action cursor
-    // and the edge arrow only inside its `capture == 0` else-arm. With the
-    // capture held, a right-drag pan owns the cursor for as long as it owns the
-    // camera, and any other gesture keeps the band's arrow or the last cursor.
-    if let Some(blocked) = crate::app::input::camera::right_drag_pan_cursor_state(state) {
-        return Some(match blocked {
-            Some(dir) => CursorFeedbackKind::PanBlocked(dir),
-            None => CursorFeedbackKind::Pan,
-        });
-    }
-    if let Some(kind) = state.match_state.input.captured_cursor() {
+    let (x, y) = (
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    if let Some(kind) = scroll_or_arrow_cursor(
+        over_radar_top_button(state) || command_bar_arrow_hit(state.sidebar_frame(), x, y),
+        crate::app::input::camera::right_drag_pan_cursor_state(state),
+        state.match_state.input.captured_cursor(),
+        crate::app::input::camera::edge_scroll_cursor_state(state),
+    ) {
         return kind;
-    }
-    // The active band is the outermost pixel of the whole window, including
-    // the sidebar. It wins even when that pixel overlaps a sidebar/minimap hit.
-    if let Some((dir, blocked)) = crate::app::input::camera::edge_scroll_cursor_state(state) {
-        return Some(if blocked {
-            CursorFeedbackKind::ScrollBlocked(dir)
-        } else {
-            CursorFeedbackKind::Scroll(dir)
-        });
     }
     if state.match_state.input.minimap_press_active()
         || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
@@ -2037,6 +2019,59 @@ fn cursor_animation_now_ms() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+/// The cursor `ScrollClass::Action @ 0x006922E0` leaves before the later
+/// checks: it runs UpdateMouseScrolling (`0x00692F30`) first, then
+/// `TabClass::Action`, whose arrow over the command bar (`0x006D06FD`) and
+/// whose path to `RadarClass::AI` through `SidebarClass::Action`
+/// (`0x006A7780`) and `PowerClass::AnimationTick` (`0x00640391`) write after
+/// it. UpdateMouseScrolling writes the action cursor and the edge arrow only
+/// inside its `capture == 0` else-arm: with the capture held, a right-drag pan
+/// owns the cursor for as long as it owns the camera, and any other gesture
+/// keeps the band's arrow or the last cursor. The active edge band is the
+/// outermost pixel of the whole window, sidebar included. `None` leaves the
+/// cursor to the later checks.
+fn scroll_or_arrow_cursor(
+    over_arrow_controls: bool,
+    pan: Option<Option<ScrollDir>>,
+    captured: Option<Option<CursorFeedbackKind>>,
+    edge: Option<(ScrollDir, bool)>,
+) -> Option<Option<CursorFeedbackKind>> {
+    if over_arrow_controls {
+        return Some(Some(CursorFeedbackKind::Default));
+    }
+    if let Some(blocked) = pan {
+        return Some(Some(match blocked {
+            Some(dir) => CursorFeedbackKind::PanBlocked(dir),
+            None => CursorFeedbackKind::Pan,
+        }));
+    }
+    if let Some(kind) = captured {
+        return Some(kind);
+    }
+    edge.map(|(dir, blocked)| {
+        Some(if blocked {
+            CursorFeedbackKind::ScrollBlocked(dir)
+        } else {
+            CursorFeedbackKind::Scroll(dir)
+        })
+    })
+}
+
+/// `TabClass::Action @ 0x006D0680` sets the arrow (`0x006D06FD`) while the
+/// mouse is on the command bar, whatever button is held: from the bar's
+/// origin (`0xB0FC58`), the tactical view wide and 0x1E of its 32 rows high
+/// (`0x006D06BD`).
+fn command_bar_arrow_hit(frame: crate::ui::sidebar::SidebarFrame, x: f32, y: f32) -> bool {
+    let (left, top, width, _) = frame.strip();
+    crate::ui::sidebar::Rect {
+        x: left as f32,
+        y: top as f32,
+        w: width as f32,
+        h: (frame.strip_height_in_frame() * 0x1E / 32) as f32,
+    }
+    .contains(x, y)
+}
+
 /// `RadarClass::AI @ 0x00653850` sets the normal arrow (`SetCursor(0)`)
 /// whenever the mouse is over the Diplomacy or Options button
 /// (`0x00653865..0x006538F3`), on every pass and with any button held, after
@@ -2492,7 +2527,7 @@ mod tests {
         select_best_for_action, what_action_on_cell,
     };
     use crate::app::input::entity_pick::HoverTargetKindWithId;
-    use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind};
+    use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::world::Simulation;
@@ -2570,6 +2605,37 @@ mod tests {
             placed.x,
             placed.y + placed.h
         ));
+    }
+
+    /// `TabClass::Action` and `RadarClass::AI` write their arrow after
+    /// UpdateMouseScrolling (`0x006922E0`), so it beats the pan, capture and
+    /// edge cursors; without it those keep their order.
+    #[test]
+    fn the_controls_arrow_is_the_frames_last_cursor_write() {
+        let pan = Some(None);
+        let captured = Some(Some(CursorFeedbackKind::Pan));
+        let edge = Some((ScrollDir::S, false));
+        assert_eq!(
+            super::scroll_or_arrow_cursor(true, pan, captured, edge),
+            Some(Some(CursorFeedbackKind::Default))
+        );
+        assert_eq!(
+            super::scroll_or_arrow_cursor(false, None, Some(None), edge),
+            Some(None)
+        );
+        assert_eq!(super::scroll_or_arrow_cursor(false, None, None, None), None);
+    }
+
+    /// `0x006D06BD`: the command bar's arrow covers the tactical width and
+    /// 0x1E rows from the bar's top, not the bar's last two rows.
+    #[test]
+    fn the_command_bar_arrow_covers_thirty_rows_of_the_tactical_width() {
+        let frame = crate::ui::sidebar::SidebarFrame::native(800, 600);
+        assert!(super::command_bar_arrow_hit(frame, 0.0, 568.0));
+        assert!(super::command_bar_arrow_hit(frame, 631.0, 597.0));
+        assert!(!super::command_bar_arrow_hit(frame, 632.0, 568.0));
+        assert!(!super::command_bar_arrow_hit(frame, 0.0, 598.0));
+        assert!(!super::command_bar_arrow_hit(frame, 0.0, 567.0));
     }
 
     #[test]

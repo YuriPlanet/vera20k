@@ -266,19 +266,9 @@ fn radar_ai_runs(
         && !crate::app::match_runtime::scenario_pause::blocks_main_tick(mode, scenario_paused)
 }
 
-/// Service outside the simulation gate. Only actual sidebar draws advance the
-/// housing timer; media and its pause must remain live when117 stops simulation.
-pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
-        || state
-            .match_state
-            .match_presentation
-            .radar_movies
-            .queue
-            .is_empty()
-    {
-        return;
-    }
+/// The announcement's EVA index, whether it has finished, and whether
+/// `RadarClass::AI` runs this pass.
+fn movie_gates(state: &AppState) -> (i32, bool, bool) {
     let selected_index = state
         .process_assets
         .audio_catalog()
@@ -293,7 +283,6 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         // leaves the initially-done entry alone, so it does not guess a delay.
         _ => true,
     };
-    let streams_ready = state.audio.movie_streams_ready();
     let ai_runs = radar_ai_runs(
         state.match_state.match_presentation.in_game_menu.is_open(),
         state.match_state.session_mode(),
@@ -303,6 +292,68 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             .runtime()
             .is_some_and(|rt| rt.simulation.session().scenario_paused()),
     );
+    (selected_index, selected_done, ai_runs)
+}
+
+/// The radar's own passes over a clip `retire_for_load` took from the queue
+/// (`RadarPresentation::wind_down_retired`). The movie-done arm then plays
+/// MovieOff (`0x00657C2C..0x00657C5B`), restores the Normal floor
+/// (`0x00657C71`) and drops the movie's pause (`0x00657C85..0x00657CD4`);
+/// `RadarClass::AI` resumes EVA once Mode leaves 4 (`0x006539AE..0x006539B7`).
+fn wind_down_retired(state: &mut AppState, wall_ms: u64) {
+    if !state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_ref()
+        .is_some_and(|radar| radar.has_movie())
+    {
+        return;
+    }
+    let (_, selected_done, ai_runs) = movie_gates(state);
+    let Some(movie_on) = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .and_then(|radar| radar.wind_down_retired_movie(ai_runs, selected_done))
+    else {
+        return;
+    };
+    let presentation = &mut state.match_state.match_presentation;
+    presentation
+        .radar_movies
+        .release_eva_hold(state.audio.sfx_player.as_mut());
+    let pause = presentation.radar_movies.set_scenario_pause(false);
+    if movie_on {
+        play_radar_sound_loop(state, true);
+    }
+    play_radar_sound_loop(state, false);
+    set_detail_floor(state, false);
+    if let Some(input) = pause {
+        crate::app::match_runtime::scenario_pause::apply_service(state, input);
+    }
+    reconcile_pause_clock(state, wall_ms);
+}
+
+/// Service outside the simulation gate. Only actual sidebar draws advance the
+/// housing timer; media and its pause must remain live when117 stops simulation.
+pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+        return;
+    }
+    if state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .is_empty()
+    {
+        wind_down_retired(state, wall_ms);
+        return;
+    }
+    let (selected_index, selected_done, ai_runs) = movie_gates(state);
+    let streams_ready = state.audio.movie_streams_ready();
     let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
         return;
     };
@@ -499,7 +550,8 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
 /// The detail floor a radar movie sets: `PlayRadarMovie` stage 2 calls
 /// `Game__SetMinFrameRate` with DetailMinFrameRateMovie (`0x0065797E`) and
 /// `PerFrameMovieUpdate`'s last clip with DetailMinFrameRateNormal
-/// (`0x00657C71`).
+/// (`0x00657C71`). Retirement (`0x005BF450`) leaves it for the next
+/// scenario's `Fill_In_Data`, or for a failed load's wind-down.
 fn set_detail_floor(state: &AppState, playing: bool) {
     if let Some(rules) = state.rules() {
         apply_detail_floor(
@@ -522,8 +574,21 @@ fn apply_detail_floor(
     });
 }
 
-///5BF450 runs before load preparation (even failure), abort/victory/defeat
-///fades and scene replacement. Repeated callers must be harmless.
+/// `Audio__ResumeAfterMovieAndCleanup @ 0x005BF450` alone, before a load's
+/// preparation: it deletes the queued clips and releases the movie audio,
+/// and leaves the radar's Mode, MovieStage, EVA suspend and movie pause. A
+/// load that fails keeps the match, and the radar winds down on its own
+/// passes (`wind_down_retired`); one that succeeds retires the rest.
+pub(crate) fn retire_for_load(state: &mut AppState, wall_ms: u64) {
+    let movies = &mut state.match_state.match_presentation.radar_movies;
+    movies.queue.clear();
+    movies.playing = None;
+    state.audio.retire_movie_audio(wall_ms);
+}
+
+///5BF450 runs before abort/victory/defeat fades, scene replacement and a
+///load's world replacement; no radar pass follows it there, so the radar's
+///own wind-down runs here too. Repeated callers must be harmless.
 pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     let held = state
         .match_state
@@ -539,12 +604,6 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     if let Some(radar) = presentation.radar_anim.as_mut() {
         radar.retire_movies();
     }
-    // 5BF450 empties the queue and leaves Mode 3, so the next
-    // `RadarClass::Draw`'s PerFrameMovieUpdate takes its movie-done arm and
-    // restores the Normal floor (`0x00657C71`); a failed load keeps the match.
-    // RESIDUAL: that arm's MovieOff sound is not played here; only a load
-    // failing mid-movie keeps the match running to hear it.
-    set_detail_floor(state, false);
     if held {
         crate::app::match_runtime::scenario_pause::apply_service(
             state,

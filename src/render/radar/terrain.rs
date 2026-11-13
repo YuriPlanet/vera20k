@@ -241,10 +241,8 @@ impl NativeRadarTerrainSurface {
             return false;
         }
         // A cell writes only its own two raw pixels (`fill_raw_cell`), and no
-        // two cells share one: cells in a raw row differ by two in x.
-        // RESIDUAL: native writes a changed left-edge cell's right colour
-        // into raw pixel 1, its neighbour's, not 0 (`0x006553A9..0x006553CD`);
-        // one pixel on the radar's left edge until the next rebuild.
+        // two cells share one: cells in a raw row differ by two in x. The
+        // one exception is native's left-edge store (`fill_dirty_left_edge`).
         let raw_size = self.geometry.raw_size();
         for &cell in &changed_cells {
             if let Some(slot) = self.base_index.slot(cell.0, cell.1) {
@@ -253,13 +251,12 @@ impl NativeRadarTerrainSurface {
                     .overrides
                     .get(&cell)
                     .map_or((base.left, base.right), |&color| (color, color));
-                fill_raw_cell(
-                    &mut self.raw_rgb,
-                    raw_size,
-                    self.geometry.cell_to_raw_pixel(cell),
-                    left,
-                    right,
-                );
+                let origin = self.geometry.cell_to_raw_pixel(cell);
+                if origin.0 == -1 {
+                    fill_dirty_left_edge(&mut self.raw_rgb, raw_size, origin.1, right);
+                } else {
+                    fill_raw_cell(&mut self.raw_rgb, raw_size, origin, left, right);
+                }
             }
         }
         let width = raw_size.0;
@@ -310,6 +307,20 @@ fn area(size: (i32, i32)) -> usize {
     usize::try_from(size.0)
         .expect("positive radar width")
         .saturating_mul(usize::try_from(size.1).expect("positive radar height"))
+}
+
+/// `ProcessDirtyCells @ 0x00655250` moves a changed left-edge cell (raw x -1)
+/// to x 0 at width 1 (`0x006552BC..0x006552D8`), and that width-1 arm stores
+/// its right colour one pixel on (`0x006553A9..0x006553CD`): into raw pixel 1,
+/// the next cell's left half, leaving pixel 0 as it was until a full fill.
+fn fill_dirty_left_edge(raw: &mut [[u8; 3]], size: (i32, i32), y: i32, right: [u8; 3]) {
+    let (width, height) = size;
+    if y < 0 || y >= height || width < 1 {
+        return;
+    }
+    if let Some(pixel) = raw.get_mut(y as usize * width as usize + 1) {
+        *pixel = right;
+    }
 }
 
 /// `FillTerrainColors @ 0x00654F9E..0x00655023`: the clipped left edge
