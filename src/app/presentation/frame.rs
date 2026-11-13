@@ -71,9 +71,9 @@ pub(crate) struct ObjectRecord {
     on_bridge: bool,
     ion_blast_lift: i8,
     pub(crate) position: crate::sim::components::Position,
+    /// The barrel's facing and elevation are the pose's `turret` and
+    /// `barrel`, read at the same frame.
     pub(crate) body_facing: crate::sim::movement::FacingClass,
-    pub(crate) barrel_facing: Option<crate::sim::movement::FacingClass>,
-    barrel_elevation: crate::sim::movement::FacingClass,
     pub(crate) body_frame_counter: crate::sim::animation::BodyFrameCounter,
     pub(crate) unit_firing_counter: crate::sim::animation::UnitFiringCounter,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
@@ -85,26 +85,26 @@ pub(crate) struct ObjectRecord {
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
-    pub(crate) attack_target: crate::sim::combat::TarCom,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
     pub(crate) building_art: crate::util::sparse::Sparse<crate::sim::building_art::BuildingArt>,
     pub(crate) animation: Option<crate::sim::animation::Animation>,
-    pub(crate) miner: Option<Box<crate::sim::miner::Miner>>,
-    pub(crate) cloak: Option<Box<crate::sim::cloak_disguise::CloakRuntime>>,
-    pub(crate) capture_manager: Option<Box<crate::sim::capture_manager::CaptureManagerState>>,
-    pub(crate) spawn_manager: Option<Box<crate::sim::spawn_manager::SpawnManagerState>>,
+    pub(crate) miner: Option<Miner>,
+    pub(crate) cloak: Option<Cloak>,
+    /// Whether it has a capture manager (`GameEntity::capture_manager`).
+    pub(crate) capture_manager: Option<()>,
+    pub(crate) spawn_manager: Option<SpawnManager>,
     pub(crate) invulnerability:
         Option<crate::sim::superweapon::invulnerability::InvulnerabilityState>,
     pub(crate) airstrike_tint: crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
-    pub(crate) temporal: crate::sim::temporal::TemporalState,
+    pub(crate) temporal: Temporal,
     pub(crate) berserk: Berserk,
     pub(crate) crash: Crash,
     pub(crate) sinking: Sinking,
-    pub(crate) passenger_role: crate::sim::passenger::PassengerRole,
-    pub(crate) rocking: Option<crate::sim::rocking::RockingState>,
-    pub(crate) mission: crate::sim::mission::MissionCom,
-    pub(crate) tether: crate::sim::radio::Tether,
-    pub(crate) radio_contacts: crate::sim::radio::Contacts,
+    pub(crate) passenger_role: PassengerRole,
+    /// Whether it rocks (`GameEntity::rocking`); its angles are the pose's.
+    pub(crate) rocking: Option<()>,
+    pub(crate) mission: Mission,
+    pub(crate) tether: Tether,
     pub(crate) disguise: Option<crate::sim::cloak_disguise::DisguiseRuntime>,
     pub(crate) display_type_override: DisplayTypeOverride,
     pub(crate) selection: crate::sim::selection::Selection,
@@ -155,7 +155,6 @@ struct Answers {
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
-    voxel_recoil: ([f32; 2], bool),
     #[cfg(feature = "phobos")]
     shield: Option<crate::sim::shield::ShieldState>,
     #[cfg(feature = "phobos")]
@@ -187,7 +186,6 @@ impl Answers {
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
-            voxel_recoil: entity.voxel_recoil(),
             #[cfg(feature = "phobos")]
             shield: entity.shield().cloned(),
             #[cfg(feature = "phobos")]
@@ -214,8 +212,6 @@ pub(crate) struct LocomotorView {
 /// What a Rocket's draw reads of its `RocketLocomotionClass`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RocketDraw {
-    /// `RocketRuntime::draw_pitch`.
-    pub(crate) pitch: f32,
     /// `RocketRuntime::draw_key_bits` with its type's block
     /// (`RuleSet::rocket_block`).
     pub(crate) key_bits: Option<u32>,
@@ -235,7 +231,6 @@ impl LocomotorView {
             fly_phase_callbacks: locomotor.fly_phase_callbacks(),
             current_fly_speed: locomotor.current_fly_speed(),
             rocket: locomotor.rocket_runtime().map(|rocket| RocketDraw {
-                pitch: rocket.draw_pitch(),
                 key_bits: rocket_block().and_then(|block| rocket.draw_key_bits(block)),
             }),
             tunnel_has_shadow: locomotor
@@ -285,8 +280,6 @@ impl LocomotorView {
 /// What placing an object reads of the world beside the object.
 #[derive(Clone, Debug)]
 pub(crate) struct Place {
-    /// `render::locomotor_visual::screen_position`.
-    pub(crate) screen_position: (f32, f32),
     /// `sim::movement::ground_pose::object_world_z_leptons` on the live map.
     pub(crate) world_z_leptons: i32,
     /// `sim::movement::air_movement::queried_flight_height`.
@@ -295,9 +288,6 @@ pub(crate) struct Place {
     pub(crate) landing_base: i32,
     /// `sim::movement::hover::hover_draw_slope` with the pose's rocking angles.
     pub(crate) hover_draw_slope: u8,
-    /// The locomotor's slope transition at the frame before the committed
-    /// one, the frame Drive and Ship draw (`instances::units`).
-    pub(crate) slope_render_phase: Option<crate::sim::movement::slope_transition::SlopeRenderPhase>,
     /// `sim::movement::motion_query::is_moving_now` at that frame.
     pub(crate) moving_now: bool,
     /// `sim::movement::motion_query::is_moving`.
@@ -366,7 +356,7 @@ pub(crate) struct Contact {
     pub(crate) id: u64,
     pub(crate) category: EntityCategory,
     pub(crate) type_ref: InternedId,
-    pub(crate) mission: crate::sim::mission::MissionCom,
+    pub(crate) mission: Mission,
 }
 
 /// A Structure's `sim::building_art` answers for its own type.
@@ -419,7 +409,8 @@ impl StructureArt {
 }
 
 impl Place {
-    fn of(entity: &GameEntity, pose: &RenderPose, at: &Capture<'_>) -> Self {
+    /// `world_z_leptons` is `object_world_z_leptons` on the live map.
+    fn of(entity: &GameEntity, pose: &RenderPose, world_z_leptons: i32, at: &Capture<'_>) -> Self {
         let sim = at.sim;
         let display_frame = at.binary_frame.wrapping_sub(1);
         let psychically_detected = at.psychic.as_ref().is_some_and(|(viewer, sites)| {
@@ -442,11 +433,7 @@ impl Place {
                     .object(sim.interner().resolve(entity.type_ref()))
                     .is_some_and(|object| object.target_laser));
         Self {
-            screen_position: (pose.screen[0], pose.screen[1]),
-            world_z_leptons: crate::sim::movement::ground_pose::object_world_z_leptons(
-                entity,
-                sim.resolved_terrain(),
-            ),
+            world_z_leptons,
             flight_height: crate::sim::movement::air_movement::queried_flight_height(
                 entity,
                 at.cells.as_ref(),
@@ -461,8 +448,6 @@ impl Place {
                 at.cells.as_ref(),
                 pose.angles,
             ),
-            slope_render_phase: crate::sim::movement::slope_transition::state_for_entity(entity)
-                .map(|state| state.render_phase(display_frame)),
             moving_now: crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 crate::sim::movement::SpeedRules::new(at.rules(), sim.interner(), sim.houses()),
@@ -514,7 +499,7 @@ impl Place {
                     id: contact.stable_id(),
                     category: contact.category(),
                     type_ref: contact.type_ref(),
-                    mission: contact.mission.clone(),
+                    mission: Mission::of(&contact.mission),
                 }),
         }
     }
@@ -586,10 +571,15 @@ impl ObjectRecord {
     fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
         let pose = RenderPose::read(entity, at.binary_frame);
         let answers = Answers::of(entity);
-        let place = Place::of(entity, &pose, at);
+        // `object_location` on the live map, which placing, the HUD and the
+        // radar all read.
+        let location =
+            crate::sim::movement::ground_pose::object_location(entity, at.sim.resolved_terrain());
+        let place = Place::of(entity, &pose, location.z, at);
         let seen = Seen::of(entity, at);
-        let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at);
-        let scene = crate::app::presentation::frame_scene::SceneFacts::capture(entity, at);
+        let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location);
+        let scene =
+            crate::app::presentation::frame_scene::SceneFacts::capture(entity, at, location);
         let tether_draw =
             crate::app::presentation::instances::tether_draw(entity, at.sim.entities());
         Self {
@@ -602,8 +592,6 @@ impl ObjectRecord {
             ion_blast_lift: entity.ion_blast_lift_pixels(),
             position: entity.position.clone(),
             body_facing: entity.body_facing.clone(),
-            barrel_facing: entity.barrel_facing.clone(),
-            barrel_elevation: entity.barrel_elevation().clone(),
             body_frame_counter: entity.body_frame_counter.clone(),
             unit_firing_counter: entity.unit_firing_counter.clone(),
             turret_anim_frame: entity.turret_anim_frame.clone(),
@@ -627,19 +615,26 @@ impl ObjectRecord {
             }),
             navigation: Navigation {
                 nav_com: entity.navigation.nav_com(),
-                nav_queue: entity.navigation.nav_queue().to_vec(),
             },
-            attack_target: entity.attack_target.clone(),
             last_fire_frame: entity.last_fire_frame.clone(),
             building_art: entity.building_art.clone(),
             animation: entity.animation.clone(),
-            miner: entity.miner.clone(),
-            cloak: entity.cloak.clone(),
-            capture_manager: entity.capture_manager.clone(),
-            spawn_manager: entity.spawn_manager.clone(),
+            miner: entity.miner.as_deref().map(|miner| Miner {
+                harvesting: miner.harvesting(),
+            }),
+            cloak: entity.cloak.as_deref().map(|cloak| Cloak {
+                state: cloak.state(),
+                depth: cloak.depth(),
+            }),
+            capture_manager: entity.capture_manager.as_ref().map(|_| ()),
+            spawn_manager: entity.spawn_manager.as_deref().map(|manager| SpawnManager {
+                docked: manager.count_docked_spawns(),
+            }),
             invulnerability: entity.invulnerability.clone(),
             airstrike_tint: entity.airstrike_tint.clone(),
-            temporal: entity.temporal.clone(),
+            temporal: Temporal {
+                warped: entity.temporal.is_warped(),
+            },
             berserk: Berserk {
                 active: entity.berserk.is_active(),
             },
@@ -649,11 +644,12 @@ impl ObjectRecord {
             sinking: Sinking {
                 active: entity.sinking.is_active(),
             },
-            passenger_role: entity.passenger_role.clone(),
-            rocking: entity.rocking.clone(),
-            mission: entity.mission.clone(),
-            tether: entity.tether.clone(),
-            radio_contacts: entity.radio_contacts.clone(),
+            passenger_role: PassengerRole::of(&entity.passenger_role),
+            rocking: entity.rocking.as_ref().map(|_| ()),
+            mission: Mission::of(&entity.mission),
+            tether: Tether {
+                partner: entity.tether.partner().is_some(),
+            },
             disguise: entity.disguise.clone(),
             display_type_override: DisplayTypeOverride {
                 image: entity.display_type_override.image(),
@@ -704,10 +700,6 @@ impl ObjectRecord {
 
     pub(crate) fn body_facing_current(&self, frame: u32) -> u16 {
         self.body_facing.current(frame)
-    }
-
-    pub(crate) fn barrel_elevation(&self) -> &crate::sim::movement::FacingClass {
-        &self.barrel_elevation
     }
 
     pub(crate) fn is_object_alive(&self) -> bool {
@@ -804,8 +796,9 @@ impl ObjectRecord {
         self.answers.emp_remaining
     }
 
+    /// `GameEntity::voxel_recoil`, which the pose holds.
     pub(crate) fn voxel_recoil(&self) -> ([f32; 2], bool) {
-        self.answers.voxel_recoil
+        self.pose.recoil
     }
 
     #[cfg(feature = "phobos")]
@@ -888,7 +881,8 @@ impl crate::render::snapshot::SnapshotObject for ObjectRecord {
         self.place.center_xy
     }
     fn screen_position(&self) -> (f32, f32) {
-        self.place.screen_position
+        let [x, y] = self.pose.screen;
+        (x, y)
     }
     fn world_z_leptons_off_map(&self) -> i32 {
         self.place.world_z_leptons_off_map
@@ -912,16 +906,158 @@ impl crate::render::snapshot::SnapshotObjects for PresentationFrame {
 #[derive(Clone, Debug)]
 pub(crate) struct Navigation {
     nav_com: Option<crate::sim::components::NavTargetRef>,
-    nav_queue: Vec<crate::sim::components::NavTargetRef>,
 }
 
 impl Navigation {
     pub(crate) fn nav_com(&self) -> Option<crate::sim::components::NavTargetRef> {
         self.nav_com
     }
+}
 
-    pub(crate) fn nav_queue(&self) -> &[crate::sim::components::NavTargetRef] {
-        &self.nav_queue
+/// `GameEntity::mission` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Mission {
+    current: crate::sim::mission::MissionId,
+    queued: crate::sim::mission::MissionId,
+    effective: crate::sim::mission::MissionId,
+}
+
+impl Mission {
+    fn of(mission: &crate::sim::mission::MissionCom) -> Self {
+        Self {
+            current: mission.current(),
+            queued: mission.queued(),
+            effective: mission.effective(),
+        }
+    }
+
+    pub(crate) fn current(&self) -> crate::sim::mission::MissionId {
+        self.current
+    }
+
+    pub(crate) fn queued(&self) -> crate::sim::mission::MissionId {
+        self.queued
+    }
+
+    pub(crate) fn effective(&self) -> crate::sim::mission::MissionId {
+        self.effective
+    }
+}
+
+/// `GameEntity::miner` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Miner {
+    harvesting: bool,
+}
+
+impl Miner {
+    pub(crate) fn harvesting(&self) -> bool {
+        self.harvesting
+    }
+}
+
+/// `GameEntity::cloak` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Cloak {
+    state: i32,
+    depth: u32,
+}
+
+impl Cloak {
+    pub(crate) fn state(&self) -> i32 {
+        self.state
+    }
+
+    pub(crate) fn depth(&self) -> u32 {
+        self.depth
+    }
+}
+
+/// `GameEntity::spawn_manager` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SpawnManager {
+    docked: usize,
+}
+
+impl SpawnManager {
+    /// `SpawnManagerClass::CountDockedSpawns` (`0x006B7D50`).
+    pub(crate) fn count_docked_spawns(&self) -> usize {
+        self.docked
+    }
+}
+
+/// `GameEntity::temporal` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Temporal {
+    warped: bool,
+}
+
+impl Temporal {
+    /// `TemporalState::is_warped`: a chain warps it.
+    pub(crate) fn is_warped(&self) -> bool {
+        self.warped
+    }
+}
+
+/// `GameEntity::tether` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Tether {
+    partner: bool,
+}
+
+impl Tether {
+    /// Whether it has a tether partner (`Tether::partner`).
+    pub(crate) fn has_partner(&self) -> bool {
+        self.partner
+    }
+}
+
+/// `GameEntity::passenger_role` as drawing reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PassengerRole {
+    inside_transport: bool,
+    #[cfg(feature = "phobos")]
+    cargo: Option<Cargo>,
+}
+
+impl PassengerRole {
+    fn of(role: &crate::sim::passenger::PassengerRole) -> Self {
+        Self {
+            inside_transport: role.is_inside_transport(),
+            #[cfg(feature = "phobos")]
+            cargo: role.cargo().map(|cargo| Cargo {
+                count: cargo.count(),
+                total_size: cargo.total_size(),
+            }),
+        }
+    }
+
+    pub(crate) fn is_inside_transport(&self) -> bool {
+        self.inside_transport
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn cargo(&self) -> Option<&Cargo> {
+        self.cargo.as_ref()
+    }
+}
+
+/// A transport's `PassengerCargo` as drawing reads it.
+#[cfg(feature = "phobos")]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Cargo {
+    count: u32,
+    total_size: i32,
+}
+
+#[cfg(feature = "phobos")]
+impl Cargo {
+    pub(crate) fn count(&self) -> u32 {
+        self.count
+    }
+
+    pub(crate) fn total_size(&self) -> i32 {
+        self.total_size
     }
 }
 
@@ -1196,3 +1332,7 @@ impl ObjectRecord {
             .expect("the inserted entity has a record")
     }
 }
+
+#[cfg(test)]
+#[path = "frame_tests.rs"]
+mod tests;

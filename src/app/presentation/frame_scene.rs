@@ -16,10 +16,16 @@ pub(crate) struct SceneFacts {
 }
 
 impl SceneFacts {
-    pub(crate) fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
+    /// `location` is `ground_pose::object_location` on the live map.
+    pub(crate) fn capture(
+        entity: &GameEntity,
+        at: &Capture<'_>,
+        location: crate::sim::components::DriveCoord,
+    ) -> Self {
         Self {
             radar: crate::render::radar::RadarFacts::capture(
                 entity,
+                location,
                 at.sim,
                 at.rules(),
                 at.cells.as_ref(),

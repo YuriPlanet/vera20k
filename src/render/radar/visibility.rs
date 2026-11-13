@@ -1231,18 +1231,18 @@ pub(crate) struct RadarFacts {
 }
 
 impl RadarFacts {
-    /// Captured with the live world: `cells` is the capture's isolated
-    /// query of the map, `observer` the local player.
+    /// Captured with the live world: `location` is
+    /// `ground_pose::object_location` on the map, `cells` the capture's
+    /// isolated query of the map, `observer` the local player.
     pub(crate) fn capture(
         entity: &crate::sim::game_entity::GameEntity,
+        location: crate::sim::components::DriveCoord,
         sim: &crate::sim::world::Simulation,
         rules: &crate::rules::ruleset::RuleSet,
         cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
         binary_frame: u32,
         observer: Option<InternedId>,
     ) -> Self {
-        let terrain = sim.resolved_terrain();
-        let location = crate::sim::movement::ground_pose::object_location(entity, terrain);
         Self {
             enemy_sensed_prefilter: enemy_sensed_prefilter(entity),
             foundation: (entity.category() == EntityCategory::Structure)

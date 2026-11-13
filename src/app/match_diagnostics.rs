@@ -88,7 +88,10 @@ impl ActorMotionObservation {
                 .as_ref(),
             entity.foot_speed.native_applied_fraction().bits(),
             crate::sim::movement::motion_query::is_moving(entity),
-            &entity.mission,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
         )
     }
 
@@ -102,7 +105,10 @@ impl ActorMotionObservation {
             entity.locomotor.as_ref(),
             entity.applied_fraction.bits(),
             entity.place.moving,
-            &entity.mission,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
         )
     }
 
@@ -111,7 +117,7 @@ impl ActorMotionObservation {
         locomotor: Option<&crate::app::presentation::frame::LocomotorView>,
         bits: u64,
         moving: Option<bool>,
-        mission: &crate::sim::mission::MissionCom,
+        mission: (i32, i32),
     ) -> Self {
         let drive = locomotor.and_then(|loco| loco.drive_track());
         Self {
@@ -122,7 +128,7 @@ impl ActorMotionObservation {
             moving,
             drive_destination: drive.and_then(|[destination, _]| destination),
             drive_head: drive.and_then(|[_, head]| head),
-            mission: (mission.current().raw(), mission.queued().raw()),
+            mission,
         }
     }
 }

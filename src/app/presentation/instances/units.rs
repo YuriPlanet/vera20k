@@ -81,10 +81,9 @@ fn vxl_body_tint(
 fn no_spawn_alt_type_id(
     base_type: &str,
     no_spawn_alt: bool,
-    manager: Option<&crate::sim::spawn_manager::SpawnManagerState>,
+    docked_spawns: Option<usize>,
 ) -> Option<String> {
-    (no_spawn_alt && manager.is_some_and(|manager| manager.count_docked_spawns() == 0))
-        .then(|| format!("{base_type}{NO_SPAWN_ALT_SUFFIX}"))
+    (no_spawn_alt && docked_spawns == Some(0)).then(|| format!("{base_type}{NO_SPAWN_ALT_SUFFIX}"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,9 +346,9 @@ fn locomotor_render_slope_state(
     entity: &crate::app::presentation::frame::ObjectRecord,
     display_binary_frame: u32,
 ) -> Option<UnitRenderSlopeState> {
-    // Captured at the frame before the committed one (`presentation::frame`).
+    // The pose's slope is read at the frame before the committed one.
     let _ = display_binary_frame;
-    entity.place.slope_render_phase.map(render_slope_phase)
+    entity.pose.slope.map(render_slope_phase)
 }
 
 fn render_slope_phase(
@@ -1239,9 +1238,13 @@ pub(crate) fn drawn_model_id<'a>(
         .and_then(|disguise| disguise.type_id())
     {
         Cow::Borrowed(interner.resolve(disguise_type))
-    } else if let Some(no_spawn_alt_type) =
-        no_spawn_alt_type_id(base_type, no_spawn_alt, entity.spawn_manager.as_deref())
-    {
+    } else if let Some(no_spawn_alt_type) = no_spawn_alt_type_id(
+        base_type,
+        no_spawn_alt,
+        entity
+            .spawn_manager
+            .map(|manager| manager.count_docked_spawns()),
+    ) {
         Cow::Owned(no_spawn_alt_type)
     } else if let Some(display_override) = (!no_spawn_alt)
         .then_some(entity.display_type_override.image())
@@ -1276,7 +1279,7 @@ fn unit_body_draw<'a>(
     let model_object = drawn_model_object(entity, &model, interner, rules);
     let tilt_crash_jumpjet = model_object.is_some_and(|object| object.tilt_crash_jumpjet);
     let turret_parts = object_draws_turret_parts(model_object, entity.current_turret_index());
-    let body = body_draw(entity, band, binary_frame, tilt_crash_jumpjet, turret_parts);
+    let body = body_draw(entity, band, tilt_crash_jumpjet, turret_parts);
     Some((model, body))
 }
 
@@ -1315,7 +1318,6 @@ pub(super) fn drawn_model_object<'r>(
 fn body_draw(
     entity: &crate::app::presentation::frame::ObjectRecord,
     band: EntityDrawBand,
-    binary_frame: u32,
     tilt_crash_jumpjet: bool,
     turret_parts: bool,
 ) -> BodyDraw {
@@ -1326,11 +1328,9 @@ fn body_draw(
         return BodyDraw::Composite;
     }
     BodyDraw::Turret {
-        turret: entity.barrel_facing.as_ref().map_or_else(
-            || entity.body_facing_current(binary_frame),
-            |facing| facing.current(binary_frame),
-        ),
-        barrel_elevation: entity.barrel_elevation().current(binary_frame),
+        // The pose's turret and barrel, read at the committed frame.
+        turret: entity.pose.turret,
+        barrel_elevation: entity.pose.barrel,
     }
 }
 
@@ -1347,15 +1347,9 @@ fn body_pose(
     band: EntityDrawBand,
     tilt_crash_jumpjet: bool,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
-    let angles = entity
-        .rocking
-        .as_ref()
-        .map_or([0.; 2], |r| r.angles_native());
-    let pitch = entity
-        .locomotor
-        .as_ref()
-        .and_then(crate::app::presentation::frame::LocomotorView::rocket)
-        .map_or(0., |rocket| rocket.pitch);
+    // The pose's rocking angles and rocket pitch.
+    let angles = entity.pose.angles;
+    let pitch = entity.pose.rocket_pitch;
     body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch, None, None)
 }
 
@@ -1449,15 +1443,8 @@ fn ground_pose(
     slope: UnitRenderSlopeState,
     binary_frame: u32,
 ) -> Option<crate::render::vxl_raster::GroundPose> {
-    ground_pose_with_angles(
-        entity,
-        slope,
-        binary_frame,
-        entity
-            .rocking
-            .as_ref()
-            .map_or([0.; 2], |r| r.angles_native()),
-    )
+    // The pose's rocking angles.
+    ground_pose_with_angles(entity, slope, binary_frame, entity.pose.angles)
 }
 
 fn ground_pose_with_angles(
@@ -1643,9 +1630,8 @@ fn turret_images_cached(
     slope_state: UnitRenderSlopeState,
 ) -> bool {
     matches!(slope_state, UnitRenderSlopeState::Stable(_))
-        && !entity.rocking.as_ref().is_some_and(|rocking| {
-            crate::map::voxel_pose::voxel_tilt_applies(rocking.angles_native())
-        })
+        && !(entity.rocking.is_some()
+            && crate::map::voxel_pose::voxel_tilt_applies(entity.pose.angles))
 }
 
 /// Return the native local draw order for a Unit's independently rendered
@@ -2778,7 +2764,7 @@ fn harvest_overlay<'a>(
             .miner
             .as_ref()
             .is_some_and(|miner| miner.harvesting())
-        || entity.temporal.chain_head().is_some()
+        || entity.temporal.is_warped()
         || entity.is_warped_out()
         || entity.is_warping_in()
         || {
@@ -3262,7 +3248,6 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
-                0,
                 false,
                 false
             ),
@@ -3280,7 +3265,6 @@ mod tests {
                 body_draw(
                     &ObjectRecord::of_test(&entity),
                     EntityDrawBand::Top,
-                    0,
                     false,
                     turret_parts
                 ),
@@ -3292,7 +3276,6 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Ground,
-                0,
                 false,
                 false
             ),
@@ -3304,7 +3287,6 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
-                0,
                 false,
                 true
             ),
@@ -3314,7 +3296,6 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Ground,
-                0,
                 true,
                 true
             ),
@@ -3331,7 +3312,6 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&entity),
                 EntityDrawBand::Top,
-                0,
                 true,
                 true
             ),
@@ -3472,7 +3452,6 @@ mod tests {
             body_draw(
                 &ObjectRecord::of_test(&level),
                 EntityDrawBand::Top,
-                0,
                 false,
                 false
             ),
@@ -3490,13 +3469,7 @@ mod tests {
         for band in [EntityDrawBand::Top, EntityDrawBand::Ground] {
             for turret_parts in [false, true] {
                 assert_eq!(
-                    body_draw(
-                        &ObjectRecord::of_test(&raised),
-                        band,
-                        0,
-                        false,
-                        turret_parts
-                    ),
+                    body_draw(&ObjectRecord::of_test(&raised), band, false, turret_parts),
                     BodyDraw::Pose(PoseTilt::Rocket(pitch))
                 );
             }
@@ -3602,7 +3575,7 @@ mod tests {
         ] {
             let manager = spawn_manager(&[state]);
             assert_eq!(
-                no_spawn_alt_type_id("V3", true, Some(&manager)).as_deref(),
+                no_spawn_alt_type_id("V3", true, Some(manager.count_docked_spawns())).as_deref(),
                 expects_alt.then_some("V3WO"),
                 "state {state:?}"
             );
@@ -3611,11 +3584,14 @@ mod tests {
         let in_flight = spawn_manager(&[SpawnSlotState::InFlight]);
         assert_eq!(in_flight.count_alive_spawns(), 1);
         assert_eq!(
-            no_spawn_alt_type_id("V3", true, Some(&in_flight)).as_deref(),
+            no_spawn_alt_type_id("V3", true, Some(in_flight.count_docked_spawns())).as_deref(),
             Some("V3WO"),
             "a live child away from its dock still selects the empty rack"
         );
-        assert_eq!(no_spawn_alt_type_id("V3", false, Some(&in_flight)), None);
+        assert_eq!(
+            no_spawn_alt_type_id("V3", false, Some(in_flight.count_docked_spawns())),
+            None
+        );
         assert_eq!(no_spawn_alt_type_id("V3", true, None), None);
     }
 }
