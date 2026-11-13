@@ -455,6 +455,10 @@ impl Simulation {
                 frame.bridge_state_changed |=
                     self.update_ion_blasts(rules, overlay_registry, effects);
                 self.alpha_shapes.purge_disabled();
+                // Ares 3.0 `Hooks.Alpha.cpp` places each surviving glow from
+                // its object's live GetCoords ahead of the Tactical's draw.
+                #[cfg(feature = "ares")]
+                self.update_alpha_shape_screens(rules);
             }
             FrameStep::CrateRegen => {
                 // Called between `AlphaShapeClass::PurgeDisabled` and the

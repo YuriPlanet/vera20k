@@ -62,3 +62,63 @@ fn a_loaded_alpha_image_glows_from_unlimbo_until_the_purge_after_expiry() {
     sim.advance_tick(&[], Some(&rules), None, None, 33);
     assert_eq!(sim.alpha_shapes().count(), 0);
 }
+
+/// Ares 3.0 `Hooks.Alpha.cpp` re-places a glow from its object's live GetCoords
+/// (the `UpdateScreen` hooks of `TacticalClass::UpdateAlphasInRectangle`), so a
+/// Super Thor's ring travels with the gunship. Stock keeps the Unlimbo spot.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_moves_a_glow_with_its_object() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=ODIN\n[ODIN]\nAlphaImage=ODINSH\nStrength=100\nSpeed=6\n",
+    ))
+    .unwrap();
+    rules.supply_alpha_image_for_test(
+        "ODINSH",
+        AlphaImage::for_test([60, 30], [0, 0, 1, 1], vec![254]),
+    );
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Units]\n0=Americans,ODIN,256,4,4,0,None,None,None,-1,0\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(5);
+    sim.session.set_map_width_for_test(10);
+    sim.session.set_map_height_for_test(10);
+    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+        base: 10,
+        off_fc: 0,
+        off_100: 0,
+        off_104: 10,
+        off_108: 10,
+    });
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 1);
+    let unit = sim.substrate.entities.values().next().unwrap().stable_id();
+    let born = sim.alpha_shapes().next().expect("the type's glow").0;
+
+    // Two cells east: the glow takes the same screen delta, not the Unlimbo
+    // spot the stock implementation keeps.
+    let moved = crate::sim::components::DriveCoord {
+        x: 6 * 256 + 128,
+        y: 4 * 256 + 128,
+        z: 0,
+    };
+    crate::sim::movement::ground_pose::foot_set_location(
+        &mut sim.substrate.entities,
+        unit,
+        moved,
+        &rules,
+        &sim.interner,
+    );
+    sim.update_alpha_shape_screens(&rules);
+    let after = sim.alpha_shapes().next().expect("still one glow").0;
+    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(moved.x, moved.y, 0);
+    assert_eq!(after, [x as i32 - 30, y as i32 - 15], "re-placed from GetCoords");
+    assert_ne!(after, born);
+}

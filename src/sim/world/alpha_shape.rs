@@ -106,6 +106,36 @@ impl Simulation {
             .iter()
             .map(|shape| (shape.origin, shape.image.as_str()))
     }
+
+    /// Ares 3.0 `Hooks.Alpha.cpp`'s UpdateScreen family: the shape's placement
+    /// is rewritten from its object's current GetCoords before the Tactical
+    /// draws, so a glow follows the techno it belongs to. Stock `0x00420Dxx`
+    /// keeps the construction-time `nX/nY` and the glow stays where Unlimbo put
+    /// it; Ares hooks `TacticalClass::UpdateAlphasInRectangle`
+    /// (`0x421371`/`0x42146E`/`0x42152C`) and the shape's own `UpdateScreen` to
+    /// replace that with a live query, which is what a MO game shows: a Super
+    /// Thor's `AlphaImage=ODINSH` ring travels with the gunship instead of
+    /// staying over the factory that built it.
+    ///
+    /// The offset is the ctor's own (`0x005F5045..0x005F5100`): the absolute
+    /// tactical projection of GetCoords, less half the SHP canvas.
+    #[cfg(feature = "ares")]
+    pub(super) fn update_alpha_shape_screens(&mut self, rules: &RuleSet) {
+        for shape in &mut self.alpha_shapes.shapes {
+            let Some(entity) = self.substrate.entities.get(shape.object) else {
+                continue;
+            };
+            let Some(image) = rules.alpha_image(&shape.image) else {
+                continue;
+            };
+            let coord = ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref());
+            let (x, y) =
+                crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+            let [width, height] = image.canvas();
+            shape.origin = [x as i32 - width / 2, y as i32 - height / 2];
+        }
+    }
+
 }
 
 #[cfg(test)]
