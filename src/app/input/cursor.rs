@@ -464,9 +464,16 @@ impl<'a> ActionQuery<'a> {
     /// Whether `FootClass::What_Action_OnCell @ 0x004DDDE0` takes object
     /// `id`'s answer back over `cell`: over a Cell centre its player's map
     /// shrouds, a Foot turns any answer but 0 into Move or NoMove
-    /// (`0x004DDE64..0x004DDEBE`), as the empty-cell ladder answers there. The
-    /// Building wrapper (`0x00447540`) has no shroud test, so a building
-    /// keeps its Attack.
+    /// (`0x004DDE64..0x004DDEBE`); the callers then answer the empty-cell
+    /// ladder. The Building wrapper (`0x00447540`) has no shroud test, so a
+    /// building keeps its Attack.
+    ///
+    /// RESIDUAL: a Foot that cannot move answers the forced Attack only with
+    /// the Cell in range (`0x00700600`), and the wrapper turns that into Move
+    /// or NoMove, where its empty-cell ladder here answers 0, the arrow.
+    /// Trigger: Ctrl over shroud with such a Foot leading the selection.
+    /// Effect: the cursor only, as neither order moves it. Rare; no
+    /// downstream risk.
     fn foot_over_shroud(&self, id: u64, cell: (u16, u16)) -> bool {
         self.sim.entities().get(id).is_some_and(|entity| {
             entity.category() != crate::map::entities::EntityCategory::Structure
