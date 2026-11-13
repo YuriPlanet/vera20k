@@ -417,17 +417,29 @@ impl MultiplayerShellRuntime {
         });
     }
 
+    /// The local player of a network game. Its name is the handle `[0xA8B380]`
+    /// widened one byte to a character (`0x735120`): LAN BB names a hosted game
+    /// that way (`0x005DCB0E..0x005DCB1E`) and its packets copy the handle's
+    /// bytes (`0x005DC6A6`), so every player, this one too, reads the same name.
+    /// Beyond ASCII it is not the text the name boxes show
+    /// ([`Self::handle_text`]), which on Windows went through a code page.
     pub(crate) fn local_participant(&self) -> crate::skirmish_launch::SkirmishHumanSlot {
         let preferences = &self.local_preferences;
         crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
-            name: crate::util::native_string::acp_decode(&preferences.handle_bytes),
+            name: crate::util::native_string::widen_bytes(&preferences.handle_bytes),
             slot: picked_seat(
                 (preferences.side, preferences.side_ex),
                 (preferences.color_index, preferences.color_ex),
             ),
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(self.lan_observer()),
         }
+    }
+
+    /// The handle as the name boxes show it: the text a code page stored
+    /// (`acp_decode`), where [`Self::local_participant`] reads its bytes.
+    pub(crate) fn handle_text(&self) -> String {
+        crate::util::native_string::acp_decode(&self.local_preferences.handle_bytes)
     }
 
     fn network_snapshot(&self, profile: SetupProfile) -> &MultiplayerSetupSnapshot {
@@ -847,7 +859,9 @@ impl MultiplayerShellRuntime {
         let handle_bytes = if handle_source == HandleSource::AuthenticatedOnline {
             self.local_preferences.handle_bytes.clone()
         } else {
-            let mut bytes = crate::util::native_string::acp_encode(&player.name);
+            // A network name is the handle widened byte by byte
+            // (`local_participant`); narrowing it gives those bytes back.
+            let mut bytes = crate::util::native_string::narrow_widened(&player.name);
             bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
             bytes
         };
@@ -1068,9 +1082,7 @@ impl MultiplayerShellRuntime {
         state.mcv_redeploy = self.snapshot.mcv_repacks;
         state.crates = self.snapshot.crates_appear;
 
-        state.player_name_edit = PlayerNameEditState::with_name(
-            &crate::util::native_string::acp_decode(&self.local_preferences.handle_bytes),
-        );
+        state.player_name_edit = PlayerNameEditState::with_name(&self.handle_text());
         state.player_country =
             LaunchCountry::from_country_index(self.local_preferences.side.max(0) as u32);
         state.player_country_random = self.local_preferences.side_ex == RANDOM_ITEM_DATA;
@@ -3567,6 +3579,26 @@ WOLTaunts=junk
         let mut reopened_shell = SkirmishShellState::default();
         reopened.hydrate_shell(&mut reopened_shell, &[map()], &[mode()]);
         assert_eq!(reopened_shell.player_name_edit.text, "\u{20ac}");
+    }
+
+    /// A code page stored the name box's text (`玩家` in GBK, `€` in
+    /// Windows-1252). The network sends those bytes and reads back the name it
+    /// sent (`0x735120`, `0x005DC6A6`), and a setup's write-back keeps them.
+    #[test]
+    fn network_name_is_the_handle_bytes_and_writes_back_unchanged() {
+        let mut runtime = runtime(
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
+            3,
+        );
+        for handle in [vec![0xcd, 0xe6, 0xbc, 0xd2], vec![0x80]] {
+            runtime.local_preferences.handle_bytes = handle.clone();
+            let local = runtime.local_participant();
+            let sent = crate::net::lan_messages::LanMessage::presence(&local.name, 0, 0).unwrap();
+            assert_eq!(sent.name_bytes(), handle.as_slice());
+            assert_eq!(sent.name(), local.name);
+            runtime.update_local_preferences(&local, 1);
+            assert_eq!(runtime.local_preferences.handle_bytes, handle);
+        }
     }
 
     #[test]

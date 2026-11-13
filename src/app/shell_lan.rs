@@ -196,9 +196,11 @@ impl App {
             .match_state
             .session
             .enter_network(NetworkReturnContext::LanLobby);
-        let local = state.frontend.multiplayer_shell_runtime.local_participant();
-        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-        let mut runtime = LanShellRuntime::new(&local.name, observer);
+        let owner = &state.frontend.multiplayer_shell_runtime;
+        let local = owner.local_participant();
+        // The name box shows the name as typed; the lobby row shows it as
+        // every other player sees it.
+        let mut runtime = LanShellRuntime::new(&owner.handle_text(), owner.lan_observer());
         runtime
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
@@ -556,6 +558,12 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             .set_lan_observer(value),
         LanLobbyAction::NameChanged(value) => {
             state.frontend.multiplayer_shell_runtime.set_handle(&value);
+            // The row shows the name as sent, as the service's rebuild does.
+            let name = state
+                .frontend
+                .multiplayer_shell_runtime
+                .local_participant()
+                .name;
             let runtime = state.frontend.lan.as_mut().unwrap();
             runtime
                 .requests
@@ -567,8 +575,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             if runtime.lobby.game_list.selected == Some(0) {
                 let mut players = runtime.lobby.players.clone();
                 match players.first_mut() {
-                    Some(local) => local.name = value,
-                    None => players.push(local_lobby_row(&value)),
+                    Some(local) => local.name = name,
+                    None => players.push(local_lobby_row(&name)),
                 }
                 runtime.lobby.replace_players(players);
             }
