@@ -239,9 +239,9 @@ pub(crate) fn resolve_rows(
                 insignia,
                 name: sources.ui_name(sim, house, state.country(), &country_name),
                 rgb,
-                // Σ of entries 0..19 of both per-victim kill tables
-                // (+0x53E4, +0x5438), `%d`.
-                kills: Some(state.stats().diplomacy_kills() as i32),
+                // Σ of the two 20-entry per-victim kill tables (+0x53E4,
+                // +0x5438), `%d`.
+                kills: Some(state.stats().kills() as i32),
                 // 0x00658330 hides a defeated House's box; nothing re-shows it.
                 allies: allies.filter(|_| !state.is_defeated()),
                 chat,

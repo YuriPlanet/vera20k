@@ -355,20 +355,9 @@ fn house_current_viewer_discovery_is_retained_without_changing_peer_hash() {
 fn native_totals(fields: &Value) -> (MatchStatistics, i32) {
     let count = |field: &Value| u32::try_from(field.as_i64().unwrap()).unwrap();
     let table_total = |name: &str| fields[name].as_array().unwrap().iter().map(count).sum();
-    // `0x00658330` reads entries 0..19 of each kill table.
-    let table_read = |name: &str| -> u32 {
-        fields[name]
-            .as_array()
-            .unwrap()
-            .iter()
-            .take(20)
-            .map(count)
-            .sum()
-    };
     let stats = MatchStatistics {
         units_killed: table_total("units_killed"),
         buildings_killed: table_total("buildings_killed"),
-        diplomacy_kills: table_read("units_killed") + table_read("buildings_killed"),
         units_lost: count(&fields["units_lost"]),
         buildings_lost: count(&fields["buildings_lost"]),
         built: fields["built"]
@@ -484,7 +473,6 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
         units_lost: 1,
         buildings_lost: 3,
         built: 0,
-        diplomacy_kills: 3,
     };
     // Explicit four-produced-item prior for this synthetic score scene.
     house.set_produced_count_for_test(ObjectCategory::Infantry, 0, 4);
@@ -522,11 +510,11 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     assert_eq!(restored.state_hash(), sim.state_hash());
 }
 
-/// `0x00658330` sums entries 0..19 of the units (`+0x53E4`) and buildings
-/// (`+0x5438`) kill tables: kills of House 20 are left out, and a unit kill
-/// of House 21 lands in the buildings table's first entry, which counts.
+/// Each 20-entry kill table is followed by its loss counter (`+0x5434`,
+/// `+0x5488`), so kills of House 20 and later land past the tables the score
+/// screen and Diplomacy dialog sum (`0x005C996D`, `0x00658330`).
 #[test]
-fn diplomacy_counts_the_kill_table_entries_it_reads() {
+fn kills_of_house_twenty_and_later_land_past_the_kill_tables() {
     use crate::map::entities::EntityCategory;
     let mut stats = MatchStatistics::default();
     stats.record_kill(EntityCategory::Unit, Some(19));
@@ -534,5 +522,9 @@ fn diplomacy_counts_the_kill_table_entries_it_reads() {
     stats.record_kill(EntityCategory::Unit, Some(20));
     stats.record_kill(EntityCategory::Structure, Some(20));
     stats.record_kill(EntityCategory::Infantry, Some(21));
-    assert_eq!((stats.kills(), stats.diplomacy_kills()), (5, 3));
+    stats.record_kill(EntityCategory::Structure, Some(21));
+    assert_eq!(
+        (stats.kills(), stats.units_lost(), stats.buildings_lost()),
+        (3, 1, 1)
+    );
 }

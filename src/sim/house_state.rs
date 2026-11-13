@@ -3113,8 +3113,6 @@ pub struct MatchStatistics {
     /// placed buildings and delivered units, `DontScore=` types excepted
     /// (`production::factory_lifecycle::record_last_built`).
     built: u32,
-    /// The kills the Diplomacy dialog counts (`diplomacy_reads_kill`).
-    diplomacy_kills: u32,
 }
 
 #[cfg(test)]
@@ -3156,10 +3154,14 @@ impl MatchStatistics {
     }
 
     /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table
-    /// at the victim owner's House index (`TechnoClass::GetOwningHouseIndex
-    /// @ 0x006F9DB0`, read before ChangeOwner's owner store). The existing
-    /// total projection keeps their sum, rather than a second per-house table,
-    /// beside the part the Diplomacy dialog reads. Both callers share its
+    /// entry at the victim owner's House index (`TechnoClass::
+    /// GetOwningHouseIndex @ 0x006F9DB0`, read before ChangeOwner's owner
+    /// store). The score screen (`0x005C996D..0x005C9995`) and the Diplomacy
+    /// dialog (`0x00658330`) sum the 20 entries of each table, so the totals
+    /// kept here are those sums. Each table is followed by its loss counter:
+    /// units `+0x53E4`, UnitsLost `+0x5434`, buildings `+0x5438`,
+    /// BuildingsLost `+0x5488`, then WhoLastHurtMe `+0x548C`, so a kill of
+    /// House 20 or later lands past its table. Both callers share its
     /// mutation and numeric semantics.
     pub(crate) fn record_kill(
         &mut self,
@@ -3167,15 +3169,21 @@ impl MatchStatistics {
         victim_house: Option<usize>,
     ) {
         let structure = category == crate::map::entities::EntityCategory::Structure;
-        let counter = if structure {
-            &mut self.buildings_killed
-        } else {
-            &mut self.units_killed
+        let base = if structure { 21 } else { 0 };
+        let counter = match victim_house.map_or(base, |house| house.saturating_add(base)) {
+            0..=19 => &mut self.units_killed,
+            20 => &mut self.units_lost,
+            21..=40 => &mut self.buildings_killed,
+            41 => &mut self.buildings_lost,
+            // WhoLastHurtMe, which only `HouseClass::ComputeCRC @ 0x0050300D`
+            // reads, the sync check VERA's state hash replaces. RESIDUAL: a
+            // 23rd House, beyond gamemd's 8 players and retail's 14
+            // countries (a map adding countries, or a VERA game with more
+            // players), would reach ComputedBaseCenter (`+0x5490`) and later
+            // AI fields; VERA leaves them.
+            _ => return,
         };
         *counter = counter.wrapping_add(1);
-        if victim_house.is_some_and(|index| diplomacy_reads_kill(structure, index)) {
-            self.diplomacy_kills = self.diplomacy_kills.wrapping_add(1);
-        }
     }
 
     /// Only HouseState's successful-production owner updates this derived sum.
@@ -3197,16 +3205,10 @@ impl MatchStatistics {
             units_lost,
             buildings_lost,
             built,
-            diplomacy_kills: units_killed.wrapping_add(buildings_killed),
         }
     }
 
-    /// The Diplomacy dialog's kill count (`0x00658330`).
-    pub const fn diplomacy_kills(&self) -> u32 {
-        self.diplomacy_kills
-    }
-
-    /// Score-screen Kills column: units + buildings destroyed.
+    /// Score-screen and Diplomacy Kills: the sum of both kill tables.
     pub const fn kills(&self) -> u32 {
         self.units_killed.wrapping_add(self.buildings_killed)
     }
@@ -3215,23 +3217,6 @@ impl MatchStatistics {
     pub const fn losses(&self) -> u32 {
         self.units_lost + self.buildings_lost
     }
-}
-
-/// Whether `RadarClass::UpdateDiplomacyDialogHouse @ 0x00658330` counts a
-/// kill of House `victim_house`'s object. The units table (`+0x53E4`) and the
-/// buildings table (`+0x5438`) hold 21 entries each, back to back, and the
-/// dialog sums entries 0..19 of both: a kill of House 20 is left out, and a
-/// unit kill of House 21..41 lands in the buildings table, read up to House
-/// 40. RESIDUAL: native's stores past the buildings table, a building kill of
-/// House 21 or a unit kill of House 42 on, overwrite `+0x548C` and later
-/// House fields; VERA counts them in the totals only.
-const fn diplomacy_reads_kill(structure: bool, victim_house: usize) -> bool {
-    let entry = if structure {
-        victim_house.saturating_add(21)
-    } else {
-        victim_house
-    };
-    entry < 41 && entry != 20
 }
 
 /// Look up a HouseState by interned owner ID (O(1) BTreeMap lookup).
