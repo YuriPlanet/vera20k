@@ -88,6 +88,9 @@ pub struct RetailStartupOptions {
     /// Parse_Command_Line52F939..52F94B sets the process flag 0xA8EDDC.
     /// Main_Tick55D767 and Options init4E2050 consume it for campaigns.
     pub campaign_speed_control: bool,
+    /// `-X` followed by `Q`s: Parse_Command_Line52FB0A sets 0xA8ED64, which
+    /// turns off every Theme entry point and EVA's dequeue.
+    pub theme_and_eva_quiet: bool,
     /// Screen width, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
     pub screen_width: i32,
     /// Screen height, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
@@ -102,6 +105,7 @@ impl Default for RetailStartupOptions {
             windowed: false,
             audio_enabled: true,
             campaign_speed_control: false,
+            theme_and_eva_quiet: false,
             screen_width: SCREEN_SIZE_UNSET,
             screen_height: SCREEN_SIZE_UNSET,
         }
@@ -116,6 +120,7 @@ impl RetailStartupOptions {
             RecognizedSwitch::Windowed => self.windowed = true,
             RecognizedSwitch::NoAudio => self.audio_enabled = false,
             RecognizedSwitch::SpeedControl => self.campaign_speed_control = true,
+            RecognizedSwitch::ThemeAndEvaQuiet => self.theme_and_eva_quiet = true,
             RecognizedSwitch::ScreenSize { width, height } => {
                 self.screen_width = width;
                 if let Some(height) = height {
@@ -135,6 +140,7 @@ enum RecognizedSwitch {
     Windowed,
     NoAudio,
     SpeedControl,
+    ThemeAndEvaQuiet,
     ScreenSize {
         width: i32,
         height: Option<i32>,
@@ -205,13 +211,19 @@ fn classify(normalized: &str) -> Option<RecognizedSwitch> {
     if normalized == WINDOWED_SWITCH {
         return Some(RecognizedSwitch::Windowed);
     }
-    // `-X…` is a native debug form that only accepts a run of `Q` characters
-    // after the prefix. Recorded divergence: on any other trailing character
-    // native prints a message and aborts the launch, where this accepts the
-    // argument and carries on. Chosen deliberately — the flag drives no VERA
-    // subsystem, so refusing to start over it would be the worse failure.
-    if normalized.starts_with("-X") {
-        return Some(RecognizedSwitch::NoLocalEffect);
+    // `-X…` (strncmp at 0x0052FAD7): each following `Q` sets 0xA8ED64 at
+    // 0x0052FB0A; a bare `-X` sets nothing. Recorded divergence: on any other
+    // trailing character native jumps to 0x0052FB41 and aborts the launch,
+    // where this accepts the argument without effect — refusing to start
+    // over a debug switch would be the worse failure.
+    if let Some(rest) = normalized.strip_prefix("-X") {
+        return Some(
+            if !rest.is_empty() && rest.bytes().all(|byte| byte == b'Q') {
+                RecognizedSwitch::ThemeAndEvaQuiet
+            } else {
+                RecognizedSwitch::NoLocalEffect
+            },
+        );
     }
     None
 }
@@ -378,10 +390,18 @@ mod tests {
             "-SOCKET1234",
             "-DESTNET",
             "-O",
-            "-XQ",
+            "-X",
+            "-XQA",
         ]);
         assert!(rest.is_empty(), "every native switch must be consumed");
         assert_eq!(options, RetailStartupOptions::default());
+    }
+
+    #[test]
+    fn x_with_only_qs_quiets_theme_and_eva() {
+        assert!(consume(&["-xq"]).0.theme_and_eva_quiet);
+        assert!(consume(&["-XQQQ"]).0.theme_and_eva_quiet);
+        assert!(!consume(&["-X"]).0.theme_and_eva_quiet);
     }
 
     #[test]
