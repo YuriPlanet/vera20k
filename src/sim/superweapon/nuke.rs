@@ -87,7 +87,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     // Ares hook 467E59 (10036960): the superweapon's radar event, then the
     // flash for its duration (the manual FadeIn and ChangeLighting), then
     // the wait on the warhead's PreImpactAnim.
-    if rules.ares_super_weapons()
+    if rules.ares_form()
         && let Some(ball) = impact.ares()
     {
         if ball.radar {

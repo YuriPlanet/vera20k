@@ -169,7 +169,7 @@ pub(crate) fn try_fire(
 ) {
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -599,7 +599,7 @@ fn find_best_rally_target(
         .values()
         .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity))
         .collect();
-    pick_best_rally_target(&entries, &mut sim.scenario_rng, rules.ares_super_weapons())
+    pick_best_rally_target(&entries, &mut sim.scenario_rng, rules.ares_form())
 }
 
 /// Ares Hooks.Targeting.cpp: OffensiveTargetSelector/ PickIonCannonTarget.

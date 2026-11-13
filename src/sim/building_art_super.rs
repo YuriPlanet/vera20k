@@ -82,7 +82,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let remaining = if rules.ares_super_weapons() {
+        let remaining = if rules.ares_form() {
             // Installed Ares4463F0 ->10034A60 replaces the retail Type-vs-
             // definition-index scan. No eligible Super still creates14 when
             // the primary definition exists (10034A91..10034ACD).
@@ -138,7 +138,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let ares = rules.ares_super_weapons();
+        let ares = rules.ares_form();
         let owner = entity.owner();
         let health = entity.health;
         if matches!(

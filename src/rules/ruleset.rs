@@ -8253,15 +8253,18 @@ impl RuleSet {
         self.reads_ares_way
     }
 
-    /// Whether the superweapon code takes its Ares arms in this game. They
-    /// read data only Rules read the Ares way hold: the SWTypeExt metadata,
-    /// the handler kinds, and a handler type's absent PreDependent. So they
+    /// Whether the code that needs Ares' own Rules takes its Ares form in this
+    /// game: the superweapons, production, power and money. Their Ares arms
+    /// read data only Rules read the Ares way hold (the SWTypeExt metadata
+    /// and handler kinds, BuildingTypeExt, the factory owners, the generic
+    /// prerequisites, a House type's power plants), and a stock arm can
+    /// misread such data (a handler type's absent PreDependent). So they
     /// follow how the Rules were read, not [`Self::ares`] alone. A game Ares
-    /// turned on in by its keys, read the stock way, keeps the stock
-    /// superweapons until loading reads its Rules the Ares way; a build
-    /// with the `ares` feature reads every game the Ares way and keeps the
-    /// Ares superweapons in every game, as before the switch.
-    pub fn ares_super_weapons(&self) -> bool {
+    /// turned on in by its keys, read the stock way, keeps the stock form of
+    /// these until loading reads its Rules the Ares way; a build with the
+    /// `ares` feature reads every game the Ares way and keeps their Ares form
+    /// in every game, as before the switch.
+    pub fn ares_form(&self) -> bool {
         self.reads_ares_way
     }
 

@@ -491,7 +491,6 @@ impl std::hash::Hash for SpyGains {
 /// The veterancy one Ares infiltration gives its house
 /// (`BuildingExt::ExtData::InfiltratedBy @ 10012000`): the House bytes
 /// `+0x2BF`/`+0x2C0` and the HouseExt bytes `+0x48..+0x4A`.
-#[cfg(feature = "ares")]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AresSpyVeterancy {
     pub(crate) infantry: bool,
@@ -883,7 +882,6 @@ pub struct HouseState {
     /// (`BuildingExt::ExtData::InfiltratedBy @ 10012000`), which
     /// `Prerequisite.StolenTechs=` asks (RequirementsMet `10021FF0`).
     /// Nothing clears it.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_stolen_tech: u32,
     /// Ares HouseExt `+0x14` SWLastIndex (constructor -1): the
@@ -2313,7 +2311,6 @@ impl HouseState {
 
     /// The veterancy arms of Ares' infiltration (`10012000`): set each
     /// granted byte, then House+1FC once any was. Answers whether any was.
-    #[cfg(feature = "ares")]
     pub(crate) fn grant_ares_spy_veterancy(&mut self, gains: AresSpyVeterancy) -> bool {
         let gains_any = gains != AresSpyVeterancy::default();
         let spy = &mut self.spy_gains;
@@ -2405,7 +2402,6 @@ impl HouseState {
             std::hash::Hash::hash(&self.ares_reverse_engineered, hasher);
         }
         // The technology bits its spies stole, folded once it has any.
-        #[cfg(feature = "ares")]
         if self.ares_stolen_tech != 0 {
             std::hash::Hash::hash(b"ares-house-stolen-tech-v1", hasher);
             std::hash::Hash::hash(&self.ares_stolen_tech, hasher);
@@ -2415,7 +2411,6 @@ impl HouseState {
     /// The StolenTech arm of Ares' infiltration (`10012000`): OR the
     /// building type's `SpyEffect.StolenTechIndex` bits into HouseExt
     /// `+0x40`, then set House+1FC.
-    #[cfg(feature = "ares")]
     pub(crate) fn steal_ares_tech(&mut self, bits: u32) {
         self.ares_stolen_tech |= bits;
         self.request_tech_recheck();
@@ -2423,7 +2418,6 @@ impl HouseState {
 
     /// Whether this house holds every StolenTech bit of `required`
     /// (`Prerequisite.StolenTechs`); an empty set is met (`10021FF0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn has_ares_stolen_techs(&self, required: u32) -> bool {
         self.ares_stolen_tech & required == required
     }
@@ -2457,7 +2451,6 @@ impl HouseState {
 
     /// `SpyEffect.UndoReverseEngineer` (`BuildingExt::ExtData::InfiltratedBy
     /// @ 10012000`): empty the list, then set House+1FC.
-    #[cfg(feature = "ares")]
     pub(crate) fn undo_ares_reverse_engineering(&mut self) {
         self.ares_reverse_engineered.clear();
         self.request_tech_recheck();
@@ -3032,7 +3025,6 @@ impl HouseState {
             spy_gains: SpyGains::default(),
             ares_academies: Vec::new(),
             ares_reverse_engineered: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_stolen_tech: 0,
             ares_last_super: no_super_index(),
             powered_unit_centers: 0,

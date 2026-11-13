@@ -182,11 +182,10 @@ impl NukeFlash {
     /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
     /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
-        // Still on the feature: no RuleSet reaches the flash timer.
-        #[cfg(feature = "ares")]
+        // Ares' test runs in every game: without Ares the duration is only
+        // -1, 15 or 30, where it is stock's `!= -1`; another one comes only
+        // from Ares' impact hook (`start_nuke_flash_for`).
         let running = self.duration >= 0;
-        #[cfg(not(feature = "ares"))]
-        let running = self.duration != -1;
         running && self.start.wrapping_add(self.duration) < frame
     }
 }
