@@ -499,8 +499,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
 /// The detail floor a radar movie sets: `PlayRadarMovie` stage 2 calls
 /// `Game__SetMinFrameRate` with DetailMinFrameRateMovie (`0x0065797E`) and
 /// `PerFrameMovieUpdate`'s last clip with DetailMinFrameRateNormal
-/// (`0x00657C71`). Retirement (`0x005BF450`) leaves it for the next
-/// scenario's `Fill_In_Data` to reset.
+/// (`0x00657C71`).
 fn set_detail_floor(state: &AppState, playing: bool) {
     if let Some(rules) = state.rules() {
         apply_detail_floor(
@@ -540,6 +539,12 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     if let Some(radar) = presentation.radar_anim.as_mut() {
         radar.retire_movies();
     }
+    // 5BF450 empties the queue and leaves Mode 3, so the next
+    // `RadarClass::Draw`'s PerFrameMovieUpdate takes its movie-done arm and
+    // restores the Normal floor (`0x00657C71`); a failed load keeps the match.
+    // RESIDUAL: that arm's MovieOff sound is not played here; only a load
+    // failing mid-movie keeps the match running to hear it.
+    set_detail_floor(state, false);
     if held {
         crate::app::match_runtime::scenario_pause::apply_service(
             state,

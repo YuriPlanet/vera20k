@@ -143,6 +143,14 @@ fn find_cursor_feedback_kind(
     if state.match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
+    // `ScrollClass::Action` (`0x006922E0`) runs UpdateMouseScrolling, which
+    // writes the pan, capture and edge cursors, before `TabClass::Action`
+    // reaches `RadarClass::AI` through `SidebarClass::Action` (`0x006A7780`)
+    // and `PowerClass::AnimationTick` (`0x00640391`), so the radar's arrow
+    // over its top buttons is the frame's last cursor write.
+    if over_radar_top_button(state) {
+        return Some(CursorFeedbackKind::Default);
+    }
     // `ScrollClass__UpdateMouseScrolling` 0x00692F30 writes the action cursor
     // and the edge arrow only inside its `capture == 0` else-arm. With the
     // capture held, a right-drag pan owns the cursor for as long as it owns the
@@ -164,9 +172,6 @@ fn find_cursor_feedback_kind(
         } else {
             CursorFeedbackKind::Scroll(dir)
         });
-    }
-    if over_radar_top_button(state) {
-        return Some(CursorFeedbackKind::Default);
     }
     if state.match_state.input.minimap_press_active()
         || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
