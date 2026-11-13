@@ -29,7 +29,10 @@ and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, and, in a build with Ares, whether the game ships `ares.mix`, which the
-rules agreement covers. Released builds have no Ares and always play stock.
+rules agreement covers. Released builds never mount `ares.mix`: there Ares plays
+only from Ares keys in the rules, mode or map, with the part of Ares that has left
+its build feature ([Ares](ares.md)). Players on one version reach the same answer;
+a game from before this decides differently and is another version.
 
 The rules agreement is one digest of the process's rules sources
 (`ProcessAssets::multiplayer_rules_digest`). With a mod in use

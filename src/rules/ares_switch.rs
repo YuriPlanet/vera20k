@@ -23,8 +23,11 @@
 //! or `Verses`. Reads through Ares' parsers that are not Ares keys open
 //! [`not_ares_reads`]: an Ares reader that replaces a stock read or reads a
 //! key retail data already holds, and the Phobos readers, which parse with
-//! Ares' `Valueable<T>` readers, so a Phobos-only mod keeps Ares off. The
-//! store's own merges and walks are not reader lookups.
+//! Ares' `Valueable<T>` readers, so a Phobos-only mod keeps Ares off. That
+//! holds in a build with the `phobos` feature: without those readers the
+//! three keys both extensions read (`LaserThickness`, `Beam.IsHouseColor`,
+//! `Passengers.BySize`) count as Ares'. The store's own merges and walks are
+//! not reader lookups.
 //!
 //! One game, one answer. The processing passes keep their Ares-only keys
 //! with the processed rules ([`AresInputs`], saved with them); the RuleSet
@@ -64,6 +67,19 @@ use std::collections::{BTreeMap, BTreeSet};
 /// feature makes this `on`.
 pub(crate) const fn reading_mode(on: bool) -> bool {
     cfg!(feature = "ares") || on
+}
+
+/// Whether this build ever reads Rules the way a saved registry says its
+/// Rules were read. A build with the `ares` feature reads every game the Ares
+/// way ([`reading_mode`]). A build without it never mounts `ares.mix`
+/// (`AssetManager::mount_base_mix_files`), so outside a test fixture it reads
+/// only the stock way. The PR that moves the mount to the switch drops this.
+pub(crate) const fn build_reads(ares_way: bool) -> bool {
+    if cfg!(feature = "ares") {
+        ares_way
+    } else {
+        !ares_way || cfg!(any(test, feature = "test-support"))
+    }
 }
 
 /// Whether the Rules reads on this thread follow Ares.dll: its list

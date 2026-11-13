@@ -1153,12 +1153,10 @@ impl ProcessedRulesLayers {
                 "saved Rules require a different compiled extension capability",
             ));
         }
-        // The release build reads only the stock way and a build with the
-        // `ares` feature only the Ares way: neither restores Rules read the
-        // other way.
-        if crate::rules::ares_switch::reading_mode(registry.reads_ares_way)
-            != registry.reads_ares_way
-        {
+        // A build without the `ares` feature reads only the stock way, since
+        // it never mounts `ares.mix`, and a build with it only the Ares way:
+        // neither restores Rules read the other way.
+        if !crate::rules::ares_switch::build_reads(registry.reads_ares_way) {
             return Err(RulesError::InvalidSavedState(
                 "saved Rules were read in a way this build never reads",
             ));
@@ -4574,8 +4572,8 @@ impl Default for NativeRulesRegistryState {
 impl NativeRulesRegistryState {
     /// A fresh RulesClass and empty Type registries, read the Ares way
     /// (Ares' generic prerequisites and armor catalog with them) or the stock
-    /// way for the rest of the process. A build that does not let Ares turn on
-    /// reads the stock way.
+    /// way for the rest of the process. A build with the `ares` feature reads
+    /// every game the Ares way (`ares_switch::reading_mode`).
     pub(crate) fn new(ares_way: bool) -> Self {
         let ares_way = crate::rules::ares_switch::reading_mode(ares_way);
         // RulesClass constructor values; `GeneralRules::default` owns them.

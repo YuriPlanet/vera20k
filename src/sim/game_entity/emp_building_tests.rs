@@ -230,8 +230,6 @@ fn ares_emp_lifts_a_gap_generators_gap_until_expiry() {
 /// (hook 0x50AF10, 10039450) holds its Psychic Reveal, which is not
 /// IsPowered=, while no provider is Charging, and an EMPed provider is not
 /// powered (10038F10). The stock pass never holds such a type.
-// Runs again once the superweapons' charging providers move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_holds_a_psychic_sensors_reveal_until_expiry() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
