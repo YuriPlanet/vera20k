@@ -182,6 +182,7 @@ impl NukeFlash {
     /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
     /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
+        // Still on the feature: no RuleSet reaches the flash timer.
         #[cfg(feature = "ares")]
         let running = self.duration >= 0;
         #[cfg(not(feature = "ares"))]
@@ -221,7 +222,6 @@ pub struct ScenarioLightingState {
     /// Ares UpdateLightingColor's `Light.Ambient`/`.Red`/`.Green`/`.Blue`
     /// over the selected profile (SWTypeExt of the active superweapon), set
     /// by [`Self::select_ares`]; `None` after a stock [`Self::select`].
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_light: Option<[Option<i32>; 4]>,
 }
@@ -316,7 +316,6 @@ impl ScenarioLightingState {
             nuke_change_rate,
             nuke_flash: NukeFlash::OFF,
             ambient_change_overrides: [None; 2],
-            #[cfg(feature = "ares")]
             ares_light: None,
         }
     }
@@ -467,10 +466,7 @@ impl ScenarioLightingState {
     pub fn select(&mut self, profile: ScenarioLightingProfile) {
         self.selected_profile = profile;
         self.target_ambient = self.profile(profile).ambient_percent;
-        #[cfg(feature = "ares")]
-        {
-            self.ares_light = None;
-        }
+        self.ares_light = None;
     }
 
     /// Ares SWTypeExt::GetLightingColor (hook 53C280, 10037B50) for a special
@@ -479,7 +475,6 @@ impl ScenarioLightingState {
     /// normal ambient, RecalcLighting restores); otherwise the type's set,
     /// nonnegative overrides replace the profile's ambient (x1) and RGB
     /// (x10 in RecalcLighting).
-    #[cfg(feature = "ares")]
     pub(crate) fn select_ares(
         &mut self,
         profile: ScenarioLightingProfile,
@@ -573,9 +568,7 @@ impl ScenarioLightingState {
     /// (`-1, -1, -1`).
     pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
         (self.selected_profile != ScenarioLightingProfile::Normal).then(|| {
-            #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
             let mut rgb = self.profile(self.selected_profile).alternate_rgb();
-            #[cfg(feature = "ares")]
             if let Some([_, red, green, blue]) = self.ares_light {
                 for (slot, value) in rgb.iter_mut().zip([red, green, blue]) {
                     if let Some(value) = value {
@@ -1977,7 +1970,6 @@ impl ScenarioSession {
             0x1668u16.hash(hasher);
             lighting.ambient_change_overrides.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if let Some(light) = lighting.ares_light {
             b"ares-sw-light-v1".hash(hasher);
             light.hash(hasher);

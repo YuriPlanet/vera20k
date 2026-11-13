@@ -1332,6 +1332,39 @@ fn a_super_holds_only_while_no_provider_is_online() {
     );
 }
 
+/// A game Ares turned on in by a key, with its Rules read the stock way
+/// (no `ares.mix`), holds no SWTypeExt data, so its superweapons stay
+/// stock (`RuleSet::ares_super_weapons`): the house is granted its Supers
+/// and one that is not `IsPowered=` charges on. A build with the `ares`
+/// feature reads every game the Ares way and has no such game.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn a_stock_read_game_with_an_ares_key_keeps_stock_superweapons() {
+    let rules = rules_from(
+        &format!(
+            "{}[SuperWeaponTypes]\n0=SpyPlaneSpecial\n\
+             [SpyPlaneSpecial]\nType=SpyPlane\nRechargeTime=1\nIsPowered=no\n\
+             [RADAR]\nStrength=40\nSuperWeapon=SpyPlaneSpecial\n",
+            RULES
+                .replace("3=GAWEAP\n", "3=GAWEAP\n4=RADAR\n")
+                .replace("[CLEG]\n", "[CLEG]\nImmuneToAbduction=yes\n")
+        ),
+        ART,
+    );
+    assert!(rules.ares(), "the key turns Ares on");
+    assert!(!rules.reads_ares_way(), "read the stock way");
+    let (mut sim, grid) = arena(12, &rules);
+    spawn(&mut sim, &rules, "RADAR", "Americans", 16, 10);
+    let americans = sim.interner.get("Americans").unwrap();
+    let spy_plane = sim.interner.get("SpyPlaneSpecial").unwrap();
+    for _ in 0..3 {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+    }
+    let instance = &sim.super_weapons[&americans][&spy_plane];
+    assert!(instance.is_active(), "granted by its provider");
+    assert!(!instance.is_suspended(), "charging");
+}
+
 /// Through the production fire path: a Chrono Legionnaire ordered to attack
 /// a silo holds its house's Nuke during the warp and erases the silo after
 /// Strength * 10 / Damage = 50 of its AI turns. The erase revokes the Nuke

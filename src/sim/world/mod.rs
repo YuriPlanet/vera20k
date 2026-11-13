@@ -1137,7 +1137,6 @@ pub enum SimSoundEvent {
     /// Ares SPECIAL_PLACE10038ECA..10038EE0: automatic selection for a
     /// manual event failed. Only the owning client prints Message.CannotFire;
     /// its existing message-list transport owns the insert sound.
-    #[cfg(feature = "ares")]
     AresSuperWeaponRefused {
         owner: InternedId,
         sw_type: InternedId,
@@ -1147,7 +1146,6 @@ pub enum SimSoundEvent {
     /// (10033153), which a handler's NoMessage Flag skips. `sw_type` is the
     /// type whose SWTypeExt the Launch read (a PostClick Super's source); a
     /// handler whose Flags hold both NoMessage and NoCleanup sends none.
-    #[cfg(feature = "ares")]
     AresSuperWeaponFinished {
         owner: InternedId,
         sw_type: InternedId,
@@ -1156,11 +1154,9 @@ pub enum SimSoundEvent {
     /// Common Ares Launch10032FC3: every client plays `sw_type`'s
     /// `EVA_Activated` (the PostClick source's for a PostClick Super),
     /// unless the handler's Flags hold NoEVA.
-    #[cfg(feature = "ares")]
     AresSuperWeaponActivatedEva { sw_type: InternedId },
     /// A new type's AbortFire refused a click (SW_PsychicDominator
     /// 10070780): the owner's client prints the type's `Message.Abort`.
-    #[cfg(feature = "ares")]
     AresSuperWeaponAborted {
         owner: InternedId,
         sw_type: InternedId,
@@ -1168,7 +1164,6 @@ pub enum SimSoundEvent {
     /// A type-13 radar event only the clients whose player `owner` counts as
     /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
     /// the target location before the enemy does").
-    #[cfg(feature = "ares")]
     AresAlliedRadarEvent {
         owner: InternedId,
         radar: RadarEventRequest,
@@ -1176,7 +1171,6 @@ pub enum SimSoundEvent {
     /// Ares SuperClass_Update_DrainMoney100358A0 refused a draining Super's
     /// money for a ControlledByHuman House: every client plays
     /// EVA.InsufficientFunds and prints the label in the player's colour.
-    #[cfg(feature = "ares")]
     AresSuperWeaponDrainRefused {
         owner: InternedId,
         sw_type: InternedId,
@@ -1184,7 +1178,6 @@ pub enum SimSoundEvent {
     /// A new type's deferred activation (UnitDelivery's state machine
     /// Update10075DE0, the Ares Lightning Storm's start 10036B00): every
     /// client prints Message.Activate.
-    #[cfg(feature = "ares")]
     AresSuperWeaponActivated {
         owner: InternedId,
         sw_type: InternedId,
@@ -1192,7 +1185,6 @@ pub enum SimSoundEvent {
     /// An Ares Lightning Storm's countdown reached a multiple of 225 under
     /// `Lightning.PrintText` (hook 53A6CF, 10037330): every client prints
     /// the type's Message.Launch, with no EVA line.
-    #[cfg(feature = "ares")]
     AresLightningStormApproaching {
         owner: InternedId,
         sw_type: InternedId,

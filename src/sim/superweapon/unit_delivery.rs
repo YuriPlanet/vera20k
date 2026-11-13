@@ -8,28 +8,20 @@
 //! existing Object entry/Unlimbo transactions, and VERA frame/identity-based
 //! deterministic placement seeds. This is not an Ares RNG/order oracle.
 
-#[cfg(feature = "ares")]
 use super::targeting::on_map;
-#[cfg(feature = "ares")]
 use crate::rules::object_type::ObjectCategory;
-#[cfg(feature = "ares")]
 use crate::rules::overlay_types::OverlayTypeRegistry;
-#[cfg(feature = "ares")]
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::DeliveryType;
-#[cfg(feature = "ares")]
 use crate::rules::superweapon_type::{DeliveryOwner, SuperWeaponType};
-#[cfg(feature = "ares")]
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
-#[cfg(feature = "ares")]
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::Simulation;
-#[cfg(feature = "ares")]
 use crate::sim::world::{FrameEffects, SimSoundEvent};
 use std::hash::{Hash, Hasher};
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "unit_delivery_tests.rs"]
 mod tests;
 
@@ -58,11 +50,17 @@ impl UnitDeliveryState {
         }
     }
 
-    pub(crate) fn validate(&self, sim: &Simulation) -> Result<(), &'static str> {
-        #[cfg(not(feature = "ares"))]
-        if !self.pending.is_empty() {
-            return Err("pending deliveries require a build with the ares feature");
+    /// Saved pending deliveries load only into a game Ares plays in (`ares`,
+    /// [`RuleSet::ares`]), like the entity's delivery base override
+    /// (`GameEntity::validate_ares_build_compatibility`).
+    pub(crate) fn validate_ares_build_compatibility(&self, ares: bool) -> Result<(), &'static str> {
+        if !ares && !self.pending.is_empty() {
+            return Err("pending deliveries require a game Ares plays in");
         }
+        Ok(())
+    }
+
+    pub(crate) fn validate(&self, sim: &Simulation) -> Result<(), &'static str> {
         if self.pending.iter().any(|delivery| {
             !sim.houses.contains_key(&delivery.owner)
                 || delivery.types.is_empty()
@@ -77,9 +75,9 @@ impl UnitDeliveryState {
     }
 }
 
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(test)]
 #[test]
-fn default_build_rejects_pending_unit_delivery_state() {
+fn a_game_without_ares_rejects_pending_unit_delivery_state() {
     let mut sim = Simulation::with_seed(0);
     let owner = sim.interner.intern("Americans");
     let sw_type = sim.interner.intern("Delivery");
@@ -88,7 +86,7 @@ fn default_build_rejects_pending_unit_delivery_state() {
             owner, 0, None, true, 0, 10,
         ));
     let mut state = UnitDeliveryState::default();
-    assert!(state.validate(&sim).is_ok());
+    assert!(state.validate_ares_build_compatibility(false).is_ok());
     state.pending.push(PendingDelivery {
         sw_type,
         owner,
@@ -103,12 +101,13 @@ fn default_build_rejects_pending_unit_delivery_state() {
         activation_sound: None,
     });
     assert_eq!(
-        state.validate(&sim),
-        Err("pending deliveries require a build with the ares feature")
+        state.validate_ares_build_compatibility(false),
+        Err("pending deliveries require a game Ares plays in")
     );
+    assert!(state.validate_ares_build_compatibility(true).is_ok());
+    assert!(state.validate(&sim).is_ok());
 }
 
-#[cfg(feature = "ares")]
 fn delivery_owner(
     sim: &Simulation,
     rules: &RuleSet,
@@ -138,7 +137,6 @@ fn delivery_owner(
 
 /// Reject malformed extension requests before the common Fire_SW transaction.
 /// Lack of a free landing site is an effect-time outcome, not this admission.
-#[cfg(feature = "ares")]
 pub(crate) fn admits(
     sim: &Simulation,
     rules: &RuleSet,
@@ -151,14 +149,13 @@ pub(crate) fn admits(
 
 /// Target-independent preflight is also shared with the AI before search/RNG.
 /// Only a game Ares plays in ([`RuleSet::ares`]) delivers.
-#[cfg(feature = "ares")]
 pub(crate) fn configured(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    rules.ares()
+    rules.ares_super_weapons()
         && !sw.pre_click
         && !sw.post_click
         && !sw.use_charge_drain
@@ -173,7 +170,6 @@ pub(crate) fn configured(
         })
 }
 
-#[cfg(feature = "ares")]
 pub(crate) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -211,7 +207,6 @@ pub(crate) fn launch(
     true
 }
 
-#[cfg(feature = "ares")]
 pub(crate) fn tick(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -233,7 +228,6 @@ pub(crate) fn tick(
     sim.unit_deliveries.pending = retained;
 }
 
-#[cfg(feature = "ares")]
 fn apply(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -275,7 +269,6 @@ fn apply(
     }
 }
 
-#[cfg(feature = "ares")]
 fn place(
     sim: &mut Simulation,
     rules: &RuleSet,
