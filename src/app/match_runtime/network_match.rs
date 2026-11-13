@@ -286,10 +286,10 @@ pub(crate) fn drain_departures(state: &mut AppState) {
     if state.match_state.sim_runtime.is_lent() {
         return;
     }
-    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Network) else {
+    if state.match_state.sim_runtime.runtime().is_none() {
         return;
-    };
-    let departed = runtime.simulation.take_departed_senders();
+    }
+    let departed = state.match_state.sim_runtime.take_departed_senders();
     for sender in departed {
         let Some(runtime) = state.match_state.sim_runtime.runtime() else {
             return;

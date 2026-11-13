@@ -1540,13 +1540,11 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
 /// Move the simulation's pending radar-terrain marks into the minimap's
 /// backlog. Without a minimap they stay with the simulation.
 pub(crate) fn drain_radar_terrain_marks(match_state: &mut super::state::MatchState) {
-    if let (Some(minimap), Some(runtime)) = (
-        match_state.match_presentation.minimap.as_mut(),
-        match_state
-            .sim_runtime
-            .write_sim(super::sim_host::SimWrite::Presentation),
-    ) {
-        minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+    let Some(minimap) = match_state.match_presentation.minimap.as_mut() else {
+        return;
+    };
+    if let Some(cells) = match_state.sim_runtime.take_radar_terrain_marks() {
+        minimap.queue_radar_terrain_cells(cells);
     }
 }
 
