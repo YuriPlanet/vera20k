@@ -203,8 +203,10 @@ pub fn consume_retail_switches(arguments: Vec<OsString>) -> (RetailStartupOption
 /// the substring switches marked in [`SUBSTRING_SWITCHES`] go on to the later
 /// tests, so one argument can match several. Empty means nothing matched.
 ///
-/// Native's hashed switch (`0x0052F77D`, hash `0xD95C68A2`, sets bit 4 of
-/// `0x00A8E960`) between the help forms and `-CD` is not modelled.
+/// Between the help forms and `-CD` native hashes the argument
+/// (`0x005F9E80`) and, on `0xD95C68A2`, sets the `[Intro] Play=` bit
+/// (`[0x00A8E960] & 4`, see app/persistence/intro_play.rs). That hidden
+/// switch's name is unknown and it is not ported.
 fn classify(normalized: &str) -> Vec<RecognizedSwitch> {
     if normalized == NO_AUDIO_SWITCH {
         return vec![RecognizedSwitch::NoAudio];
@@ -297,8 +299,8 @@ fn scan_i32(text: &str) -> (Option<i32>, &str) {
 ///
 /// Native prints TXT_OPTION_HELP_01..06 through StringTable::LoadString
 /// (`0x0052FB6A..0x0052FC16`). The table is not loaded yet at that point (see
-/// [`exit_text`]), so native prints LoadString's fallback line six times; this
-/// text is VERA's own help.
+/// [`exit_text`]), so native prints LoadString's fallback line six times. This
+/// text is VERA's own help instead: it lists VERA's own options too.
 ///
 /// Only switches that actually change what this engine does are listed as
 /// working. The rest are parsed and accepted — which is the point, since a
@@ -324,16 +326,19 @@ pub fn usage_text() -> String {
     .join("\n")
 }
 
-/// The text a [`StartupExit`] prints: for an invalid switch, retail
-/// `ra2md.csf`'s TXT_INVALID. RESIDUAL: native asks StringTable::LoadString
-/// (`0x00734E60`) for it before WinMain loads the table (`0x006BD853`; only
-/// -JABBER/-STR/-NOSTR load it earlier), so it prints the fallback
-/// `***FATAL*** String Manager failed to initilaized properly` (`0x0084583C`)
-/// instead. Stdout only, which the Windows build never shows.
+/// The text a [`StartupExit`] prints. For an invalid switch native asks
+/// StringTable::LoadString (`0x00734E60`) for TXT_INVALID, but the label table
+/// `[0x00B1CF74]` is still empty: WinMain loads it at `0x006BD853`, after the
+/// parser, and the -JABBER/-STR/-NOSTR reloads before that pass the loader a
+/// null file name (`[0x00B1CF68]`, written only by the loader), which it
+/// refuses at `0x007346C1`. So LoadString returns its fallback (`0x0084583C`),
+/// misspelling included, and `_putws` adds the newline.
 pub fn exit_text(exit: StartupExit) -> String {
     match exit {
         StartupExit::Usage => usage_text(),
-        StartupExit::InvalidSwitch => "Invalid option switch.".to_owned(),
+        StartupExit::InvalidSwitch => {
+            "***FATAL*** String Manager failed to initilaized properly".to_owned()
+        }
     }
 }
 
@@ -464,6 +469,11 @@ mod tests {
         assert_eq!(consume(&["-XQA"]).0.exit, Some(StartupExit::InvalidSwitch));
         assert_eq!(consume(&["-x1"]).0.exit, Some(StartupExit::InvalidSwitch));
         assert_eq!(consume(&["-X"]).0.exit, None);
+        // LoadString's fallback, from retail bytes at 0x0084583C.
+        assert_eq!(
+            exit_text(StartupExit::InvalidSwitch),
+            "***FATAL*** String Manager failed to initilaized properly"
+        );
         // Parse_Command_Line returns at the first exit it meets.
         assert_eq!(consume(&["-?", "-XA"]).0.exit, Some(StartupExit::Usage));
         assert_eq!(

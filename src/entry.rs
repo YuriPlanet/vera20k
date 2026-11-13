@@ -138,7 +138,7 @@ fn print_exit(exit: crate::app::frontend::startup_options::StartupExit) -> i32 {
     let text = crate::app::frontend::startup_options::exit_text(exit);
     if exit == crate::app::frontend::startup_options::StartupExit::InvalidSwitch {
         log::warn!(
-            "{text} An -X switch had something other than Q after it; the game did not start."
+            "Invalid option switch: an -X switch had something other than Q after it, so the game did not start."
         );
     }
     println!("{text}");
