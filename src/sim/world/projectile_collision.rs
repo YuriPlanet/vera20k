@@ -617,9 +617,8 @@ impl ProjectileCollisionWorld<'_> {
             overlay_grid: self.overlays,
             overlay_registry: self.overlay_registry,
             alliances: Some(self.alliances),
-            // Ares' building test moves to the switch with combat's
-            // line-of-fire walk (`line_of_fire::ares_obstacle`).
-            #[cfg(feature = "ares")]
+            // The walk itself answers on the switch; a game without Ares
+            // never asks a cell for its buildings.
             buildings: Some(crate::sim::combat::line_of_fire::CellBuildings {
                 occupancy: self.occupancy,
                 entities: self.entities,
@@ -639,14 +638,11 @@ impl ProjectileCollisionWorld<'_> {
                 shot: LineOfFireShot {
                     subject_to_cliffs: projectile.collision().subject_to_cliffs,
                     subject_to_walls: projectile.collision().subject_to_walls,
-                    #[cfg(feature = "ares")]
                     subject_to_solid: projectile.collision().subject_to_solid,
                     parties: LineOfFireParties {
                         firing_house: owner.map(|source| source.owner()),
                         // The bullet's Owner (+0xB0) and Target (+0x10C).
-                        #[cfg(feature = "ares")]
                         source_object: owner.map(|source| source.stable_id()),
-                        #[cfg(feature = "ares")]
                         target_object: match projectile.target() {
                             ProjectileTarget::Entity(id) => Some(id),
                             _ => None,
@@ -1445,8 +1441,6 @@ mod tests {
     /// a `SubjectToBuildings=` bullet detonates in a cell whose building's
     /// `SolidHeight=` reaches it (`GetObstacle 1006E540`), but not over its
     /// own target building, nor above that height.
-    // Runs again once combat's line-of-fire walk moves to the switch.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_shared_probe_stops_at_a_solid_building_except_its_target() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1476,9 +1470,6 @@ mod tests {
     /// Ares `BulletClass_SetMovement_Obstacle 1001A940` (hook 0x4688BD): an
     /// Inviso bullet stands on the first obstacle between its launch and its
     /// placement, at that cell's vt+0x48 (`FindFirstObstacle 1006E2B0`).
-    // Moves to the switch with combat's line-of-fire walk
-    // (`Simulation::ares_inviso_obstacle`).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_inviso_bullet_stands_on_the_first_solid_building() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);

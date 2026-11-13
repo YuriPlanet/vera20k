@@ -825,7 +825,7 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
         hall,
         [(
             "DESTA".to_string(),
-            crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner))
+            rules.ares().then_some(AnimRemap::House(owner))
         )]
     );
 }
@@ -1867,7 +1867,9 @@ fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
         remaps,
         [(
             "DESTA",
-            crate::rules::ARES_BUILD.then_some(crate::sim::anim_class::AnimRemap::House(owner))
+            rules
+                .ares()
+                .then_some(crate::sim::anim_class::AnimRemap::House(owner))
         )]
     );
 }
@@ -1942,7 +1944,7 @@ fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
                         palette: sim.interner.get("lib").unwrap(),
                     })
                 } else {
-                    crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner))
+                    rules.ares().then_some(AnimRemap::House(owner))
                 }
             )],
             "{kind}"
@@ -1982,7 +1984,7 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     assert_eq!(
         one_group_hash != rules.simulation_config_hash(),
-        crate::rules::ARES_BUILD
+        rules.ares()
     );
     assert!(rules.art().get("FIRST").unwrap().terrain_palette);
 
@@ -1992,13 +1994,13 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     // case-insensitive after this identity is frozen and later rendered.
     let first = sim.interner.intern("FIRST");
     let lib = sim.interner.intern("lib");
-    let fallback = crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner));
+    let fallback = rules.ares().then_some(AnimRemap::House(owner));
     let expected = [
         Some(AnimRemap::ExtraBuildingScheme {
             house: owner,
             palette: first,
         }),
-        if crate::rules::ARES_BUILD {
+        if rules.ares() {
             Some(AnimRemap::ExtraBuildingScheme {
                 house: owner,
                 palette: lib,

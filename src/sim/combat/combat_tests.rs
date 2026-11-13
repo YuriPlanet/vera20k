@@ -2960,9 +2960,9 @@ fn retaliates(case: RetaliationCase) -> bool {
 /// Ares 3.0 TechnoClass_ReceiveDamage_OpenTopped (1004AD10, hook 0x702A38):
 /// a hit from a rider of an open-topped transport makes the victim
 /// retaliate against the transport.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_retaliation_turns_on_an_open_topped_riders_transport() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     assert!(retaliates(RetaliationCase {
         rider: true,
         ..Default::default()
@@ -6459,8 +6459,8 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
 
 /// A mapless Guard scan by a human player's guarding `ART` (with `art`) of
 /// one enemy `MTNK` (with `target`) a cell away.
-#[cfg(feature = "ares")]
 fn ares_guarding_pick(art: &str, target: &str) -> Option<u64> {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[InfantryTypes]\n[VehicleTypes]\n0=ART\n1=MTNK\n[AircraftTypes]\n[BuildingTypes]\n\
          [ART]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=Shell\n{art}\n\
@@ -6505,9 +6505,9 @@ fn ares_guarding_pick(art: &str, target: &str) -> Option<u64> {
 /// Ares `CanPassiveAquire.Guard=no` stops a human player's guarding Foot
 /// from scanning (hook 0x4D9920), and `CivilianEnemy=yes` makes an
 /// `Insignificant=` candidate an enemy (hook 0x6F826E).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_passive_acquire_and_civilian_enemy_gate_the_guard_scan() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     assert_eq!(ares_guarding_pick("", ""), Some(20));
     assert_eq!(ares_guarding_pick("CanPassiveAquire.Guard=no", ""), None);
     assert_eq!(ares_guarding_pick("", "Insignificant=yes"), None);
@@ -9937,7 +9937,7 @@ fn projectile_shrapnel_fragment_holds_its_weapon_only_in_ares() {
             .iter()
             .map(|fragment| fragment.payload().installed_weapon())
             .collect::<Vec<_>>(),
-        vec![crate::rules::ARES_BUILD.then_some(child)]
+        vec![rules.ares().then_some(child)]
     );
 }
 
@@ -10573,9 +10573,9 @@ fn gsi_08_05_a_sonic_shot_carries_no_damage() {
 
 /// Ares `ApplyDamage=yes` (TechnoClass_Fire_AllowDamage 1004A370, hook
 /// 0x6FE31C) keeps the Sonic shot's `Damage=`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_apply_damage_keeps_a_sonic_shots_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
          [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
@@ -11110,9 +11110,9 @@ fn gsi_08_05_rearm_frames_match_the_original() {
 /// 0x6FF28F): a berserk firer's rearm is its GetROF value times the type's
 /// `Berserk.ROFMultiplier`, else `[CombatDamage] BerserkROFMultiplier`,
 /// truncated toward zero.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_berserk_rearm_takes_the_type_or_rules_multiplier() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[CombatDamage]\nBerserkROFMultiplier=0.75\n[VehicleTypes]\n0=OWN\n1=RULES\n\
          [OWN]\nBerserk.ROFMultiplier=0.25\n[RULES]\nStrength=1\n",

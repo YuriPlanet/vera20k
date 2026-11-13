@@ -1054,7 +1054,6 @@ impl Simulation {
     /// (vt+0xF8) and `PermaControlledAnimationType=` rings it
     /// (CreateMindControlRingAnim 10043F90 inlined: a building's ring at its
     /// height with ZAdjust -1024). Buildings are not refused.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_apply_perma_mc(
         &mut self,
         id: u64,

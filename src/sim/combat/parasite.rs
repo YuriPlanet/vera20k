@@ -835,8 +835,7 @@ impl Simulation {
         // 0x62A2F8): a non-naval Unit or an Infantry owner whose victim is
         // at least two levels up (GetHeight 208) drops from the victim's
         // Location as a bomb (+0x8D, +0x8F).
-        #[cfg(feature = "ares")]
-        let coords = {
+        let coords = if rules.ares() {
             let terrain = self.resolved_terrain.as_ref();
             let falls =
                 self.substrate
@@ -865,6 +864,8 @@ impl Simulation {
                 eater.begin_bomb_fall();
             }
             drop.or(coords)
+        } else {
+            coords
         };
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {

@@ -147,8 +147,7 @@ pub(crate) fn select_with_context(
     // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`) and
     // Ares 3.0 SelectDamageAnimation_FixNegatives (1005D070, hook 0x48A4F9):
     // a negative packet selects by its magnitude (`std::abs`, wrapping).
-    #[cfg(any(feature = "phobos", feature = "ares"))]
-    let damage = if damage < 0 {
+    let damage = if (rules.ares() || crate::rules::PHOBOS_ENABLED) && damage < 0 {
         damage.wrapping_neg()
     } else {
         damage
@@ -207,7 +206,8 @@ pub(crate) fn select_with_context(
         }
     }
     // Ares hook 48A59A (100377E0): a current Ares storm's own warhead and
-    // bolt explosion come first.
+    // bolt explosion come first. Still behind the feature: the Ares storm
+    // this reads moves with the superweapons.
     #[cfg(feature = "ares")]
     if let Some(name) =
         crate::sim::superweapon::lightning_storm::ares_bolt_explosion(world, rules, warhead)

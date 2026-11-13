@@ -328,7 +328,6 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
 /// type's non-null `SW.Warhead` else the payload's warhead, and its
 /// nonnegative `SW.Damage` else the payload's damage. `None` without a
 /// payload.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_payload_hit<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,

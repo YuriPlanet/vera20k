@@ -504,7 +504,7 @@ mod tests {
     use crate::sim::house_state::HouseState;
     use crate::sim::passenger::{BoardingArm, board_passenger};
 
-    // Runs again once combat's driver-kill step moves to the switch.
+    // Runs again once movement's scatter admission moves to the switch.
     #[cfg(feature = "ares")]
     #[test]
     fn driver_hit_kills_one_operator_ejects_rider_and_allows_a_new_driver() {

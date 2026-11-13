@@ -34,15 +34,19 @@ pub(super) fn infantry_prone_raw_damage(
 /// 0x517FC1) in place of the prone head: a deployed infantryman (vt+0x554,
 /// Doing 27..30) hit without ignoreDefenses takes
 /// `ftol(fild damage * Damage.Deployed)` of any sign, with no minimum, and
-/// resumes past the prone head (0x517FF9). `None` runs the prone head.
-#[cfg(feature = "ares")]
+/// resumes past the prone head (0x517FF9). `None` runs the prone head, as a
+/// game without Ares always does.
 fn infantry_deployed_raw_damage(
     target: &GameEntity,
     warhead: &WarheadType,
     damage: i32,
     flags: ReceiverCallFlags,
+    ares: bool,
 ) -> Option<i32> {
     use crate::util::native_x87::MaskedX87Chop53 as X87;
+    if !ares {
+        return None;
+    }
     let combat = warhead.ares_combat()?;
     if target.category() != EntityCategory::Infantry
         || flags.ignore_defenses
@@ -54,16 +58,6 @@ fn infantry_deployed_raw_damage(
         X87::load_i32(damage),
         X87::load_f64(combat.deployed_damage()),
     )))
-}
-
-#[cfg(not(feature = "ares"))]
-fn infantry_deployed_raw_damage(
-    _target: &GameEntity,
-    _warhead: &WarheadType,
-    _damage: i32,
-    _flags: ReceiverCallFlags,
-) -> Option<i32> {
-    None
 }
 
 /// InfantryClass::ReceiveDamage's next head (`0x00517FF5..0x00518010`): an
@@ -85,7 +79,6 @@ fn infantry_spared_mutation(
 /// GetRelativeDamage's victim kind (installed 10051C50): a Unit whose live
 /// type is `ConsideredAircraft=` (+0xD96) counts as Aircraft, an `Organic=`
 /// one (+0xD97) as Infantry, any other as Vehicles.
-#[cfg(feature = "ares")]
 pub(super) fn relative_damage_kind(
     target: &GameEntity,
     target_type: Option<&crate::rules::object_type::ObjectType>,
@@ -361,9 +354,13 @@ pub(super) fn prepare_infantry_receiver(
     {
         prepared.damage = if infantry_spared_mutation(target, warhead, terrain) {
             0
-        } else if let Some(damage) =
-            infantry_deployed_raw_damage(target, warhead, event.damage, event.receiver_flags)
-        {
+        } else if let Some(damage) = infantry_deployed_raw_damage(
+            target,
+            warhead,
+            event.damage,
+            event.receiver_flags,
+            rules.ares(),
+        ) {
             damage
         } else {
             infantry_prone_raw_damage(
@@ -508,50 +505,53 @@ pub(super) fn resolve_receive_damage_with_input(
     // 0x701BFE): the rank's RADIMMUNE, PSIONICWEAPONIMMUNE, POISONIMMUNE and
     // PSIONICSIMMUNE join the type flags, and `ImmuneToBerserk` overrides the
     // Psychedelic one.
-    #[cfg(feature = "ares")]
-    let (rank_rad, rank_psychic, rank_poison, rank_psionics) = target_type
-        .and_then(|object| object.promotion_abilities())
-        .map_or((false, false, false, false), |abilities| {
-            let xp = target.veterancy.raw();
-            (
-                abilities.rad_immune(xp),
-                abilities.psionic_weapon_immune(xp),
-                abilities.poison_immune(xp),
-                abilities.psionics_immune(xp),
-            )
-        });
-    #[cfg(not(feature = "ares"))]
-    let (rank_rad, rank_psychic, rank_poison, rank_psionics) = (false, false, false, false);
+    let (rank_rad, rank_psychic, rank_poison, rank_psionics) = if rules.ares() {
+        target_type
+            .and_then(|object| object.promotion_abilities())
+            .map_or((false, false, false, false), |abilities| {
+                let xp = target.veterancy.raw();
+                (
+                    abilities.rad_immune(xp),
+                    abilities.psionic_weapon_immune(xp),
+                    abilities.poison_immune(xp),
+                    abilities.psionics_immune(xp),
+                )
+            })
+    } else {
+        (false, false, false, false)
+    };
     // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950, at1004AA5F:
     // a live attacker's owner wins over arg7 sourceHouse. CanTargetHouse10051B70
     // replaces the stock ally gate after Poison and before Psychedelic, including
     // ignoreDefenses calls. Reuse the EMP/AttachEffect policy's retained owner.
-    #[cfg(feature = "ares")]
-    let ares_house_damage_allowed = warhead.ares_rules().map(|settings| {
-        let owner = source.map(|entity| entity.owner()).or(event.source_house);
-        settings.can_affect_house(
-            owner.is_some(),
-            owner == Some(target.owner()),
-            owner.is_some_and(|owner| allied(owner, target.owner())),
-            warhead.affects_allies,
-        )
-    });
-    #[cfg(not(feature = "ares"))]
-    let ares_house_damage_allowed = None;
+    let ares_house_damage_allowed = if rules.ares() {
+        warhead.ares_rules().map(|settings| {
+            let owner = source.map(|entity| entity.owner()).or(event.source_house);
+            settings.can_affect_house(
+                owner.is_some(),
+                owner == Some(target.owner()),
+                owner.is_some_and(|owner| allied(owner, target.owner())),
+                warhead.affects_allies,
+            )
+        })
+    } else {
+        None
+    };
 
     let target_view = damage::TargetDamageView {
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
-        #[cfg(feature = "ares")]
-        relative_damage: warhead.ares_combat().and_then(|combat| {
-            combat.relative_damage(
-                relative_damage_kind(target, target_type),
-                target.health.current(),
-                target_type.map(|object| object.strength),
-            )
-        }),
-        #[cfg(not(feature = "ares"))]
-        relative_damage: None,
+        relative_damage: if rules.ares() {
+            warhead.ares_combat().and_then(|combat| {
+                combat.relative_damage(
+                    relative_damage_kind(target, target_type),
+                    target.health.current(),
+                    target_type.map(|object| object.strength),
+                )
+            })
+        } else {
+            None
+        },
     };
     // 70192B/701933 skip the entire defender/TypeImmune block for forced
     // damage and healing, before readiness is considered at701ADB.
@@ -615,9 +615,11 @@ pub(super) fn resolve_receive_damage_with_input(
         psychedelic: warhead.psychedelic,
         psionics_immune: target_type.is_some_and(|object| {
             let immune = rank_psionics || object.immune_to_psionics;
-            #[cfg(feature = "ares")]
-            let immune = object.techno_combat().combat().immune_to_berserk(immune);
-            immune
+            if rules.ares() {
+                object.techno_combat().combat().immune_to_berserk(immune)
+            } else {
+                immune
+            }
         }),
         target_is_building,
         skip_low_damage_check,
@@ -657,14 +659,12 @@ pub(super) fn resolve_receive_damage_with_input(
     // 0x701A5C): `IronCurtain.Flash=` (default `[AudioVisual]
     // IronCurtainFlash=`) off goes to 0x701A98, the zero packet without the
     // flash.
-    #[cfg(feature = "ares")]
-    let invulnerability_flashes = warhead.ares_combat().is_none_or(|combat| {
-        combat
-            .iron_curtain_flash()
-            .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
-    });
-    #[cfg(not(feature = "ares"))]
-    let invulnerability_flashes = true;
+    let invulnerability_flashes = !rules.ares()
+        || warhead.ares_combat().is_none_or(|combat| {
+            combat
+                .iron_curtain_flash()
+                .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
+        });
     let invulnerability_impact = outcome
         .invulnerability_impact_damage
         .filter(|_| invulnerability_flashes)
@@ -934,12 +934,12 @@ mod house_damage_tests {
     }
 
     #[test]
-    #[cfg(feature = "ares")]
     fn live_attacker_house_precedes_explicit_house_for_ares_damage_admission() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         assert_eq!(receive("AffectsAllies=no\n", true, true, None), 10);
         assert_eq!(
             receive("AffectsAllies=yes\nAffectsEnemies=no\n", true, true, None),
-            if cfg!(feature = "ares") { 0 } else { 10 },
+            0,
         );
     }
 }

@@ -466,8 +466,6 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = (registry, effects);
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -505,8 +503,9 @@ impl Simulation {
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
         // `RET`): no effect. Ares 3.0 1004BD90 (hook 0x738749) puts the
         // TiberiumExplosive blast there (`sim::ares_tiberium`).
-        #[cfg(feature = "ares")]
-        self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+        if rules.ares() {
+            self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+        }
         if !object.destroy_anims.is_empty() {
             let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
@@ -568,14 +567,16 @@ impl Simulation {
         self.clear_building_damage_fire_slots(building_id, rules);
         // Ares 3.0 10015A90 (hook 0x0044161C): the destroyed building shows
         // its production to nobody (`sim::spy_infiltration`).
-        #[cfg(feature = "ares")]
-        if let Some(building) = self.substrate.entities.get_mut(building_id) {
+        if rules.ares()
+            && let Some(building) = self.substrate.entities.get_mut(building_id)
+        {
             building.ares.display_production_to.clear();
         }
         // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
         // sensor array ahead of the gap and RevealToAll steps.
-        #[cfg(feature = "ares")]
-        self.ares_sensor_array_dispatch(building_id, false, rules, None);
+        if rules.ares() {
+            self.ares_sensor_array_dispatch(building_id, false, rules, None);
+        }
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };
@@ -704,9 +705,10 @@ impl Simulation {
         // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
         // the building and House, spilling with TiberiumSpill
         // (`sim::ares_tiberium_storage`). The stock spill has no store to
-        // read in default builds.
-        #[cfg(feature = "ares")]
-        self.ares_destroy_refinery_storage(building_id, rules, effects);
+        // read without Ares.
+        if rules.ares() {
+            self.ares_destroy_refinery_storage(building_id, rules, effects);
+        }
 
         // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
         // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a

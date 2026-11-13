@@ -243,12 +243,9 @@ fn can_affect_target(
     };
     let armor = crate::sim::shield::warhead_versus_armor(target, rules, warhead, target_type);
     let verses = warhead.interaction(armor).multiplier();
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         f64::from_bits(verses.bits()) != 0.0
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         super::damage::kernel::apply_warhead_damage(
             100,
             warhead.cell_spread_f64,

@@ -650,7 +650,6 @@ impl Simulation {
     /// rings around the cell of the target's GetCoords, or the bullet's own
     /// when it has none) finds, except the owner and those already carrying
     /// one. Each plant is `PlantBomb` ([`Self::bomb_attach`]).
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_ivan_bomb_detonation(
         &mut self,
         detonation: &crate::sim::projectile::ProjectileDetonation,
