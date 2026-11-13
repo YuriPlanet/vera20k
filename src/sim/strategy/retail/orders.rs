@@ -2974,9 +2974,19 @@ mod tests {
             return;
         };
         let owner = sim.interner.intern("Americans");
+        // The wound is set after the spawn: the fixture's health argument also
+        // sets the entity's `max_health`, so a plant spawned "at 200" reads as a
+        // plant at full health and the step correctly does nothing. Damage is a
+        // current-health change against the type's own strength, as the sim's.
         let hurt = sim
-            .spawn_object("GAPOWR", "Americans", 16, 16, 200, &rules)
+            .spawn_object("GAPOWR", "Americans", 16, 16, 255, &rules)
             .expect("a power plant");
+        sim.substrate
+            .entities
+            .get_mut(hurt)
+            .expect("the plant")
+            .health
+            .set(300);
 
         let mut brain = RetailBrain::new(0xA17);
         brain.census.refresh(
