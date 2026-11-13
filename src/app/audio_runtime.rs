@@ -642,6 +642,28 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
 }
 
 #[cfg(test)]
+impl AppAudioRuntime {
+    /// A runtime with an EVA/SFX output and no music output, or `None` after
+    /// a `SKIPPED` line when the machine has no output device.
+    pub(crate) fn with_sfx_output_for_test() -> Option<Self> {
+        let Some(sfx_player) = SfxPlayer::new() else {
+            eprintln!("SKIPPED: no audio output device");
+            return None;
+        };
+        Some(Self {
+            theme: ThemeRuntime::default(),
+            service_clock: AudioServiceClock::default(),
+            music_player: None,
+            sfx_player: Some(sfx_player),
+            launcher_audio_available: true,
+            theme_startup_suppressed: false,
+            master_groups: Default::default(),
+            restore_muted: false,
+        })
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
