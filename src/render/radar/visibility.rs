@@ -1280,8 +1280,3 @@ impl RadarFacts {
         crate::sim::components::DriveCoord { x, y, z }
     }
 }
-
-/// What the radar reads of the objects beside any one object's record
-/// (`app::presentation::frame_scene::SceneFrame`).
-#[derive(Clone, Debug, Default)]
-pub(crate) struct RadarFrame {}

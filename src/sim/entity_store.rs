@@ -851,6 +851,22 @@ impl EntityStore {
         .collect()
     }
 
+    /// `work`'s answer for every stored entity, in ascending stable_id
+    /// order, each written in its place in the result. `work` runs on worker
+    /// threads ([`crate::sim::parallel`]), so it only reads.
+    pub fn par_map<'a, R: Send>(
+        &'a self,
+        work: impl Fn(u64, &'a GameEntity) -> R + Sync,
+    ) -> Vec<R> {
+        let stored: Vec<(u64, &GameEntity)> = self
+            .ids
+            .iter()
+            .zip(&self.entities)
+            .filter_map(|(&id, entity)| Some((id, entity.as_deref()?)))
+            .collect();
+        crate::sim::parallel::map(&stored, |&(id, entity)| work(id, entity))
+    }
+
     /// `pick`'s answers for the stored entities it answers, in ascending
     /// stable_id order. `pick` runs on worker threads
     /// ([`crate::sim::parallel`]), so it only reads.

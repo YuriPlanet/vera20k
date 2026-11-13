@@ -2,8 +2,8 @@
 
 Goal: run the simulation on its own thread so that drawing keeps its frame
 rate when a tick costs more than the frame budget. In a 1v29 skirmish a tick
-at about 2,000 objects costs about 25 ms against a 22 ms step. Today the tick
-and the draw share the main thread, so the frame rate falls to about 30.
+at about 2,000 objects costs about 25 ms against a 22 ms step. When the tick
+and the draw shared the main thread, the frame rate fell to about 30.
 With its own thread, a slow simulation slows only game time: the camera,
 the cursor and the interface keep the picture rate, while objects move once
 a tick, as they always draw their current state (`RenderPose`).
@@ -11,7 +11,9 @@ a tick, as they always draw their current state (`RenderPose`).
 This changes no gameplay. Every phase must keep `sim-bench --frame-hashes`
 identical frame by frame.
 
-## Where the main thread couples today
+## Where the main thread coupled
+
+The starting point, before phase 0; the phases below take each apart.
 
 1. **Frame loop** (`app/frame.rs` `render_frame`). Each frame it prepares
    interpolation, then runs `service_match_runtime`, then draws. Catch-up runs
@@ -71,9 +73,10 @@ identical frame by frame.
 - [x] `SimRuntime: Send` is asserted at compile time.
 - [x] No `sim_runtime.as_mut()` remains under `app/presentation` or
   `render`.
-- [ ] Nothing enforces that yet: `render_game` still takes `&mut AppState`.
-  Phase 1's `SimHost` closes this. Presentation then gets only a shared
-  view and cannot reach the runtime mutably.
+- [x] Drawing cannot reach the live world's objects: it reads the
+  presentation frame and the world copy (phase 2), and debug builds draw
+  every frame from a copy whose entity store panics on a read.
+  `render_game` itself still takes `&mut AppState`.
 
 ### Phase 1: a tick that borrows no app state
 
@@ -106,7 +109,7 @@ Only presentation order moves: sounds and the radar cue follow the tick
 instead of interleaving with it. Replay playback, a campaign's initial save
 and command observation still need the lent owners. Those frames stay on the
 borrowing path (`DeferredClientEffects::applies`). A network frame's
-`Queue_AI` exchange needs the live session; phase 4 hands it back to the
+`Queue_AI` exchange needs the live session; phase 5 hands it back to the
 main thread.
 
 Done:
@@ -173,10 +176,21 @@ then) waits for the tick's tail.
 Still shared, read-only: `SimResources` (the rules, the terrain template, the
 overlay registry), which nothing writes once a match is loaded.
 
-Measured (release test build, sim-bench's 20,000-unit march on a loaded
-12-core machine whose tick ran 3.7–5.8x slower than quiet): capturing the
-frame 19–30 ms, bringing the world copy up to date 7–9 ms, the first whole
-copy 46 ms. Not yet within the 2 ms goal at 20,000 objects; see Status.
+What the snapshot costs the main thread:
+
+- The records are captured on the worker pool while the scene frame is
+  captured on the calling thread. A record asks only what a drawer of that
+  object reads: an action line only for a selected or psychically detected
+  object, the airstrike tint only for a Structure, a Carryall's cargo only
+  for an Aircraft, the mind-control count only for a capture manager.
+- A frame that is replaced is freed on the pool
+  (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
+- The world copy's syncs run on the pool beside the clone of its other parts
+  and the local player's fog.
+- The first world copy is a whole one; desktop takes it when a scenario is
+  installed (`SimHost::install`), so the first lent tick only syncs it.
+
+Current cost: see Status.
 
 ### Phase 3: lending the runtime
 
@@ -346,10 +360,9 @@ another thread, so two things differ:
 
 Nothing the draw and a tick can both take waits on the main thread
 (`util::sync`). The Main RNG and the zone grid's precheck memo lock with
-`wasm_sync`'s mutex, which spins there. Once-cells in copy-on-write state
-(`DerivedCache`, the zone grid's cached hash, the terrain's allocation
-caches) and the static tables both read never wait: two threads that fill
-one at once both compute it, and one value is kept. (`wasm_sync`'s own
+`wasm_sync`'s mutex, which spins there. Once-cells both can reach (the
+static tables, such as `adjust_for_z_standard`'s) never wait: two threads
+that fill one at once both compute it, and one value is kept. (`wasm_sync`'s own
 once-cell reads the standard library's private state and spins forever on
 the nightly the build uses.) The host and the worker hand each other the
 runtime through a one-slot mailbox on the same mutex, since a standard
@@ -380,28 +393,20 @@ separate Main RNG cells.
 
 Not done:
 
-- **Snapshot cost.** The goal was 2 ms per tick at 20,000 objects. Measured
-  in a release test build on the sim-bench march (12 cores, a loaded
-  machine): frame capture 14.9 ms mean (records 11.2 ms in parallel from
-  46 ms of thread time: placement 13.4, component copies 8.8, pose and
-  entity answers 8.0, local player's view 6.8, radar 6.3, status 1.8,
-  tether 1.0; the scene frame 3.7 ms serial), world copy sync 6.3 ms, frame
-  drop 1.8 ms, first whole copy 40 ms. A record is 1,200 bytes, about 24 MB
-  at 20,000 objects. Next: compute placement and radar values only for
-  drawn objects (as the Foot depth already is), slim the records (the
-  locomotor is cloned whole), parallelize the scene frame, and build the
-  first world copy while a match loads. The estimated floor at 20,000
-  objects is 1.5–2.5 ms.
-- **Tests.** The client lib suite passes but for 195 cases that need retail
-  assets this machine lacks (`Hills.mmx`, `MOVIES01.MIX`, language files)
-  and 7 others: the per-client-read pin (fails on main too), a retail cameo
-  label check, and five fixtures not yet adapted to the frame
-  (`draw_state` fading building: its sensed-observer row needs a frame
-  captured for a sensing player; `tooltips` IFV passenger; radar `minimap`
-  Mirage and two `visibility` cases whose fixtures have no terrain).
-- The core lib suite passes but for 495 cases that need retail assets this
-  machine lacks.
-- **Phase 4** (the simulation thread ticking on its own) is the next phase.
+- **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. Measured
+  in a release build on sim-bench's 20,000-unit, 30-house march, on a
+  12-core machine other builds kept at a load of 30–40, the main thread's
+  part per lent tick: capturing the frame 5.0–5.6 ms (records and scene
+  frame side by side), syncing the world copy 3.5–3.8 ms, freeing the old
+  frame 0 ms (1.6–1.9 ms of pool work), 8.5–9.4 ms in all. The code before
+  these changes, run beside it: 9.3–10.6 + 2.7–3.0 ms capture, 6.4–7.4 ms
+  copy, 3.4–3.5 ms freeing, 21.8–24.5 ms in all. A record is 1,104 bytes.
+  The records are bound by reading 20,000 objects scattered in memory: each
+  touches several cache lines of its `GameEntity`. Left: answer placement,
+  lighting and the status strip only for objects near the screen (radar
+  facts stay for every object).
+- **The simulation thread ticking on its own**, several ticks per hand-off
+  (Phase 4's first residual), is the next phase.
 
 ## Validation
 

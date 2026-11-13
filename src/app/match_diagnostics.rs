@@ -79,7 +79,13 @@ impl ActorMotionObservation {
     ) -> Self {
         Self::of_parts(
             sim.interner().resolve(entity.type_ref()),
-            entity.locomotor.as_ref(),
+            entity
+                .locomotor
+                .as_ref()
+                .map(|locomotor| {
+                    crate::app::presentation::frame::LocomotorView::of(locomotor, || None)
+                })
+                .as_ref(),
             entity.foot_speed.native_applied_fraction().bits(),
             crate::sim::movement::motion_query::is_moving(entity),
             &entity.mission,
@@ -102,23 +108,20 @@ impl ActorMotionObservation {
 
     fn of_parts(
         actor_type: &str,
-        locomotor: Option<&crate::sim::movement::locomotor::LocomotorState>,
+        locomotor: Option<&crate::app::presentation::frame::LocomotorView>,
         bits: u64,
         moving: Option<bool>,
         mission: &crate::sim::mission::MissionCom,
     ) -> Self {
-        use crate::sim::movement::track_process::TrackFamily;
-        let drive = locomotor.filter(|loco| {
-            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-        });
+        let drive = locomotor.and_then(|loco| loco.drive_track());
         Self {
             actor_type: actor_type.to_owned(),
             locomotor: locomotor.map(|loco| format!("{:?}", loco.active_kind())),
             applied_fraction: f64::from_bits(bits),
             applied_fraction_bits: bits,
             moving,
-            drive_destination: drive.and_then(|loco| loco.track_destination(TrackFamily::Drive)),
-            drive_head: drive.and_then(|loco| loco.track_head(TrackFamily::Drive)),
+            drive_destination: drive.and_then(|[destination, _]| destination),
+            drive_head: drive.and_then(|[_, head]| head),
             mission: (mission.current().raw(), mission.queued().raw()),
         }
     }

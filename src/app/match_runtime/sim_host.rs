@@ -10,7 +10,9 @@
 //! that frame, and any write first takes the runtime back, waiting for the
 //! job to end; the job's result then waits in the host for
 //! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
-//! see the live world again, so a tick that is not lent copies nothing.
+//! see the live world again. Drawing reads object records either way, captured
+//! from a home world on the first read after a write; release builds copy
+//! the world beside them only for a lent tick.
 //!
 //! A frame-loop pass never waits for a lent job: the host collects it only
 //! once it has ended ([`SimHost::pass_may_run`]), and the simulation thread
@@ -83,9 +85,9 @@ pub(crate) struct SimHost {
     ended: Option<Returned>,
     /// The world without its objects as the frame found it
     /// ([`SimRuntime::presentation_copy`]), which drawing reads beside the
-    /// frame's records while the live world ticks elsewhere. Copy-on-write
-    /// state (the terrain cells, the resources) stays shared with the live
-    /// world until that changes. Release builds keep it only while the
+    /// frame's records while the live world ticks elsewhere. It shares only
+    /// the read-only `SimResources` with the live world; its terrain, grids
+    /// and interner are synced from it. Release builds keep it only while the
     /// runtime is lent; debug builds take one with every frame, so every
     /// draw reads the frame as a lent tick's draw does.
     presentation: Option<Arc<SimRuntime>>,
@@ -312,7 +314,10 @@ impl SimHost {
     /// world is kept for the next copy to bring up to date
     /// (`Simulation::presentation_copy`).
     fn forget_frame(&mut self) {
-        self.frame = std::cell::OnceCell::new();
+        // Freeing 20,000 records takes milliseconds; the pool does it.
+        if let Some(frame) = std::mem::take(&mut self.frame).into_inner() {
+            crate::sim::parallel::drop_on_pool(frame);
+        }
         if let Some(copy) = self.presentation.take()
             && let Ok(copy) = Arc::try_unwrap(copy)
         {
@@ -408,6 +413,15 @@ impl SimHost {
         self.runtime = runtime;
         self.forget_frame();
         self.spare = None;
+        // The first copy of the world is a whole one, tens of milliseconds
+        // at 20,000 objects. Taken while the scenario loads, the first lent
+        // tick only brings it up to date.
+        if self.thread_enabled()
+            && let Some(runtime) = self.runtime.as_mut()
+        {
+            let viewer = runtime.simulation.session().current_house();
+            self.spare = Some(runtime.presentation_copy(viewer, None).simulation);
+        }
     }
 
     /// Remove and return the installed runtime.

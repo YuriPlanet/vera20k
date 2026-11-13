@@ -30,8 +30,8 @@ impl ResolvedTerrainGrid {
         land_flags: Option<&OverlayTypeFlags>,
         cliff_back_rock: Option<&LandTypeSemantics>,
     ) -> bool {
-        // Like the cell recalc, an unchanged projection leaves shared cell
-        // storage shared (see `cow_cells`).
+        // Like the cell recalc, an unchanged projection marks no chunk for
+        // the presentation copy to take (see `terrain_cells`).
         let Some(index) = self.index(rx, ry) else {
             return false;
         };

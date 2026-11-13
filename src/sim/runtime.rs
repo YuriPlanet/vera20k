@@ -54,7 +54,8 @@ impl SimResources {
 }
 
 /// The runtime owner: one deterministic simulation plus its bound resources.
-#[derive(Clone)]
+/// Not `Clone`: drawing reads a copy without the objects
+/// ([`SimRuntime::presentation_copy`]), never a whole one.
 pub struct SimRuntime {
     pub simulation: Simulation,
     /// Immutable once a match is loaded: the presentation copy of the world
