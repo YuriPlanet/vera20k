@@ -1287,13 +1287,11 @@ fn advance_in_game_runtime_mode(
         let (game_speed, network_fps) = local_pacing_inputs(state);
         let pacer = &state.platform.frame_pacer;
         let hashes_state = !replaying
-            && state.match_state.sim_runtime.runtime().is_some_and(|rt| {
-                rt.simulation
-                    .session()
-                    .tick()
-                    .saturating_add(1)
-                    .is_multiple_of(crate::sim::replay::PLAY_HASH_INTERVAL.get())
-            });
+            && state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .is_some_and(|rt| rt.simulation.next_frame_hashes_state());
         let now = crate::util::time::Instant::now();
         // Online, the relay's frontier and the online pacer admit the next
         // frame (the catch-up loop in `App::service_match_runtime`).
@@ -1616,8 +1614,6 @@ fn after_simulation_pass(
     decision.run_sim
 }
 
-/// The GameSpeed and network FPS (with lag delay) the local pacer times
-/// Main_Tick by; sequenced online play paces with its own clock instead.
 /// Whether an admitted frame ticks on this thread instead of going to the
 /// simulation thread (docs/sim-thread.md). A frame goes only when that saves
 /// this thread time: one expected to cost less here than the last lent one
@@ -1641,6 +1637,8 @@ fn frame_ticks_inline(
         || (another_pass_follows && !(lending_is_cheaper || hashes_state))
 }
 
+/// The GameSpeed and network FPS (with lag delay) the local pacer times
+/// Main_Tick by; sequenced online play paces with its own clock instead.
 pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) {
     let game_speed = state
         .match_state

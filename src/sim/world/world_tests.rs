@@ -387,11 +387,18 @@ fn a_state_hash_interval_selects_frames_by_tick() {
     assert_eq!(first.state_hash, None);
     sim.hash_state_every(std::num::NonZeroU64::new(3).unwrap());
     for step in 1..=6 {
+        let foretold = sim.next_frame_hashes_state();
         let result = sim.advance_tick(&[], None, None, None, 67);
         assert_eq!(
             result.tick,
             first.tick + step,
             "each frame advances the tick"
+        );
+        assert_eq!(
+            foretold,
+            result.state_hash.is_some(),
+            "tick {} was foretold",
+            result.tick
         );
         assert_eq!(
             result.state_hash,
