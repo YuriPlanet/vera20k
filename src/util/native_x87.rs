@@ -523,7 +523,30 @@ pub fn adjust_for_z_with_multiplier(
 }
 
 /// Evaluate active YR's standard-session height-to-screen conversion.
+///
+/// The evaluation runs on the x87 evaluator, which every placed object's
+/// screen point asks for each frame, so the Z values below
+/// [`ADJUST_FOR_Z_TABLE_LEN`] (terrain up to level 127 and every flight
+/// height) are looked up in a table of the same evaluations.
 pub fn adjust_for_z_standard(world_z: i32) -> i32 {
+    static TABLE: crate::util::sync::OnceLock<Box<[i32]>> = crate::util::sync::OnceLock::new();
+    let Ok(index) = usize::try_from(world_z) else {
+        return adjust_for_z_standard_evaluated(world_z);
+    };
+    if index >= ADJUST_FOR_Z_TABLE_LEN {
+        return adjust_for_z_standard_evaluated(world_z);
+    }
+    TABLE.get_or_init(|| {
+        (0..ADJUST_FOR_Z_TABLE_LEN as i32)
+            .map(adjust_for_z_standard_evaluated)
+            .collect()
+    })[index]
+}
+
+/// The Z values [`adjust_for_z_standard`] looks up instead of evaluating.
+const ADJUST_FOR_Z_TABLE_LEN: usize = 16_384;
+
+fn adjust_for_z_standard_evaluated(world_z: i32) -> i32 {
     adjust_for_z_with_multiplier(world_z, STANDARD_ADJUST_FOR_Z_MULTIPLIER)
         .expect("the verified finite standard multiplier maps every i32 Z into i32")
 }
@@ -942,5 +965,17 @@ mod tests {
         assert_eq!(adjust_for_z_standard(1_500), 216);
         assert_eq!(adjust_for_z_standard(-104), -14);
         assert_eq!(adjust_for_z_standard(-400), -56);
+    }
+
+    #[test]
+    fn adjust_for_z_standard_table_matches_the_evaluation_at_its_edges() {
+        let last = ADJUST_FOR_Z_TABLE_LEN as i32 - 1;
+        for z in [0, 727, 728, last, last + 1, -1] {
+            assert_eq!(
+                adjust_for_z_standard(z),
+                adjust_for_z_standard_evaluated(z),
+                "Z {z}"
+            );
+        }
     }
 }

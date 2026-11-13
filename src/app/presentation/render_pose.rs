@@ -31,19 +31,6 @@ pub(crate) fn body_draw_facing(entity: &GameEntity, binary_frame: u32) -> u16 {
     )
 }
 
-/// [`body_draw_facing`] of an object's presentation record.
-pub(crate) fn record_body_draw_facing(
-    entity: &crate::app::presentation::frame::ObjectRecord,
-    binary_frame: u32,
-) -> u16 {
-    draw_facing(
-        entity.locomotor.as_ref(),
-        entity.barrel_facing.as_ref(),
-        &entity.body_facing,
-        binary_frame,
-    )
-}
-
 fn draw_facing(
     locomotor: Option<&crate::sim::movement::locomotor::LocomotorState>,
     barrel: Option<&crate::sim::movement::FacingClass>,

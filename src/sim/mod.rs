@@ -99,7 +99,7 @@ pub(crate) mod vehicle_theft;
     all(target_arch = "wasm32", not(feature = "wasm-threads")),
     path = "parallel_web.rs"
 )]
-pub(crate) mod parallel; // order-preserving work over scoped threads
+pub mod parallel; // order-preserving work over scoped threads
 #[cfg(all(test, feature = "wasm", not(target_arch = "wasm32")))]
 #[path = "parallel_web.rs"]
 mod parallel_web_tests;

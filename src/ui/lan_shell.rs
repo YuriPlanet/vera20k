@@ -17,6 +17,8 @@ pub(crate) const JOIN: u16 = 0x6CD;
 pub(crate) const OBSERVE: u16 = 0x6CE;
 pub(crate) const BACK: u16 = 0x5C0;
 pub(crate) const NAME: u16 = 0x541;
+/// The name edit's limit: 16 units, each a code-page byte in gamemd.
+const NAME_LIMIT: usize = 16;
 pub(crate) const CHAT: u16 = 0x540;
 pub(crate) const GAMES: u16 = 0x549;
 pub(crate) const PLAYERS: u16 = 0x53E;
@@ -391,8 +393,8 @@ pub(crate) struct LanLobbyState {
 impl LanLobbyState {
     pub(crate) fn new(name: &str, observer: bool) -> Self {
         let mut name_edit = SavedSeedDescriptionEdit::default();
-        name_edit.set_units_limited(name.encode_utf16(), 16);
-        let notified_name = name_edit.narrow_text(20);
+        name_edit.set_units_limited(name.encode_utf16(), NAME_LIMIT);
+        let notified_name = name_text(&name_edit);
         Self {
             name: name_edit,
             chat: LanChatState {
@@ -562,9 +564,12 @@ impl LanLobbyState {
         //5DDD90..5DDE42: collapse all ASCII spaces, but preserve every
         // leading/trailing space in a name that contains another character.
         if !self.name.units.is_empty() && self.name.units.iter().all(|unit| *unit == 32) {
-            self.name.set_units_limited([], 16);
+            self.name.set_units_limited([], NAME_LIMIT);
         }
-        let value = self.name.narrow_text(20);
+        // BB narrows its edit's units by their low byte (`0x5DDE07`), which
+        // gives back the code-page bytes its ANSI edit was typed in. This edit
+        // holds the typed text instead; the app saves it through the code page.
+        let value = name_text(&self.name);
         if value == self.notified_name {
             return None;
         }
@@ -572,21 +577,47 @@ impl LanLobbyState {
         Some(LanLobbyAction::NameChanged(value))
     }
 
+    /// BB's name edit takes 16 bytes: BB switches on its byte-only filter
+    /// (`0x4D1` at `0x5DE0E3`), which drops units from 0x100 up
+    /// (`0x61525E..0x61526A`). Typed keys reach gamemd, an ANSI program, as
+    /// code-page bytes and get in, but input-method characters arrive widened
+    /// (`0x6151F6..0x61520C`) and stay out; VERA offers no input method here
+    /// either. VERA gets keys as text, so it keeps the text and saves it
+    /// through the code page: a character goes in as the code page passes it
+    /// (`?` for one it cannot hold) while the name's code-page bytes fit in
+    /// 16. A character of two UTF-16 units, such as an emoji, stays out, so
+    /// the edit's one-unit keys never split one.
+    fn insert_name_char(&mut self, character: char) -> bool {
+        let Ok(unit) = u16::try_from(u32::from(character)) else {
+            return false;
+        };
+        let mut text = self.name.display_text();
+        text.push(character);
+        crate::util::native_string::acp_encode(&text).len() <= NAME_LIMIT
+            && self.name.insert_unit_filtered(unit, 0, false, &[44])
+    }
+
     pub(crate) fn insert_text(&mut self, text: &str) -> Vec<LanLobbyAction> {
         let mut actions = Vec::new();
         if !self.enabled || self.pending_command {
             return actions;
         }
-        for unit in text.encode_utf16() {
-            match self.focused_control {
-                NAME if self.name.insert_unit_filtered(unit, 16, true, &[44]) => {
-                    if let Some(action) = self.name_changed() {
+        match self.focused_control {
+            NAME => {
+                for character in crate::util::native_string::acp_round_trip(text).chars() {
+                    if self.insert_name_char(character)
+                        && let Some(action) = self.name_changed()
+                    {
                         actions.push(action);
                     }
                 }
-                CHAT => self.chat.insert_unit(unit),
-                _ => {}
             }
+            CHAT => {
+                for unit in text.encode_utf16() {
+                    self.chat.insert_unit(unit);
+                }
+            }
+            _ => {}
         }
         actions
     }
@@ -625,6 +656,12 @@ impl LanLobbyState {
             None
         }
     }
+}
+
+/// The name edit's text as BB reads it: message `0x4B3` with room for 20
+/// units, the last for the NUL (`0x005DDDA9..0x005DDDBC`).
+fn name_text(edit: &SavedSeedDescriptionEdit) -> String {
+    String::from_utf16_lossy(&edit.wide_text(20))
 }
 
 /// One port of the shared5EDD00 chat-length prepass (BB/BC/BD and WOL).
@@ -865,17 +902,34 @@ mod tests {
     }
 
     #[test]
-    fn name_input_uses_byte_filter_comma_rejection_and_literal_space_rule() {
+    fn name_input_takes_16_code_page_bytes_rejects_commas_and_keeps_literal_spaces() {
         let mut lobby = LanLobbyState::new("", false);
         assert_eq!(lobby.focused_control, CHAT);
         lobby.focus(NAME);
-        lobby.insert_text("  A,éĀB");
-        assert_eq!(lobby.name.display_text(), "AéB");
+        lobby.insert_text("  A,é€B");
+        assert_eq!(lobby.name.display_text(), "Aé€B");
         lobby.insert_text("12345678901234567890");
-        assert_eq!(lobby.name.units.len(), 16);
+        let saved = crate::util::native_string::acp_encode(&lobby.name.display_text());
+        assert_eq!(saved.len(), 16);
         assert_eq!(lobby.edit_key(LanEditKey::Enter), None);
         let retained = LanLobbyState::new(" A ", false);
         assert_eq!(retained.name.display_text(), " A ");
+    }
+
+    /// Typing into a name beyond Latin-1 and deleting it again reports the
+    /// name as shown, not its characters' low bytes (`玩家` as `©¶`).
+    #[test]
+    fn name_edit_reports_the_name_it_shows() {
+        let mut lobby = LanLobbyState::new("玩家", false);
+        lobby.focus(NAME);
+        assert_eq!(
+            lobby.insert_text("x"),
+            vec![LanLobbyAction::NameChanged("玩家x".into())]
+        );
+        assert_eq!(
+            lobby.edit_key(LanEditKey::Backspace),
+            Some(LanLobbyAction::NameChanged("玩家".into()))
+        );
     }
 
     #[test]

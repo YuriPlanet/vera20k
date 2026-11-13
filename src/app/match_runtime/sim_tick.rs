@@ -1972,6 +1972,12 @@ fn advance_one_simulation_frame(
                 logic_ms: (logic_started_ms, super::frame_pacer::wall_clock_ms()),
             })
         };
+        // The passes and draws beside the tick show the placement preview and
+        // the cursor's kept answers, which ask the live world. Answered now,
+        // with the world home, they are one tick late at most however many
+        // ticks in a row are lent; no draw may find the world home between.
+        update_building_placement_preview(state);
+        crate::app::input::cursor::answer_kept_questions(state);
         state.match_state.sim_runtime.lend(Box::new(job));
         if let Some(request) = mouse_scroll {
             crate::app::input::camera::commit_camera_scroll(state, request);
@@ -2932,7 +2938,9 @@ fn finish_simulation_frame(
     // changing any entity identity. Unit deploy Anim+D4 (739C1A/739DFE) is one
     // such producer: its first ordinary draw needs the selected-scheme atlas
     // frames even when the tick reports no entity spawn or ownership change.
+    // A refresh asked beside the tick (`refresh_entity_atlases`) runs here.
     if refresh_atlases_after_tick
+        || state.match_state.match_presentation.atlas_refresh_owed
         || (frame_committed
             && state
                 .match_state
@@ -3117,6 +3125,12 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         // it is neither an abandon nor a permission to emit another PLACE.
         return;
     }
+    // The owner's buildings bound the build area (`is_within_build_area`),
+    // and the world copy beside a lent tick has no objects: the preview
+    // answered before the tick left stands until it is back.
+    if state.match_state.sim_runtime.is_lent() {
+        return;
+    }
     let owner = preferred_local_owner(state);
     let (Some(owner), Some(sim), Some(rules)) = (
         owner,
@@ -3186,6 +3200,14 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
 ///
 /// [`EntityAtlasGrowth::start`]: crate::render::entity_atlas_growth::EntityAtlasGrowth::start
 pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
+    // The refresh asks the live world's objects, which the world copy beside
+    // a lent tick lacks: a refresh asked then (a growth published beside the
+    // tick) waits for the tick's tail.
+    let lent = state.match_state.sim_runtime.is_lent();
+    state.match_state.match_presentation.atlas_refresh_owed = lent;
+    if lent {
+        return;
+    }
     let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return;
     };

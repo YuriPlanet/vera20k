@@ -251,7 +251,7 @@ impl ResolvedTerrainGrid {
             let mut grid = Self {
                 width: 0,
                 height: 0,
-                cells: super::cow_cells::CowCells::default(),
+                cells: super::terrain_cells::TerrainCells::default(),
                 level_span: LevelSpan::of([]),
                 land_speed_costs: land_speed_cost_profiles(None),
                 overlay_passability: Default::default(),
@@ -962,7 +962,7 @@ impl ResolvedTerrainGrid {
             width,
             height,
             level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
-            cells: super::cow_cells::CowCells::new(cells),
+            cells: super::terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
             native_tmp_draw_heights: Default::default(),
