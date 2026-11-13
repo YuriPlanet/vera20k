@@ -91,9 +91,6 @@ struct QueuedMovie {
 pub(crate) struct RadarMovies {
     queue: VecDeque<QueuedMovie>,
     playing: Option<MoviePlayback>,
-    /// Credit for this FIFO's prelude suspend. Retirement may run after
-    /// playback already released it, and must not release another caller.
-    eva_suspended: bool,
     /// This FIFO's actual684060 credit, independent of other pause callers.
     scenario_hold: bool,
 }
@@ -131,14 +128,6 @@ impl RadarMovies {
     pub(crate) fn set_active(&mut self, active: bool) {
         if let Some(player) = self.playing.as_mut() {
             player.set_active(active);
-        }
-    }
-
-    fn release_eva_hold(&mut self, sfx: Option<&mut crate::audio::sfx::SfxPlayer>) {
-        if std::mem::take(&mut self.eva_suspended)
-            && let Some(sfx) = sfx
-        {
-            sfx.resume_eva();
         }
     }
 }
@@ -253,14 +242,53 @@ fn reconcile_pause_clock(state: &mut AppState, wall_ms: u64) {
 /// Service outside the simulation gate. Only actual sidebar draws advance the
 /// housing timer; media and its pause must remain live when117 stops simulation.
 pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
-        || state
-            .match_state
-            .match_presentation
-            .radar_movies
-            .queue
-            .is_empty()
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+        return;
+    }
+    // `RadarClass::AI @ 0x00653850` (vt+0x28) runs on Main_Tick's input
+    // path (`0x0055D8AB`), which needs `g_GameState` `0x00A8EDA0` zero
+    // (`0x0055D883`). Every in-game menu runs inside State_Machine
+    // `0x0048C8B0` with it 1..9, so even the network modes' modal pump
+    // (`0x00623120` -> Main_Tick) skips the radar.
+    if !state.match_state.match_presentation.in_game_menu.is_open() {
+        radar_ai(state, wall_ms);
+    }
+    if state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .is_empty()
     {
+        return;
+    }
+    play_head(state, wall_ms);
+}
+
+/// The movie half of `RadarClass::AI`: admission (`0x00653963`) and, in mode
+/// 4, the prelude (`0x006539A2` -> `0x006578F0`). Every other pass resumes
+/// EVA unless ChronoScreen holds the screen (`0x006539AE..0x006539B7`), so
+/// a prelude's suspend, or one a retired movie left, lifts on the next pass.
+fn radar_ai(state: &mut AppState, wall_ms: u64) {
+    let queued = !state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .is_empty();
+    let prelude = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .is_some_and(|radar| {
+            if queued {
+                radar.admit_movie();
+            }
+            radar.movie_prelude()
+        });
+    if !prelude {
+        resume_eva_outside_prelude(state);
         return;
     }
     let selected_index = state
@@ -278,20 +306,10 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         _ => true,
     };
     let streams_ready = state.audio.movie_streams_ready();
-    // Admission and the prelude run from `RadarClass::AI @ 0x00653850`
-    // (vt+0x28, `0x006539A2`)
-    // on the main loop's input path, which an in-game modal does not pump.
-    let menu_open = state.match_state.match_presentation.in_game_menu.is_open();
     let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
         return;
     };
-    let command = if menu_open {
-        RadarMovieCommand::None
-    } else {
-        radar.admit_movie();
-        radar.movie_command(selected_done, streams_ready)
-    };
-    match command {
+    match radar.movie_command(selected_done, streams_ready) {
         RadarMovieCommand::Announce => {
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
                 sfx.clear_eva_queues();
@@ -308,27 +326,31 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
                         catalog.index(),
                     );
                 }
-                sfx.suspend_eva();
-                state
-                    .match_state
-                    .match_presentation
-                    .radar_movies
-                    .eva_suspended = true;
+                sfx.suspend_eva(); //6579C0/753570
             }
         }
         RadarMovieCommand::PrepareStreams => state.audio.prepare_movie_streams(wall_ms),
         RadarMovieCommand::StartPlayback => {
-            state
-                .match_state
-                .match_presentation
-                .radar_movies
-                .release_eva_hold(state.audio.sfx_player.as_mut());
+            if let Some(sfx) = state.audio.sfx_player.as_mut() {
+                sfx.resume_eva(); //65792B/753580
+            }
             state.audio.set_movie_audio_held(true, wall_ms);
             //6578F0 stage2: SetRadarMode(3), EndLooping, then MovieOn.
             play_radar_sound_loop(state, true);
         }
         RadarMovieCommand::None => {}
     }
+}
+
+/// `RadarClass::AI`'s pass outside mode 4.
+pub(crate) fn resume_eva_outside_prelude(state: &mut AppState) {
+    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+        sfx.resume_eva_unless_chrono_screen();
+    }
+}
+
+/// Draw and step the FIFO head once Radar has opened for it.
+fn play_head(state: &mut AppState, wall_ms: u64) {
     let ready = state
         .match_state
         .match_presentation
@@ -474,10 +496,8 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
         .radar_movies
         .scenario_hold;
     // Clear Radar's own movie flag before its shared684180 output is applied.
+    // 5BF450 leaves a prelude's EVA suspend to RadarClass::AI's next resume.
     let presentation = &mut state.match_state.match_presentation;
-    presentation
-        .radar_movies
-        .release_eva_hold(state.audio.sfx_player.as_mut());
     presentation.radar_movies = RadarMovies::default();
     if let Some(radar) = presentation.radar_anim.as_mut() {
         radar.retire_movies();

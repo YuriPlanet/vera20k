@@ -17,7 +17,6 @@ pub(crate) struct ChronoScreenPresentation {
     capture_prior: bool,
     capture_destination: bool,
     draw: Option<ChronoScreenDraw>,
-    eva_credits: u32,
 }
 
 impl ChronoScreenPresentation {
@@ -144,11 +143,6 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
                 sfx.set_voc_enabled(false); //53B538/7518C0
                 sfx.suspend_eva(); //53B554/753570
-                state
-                    .match_state
-                    .match_presentation
-                    .chrono_screen
-                    .eva_credits += 1;
             }
         }
         ChronoScreenCommand::Draw { step, duration } => {
@@ -182,15 +176,7 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
                 sfx.release_animation_sound(HANDLE);
                 sfx.stop_animation_sound(HANDLE); //4060F0(NULL),405C00
                 sfx.set_voc_enabled(true);
-                let credits = &mut state
-                    .match_state
-                    .match_presentation
-                    .chrono_screen
-                    .eva_credits;
-                if *credits != 0 {
-                    sfx.resume_eva();
-                    *credits -= 1;
-                }
+                sfx.resume_eva(); //53B714/753580
                 sfx.set_chrono_screen_active(false);
             }
             if !state
@@ -205,17 +191,15 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
     }
 }
 
-/// App teardown has no native saved GPU pointer. Release only this owner's
-/// EVA credits, never the movie/menu caller's, and discard both snapshots.
+/// App teardown has no native saved GPU pointer: discard both snapshots. An
+/// EVA suspend left by Start lifts at RadarClass::AI's next resume
+/// (`0x006539B7`) once the phase reads zero, or at the world's ResetAll.
 pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
-    let screen = std::mem::take(&mut state.match_state.match_presentation.chrono_screen);
+    state.match_state.match_presentation.chrono_screen = Default::default();
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         sfx.stop_animation_sound(HANDLE);
         sfx.set_voc_enabled(true);
         sfx.set_chrono_screen_active(false);
-        for _ in 0..screen.eva_credits {
-            sfx.resume_eva();
-        }
     }
     if !state
         .match_state

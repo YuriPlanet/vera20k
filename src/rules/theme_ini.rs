@@ -91,6 +91,19 @@ impl ThemeCatalog {
             .map_or(-1, |index| index as i32)
     }
 
+    /// The catalog as it stands when Scan `0x007207F0` never ran: its gate
+    /// (`0x007207F0..0x0072081B`) needs ScoresPresent, an output device and
+    /// no `-X…Q` (`0x00A8ED64`), and without it every entry keeps the
+    /// constructor's unavailable flag and zero length. Membership, which
+    /// trigger operands read through `from_name`, does not change.
+    pub fn without_scan(mut self) -> Self {
+        for entry in &mut self.entries {
+            entry.available = false;
+            entry.duration_seconds = 0;
+        }
+        self
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_entries_for_test(entries: Vec<ThemeEntry>) -> Self {
         Self { entries }

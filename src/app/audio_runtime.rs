@@ -82,8 +82,8 @@ pub(crate) struct AppAudioRuntime {
     /// Rust-native substitute for native's one shared DirectSound-device gate.
     /// Frozen after both process-start output constructor attempts.
     pub(crate) launcher_audio_available: bool,
-    /// Native has a startup-suppression gate. Current Rust has no non-default
-    /// route, so production initializes this false and keeps one explicit seam.
+    /// `-X…Q` (`Parse_Command_Line` writes `0x00A8ED64` at `0x0052FB0A`):
+    /// every Theme entry point and Vox's dequeue refuse to run.
     pub(crate) theme_startup_suppressed: bool,
 }
 
@@ -181,10 +181,8 @@ impl AppAudioRuntime {
             sfx.set_movie_held(held, wall_ms);
         }
         if let Some(music) = self.music_player.as_mut() {
-            if held {
-                music.pause_output();
-            } else {
-                music.resume_output();
+            music.set_movie_hold(held);
+            if !held {
                 music.restore_stream_volume(wall_ms);
             }
         }
@@ -301,7 +299,8 @@ impl AppAudioRuntime {
     }
 
     pub(crate) fn initialize_theme(&mut self, assets: &AssetManager) {
-        self.theme.initialize_catalog(assets);
+        let gates = self.theme_gates();
+        self.theme.initialize_catalog(assets, gates);
     }
 
     pub(crate) fn maintain_main_menu_theme(&mut self, assets: &AssetManager, wall_ms: u64) {
@@ -411,8 +410,8 @@ impl AppAudioRuntime {
         assets: &AssetManager,
         wall_ms: u64,
     ) {
-        self.theme.initialize_catalog(assets);
         let gates = self.theme_gates();
+        self.theme.initialize_catalog(assets, gates);
         let physical = self.music_output_state();
         let action = self
             .theme
