@@ -34,9 +34,12 @@ pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Syn
 pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool {
     (0..len).any(test)
 }
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     pooled();
     here();
+}
+pub fn drop_on_pool<T: Send + 'static>(value: T) {
+    drop(value);
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
