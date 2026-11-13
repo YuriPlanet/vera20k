@@ -46,7 +46,7 @@ struct Grids {
     height: u16,
     cells: Vec<u8>,
     ground_flags: Vec<u8>,
-    shroud_knowledge: Vec<ShroudKnowledge>,
+    shroud_knowledge: crate::util::synced::ChunkedVec<ShroudKnowledge>,
     map_cell_edge_cache: Vec<MapCellEdgeCache>,
     dummy_visibility: DummyVisibility,
 }
@@ -154,6 +154,23 @@ impl Planes {
     pub fn get_mut(&mut self, viewer: &InternedId) -> Option<&mut OwnerVisibility> {
         self.note(*viewer);
         self.planes.get_mut(viewer).map(Plane::settled)
+    }
+
+    /// Bring `mirror`, a presentation copy of `viewer`'s plane, up to it
+    /// ([`OwnerVisibility::sync_presentation_into`]). Not a use that writes
+    /// the plane, so the journal keeps nothing; no writes may wait.
+    pub(super) fn sync_presentation_into(
+        &mut self,
+        viewer: &InternedId,
+        mirror: &mut OwnerVisibility,
+    ) {
+        if let Some(plane) = self.planes.get_mut(viewer) {
+            assert!(
+                plane.waiting.is_empty(),
+                "a sight plane copied while its writes wait"
+            );
+            plane.view.sync_presentation_into(mirror);
+        }
     }
 
     /// `viewer`'s plane, `new` if it has none, its waiting writes applied.

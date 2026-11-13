@@ -88,6 +88,13 @@ impl HouseSpatialThreat {
         }
     }
 
+    /// No grid at all: what a house holds in the presentation copy of the
+    /// world, which never runs a tick or answers a threat query
+    /// (`Simulation::presentation_copy`).
+    pub(crate) fn none() -> Self {
+        Self(Box::new([]))
+    }
+
     pub(crate) fn configure(&mut self, grid: crate::map::cell_index::CellGrid) {
         let old_side = usize::from(self.grid().side()) / 4 + 2;
         let side = usize::from(grid.side()) / 4 + 2;
