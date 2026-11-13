@@ -1065,9 +1065,12 @@ fn refresh_radar_animation_source(state: &mut AppState) {
         if let Some(radar) = presentation.radar_anim.as_mut() {
             //652E90 source installation does not request a new availability
             //edge. A new scenario arrives with has_radar clear and opens on
-            //its first House update; a loaded one arrives with the loaded
-            //House's radar, which MouseLoad5BE092 restores open and silent.
-            radar.restore_availability(presentation.has_radar);
+            //its first House update; a loaded one arrives with its saved
+            //housing, which MouseLoad5BE092 restores silent.
+            match presentation.loaded_radar_housing.take() {
+                Some(saved) => radar.restore_saved_housing(saved),
+                None => radar.restore_availability(presentation.has_radar),
+            }
         }
     }
     presentation.radar_animation_source = Some(identity);

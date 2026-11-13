@@ -1074,6 +1074,7 @@ impl App {
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,
+                    loaded_radar_housing: None,
                     selection_overlay: None,
                     #[cfg(feature = "phobos")]
                     digital_display_enabled: phobos_client.digital_display_enabled,

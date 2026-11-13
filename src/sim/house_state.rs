@@ -3113,6 +3113,8 @@ pub struct MatchStatistics {
     /// placed buildings and delivered units, `DontScore=` types excepted
     /// (`production::factory_lifecycle::record_last_built`).
     built: u32,
+    /// The kills the Diplomacy dialog counts (`diplomacy_reads_kill`).
+    diplomacy_kills: u32,
 }
 
 #[cfg(test)]
@@ -3153,16 +3155,27 @@ impl MatchStatistics {
         *counter = counter.wrapping_add(1);
     }
 
-    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table.
-    /// The existing total projection keeps their sum, rather than a second
-    /// per-house table. Both callers share its mutation and numeric semantics.
-    pub(crate) fn record_kill(&mut self, category: crate::map::entities::EntityCategory) {
-        let counter = if category == crate::map::entities::EntityCategory::Structure {
+    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table
+    /// at the victim owner's House index (`TechnoClass::GetOwningHouseIndex
+    /// @ 0x006F9DB0`, read before ChangeOwner's owner store). The existing
+    /// total projection keeps their sum, rather than a second per-house table,
+    /// beside the part the Diplomacy dialog reads. Both callers share its
+    /// mutation and numeric semantics.
+    pub(crate) fn record_kill(
+        &mut self,
+        category: crate::map::entities::EntityCategory,
+        victim_house: Option<usize>,
+    ) {
+        let structure = category == crate::map::entities::EntityCategory::Structure;
+        let counter = if structure {
             &mut self.buildings_killed
         } else {
             &mut self.units_killed
         };
         *counter = counter.wrapping_add(1);
+        if victim_house.is_some_and(|index| diplomacy_reads_kill(structure, index)) {
+            self.diplomacy_kills = self.diplomacy_kills.wrapping_add(1);
+        }
     }
 
     /// Only HouseState's successful-production owner updates this derived sum.
@@ -3184,7 +3197,13 @@ impl MatchStatistics {
             units_lost,
             buildings_lost,
             built,
+            diplomacy_kills: units_killed.wrapping_add(buildings_killed),
         }
+    }
+
+    /// The Diplomacy dialog's kill count (`0x00658330`).
+    pub const fn diplomacy_kills(&self) -> u32 {
+        self.diplomacy_kills
     }
 
     /// Score-screen Kills column: units + buildings destroyed.
@@ -3196,6 +3215,23 @@ impl MatchStatistics {
     pub const fn losses(&self) -> u32 {
         self.units_lost + self.buildings_lost
     }
+}
+
+/// Whether `RadarClass::UpdateDiplomacyDialogHouse @ 0x00658330` counts a
+/// kill of House `victim_house`'s object. The units table (`+0x53E4`) and the
+/// buildings table (`+0x5438`) hold 21 entries each, back to back, and the
+/// dialog sums entries 0..19 of both: a kill of House 20 is left out, and a
+/// unit kill of House 21..41 lands in the buildings table, read up to House
+/// 40. RESIDUAL: native's stores past the buildings table, a building kill of
+/// House 21 or a unit kill of House 42 on, overwrite `+0x548C` and later
+/// House fields; VERA counts them in the totals only.
+const fn diplomacy_reads_kill(structure: bool, victim_house: usize) -> bool {
+    let entry = if structure {
+        victim_house.saturating_add(21)
+    } else {
+        victim_house
+    };
+    entry < 41 && entry != 20
 }
 
 /// Look up a HouseState by interned owner ID (O(1) BTreeMap lookup).

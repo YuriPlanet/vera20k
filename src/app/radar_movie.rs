@@ -617,8 +617,11 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
 }
 
 /// A loaded world retains Scenario62C but not the physical video FIFO. This
-/// Rust recovery policy releases only its recorded credit through684180;
-/// native saved Radar/Bink reconstruction remains an explicit boundary.
+/// Rust recovery policy releases only its recorded credit through684180.
+/// Native keeps the radar's `MoviePausedGame` with the rest of its body, and
+/// `RadarClass::Init @ 0x00655B20` ends the clip without the movie-done
+/// arm's `ScenarioPause__ExitOneLevel` (`0x00657CC8`), so a game saved under
+/// a pausing clip would stay paused until another clip ends.
 pub(crate) fn release_saved_scenario_hold(
     sim: &mut crate::sim::world::Simulation,
     held: bool,

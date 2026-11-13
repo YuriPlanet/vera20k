@@ -171,7 +171,14 @@ fn native_change_owner_score_and_kill_counter_wrap() {
     let mut economy = crate::sim::economy::Economy::new(0);
     economy.set_score_for_test(score);
     economy.add_score(i32::try_from(native_price).unwrap());
-    stats.record_kill(crate::map::entities::EntityCategory::Structure);
+    // The table slot that changed is the old owner's House index.
+    let slot = row["before"]["new"]["building_kills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(row["after"]["new"]["building_kills"].as_array().unwrap())
+        .position(|(before, after)| before != after);
+    stats.record_kill(crate::map::entities::EntityCategory::Structure, slot);
     assert_eq!(
         (stats, economy.score()),
         capture_totals(&row["after"]["new"])
@@ -348,9 +355,20 @@ fn house_current_viewer_discovery_is_retained_without_changing_peer_hash() {
 fn native_totals(fields: &Value) -> (MatchStatistics, i32) {
     let count = |field: &Value| u32::try_from(field.as_i64().unwrap()).unwrap();
     let table_total = |name: &str| fields[name].as_array().unwrap().iter().map(count).sum();
+    // `0x00658330` reads entries 0..19 of each kill table.
+    let table_read = |name: &str| -> u32 {
+        fields[name]
+            .as_array()
+            .unwrap()
+            .iter()
+            .take(20)
+            .map(count)
+            .sum()
+    };
     let stats = MatchStatistics {
         units_killed: table_total("units_killed"),
         buildings_killed: table_total("buildings_killed"),
+        diplomacy_kills: table_read("units_killed") + table_read("buildings_killed"),
         units_lost: count(&fields["units_lost"]),
         buildings_lost: count(&fields["buildings_lost"]),
         built: fields["built"]
@@ -466,6 +484,7 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
         units_lost: 1,
         buildings_lost: 3,
         built: 0,
+        diplomacy_kills: 3,
     };
     // Explicit four-produced-item prior for this synthetic score scene.
     house.set_produced_count_for_test(ObjectCategory::Infantry, 0, 4);
@@ -501,4 +520,19 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     );
     assert_eq!(restored.rng_state(), sim.rng_state());
     assert_eq!(restored.state_hash(), sim.state_hash());
+}
+
+/// `0x00658330` sums entries 0..19 of the units (`+0x53E4`) and buildings
+/// (`+0x5438`) kill tables: kills of House 20 are left out, and a unit kill
+/// of House 21 lands in the buildings table's first entry, which counts.
+#[test]
+fn diplomacy_counts_the_kill_table_entries_it_reads() {
+    use crate::map::entities::EntityCategory;
+    let mut stats = MatchStatistics::default();
+    stats.record_kill(EntityCategory::Unit, Some(19));
+    stats.record_kill(EntityCategory::Structure, Some(19));
+    stats.record_kill(EntityCategory::Unit, Some(20));
+    stats.record_kill(EntityCategory::Structure, Some(20));
+    stats.record_kill(EntityCategory::Infantry, Some(21));
+    assert_eq!((stats.kills(), stats.diplomacy_kills()), (5, 3));
 }

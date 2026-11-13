@@ -134,6 +134,7 @@ pub(crate) fn commit_prepared_load(
     // included, so the rebuilt radar starts from the loaded House's radar.
     state.match_state.match_presentation.has_radar =
         crate::app::presentation::building_anim::local_has_radar(state);
+    state.match_state.match_presentation.loaded_radar_housing = committed.radar_housing;
     // Load_Game's Set_View_Dimensions (`0x0067E7F9`): Init `0x005D3A60`
     // deletes every row and an open edit, and SetWidth `0x005D4AD0` leaves
     // the list tactical_w − 8 wide.

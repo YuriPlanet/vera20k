@@ -285,6 +285,7 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.radar_animation_source = None;
     state.match_state.match_presentation.radar_content_insets = None;
     state.match_state.match_presentation.has_radar = false;
+    state.match_state.match_presentation.loaded_radar_housing = None;
     state.match_state.match_presentation.software_cursor = assets.software_cursor;
     state
         .match_state

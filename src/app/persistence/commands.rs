@@ -218,6 +218,12 @@ fn prepare_save<'a>(
         &presentation.sidebar_gadget_state,
     )?;
     local_view.set_power_bar(presentation.power_bar_anim.saved());
+    local_view.set_radar_housing(
+        presentation
+            .radar_anim
+            .as_ref()
+            .map(crate::render::radar::anim::RadarAnimState::saved_housing),
+    );
     local_view.set_credits_counter(
         state
             .match_state

@@ -21,6 +21,7 @@
 
 use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform, SpriteInstance};
 use crate::render::shroud_buffer::InstanceUpload;
+use crate::sim::snapshot::saved_local_view::{SavedRadarHousing, SavedRadarMovie, SavedRadarPhase};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RadarAnimPhase {
@@ -246,15 +247,10 @@ impl RadarPresentation {
         self.needs_show |= !has_radar && self.animation.phase == RadarAnimPhase::Online;
         self.animation.set_has_radar(has_radar)
     }
-    /// A loaded game's radar. `MouseClass::Load @ 0x005BDF70` reads the
-    /// whole Display body back over the radar (`0x005BE092`), so State,
-    /// AnimFrame and TacticalMapAvailable come back as saved and the next
-    /// `SetTacticalMapAvailable @ 0x00656DF0` sees no change: a radar that
-    /// was up stays up, with no opening and no RadarOn. VERA keeps no radar
-    /// fields in its save and takes them from the loaded House instead.
-    /// RESIDUAL: a save made in the half second of an opening or closing,
-    /// or during a radar movie (where `RadarClass::Init @ 0x00655B20` replays
-    /// frames 25..32 through `SetRadarMode`), loads at the end state.
+    /// A radar with no saved housing to restore (`restore_saved`): a new
+    /// scenario's, which arrives unavailable, or one from a save made while
+    /// no housing was built, which takes the loaded House's radar and is up
+    /// at frame 32 with no RadarOn.
     pub(in crate::render) fn restore_availability(&mut self, has_radar: bool) {
         self.pending_radar = has_radar;
         if has_radar {
@@ -263,6 +259,63 @@ impl RadarPresentation {
             self.paints.push(RadarPaint::Frame(32));
             self.needs_show = true;
         }
+    }
+    /// What a save keeps of this radar (`restore_saved`). Stage 0 never
+    /// outlasts the service pass that admits its clip.
+    pub(in crate::render) fn saved(&self) -> SavedRadarHousing {
+        SavedRadarHousing {
+            phase: match self.animation.phase {
+                RadarAnimPhase::Offline => SavedRadarPhase::Offline,
+                RadarAnimPhase::Opening => SavedRadarPhase::Opening,
+                RadarAnimPhase::Online => SavedRadarPhase::Online,
+                RadarAnimPhase::Closing => SavedRadarPhase::Closing,
+                RadarAnimPhase::MovieOpening => SavedRadarPhase::MovieOpening,
+                RadarAnimPhase::MovieRestoring => SavedRadarPhase::MovieRestoring,
+            },
+            frame: self.animation.frame.min(32) as u8,
+            timer: [self.animation.last_bucket, self.animation.duration],
+            movie: self.movie.map(|stage| match stage {
+                MovieStage::Announce | MovieStage::WaitAnnouncement => {
+                    SavedRadarMovie::WaitAnnouncement
+                }
+                MovieStage::WaitStreams => SavedRadarMovie::WaitStreams,
+                MovieStage::Playback => SavedRadarMovie::Playback,
+            }),
+            available: self.pending_radar,
+        }
+    }
+    /// A loaded game's radar. `RadarClass::Load @ 0x006568A0` reads Mode,
+    /// State, PendingMode and MovieStage back, and `MouseClass::Load @
+    /// 0x005BDF70` the Display body with AnimFrame, the housing timer and
+    /// TacticalMapAvailable (`0x005BE092`): an opening or closing goes on
+    /// from its frame, silent (the load rebuilds an empty VocHandle), and the
+    /// next `SetTacticalMapAvailable @ 0x00656DF0` sees no change. The load
+    /// keeps no clip, so `RadarClass::Init @ 0x00655B20` ends Mode 3 with
+    /// State 5 and `SetRadarMode(PendingMode)`, and a Mode 4 stage winds down
+    /// on the radar's own passes (`wind_down_retired`).
+    pub(in crate::render) fn restore_saved(&mut self, saved: SavedRadarHousing) {
+        self.pending_radar = saved.available;
+        self.animation.phase = match saved.phase {
+            SavedRadarPhase::Offline => RadarAnimPhase::Offline,
+            SavedRadarPhase::Opening => RadarAnimPhase::Opening,
+            SavedRadarPhase::Online => RadarAnimPhase::Online,
+            SavedRadarPhase::Closing => RadarAnimPhase::Closing,
+            SavedRadarPhase::MovieOpening => RadarAnimPhase::MovieOpening,
+            SavedRadarPhase::MovieRestoring => RadarAnimPhase::MovieRestoring,
+        };
+        self.animation.frame = usize::from(saved.frame.min(32));
+        [self.animation.last_bucket, self.animation.duration] = saved.timer;
+        self.movie = saved.movie.map(|stage| match stage {
+            SavedRadarMovie::WaitAnnouncement => MovieStage::WaitAnnouncement,
+            SavedRadarMovie::WaitStreams => MovieStage::WaitStreams,
+            SavedRadarMovie::Playback => MovieStage::Playback,
+        });
+        self.movie_pause_latch = false;
+        if self.movie == Some(MovieStage::Playback) {
+            self.finish_movie(false);
+        }
+        self.paints.push(RadarPaint::Frame(self.animation.frame));
+        self.needs_show = true;
     }
     /// Advance the housing, painting the frame it reaches; returns whether
     /// the surface is shown.
@@ -533,6 +586,14 @@ impl RadarAnimState {
     /// see [`RadarPresentation::restore_availability`].
     pub fn restore_availability(&mut self, has_radar: bool) {
         self.presentation.restore_availability(has_radar);
+    }
+    /// See [`RadarPresentation::saved`].
+    pub fn saved_housing(&self) -> SavedRadarHousing {
+        self.presentation.saved()
+    }
+    /// See [`RadarPresentation::restore_saved`].
+    pub fn restore_saved_housing(&mut self, saved: SavedRadarHousing) {
+        self.presentation.restore_saved(saved);
     }
     /// Whether the housing is opening or closing: `653100` steps it on the
     /// first draw after each four wall-clock buckets.
@@ -937,6 +998,52 @@ mod tests {
             (RadarAnimPhase::MovieOpening, 25)
         );
         assert_eq!(radar.wind_down_retired(true, true), None);
+    }
+    /// A load reads the housing back as saved (`0x006568A0`, `0x005BE092`):
+    /// an opening goes on from its frame and timer, a Mode 4 stage stays, and
+    /// `RadarClass::Init @ 0x00655B20` ends a Mode 3 clip through
+    /// `SetRadarMode(PendingMode)`, replaying frames 25..32.
+    #[test]
+    fn a_loaded_radar_resumes_as_saved_and_ends_a_playing_clip() {
+        let mut opening = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = opening.set_has_radar(true);
+        opening.animation.frame = 10;
+        opening.animation.last_bucket = 7;
+        opening.animation.duration = 4;
+        let mut loaded = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        loaded.restore_saved(opening.saved());
+        assert_eq!(
+            (loaded.animation.phase, loaded.animation.frame),
+            (RadarAnimPhase::Opening, 10)
+        );
+        assert_eq!(
+            (loaded.animation.last_bucket, loaded.animation.duration),
+            (7, 4)
+        );
+        assert!(loaded.pending_radar);
+
+        let mut playing = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = playing.set_has_radar(true);
+        playing.animation.phase = RadarAnimPhase::Online;
+        playing.animation.frame = 32;
+        assert!(playing.admit_movie());
+        let _ = playing.movie_step(true, true);
+        let _ = playing.movie_step(true, true);
+        let waiting = playing.saved();
+        assert_eq!(
+            playing.movie_step(true, true),
+            RadarMovieCommand::StartPlayback
+        );
+        let mut loaded = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        loaded.restore_saved(waiting);
+        assert_eq!(loaded.movie, Some(MovieStage::WaitStreams));
+        let mut loaded = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        loaded.restore_saved(playing.saved());
+        assert_eq!(loaded.movie, None);
+        assert_eq!(
+            (loaded.animation.phase, loaded.animation.frame),
+            (RadarAnimPhase::MovieOpening, 25)
+        );
     }
     /// `653100` ends the radar's sound loop only on the draw that finishes
     /// the housing: MovieOpening reaching 32 (`0x0065328C`) and Closing
