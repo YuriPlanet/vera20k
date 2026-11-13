@@ -3625,8 +3625,6 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
 /// `Wave.IsBigLaser` shot creates a TS laser wave of type 1 or 2, whose
 /// AmbientDamage strikes the cells under the beam on each of its 22 updates
 /// (nLaserIntensity 160, less 6 each, leaves below 32), and then it leaves.
-// Runs again once combat's wave creation in FireAt moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

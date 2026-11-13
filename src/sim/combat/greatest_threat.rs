@@ -1295,8 +1295,8 @@ pub(crate) fn greatest_threat(
     // has `CanPassiveAquire.Guard=no`, or `CanPassiveAquire.Cloak=no` while
     // it can cloak (IsCloakable vt+0x288, or the rank's CLOAK ability),
     // returns no target before the latch and the scan.
-    #[cfg(feature = "ares")]
-    if foot_wrapper_entered
+    if rules.ares()
+        && foot_wrapper_entered
         && standing.human
         && scanner.mission.effective().known() == Some(crate::sim::mission::MissionType::Guard)
     {
@@ -2553,24 +2553,22 @@ fn evaluate_candidate(
     // target the scanner's house is allied with while `[CombatDamage]
     // AutoRepel` (`PlayerAutoRepel` for a human scanner) is set, is an enemy:
     // the passive-house and Insignificant gates are skipped (`0x006F8483`).
-    #[cfg(feature = "ares")]
-    let considered_enemy = candidate_obj.techno_combat().combat().civilian_enemy()
-        || (candidate
-            .attack_target
-            .target()
-            .is_some_and(|target| match target {
-                super::TargetKind::Entity(id) => ctx
-                    .entities
-                    .get(id)
-                    .is_some_and(|target| ctx.is_ally(target)),
-                _ => false,
-            })
-            && ctx
-                .rules
-                .ares_techno_combat()
-                .auto_repel(ctx.standing.human));
-    #[cfg(not(feature = "ares"))]
-    let considered_enemy = false;
+    let considered_enemy = ctx.rules.ares()
+        && (candidate_obj.techno_combat().combat().civilian_enemy()
+            || (candidate
+                .attack_target
+                .target()
+                .is_some_and(|target| match target {
+                    super::TargetKind::Entity(id) => ctx
+                        .entities
+                        .get(id)
+                        .is_some_and(|target| ctx.is_ally(target)),
+                    _ => false,
+                })
+                && ctx
+                    .rules
+                    .ares_techno_combat()
+                    .auto_repel(ctx.standing.human)));
 
     // `0x006F826E..0x006F835E`: outside the campaign, a `MultiplayPassive`
     // house's objects are off limits but for the building exception.
@@ -3352,7 +3350,7 @@ mod tests {
                 .entities
                 .get_mut(ifv)
                 .unwrap()
-                .set_gunner_weapon(slot, object, crate::rules::ARES_BUILD);
+                .set_gunner_weapon(slot, object, rules.ares());
             let pick = sim
                 .greatest_threat_represented(
                     &rules,

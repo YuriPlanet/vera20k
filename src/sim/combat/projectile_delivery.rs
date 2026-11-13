@@ -423,12 +423,9 @@ fn admit_bullet(
             .admitted_spawns
             .push((bullet_id, delivery.inviso, spawn));
     }
-    #[cfg(feature = "ares")]
-    if techno_fire {
+    if rules.ares() && techno_fire {
         world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = techno_fire;
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;
         let placement = inviso_fire_placement(
@@ -441,12 +438,14 @@ fn admit_bullet(
         );
         // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way burns
         // the bullet before the obstacle walk.
-        #[cfg(feature = "ares")]
-        if world.ares_inviso_firestorm(bullet_id, placement, rules) {
-            return false;
-        }
-        #[cfg(feature = "ares")]
-        let placement = world.ares_inviso_obstacle(bullet_id, placement, rules);
+        let placement = if rules.ares() {
+            if world.ares_inviso_firestorm(bullet_id, placement, rules) {
+                return false;
+            }
+            world.ares_inviso_obstacle(bullet_id, placement, rules)
+        } else {
+            placement
+        };
         world
             .projectiles
             .fire_inviso(bullet_id, placement, on_bridge);
@@ -496,12 +495,11 @@ impl Simulation {
     /// and `placement`, at that cell's GetCoords (vt+0x48), else on
     /// `placement` (`FindFirstObstacle 1006E2B0`, with the bullet's Owner
     /// and Target as GetObstacle's pSource/pTarget). Fire's original walk
-    /// result is overwritten (`0x0046897D`), so default builds stand it on
-    /// `placement` even through a wall.
+    /// result is overwritten (`0x0046897D`), so a game without Ares stands it
+    /// on `placement` even through a wall.
     ///
     /// Its firestorm arm, which runs first, is
     /// [`Simulation::ares_inviso_firestorm`].
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_inviso_obstacle(
         &self,
         bullet_id: u64,
@@ -538,6 +536,7 @@ impl Simulation {
                         _ => None,
                     },
                 },
+                rules.ares(),
             ),
             rules,
             &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),

@@ -482,8 +482,6 @@ mod tests {
         }
     }
 
-    // Runs again once combat's warhead effects move to the switch.
-    #[cfg(feature = "ares")]
     #[test]
     fn attach_effect_parent_bullet_actual_ai_snapshot_and_limbo_use_one_owner() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);

@@ -133,8 +133,6 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
 /// With `UC.PassThrough=100%` and a projectile that is not
 /// `SubjectToTrenches`, the shot passes through to the occupant with
 /// `UC.DamageMultiplier=50%` of its damage, and the building takes none.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn a_shot_passes_through_to_an_occupant() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

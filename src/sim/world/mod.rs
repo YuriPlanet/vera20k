@@ -5737,9 +5737,6 @@ impl Simulation {
                     if self.ares_inviso_firestorm(stable_id, placement, rules) {
                         continue;
                     }
-                    // The obstacle walk moves to the switch with combat's
-                    // line-of-fire walk (`line_of_fire::ares_obstacle`).
-                    #[cfg(feature = "ares")]
                     let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
                     placement
                 } else {

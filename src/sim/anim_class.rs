@@ -453,7 +453,6 @@ pub struct AnimObject {
     /// a terrain owner apart from `owner_entity` and its stored coordinate
     /// absolute: a terrain object never moves, so native's owner-relative
     /// form adds the same constant back on every read.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     owner_terrain: Option<u64>,
 }
@@ -771,7 +770,6 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "ares")]
             owner_terrain: None,
         }
     }
@@ -1067,7 +1065,6 @@ impl AnimStore {
 
     /// `AnimClass::ClearLoopsForOwner @ 0x00422B80`: every anim naming
     /// `owner` at `+0xCC` ends after its current loop (`+0x195 = 0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_loops_for_terrain_owner(&mut self, owner: u64) {
         let stored = self.anims.len();
         for (&id, anim) in self.anims.iter_mut() {
@@ -1961,7 +1958,6 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "ares")]
             owner_terrain: None,
         };
         // The insert must run in every build profile: wrapped in

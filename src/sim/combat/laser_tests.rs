@@ -320,9 +320,9 @@ fn an_infantry_house_color_laser_is_two_wide() {
 /// its colour and a non-Prism building's 3; a set thickness replaces both,
 /// supported above 3 for a non-building. TechnoClass_FireLaser (100563A0,
 /// hook 0x6FD438) gives a direct SpawnLaser a thickness above 1.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let fire = |kind: &str, category, input: Value| {
         let rules = fixture_rules(&input);
         let mut sim = Simulation::new();
@@ -698,7 +698,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
                     .building
                     .prism_support_count
                     .count(),
-                if cfg!(feature = "ares") { 0 } else { 1 }
+                if rules.ares() { 0 } else { 1 }
             );
         }
     }

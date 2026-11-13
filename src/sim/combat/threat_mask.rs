@@ -339,40 +339,16 @@ mod tests {
     fn healers_and_engineers_rewrite_the_mask() {
         use EntityCategory::*;
         // Ares 1004E4A0 (hooks 0x6F8EE3/0x6F8F1F) has its own expectation.
-        #[cfg(not(feature = "ares"))]
-        {
-            assert_eq!(
-                preamble_rewrite(0x21, Infantry, true, false, crate::rules::ARES_BUILD),
-                0x4009
-            );
-            assert_eq!(
-                preamble_rewrite(0x22, Unit, true, false, crate::rules::ARES_BUILD),
-                0x4012
-            );
+        assert_eq!(preamble_rewrite(0x21, Infantry, true, false, false), 0x4009);
+        assert_eq!(preamble_rewrite(0x22, Unit, true, false, false), 0x4012);
+        assert_eq!(preamble_rewrite(0x21, Infantry, true, false, true), 0x403D);
+        assert_eq!(preamble_rewrite(0x22, Unit, true, false, true), 0x403E);
+        // The engineer and aircraft arms read no Ares rewrite.
+        for ares in [false, true] {
+            assert_eq!(preamble_rewrite(0x238, Infantry, false, true, ares), 0x220);
+            assert_eq!(preamble_rewrite(0x238, Unit, false, true, ares), 0x238);
+            assert_eq!(preamble_rewrite(0x21, Aircraft, true, true, ares), 0x21);
         }
-        #[cfg(feature = "ares")]
-        {
-            assert_eq!(
-                preamble_rewrite(0x21, Infantry, true, false, crate::rules::ARES_BUILD),
-                0x403D
-            );
-            assert_eq!(
-                preamble_rewrite(0x22, Unit, true, false, crate::rules::ARES_BUILD),
-                0x403E
-            );
-        }
-        assert_eq!(
-            preamble_rewrite(0x238, Infantry, false, true, crate::rules::ARES_BUILD),
-            0x220
-        );
-        assert_eq!(
-            preamble_rewrite(0x238, Unit, false, true, crate::rules::ARES_BUILD),
-            0x238
-        );
-        assert_eq!(
-            preamble_rewrite(0x21, Aircraft, true, true, crate::rules::ARES_BUILD),
-            0x21
-        );
     }
 
     #[test]

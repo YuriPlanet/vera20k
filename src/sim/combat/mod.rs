@@ -26,7 +26,6 @@
 
 pub mod aim_coord;
 mod airburst;
-#[cfg(feature = "ares")]
 mod ares_warhead_effects;
 mod attack_target;
 pub(crate) mod base_defense_response;
@@ -83,13 +82,13 @@ pub(crate) mod receiver_fixture;
 mod aegis_launch_tests;
 #[cfg(all(test, feature = "phobos"))]
 mod airstrike_target_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_armor_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_cliff_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_warhead_combat_tests;
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_warhead_effects_tests;
 #[cfg(test)]
 mod bridge_cluster_tests;
@@ -167,6 +166,8 @@ pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
 pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
 pub use techno_death::FatalLifecycleStage;
+// Still on the feature: it moves with the unit-lost event, whose Ares fields
+// (`UnitLostEvent`, `SimSoundEvent::UnitLost`) the app reads.
 #[cfg(feature = "ares")]
 pub(crate) use techno_death::ares_building_lost_event;
 pub(crate) use techno_death::{

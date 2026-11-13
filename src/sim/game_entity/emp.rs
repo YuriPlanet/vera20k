@@ -1459,8 +1459,6 @@ mod receiver {
             .fire_error(false)
         }
 
-        // Runs again once combat's warhead effects move to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_building_parent_bullet_actual_ai_fire_and_power_recovery() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);

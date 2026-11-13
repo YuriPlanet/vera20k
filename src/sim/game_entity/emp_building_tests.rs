@@ -193,8 +193,6 @@ fn ares_emp_rides_out_of_a_repacking_yard_on_its_mcv() {
 /// A Gap Generator is prone (GapGenerator). DisableStuff 0x452480 removes
 /// its gap at the hit; its operational sample (0x0043FB20 -> 0x004549B0)
 /// restores it once the counter ends.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_lifts_a_gap_generators_gap_until_expiry() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -232,8 +230,6 @@ fn ares_emp_lifts_a_gap_generators_gap_until_expiry() {
 /// (hook 0x50AF10, 10039450) holds its Psychic Reveal, which is not
 /// IsPowered=, while no provider is Charging, and an EMPed provider is not
 /// powered (10038F10). The stock pass never holds such a type.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_holds_a_psychic_sensors_reveal_until_expiry() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -280,8 +276,6 @@ fn ares_emp_holds_a_psychic_sensors_reveal_until_expiry() {
 /// EMP (0x004555D0), its off edge (0x004549B0) loses the House's powered
 /// center and the Robot Tank goes offline (LostPoweredCenter 0x0050E0E0);
 /// the on edge after expiry brings it back (0x0050E010).
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_on_a_robot_control_center_takes_its_robots_offline() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

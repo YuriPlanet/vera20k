@@ -1908,7 +1908,6 @@ impl ProjectileStore {
     /// Ares BulletClass_Detonate's neutering of an abducting bullet
     /// (100536E0, hook 0x46920B): Health (`+0x6C`) and DamageMultiplier
     /// (`+0x150`) zeroed, so the vanilla arms that follow deal nothing.
-    #[cfg(feature = "ares")]
     pub(crate) fn neuter(&mut self, id: u64) {
         if let Some(bullet) = self.get_mut(id) {
             bullet.payload.base_damage = 0;

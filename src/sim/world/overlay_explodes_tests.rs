@@ -396,8 +396,6 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
 
 /// Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes overlay blows up only from
 /// `damage >= [General] OverlayExplodeThreshold`.
-// Runs again once combat's `OverlayExplodeThreshold` moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_overlay_explode_threshold_gates_the_explodes_tail() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

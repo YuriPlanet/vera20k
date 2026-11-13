@@ -99,8 +99,6 @@ fn armor_crate(sim: &mut Simulation, rules: &RuleSet, victim: u64) -> bool {
     .is_empty()
 }
 
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_armor_parent_hit_changes_received_damage_then_expires() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

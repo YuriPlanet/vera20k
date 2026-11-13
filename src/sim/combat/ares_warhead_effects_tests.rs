@@ -86,6 +86,7 @@ fn curtain_left(sim: &Simulation, id: u64) -> i32 {
 /// non-stacking refresh deals nothing; a negative duration stops it.
 #[test]
 fn iron_curtain_warhead_damages_then_curtains_once_scaled() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "IronCurtain.Duration=100\n",
         "IronCurtain.Modifier=50%\n",
@@ -132,6 +133,7 @@ fn iron_curtain_warhead_damages_then_curtains_once_scaled() {
 /// type's `IronCurtain.Modifier`.
 #[test]
 fn techno_curtain_scales_by_the_type_modifier() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("", "IronCurtain.Modifier=1.5\n", "");
     let (mut sim, _, target) = scene(&rules);
     crate::sim::superweapon::iron_curtain::curtain_object(
@@ -152,6 +154,7 @@ fn techno_curtain_scales_by_the_type_modifier() {
 /// (0x469AA4); an ImmuneToPsionics type refuses and takes the damage.
 #[test]
 fn permanent_mind_control_captures_and_skips_the_area_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("MindControl.Permanent=yes\n", "", "");
     let (mut sim, firer, target) = scene(&rules);
     shoot(&mut sim, &rules, firer, target, 100);
@@ -173,6 +176,7 @@ fn permanent_mind_control_captures_and_skips_the_area_damage() {
 /// (10049EA0, hook 0x6FC0D3) then answers Rearm until it runs out.
 #[test]
 fn disable_weapons_duration_holds_fire_with_rearm() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("DisableWeapons.Duration=40\n", "", "");
     let (mut sim, firer, target) = scene(&rules);
     let fire_error = |sim: &Simulation| {
@@ -218,6 +222,7 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
 /// CloakDisallowed (10043A40) then reads.
 #[test]
 fn sonar_duration_extends_the_sonar_timer() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("Sonar.Duration=60\n", "", "");
     let (mut sim, firer, target) = scene(&rules);
     let hit = |sim: &mut Simulation| {
@@ -263,6 +268,7 @@ fn sonar_duration_extends_the_sonar_timer() {
 /// Invoker: the killer's house) and remapped for a MakeInfantry type.
 #[test]
 fn inf_death_anim_replaces_the_table_and_takes_the_invoker_house() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut rules = rules(
         "InfDeathAnim=GOO\nInfDeath=2\n",
         "",
@@ -322,6 +328,7 @@ fn inf_death_anim_replaces_the_table_and_takes_the_invoker_house() {
 /// gives it the burnt infantryman's house.
 #[test]
 fn inf_death_table_anim_takes_its_make_infantry_owner() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (owner_kind, expect_victim) in [("", false), ("MakeInfantryOwner=victim\n", true)] {
         let mut rules = rules(
             "InfDeath=4\n",
@@ -376,6 +383,7 @@ fn inf_death_table_anim_takes_its_make_infantry_owner() {
 /// both ways.
 #[test]
 fn immune_to_berserk_overrides_the_psychedelic_fire_error() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (target_ini, illegal) in [
         ("ImmuneToPsionics=yes\n", true),
         ("ImmuneToPsionics=yes\nImmuneToBerserk=no\n", false),
@@ -403,6 +411,7 @@ fn immune_to_berserk_overrides_the_psychedelic_fire_error() {
 /// same type below veteran does.
 #[test]
 fn rad_immune_rank_ability_refuses_radiation_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("Radiation=yes\n", "VeteranAbilities=RADIMMUNE\n", "");
     for (experience, damaged) in [(0.0f32, true), (1.0, false)] {
         let (mut sim, firer, target) = scene(&rules);
@@ -426,6 +435,7 @@ fn rad_immune_rank_ability_refuses_radiation_damage() {
 /// ground height.
 #[test]
 fn cell_spread_items_collect_airborne_foot_objects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("IronCurtain.Duration=100\n", "", "");
     let (mut sim, _, flying) = scene(&rules);
     let grounded = sim
