@@ -1235,7 +1235,8 @@ impl Simulation {
     /// target, accepts it only when it lies closer to the target than the
     /// actor (0x4D3C39) and `EstimateZoneCost` 0x42D170 admits it (at most
     /// Chebyshev plus 6). Code 7 with a Building in the target cell
-    /// (0x47C520) redirects unconditionally.
+    /// (0x47C520) redirects unconditionally, to cell (0,0) when FNPC finds
+    /// no cell.
     pub(crate) fn find_path_redirect(
         &self,
         id: u64,
@@ -1322,12 +1323,13 @@ impl Simulation {
                 {
                     return Ok(None);
                 }
-                //0x4D3DD8..0x4D3E03: the FNPC result is set and searched without
-                //an invalid-cell test; only an FNPC failure over the whole map
-                //radius would search cell (0,0), which no test fixture produces.
-                let near = self.find_path_nearby_cell(id, target, rules)?.ok_or(
-                    "Find_Path code-7 redirect found no passable cell near the Building target",
-                )?;
+                //0x4D3DD8..0x4D3E03 sets and searches the FNPC result without
+                //code 6's invalid-cell test (0x4D3BBD..0x4D3BD7). An FNPC that
+                //finds nothing answers the zero Cell (0x56E79A..0x56E7AA reads
+                //0xABD480), so SetDestination and the search go to cell (0,0).
+                let near = self
+                    .find_path_nearby_cell(id, target, rules)?
+                    .unwrap_or((0, 0));
                 Ok(Some(near))
             }
             _ => Ok(None),

@@ -1,6 +1,7 @@
-//! Rust regression tests for the batched path searches ([`super`]). A
-//! batched answer is checked against Find_Path's own search on the same
-//! world; no native behavior is claimed.
+//! Rust regression tests for the batched path searches ([`super`]) and the
+//! Find_Path redirects they leave to the Foot. A batched answer is checked
+//! against Find_Path's own search on the same world; no native behavior is
+//! claimed for it.
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::components::NavTargetRef;
@@ -512,6 +513,29 @@ fn a_redirected_request_is_left_to_find_path() {
     sim.foot_find_path(&request, &rules, None, FrameEffects::default())
         .expect("Find_Path runs");
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [0, 0]);
+}
+
+/// When Find_Nearby_Passable_Cell finds no cell near a code-7 target,
+/// Find_Path heads for the zero cell it returns instead (0x004D3DD8..
+/// 0x004D3E03 has no invalid-cell test) and the frame goes on (#4269).
+#[test]
+fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
+    use crate::sim::movement::fresh_oracle_seam;
+    let rules = rules();
+    let (mut sim, [tank, _]) = jam(&rules);
+    spawn(&mut sim, &rules, "HUT", (20, 10));
+    let request = sim.code2_ladder_request(tank, 1).unwrap();
+    let answer = sim
+        .find_path_target_answer(tank, request.destination, &rules, None)
+        .unwrap();
+    assert_eq!(answer, Some(7), "the hut on the destination answers code 7");
+    fresh_oracle_seam::install_nearby_only(vec![None, None]);
+    let redirect = sim.find_path_redirect(tank, request.destination, 7, &rules);
+    let found = sim.foot_find_path(&request, &rules, None, FrameEffects::default());
+    let (_, unused) = fresh_oracle_seam::finish();
+    assert_eq!(redirect, Ok(Some((0, 0))));
+    assert!(found.is_ok(), "Find_Path carries on: {found:?}");
+    assert_eq!(unused, 0, "Find_Path asked for one nearby cell");
 }
 
 /// Each answer is its search's own, whatever thread ran it: the same
