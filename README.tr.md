@@ -43,19 +43,6 @@ Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden
 
 ## Katkıda bulunma
 
-**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
-
-Her alanda yardımınızı bekliyoruz; en çok yardıma ihtiyaç duyan alanlar aşağıda. Her biri yol
-haritasındaki sayfasına bağlanır; orada süren çalışmayı ve sonraki adımı bulabilirsiniz:
-
-- **[Oynanış ve çatışma](https://github.com/YuriPlanet/vera20k/issues/3830):** birim davranışı, hasar ve çatışma maçlarının güvenilirliği.
-- **[Performans](https://github.com/YuriPlanet/vera20k/issues/3831):** büyük savaşlarda ve eski donanımda kare hızı ve tepki süresi.
-- **[Çok oyunculu mod](https://github.com/YuriPlanet/vera20k/issues/3832):** çevrimiçi maçlara katılma, maç başlatma ve maçları sürdürme, ayrıca ortak oyunun güvenilirliği.
-- **[Arayüz ve ses](https://github.com/YuriPlanet/vera20k/issues/3833):** menüler, metinler, [çeviriler](src/i18n/README.md) ve ses.
-- **[Senaryolar](https://github.com/YuriPlanet/vera20k/issues/3834):** görevler başlatılabiliyor, ancak sonuna kadar oynanabilmeleri için daha çalışma gerekiyor: hedefler, tetikleyiciler, betikli geçişler, kaydetme/yükleme ve sonraki göreve geçiş.
-- **[Mod uyumluluğu](https://github.com/YuriPlanet/vera20k/issues/3835):** orijinal oyunun varsayılanlarını değiştirmeden Ares ve Phobos özellikleri.
-- **[Test](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K'yi orijinal oyunla yan yana oynayıp farklı oynanan yerleri bildirmek.
-
 Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi
 ileriye taşıyan değişiklikleri geniş bir özgürlükle yapabilir.
 

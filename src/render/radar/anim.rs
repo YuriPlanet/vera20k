@@ -364,6 +364,15 @@ impl RadarPresentation {
         // IncomingTransmission plays. SetMode3 below starts its transition.
         true
     }
+    /// Radar mode 4 (`+0x14B0`): an admitted movie still in its prelude,
+    /// where `RadarClass::AI` runs the prelude (`0x006539A2`) instead of its
+    /// per-pass EVA resume.
+    fn movie_prelude(&self) -> bool {
+        matches!(
+            self.movie,
+            Some(MovieStage::Announce | MovieStage::WaitAnnouncement | MovieStage::WaitStreams)
+        )
+    }
     fn movie_step(&mut self, selected_done: bool, streams_ready: bool) -> RadarMovieCommand {
         match self.movie {
             Some(MovieStage::Announce) => {
@@ -655,16 +664,14 @@ impl RadarAnimState {
     pub fn wind_down_retired_movie(&mut self, ai_runs: bool, selected_done: bool) -> Option<bool> {
         self.presentation.wind_down_retired(ai_runs, selected_done)
     }
-    pub fn retire_movies(&mut self) -> bool {
-        let suspended = matches!(
-            self.presentation.movie,
-            Some(MovieStage::WaitAnnouncement | MovieStage::WaitStreams)
-        );
+    pub fn retire_movies(&mut self) {
         if self.presentation.movie.is_some() {
             self.presentation.finish_movie(false);
         }
         self.presentation.movie_pause_latch = false;
-        suspended
+    }
+    pub fn movie_prelude(&self) -> bool {
+        self.presentation.movie_prelude()
     }
     /// Paint the movie's current `picture`, `size` pixels, and show it.
     pub fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2], origin: [f32; 2]) {
@@ -947,8 +954,10 @@ mod tests {
         let _ = radar.set_has_radar(true);
         radar.animation.phase = RadarAnimPhase::Online;
         radar.animation.frame = 32;
+        assert!(!radar.movie_prelude());
         assert!(radar.admit_movie());
         assert!(!radar.admit_movie());
+        assert!(radar.movie_prelude(), "mode 4 skips the EVA resume");
         assert_eq!(radar.movie_step(true, true), RadarMovieCommand::Announce);
         assert_eq!(radar.movie_step(false, true), RadarMovieCommand::None);
         assert_eq!(
@@ -956,10 +965,12 @@ mod tests {
             RadarMovieCommand::PrepareStreams
         );
         assert_eq!(radar.movie_step(true, false), RadarMovieCommand::None);
+        assert!(radar.movie_prelude());
         assert_eq!(
             radar.movie_step(true, true),
             RadarMovieCommand::StartPlayback
         );
+        assert!(!radar.movie_prelude(), "playback resumes EVA every pass");
         let _ = radar.set_has_radar(false);
         assert_eq!(radar.movie, Some(MovieStage::Playback));
         radar.movie_pause_latch = true;

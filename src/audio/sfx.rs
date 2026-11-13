@@ -28,10 +28,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZero;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use rodio::Player;
 use rodio::buffer::SamplesBuffer;
+use rodio::source::EmptyCallback;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 
@@ -1277,6 +1278,10 @@ pub struct SfxPlayer {
     /// [`Self::advance_voice_queue`] observes it finished and reports the end
     /// time to `vox` (`StreamPlayer::GetEndTime` stand-in).
     eva_player: Option<LiveSfxOutput>,
+    /// Set on the mixer thread the moment the current EVA sample runs out,
+    /// as the channel's done callback `0x00407A30` stamps the stream's end
+    /// time `+0x20` on the audio thread rather than at the next pump.
+    eva_ran_out: Option<Arc<OnceLock<crate::util::time::Instant>>>,
     /// The taunt stream `[0x00B1D4D8]` ("Taunt Stream", `0x00752AD0`): a
     /// second StreamPlayer beside EVA's. `PlayFile` stops what it plays, so
     /// a new taunt cuts the last one.
@@ -1306,6 +1311,10 @@ pub struct SfxPlayer {
     paused: bool,
     movie_held: bool,
     movie_sounds_suspended: bool,
+    /// `-X…Q` (`0x00A8ED64`), set once at startup: `PlayNextQueued
+    /// @ 0x00752760` returns before its dequeue. Theme reads the same switch
+    /// through `ThemeGates`.
+    eva_quiet: bool,
     ///7518C0 gates Voc admission; it neither pauses Theme nor ends buffers.
     voc_enabled: bool,
     ///53BAD0 excludes the SFX half of GamePause, not its EVA stream half.
@@ -1426,6 +1435,7 @@ impl SfxPlayer {
             now_ms: 0,
             vox: VoxQueue::new(),
             eva_player: None,
+            eva_ran_out: None,
             taunt_player: None,
             eva_stream_volume: VolumeInterp::new(VOLUME_SCALE, 0),
             taunt_stream_volume: VolumeInterp::new(VOLUME_SCALE, 0),
@@ -1441,6 +1451,7 @@ impl SfxPlayer {
             paused: false,
             movie_held: false,
             movie_sounds_suspended: false,
+            eva_quiet: false,
             voc_enabled: true,
             chrono_screen_active: false,
             game_pause_suspends_sounds: false,
@@ -2087,6 +2098,10 @@ impl SfxPlayer {
     /// picks `taunts\tau{am,ko,fr,ge,br,li,ir,cu,ru,yu}%02i.wav` (jump table
     /// `0x00752C6C`). `StreamPlayer::PlayFile(name, 0)` `0x00407B60` tries
     /// the loose file first, then CCFile; a new taunt stops the last one.
+    /// Under a movie's stop hold (`+0x88`) Stop and PlayFile both do
+    /// nothing, so the paused taunt stays and the new one is dropped. A
+    /// paused stream otherwise plays a new file at once: PlayFile sets the
+    /// playing bit whatever the pause count `+0x80`.
     /// RESIDUAL: the suppress counter `[0x00B1D480]` is taken as 0; its
     /// writers `0x00753520`/`0x00753540` have no direct caller.
     pub(crate) fn play_taunt(&mut self, byte: u8, assets: &AssetManager, pattern: Option<&str>) {
@@ -2104,6 +2119,9 @@ impl SfxPlayer {
                 format!("taunts\\tau{country}{number:02}.wav")
             }
         };
+        if self.movie_held {
+            return;
+        }
         if let Some(output) = self.taunt_player.take() {
             output.player.stop();
         }
@@ -2123,11 +2141,6 @@ impl SfxPlayer {
         else {
             return;
         };
-        // A paused stream player stays paused across PlayFile (`0x00408270`
-        // holds every player in the stream list, `0x0087E810`).
-        if self.streams_paused() {
-            output.player.pause();
-        }
         self.taunt_player = Some(output);
     }
 
@@ -2138,15 +2151,20 @@ impl SfxPlayer {
             .is_some_and(|output| !output.player.empty())
     }
 
-    /// `StreamPlayer::Stop` (`0x00407F40`) on the announcement stream, if one
-    /// is open. Its `Audio__StopPlaybackChannel` (`0x004025B0`) runs the stop
-    /// callback `0x00407A60` installed by `StreamPlayer::Create` (`0x0040796C`),
-    /// which stamps `GetEndTime` (`StreamPlayer+0x20`, `0x00408140`) with the
-    /// stop moment, so `PlayNextQueued`'s gap (`0x007527A7..0x007527CF`) runs
-    /// from there. A stream VERA has not yet seen finish takes the same stamp.
+    /// `StreamPlayer::Stop @ 0x00407F40` on the announcement stream, if one
+    /// is open. A movie's stop hold (`+0x88`) refuses it: the paused line
+    /// plays on after the movie. The stop stamps the stream's end time
+    /// (`0x00407A60`), which the next line's gap counts from.
     fn stop_eva_stream(&mut self) {
+        if !self.movie_held {
+            self.drop_eva_stream();
+        }
+    }
+
+    fn drop_eva_stream(&mut self) {
         if let Some(output) = self.eva_player.take() {
             output.player.stop();
+            self.eva_ran_out = None;
             self.vox.stream_ended(self.now_ms);
         }
     }
@@ -2170,6 +2188,17 @@ impl SfxPlayer {
     }
     pub(crate) fn set_chrono_screen_active(&mut self, active: bool) {
         self.chrono_screen_active = active;
+    }
+    /// `RadarClass::AI`'s pass outside its prelude: `ResumeEVA @ 0x00753580`
+    /// unless ChronoScreen holds the screen (`0x0053BAE0` at
+    /// `0x006539AE..0x006539B7`).
+    pub(crate) fn resume_eva_unless_chrono_screen(&mut self) {
+        if !self.chrono_screen_active {
+            self.vox.resume();
+        }
+    }
+    pub(crate) fn set_eva_quiet(&mut self, quiet: bool) {
+        self.eva_quiet = quiet;
     }
     pub(crate) fn suspend_eva(&mut self) {
         self.vox.suspend();
@@ -2213,9 +2242,9 @@ impl SfxPlayer {
     /// The native gate is `IsPlaying() == 0 && now > GetEndTime() + gap &&
     /// DAT_00b1d428 == 0` (`0x00752794..0x007527D5`); [`VoxQueue::take_next`]
     /// owns it. The stream's end time is reported here the first time the
-    /// stream is seen empty after an EVA line started, so the 500 ms gap runs
-    /// from the observed end (a paused line therefore still gets its gap
-    /// after it resumes and finishes).
+    /// stream is seen empty after an EVA line started, back-dated to when the
+    /// sample ran out, so the 500 ms gap runs from the real end (a paused
+    /// line therefore still gets its gap after it resumes and finishes).
     ///
     /// Then the sample is loaded and started — `StreamPlayer::PlayFile(name,
     /// 1)` at `0x0075295C`; a failed load drops the node without touching
@@ -2227,9 +2256,20 @@ impl SfxPlayer {
         assets: &AssetManager,
         audio_index: Option<&crate::assets::audio_bag::AudioIndex>,
     ) {
+        if self.eva_quiet {
+            return;
+        }
         let busy = self.eva_stream_busy();
         if !busy && self.eva_player.take().is_some() {
-            self.vox.stream_ended(self.now_ms);
+            // Back-date to when the sample ran out: the pump sees it a pass
+            // or a stalled frame later.
+            let ran_out_ago = self
+                .eva_ran_out
+                .take()
+                .and_then(|stamp| stamp.get().map(|at| at.elapsed().as_millis()))
+                .map_or(0, |ago| u64::try_from(ago).unwrap_or(u64::MAX));
+            self.vox
+                .stream_ended(self.now_ms.saturating_sub(ran_out_ago));
         }
         let Some(node) = self.vox.take_next(self.now_ms, busy) else {
             return;
@@ -2268,6 +2308,12 @@ impl SfxPlayer {
         else {
             return;
         };
+        let ran_out = Arc::new(OnceLock::new());
+        let stamp = Arc::clone(&ran_out);
+        output.player.append(EmptyCallback::new(Box::new(move || {
+            let _ = stamp.set(crate::util::time::Instant::now());
+        })));
+        self.eva_ran_out = Some(ran_out);
         self.eva_player = Some(output);
         self.vox.started(node);
     }
@@ -2371,7 +2417,8 @@ impl SfxPlayer {
         };
         log::info!("SFX output reopened on the default device");
         self.clear_sound_pool();
-        self.stop_eva_stream();
+        // The lost device took the stream with it, held or not.
+        self.drop_eva_stream();
         if let Some(output) = self.taunt_player.take() {
             output.player.stop();
         }
@@ -2418,9 +2465,7 @@ impl SfxPlayer {
             (&self.taunt_player, &self.taunt_stream_volume),
         ]
         .into_iter()
-        .all(|(output, volume)| {
-            !(output.as_ref().is_some_and(|output| !output.player.empty()) && volume.moving())
-        })
+        .all(|(output, volume)| !(stream_playing(output) && volume.moving()))
     }
 
     /// The app's one AudioServiceClock admits Sound4041D0, then Vox752760,
@@ -2810,16 +2855,23 @@ impl SfxPlayer {
         // World replacement owns the wider Techno/Vox reset; the screen
         // effect's406E80 call only clears the shared event pool.
         self.voice_queue = VoiceQueue::new();
+        // The teardown drops a movie's stop hold with everything else, so
+        // it no longer keeps the streams it stops.
+        self.movie_held = false;
         self.stop_eva_stream();
         // SpeechSystem::Stop `0x00752CA0`: every scenario exit and the
         // restart stop the taunt stream.
         if let Some(output) = self.taunt_player.take() {
             output.player.stop();
         }
+        // Every scenario end runs `0x0069BB40` (`ResetAll` at `0x0069BB82`)
+        // before GameExit's `StopAll(1)`: `Route_Scenario_Termination
+        // @ 0x0055D145`, `0x0055D1D3`, `0x0055D231`, `0x0055D27E`; so do
+        // Main_Game's exit `0x0048CEB4` and LoadMission `0x00559DBC`. Both
+        // depths go to zero.
         self.vox.reset_all();
         self.paused = false;
         self.game_pause_suspends_sounds = false;
-        self.movie_held = false;
         self.movie_sounds_suspended = false;
         self.voc_enabled = true;
         self.chrono_screen_active = false;
@@ -2926,12 +2978,21 @@ impl SfxPlayer {
     }
 
     /// `VoxClass::PumpAndCheckActive @ 0x007529E0`'s answer: the stream is
-    /// playing or a node waits in any queue. Non-blocking (rodio
-    /// `Player::empty()` is a poll). Used by the quit cascade and the
-    /// victory/defeat savour wait.
+    /// playing (a paused line is not, `0x00408070`) or a node waits in any
+    /// queue. Non-blocking (rodio `Player::empty()` is a poll). Used by the
+    /// quit cascade and the victory/defeat savour wait.
     pub fn voices_active(&self) -> bool {
-        self.vox.is_active(self.eva_stream_busy())
+        self.vox.is_active(stream_playing(&self.eva_player))
     }
+}
+
+/// `StreamPlayer::IsPlaying @ 0x00408070` reads the playing bit, which
+/// `Pause @ 0x00407FB0` and the movie pause `0x00408270` move to the paused
+/// bit: a stream with audio left plays only while unpaused.
+fn stream_playing(output: &Option<LiveSfxOutput>) -> bool {
+    output
+        .as_ref()
+        .is_some_and(|output| !output.player.empty() && !output.player.is_paused())
 }
 
 /// The registry entry for a Voc identity, or `None` for an unknown name — a
@@ -4190,6 +4251,146 @@ mod tests {
         player.stop_all();
     }
 
+    /// A movie's stop hold (`+0x88`) refuses `StreamPlayer::Stop @
+    /// 0x00407F40`, so ChronoScreen's EVA stop (`0x007529A0`) leaves the
+    /// paused line; paused, it does not count as playing (`0x00408070`).
+    #[test]
+    fn movie_hold_keeps_the_paused_eva_line_through_a_stop() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut player) = output_player() else {
+            return;
+        };
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let loaded_index = crate::rules::retail_ini_fixture::retail_audio_index();
+        let index = loaded_index.map(|loaded| &loaded.index);
+        player.set_volume(0.0);
+        player.set_paused(false, 1_000);
+        assert!(player.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
+        player.set_movie_held(true, 1_000);
+        assert!(!player.voices_active());
+        player.stop_eva(true);
+        assert!(player.eva_player.is_some());
+        player.set_movie_held(false, 1_000);
+        assert!(player.voices_active());
+        player.stop_eva(true);
+        assert!(player.eva_player.is_none());
+        player.stop_all();
+    }
+
+    /// `PlayFile @ 0x00407B60` does nothing under a movie's stop hold, and
+    /// otherwise sets the playing bit whatever the pause count `+0x80`: a
+    /// taunt sent during a game pause plays at once.
+    #[test]
+    fn a_taunt_waits_out_no_pause_but_a_movie_hold_drops_it() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut player) = output_player() else {
+            return;
+        };
+        player.set_volume(0.0);
+        player.set_movie_held(true, 1_000);
+        player.play_taunt(0x01, &assets, None);
+        assert!(player.taunt_player.is_none());
+        player.set_movie_held(false, 1_000);
+        player.set_paused(true, 1_000);
+        player.play_taunt(0x01, &assets, None);
+        let taunt = player.taunt_player.as_ref().expect("retail TAUAM01.WAV");
+        assert!(!taunt.player.is_paused());
+        player.stop_all();
+    }
+
+    /// An output device, or `None` after a `SKIPPED` line: these tests need
+    /// a real stream to tell playing from paused.
+    fn output_player() -> Option<SfxPlayer> {
+        let player = SfxPlayer::new();
+        if player.is_none() {
+            eprintln!("SKIPPED: no audio output device");
+        }
+        player
+    }
+
+    /// The radar pass lifts a suspend (`0x006539AE..0x006539B7`) only while
+    /// ChronoScreen does not hold the screen; ChronoScreen's Finish resumes
+    /// on its own (`0x0053B714`).
+    #[test]
+    fn the_radar_pass_lifts_an_eva_suspend_unless_chrono_screen_holds() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut player) = output_player() else {
+            return;
+        };
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let eva = definitions.eva();
+        player.set_volume(0.0);
+        player.suspend_eva();
+        player.set_chrono_screen_active(true);
+        player.resume_eva_unless_chrono_screen();
+        assert!(!player.play_eva("EVA_UnitReady", None, eva, &assets, None));
+        player.set_chrono_screen_active(false);
+        player.resume_eva_unless_chrono_screen();
+        assert!(player.play_eva("EVA_UnitReady", None, eva, &assets, None));
+        player.stop_all();
+    }
+
+    /// `-X…Q` (`0x00A8ED64`) stops `PlayNextQueued @ 0x00752760` before its
+    /// dequeue; queueing still succeeds.
+    #[test]
+    fn the_quiet_switch_queues_eva_but_never_plays_it() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut player) = output_player() else {
+            return;
+        };
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let loaded_index = crate::rules::retail_ini_fixture::retail_audio_index();
+        let index = loaded_index.map(|loaded| &loaded.index);
+        player.set_volume(0.0);
+        player.set_paused(false, 1_000);
+        player.set_eva_quiet(true);
+        assert!(player.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
+        assert!(player.eva_player.is_none());
+        player.stop_all();
+    }
+
+    /// The done callback `0x00407A30` stamps the end time when the sample
+    /// runs out, so a pump that comes 600 ms late finds the 500 ms gap
+    /// (`0x00752794..0x007527D5`) already passed and starts the next line.
+    #[test]
+    fn a_late_pump_measures_the_eva_gap_from_the_real_end() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut player) = output_player() else {
+            return;
+        };
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let loaded_index = crate::rules::retail_ini_fixture::retail_audio_index();
+        let index = loaded_index.map(|loaded| &loaded.index);
+        let eva = definitions.eva();
+        player.set_volume(0.0);
+        let started = crate::util::time::Instant::now();
+        player.set_paused(false, 1_000);
+        assert!(player.play_eva("EVA_UnitReady", None, eva, &assets, index));
+        assert!(player.play_eva("EVA_ConstructionComplete", None, eva, &assets, index));
+        assert_eq!(player.current_eva_event(), Some("EVA_UNITREADY"));
+        player.eva_player.as_ref().unwrap().player.sleep_until_end();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap();
+        player.set_paused(false, 1_000 + elapsed);
+        player.advance_voice_queue(eva, &assets, index);
+        assert_eq!(player.current_eva_event(), Some("EVA_CONSTRUCTIONCOMPLETE"));
+        player.stop_all();
+    }
+
     /// Original two-E1 QueueVoice708D90 -> AI6F9EBB -> PlayAtPos750920
     /// admits two distinct state-0 SoundEvents before either sample starts.
     #[test]
@@ -4908,6 +5109,10 @@ mod tests {
         // no simulated playback-completion answer is supplied to this owner.
         player.eva_player.as_ref().unwrap().player.sleep_until_end();
         assert!(!player.eva_stream_busy());
+        // This test's clock is the native capture's, not real time: its
+        // worker saw the end at the next 2089 ms visit, so drop the
+        // real-time stamp rather than back-date into the synthetic clock.
+        player.eva_ran_out = None;
         for label in [
             "original_payload_worker_2089ms",
             "original_payload_end_exact_gap_queue_visit",

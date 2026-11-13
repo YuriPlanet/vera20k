@@ -199,9 +199,10 @@ pub(crate) struct ObjectLayerPass {
 
 /// Frame-local lookup derived solely from the five retained Display vectors.
 /// The sim owns all registration and sorting; atlas builders only read ranks.
-/// Rebuilt each frame for every Display member and only looked up, so it
-/// takes the lookup hasher, sized up front.
-#[derive(Default)]
+/// Built once for each presentation frame
+/// (`PresentationFrame::display_order`) for every Display member and only
+/// looked up, so it takes the lookup hasher, sized up front.
+#[derive(Clone, Debug, Default)]
 pub(crate) struct NativeDisplayOrder {
     positions: LookupMap<DrawId, (TacticalLayer, u64)>,
 }

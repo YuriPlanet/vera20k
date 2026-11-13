@@ -121,7 +121,7 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // further frame runs while it waits. With `Custom End Game Movie` on, only
     // what follows here waits for the losing commander's clip: the card, the
     // teardown and the score page.
-    if crate::app::commander_feedback::owe_the_verdict_a_clip(state, outcome, wall_ms) {
+    if crate::app::commander_feedback::owe_the_verdict_a_clip(state, wall_ms) {
         return;
     }
     log::info!(
@@ -152,9 +152,11 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // delivered there, because the clip that kill earns would have cleared it
     // (`RadarMovieCommand::Announce` -> `clear_eva_queues` + `suspend_eva`).
     // The clip layer says it as soon as no clip is in the way; one still
-    // playing when the result was published leaves it to here, after `retire`
-    // has released the clip's EVA hold. Either way it is said once.
+    // playing when the result was published leaves it to here. Either way it
+    // is said once. A clip retired in its prelude leaves its EVA suspend for
+    // RadarClass::AI's next pass, so that pass's resume is taken first.
     if crate::app::commander_feedback::take_withheld_verdict_line(state) {
+        crate::app::radar_movie::resume_eva_outside_prelude(state);
         play_outcome_eva(state, outcome);
     }
     state.frontend.finished_game_count = state.frontend.finished_game_count.saturating_add(1);
@@ -186,14 +188,12 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         entry.is_some(),
         banner.is_some(),
     );
-    // The theme belongs to the verdict, not to the card: with `Custom End Game
-    // Movie` on it started when the clip wait opened, so the rest of the clip
-    // had the new music under it and restarting here would cut that track
-    // back to its first bar. One beat later the score page asks for its own
-    // `Score*` half, which is a no-op when this name is already playing.
-    if !crate::app::commander_feedback::verdict_was_held_for_a_clip(state) {
-        start_verdict_theme(state, outcome, wall_ms);
-    }
+    // The theme belongs to the verdict, not to the card. It starts here, after
+    // any clip the result waited for: a playing clip holds the music, and a
+    // held stream refuses a new song (`PlayFile @ 0x00407B60`). One beat later
+    // the score page asks for its own `Score*` half, which is a no-op when
+    // this name is already playing.
+    start_verdict_theme(state, outcome, wall_ms);
     let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
     let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
@@ -266,10 +266,8 @@ fn local_end_game_entry(
 
 /// The battlefield's own theme for the result (`[EndGameScreens] *Music=`).
 ///
-/// With `Custom End Game Movie` on this runs when the result is published and
-/// the clip wait opens, so the rest of the loser's clip plays over the new
-/// track. Otherwise it runs when the verdict is taken, one beat before the
-/// score page asks for its own `Score*` half.
+/// It runs when the verdict is taken, after any clip the result waited for,
+/// one beat before the score page asks for its own `Score*` half.
 pub(crate) fn start_verdict_theme(
     state: &mut AppState,
     outcome: crate::sim::house_state::HouseOutcomeKind,
@@ -746,6 +744,13 @@ pub(crate) enum ExactStepError {
 /// resumed by `0x00406EC0`). The movie routes apply both through
 /// `AppAudioRuntime`; the SFX player combines their reasons with this pause.
 pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
+    // `Play_Movie @ 0x005BED40`'s Bink loop (`0x00432C70`) never reaches
+    // `Network_ServiceLoop`, so a full-screen movie runs no pump: Theme AI
+    // does not move on past the held song, and only the outputs run.
+    if state.frontend.fullscreen_movie.is_some() {
+        service_audio_outputs(state, now_ms);
+        return;
+    }
     crate::app::presentation::building_anim::refresh_coordinate_sound_gains(state);
     // The process audio service remains live while the loading job holds the
     // asset-manager lease. Retained simulations still own Main on the shell;
