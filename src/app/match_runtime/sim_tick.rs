@@ -1618,6 +1618,23 @@ fn after_simulation_pass(
 
 /// The GameSpeed and network FPS (with lag delay) the local pacer times
 /// Main_Tick by; sequenced online play paces with its own clock instead.
+/// How often an offline match hashes its state for the replay log: every
+/// 300th tick, about five seconds at GameSpeed 1, and after the frame that
+/// ends the match. Only the replay log's diagnostic checks read it, and
+/// replay verification compares only the ticks the log recorded; on a large
+/// map with many houses one hash costs more than a frame's budget. Network
+/// matches keep [`crate::sim::replay::PLAY_HASH_INTERVAL`].
+const OFFLINE_REPLAY_HASH_INTERVAL: std::num::NonZeroU64 = std::num::NonZeroU64::new(300).unwrap();
+
+/// The replay-log hash interval of normal play: offline or `network`.
+fn play_hash_interval(network: bool) -> std::num::NonZeroU64 {
+    if network {
+        crate::sim::replay::PLAY_HASH_INTERVAL
+    } else {
+        OFFLINE_REPLAY_HASH_INTERVAL
+    }
+}
+
 pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) {
     let game_speed = state
         .match_state
@@ -1901,6 +1918,7 @@ fn advance_one_simulation_frame(
         // takes them while the tick is out (`App::drain_radar_terrain_marks`).
         drain_radar_terrain_marks(&mut state.match_state);
     }
+    let hash_interval = play_hash_interval(state.match_state.live_network.is_some());
     let Some((rt, frame_checksums)) = state.match_state.sim_runtime.tick_parts() else {
         return threaded_finished.unwrap_or(false);
     };
@@ -1909,12 +1927,12 @@ fn advance_one_simulation_frame(
     if !resuming {
         sim.prepare_unit_voice_visits(unit_voice_owners);
     }
-    // Normal play hashes its state once every PLAY_HASH_INTERVAL
-    // frames and on the frame that ends the match, for the replay log.
+    // Normal play hashes its state once every `play_hash_interval` frames
+    // and on the frame that ends the match, for the replay log.
     sim.hash_state_every(if replaying {
         std::num::NonZeroU64::MIN
     } else {
-        crate::sim::replay::PLAY_HASH_INTERVAL
+        hash_interval
     });
     // Report points need the ledger whether or not a dashboard is
     // attached; `publish_if_due` only runs with a client. Elsewhere
