@@ -132,10 +132,17 @@ fn run_with_args(app_bundle: bool, args: impl IntoIterator<Item = OsString>) -> 
     run_with(launch_mode, app_bundle, event_loop, mod_switch)
 }
 
-/// Both exits leave through the same WinMain shutdown (`0x006BE0EB`).
+/// Both exits leave through the same WinMain shutdown (`0x006BE0EB`), which
+/// returns 1.
 fn print_exit(exit: crate::app::frontend::startup_options::StartupExit) -> i32 {
-    println!("{}", crate::app::frontend::startup_options::exit_text(exit));
-    0
+    let text = crate::app::frontend::startup_options::exit_text(exit);
+    if exit == crate::app::frontend::startup_options::StartupExit::InvalidSwitch {
+        log::warn!(
+            "{text} An -X switch had something other than Q after it; the game did not start."
+        );
+    }
+    println!("{text}");
+    1
 }
 
 /// Shared start-up once an event loop exists.
@@ -289,8 +296,9 @@ mod tests {
     fn native_help_exits_without_initializing_an_event_loop() {
         // The test runs off the main thread, where constructing an OS event
         // loop would fail even on a machine with a display server.
-        assert_eq!(run_with_args(false, [OsString::from("-h")]).unwrap(), 0);
+        // WinMain returns 1 on this path (0x006BE161).
+        assert_eq!(run_with_args(false, [OsString::from("-h")]).unwrap(), 1);
         // An invalid `-X` tail leaves the same way (0x0052FB41).
-        assert_eq!(run_with_args(false, [OsString::from("-XA")]).unwrap(), 0);
+        assert_eq!(run_with_args(false, [OsString::from("-XA")]).unwrap(), 1);
     }
 }
