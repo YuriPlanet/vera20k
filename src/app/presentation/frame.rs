@@ -430,10 +430,17 @@ impl Place {
                 at.cells.as_ref(),
             )
         });
-        // Only a selected object's line and a psychically detected one's are
-        // drawn (`target_lines`).
+        // Only a selected object's line, a psychically detected one's and the
+        // attack line of a `TargetLaser=` Unit, selected or not, are drawn
+        // (`target_lines`, `target_laser_draws`).
         let draws_action_line = psychically_detected
-            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure);
+            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure)
+            || (entity.category() == EntityCategory::Unit
+                && entity.attack_target.target().is_some()
+                && at
+                    .rules()
+                    .object(sim.interner().resolve(entity.type_ref()))
+                    .is_some_and(|object| object.target_laser));
         Self {
             screen_position: (pose.screen[0], pose.screen[1]),
             world_z_leptons: crate::sim::movement::ground_pose::object_world_z_leptons(
