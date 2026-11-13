@@ -94,7 +94,7 @@ impl OverlayCell {
 pub struct OverlayGrid {
     width: u16,
     height: u16,
-    /// Shared copy-on-write in chunks with the presentation frame.
+    /// Synced in chunks into the presentation copy (docs/sim-thread.md).
     cells: crate::util::synced::ChunkedVec<OverlayCell>,
     /// Retained wall and Foot contribution to CellClass+0x122, one byte per
     /// cell. It is the sole wall authority, even when all zero: final wall

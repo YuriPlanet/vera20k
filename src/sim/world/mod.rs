@@ -4832,6 +4832,7 @@ impl Simulation {
     /// This simulation's Main886B88 cell, which the sounds the tick plays
     /// draw from (the app draws its own: `install_fresh_process_main`).
     /// Draws remain outside Scenario/hash/save state.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn presentation_main_draws(&self) -> crate::sim::rng::MainRngDraws {
         self.main_rng.draws()
     }

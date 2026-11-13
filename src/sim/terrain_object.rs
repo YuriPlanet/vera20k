@@ -504,7 +504,7 @@ pub struct TerrainObjectStore {
     #[serde(skip)]
     cell_grid: CellGrid,
     animations: BTreeMap<u64, TerrainAnimationState>,
-    /// Shared copy-on-write with presentation frames (docs/sim-thread.md).
+    /// Synced into the presentation copy (docs/sim-thread.md).
     objects: crate::util::synced::Synced<BTreeMap<u64, TerrainObjectState>>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,

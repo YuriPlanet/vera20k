@@ -10,7 +10,9 @@
 //! that frame, and any write first takes the runtime back, waiting for the
 //! job to end; the job's result then waits in the host for
 //! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
-//! see the live world again, so a tick that is not lent copies nothing.
+//! see the live world again. Drawing reads object records either way, captured
+//! from a home world on the first read after a write; release builds copy
+//! the world beside them only for a lent tick.
 //!
 //! A frame-loop pass never waits for a lent job: the host collects it only
 //! once it has ended ([`SimHost::pass_may_run`]), and the simulation thread
@@ -83,9 +85,9 @@ pub(crate) struct SimHost {
     ended: Option<Returned>,
     /// The world without its objects as the frame found it
     /// ([`SimRuntime::presentation_copy`]), which drawing reads beside the
-    /// frame's records while the live world ticks elsewhere. Copy-on-write
-    /// state (the terrain cells, the resources) stays shared with the live
-    /// world until that changes. Release builds keep it only while the
+    /// frame's records while the live world ticks elsewhere. It shares only
+    /// the read-only `SimResources` with the live world; its terrain, grids
+    /// and interner are synced from it. Release builds keep it only while the
     /// runtime is lent; debug builds take one with every frame, so every
     /// draw reads the frame as a lent tick's draw does.
     presentation: Option<Arc<SimRuntime>>,

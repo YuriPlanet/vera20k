@@ -2,8 +2,8 @@
 
 Goal: run the simulation on its own thread so that drawing keeps its frame
 rate when a tick costs more than the frame budget. In a 1v29 skirmish a tick
-at about 2,000 objects costs about 25 ms against a 22 ms step. Today the tick
-and the draw share the main thread, so the frame rate falls to about 30.
+at about 2,000 objects costs about 25 ms against a 22 ms step. When the tick
+and the draw shared the main thread, the frame rate fell to about 30.
 With its own thread, a slow simulation slows only game time: the camera,
 the cursor and the interface keep the picture rate, while objects move once
 a tick, as they always draw their current state (`RenderPose`).
@@ -11,7 +11,9 @@ a tick, as they always draw their current state (`RenderPose`).
 This changes no gameplay. Every phase must keep `sim-bench --frame-hashes`
 identical frame by frame.
 
-## Where the main thread couples today
+## Where the main thread coupled
+
+The starting point, before phase 0; the phases below take each apart.
 
 1. **Frame loop** (`app/frame.rs` `render_frame`). Each frame it prepares
    interpolation, then runs `service_match_runtime`, then draws. Catch-up runs
@@ -71,9 +73,10 @@ identical frame by frame.
 - [x] `SimRuntime: Send` is asserted at compile time.
 - [x] No `sim_runtime.as_mut()` remains under `app/presentation` or
   `render`.
-- [ ] Nothing enforces that yet: `render_game` still takes `&mut AppState`.
-  Phase 1's `SimHost` closes this. Presentation then gets only a shared
-  view and cannot reach the runtime mutably.
+- [x] Drawing cannot reach the live world's objects: it reads the
+  presentation frame and the world copy (phase 2), and debug builds draw
+  every frame from a copy whose entity store panics on a read.
+  `render_game` itself still takes `&mut AppState`.
 
 ### Phase 1: a tick that borrows no app state
 
@@ -106,7 +109,7 @@ Only presentation order moves: sounds and the radar cue follow the tick
 instead of interleaving with it. Replay playback, a campaign's initial save
 and command observation still need the lent owners. Those frames stay on the
 borrowing path (`DeferredClientEffects::applies`). A network frame's
-`Queue_AI` exchange needs the live session; phase 4 hands it back to the
+`Queue_AI` exchange needs the live session; phase 5 hands it back to the
 main thread.
 
 Done:
@@ -351,10 +354,9 @@ another thread, so two things differ:
 
 Nothing the draw and a tick can both take waits on the main thread
 (`util::sync`). The Main RNG and the zone grid's precheck memo lock with
-`wasm_sync`'s mutex, which spins there. Once-cells in copy-on-write state
-(`DerivedCache`, the zone grid's cached hash, the terrain's allocation
-caches) and the static tables both read never wait: two threads that fill
-one at once both compute it, and one value is kept. (`wasm_sync`'s own
+`wasm_sync`'s mutex, which spins there. Once-cells both can reach (the
+static tables, such as `adjust_for_z_standard`'s) never wait: two threads
+that fill one at once both compute it, and one value is kept. (`wasm_sync`'s own
 once-cell reads the standard library's private state and spins forever on
 the nightly the build uses.) The host and the worker hand each other the
 runtime through a one-slot mailbox on the same mutex, since a standard

@@ -139,7 +139,7 @@ pub struct SmudgeCell {
 pub struct SmudgeGrid {
     width: u16,
     height: u16,
-    /// Shared in chunks with presentation frames (docs/sim-thread.md).
+    /// Synced in chunks into the presentation copy (docs/sim-thread.md).
     cells: ChunkedVec<SmudgeCell>,
     /// Generic Object/SmudgeClass vector membership lasts through UnInit.
     /// Never joins Logic; scalar destruction removes only the object.

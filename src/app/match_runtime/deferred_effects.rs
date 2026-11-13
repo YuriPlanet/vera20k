@@ -129,6 +129,7 @@ impl DeferredClientEffects {
     }
 
     /// The writes recorded so far, in order.
+    #[cfg(test)]
     pub(crate) fn recorded(&self) -> std::cell::Ref<'_, Vec<DeferredEffect>> {
         self.recorded.borrow()
     }
