@@ -442,6 +442,20 @@ impl MultiplayerShellRuntime {
         crate::util::native_string::acp_decode(&self.local_preferences.handle_bytes)
     }
 
+    /// The handle the skirmish name box saves for `text`. While the box still
+    /// shows what [`Self::hydrate_shell`] put there, the handle keeps its own
+    /// bytes, so a name nobody edited is not re-encoded, not even one that
+    /// another code page wrote and this one cannot spell.
+    fn handle_bytes_for(&self, text: &str) -> Vec<u8> {
+        let mut bytes = if text == PlayerNameEditState::with_name(&self.handle_text()).text {
+            self.local_preferences.handle_bytes.clone()
+        } else {
+            crate::util::native_string::acp_encode(text)
+        };
+        bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
+        bytes
+    }
+
     fn network_snapshot(&self, profile: SetupProfile) -> &MultiplayerSetupSnapshot {
         match profile {
             SetupProfile::Lan => &self.lan_snapshot,
@@ -1189,8 +1203,7 @@ impl MultiplayerShellRuntime {
         // the unconditional writer at 0x006990A0. Keep the resolved concrete
         // values behind the raw -1/-2 markers so reopening the shell can show
         // Random without discarding the value selected for this launch.
-        let mut handle_bytes = crate::util::native_string::acp_encode(&state.player_name_edit.text);
-        handle_bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
+        let handle_bytes = self.handle_bytes_for(&state.player_name_edit.text);
         self.local_preferences = LocalMultiplayerPreferences {
             toggles: self.local_preferences.toggles,
             handle_bytes,
@@ -1227,9 +1240,7 @@ impl MultiplayerShellRuntime {
         pack_snapshot_selection(&mut self.snapshot, state, maps, modes);
         pack_snapshot_slots(&mut self.snapshot, state);
         pack_snapshot_options(&mut self.snapshot, state);
-        let mut handle_bytes = crate::util::native_string::acp_encode(&state.player_name_edit.text);
-        handle_bytes.truncate(MULTIPLAYER_HANDLE_LIMIT_BYTES);
-        self.local_preferences.handle_bytes = handle_bytes;
+        self.local_preferences.handle_bytes = self.handle_bytes_for(&state.player_name_edit.text);
         self.local_preferences.handle_source = HandleSource::Native;
         self.local_preferences.game_mode = self.snapshot.game_mode;
         if state.player_country_random {
@@ -3599,6 +3610,32 @@ WOLTaunts=junk
             runtime.update_local_preferences(&local, 1);
             assert_eq!(runtime.local_preferences.handle_bytes, handle);
         }
+    }
+
+    /// The skirmish name box reads the handle as its code page wrote it, and a
+    /// visit that leaves the name alone keeps the handle's bytes, even ones
+    /// another code page wrote (`玩家` in GBK). An edited name is encoded anew.
+    #[test]
+    fn name_box_shows_the_handle_and_an_unedited_visit_keeps_its_bytes() {
+        use crate::util::native_string::{acp_encode, acp_round_trip};
+        let mut runtime = runtime(
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
+            5,
+        );
+        let mut visit = |handle: Vec<u8>| {
+            runtime.local_preferences.handle_bytes = handle.clone();
+            let mut shell = SkirmishShellState::default();
+            runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
+            runtime.pack_durable_state(&shell, &[map()], &[mode()]);
+            assert_eq!(runtime.local_preferences.handle_bytes, handle);
+            shell.player_name_edit.text
+        };
+        assert_eq!(visit(acp_encode("Hélène")), acp_round_trip("Hélène"));
+        visit(vec![0xcd, 0xe6, 0xbc, 0xd2]);
+        let mut shell = SkirmishShellState::default();
+        shell.player_name_edit = PlayerNameEditState::with_name("Zoë");
+        runtime.pack_durable_state(&shell, &[map()], &[mode()]);
+        assert_eq!(runtime.local_preferences.handle_bytes, acp_encode("Zoë"));
     }
 
     #[test]
