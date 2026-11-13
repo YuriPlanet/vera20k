@@ -318,6 +318,99 @@ fn select_optional_ini(assets: &AssetManager, name: &str) -> OptionalIniSelectio
     }
 }
 
+/// The archives a retail install ships, by outermost name and in lookup
+/// order: the language archives (mounted ahead of the expansions), the
+/// YR 1.001 patch `expandmd01.mix` (retail `rulesmd.ini` comes from it) and
+/// the masters. Retail installs ship no other expansion.
+const SHIPPED_ARCHIVES: [&str; 5] = [
+    "langmd.mix",
+    "language.mix",
+    "expandmd01.mix",
+    "ra2md.mix",
+    "ra2.mix",
+];
+/// The master archive whose nested `localmd.mix` ships most INIs.
+const SHIPPED_MASTER: &str = "ra2md.mix";
+const SHIPPED_LOCAL: &str = "localmd.mix";
+
+/// VERA: the game-folder files that change any of `names` from the copy the
+/// retail game ships, for Quick Match, which plays the original game. Each
+/// is a loose file's name or an archive's outermost name (`expandmd99.mix`),
+/// once. A copy from a shipped archive is the original (a replaced retail
+/// archive is not caught, and is never named). Any other copy is compared
+/// with the shipped one: a shipped archive's own entry, else the one in
+/// `ra2md.mix`'s own `localmd.mix`, read there because a mod's archive can
+/// mount another `localmd.mix` first. The same entries
+/// (`IniFile::multiplayer_digest`) are unchanged, and so is a name nothing
+/// supplies.
+pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec<String> {
+    let shipped_archive = |archive: &str| {
+        SHIPPED_ARCHIVES
+            .iter()
+            .any(|shipped| archive.eq_ignore_ascii_case(shipped))
+    };
+    let mut local = None;
+    let mut files = Vec::new();
+    for name in names.iter().map(|name| name.trim()) {
+        let Some(used) = (!name.is_empty())
+            .then(|| assets.resolve_ref(name))
+            .flatten()
+        else {
+            continue;
+        };
+        let loose = used.source_archive.strip_prefix("loose:");
+        let outermost = used
+            .source_archive
+            .split(" -> ")
+            .next()
+            .unwrap_or(used.source_archive)
+            .trim();
+        if loose.is_none() && shipped_archive(outermost) {
+            continue;
+        }
+        let local = local.get_or_insert_with(|| {
+            assets
+                .archive_with_source(SHIPPED_MASTER)
+                .and_then(|(_, master)| {
+                    master
+                        .nested_archive_by_id(crate::assets::mix_hash::mix_hash(SHIPPED_LOCAL))
+                        .ok()
+                        .flatten()
+                })
+        });
+        let shipped = SHIPPED_ARCHIVES
+            .iter()
+            .find_map(|archive| {
+                assets
+                    .archive_with_source(archive)
+                    .and_then(|(_, archive)| archive.get_by_name(name))
+            })
+            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)));
+        if shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+            continue;
+        }
+        let file = match loose {
+            Some(path) => std::path::Path::new(path).file_name().map_or_else(
+                || name.to_owned(),
+                |file| file.to_string_lossy().into_owned(),
+            ),
+            None => outermost.to_owned(),
+        };
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    files
+}
+
+fn same_entries(shipped: &[u8], used: &[u8]) -> bool {
+    shipped == used
+        || match (IniFile::from_bytes(shipped), IniFile::from_bytes(used)) {
+            (Ok(shipped), Ok(used)) => shipped.multiplayer_digest() == used.multiplayer_digest(),
+            _ => false,
+        }
+}
+
 /// Cold-start native Rules authority plus the one shell compatibility
 /// projection derived from the same selected INI snapshots.
 pub struct StartupRulesLoad {
@@ -781,5 +874,39 @@ mod tests {
         assert_eq!(napowr.strength, 750);
         assert!(napowr.can_c4);
         assert_eq!(rules.c4_delay_frames(), 26);
+    }
+
+    #[test]
+    fn game_folder_files_that_change_shipped_inis_are_named() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        use crate::assets::asset_manager::test_support::audio_test_install;
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        let dir = audio_test_install("shipped-inis");
+        let local = make_new_format_mix_bytes(&[("aimd.ini", b"[AI]\nValue=1\n")]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+        )
+        .unwrap();
+        dir.write_mix(
+            "expandmd01.mix",
+            "rulesmd.ini",
+            b"[General]\nBuildSpeed=.7\n",
+        );
+        let changed = || {
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            files_changing_shipped_inis(&assets, &["rulesmd.ini", "aimd.ini", "langrule.ini"])
+        };
+        assert!(changed().is_empty());
+        // A localized edition's own archive is the original too.
+        dir.write_mix("langmd.mix", "langrule.ini", b"[General]\nName=x\n");
+        assert!(changed().is_empty());
+        let rules = dir.path().join("rulesmd.ini");
+        std::fs::write(&rules, b"; same entries\r\n[General]\r\nBuildSpeed=.7\r\n").unwrap();
+        assert!(changed().is_empty());
+        std::fs::write(&rules, b"[General]\nBuildSpeed=.5\n").unwrap();
+        dir.write_mix("expandmd99.mix", "aimd.ini", b"[AI]\nValue=2\n");
+        assert_eq!(changed(), ["rulesmd.ini", "expandmd99.mix"]);
     }
 }
