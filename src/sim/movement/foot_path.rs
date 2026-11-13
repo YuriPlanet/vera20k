@@ -1323,31 +1323,25 @@ impl Simulation {
                 {
                     return Ok(None);
                 }
-                //0x4D3DD8..0x4D3E03: the FNPC result is set and searched without
-                //an invalid-cell test; only an FNPC failure over the whole map
-                //radius would search cell (0,0).
+                //0x4D3DD8..0x4D3E03 sets and searches the FNPC result without
+                //code 6's invalid-cell test (0x4D3BBD..0x4D3BD7). An FNPC that
+                //finds nothing answers the zero Cell (0x56E79A..0x56E7AA reads
+                //0xABD480), so SetDestination and the search go to cell (0,0).
                 //
-                // A map can produce exactly that: a building whose neighbour
-                // cells are all taken by other buildings has no passable cell
-                // within the radius, and a house that packs its base does it on
-                // its own. Native has no defined answer there — it searches the
-                // invalid cell — so the frame keeps the target and lets the
-                // search fail the order, which is what a player's click on a
-                // walled-in building does. Ending the frame instead killed the
-                // match (tick 12816, an Enter on a clumped base).
-                //
-                // Kept against upstream, which restores the native `(0, 0)`
-                // destination: this is the crash that branch has, and it was
-                // measured here rather than inferred.
-                match self.find_path_nearby_cell(id, target, rules)? {
-                    Some(near) => Ok(Some(near)),
-                    None => {
-                        log::debug!(
-                            "Find_Path code-7: no passable cell near the Building target, keeping it"
-                        );
-                        Ok(None)
-                    }
-                }
+                // Taking upstream's answer here rather than this branch's own
+                // earlier guard: the frame used to be ended when a walled-in
+                // building had no passable neighbour (tick 12816, an Enter on a
+                // clumped base), and upstream fixed that at the owner instead —
+                // with no cell allocated at (0, 0) the zero Cell is the shared
+                // Dummy, which GetCell stamps before the destination setter
+                // reads it, so the search cannot reach it and the frame goes on
+                // (#4269, `a_code7_redirect_without_a_nearby_cell_heads_for_the
+                // _zero_cell`). The guard is not needed against that, and keeping
+                // both would hide the native path from the test that pins it.
+                let near = self
+                    .find_path_nearby_cell(id, target, rules)?
+                    .unwrap_or((0, 0));
+                Ok(Some(near))
             }
             _ => Ok(None),
         }
