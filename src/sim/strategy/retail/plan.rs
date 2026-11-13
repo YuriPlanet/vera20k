@@ -174,6 +174,10 @@ pub(super) enum Item {
     /// The plant an `Aircraft` line needs, read off `Factory=` rather than off
     /// a name list.
     Aircraft,
+    /// The `OrePurifier=` structure (`[GAOREP]`): every load the bays take is
+    /// worth more while one stands. Read off the rules' own flag, so a mod's
+    /// purifier is answered by the same query.
+    Purifier,
     /// The `UnitRepair=` shed (`[GADEPT] UnitRepair=yes`): where a hurt vehicle
     /// stops being a loss. Without one the retreat has nowhere to send a
     /// damaged unit, and the army shrinks by every fight it survives.
@@ -298,6 +302,15 @@ pub(super) const STEPS: &[Step] = &[
         item: Item::Refinery,
         want: 3,
         gate: Gate::HarvestersServed,
+    },
+    // The purifier, once the bays are there to feed it: `[GAOREP]` costs 2500
+    // and is worth it only against three bays' worth of ore. After the refineries
+    // rather than before, because a purifier pays a percentage of an income that
+    // does not exist yet.
+    Step {
+        item: Item::Purifier,
+        want: 1,
+        gate: Gate::Surplus,
     },
     // Ground to stand on, once the tree is open: before that the same money
     // unlocks the rest of the tree, which is worth more than a second tower.
@@ -532,6 +545,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
     match item {
         Item::Power => build::count_in(obs, rules, census, &rules.build_power_types),
         Item::Refinery => census.refineries,
+        Item::Purifier => build::count_ore_purifiers(rules, obs),
         Item::Barracks => build::count_in(obs, rules, census, &rules.build_barracks_types),
         Item::Weapons => build::count_in(obs, rules, census, &rules.build_weapons_types),
         Item::Defense => build::defenses(rules, obs, census),
@@ -561,6 +575,7 @@ fn pick<'r>(
     match item {
         Item::Power => build::first_buildable(rules, obs, &rules.build_power_types),
         Item::Refinery => build::first_buildable(rules, obs, &rules.build_refinery_types),
+        Item::Purifier => build::ore_purifier_building(rules, obs),
         Item::Barracks => build::first_buildable(rules, obs, &rules.build_barracks_types),
         Item::Weapons => build::first_buildable(rules, obs, &rules.build_weapons_types),
         Item::Defense => build::defense_building(rules, obs),

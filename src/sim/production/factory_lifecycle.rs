@@ -194,12 +194,32 @@ pub(crate) fn enqueue_selected(
     // A docked aircraft past the airfield's pads is refused at the producer.
     //
     // `check_build_limit` was consulted only by the queue arm of
-    /// `FactoryRegistry::enqueue`, so it bounded the *queue* and never the
-    /// *start*: a house with an idle aircraft line started one more every time,
-    /// finished it, and started another — the wishlist's "超出机场容量上限造
-    ///战机，无视了UI最大上限". The check belongs at BeginProduction, which is
-    /// where this is.
-    if obj.category == ObjectCategory::Aircraft && check_build_limit(sim, rules, owner_id, obj) {
+    // `FactoryRegistry::enqueue`, so it bounded the *queue* and never the
+    // *start*: a house with an idle aircraft line started one more every time,
+    // finished it, and started another — the wishlist's "超出机场容量上限造
+    //战机，无视了UI最大上限". The check belongs at BeginProduction, which is
+    // where this is.
+    //
+    // The refusal has to be the *same* refusal the queue arm makes, not a quiet
+    // `false`: the click already wrote the cameo's request record, and a start
+    // that returns false without a factory visit leaves that record set, so the
+    // button draws a clock for a build that was never admitted. That is the
+    // wishlist's "战机生产UI出BUG".
+    //
+    // Scoped to the idle start: a held or paused product of the same type takes
+    // the resume branch below, which is native's own path for finishing what was
+    // already paid for.
+    let at_build_limit = check_build_limit(sim, rules, owner_id, obj);
+    if obj.category == ObjectCategory::Aircraft
+        && at_build_limit
+        && sim
+            .production
+            .factories()
+            .view(owner_id, category)
+            .is_none_or(|factory| factory.object.is_none())
+    {
+        sim.sound_events
+            .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
         return false;
     }
     #[cfg(feature = "phobos")]
@@ -261,7 +281,7 @@ pub(crate) fn enqueue_selected(
     }
     let enqueue_order = sim.production.next_enqueue_order();
     let cost = sim.cost_of(owner_id, obj, rules);
-    let at_build_limit = check_build_limit(sim, rules, owner_id, obj);
+    let queued_at_limit = check_build_limit(sim, rules, owner_id, obj);
     let outcome = sim.production.factories_mut().enqueue(
         owner_id,
         category,
@@ -269,7 +289,7 @@ pub(crate) fn enqueue_selected(
         enqueue_order,
         cost,
         rules.general.maximum_queued_objects,
-        at_build_limit,
+        queued_at_limit,
         force,
     );
     if outcome == EnqueueOutcome::AppendRefused {

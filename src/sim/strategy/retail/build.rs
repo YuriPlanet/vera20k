@@ -800,6 +800,36 @@ pub(super) fn unit_repair_building<'r>(
     class_types(rules, obs, ObjectCategory::Building).find(|(ty, _)| ty.unit_repair)
 }
 
+/// The ore purifier: the structure that makes every load worth more.
+///
+/// `OrePurifier=yes` is the rules' own statement, so a mod that renames the
+/// building or adds a second one is answered by the same query — the wishlist's
+/// "我们不能写死任何东西".
+///
+/// It is not wanted early. `[GAOREP] Prerequisite=GATECH,PROC,GACNST` and
+/// `Cost=2500`: it is worth what it costs only once there are bays to feed it,
+/// which is why the plan asks for it after the second and third refineries and
+/// behind a surplus. `BuildLimit=1` in the rules bounds it; the plan's own
+/// `want: 1` agrees, so the two cannot disagree.
+pub(super) fn ore_purifier_building<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    class_types(rules, obs, ObjectCategory::Building)
+        .filter(|(ty, _)| ty.ore_purifier)
+        .min_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+}
+
+/// How many of the house's buildings carry `OrePurifier=`.
+pub(super) fn count_ore_purifiers(rules: &RuleSet, obs: &Observation<'_>) -> usize {
+    obs.own_entities()
+        .filter(|entity| {
+            obs.object_type(rules, entity.type_id)
+                .is_some_and(|ty| ty.ore_purifier)
+        })
+        .count()
+}
+
 /// The lab, preferring the one that authorises a power the house can use.
 ///
 /// A super weapon is not granted by the power existing: it is granted by the

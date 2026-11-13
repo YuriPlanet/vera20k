@@ -920,6 +920,20 @@ impl SidebarProjectionState {
 
     /// Building7342A0/B0 returns the tab's published reference, not a poll of
     /// complete Factories. Resolve its foreign identity through the world.
+    ///
+    /// The retained reference alone is not enough to act on. Native clears it
+    /// through `SetSidebarTabObject734250(NULL)` on the abandon tail, and that
+    /// tail never runs for a placement: `complete_placement` has already
+    /// released the factory's object, so the cancel that follows answers
+    /// `NoMatch` and no `ProductionFactoryAbandoning` is emitted. The slot then
+    /// keeps a stable id that is now the *placed* building, and the Q/W tab
+    /// commands handed it straight back to `Begin_Building_Placement` — the
+    /// wishlist's "已托管建造完成的建筑仍会被快捷键触发摆放".
+    ///
+    /// So the answer is the factory's, which is the owner of "a product waits
+    /// for a cell": the slot is live only while that factory still holds the
+    /// same entity as its complete object. A placed building is on the map and
+    /// no longer held, so the stale slot reads as nothing.
     pub(crate) fn ready_building_for_tab(
         &self,
         sim: &crate::sim::world::Simulation,
@@ -938,7 +952,21 @@ impl SidebarProjectionState {
             SidebarTab::Defense => 1,
             _ => return None,
         };
+        let category = match tab {
+            SidebarTab::Building => crate::sim::production::ProductionCategory::Building,
+            _ => crate::sim::production::ProductionCategory::Defense,
+        };
         let held = self.ready_buildings[slot]?;
+        // The factory has to still be holding this entity for placement.
+        let still_held = sim
+            .production()
+            .factories()
+            .view(owner, category)
+            .and_then(|factory| factory.complete_object())
+            .is_some_and(|object| object.entity_id == Some(held));
+        if !still_held {
+            return None;
+        }
         Some((sim.entities().get(held)?.type_ref(), held))
     }
 

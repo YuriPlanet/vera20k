@@ -382,6 +382,58 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
     assert!(!gadgets.tab_flashes[1].is_active());
 }
 
+/// A placed building is off the tab's hands.
+///
+/// Native clears the retained reference on the abandon tail, and that tail does
+/// not run for a placement: `complete_placement` has already released the
+/// factory's object, so the cancel that follows answers `NoMatch` and no
+/// `ProductionFactoryAbandoning` is emitted. The slot then names the *placed*
+/// building, and the Q/W tab commands handed it back to
+/// `Begin_Building_Placement` — the wishlist's "已托管建造完成的建筑仍会被
+/// 快捷键触发摆放".
+///
+/// The tab's live answer is the factory's, not the slot's: a building the
+/// factory no longer holds is on the map.
+#[test]
+fn a_building_the_factory_no_longer_holds_is_not_ready_for_its_tab() {
+    use crate::sim::production::ProductionCategory;
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n[BuildingTypes]\n0=GACNST\n1=GAPOWR\n\
+             [GACNST]\nBuildCat=Resource\nFoundation=3x3\nStrength=1000\n\
+             [GAPOWR]\nBuildCat=Resource\nFoundation=2x2\nStrength=750\nPower=200\n",
+        ),
+        &crate::rules::ini_parser::IniFile::empty(),
+    )
+    .expect("a two-building ruleset");
+    let (mut sim, owner) = world(&rules, &["GACNST"]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &candidates, 1);
+
+    // A completed power plant is published as the tab's ready building, then
+    // placed: the entity lives on the map and no factory holds it.
+    let plant = sim
+        .spawn_object("GAPOWR", "Americans", 20, 6, 255, &rules)
+        .expect("a power plant");
+    projection.apply_lifecycle_output(
+        &crate::sim::world::LifecycleOutput::ProductionBuildingReady {
+            owner,
+            category: ProductionCategory::Building,
+            stable_id: plant,
+        },
+        Some(owner),
+    );
+    assert!(
+        projection
+            .ready_building_for_tab(&sim, owner, SidebarTab::Building)
+            .is_none(),
+        "a building the factory no longer holds is not a ready building: the tab \
+         must not hand it back to placement"
+    );
+}
+
 fn native_context_world(context: &Value) -> (Simulation, RuleSet, InternedId, CsfFile) {
     let types: Vec<_> = context["types"]
         .as_array()
