@@ -42,8 +42,6 @@ För att starta skirmish-matcher eller kampanjer i YR för en spelare från en C
 
 ## Bidra
 
-**Var inte rädd för att skicka in en PR.** Den behöver inte vara perfekt; vi hjälper till med resten.
-
 All hjälp är välkommen, och de här områdena behöver den mest. Varje område länkar till sin sida
 i färdplanen, med pågående arbete och nästa steg:
 

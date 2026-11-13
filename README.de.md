@@ -43,8 +43,6 @@ Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client st
 
 ## Mitmachen
 
-**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
-
 Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
 verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:
 
