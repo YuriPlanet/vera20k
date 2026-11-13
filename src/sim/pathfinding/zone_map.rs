@@ -198,6 +198,13 @@ pub struct ZoneGrid {
     /// hierarchy snapshot; record-only changes invalidate cached connectivity.
     bridge_records: Vec<crate::sim::bridge_state::BridgeEndpointRecord>,
     native_bridge_source_size: Option<(i32, i32)>,
+    /// `Some(signed_levels)` while `base_topology` and `maps` are exactly what
+    /// [`Self::rebuild_base_connectivity_preserving_hierarchy`] last produced
+    /// with that terrain-deformation flag: no write has touched them since.
+    /// The base rebuild reads only the retained classes, levels, that flag,
+    /// the bridge records and the fixed sizes, so a rebuild with the same
+    /// flag and records would produce them again and is skipped. Not saved.
+    rebuilt_unchanged: Option<bool>,
     width: u16,
     height: u16,
 }
@@ -283,6 +290,7 @@ impl<'de> serde::Deserialize<'de> for ZoneGrid {
             base_topology: base,
             bridge_records: Vec::new(),
             native_bridge_source_size,
+            rebuilt_unchanged: None,
             width: retained.width,
             height: retained.height,
         })
@@ -317,6 +325,7 @@ impl ZoneGrid {
             return Err("saved navigation dimensions differ from the bound map".into());
         }
         self.invalidate_navigation_history();
+        self.rebuilt_unchanged = None;
         self.maps = Self::project_movement_rows(
             &self.base_topology,
             path,
@@ -537,6 +546,7 @@ impl ZoneGrid {
             base_topology,
             bridge_records: bridge_records.to_vec(),
             native_bridge_source_size,
+            rebuilt_unchanged: None,
             width,
             height,
         }
@@ -591,6 +601,7 @@ impl ZoneGrid {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn map_mut(&mut self, mz: MovementZone) -> Option<&mut ZoneMap> {
         self.invalidate_navigation_history();
+        self.rebuilt_unchanged = None;
         self.maps.get_mut(&mz)
     }
 
@@ -999,6 +1010,7 @@ impl ZoneGrid {
         let class = zone_build::movement_class_for_cell(terrain, x, y);
         let level = terrain.cell(x, y).map_or(0, |cell| cell.level);
         self.invalidate_navigation_history();
+        self.rebuilt_unchanged = None;
         let base = &mut self.base_topology;
         let Some(slot) = base.movement_classes.get_mut(index) else {
             return false;
@@ -1021,7 +1033,13 @@ impl ZoneGrid {
 
     pub(super) fn base_topology_mut(&mut self) -> &mut zone_build::BaseZoneTopology {
         self.invalidate_navigation_history();
+        self.rebuilt_unchanged = None;
         &mut self.base_topology
+    }
+
+    /// Read-only view of the retained base topology.
+    pub(super) fn base_topology(&self) -> &zone_build::BaseZoneTopology {
+        &self.base_topology
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1034,6 +1052,7 @@ impl ZoneGrid {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn test_supply_uniform_raw_zone_rows(&mut self, zone: ZoneId) {
         self.invalidate_navigation_history();
+        self.rebuilt_unchanged = None;
         for row in &mut self.base_topology.raw_zone_ids_by_row {
             row.fill(zone);
         }
@@ -1053,6 +1072,7 @@ impl ZoneGrid {
     /// No topology, count, adjacency, or unrelated cell is rewritten.
     pub(crate) fn project_adopted_base_cell(&mut self, cell_index: usize) {
         self.invalidate_navigation_history();
+        self.rebuilt_unchanged = None;
         let Some(&cluster) = self.base_topology.zone_ids.get(cell_index) else {
             return;
         };
@@ -1094,10 +1114,33 @@ impl ZoneGrid {
         bridge_records: &[crate::sim::bridge_state::BridgeEndpointRecord],
     ) {
         self.invalidate_navigation_history();
+        let signed_levels = resolved_terrain.terrain_deformation();
+        if self.rebuilt_unchanged == Some(signed_levels)
+            && self.bridge_records.as_slice() == bridge_records
+        {
+            // Nothing the base pass reads has changed since it last ran, and
+            // nothing has written its products: running it again would give
+            // the same base topology and rows. Only the rows' bridge redirect
+            // also reads the terrain, so it is projected again as
+            // `project_movement_rows` does.
+            let redirect = zone_build::build_bridge_redirect(
+                path_grid,
+                Some(resolved_terrain),
+                bridge_records,
+                self.width,
+                self.height,
+            );
+            for (movement_zone, zone_map) in &mut self.maps {
+                if movement_zone.can_use_bridges() {
+                    zone_map.set_bridge_redirect(redirect.clone());
+                }
+            }
+            return;
+        }
         let base_topology = zone_build::rebuild_base_zone_topology(
             self.base_topology.movement_classes.clone(),
             self.base_topology.levels.clone(),
-            resolved_terrain.terrain_deformation(),
+            signed_levels,
             bridge_records,
             self.width,
             self.height,
@@ -1113,6 +1156,7 @@ impl ZoneGrid {
         );
         self.base_topology = base_topology;
         self.bridge_records = bridge_records.to_vec();
+        self.rebuilt_unchanged = Some(signed_levels);
     }
 
     /// Replace the one shared route-selection hierarchy (test fixtures only).
