@@ -298,7 +298,6 @@ impl PowerState {
     }
 
     /// SW_Battery::Activate1006EBD0's House writes, then RecheckPower.
-    #[cfg(feature = "ares")]
     pub(crate) fn activate_battery(
         &mut self,
         power: i32,
@@ -322,7 +321,6 @@ impl PowerState {
 
     /// SW_Battery::Deactivate1006EC40: the reverse writes; each list item
     /// erases its first equal entry (1006EB70), then RecheckPower.
-    #[cfg(feature = "ares")]
     pub(crate) fn deactivate_battery(
         &mut self,
         power: i32,
@@ -345,7 +343,6 @@ impl PowerState {
     }
 
     /// HouseExt BatteryCount > 0: the radar hook508E66 (Ares.dll 10024780).
-    #[cfg(feature = "ares")]
     pub(crate) fn has_battery(&self) -> bool {
         self.ares.battery_count > 0
     }
@@ -359,7 +356,6 @@ impl PowerState {
     }
 
     /// BatteryOverpower holds this BuildingType (hook44019D, 10014690).
-    #[cfg(feature = "ares")]
     pub(crate) fn overpowers(&self, building_type: &str) -> bool {
         self.ares
             .overpower

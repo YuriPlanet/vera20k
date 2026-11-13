@@ -1103,7 +1103,6 @@ impl Simulation {
     /// UnInit and `ring` (`Dominator.ControlAnim`, else
     /// `PermaControlledAnimationType=`) rings it through
     /// CreateMindControlRingAnim. Unlike ApplyPermaMC it queues nothing.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_dominate(
         &mut self,
         id: u64,

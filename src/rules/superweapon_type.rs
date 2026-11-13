@@ -793,7 +793,6 @@ impl SuperWeaponType {
 
     /// Only implemented extension handlers own the Ares announcement path.
     /// Stock redirects keep their existing readers and dispatch boundaries.
-    #[cfg(feature = "ares")]
     pub fn ares_eva(&self) -> Option<&AresSuperWeaponEva> {
         self.kind
             .has_ares_handler()

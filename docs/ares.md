@@ -9,10 +9,11 @@ No option or client setting turns it on.
 
 The official downloads hold only part of Ares so far. Its code is moving out of the `ares`
 build feature area by area. In a download, a game with Ares keys plays the parts that have
-moved (the world and unit simulation, and combat) and misses the rest: superweapons,
-production, what the player sees and hears, `ares.mix`, the Ares INI syntax, and most Ares
-rules keys, which are read only with `ares.mix` mounted. Such a game can play unlike both
-the original and Ares. For all the Ares support VERA20K has, build with the feature:
+moved (the world and unit simulation, and combat) and misses the rest: production, what
+the player sees and hears, `ares.mix`, the Ares INI syntax, and most Ares rules keys, which
+are read only with `ares.mix` mounted. The superweapon code is in every build, but it takes
+its Ares form only in a game whose rules were read the Ares way, so a download keeps the
+original superweapons. Such a game can play unlike both the original and Ares. For all the Ares support VERA20K has, build with the feature:
 
 ```sh
 cargo run --release --bin vera20k --features ares

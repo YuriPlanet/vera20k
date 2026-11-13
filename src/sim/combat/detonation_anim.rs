@@ -206,9 +206,7 @@ pub(crate) fn select_with_context(
         }
     }
     // Ares hook 48A59A (100377E0): a current Ares storm's own warhead and
-    // bolt explosion come first. Still behind the feature: the Ares storm
-    // this reads moves with the superweapons.
-    #[cfg(feature = "ares")]
+    // bolt explosion come first; no Ares storm is current without Ares.
     if let Some(name) =
         crate::sim::superweapon::lightning_storm::ares_bolt_explosion(world, rules, warhead)
     {

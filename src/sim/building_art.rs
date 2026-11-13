@@ -205,7 +205,6 @@ impl BuildingArt {
 
     /// Ares ChronoWarpStateMachine::Update (`10070230`) drops +6E4 when it
     /// removes a chronoshifted building, so its next Place opens it again.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_actually_placed(&mut self) {
         self.actually_placed = false;
     }

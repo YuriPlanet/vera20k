@@ -23,7 +23,7 @@
 //! Super and drops a queued `EVA_ReinforcementsReady` after every charged
 //! launch, whatever was sent; the app does both from the launch event.
 //!
-//! An Ares build hands both Types to SW_ParaDrop ([`ares_launch`]): per-Super
+//! When Ares plays, both Types go to SW_ParaDrop ([`ares_launch`]): per-Super
 //! `ParaDrop.*` planes over the Country, Side and `[General]` lists, one
 //! plane per plane entry carrying every listed InfantryType and UnitType.
 //! The stock cases then run only after a refused Activate, which sends
@@ -75,7 +75,6 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
-#[cfg(feature = "ares")]
 use crate::rules::superweapon_type::{AresParaDropOwner, SuperWeaponType, TechnoTypeReference};
 use crate::sim::combat::TargetKind;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -103,7 +102,8 @@ pub enum ParaDropKind {
 /// GetParadropPlane @ 0x1001BCB0`, SW_ParaDrop's fallback plane and the
 /// Droppod reinforcement's (`0x65DBB3`). The country's `ParaDrop.Aircraft=`,
 /// unless its index is `-1`, then the side's (`[Side] ParaDrop.Aircraft=`),
-/// unless `-1` (unset or `none`), then PDPLANE. Stock builds read neither.
+/// unless `-1` (unset or `none`), then PDPLANE. A game without Ares reads
+/// neither.
 pub(crate) fn house_paradrop_plane<'r>(
     sim: &Simulation,
     rules: &'r RuleSet,
@@ -189,7 +189,6 @@ pub(crate) fn launch(
 /// `Tile_Is_Water @ 0x00485060` tests). An uncharged Super, or an off-map
 /// cell (SendParadrop's null cell), is refused, and the stock case that then
 /// runs sends nothing either.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -220,7 +219,6 @@ pub(super) fn ares_launch(
 /// takes, from plane 0 and then plane i of the default, Side and Country
 /// lists in that order, the lists of any plane that has both and the
 /// aircraft of any plane that names one: the last such plane wins.
-#[cfg(feature = "ares")]
 fn send_paradrop(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -300,7 +298,6 @@ fn send_paradrop(
 /// A Country, Side or `[General]` paradrop list entry as the TechnoType it
 /// names: the Country and Side readers keep an InfantryType before a
 /// UnitType of the same name, and the `[General]` lists hold InfantryTypes.
-#[cfg(feature = "ares")]
 fn listed_type(rules: &RuleSet, name: &str) -> TechnoTypeReference {
     let category = if rules
         .object_in_category(ObjectCategory::Infantry, name)
@@ -380,17 +377,12 @@ pub(super) enum Payload<'a> {
     /// SendParadropPlanes: `count` of one InfantryType.
     Infantry(&'a str, u32),
     /// Ares SendPDPlane: each type its count times.
-    #[cfg(feature = "ares")]
     Ares(&'a [TechnoTypeReference], &'a [i32]),
 }
 
 impl Payload<'_> {
     fn is_ares(self) -> bool {
-        #[cfg(feature = "ares")]
-        if let Self::Ares(..) = self {
-            return true;
-        }
-        false
+        matches!(self, Self::Ares(..))
     }
 }
 
@@ -439,7 +431,6 @@ pub(super) fn send_planes(
     payload: Payload<'_>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    #[cfg(feature = "ares")]
     if let Payload::Ares(types, counts) = payload
         && (counts.len() != types.len() || counts.is_empty())
     {
@@ -528,7 +519,6 @@ pub(super) fn send_planes(
             frame_effects,
         ),
         // 100742B8..: only InfantryTypes and UnitTypes board.
-        #[cfg(feature = "ares")]
         Payload::Ares(types, counts) => {
             for (ty, &count) in types.iter().zip(counts) {
                 if matches!(

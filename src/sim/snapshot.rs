@@ -359,7 +359,6 @@ pub enum SnapshotRestoreError {
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
     InvalidPaidSuperWeaponSelection(&'static str),
-    #[cfg(feature = "ares")]
     #[error("invalid superweapon launch history: {0}")]
     InvalidSuperWeaponLaunchHistory(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
@@ -1789,15 +1788,21 @@ impl Simulation {
         }
     }
 
-    /// Saved Ares state (a delivery base override, an attached superweapon)
-    /// loads only into a game Ares plays in; the player load checks it with
-    /// the loading game's switch before restoring.
+    /// Saved Ares state (a delivery base override, an attached superweapon,
+    /// a pending unit delivery, a paid superweapon selection) loads only into
+    /// a game Ares plays in; the player load checks it with the loading
+    /// game's switch before restoring.
     pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
                 .validate_ares_build_compatibility(ares)
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
+        self.unit_deliveries
+            .validate_ares_build_compatibility(ares)
+            .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        self.validate_paid_super_weapon_selections_for_load(ares)
+            .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         Ok(())
     }
 
@@ -1819,7 +1824,6 @@ impl Simulation {
         }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
-        #[cfg(feature = "ares")]
         self.super_weapons
             .validate_ares_launch_history()
             .map_err(SnapshotRestoreError::InvalidSuperWeaponLaunchHistory)?;
