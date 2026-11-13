@@ -816,10 +816,21 @@ pub(super) fn already_attacking(obs: &Observation<'_>, unit: u64, target: u64) -
     obs.attack_target(unit) == Some(target)
 }
 
+/// Whether `unit` may be given `goal` at all.
+///
+/// The hostility test is here and not only in [`super::board::order_stands`]
+/// because this is the one gate every order goes through, and the other is the
+/// "does this order still stand" layer: a squad that captured the refinery it
+/// was shelling reached this function with a legal target — `can_engage` and
+/// `can_hurt` are both true against a friendly building, since neither asks
+/// whose it is — and the order went out. The wishlist's "占领后仍然自己打自己"
+/// is that gap.
 pub(super) fn admits(rules: &RuleSet, obs: &Observation<'_>, unit: u64, goal: &Goal) -> bool {
     match *goal {
         Goal::Attack { target } => {
-            obs.can_engage(rules, unit, target) && obs.can_hurt(rules, unit, target)
+            obs.is_hostile(target)
+                && obs.can_engage(rules, unit, target)
+                && obs.can_hurt(rules, unit, target)
         }
         Goal::Capture { target } => obs.can_take_building(rules, unit, target),
         _ => true,
@@ -2462,6 +2473,38 @@ mod tests {
     /// spy has no combat value to rank, so without this order it stands where
     /// it was built.
     #[test]
+    /// A building this house owns is not a target, whatever the warhead says.
+    ///
+    /// `can_engage` and `can_hurt` are both true against a friendly structure —
+    /// neither asks whose it is — so before this gate a squad that had captured
+    /// the refinery it was shelling was still handed the order. The wishlist's
+    /// "占领后仍然自己打自己".
+    #[test]
+    fn a_building_this_house_owns_is_not_a_target() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let enemy = sim.interner.intern("Russians");
+        let rifleman = sim
+            .spawn_object("E1", "Americans", 12, 12, 255, &rules)
+            .expect("a rifleman");
+        let refinery = sim
+            .spawn_object("GAREFN", "Americans", 16, 12, 255, &rules)
+            .expect("a refinery");
+        let attack = Goal::Attack { target: refinery };
+        assert!(
+            !admits(&rules, &Observation::new(&sim, owner), rifleman, &attack),
+            "the house does not shell its own refinery"
+        );
+        // The same building in enemy hands is a target again.
+        sim.change_owner_with_rules(refinery, enemy, &rules, None, Default::default());
+        assert!(
+            admits(&rules, &Observation::new(&sim, owner), rifleman, &attack),
+            "and it is a target once the enemy holds it"
+        );
+    }
+
     fn a_spy_walks_into_a_building_the_way_an_engineer_does() {
         let Some((mut sim, rules)) = arena(0xA17) else {
             return;

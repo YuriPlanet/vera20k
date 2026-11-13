@@ -4196,6 +4196,60 @@ mod tests {
     }
 
     #[test]
+    fn a_squad_stops_firing_at_a_building_the_instant_it_is_captured() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x51A7);
+        let americans = sim.interner.get("Americans").unwrap();
+        let russians = sim.interner.get("Russians").unwrap();
+        let building = sim
+            .spawn_object("GAREFN", "Russians", 20, 20, 0, &rules)
+            .unwrap();
+        let rifleman = sim
+            .spawn_object("E1", "Americans", 16, 20, 0, &rules)
+            .unwrap();
+        // The squad is shooting the refinery.
+        let order = crate::sim::command::Command::Attack {
+            attacker_id: rifleman,
+            target_id: building,
+        };
+        assert!(sim.apply_command("Americans", &order, Some(&rules)));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(rifleman)
+                .and_then(|entity| entity.attack_target.target()),
+            Some(crate::sim::combat::TargetKind::Entity(building)),
+            "the rifleman is shooting the refinery"
+        );
+        // The engineer takes it: the refinery is now the rifleman's own.
+        sim.change_owner_with_rules(building, americans, &rules, None, FrameEffects::default());
+        assert!(
+            sim.substrate
+                .entities
+                .get(rifleman)
+                .and_then(|entity| entity.attack_target.target())
+                .is_none(),
+            "the detach sweep releases the gun the moment the building changes hands"
+        );
+        // And it stays released: nothing re-tasks it at what is now its own.
+        for _ in 0..8 {
+            sim.advance_tick(&[], Some(&rules), None, None, 67);
+        }
+        assert!(
+            sim.substrate
+                .entities
+                .get(rifleman)
+                .and_then(|entity| entity.attack_target.target())
+                .is_none(),
+            "and it does not take the building back as a target over the next frames"
+        );
+        let _ = russians;
+    }
+
+    #[test]
     fn accepted_repair_resolves_the_captured_building_and_stale_target_at_dispatch() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
