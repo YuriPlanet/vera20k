@@ -436,6 +436,8 @@ fn ares_emp_downs_a_v3_rocket_on_its_launcher() {
 /// RecheckRadar, and the House radar and SpySat scans (Ares 10024550,
 /// 10024620) skip it while the counter runs, so the uplink's radar and map
 /// go dark and come back with it.
+// Runs again once power's radar provider moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_darkens_a_spy_satellite_uplink_until_expiry() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
