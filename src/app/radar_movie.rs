@@ -250,6 +250,22 @@ fn reconcile_pause_clock(state: &mut AppState, wall_ms: u64) {
     }
 }
 
+/// Whether `RadarClass::AI @ 0x00653850` runs this pass. Admission and the
+/// prelude are its work (vt+0x28, `0x006539A2`), reached only through
+/// `GScreenClass::Input @ 0x004F4320` on the main loop's input path. An
+/// in-game modal's pump does not call Input, and neither does Main_Tick's
+/// offline scenario-pause path (`0x0055D82E..0x0055D877`: audio pump,
+/// ChronoScreen, `GScreenClass::Render @ 0x004F4480`, throttle, return),
+/// which still draws the housing and a playing clip.
+fn radar_ai_runs(
+    menu_open: bool,
+    mode: crate::app::match_runtime::session::SessionMode,
+    scenario_paused: bool,
+) -> bool {
+    !menu_open
+        && !crate::app::match_runtime::scenario_pause::blocks_main_tick(mode, scenario_paused)
+}
+
 /// Service outside the simulation gate. Only actual sidebar draws advance the
 /// housing timer; media and its pause must remain live when117 stops simulation.
 pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
@@ -278,18 +294,23 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         _ => true,
     };
     let streams_ready = state.audio.movie_streams_ready();
-    // Admission and the prelude run from `RadarClass::AI @ 0x00653850`
-    // (vt+0x28, `0x006539A2`)
-    // on the main loop's input path, which an in-game modal does not pump.
-    let menu_open = state.match_state.match_presentation.in_game_menu.is_open();
+    let ai_runs = radar_ai_runs(
+        state.match_state.match_presentation.in_game_menu.is_open(),
+        state.match_state.session_mode(),
+        state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.session().scenario_paused()),
+    );
     let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
         return;
     };
-    let command = if menu_open {
-        RadarMovieCommand::None
-    } else {
+    let command = if ai_runs {
         radar.admit_movie();
         radar.movie_command(selected_done, streams_ready)
+    } else {
+        RadarMovieCommand::None
     };
     match command {
         RadarMovieCommand::Announce => {
@@ -326,6 +347,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             state.audio.set_movie_audio_held(true, wall_ms);
             //6578F0 stage2: SetRadarMode(3), EndLooping, then MovieOn.
             play_radar_sound_loop(state, true);
+            set_detail_floor(state, true);
         }
         RadarMovieCommand::None => {}
     }
@@ -415,7 +437,15 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         .radar_anim
         .as_mut()
         .expect("radar draw owner")
-        .paint_movie(surface.batch_texture(), [surface.width(), surface.height()]);
+        .paint_movie(
+            surface.batch_texture(),
+            [surface.width(), surface.height()],
+            state
+                .match_state
+                .match_presentation
+                .sidebar_layout_spec
+                .radar_movie_origin(),
+        );
     let mut due = Vec::new();
     if active
         && let Some(subtitles) = state
@@ -459,10 +489,38 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
             state.audio.retire_movie_audio(wall_ms);
             play_radar_sound_loop(state, false);
+            set_detail_floor(state, false);
             reconcile_pause_clock(state, wall_ms);
         }
     }
     state.platform.window.request_redraw();
+}
+
+/// The detail floor a radar movie sets: `PlayRadarMovie` stage 2 calls
+/// `Game__SetMinFrameRate` with DetailMinFrameRateMovie (`0x0065797E`) and
+/// `PerFrameMovieUpdate`'s last clip with DetailMinFrameRateNormal
+/// (`0x00657C71`). Retirement (`0x005BF450`) leaves it for the next
+/// scenario's `Fill_In_Data` to reset.
+fn set_detail_floor(state: &AppState, playing: bool) {
+    if let Some(rules) = state.rules() {
+        apply_detail_floor(
+            &mut state.match_state.match_presentation.detail.borrow_mut(),
+            &rules.general.detail,
+            playing,
+        );
+    }
+}
+
+fn apply_detail_floor(
+    detail: &mut crate::app::presentation::detail::DetailState,
+    rules: &crate::rules::ruleset::DetailRules,
+    playing: bool,
+) {
+    detail.set_min_frame_rate(if playing {
+        rules.min_frame_rate_movie
+    } else {
+        rules.min_frame_rate_normal
+    });
 }
 
 ///5BF450 runs before load preparation (even failure), abort/victory/defeat
@@ -527,6 +585,41 @@ mod tests {
             (general.movie_on.as_deref(), general.movie_off.as_deref()),
             (Some("MovieOn"), Some("MovieOff"))
         );
+    }
+
+    /// Retail DetailMinFrameRateMovie=20 (`0x0065797E`) cuts effects at 18
+    /// Logic frames a second during a movie; after the last clip's Normal=15
+    /// (`0x00657C71`) they come back once the rate reaches 15 plus the
+    /// buffer of 5 (`0x0055AF60`).
+    #[test]
+    fn radar_movie_raises_the_detail_floor_while_it_plays() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules.general.detail;
+        let mut detail = crate::app::presentation::detail::DetailState::default();
+        detail.configure_normal(rules);
+        for _ in 0..18 {
+            detail.record_logic_visit();
+        }
+        detail.throttle_tail(0);
+        assert_eq!(detail.frame_rate(), 18);
+        assert_eq!(detail.minimum_frame_rate(), 15);
+        apply_detail_floor(&mut detail, rules, true);
+        assert_eq!(detail.minimum_frame_rate(), 25);
+        apply_detail_floor(&mut detail, rules, false);
+        assert_eq!(detail.minimum_frame_rate(), 20);
+    }
+
+    /// A time jump's scenario pause (`0x0055D82E..0x0055D877`) returns before
+    /// `GScreenClass::Input`, so a clip queued meanwhile is not admitted until
+    /// the pause lifts; network modes never take that path.
+    #[test]
+    fn offline_scenario_pause_holds_radar_admission() {
+        use crate::app::match_runtime::session::SessionMode;
+        assert!(radar_ai_runs(false, SessionMode::Campaign, false));
+        assert!(!radar_ai_runs(false, SessionMode::Campaign, true));
+        assert!(radar_ai_runs(false, SessionMode::Lan, true));
     }
 
     #[test]

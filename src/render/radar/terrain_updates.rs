@@ -19,6 +19,8 @@ pub(crate) struct RadarTerrainUpdateLayers<'a> {
     pub overlay_pixels: &'a mut Vec<OverlayPixel>,
     pub native_surface: Option<NativeRadarSurfaceGeometry>,
     pub native_terrain: &'a mut Option<NativeRadarTerrainSurface>,
+    /// The live MapClass playfield; `None` for a fixture without one.
+    pub playfield: Option<crate::map::playfield::PlayfieldBounds>,
 }
 
 /// A retained-radar terrain update staged before final frame composition.
@@ -182,7 +184,21 @@ pub(super) fn apply_radar_terrain_dirty_cells(
     // not maintained; stamping them would leave a non-native pixel when
     // nothing changed.
     let terrain_brightness = surface.terrain_brightness();
-    let changes = cells.iter().filter_map(|&(rx, ry)| {
+    // `ProcessDirtyCells` redraws only a Cell inside the mode-one playfield
+    // (`IsCellInPlayfield(cell, 1)`, `0x00655285..0x00655298`); one outside,
+    // such as a raised Cell in the top rows, keeps its colour until the
+    // radar is rebuilt.
+    let playfield = layers.playfield;
+    let in_playfield = |&&(rx, ry): &&(u16, u16)| {
+        playfield.is_none_or(|bounds| {
+            crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+                (i32::from(rx), i32::from(ry)),
+                Some(bounds),
+                authority.resolved_terrain(),
+            )
+        })
+    };
+    let changes = cells.iter().filter(in_playfield).filter_map(|&(rx, ry)| {
         let (left, right) = authority.tile_radar_colors(rx, ry, terrain_brightness)?;
         Some(NativeRadarCellUpdate {
             base: NativeRadarCellColors {

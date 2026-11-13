@@ -145,10 +145,11 @@ enum RadarPaint {
     Clear,
     /// Frame `n`'s pixels; `4912B0` skips source index 0, transparent here.
     Frame(usize),
-    /// A movie frame along the top, centred in the surface's width.
+    /// A movie frame, its top-left corner at `origin` in the surface.
     Movie {
         picture: BatchTexture,
         size: [u32; 2],
+        origin: [f32; 2],
     },
     /// The online draw (`656EC0`) kept for a later loss: frame 32, then the
     /// minimap's picture through `map_quads` and the solid `solid_quads`, as
@@ -245,6 +246,24 @@ impl RadarPresentation {
         self.needs_show |= !has_radar && self.animation.phase == RadarAnimPhase::Online;
         self.animation.set_has_radar(has_radar)
     }
+    /// A loaded game's radar. `MouseClass::Load @ 0x005BDF70` reads the
+    /// whole Display body back over the radar (`0x005BE092`), so State,
+    /// AnimFrame and TacticalMapAvailable come back as saved and the next
+    /// `SetTacticalMapAvailable @ 0x00656DF0` sees no change: a radar that
+    /// was up stays up, with no opening and no RadarOn. VERA keeps no radar
+    /// fields in its save and takes them from the loaded House instead.
+    /// RESIDUAL: a save made in the half second of an opening or closing,
+    /// or during a radar movie (where `RadarClass::Init @ 0x00655B20` replays
+    /// frames 25..32 through `SetRadarMode`), loads at the end state.
+    pub(in crate::render) fn restore_availability(&mut self, has_radar: bool) {
+        self.pending_radar = has_radar;
+        if has_radar {
+            self.animation.phase = RadarAnimPhase::Online;
+            self.animation.frame = 32;
+            self.paints.push(RadarPaint::Frame(32));
+            self.needs_show = true;
+        }
+    }
     /// Advance the housing, painting the frame it reaches; returns whether
     /// the surface is shown.
     pub(in crate::render) fn advance_draw(&mut self, wall_ms: u64) -> bool {
@@ -336,27 +355,29 @@ impl RadarPresentation {
             }
         }
     }
-    /// Native movie copies into retained SidebarSurface. Use the stock 140x110
-    /// aperture centered in its168x110 backing. Full native origin/final-paint
-    /// driver equivalence is not established; no battlefield shader involved.
-    fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2]) {
+    /// The movie's frame copied into the retained housing surface at
+    /// `origin` (see `SidebarChromeLayoutSpec::radar_movie_origin`).
+    fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2], origin: [f32; 2]) {
         // Painting the same picture again stores the same pixels.
         if let [
             ..,
             RadarPaint::Movie {
                 picture: last,
                 size: last_size,
+                origin: last_origin,
             },
             RadarPaint::Show,
         ] = self.paints.as_slice()
             && last.view == picture.view
             && *last_size == size
+            && *last_origin == origin
         {
             return;
         }
         self.paints.push(RadarPaint::Movie {
             picture: picture.clone(),
             size,
+            origin,
         });
         self.paints.push(RadarPaint::Show);
     }
@@ -480,6 +501,11 @@ impl RadarAnimState {
     pub fn set_has_radar(&mut self, has_radar: bool) -> Option<RadarAvailabilityCue> {
         self.presentation.set_has_radar(has_radar)
     }
+    /// Hydrate a new owner from the current availability without a cue;
+    /// see [`RadarPresentation::restore_availability`].
+    pub fn restore_availability(&mut self, has_radar: bool) {
+        self.presentation.restore_availability(has_radar);
+    }
     /// Whether the housing is opening or closing: `653100` steps it on the
     /// first draw after each four wall-clock buckets.
     pub fn housing_moving(&self) -> bool {
@@ -544,8 +570,8 @@ impl RadarAnimState {
         suspended
     }
     /// Paint the movie's current `picture`, `size` pixels, and show it.
-    pub fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2]) {
-        self.presentation.paint_movie(picture, size);
+    pub fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2], origin: [f32; 2]) {
+        self.presentation.paint_movie(picture, size, origin);
     }
     pub fn phase(&self) -> RadarAnimPhase {
         self.presentation.phase()
@@ -608,9 +634,9 @@ impl RadarAnimState {
                 RadarPaint::Movie {
                     picture,
                     size: movie,
+                    origin,
                 } => {
-                    let left = self.width.saturating_sub(movie[0]) / 2;
-                    let quad = picture_quad([left as f32, 0.0], movie.map(|v| v as f32));
+                    let quad = picture_quad(origin, movie.map(|v| v as f32));
                     draw(&mut steps, &picture, 0, &[quad]);
                 }
                 RadarPaint::Online {
@@ -783,6 +809,22 @@ mod tests {
     use serde::Deserialize;
     fn housing() -> Vec<Vec<u8>> {
         (0..33).map(|i| [i * 5, 12, 88, 255].repeat(2)).collect()
+    }
+    /// `MouseClass::Load` (`0x005BE092`) brings a saved radar back open, so
+    /// the next House update (`0x00656DF0`) finds no change: no opening, no
+    /// RadarOn. A radar that was down still opens with its cue.
+    #[test]
+    fn loaded_radar_comes_back_open_without_a_cue() {
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        radar.restore_availability(true);
+        assert_eq!(radar.set_has_radar(true), None);
+        assert_eq!(
+            (radar.animation.frame, radar.phase()),
+            (32, RadarAnimPhase::Online)
+        );
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        radar.restore_availability(false);
+        assert_eq!(radar.set_has_radar(true), Some(RadarAvailabilityCue::On));
     }
     /// Executed6531DB controls for native phase4/5: at100+3 buckets no
     ///movement; at100+4,25->26 and31->32/phase1. Synthetic colors here only

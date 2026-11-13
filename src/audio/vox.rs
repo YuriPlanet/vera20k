@@ -184,12 +184,10 @@ impl VoxQueue {
             }
             effect.stop_stream = true;
             self.clear_all_queues();
+            // The caller's `StreamPlayer::Stop` stamps the end time with the
+            // stop moment (`0x00407A60`); with no gap the line starts on the
+            // first `PlayNextQueued` after that millisecond.
             self.gap_ms = 0;
-            // VERA assumption: after `StreamPlayer::Stop` the stream's end
-            // time is not in the future, so the interrupt line starts on the
-            // `PlayNextQueued` that follows. gamemd `GetEndTime`-after-`Stop`
-            // UNCHECKED.
-            self.end_time_ms = 0;
         }
 
         let duplicate = self
@@ -387,6 +385,8 @@ impl VoxQueue {
         let had_current = self.stop_all(true);
         self.pause_depth = 0;
         self.suspend_depth = 0;
+        // Residual: native keeps the gap and end time; a world transition's
+        // loading outlasts the 500 ms either would hold.
         self.gap_ms = 0;
         self.end_time_ms = 0;
         had_current
@@ -794,7 +794,7 @@ mod tests {
     }
 
     /// Type 2 while a line is current: stream stopped, every queue cleared,
-    /// gap zeroed, and the interrupt line starts at once. With an idle slot a
+    /// gap zeroed, and the interrupt line starts on the next pump. With an idle slot a
     /// type-2 line routes like STANDARD and existing nodes survive.
     #[test]
     fn interrupt_cuts_only_when_a_line_is_current() {
@@ -812,7 +812,9 @@ mod tests {
         assert!(effect.stop_stream && effect.inserted);
         assert_eq!(q.queued_count(), 1);
         assert!(q.current().is_none());
-        // No gap: the interrupt line starts on the very next pump.
+        // The stream owner's stop stamps the end; with no gap the interrupt
+        // line starts on the next pump.
+        q.stream_ended(1);
         assert_eq!(
             play_next(&mut q, 2).as_deref(),
             Some("EVA_BATTLECONTROLTERMINATED")

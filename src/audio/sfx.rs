@@ -2138,10 +2138,16 @@ impl SfxPlayer {
             .is_some_and(|output| !output.player.empty())
     }
 
-    /// `StreamPlayer::Stop` on the announcement stream, if one is open.
+    /// `StreamPlayer::Stop` (`0x00407F40`) on the announcement stream, if one
+    /// is open. Its `Audio__StopPlaybackChannel` (`0x004025B0`) runs the stop
+    /// callback `0x00407A60` installed by `StreamPlayer::Create` (`0x0040796C`),
+    /// which stamps `GetEndTime` (`StreamPlayer+0x20`, `0x00408140`) with the
+    /// stop moment, so `PlayNextQueued`'s gap (`0x007527A7..0x007527CF`) runs
+    /// from there. A stream VERA has not yet seen finish takes the same stamp.
     fn stop_eva_stream(&mut self) {
         if let Some(output) = self.eva_player.take() {
             output.player.stop();
+            self.vox.stream_ended(self.now_ms);
         }
     }
 
@@ -4309,6 +4315,61 @@ mod tests {
                 .validate_loop_handle(HandleOwner::UnitVoice(7))
                 .is_some()
         );
+        player.stop_all();
+    }
+
+    /// The time jump's `Speech__StopPlayback` (`0x007529A0`, from
+    /// `0x0053B508`) stops a playing line; `StreamPlayer::Stop` stamps the
+    /// stop moment as its end (`0x00407A60`), so a line queued next starts
+    /// once `PlayNextQueued`'s 500 ms gap has run (`0x007527A7..0x007527CF`).
+    /// SOV01's radar-movie announcement waited for the next jump without it.
+    /// Needs retail assets and an audio device; skips without either.
+    #[test]
+    fn stopped_eva_line_lets_the_queue_resume_after_the_gap() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut player) = SfxPlayer::new() else {
+            return;
+        };
+        player.set_volume(0.0);
+        let mut service = TestAudioService::default();
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let loaded_index = crate::rules::retail_ini_fixture::retail_audio_index();
+        let audio_index = loaded_index.map(|loaded| &loaded.index);
+        let mut pump = |player: &mut SfxPlayer, now| {
+            service.pump(
+                player,
+                now,
+                definitions.sounds(),
+                definitions.eva(),
+                &assets,
+                audio_index,
+            );
+        };
+        pump(&mut player, 1_000);
+        assert!(player.play_eva(
+            "EVA_UnitReady",
+            None,
+            definitions.eva(),
+            &assets,
+            audio_index
+        ));
+        assert!(player.eva_stream_busy());
+        pump(&mut player, 1_100);
+        player.stop_eva(true);
+        assert!(player.play_eva(
+            "EVA_LowPower",
+            None,
+            definitions.eva(),
+            &assets,
+            audio_index
+        ));
+        pump(&mut player, 1_600);
+        assert!(player.vox.current().is_none(), "the gap runs from the stop");
+        pump(&mut player, 1_700);
+        assert_eq!(player.current_eva_event(), Some("EVA_LOWPOWER"));
         player.stop_all();
     }
 

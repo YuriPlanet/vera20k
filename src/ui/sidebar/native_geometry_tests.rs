@@ -246,30 +246,20 @@ fn retail_allied_control_capture_anchors_connect_to_hit_rects() {
     );
 }
 
-/// `RadarClass::Init_For_House` moves the radar gadget by the position table:
-/// the GDI arm adds `(0xB, 4)`, the NOD arm `(0xE, 5)`, and nothing else
-/// differs. The aperture size stays the radar source frame.
+/// `RadarClass::Init_For_House @ 0x00652E90` writes MapAreaX 16 in both its
+/// GDI and NOD arms (`0x00652ECF`, `0x00652F13`); only the two top buttons
+/// move between them, so the aperture is the same for both tables.
 #[test]
-fn radar_aperture_follows_the_gdi_and_nod_tables() {
-    let gdi = SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, true);
-    let nod = SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, false);
-    assert_eq!(
-        radar_minimap_rect_with_spec(800., gdi),
-        Rect {
-            x: 648.,
-            y: 49.,
-            w: 140.,
-            h: 108.
-        }
-    );
-    assert_eq!(
-        radar_minimap_rect_with_spec(800., nod),
-        Rect {
-            x: 651.,
-            y: 50.,
-            w: 140.,
-            h: 108.
-        },
-        "the NOD table is the native +3/+1 from the GDI arm"
-    );
+fn radar_aperture_is_the_same_in_the_gdi_and_nod_tables() {
+    let aperture = Rect {
+        x: 648.,
+        y: 49.,
+        w: 140.,
+        h: 108.,
+    };
+    for gdi_positions in [true, false] {
+        let spec =
+            SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, gdi_positions);
+        assert_eq!(radar_minimap_rect_with_spec(800., spec), aperture);
+    }
 }

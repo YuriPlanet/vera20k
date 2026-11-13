@@ -165,6 +165,9 @@ fn find_cursor_feedback_kind(
             CursorFeedbackKind::Scroll(dir)
         });
     }
+    if over_radar_top_button(state) {
+        return Some(CursorFeedbackKind::Default);
+    }
     if state.match_state.input.minimap_press_active()
         || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
     {
@@ -2029,6 +2032,35 @@ fn cursor_animation_now_ms() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+/// `RadarClass::AI @ 0x00653850` sets the normal arrow (`SetCursor(0)`)
+/// whenever the mouse is over the Diplomacy or Options button
+/// (`0x00653865..0x006538F3`), on every pass and with any button held, after
+/// the radar's own press drew its row: a radar press dragged onto them shows
+/// the arrow too.
+fn over_radar_top_button(state: &AppState) -> bool {
+    crate::app::presentation::sidebar_render::current_sidebar_view(state).is_some_and(|view| {
+        top_button_hit(
+            state.sidebar_frame(),
+            view.top_buttons.iter().map(|button| button.rect),
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        )
+    })
+}
+
+/// Whether (`x`, `y`) lies in one of `rects`, placed by `frame`: left and
+/// top inclusive, right and bottom exclusive (`0x0065388E..0x006538A9`).
+fn top_button_hit(
+    frame: crate::ui::sidebar::SidebarFrame,
+    rects: impl IntoIterator<Item = crate::ui::sidebar::Rect>,
+    x: f32,
+    y: f32,
+) -> bool {
+    rects
+        .into_iter()
+        .any(|rect| frame.rect_to_frame(rect).contains(x, y))
+}
+
 pub(crate) fn current_sidebar_view_hit(state: &AppState) -> bool {
     sidebar_view_hit(
         state.sidebar_frame(),
@@ -2505,6 +2537,34 @@ mod tests {
         input.selection_state.update_drag(105.0, 100.0);
         assert!(input.selection_state.is_band_box_active());
         assert_eq!(input.captured_cursor(), Some(None));
+    }
+
+    /// `RadarClass::AI` tests each top button's rect left/top inclusive and
+    /// right/bottom exclusive (`0x0065388E..0x006538A9`) before it sets the
+    /// arrow.
+    #[test]
+    fn radar_top_buttons_take_the_cursor_inside_their_half_open_rects() {
+        let frame = crate::ui::sidebar::SidebarFrame::native(800, 600);
+        let rect = crate::ui::sidebar::Rect {
+            x: 643.0,
+            y: 20.0,
+            w: 50.0,
+            h: 15.0,
+        };
+        let placed = frame.rect_to_frame(rect);
+        assert!(super::top_button_hit(frame, [rect], placed.x, placed.y));
+        assert!(!super::top_button_hit(
+            frame,
+            [rect],
+            placed.x + placed.w,
+            placed.y
+        ));
+        assert!(!super::top_button_hit(
+            frame,
+            [rect],
+            placed.x,
+            placed.y + placed.h
+        ));
     }
 
     #[test]

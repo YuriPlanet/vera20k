@@ -406,12 +406,10 @@ pub(super) fn cell_visibility_color(
     fog: &FogState,
     pixel: &TerrainPixel,
 ) -> Option<[u8; 4]> {
-    // Hostile gap generator: terrain renders black like unexplored shroud.
-    // Checked before fog so black wins over half-bright on overlap (native order).
-    if fog.is_cell_gap_covered(local_owner, pixel.rx, pixel.ry) {
-        return Some(COLOR_SHROUD);
-    }
-    // Friendly (own/allied) gap generator: half-bright fog over the terrain.
+    // RenderCellPixel @ 0x00655E7E: IsFogged (an own or allied gap
+    // generator, Cell+13C) half-brightens before the shroud test blackens,
+    // so it wins where a hostile gap generator overlaps. A hostile gap's
+    // cover clears the revealed bit, which the shroud test reads.
     if fog.is_cell_gap_fog(local_owner, pixel.rx, pixel.ry) {
         return Some(dim_color(pixel.color, 0.5));
     }
