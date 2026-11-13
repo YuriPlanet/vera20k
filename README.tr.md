@@ -43,8 +43,6 @@ Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden
 
 ## Katkıda bulunma
 
-**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
-
 Her alanda yardımınızı bekliyoruz; en çok yardıma ihtiyaç duyan alanlar aşağıda. Her biri yol
 haritasındaki sayfasına bağlanır; orada süren çalışmayı ve sonraki adımı bulabilirsiniz:
 

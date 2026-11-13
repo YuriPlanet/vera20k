@@ -44,8 +44,6 @@ To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
 
 ## Contributing
 
-**Don't be afraid to send a PR.** It doesn't have to be perfect; we'll help with the rest.
-
 Help is welcome anywhere, and these areas need it most. Each links to its roadmap issue, with
 the work in progress and the next step:
 

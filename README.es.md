@@ -43,8 +43,6 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 
 ## Contribuir
 
-**No tengas miedo de enviar un PR.** No tiene que ser perfecto; te ayudaremos con el resto.
-
 Toda ayuda es bienvenida, y estas áreas son las que más la necesitan. Cada una enlaza a su
 página en la hoja de ruta, con el trabajo en curso y el siguiente paso:
 
