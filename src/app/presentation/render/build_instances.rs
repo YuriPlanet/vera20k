@@ -315,6 +315,15 @@ pub(super) fn build_world_instances(
                 continue;
             };
             let Some(band) = instances::layer_draw_band(layer) else {
+                // Layer 0 owns the dive's pixels below the terrain, so the
+                // member keeps its Display slot with no sprites: the body
+                // stays hidden while the Extras sweep still admits its health
+                // bar over a sensor.
+                if layer == crate::sim::world::display_layers::DisplayLayer::UNDERGROUND
+                    && let Some(parent) = instances::underground_extras_parent(&display_order, id)
+                {
+                    objects.push(parent);
+                }
                 continue;
             };
             if let Some(visit) = units.as_mut() {

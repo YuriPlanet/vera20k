@@ -113,6 +113,59 @@ fn long_trip_digs_travels_underground_and_surfaces() {
     assert!(entity.lifecycle.cell_marked());
 }
 
+/// The Display registration follows the owner's `In_Which_Layer` answer
+/// (`0x0072A1A0`) through Object Turn's Process (`0x004DA8B0`): Unlimbo's
+/// submit puts the Idle digger in the Ground vector, the underground leg
+/// leaves that vector for layer 0, and surfacing returns it. Tactical6D8F19
+/// draws the retained vectors, so the underground leg draws no body while the
+/// Extras sweep still reaches the member (the health bar a sensor admits).
+#[test]
+fn a_dig_moves_the_owners_display_registration_underground_and_back() {
+    use crate::sim::world::display_layers::DisplayLayer;
+    let (mut sim, rules) = fixture();
+    // Object Unlimbo's Display submit (4A9720) of the Idle owner.
+    sim.submit_object_display_for_test(DIGGER, DisplayLayer::GROUND, Some(&rules));
+    assert_eq!(
+        sim.display_layers().layer_of(DIGGER),
+        Some(DisplayLayer::GROUND)
+    );
+    order(&mut sim, &rules, (30, 10));
+    let mut underground_frames = 0;
+    for frame in 1..3000 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.process_active_locomotor(
+            DIGGER,
+            &rules,
+            crate::sim::world::ObjectAiCtx::default(),
+        )
+        .expect("tunnel Process");
+        let registered = sim.display_layers().layer_of(DIGGER);
+        if tunnel_state(&sim) == Some(TunnelState::Digging) {
+            underground_frames += 1;
+            assert_eq!(
+                registered,
+                Some(DisplayLayer::UNDERGROUND),
+                "frame {frame} travels below the cells"
+            );
+        } else {
+            assert_ne!(
+                registered,
+                Some(DisplayLayer::UNDERGROUND),
+                "frame {frame} is not underground"
+            );
+        }
+        if tunnel_state(&sim) == Some(TunnelState::Idle) {
+            break;
+        }
+    }
+    assert!(underground_frames > 0, "the trip ran below the cells");
+    assert_eq!(
+        sim.display_layers().layer_of(DIGGER),
+        Some(DisplayLayer::GROUND),
+        "a surfaced owner is back in the Ground vector"
+    );
+}
+
 /// A destination that stops allowing burrowing while the digger travels:
 /// ProcessDigging's own cell refuses it (Tunnel Can_Enter_Cell `0x0072A090`),
 /// and its nearby-cell search keeps only burrowable cells (FNPC `0x0056DE5F`),

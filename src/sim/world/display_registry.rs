@@ -294,22 +294,76 @@ impl Simulation {
         before: DisplayLayer,
         rules: &RuleSet,
     ) {
-        let Some(entity) = substrate.entities.get(id) else {
+        Self::resubmit_display_on_layer_change(
+            interner,
+            terrain_objects,
+            substrate,
+            resolved_terrain,
+            id,
+            before,
+            rules,
+        );
+    }
+
+    /// The Tunnel's `In_Which_Layer` (`0x0072A1A0`) answers from its State,
+    /// so a dig transition changes the owner's layer without moving it into
+    /// or out of the map: ProcessDugIn's Mark(UP) hands the owner to the
+    /// underground vector and ProcessDigging's arrival Mark(DOWN) hands it
+    /// back. Tactical6D8F19 draws the retained vectors, so the registration
+    /// has to follow the answer, not the cell: an owner resubmitted here
+    /// travels in `DisplayLayer::UNDERGROUND` (no entity body stream, so no
+    /// wheel or hull above the terrain) and reappears as it surfaces.
+    pub(super) fn complete_tunnel_display_process(
+        interner: &StringInterner,
+        terrain_objects: &TerrainObjectStore,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        before: DisplayLayer,
+        rules: &RuleSet,
+    ) {
+        Self::resubmit_display_on_layer_change(
+            interner,
+            terrain_objects,
+            substrate,
+            resolved_terrain,
+            id,
+            before,
+            rules,
+        );
+    }
+
+    /// Display4A9720 removes the old registration and inserts the object into
+    /// the vector its current answer selects. A dead or Limbo'd owner that
+    /// kept its registration would be drawn at its last layer, so both
+    /// wrappers above compare the answer with the capture taken before the
+    /// process and leave an unchanged one alone (an equal layer is not a
+    /// resubmission site).
+    fn resubmit_display_on_layer_change(
+        interner: &StringInterner,
+        terrain_objects: &TerrainObjectStore,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        before: DisplayLayer,
+        rules: &RuleSet,
+    ) {
+        let changed = substrate.entities.get(id).is_some_and(|entity| {
+            entity.lifecycle.object_alive()
+                && entity_layer(entity, resolved_terrain.as_ref(), Some((rules, interner))) != before
+        });
+        if !changed {
             return;
-        };
-        if entity.lifecycle.object_alive()
-            && entity_layer(entity, resolved_terrain.as_ref(), Some((rules, interner))) != before
-        {
-            Self::submit_entity_display(
-                interner,
-                terrain_objects,
-                substrate,
-                resolved_terrain,
-                id,
-                rules,
-                None,
-            );
         }
+        Self::submit_entity_display(
+            interner,
+            terrain_objects,
+            substrate,
+            resolved_terrain,
+            id,
+            rules,
+            None,
+        );
     }
 
     pub(super) fn sort_display_ground(
