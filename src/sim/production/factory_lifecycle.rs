@@ -220,6 +220,12 @@ pub(crate) fn enqueue_selected(
     {
         sim.sound_events
             .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
+        // The click already wrote the cameo's request record, and the button
+        // draws its clock from that record. Refusing without clearing it is how
+        // the sidebar showed a build that was never admitted — the wishlist's
+        // "战机生产UI出BUG了", reported twice. Native clears the request on the
+        // refused PRODUCE, and the client turns this into the same clear.
+        effects.clear_production_request(type_interned);
         return false;
     }
     #[cfg(feature = "phobos")]

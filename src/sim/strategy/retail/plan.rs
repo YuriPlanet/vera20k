@@ -178,6 +178,12 @@ pub(super) enum Item {
     /// worth more while one stands. Read off the rules' own flag, so a mod's
     /// purifier is answered by the same query.
     Purifier,
+    /// The `FactoryPlant=` structure (`[NAINDP]`): `UnitsCostBonus=0.75` is a
+    /// quarter off every vehicle for 2500 credits, which pays for itself the
+    /// moment the house has a war factory running. Read off the flag, not the
+    /// name: the industrial plant is a Soviet structure in retail and a mod may
+    // put the key on something else.
+    IndustrialPlant,
     /// The `UnitRepair=` shed (`[GADEPT] UnitRepair=yes`): where a hurt vehicle
     /// stops being a loss. Without one the retreat has nowhere to send a
     /// damaged unit, and the army shrinks by every fight it survives.
@@ -309,6 +315,15 @@ pub(super) const STEPS: &[Step] = &[
     // does not exist yet.
     Step {
         item: Item::Purifier,
+        want: 1,
+        gate: Gate::Surplus,
+    },
+    // The plant that takes a quarter off every vehicle. After the lab, because
+    // `Prerequisite=NATECH,PROC,NACNST` puts it behind the whole tree, and
+    // behind a surplus because 2500 is the army's money until the war factory
+    // can spend it on something cheaper.
+    Step {
+        item: Item::IndustrialPlant,
         want: 1,
         gate: Gate::Surplus,
     },
@@ -546,6 +561,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         Item::Power => build::count_in(obs, rules, census, &rules.build_power_types),
         Item::Refinery => census.refineries,
         Item::Purifier => build::count_ore_purifiers(rules, obs),
+        Item::IndustrialPlant => build::count_industrial_plants(rules, obs),
         Item::Barracks => build::count_in(obs, rules, census, &rules.build_barracks_types),
         Item::Weapons => build::count_in(obs, rules, census, &rules.build_weapons_types),
         Item::Defense => build::defenses(rules, obs, census),
@@ -576,6 +592,7 @@ fn pick<'r>(
         Item::Power => build::first_buildable(rules, obs, &rules.build_power_types),
         Item::Refinery => build::first_buildable(rules, obs, &rules.build_refinery_types),
         Item::Purifier => build::ore_purifier_building(rules, obs),
+        Item::IndustrialPlant => build::industrial_plant_building(rules, obs),
         Item::Barracks => build::first_buildable(rules, obs, &rules.build_barracks_types),
         Item::Weapons => build::first_buildable(rules, obs, &rules.build_weapons_types),
         Item::Defense => build::defense_building(rules, obs, census),

@@ -940,6 +940,30 @@ pub(super) fn count_ore_purifiers(rules: &RuleSet, obs: &Observation<'_>) -> usi
         .count()
 }
 
+/// The `FactoryPlant=` structure: the industrial plant, `[NAINDP]` in retail.
+///
+/// `UnitsCostBonus=0.75` is a quarter off every vehicle, and `AIBuildThis=yes`
+/// says the computer builds it in retail, so this is the native plan rather than
+/// a VERA preference. Read off the flag, not the name.
+pub(super) fn industrial_plant_building<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    class_types(rules, obs, ObjectCategory::Building)
+        .filter(|(ty, _)| ty.factory_plant)
+        .min_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+}
+
+/// How many `FactoryPlant=` buildings the house has.
+pub(super) fn count_industrial_plants(rules: &RuleSet, obs: &Observation<'_>) -> usize {
+    obs.own_entities()
+        .filter(|entity| {
+            obs.object_type(rules, entity.type_id)
+                .is_some_and(|ty| ty.factory_plant)
+        })
+        .count()
+}
+
 /// The lab, preferring the one that authorises a power the house can use.
 ///
 /// A super weapon is not granted by the power existing: it is granted by the
@@ -1166,6 +1190,38 @@ mod tests {
     /// barracks is the cheaper production building and the one the engineer and
     /// the dog come out of, and the tree is unlocked before a second line or a
     /// second tower is bought.
+    /// The industrial plant is selected by `FactoryPlant=yes`, not by name, and
+    /// only for a house whose tree can reach it: `Prerequisite=NATECH,PROC` is
+    // the Soviet tree, so an American house has no answer and is not offered
+    // one.
+    #[test]
+    fn the_industrial_plant_is_chosen_by_its_factory_flag() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let soviet = sim.interner.intern("Russians");
+        // Spread out: each foundation has to fit, and a yard's is 3x3.
+        for (name, cell) in [
+            ("NACNST", (16u16, 16u16)),
+            ("NAREFN", (24, 16)),
+            ("NATECH", (16, 24)),
+        ] {
+            sim.spawn_object(name, "Russians", cell.0, cell.1, 255, &rules)
+                .unwrap_or_else(|| panic!("place {name}"));
+        }
+        let obs = Observation::new(&sim, soviet);
+        let (ty, _) = industrial_plant_building(&rules, &obs).expect("the plant is buildable");
+        assert_eq!(ty.id.as_str(), "NAINDP", "`FactoryPlant=yes` names it");
+        assert!(ty.factory_plant, "and the flag is what selected it");
+
+        let american = sim.interner.intern("Americans");
+        let obs = Observation::new(&sim, american);
+        assert!(
+            industrial_plant_building(&rules, &obs).is_none(),
+            "the Allied house cannot build the Soviet plant"
+        );
+    }
+
     #[test]
     fn a_towers_armament_comes_from_its_own_weapons() {
         let Some((_sim, rules)) = arena(0xA17) else {
