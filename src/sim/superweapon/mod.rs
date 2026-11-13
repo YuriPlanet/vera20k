@@ -2359,8 +2359,8 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
     // one, as the shared hold decision does). Ares reads the client's own
     // Observer pointer; VERA's observer list comes from every start slot, so
     // all peers skip the same Houses.
-    #[cfg(feature = "ares")]
-    {
+    let ares = rules.ares();
+    if ares {
         if sim.session.is_observer_house(owner) {
             return providers;
         }
@@ -2379,15 +2379,13 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
     }
     for building in owned_live_buildings(sim, owner) {
         // 10038F10 asks the building's power once: HasPower, not under EMP
-        // and NoOperatorRequired or operated (10062F50).
-        #[cfg(feature = "ares")]
+        // and NoOperatorRequired or operated (10062F50). The stock pass
+        // reads the online byte alone and has no Charging status.
         let powered = building.building_online()
-            && building.emp_remaining() <= 0
-            && sim.ares_is_operated(building.stable_id(), rules);
-        #[cfg(not(feature = "ares"))]
-        let powered = building.building_online();
-        #[cfg(feature = "ares")]
-        let charging = powered && !building.is_warped_out() && {
+            && (!ares
+                || (building.emp_remaining() <= 0
+                    && sim.ares_is_operated(building.stable_id(), rules)));
+        let charging = ares && powered && !building.is_warped_out() && {
             use crate::sim::mission::MissionType::{Construction, Selling};
             ![
                 building.mission.current().known(),
@@ -2402,7 +2400,6 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
                 if powered {
                     providers.online.insert(id);
                 }
-                #[cfg(feature = "ares")]
                 if charging {
                     providers.charging.insert(id);
                 }

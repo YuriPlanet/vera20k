@@ -405,7 +405,8 @@ impl ProcessAssets {
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
         // the map, which the map agreement covers, and whether `ares.mix`
-        // ships. A build without Ares never plays it and keeps the old bytes.
+        // ships. A build without the `ares` feature never mounts `ares.mix`
+        // and keeps the old bytes.
         #[cfg(feature = "ares")]
         bytes.push(u8::from(assets.ships_ares()));
         // VERA: with a mod in use, its other files too (art, maps, archives),

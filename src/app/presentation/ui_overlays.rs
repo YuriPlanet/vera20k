@@ -2122,7 +2122,6 @@ pub(super) fn passenger_pip_filler_count(size: f64) -> i32 {
 /// building, anything else 1), then `Size - 1` frame-3 pips, clipped to the
 /// pips left. `Passengers.BySize=no` and absorbers give every passenger one
 /// pip; the size is truncated by the DLL's CRT conversion (`100772B0`).
-#[cfg(feature = "ares")]
 fn ares_passenger_pip_frames(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -2275,8 +2274,9 @@ fn scale_pip_rows(
     // GetPipMax frames of GetPassengerPips, stepping once more after the
     // first GapAfter pips; any other PipScale resumes at the other scale
     // arms (0x70A083).
-    #[cfg(feature = "ares")]
-    if object.passengers > 0 && object.pip_scale == crate::rules::object_type::PipScale::Passengers
+    if rules.ares()
+        && object.passengers > 0
+        && object.pip_scale == crate::rules::object_type::PipScale::Passengers
     {
         let (frames, gap_after) = ares_passenger_pip_frames(sim, entity, object, rules);
         pips.extend(frames.into_iter().enumerate().map(|(slot, frame)| {

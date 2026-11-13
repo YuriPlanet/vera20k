@@ -895,6 +895,9 @@ fn main() -> Result<(), String> {
         print_frame_profile(runtime);
     }
     println!("live_objects start={live_at_start} end={live_at_end}");
+    // Whether the game's data turned Ares on (`RuleSet::ares`).
+    let ares = runtime.resources.rules.ares();
+    println!("ares={}", if ares { "on" } else { "off" });
     frames?;
     csv_written?;
     frame_hashes_written?;

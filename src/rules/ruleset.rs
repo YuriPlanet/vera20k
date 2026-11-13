@@ -5399,7 +5399,7 @@ impl RuleSet {
         );
         let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
         let mut rules = rules?;
-        rules.ares = crate::rules::ares_switch::LIVE && processed.ares_inputs().decide(&reads);
+        rules.ares = processed.ares_inputs().decide(&reads);
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         Ok(rules)
     }
@@ -8239,8 +8239,7 @@ impl RuleSet {
 
     /// Whether Ares plays in this game: its Rules layers or map hold an Ares
     /// key, or the game ships `ares.mix` (`rules::ares_switch`). Sim and
-    /// presentation read this one answer. A release build keeps it off until
-    /// the `ares` feature is gone (`ares_switch::LIVE`).
+    /// presentation read this one answer, in every build.
     #[inline]
     pub fn ares(&self) -> bool {
         self.ares
