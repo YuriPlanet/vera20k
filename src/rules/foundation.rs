@@ -8,10 +8,12 @@
 /// free-form size. Ares owns declared dimensions, occupied cells and exit cells
 /// independently; one resolved value follows the type into its existing cache.
 /// Only a Rules read the Ares way installs `Custom` or `InvalidCustom`.
+/// Every object's record copies its type's foundation, so the rare custom
+/// shape sits behind a pointer and a stock one stays two bytes plus a tag.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Foundation {
     Stock(u8),
-    Custom(CustomFoundation),
+    Custom(Box<CustomFoundation>),
     /// A configuration the current 16-bit consumer interface cannot admit.
     /// Retained only until the process-registry validation rejects the load.
     InvalidCustom,
@@ -249,12 +251,12 @@ impl Foundation {
             outline.push(pair);
         }
         outline.push((0x7fff, 0x7fff));
-        *self = Self::Custom(CustomFoundation {
+        *self = Self::Custom(Box::new(CustomFoundation {
             width,
             height,
             cells,
             outline,
-        });
+        }));
     }
 }
 
