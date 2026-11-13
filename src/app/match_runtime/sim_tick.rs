@@ -1637,8 +1637,6 @@ fn frame_ticks_inline(
         || (another_pass_follows && !(lending_is_cheaper || hashes_state))
 }
 
-/// The GameSpeed and network FPS (with lag delay) the local pacer times
-/// Main_Tick by; sequenced online play paces with its own clock instead.
 /// How often an offline match hashes its state for the replay log: every
 /// 300th tick, about five seconds at GameSpeed 1, and after the frame that
 /// ends the match. Only the replay log's diagnostic checks read it, and
@@ -1656,6 +1654,8 @@ fn play_hash_interval(network: bool) -> std::num::NonZeroU64 {
     }
 }
 
+/// The GameSpeed and network FPS (with lag delay) the local pacer times
+/// Main_Tick by; sequenced online play paces with its own clock instead.
 pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) {
     let game_speed = state
         .match_state
