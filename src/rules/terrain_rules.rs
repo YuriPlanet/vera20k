@@ -7,7 +7,7 @@
 
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::locomotor_type::SpeedType;
-use crate::util::fixed_math::{SIM_ONE, SimFixed};
+use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{
     MaskedX87Chop53 as X, MaskedX87Ordering, NativeF32Bits, NativeF64Bits,
 };
@@ -376,6 +376,7 @@ pub(crate) fn test_speed_percent(percent: impl std::fmt::Display) -> NativeF32Bi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::fixed_math::SIM_ONE;
 
     #[test]
     fn fractional_land_speed_survives_rules_layers_and_absent_keys_reset() {

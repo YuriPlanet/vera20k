@@ -19,7 +19,7 @@
 use super::grid::RmgGrid;
 use super::phases::blob::BlobCtx;
 use super::phases::carve::CarveCtx;
-use super::phases::carve_driver::{self, ConnectorRegion};
+use super::phases::carve_driver;
 use super::phases::hills::{HillsArgs, HillsCtx};
 use super::phases::island_passes;
 use super::phases::lat_patches::PatchCtx;
@@ -727,6 +727,7 @@ pub fn run_pipeline(
 mod tests {
     use super::*;
     use crate::map::rmg::options::RmgOptions;
+    use crate::map::rmg::phases::carve_driver::ConnectorRegion;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};
     use crate::map::rmg::{RmgConstructionOutcome, RmgConstructionPhase};
     use crate::map::theater::TheaterCliffRanges;

@@ -4,7 +4,6 @@
 //! before choosing an SHP or voxel rasterizer. Keep that decision in
 //! one CPU descriptor so the two atlas paths cannot disagree.
 
-use crate::render::snapshot::SnapshotObject;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ObserverDrawContext {
     /// The observer's house considers the object's real owner allied.
@@ -280,7 +279,7 @@ impl DrawState {
     }
 
     /// Adapt simulation-owned producers without inventing missing native fields.
-    pub fn for_entity(
+    pub(crate) fn for_entity(
         entity: &impl crate::render::snapshot::SnapshotObject,
         current_frame: u32,
         remap_row: u32,

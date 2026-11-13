@@ -102,13 +102,6 @@ pub enum DeactivateDim {
     Operator = 2,
 }
 
-/// Index of [`CloakPowerGlobalRules::speak_delay`]'s delays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DetectedSpeech {
-    Stealth = 0,
-    Subterranean = 1,
-}
-
 impl Default for CloakPowerGlobalRules {
     fn default() -> Self {
         // Constructor1002A360: CloakHeight unset; the dim factors 0.5, 0.8
@@ -167,9 +160,5 @@ impl CloakPowerGlobalRules {
 
     pub fn deactivate_dim(&self, kind: DeactivateDim) -> f64 {
         f64::from_bits(self.deactivate_dim[kind as usize].bits())
-    }
-
-    pub(crate) fn speak_delay(&self, kind: DetectedSpeech) -> f64 {
-        f64::from_bits(self.speak_delay[kind as usize].bits())
     }
 }

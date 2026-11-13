@@ -342,6 +342,7 @@ impl PassengerCargo {
     }
 
     /// Clear the live CargoClass contents while preserving type configuration.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_contents(&mut self) {
         self.passengers.clear();
         self.passenger_sizes.clear();

@@ -4,7 +4,6 @@
 //! player, that player's shroud/sensor plane, and fresh mutable MapClass bounds.
 
 use crate::map::entities::EntityCategory;
-use crate::render::snapshot::SnapshotObject;
 use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::has_weapon_ability;
