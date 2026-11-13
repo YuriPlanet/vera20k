@@ -441,9 +441,15 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // temporary control skipping just those two folds gave the previous values
 // in both games, with every tripwire above green. Control removed.
 // Previous: 0x534D_F91E_A02A_F8B2, Ares 0xF5A9_CCCB_69E6_AD58.
+// An Ares game no longer folds RecalculateStats100460A0's attached-cloak
+// byte while it is false: the byte moved into the object's Ares part, which a
+// game without Ares never writes, so the fold asks first. Hash composition
+// only, in an Ares game alone: the stock value above is unchanged, and the
+// tripwires below stayed green in both games.
+// Previous Ares: 0x83AC_A9D6_3E40_9C5D.
 fn bridge_harness_final_hash(ares: bool) -> u64 {
     if ares {
-        0x83AC_A9D6_3E40_9C5D
+        0xA06F_A011_54C1_FA40
     } else {
         0x0D31_C373_DA29_2EB6
     }

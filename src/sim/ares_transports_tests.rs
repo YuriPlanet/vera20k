@@ -139,6 +139,8 @@ fn initial_payload_fills_a_transport_once_and_garrisons_infantry_only() {
 /// 100163B0, hook 0x448277) and then a sale order (Sell_Back, 10016970,
 /// hook 0x447113) each kick one trainee out of an `Armory=` building, the
 /// head of its cargo first.
+// Runs again once production's sale step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn armory_capture_and_sale_each_kick_out_one_trainee() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

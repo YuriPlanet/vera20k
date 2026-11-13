@@ -235,7 +235,7 @@ mod tests {
                         NativeF64Bits::ONE
                     }
                 );
-                assert_eq!(state.effective_multiplier(), state.crate_multiplier());
+                assert!(!state.attached());
             }
         }
     }

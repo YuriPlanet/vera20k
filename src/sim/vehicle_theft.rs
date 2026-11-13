@@ -567,6 +567,7 @@ mod tests {
 
     #[test]
     fn ares_vehicle_capture_admission_distinguishes_theft_and_civilian_driving() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[Countries]\n0=Americans\n1=Russians\n2=Neutral\n3=NoDrive\n\
              [Neutral]\nMultiplayPassive=yes\n[NoDrive]\nMultiplayPassive=yes\nCanBeDriven=no\n\

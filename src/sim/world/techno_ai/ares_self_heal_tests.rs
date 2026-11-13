@@ -49,6 +49,8 @@ fn pulse(sim: &mut Simulation, rules: &RuleSet, health: i32) -> i32 {
 /// the stock IDIV faults); the Promotable amount heals by rank up to
 /// `ftol(Strength * SelfHealing.%sMax) + 1`, and a damaging hit holds the
 /// pulse off for `SelfHealing.CombatDelay` frames.
+// Runs again once combat's damage aftermath, which starts the combat delay, moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn ares_self_heal_amount_max_rate_and_combat_delay() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

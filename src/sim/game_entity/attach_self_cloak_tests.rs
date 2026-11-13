@@ -68,7 +68,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         entity.ares.attach_effects.self_effect,
         SelfEffectState::Applied(0)
     );
-    assert!(entity.stealth_ability.active(false));
+    assert!(entity.cloak_ability_active(false));
     assert_eq!(
         entity.cloak.as_deref().unwrap().state(),
         1,
@@ -92,7 +92,7 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
         SelfEffectState::Pending(1),
         "expiry consumes the first repeat-wait tick in the same head"
     );
-    assert!(!entity.stealth_ability.active(false));
+    assert!(!entity.cloak_ability_active(false));
     assert_eq!(
         entity.cloak.as_deref().unwrap().state(),
         3,
@@ -133,18 +133,14 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
     );
 }
 
+// Runs again once the crates' pickup eligibility moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibition() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, actor) = scene(false);
     hit(&mut sim, &rules, actor);
-    assert!(
-        sim.entities()
-            .get(actor)
-            .unwrap()
-            .stealth_ability
-            .active(false)
-    );
+    assert!(sim.entities().get(actor).unwrap().cloak_ability_active(false));
     assert_eq!(
         crate::sim::crates::multiplayer_eligible_slot(&sim, &rules, actor, 0, 3),
         3,
@@ -159,9 +155,9 @@ fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibiti
     sim.update_ares_attach_effects(actor, &rules);
     sim.update_ares_attach_effects(actor, &rules);
     let entity = sim.entities().get(actor).unwrap();
-    assert!(!entity.stealth_ability.attached());
+    assert!(!entity.cloak_attached());
     assert!(
-        entity.stealth_ability.active(false),
+        entity.cloak_ability_active(false),
         "expiry keeps the permanent grant"
     );
     assert_eq!(

@@ -432,9 +432,15 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // `idle_wander`): hash composition only. A temporary control skipping that fold
 // gave the previous values in both games. Control removed. Previous:
 // 0x5171_FBD3_06C4_D828 (Ares), 0xD8C3_5827_8CA8_5375 (stock).
+// An Ares game no longer folds RecalculateStats100460A0's attached-cloak
+// byte while it is false: the byte moved into the object's Ares part, which a
+// game without Ares never writes, so the fold asks first. Hash composition
+// only, in an Ares game alone: the stock value above is unchanged, and the
+// tripwires below stayed green in both games.
+// Previous Ares: 0x7D9F_30F7_1CBF_1016.
 fn slice6_baseline_hash(ares: bool) -> u64 {
     if ares {
-        0x7D9F_30F7_1CBF_1016
+        0x949A_7C55_B2F8_4F0B
     } else {
         0xCBF9_C392_848C_13BA
     }

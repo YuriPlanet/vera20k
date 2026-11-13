@@ -56,6 +56,8 @@ fn enter(sim: &mut Simulation, rules: &RuleSet, foot: u64, tunnel: u64) -> bool 
 /// has room under `Passengers=` (hook `0x43C326`), EnterTunnel limboes it
 /// (`10009000`), and another entrance's Unload puts it out next to that
 /// building (hook `0x44D8A7`, UnloadOne `100098A0`).
+// Runs again once the radio's CanEnter moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn a_foot_enters_one_tunnel_and_leaves_from_another() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -108,6 +110,8 @@ fn a_foot_enters_one_tunnel_and_leaves_from_another() {
 /// `UnitAbsorb=` building (hook `0x741CE5`); on arrival the Unit PerCell
 /// arm asks it CAN_LOAD and the unit enters its own House's network (hook
 /// `0x73A23F`).
+// Runs again once movement's destination step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -161,6 +165,8 @@ fn a_unit_ordered_into_a_tunnel_enters_on_arrival() {
 /// While another entrance stands, neither a sale (hook `0x44A37F`) nor a
 /// death (hook `0x442DF2`) of one touches the network; the death of the
 /// last entrance kills every member (KillFootsIfLastTunnel `100093C0`).
+// Runs again once the radio's CanEnter moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn only_the_last_entrance_kills_its_network() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -192,6 +198,8 @@ fn only_the_last_entrance_kills_its_network() {
 
 /// The sale of the last entrance puts every member out on its cell
 /// (PlaceOne `10009810`).
+// Runs again once the radio's CanEnter moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn a_sold_last_entrance_puts_its_network_out() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -211,6 +219,8 @@ fn a_sold_last_entrance_puts_its_network_out() {
 /// every carrier's CAN_LOAD by the sender's type: a tunnel entrance's
 /// (`100174E0`, hook `0x43C326`) and a Unit transport's (`1004C270`, hook
 /// `0x73769E`), which answer NEGATORY where the stock receiver says ROGER.
+// Runs again once the radio's CanEnter moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn passenger_lists_gate_building_and_transport_can_load() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

@@ -14,10 +14,6 @@ use crate::sim::timer::CdTimer;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StealthAbility {
     granted: bool,
-    /// The Ares attached-effect cloak ([`Self::set_attached`]). Only Ares
-    /// code writes it, so in a game Ares doesn't play in it stays false.
-    #[serde(default)]
-    attached: bool,
 }
 
 /// Whether the constructor seeds `Techno+0x3D2` from the type's `Cloakable=`
@@ -39,10 +35,11 @@ pub(crate) fn type_seeds_stealth(
 }
 
 impl StealthAbility {
+    /// The permanent capability: the type's seed or a crate's grant. An Ares
+    /// attached-effect cloak is held in the object's Ares part, so ask
+    /// [`GameEntity::cloak_ability_active`](crate::sim::game_entity::GameEntity::cloak_ability_active)
+    /// where the object is at hand.
     pub(crate) fn active(self, type_seed: bool) -> bool {
-        if self.attached {
-            return true;
-        }
         type_seed || self.granted
     }
 
@@ -52,14 +49,6 @@ impl StealthAbility {
 
     pub(crate) fn granted(self) -> bool {
         self.granted
-    }
-    pub(crate) fn attached(self) -> bool {
-        self.attached
-    }
-    /// RecalculateStats1004617D/1004613B ORs descriptor+38 into the
-    /// raw capability, without replacing permanent crate Ext+98.
-    pub(crate) fn set_attached(&mut self, value: bool) {
-        self.attached = value;
     }
 }
 

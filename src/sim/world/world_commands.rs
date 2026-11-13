@@ -1053,8 +1053,9 @@ impl Simulation {
                 )
             });
         }
-        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler.
-        #[cfg(feature = "ares")]
+        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler,
+        // which answers on the switch; no stock opcode decodes as 0x60, and
+        // only a game Ares plays in encodes one.
         if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
             let owner = self.command_sender_owner(record.house_id())?;
             return self.houses.contains_key(&owner).then(|| {

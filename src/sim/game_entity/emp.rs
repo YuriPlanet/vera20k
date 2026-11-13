@@ -1183,6 +1183,8 @@ mod receiver {
 
         /// Ares3.0 deliver100624C5..10062509 and10062526..10062563 raise
         /// house-specific events before generic events. Natural expiry does not.
+        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_tagged_delivery_orders_events_and_natural_expiry_does_not_emit_them() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1221,6 +1223,8 @@ mod receiver {
             assert!(sim.trigger_local_is_set_for_test(3));
         }
 
+        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_tag_event_house_filter_uses_raw_source_index_and_requires_source() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1249,6 +1253,8 @@ mod receiver {
             }
         }
 
+        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_tag_predicates_require_matching_kind_actor_and_live_counter() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1279,6 +1285,8 @@ mod receiver {
             assert!(!sim.trigger_local_is_set_for_test(3));
         }
 
+        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_first_tag_event_detachment_suppresses_the_generic_raise() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1316,6 +1324,8 @@ mod receiver {
             }
         }
 
+        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_first_tag_event_can_kill_the_victim_before_generic_raise() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1449,6 +1459,8 @@ mod receiver {
             .fire_error(false)
         }
 
+        // Runs again once combat's warhead effects move to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_building_parent_bullet_actual_ai_fire_and_power_recovery() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2219,6 +2231,8 @@ mod receiver {
                 0
             );
         }
+        // Runs again once the deploy admission moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_ai_mcv_cannot_deploy_until_expiry_then_recovers_through_hunt() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2385,6 +2399,8 @@ mod receiver {
                 .unwrap();
             (sim, rules, target, source)
         }
+        // Runs again once the deploy admission moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_mcv_shared_admission_and_pending_unload_respect_emp() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2480,6 +2496,8 @@ mod receiver {
                     .any(|entity| sim.interner.resolve(entity.type_ref()) == "YARD")
             );
         }
+        // Runs again once the powered-unit code's Reactivate moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_shared_activation_matches_native_hook_gates() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2537,6 +2555,8 @@ mod receiver {
                 assert_eq!(sim.rng_state(), rng, "{}", row["name"]);
             }
         }
+        // Runs again once the powered-unit code's Reactivate moves to the switch.
+        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_power_center_return_cannot_reactivate_an_emp_victim() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);

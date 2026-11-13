@@ -102,8 +102,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         sim.entities()
             .get(members[1])
             .unwrap()
-            .crate_multipliers
-            .firepower(),
+            .firepower_multiplier(),
         NativeF64Bits::from_bits(2.0_f64.to_bits()),
     );
     let count = sim.entities().len();
@@ -171,14 +170,13 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         "not Infantry constructor ROT127"
     );
     assert!(foot.barrel_facing.is_none(), "no phantom turret");
-    assert_eq!(foot.crate_multipliers.firepower(), NativeF64Bits::ONE);
+    assert_eq!(foot.firepower_multiplier(), NativeF64Bits::ONE);
     sim.update_ares_attach_effects(members[1], &rules);
     assert_eq!(
         sim.entities()
             .get(members[1])
             .unwrap()
-            .crate_multipliers
-            .firepower(),
+            .firepower_multiplier(),
         NativeF64Bits::ONE,
         "conversion retains the initial-delay sentinel until the new type's first visit",
     );
@@ -188,8 +186,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         sim.entities()
             .get(members[1])
             .unwrap()
-            .crate_multipliers
-            .firepower(),
+            .firepower_multiplier(),
         NativeF64Bits::from_bits(3.0_f64.to_bits()),
     );
     assert_eq!(

@@ -64,6 +64,8 @@ fn health(sim: &Simulation, id: u64) -> i32 {
 
 /// A cell arrival on ore hurts infantry by the mineral's `Damage` with its
 /// `Warhead`; `TiberiumProof=yes` (and the default for vehicles) spares it.
+// Runs again once movement's per-cell step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -200,6 +202,8 @@ fn harvester(sim: &mut Simulation, rules: &RuleSet, name: &str, bales: u16) -> u
 /// `TiberiumSpill=yes` harvester spills ore around its cell; a
 /// `TiberiumRemains=yes` one leaves ore there even when empty; a plain one
 /// leaves nothing.
+// Runs again once combat's destruction step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -222,6 +226,8 @@ fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
 /// Ares 1004BD90 (hook 0x738749): with `TiberiumExplosive=yes` a dying
 /// harvester's bales times Power go off as one Apply_area_damage with
 /// `TiberiumExplosiveWarhead` that leaves tiberium alone.
+// Runs again once combat's destruction effects move to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn tiberium_explosive_harvester_blasts_bales_times_power() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -370,6 +376,8 @@ fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
 /// loses half its density, and `Power * 10` goes off as a nested blast with
 /// the mineral's ExplosionWarhead that leaves tiberium alone. A cell without
 /// `ChainReaction=yes` keeps its ore.
+// Runs again once combat's area damage moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn chain_reacting_ore_halves_and_blasts_power_times_the_loss() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

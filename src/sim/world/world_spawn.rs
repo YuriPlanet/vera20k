@@ -2369,7 +2369,14 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((category, veterancy, in_playfield, type_ref, stealth_ability)) =
+        let Some((
+            category,
+            veterancy,
+            in_playfield,
+            type_ref,
+            stealth_ability,
+            attached_cloak,
+        )) =
             substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.category(),
@@ -2377,6 +2384,7 @@ impl Simulation {
                     entity.in_playfield(),
                     entity.type_ref(),
                     entity.stealth_ability,
+                    entity.cloak_attached(),
                 )
             })
         else {
@@ -2390,7 +2398,7 @@ impl Simulation {
             return;
         };
         let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
-        let intrinsic_cloak = stealth_ability.active(object.cloakable);
+        let intrinsic_cloak = attached_cloak || stealth_ability.active(object.cloakable);
         if !intrinsic_cloak && !rank_cloak {
             return;
         }

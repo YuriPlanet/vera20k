@@ -3625,6 +3625,8 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
 /// `Wave.IsBigLaser` shot creates a TS laser wave of type 1 or 2, whose
 /// AmbientDamage strikes the cells under the beam on each of its 22 updates
 /// (nLaserIntensity 160, less 6 each, leaves below 32), and then it leaves.
+// Runs again once combat's wave creation in FireAt moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -8251,6 +8253,10 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
 /// readers (the blocker plane, the kept Ground keys and the expiry listener
 /// index) re-read every object named, so when each walk borrowed every
 /// entity, a 20k-object world was re-read almost whole every frame.
+// A build that still carries Ares behind its feature sleeps nothing
+// (`Simulation::extension_steps_unsorted`), so this runs once that
+// feature is gone.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn idle_objects_stay_out_of_the_touch_logs() {
     use crate::sim::entity_store::TouchReader;

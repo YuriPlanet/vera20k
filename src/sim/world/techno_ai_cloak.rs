@@ -42,13 +42,11 @@ fn has_stealth_ability(
     object: &crate::rules::object_type::ObjectType,
     ares: bool,
 ) -> bool {
-    entity
-        .stealth_ability
-        .active(crate::sim::cloak_disguise::type_seeds_stealth(
-            entity.category(),
-            object,
-            ares,
-        ))
+    entity.cloak_ability_active(crate::sim::cloak_disguise::type_seeds_stealth(
+        entity.category(),
+        object,
+        ares,
+    ))
         || entity.phobos_cloakable()
 }
 
@@ -913,13 +911,11 @@ pub(crate) fn cloak_producer_ticks(
     object: &crate::rules::object_type::ObjectType,
     ares: bool,
 ) -> bool {
-    entity
-        .stealth_ability
-        .active(crate::sim::cloak_disguise::type_seeds_stealth(
-            entity.category(),
-            object,
-            ares,
-        ))
+    entity.cloak_ability_active(crate::sim::cloak_disguise::type_seeds_stealth(
+        entity.category(),
+        object,
+        ares,
+    ))
         || has_weapon_ability(
             rank_from_u16(entity.veterancy.rank()),
             object,

@@ -991,6 +991,25 @@ pub(crate) struct AresPart {
     /// Ares builtin attachments: ordered instance vector, owned by attach_effect.
     #[serde(default)]
     attach_effects: attach_effect::AttachEffects,
+    /// Ares100460A0's derived `Techno+0x160` and `+0x158`, while the
+    /// attachments make them differ from the permanent crate baselines
+    /// (Ext+80 and Ext+88, [`CrateMultipliers`]); `None` reads the baseline.
+    /// Owned by attach_effect.
+    ///
+    /// [`CrateMultipliers`]: crate::sim::crates::CrateMultipliers
+    #[serde(default)]
+    attached_firepower: Option<crate::util::native_x87::NativeF64Bits>,
+    #[serde(default)]
+    attached_armor: Option<crate::util::native_x87::NativeF64Bits>,
+    /// Ares100460A0's derived Foot `+0x580`, likewise against the Ext+90
+    /// baseline; set together with `FootSpeedState`'s `attached` byte.
+    #[serde(default)]
+    attached_speed: Option<crate::util::native_x87::NativeF64Bits>,
+    /// Ares RecalculateStats1004617D/1004613B ORs descriptor+38 into the
+    /// raw cloak capability, leaving the permanent crate Ext+98 alone
+    /// ([`StealthAbility`](crate::sim::cloak_disguise::StealthAbility)).
+    #[serde(default)]
+    attached_cloak: bool,
     /// Ares BuildingExt+0x50 `SecretLab_Placed` (constructor false): the
     /// lab's UpdateSecretLab (10013700) has rolled its boon
     /// (`sim::secret_lab`).

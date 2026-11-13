@@ -29,9 +29,9 @@
 //! It marks plain buildings (no weapon, factory, super weapon, occupants or
 //! sound of their own, at full health, on Guard) and standing infantry (on
 //! Guard or Area Guard, at full health, standing ready with no target,
-//! order or fear). Everything else stays awake. A game where Ares plays, and
-//! a build with the Phobos capability, mark nothing: their per-visit steps
-//! are not sorted yet.
+//! order or fear). Everything else stays awake. A game where an extension
+//! plays marks nothing ([`Simulation::extension_steps_unsorted`]): its
+//! per-visit steps are not sorted yet.
 //! A campaign marks nothing either (`TechnoClass` vt+0x4A0's shroud prelude
 //! runs every visit there).
 //!
@@ -292,10 +292,20 @@ impl Simulation {
         })
     }
 
+    /// Whether an extension's per-visit steps, which this module has not
+    /// sorted, can run in this game: Ares plays, or the build carries Phobos.
+    /// A build with the `ares` feature counts as well while Ares code sits
+    /// behind that feature ([`ARES_BUILD`](crate::rules::ARES_BUILD)), since
+    /// there it runs in every game, this check's own games included; the PR
+    /// that deletes the feature drops that term.
+    pub(super) fn extension_steps_unsorted(&self, rules: &RuleSet) -> bool {
+        crate::rules::ARES_BUILD || rules.ares() || crate::rules::PHOBOS_ENABLED
+    }
+
     /// The frame plain idle building `id` may sleep until and its owner
     /// note, or `None` to stay awake.
     fn building_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
-        if rules.ares() || crate::rules::PHOBOS_ENABLED || !self.session.game_mode_nonzero() {
+        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;
@@ -429,7 +439,7 @@ impl Simulation {
     /// checked at each visit ([`Self::infantry_disturbed`]).
     fn infantry_sleep(&self, id: u64, rules: &RuleSet) -> Option<(u32, u8)> {
         use crate::sim::movement::infantry_action::{DO_GUARD, DO_READY};
-        if rules.ares() || crate::rules::PHOBOS_ENABLED || !self.session.game_mode_nonzero() {
+        if self.extension_steps_unsorted(rules) || !self.session.game_mode_nonzero() {
             return None;
         }
         let entity = self.substrate.entities.get(id)?;

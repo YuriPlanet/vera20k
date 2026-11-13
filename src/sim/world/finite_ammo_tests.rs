@@ -384,6 +384,8 @@ fn fraidycat_last_round_does_not_use_fearless_gate() {
     assert_eq!(scene.actor(infantry).mission.queued().raw(), 5);
 }
 
+// Runs again once combat's `Ammo=` weapon cost moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

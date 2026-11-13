@@ -2173,9 +2173,9 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     // the MegaMission event's flash read the current player, so lockstep
     // peers hold different values, and no gameplay decision reads it.
     entity.crate_multipliers.crate_armor().bits().hash(hasher);
-    if entity.crate_multipliers.armor() != entity.crate_multipliers.crate_armor() {
+    if entity.armor_multiplier() != entity.crate_multipliers.crate_armor() {
         b"attached-armor-v1".hash(hasher);
-        entity.crate_multipliers.armor().bits().hash(hasher);
+        entity.armor_multiplier().bits().hash(hasher);
     }
     // Folded only once a Firepower crate changed it, so the legacy
     // hash stream of every untouched object is preserved.
@@ -2187,9 +2187,9 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
             .bits()
             .hash(hasher);
     }
-    if entity.crate_multipliers.firepower() != entity.crate_multipliers.crate_firepower() {
+    if entity.firepower_multiplier() != entity.crate_multipliers.crate_firepower() {
         b"attached-firepower-v1".hash(hasher);
-        entity.crate_multipliers.firepower().bits().hash(hasher);
+        entity.firepower_multiplier().bits().hash(hasher);
     }
     entity.berserk.hash(hasher);
     entity.ai_sell_repair.was_attacked_by_enemy().hash(hasher);
@@ -2340,7 +2340,7 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     entity.stealth_ability.granted().hash(hasher);
     // The Ares attached cloak, folded only while set, so a stock game's
     // stream stays as it was.
-    if entity.stealth_ability.attached() {
+    if entity.cloak_attached() {
         b"ares-attached-stealth-v1".hash(hasher);
     }
     if let Some(cloak) = entity.cloak.as_ref() {

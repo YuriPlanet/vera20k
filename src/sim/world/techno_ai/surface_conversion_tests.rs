@@ -50,7 +50,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
     assert!(!actor.locomotor.as_ref().unwrap().is_powered());
     if rules.ares() {
         assert_eq!(
-            actor.crate_multipliers.firepower(),
+            actor.firepower_multiplier(),
             crate::util::native_x87::NativeF64Bits::from_bits(3.0_f64.to_bits())
         );
         assert_eq!(sim.take_lifecycle_outputs_for_test().into_iter().filter(|event|

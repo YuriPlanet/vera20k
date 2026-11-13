@@ -6279,7 +6279,7 @@ mod tests {
         let entity = restored.substrate.entities.get(entity_id).unwrap();
         assert_eq!(entity.air_spatial_bucket(), Some(143));
         assert_eq!(entity.air_spatial_enter_order(), 91);
-        assert_eq!(entity.crate_multipliers.armor().bits(), 1.5_f64.to_bits());
+        assert_eq!(entity.armor_multiplier().bits(), 1.5_f64.to_bits());
         assert!(entity.berserk.is_active());
         assert_eq!(entity.berserk.timer(), -17);
         assert!(entity.ai_sell_repair.was_attacked_by_enemy());

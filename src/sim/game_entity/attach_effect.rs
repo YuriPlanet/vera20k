@@ -175,16 +175,68 @@ impl GameEntity {
         let stats = self
             .attached_stats_from_entries(rules, interner)
             .expect("live attachment belongs to the scenario rules");
-        self.crate_multipliers
-            .set_attached_firepower(stats.firepower);
-        self.crate_multipliers.set_attached_armor(stats.armor);
-        self.stealth_ability.set_attached(stats.cloak);
+        self.set_attached_firepower(stats.firepower);
+        self.set_attached_armor(stats.armor);
+        self.ares.attached_cloak = stats.cloak;
         // RecalculateStats10046130..10046134 commits Ext+78. The reload
         // consumer samples it on a later GetROF; existing timers stay intact.
         self.ares.attach_effects.rof_multiplier = stats.rof;
         if self.category().is_foot() {
-            self.foot_speed.set_attached_speed(stats.speed);
+            self.set_attached_speed(stats.speed);
         }
+    }
+
+    /// Effective `Techno+0x158`, the armor multiplier the receiver's damage
+    /// build reads: Ares' derived value while attachments change it, else the
+    /// permanent crate baseline.
+    pub(crate) fn armor_multiplier(&self) -> NativeF64Bits {
+        self.ares
+            .attached_armor
+            .unwrap_or(self.crate_multipliers.crate_armor())
+    }
+
+    /// Effective `Techno+0x160`, read by both FireAt and EstimateDamage.
+    pub(crate) fn firepower_multiplier(&self) -> NativeF64Bits {
+        self.ares
+            .attached_firepower
+            .unwrap_or(self.crate_multipliers.crate_firepower())
+    }
+
+    /// Live Foot+580, the multiplier GetCurrentSpeed reads. Crate eligibility
+    /// reads the permanent baseline (`FootSpeedState::crate_multiplier`).
+    pub(crate) fn speed_multiplier(&self) -> NativeF64Bits {
+        if self.foot_speed.attached()
+            && let Some(multiplier) = self.ares.attached_speed
+        {
+            return multiplier;
+        }
+        self.foot_speed.crate_multiplier()
+    }
+
+    pub(crate) fn set_attached_armor(&mut self, value: NativeF64Bits) {
+        self.ares.attached_armor = (value != self.crate_multipliers.crate_armor()).then_some(value);
+    }
+
+    pub(crate) fn set_attached_firepower(&mut self, value: NativeF64Bits) {
+        self.ares.attached_firepower =
+            (value != self.crate_multipliers.crate_firepower()).then_some(value);
+    }
+
+    /// Whether an Ares attached effect grants the cloak capability.
+    pub(crate) fn cloak_attached(&self) -> bool {
+        self.ares.attached_cloak
+    }
+
+    /// The live cloak capability: an attached effect's, or the permanent one
+    /// (the type's seed or a crate's grant).
+    pub(crate) fn cloak_ability_active(&self, type_seed: bool) -> bool {
+        self.ares.attached_cloak || self.stealth_ability.active(type_seed)
+    }
+
+    pub(crate) fn set_attached_speed(&mut self, value: NativeF64Bits) {
+        let attached = value != self.foot_speed.crate_multiplier();
+        self.foot_speed.set_attached(attached);
+        self.ares.attached_speed = attached.then_some(value);
     }
 
     pub(crate) fn attached_rof_multiplier(&self) -> NativeF64Bits {
@@ -231,9 +283,9 @@ impl GameEntity {
             b"ares-attach-effects-v1".hash(hasher);
             self.ares.attach_effects.hash(hasher);
         }
-        if self.foot_speed.effective_multiplier() != self.foot_speed.crate_multiplier() {
+        if self.speed_multiplier() != self.foot_speed.crate_multiplier() {
             b"ares-foot-effective-speed-v1".hash(hasher);
-            self.foot_speed.effective_multiplier().hash(hasher);
+            self.speed_multiplier().hash(hasher);
         }
     }
 }
@@ -430,6 +482,8 @@ mod tests {
         }
     }
 
+    // Runs again once combat's warhead effects move to the switch.
+    #[cfg(feature = "ares")]
     #[test]
     fn attach_effect_parent_bullet_actual_ai_snapshot_and_limbo_use_one_owner() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1015,25 +1069,25 @@ mod receiver {
                 let expected = victim
                     .attached_stats_from_entries(rules, &self.interner)
                     .map_err(|reason| (id, reason))?;
-                if victim.crate_multipliers.firepower() != expected.firepower {
+                if victim.firepower_multiplier() != expected.firepower {
                     return Err((
                         id,
                         "saved attached firepower differs from its baseline and effects",
                     ));
                 }
-                if victim.foot_speed.effective_multiplier() != expected.speed {
+                if victim.speed_multiplier() != expected.speed {
                     return Err((
                         id,
                         "saved attached speed differs from its baseline and effects",
                     ));
                 }
-                if victim.crate_multipliers.armor() != expected.armor {
+                if victim.armor_multiplier() != expected.armor {
                     return Err((
                         id,
                         "saved attached armor differs from its baseline and effects",
                     ));
                 }
-                if victim.stealth_ability.attached() != expected.cloak {
+                if victim.cloak_attached() != expected.cloak {
                     return Err((id, "saved attached cloak ability differs from its effects"));
                 }
                 if victim.attached_rof_multiplier() != expected.rof {

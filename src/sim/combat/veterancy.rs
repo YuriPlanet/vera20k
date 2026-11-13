@@ -614,7 +614,7 @@ pub fn entity_mover_speed_leptons_per_second(
         object,
         veteran_speed,
         house_bonus,
-        entity.foot_speed.effective_multiplier(),
+        entity.speed_multiplier(),
     )
 }
 

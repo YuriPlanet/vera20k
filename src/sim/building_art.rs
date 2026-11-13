@@ -194,7 +194,6 @@ impl BuildingArt {
     /// Ares 3.0 BuildingClass_Place_SkipFreeUnits (10036860, hook 0x446AAF):
     /// whether this Place runs the free-unit block, which only the first
     /// Place to reach it does.
-    #[cfg(feature = "ares")]
     fn take_free_units(&mut self) -> bool {
         !std::mem::replace(&mut self.free_units_done, true)
     }
@@ -532,14 +531,12 @@ impl Simulation {
         // 446AAF: Ares marks the block run on its first reach, whatever the
         // capture and ScenarioInit arguments, and skips it afterwards (a
         // building ChronoWarp put back opens again with +6E4 clear).
-        #[cfg(feature = "ares")]
-        let free_units = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .is_some_and(|entity| entity.building_art.take_free_units());
-        #[cfg(not(feature = "ares"))]
-        let free_units = true;
+        let free_units = !rules.ares()
+            || self
+                .substrate
+                .entities
+                .get_mut(id)
+                .is_some_and(|entity| entity.building_art.take_free_units());
         if free_units && !captured && !scenario_initialization {
             if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
             {

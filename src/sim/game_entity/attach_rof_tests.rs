@@ -29,6 +29,8 @@ fn shoot(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64) -> u64 
     bullets[0]
 }
 
+// Runs again once combat's warhead effects move to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

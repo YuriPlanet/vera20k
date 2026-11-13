@@ -18,9 +18,9 @@
 //! earlier in the same turn makes the later ones run as before. Each names
 //! this module where it asks.
 //!
-//! Only Units are marked, and only in games where Ares does not play and in
-//! builds without the Phobos capability, whose per-visit steps are not
-//! sorted. Idle sleeping's switch turns it on and off
+//! Only Units are marked, and only where no extension's unsorted per-visit
+//! steps can run ([`Simulation::extension_steps_unsorted`]). Idle sleeping's
+//! switch turns it on and off
 //! ([`Simulation::sleep_idle_objects`]). A debug build checks [`rests`] at the
 //! start of every quiet turn.
 
@@ -41,8 +41,7 @@ impl Simulation {
 
     /// `id`'s turn is over: mark it quiet if [`rests`] holds.
     pub(super) fn quiet_after_turn(&mut self, id: u64, rules: &RuleSet) {
-        if rules.ares()
-            || crate::rules::PHOBOS_ENABLED
+        if self.extension_steps_unsorted(rules)
             || !self.idle_sleep.is_on()
             || self.substrate.entities.category_of(id) != Some(EntityCategory::Unit)
             || self.quiet(id)

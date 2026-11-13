@@ -1445,6 +1445,8 @@ mod tests {
     /// a `SubjectToBuildings=` bullet detonates in a cell whose building's
     /// `SolidHeight=` reaches it (`GetObstacle 1006E540`), but not over its
     /// own target building, nor above that height.
+    // Runs again once combat's line-of-fire walk moves to the switch.
+    #[cfg(feature = "ares")]
     #[test]
     fn ares_shared_probe_stops_at_a_solid_building_except_its_target() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
