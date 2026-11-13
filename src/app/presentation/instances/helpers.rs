@@ -513,19 +513,6 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
     (depth + z_adjust_px as f32 / world_height.max(1.0)).clamp(0.001, 0.999)
 }
 
-/// The authoritative anchor, sub-cell offsets and height lift included.
-///
-/// Thin wrapper over [`crate::render::locomotor_visual::screen_position`],
-/// which is the single owner of the answer. Callers must NOT apply a height
-/// offset of their own on top — doing that in two places is what used to lift
-/// aircraft twice.
-#[cfg(test)]
-pub(crate) fn entity_screen_position(
-    entity: &crate::app::presentation::frame::ObjectRecord,
-) -> (f32, f32) {
-    crate::render::locomotor_visual::screen_position(entity)
-}
-
 /// Is `owner`'s object at `pos` shown to the local player? The one rule
 /// tactical presentation (screen selection, VERA's translucent fog) and input
 /// picking (band preflight, TypeSelect's screen stage, translucent pick

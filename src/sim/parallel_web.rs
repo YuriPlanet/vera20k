@@ -2,14 +2,6 @@
 pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) -> Vec<R> {
     items.iter().map(work).collect()
 }
-pub(crate) fn map_into<T: Sync, R: Send>(
-    items: &[T],
-    out: &mut Vec<R>,
-    work: impl Fn(&T) -> R + Sync,
-) {
-    out.clear();
-    out.extend(items.iter().map(work));
-}
 pub(crate) fn map_in_order<T: Sync, R: Send>(
     items: &[T],
     work: impl Fn(usize, &T) -> R + Sync,
@@ -42,9 +34,12 @@ pub(crate) fn for_each_mut<T: Send>(items: &mut [T], work: impl Fn(&mut T) + Syn
 pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool {
     (0..len).any(test)
 }
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     pooled();
     here();
+}
+pub fn drop_on_pool<T: Send + 'static>(value: T) {
+    drop(value);
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -57,10 +52,6 @@ mod tests {
         // Independent work must agree regardless of scheduling or worker count.
         let input = [7, 1, 9, 0, 4];
         assert_eq!(map(&input, |x| x * x), native::map(&input, |x| x * x));
-        let (mut serial, mut pooled) = (vec![5; 9], Vec::with_capacity(2));
-        map_into(&input, &mut serial, |x| x + 1);
-        native::map_into(&input, &mut pooled, |x| x + 1);
-        assert_eq!(serial, pooled);
         assert_eq!(
             map_in_order(&input, |index, x| x * 10 + index as i32),
             native::map_in_order(&input, |index, x| x * 10 + index as i32)

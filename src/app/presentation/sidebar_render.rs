@@ -1459,9 +1459,10 @@ pub(crate) struct UiFrame {
     /// each object that is not a Unit, Infantry or Aircraft: the owners whose
     /// loops the frame tail re-drives from their coordinate.
     sound_owner_coords: std::collections::HashMap<u64, crate::sim::anim_class::AnimWorldCoord>,
-    /// The objects and terrain objects that stand for their own sound
-    /// handles (`Simulation::object_sound_owner_alive`).
-    standing_sound_objects: std::collections::HashSet<u64>,
+    /// The terrain objects that stand for their own sound handles
+    /// (`Simulation::object_sound_owner_alive`); an object's answer is its
+    /// record's ([`crate::app::presentation::frame::PresentationFrame::sound_object_stands`]).
+    standing_terrain_objects: std::collections::HashSet<u64>,
 }
 
 /// One live bomb's ticking loop (`BombListClass::UpdateAll @ 0x00438BF0`'s
@@ -1508,38 +1509,27 @@ impl UiFrame {
                 coord: sim.bomb_ticking_coord(carrier),
             })
             .collect();
-        // Every object's sound questions, asked in parallel.
-        let object_sounds = sim.entities().par_filter_map(|id, entity| {
-            let coord = (!matches!(entity.category(), Unit | Infantry | Aircraft))
-                .then(|| sim.looping_sound_owner_coord(id))
-                .flatten();
-            let stands = sim.object_sound_owner_alive(crate::sim::world::ambient_sound_owner(id))
-                == Some(true);
-            (coord.is_some() || stands).then_some((id, coord, stands))
+        // The objects' loop coordinates, asked in parallel.
+        let object_coords = sim.entities().par_filter_map(|id, entity| {
+            if matches!(entity.category(), Unit | Infantry | Aircraft) {
+                return None;
+            }
+            Some((id, sim.looping_sound_owner_coord(id)?))
         });
         let sound_owner_coords = bomb_ticks
             .iter()
             .filter_map(|tick| Some((tick.owner, sim.looping_sound_owner_coord(tick.owner)?)))
-            .chain(
-                object_sounds
-                    .iter()
-                    .filter_map(|&(id, coord, _)| Some((id, coord?))),
-            )
+            .chain(object_coords)
             .collect();
-        let standing_sound_objects = object_sounds
-            .iter()
-            .filter(|&&(_, _, stands)| stands)
-            .map(|&(id, _, _)| id)
-            .chain(
-                sim.terrain_objects()
-                    .objects()
-                    .keys()
-                    .copied()
-                    .filter(|&object| {
-                        sim.object_sound_owner_alive(crate::sim::world::ambient_sound_owner(object))
-                            == Some(true)
-                    }),
-            )
+        let standing_terrain_objects = sim
+            .terrain_objects()
+            .objects()
+            .keys()
+            .copied()
+            .filter(|&object| {
+                sim.object_sound_owner_alive(crate::sim::world::ambient_sound_owner(object))
+                    == Some(true)
+            })
             .collect();
         Self {
             theoretical_power: at
@@ -1549,7 +1539,7 @@ impl UiFrame {
             cameo_draw,
             bomb_ticks,
             sound_owner_coords,
-            standing_sound_objects,
+            standing_terrain_objects,
         }
     }
 
@@ -1594,9 +1584,9 @@ impl UiFrame {
         self.sound_owner_coords.get(&owner).copied()
     }
 
-    /// Whether `object` stands for its own sound handles
+    /// Whether terrain object `object` stands for its own sound handles
     /// (`Simulation::object_sound_owner_alive`).
-    pub(crate) fn sound_object_stands(&self, object: u64) -> bool {
-        self.standing_sound_objects.contains(&object)
+    pub(crate) fn terrain_object_stands(&self, object: u64) -> bool {
+        self.standing_terrain_objects.contains(&object)
     }
 }

@@ -39,8 +39,6 @@ impl SceneFacts {
 /// The frame's part that belongs to no one object.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SceneFrame {
-    /// What the radar reads beside its objects (`render::radar`).
-    pub(crate) radar: crate::render::radar::RadarFrame,
     /// What the sidebar, the house UI and the sounds read of the objects
     /// (`presentation::sidebar_render`).
     pub(crate) ui: crate::app::presentation::sidebar_render::UiFrame,
@@ -72,7 +70,6 @@ pub(crate) struct PlanningGraph {
 impl SceneFrame {
     pub(crate) fn capture(at: &Capture<'_>) -> Self {
         Self {
-            radar: crate::render::radar::RadarFrame::default(),
             ui: crate::app::presentation::sidebar_render::UiFrame::capture(at),
             spotlights: spotlights(at),
             psi_warnings_detected: psi_warnings_detected(at),

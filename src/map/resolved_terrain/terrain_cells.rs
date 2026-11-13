@@ -4,9 +4,9 @@
 //!
 //! `CellClass::RecalcAttributes @ 0x0047D2B0` runs whenever an object marks
 //! or leaves a cell, and almost always derives the attributes the cell
-//! already holds. [`CowCells::begin_shadow`] gives that recalc a private copy
+//! already holds. [`TerrainCells::begin_shadow`] gives that recalc a private copy
 //! of its one cell: reads and writes of that index use the copy, and
-//! [`CowCells::end_shadow`] writes it back only if it differs, so an
+//! [`TerrainCells::end_shadow`] writes it back only if it differs, so an
 //! unchanged recalc marks nothing for the copy to take.
 
 use std::ops::{Index, IndexMut};
@@ -15,13 +15,13 @@ use super::ResolvedTerrainCell;
 use crate::util::synced::ChunkedVec;
 
 #[derive(Debug, Clone)]
-pub(super) struct CowCells {
+pub(super) struct TerrainCells {
     cells: ChunkedVec<ResolvedTerrainCell>,
     /// The recalc's private copy of one cell, by index.
     shadow: Option<(usize, ResolvedTerrainCell)>,
 }
 
-impl Default for CowCells {
+impl Default for TerrainCells {
     fn default() -> Self {
         Self {
             cells: ChunkedVec::new(),
@@ -30,7 +30,7 @@ impl Default for CowCells {
     }
 }
 
-impl CowCells {
+impl TerrainCells {
     pub(super) fn new(cells: Vec<ResolvedTerrainCell>) -> Self {
         Self {
             cells: cells.into(),
@@ -89,8 +89,8 @@ impl CowCells {
         self.shadow = self.cells.get(index).cloned().map(|cell| (index, cell));
     }
 
-    /// Write the recalc's copy back if it changed; an unchanged cell leaves
-    /// shared storage shared.
+    /// Write the recalc's copy back if it changed; an unchanged cell marks
+    /// no chunk for the presentation copy to take.
     pub(super) fn end_shadow(&mut self) {
         if let Some((index, cell)) = self.shadow.take()
             && self.cells[index] != cell
@@ -108,13 +108,13 @@ impl CowCells {
 }
 
 /// Equal cells.
-impl PartialEq for CowCells {
+impl PartialEq for TerrainCells {
     fn eq(&self, other: &Self) -> bool {
         self.all() == other.all()
     }
 }
 
-impl Index<usize> for CowCells {
+impl Index<usize> for TerrainCells {
     type Output = ResolvedTerrainCell;
 
     fn index(&self, index: usize) -> &ResolvedTerrainCell {
@@ -122,7 +122,7 @@ impl Index<usize> for CowCells {
     }
 }
 
-impl IndexMut<usize> for CowCells {
+impl IndexMut<usize> for TerrainCells {
     fn index_mut(&mut self, index: usize) -> &mut ResolvedTerrainCell {
         self.get_mut(index).expect("terrain cell index in range")
     }
@@ -132,8 +132,8 @@ impl IndexMut<usize> for CowCells {
 mod tests {
     use super::*;
 
-    fn cells() -> CowCells {
-        CowCells::new(
+    fn cells() -> TerrainCells {
+        TerrainCells::new(
             (0..600)
                 .map(|x| super::super::test_flat_cell(x % 300, x / 300))
                 .collect(),
@@ -142,8 +142,8 @@ mod tests {
 
     /// A copy synced, then changed where `live` was not written, keeps that
     /// change after the next sync only if `live` left the cell alone.
-    fn kept_after_sync(live: &mut CowCells, index: usize) -> bool {
-        let mut copy = CowCells::default();
+    fn kept_after_sync(live: &mut TerrainCells, index: usize) -> bool {
+        let mut copy = TerrainCells::default();
         live.sync_into(&mut copy);
         copy[index].level = copy[index].level.wrapping_add(7);
         let marked = copy[index].level;
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn an_unchanged_recalc_marks_nothing_for_the_copy() {
         let mut live = cells();
-        let mut copy = CowCells::default();
+        let mut copy = TerrainCells::default();
         live.sync_into(&mut copy);
         live.begin_shadow(2);
         let level = live[2].level;
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn a_changed_cell_reaches_the_copy_with_its_chunk_only() {
         let mut live = cells();
-        let mut copy = CowCells::default();
+        let mut copy = TerrainCells::default();
         live.sync_into(&mut copy);
         live.begin_shadow(1);
         live[1].level = 3;

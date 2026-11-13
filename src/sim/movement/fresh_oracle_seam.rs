@@ -8,8 +8,8 @@
 //! corpus opts into live effects: the same boundaries are recorded while the
 //! real Scatter and Override bodies run. The Teleport resolver's replay
 //! (`tools/spatial_oracle/cmin_dock`) supplies only Find_Nearby_Passable_Cell's
-//! answer at `0x00719185`, which that harness stubs; Can_Enter_Cell and every
-//! effect run for real.
+//! answer at `0x00719185`, which that harness stubs; Can_Enter_Cell, Find_Path
+//! and every effect run for real.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -82,6 +82,7 @@ struct Seam {
     core_null: bool,
     live_effects: bool,
     live_can_enter: bool,
+    live_paths: bool,
 }
 
 thread_local! {
@@ -99,6 +100,7 @@ pub(crate) fn install(codes: Vec<u8>, paths: Vec<SuppliedPath>) {
             core_null: false,
             live_effects: false,
             live_can_enter: false,
+            live_paths: false,
         })
     });
 }
@@ -123,10 +125,15 @@ pub(crate) fn install_path_only(paths: Vec<SuppliedPath>) {
 }
 
 /// A composed native comparison that supplies only Find_Nearby_Passable_Cell's
-/// answers; `None` is the null cell.
+/// answers; `None` is the null cell. Find_Path searches for real.
 pub(crate) fn install_nearby_only(answers: Vec<Option<(u16, u16)>>) {
     install_path_only(Vec::new());
-    SEAM.with(|seam| seam.borrow_mut().as_mut().unwrap().nearby = Some(answers.into()));
+    SEAM.with(|seam| {
+        let mut seam = seam.borrow_mut();
+        let seam = seam.as_mut().unwrap();
+        seam.nearby = Some(answers.into());
+        seam.live_paths = true;
+    });
 }
 
 /// Remove the seam, returning the records and any unused answers.
@@ -214,7 +221,7 @@ pub(crate) fn supplied_nearby_cell(
 pub(crate) fn supplied_path(cell: (i32, i32), urgency: u8) -> Option<SuppliedPath> {
     SEAM.with(|seam| {
         let mut seam = seam.borrow_mut();
-        let seam = seam.as_mut()?;
+        let seam = seam.as_mut().filter(|seam| !seam.live_paths)?;
         let path = seam.paths.pop_front().expect("unsupplied Find_Path");
         seam.records
             .push(FreshCallRecord::FindPath { cell, urgency });

@@ -23,4 +23,4 @@ pub use terrain_updates::RadarTerrainBacklog;
 mod tracker;
 mod viewport;
 mod visibility;
-pub(crate) use visibility::{RadarFacts, RadarFrame};
+pub(crate) use visibility::RadarFacts;

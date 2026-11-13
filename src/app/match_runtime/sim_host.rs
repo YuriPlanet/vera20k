@@ -10,7 +10,9 @@
 //! that frame, and any write first takes the runtime back, waiting for the
 //! job to end; the job's result then waits in the host for
 //! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
-//! see the live world again, so a tick that is not lent copies nothing.
+//! see the live world again. Drawing reads object records either way, captured
+//! from a home world on the first read after a write; release builds copy
+//! the world beside them only for a lent tick.
 //!
 //! A frame-loop pass never waits for a lent job: the host collects it only
 //! once it has ended ([`SimHost::pass_may_run`]), and the simulation thread
@@ -83,9 +85,9 @@ pub(crate) struct SimHost {
     ended: Option<Returned>,
     /// The world without its objects as the frame found it
     /// ([`SimRuntime::presentation_copy`]), which drawing reads beside the
-    /// frame's records while the live world ticks elsewhere. Copy-on-write
-    /// state (the terrain cells, the resources) stays shared with the live
-    /// world until that changes. Release builds keep it only while the
+    /// frame's records while the live world ticks elsewhere. It shares only
+    /// the read-only `SimResources` with the live world; its terrain, grids
+    /// and interner are synced from it. Release builds keep it only while the
     /// runtime is lent; debug builds take one with every frame, so every
     /// draw reads the frame as a lent tick's draw does.
     presentation: Option<Arc<SimRuntime>>,
@@ -108,9 +110,6 @@ pub(crate) struct SimHost {
     /// world on its first read after a write, and at [`Self::lend`] for the
     /// world the lent tick starts from. Every write route empties it.
     frame: std::cell::OnceCell<Arc<PresentationFrame>>,
-    /// The last frame's record storage, which the next capture fills in
-    /// place instead of allocating its own.
-    spare_records: std::cell::Cell<Vec<crate::app::presentation::frame::ObjectRecord>>,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -315,10 +314,9 @@ impl SimHost {
     /// world is kept for the next copy to bring up to date
     /// (`Simulation::presentation_copy`).
     fn forget_frame(&mut self) {
-        if let Some(frame) = self.frame.take()
-            && let Ok(frame) = Arc::try_unwrap(frame)
-        {
-            self.spare_records.set(frame.into_records());
+        // Freeing 20,000 records takes milliseconds; the pool does it.
+        if let Some(frame) = std::mem::take(&mut self.frame).into_inner() {
+            crate::sim::parallel::drop_on_pool(frame);
         }
         if let Some(copy) = self.presentation.take()
             && let Ok(copy) = Arc::try_unwrap(copy)
@@ -365,10 +363,7 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Arc::new(PresentationFrame::capture_into(
-                runtime,
-                self.spare_records.take(),
-            ));
+            let frame = Arc::new(PresentationFrame::capture(runtime));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
@@ -418,7 +413,15 @@ impl SimHost {
         self.runtime = runtime;
         self.forget_frame();
         self.spare = None;
-        self.spare_records.take();
+        // The first copy of the world is a whole one, tens of milliseconds
+        // at 20,000 objects. Taken while the scenario loads, the first lent
+        // tick only brings it up to date.
+        if self.thread_enabled()
+            && let Some(runtime) = self.runtime.as_mut()
+        {
+            let viewer = runtime.simulation.session().current_house();
+            self.spare = Some(runtime.presentation_copy(viewer, None).simulation);
+        }
     }
 
     /// Remove and return the installed runtime.
@@ -429,7 +432,6 @@ impl SimHost {
         self.lend_cost = None;
         self.forget_frame();
         self.spare = None;
-        self.spare_records.take();
         self.runtime.take()
     }
 }
@@ -437,6 +439,9 @@ impl SimHost {
 /// A question about the live world a draw asks every frame (a cursor's
 /// preview, a hover): answered while the world is home and the answer kept
 /// in `kept`, which the draws beside a lent tick read (docs/sim-thread.md).
+/// Each one is also asked before a tick leaves
+/// (`cursor::answer_kept_questions`), so a kept answer is one tick old at
+/// most even when every frame is lent.
 pub(crate) fn home_answer<T: Clone>(
     host: &SimHost,
     kept: &std::cell::RefCell<T>,

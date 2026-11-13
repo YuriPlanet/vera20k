@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::skirmish_colors::{FIRST_EXTRA_PRIORITY, MAX_EXTRA_COLORS, OBSERVER_PRIORITY};
 use crate::sim::game_options::is_selectable_game_speed;
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
@@ -676,8 +677,10 @@ fn skirmish(
         !multiplayer || humans.len() - spectators + ai_count >= 2,
         "a multiplayer launch needs at least two playing participants"
     );
-    // Network rooms reuse YR's eight colours once more than eight houses
-    // play (see `network_color_in_use`); up to eight they stay distinct.
+    // Up to eight houses keep distinct colours. Past eight the launcher
+    // decides: this reader runs before the rules' colour list is known, and
+    // VERA's rooms keep colours apart while their list covers every player
+    // (`network_color_in_use`).
     if colors.len() <= SKIRMISH_PLAYER_SLOT_COUNT {
         let mut used = [false; COLOR_SLOTS];
         for &index in &colors {
@@ -809,9 +812,14 @@ pub(crate) const fn max_spawn_country_index() -> i32 {
     }
 }
 
-/// The largest `Color=` value this build reads (see [`color`]).
+/// The largest `Color=` value this build reads (see [`color`]): YR's eight
+/// priorities and VERA's extra lobby colours after the observer's.
 pub(crate) const fn max_spawn_color_index() -> i32 {
-    if crate::rules::PHOBOS_ENABLED { 255 } else { 7 }
+    if crate::rules::PHOBOS_ENABLED {
+        255
+    } else {
+        FIRST_EXTRA_PRIORITY as i32 + MAX_EXTRA_COLORS as i32 - 1
+    }
 }
 
 fn country(section: &IniSection, key: &str) -> Result<LaunchCountry> {
@@ -830,8 +838,17 @@ fn color(section: &IniSection, key: &str) -> Result<u8> {
     // A phobos build admits Phobos SkirmishUnlimitedColors, where the spawner
     // sends the [Colors] entry index instead; that build therefore accepts the
     // whole byte and the loaded rules decide which entries exist. Without the
-    // feature the stock client only produces YR's eight priorities.
-    Ok(ranged(section, key, -1, 0, max_spawn_color_index())? as u8)
+    // feature a launcher sends YR's eight priorities or *(VERA)* the extra
+    // lobby colours 9..30, as VERA's own rooms do (`SkirmishColorMode`). This
+    // early reader admits the list's whole width; the loaded rules' list
+    // resolves the entry, and a priority past it keeps the native pass-through.
+    // Priority 8 is the observer's, never a player's.
+    let priority = ranged(section, key, -1, 0, max_spawn_color_index())?;
+    ensure!(
+        crate::rules::PHOBOS_ENABLED || priority != i32::from(OBSERVER_PRIORITY),
+        "{key}={priority} is the observer's colour, not a player's"
+    );
+    Ok(priority as u8)
 }
 
 /// Waypoints 0..29, for one human as in network rooms; the map decides which

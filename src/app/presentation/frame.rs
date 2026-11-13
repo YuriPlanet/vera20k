@@ -83,7 +83,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) deactivated: Deactivated,
     pub(crate) repairing: Repairing,
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
-    pub(crate) locomotor: Option<Locomotor>,
+    pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
     pub(crate) building_art: crate::util::sparse::Sparse<crate::sim::building_art::BuildingArt>,
@@ -97,8 +97,6 @@ pub(crate) struct ObjectRecord {
         Option<crate::sim::superweapon::invulnerability::InvulnerabilityState>,
     pub(crate) airstrike_tint: crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
     pub(crate) temporal: Temporal,
-    /// Whether it carries a bomb (`GameEntity::bomb`).
-    pub(crate) bomb: Option<()>,
     pub(crate) berserk: Berserk,
     pub(crate) crash: Crash,
     pub(crate) sinking: Sinking,
@@ -148,7 +146,6 @@ struct Answers {
     building_down: bool,
     in_construction_bstate: bool,
     infantry_sprite_pose: Option<(i32, i32)>,
-    gap_supercharged: bool,
     building_online: bool,
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
@@ -180,7 +177,6 @@ impl Answers {
             building_down: entity.building_down(),
             in_construction_bstate: entity.in_construction_bstate(),
             infantry_sprite_pose: entity.infantry_sprite_pose(),
-            gap_supercharged: entity.gap_supercharged(),
             building_online: entity.building_online(),
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
@@ -195,6 +191,89 @@ impl Answers {
             #[cfg(feature = "phobos")]
             phobos_attach_effects: entity.phobos_attach_effects().clone(),
         }
+    }
+}
+
+/// What drawing reads of an object's locomotor, without its runtime
+/// payload, which most kinds keep on the heap.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LocomotorView {
+    kind: crate::rules::locomotor_type::LocomotorKind,
+    fly_phase_callbacks: Option<(bool, bool)>,
+    current_fly_speed: Option<crate::util::native_x87::NativeF64Bits>,
+    rocket: Option<RocketDraw>,
+    /// A Tunnel locomotor's `Is_To_Have_Shadow`.
+    tunnel_has_shadow: Option<bool>,
+    speed_type: crate::rules::locomotor_type::SpeedType,
+    /// A Drive locomotor's track destination and head.
+    drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
+}
+
+/// What a Rocket's draw reads of its `RocketLocomotionClass`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RocketDraw {
+    /// `RocketRuntime::draw_key_bits` with its type's block
+    /// (`RuleSet::rocket_block`).
+    pub(crate) key_bits: Option<u32>,
+}
+
+impl LocomotorView {
+    /// `rocket_block` gives a Rocket's block (`RuleSet::rocket_block`); a
+    /// view without one keys no draw.
+    pub(crate) fn of<'r>(
+        locomotor: &crate::sim::movement::locomotor::LocomotorState,
+        rocket_block: impl FnOnce() -> Option<&'r crate::rules::missile_spawn::MissileSpawnParams>,
+    ) -> Self {
+        use crate::sim::movement::track_process::TrackFamily;
+        let kind = locomotor.active_kind();
+        Self {
+            kind,
+            fly_phase_callbacks: locomotor.fly_phase_callbacks(),
+            current_fly_speed: locomotor.current_fly_speed(),
+            rocket: locomotor.rocket_runtime().map(|rocket| RocketDraw {
+                key_bits: rocket_block().and_then(|block| rocket.draw_key_bits(block)),
+            }),
+            tunnel_has_shadow: locomotor
+                .tunnel_runtime()
+                .map(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow),
+            speed_type: locomotor.speed_type(),
+            drive_track: (kind == crate::rules::locomotor_type::LocomotorKind::Drive).then(|| {
+                [
+                    locomotor.track_destination(TrackFamily::Drive),
+                    locomotor.track_head(TrackFamily::Drive),
+                ]
+            }),
+        }
+    }
+
+    pub(crate) fn active_kind(&self) -> crate::rules::locomotor_type::LocomotorKind {
+        self.kind
+    }
+
+    pub(crate) fn fly_phase_callbacks(&self) -> Option<(bool, bool)> {
+        self.fly_phase_callbacks
+    }
+
+    pub(crate) fn current_fly_speed(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
+        self.current_fly_speed
+    }
+
+    pub(crate) fn rocket(&self) -> Option<RocketDraw> {
+        self.rocket
+    }
+
+    /// A Tunnel locomotor's `Is_To_Have_Shadow`; `None` for other kinds.
+    pub(crate) fn tunnel_has_shadow(&self) -> Option<bool> {
+        self.tunnel_has_shadow
+    }
+
+    pub(crate) fn speed_type(&self) -> crate::rules::locomotor_type::SpeedType {
+        self.speed_type
+    }
+
+    /// A Drive locomotor's track destination and head.
+    pub(crate) fn drive_track(&self) -> Option<[Option<crate::sim::components::DriveCoord>; 2]> {
+        self.drive_track
     }
 }
 
@@ -334,6 +413,25 @@ impl Place {
     fn of(entity: &GameEntity, pose: &RenderPose, world_z_leptons: i32, at: &Capture<'_>) -> Self {
         let sim = at.sim;
         let display_frame = at.binary_frame.wrapping_sub(1);
+        let psychically_detected = at.psychic.as_ref().is_some_and(|(viewer, sites)| {
+            sim.techno_intent_psychically_detected(
+                entity.stable_id(),
+                *viewer,
+                sites,
+                at.cells.as_ref(),
+            )
+        });
+        // Only a selected object's line, a psychically detected one's and the
+        // attack line of a `TargetLaser=` Unit, selected or not, are drawn
+        // (`target_lines`, `target_laser_draws`).
+        let draws_action_line = psychically_detected
+            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure)
+            || (entity.category() == EntityCategory::Unit
+                && entity.attack_target.target().is_some()
+                && at
+                    .rules()
+                    .object(sim.interner().resolve(entity.type_ref()))
+                    .is_some_and(|object| object.target_laser));
         Self {
             world_z_leptons,
             flight_height: crate::sim::movement::air_movement::queried_flight_height(
@@ -371,24 +469,23 @@ impl Place {
                 at.cells.as_ref(),
             ),
             airstrike_designation: AirstrikeDesignation::of(entity, at),
-            action_line: crate::app::presentation::target_lines::action_line_endpoints(
-                entity,
-                sim,
-                Some(at.rules()),
-                at.cells.as_ref(),
-            ),
+            action_line: draws_action_line
+                .then(|| {
+                    crate::app::presentation::target_lines::action_line_endpoints(
+                        entity,
+                        sim,
+                        Some(at.rules()),
+                        at.cells.as_ref(),
+                    )
+                })
+                .flatten(),
             rally_line: at.cells.as_ref().and_then(|cells| {
                 crate::app::presentation::target_lines::rally_line_coords(entity, sim, cells)
             }),
-            psychically_detected: at.psychic.as_ref().is_some_and(|(viewer, sites)| {
-                sim.techno_intent_psychically_detected(
-                    entity.stable_id(),
-                    *viewer,
-                    sites,
-                    at.cells.as_ref(),
-                )
-            }),
-            airstrike_tint_active: sim.airstrike_tint_active(entity.stable_id()),
+            psychically_detected,
+            // Only a Structure's is ever active.
+            airstrike_tint_active: entity.category() == EntityCategory::Structure
+                && sim.airstrike_tint_active(entity.stable_id()),
             #[cfg(feature = "ares")]
             ares_operated: sim.ares_is_operated(entity.stable_id(), at.rules()),
             #[cfg(feature = "phobos")]
@@ -510,10 +607,12 @@ impl ObjectRecord {
                 on: entity.building.repairing.is_on(),
             },
             lifecycle: entity.lifecycle.clone(),
-            locomotor: entity
-                .locomotor
-                .as_ref()
-                .map(|locomotor| Locomotor::of(locomotor, entity, at)),
+            locomotor: entity.locomotor.as_ref().map(|locomotor| {
+                LocomotorView::of(locomotor, || {
+                    let type_name = at.sim.interner().resolve(entity.type_ref());
+                    Some(at.rules().rocket_block(type_name).0)
+                })
+            }),
             navigation: Navigation {
                 nav_com: entity.navigation.nav_com(),
             },
@@ -536,7 +635,6 @@ impl ObjectRecord {
             temporal: Temporal {
                 warped: entity.temporal.is_warped(),
             },
-            bomb: entity.bomb.as_ref().map(|_| ()),
             berserk: Berserk {
                 active: entity.berserk.is_active(),
             },
@@ -558,7 +656,10 @@ impl ObjectRecord {
             },
             selection: entity.selection.clone(),
             applied_fraction: entity.foot_speed.native_applied_fraction(),
-            drawn_cargo: at.sim.carryall_drawn_cargo(entity.stable_id(), at.rules()),
+            // Only an Aircraft can be a Carryall.
+            drawn_cargo: (entity.category() == EntityCategory::Aircraft)
+                .then(|| at.sim.carryall_drawn_cargo(entity.stable_id(), at.rules()))
+                .flatten(),
             answers,
             place,
             seen,
@@ -663,10 +764,6 @@ impl ObjectRecord {
 
     pub(crate) fn infantry_sprite_pose(&self) -> Option<(i32, i32)> {
         self.answers.infantry_sprite_pose
-    }
-
-    pub(crate) fn gap_supercharged(&self) -> bool {
-        self.answers.gap_supercharged
     }
 
     pub(crate) fn building_online(&self) -> bool {
@@ -814,72 +911,6 @@ pub(crate) struct Navigation {
 impl Navigation {
     pub(crate) fn nav_com(&self) -> Option<crate::sim::components::NavTargetRef> {
         self.nav_com
-    }
-}
-
-/// `GameEntity::locomotor` as drawing reads it.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Locomotor {
-    kind: crate::rules::locomotor_type::LocomotorKind,
-    fly_speed: Option<crate::util::native_x87::NativeF64Bits>,
-    fly_phase: Option<(bool, bool)>,
-    /// For a rocket: its Draw_Matrix key bits (`RocketRuntime::draw_key_bits`,
-    /// `0x00663470`) from its owner type's block.
-    rocket: Option<Option<u32>>,
-    /// For a tunneller: `TunnelRuntime::has_shadow`.
-    tunnel_has_shadow: Option<bool>,
-    /// A Drive's track destination and head, for the actor probe
-    /// (`match_diagnostics`).
-    drive_track: [Option<crate::sim::components::DriveCoord>; 2],
-}
-
-impl Locomotor {
-    fn of(
-        locomotor: &crate::sim::movement::locomotor::LocomotorState,
-        entity: &GameEntity,
-        at: &Capture<'_>,
-    ) -> Self {
-        Self {
-            kind: locomotor.active_kind(),
-            fly_speed: locomotor.current_fly_speed(),
-            fly_phase: locomotor.fly_phase_callbacks(),
-            rocket: locomotor.rocket_runtime().map(|rocket| {
-                let (block, _) = at
-                    .rules()
-                    .rocket_block(at.sim.interner().resolve(entity.type_ref()));
-                rocket.draw_key_bits(block)
-            }),
-            tunnel_has_shadow: locomotor
-                .tunnel_runtime()
-                .map(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow),
-            drive_track: crate::app::match_diagnostics::drive_track(locomotor),
-        }
-    }
-
-    pub(crate) fn active_kind(&self) -> crate::rules::locomotor_type::LocomotorKind {
-        self.kind
-    }
-
-    pub(crate) fn current_fly_speed(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
-        self.fly_speed
-    }
-
-    pub(crate) fn fly_phase_callbacks(&self) -> Option<(bool, bool)> {
-        self.fly_phase
-    }
-
-    /// `Some` for a rocket, with its Draw_Matrix key bits.
-    pub(crate) fn rocket_draw_key_bits(&self) -> Option<Option<u32>> {
-        self.rocket
-    }
-
-    pub(crate) fn tunnel_has_shadow(&self) -> Option<bool> {
-        self.tunnel_has_shadow
-    }
-
-    /// A Drive's track destination and head.
-    pub(crate) fn drive_track(&self) -> [Option<crate::sim::components::DriveCoord>; 2] {
-        self.drive_track
     }
 }
 
@@ -1139,12 +1170,6 @@ impl PresentationFrame {
     /// The records of `runtime`'s objects, as its local player (the
     /// scenario's current house) sees them.
     pub(crate) fn capture(runtime: &SimRuntime) -> Self {
-        Self::capture_into(runtime, Vec::new())
-    }
-
-    /// [`Self::capture`] into `records`, the storage of an earlier frame's
-    /// records, which it fills in place.
-    pub(crate) fn capture_into(runtime: &SimRuntime, mut records: Vec<ObjectRecord>) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
         let observer = observer_id.map(|id| sim.interner().resolve(id));
@@ -1164,14 +1189,26 @@ impl PresentationFrame {
                 (!sites.is_empty()).then_some((viewer, sites))
             }),
         };
-        sim.entities()
-            .par_map_into(&mut records, |entity| ObjectRecord::capture(entity, &at));
-        let objects = records;
+        // The scene frame reads no record, so it is captured beside them.
+        let mut objects = Vec::new();
+        let mut scene = None;
+        crate::sim::parallel::alongside(
+            || {
+                objects = sim
+                    .entities()
+                    .par_map(|_, entity| ObjectRecord::capture(entity, &at));
+            },
+            || {
+                scene = Some(crate::app::presentation::frame_scene::SceneFrame::capture(
+                    &at,
+                ))
+            },
+        );
+        let scene = scene.expect("captured beside the records");
         let anim_coords = sim
             .anims()
             .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
             .collect();
-        let scene = crate::app::presentation::frame_scene::SceneFrame::capture(&at);
         let psychic_detection = at.psychic.is_some();
         Self {
             binary_frame: at.binary_frame,
@@ -1180,11 +1217,6 @@ impl PresentationFrame {
             scene,
             psychic_detection,
         }
-    }
-
-    /// Its record storage, for the next capture to fill.
-    pub(crate) fn into_records(self) -> Vec<ObjectRecord> {
-        self.objects
     }
 
     /// The committed binary frame the records were captured at.
@@ -1202,6 +1234,16 @@ impl PresentationFrame {
     /// `Simulation::anim_absolute_coord` of anim `id`.
     pub(crate) fn anim_coord(&self, id: u64) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         self.anim_coords.get(&id).copied()
+    }
+
+    /// Whether `object` stands for its own sound handles
+    /// (`Simulation::object_sound_owner_alive`): an object while it is out of
+    /// limbo, else a live terrain object.
+    pub(crate) fn sound_object_stands(&self, object: u64) -> bool {
+        self.object(object).map_or_else(
+            || self.scene.ui.terrain_object_stands(object),
+            |record| !record.in_limbo(),
+        )
     }
 
     pub(crate) fn contains(&self, id: u64) -> bool {

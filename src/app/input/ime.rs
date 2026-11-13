@@ -19,9 +19,10 @@
 //! (C2/C9, BC/BD) and the LAN lobby (BB). Finished text goes through each
 //! screen's own text path, as WM_IME_CHAR does.
 //!
-//! Player-name edits stay Latin as native: NewEdit `0x00614B30` drops units
-//! at or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
-//! and the LAN messages carry a name's low bytes.
+//! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
+//! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
+//! so gamemd lets in typed keys as code-page bytes but no widened
+//! input-method character such as Chinese.
 //!
 //! RESIDUAL: native's other NewEdits (login, page, buddy, saved-game
 //! descriptions) also take IME input; here they keep plain key text. In

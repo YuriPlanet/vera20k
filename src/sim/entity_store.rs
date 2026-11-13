@@ -851,6 +851,22 @@ impl EntityStore {
         .collect()
     }
 
+    /// `work`'s answer for every stored entity, in ascending stable_id
+    /// order, each written in its place in the result. `work` runs on worker
+    /// threads ([`crate::sim::parallel`]), so it only reads.
+    pub fn par_map<'a, R: Send>(
+        &'a self,
+        work: impl Fn(u64, &'a GameEntity) -> R + Sync,
+    ) -> Vec<R> {
+        let stored: Vec<(u64, &GameEntity)> = self
+            .ids
+            .iter()
+            .zip(&self.entities)
+            .filter_map(|(&id, entity)| Some((id, entity.as_deref()?)))
+            .collect();
+        crate::sim::parallel::map(&stored, |&(id, entity)| work(id, entity))
+    }
+
     /// `pick`'s answers for the stored entities it answers, in ascending
     /// stable_id order. `pick` runs on worker threads
     /// ([`crate::sim::parallel`]), so it only reads.
@@ -863,13 +879,6 @@ impl EntityStore {
                 .as_deref()
                 .and_then(|entity| pick(self.ids[slot], entity))
         })
-    }
-
-    /// `work`'s answer for every stored object, in slot order, into `out`,
-    /// whose storage it reuses.
-    pub fn par_map_into<R: Send>(&self, out: &mut Vec<R>, work: impl Fn(&GameEntity) -> R + Sync) {
-        let stored: Vec<&GameEntity> = self.entities.iter().filter_map(Option::as_deref).collect();
-        crate::sim::parallel::map_into(&stored, out, |entity| work(entity));
     }
 
     /// Action14's full Techno array, independent of Logic and Display order.

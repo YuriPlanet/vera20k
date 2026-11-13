@@ -232,16 +232,18 @@ fn client_campaign_uses_human_difficulty_and_not_catalog_index() {
 }
 
 /// `[MPColors] Color=` carries the client's colour index: YR's eight
-/// priorities, or a `[Colors]` entry when a Phobos build admits
-/// SkirmishUnlimitedColors.
+/// priorities and VERA's extra lobby colours 9..30, or a `[Colors]` entry
+/// when a Phobos build admits SkirmishUnlimitedColors. Priority 8 is the
+/// observer's.
 #[test]
 fn spawn_colour_index_width_follows_the_phobos_capability() {
     assert!(SpawnRequest::parse(SKIRMISH).is_ok());
-    let beyond_eight = SKIRMISH.replacen("Color=2", "Color=9", 1);
-    assert_eq!(
-        SpawnRequest::parse(&beyond_eight).is_ok(),
-        crate::rules::PHOBOS_ENABLED
-    );
+    let color = |value: u32| {
+        SpawnRequest::parse(&SKIRMISH.replacen("Color=2", &format!("Color={value}"), 1))
+    };
+    assert!(color(9).is_ok() && color(30).is_ok());
+    assert_eq!(color(8).is_ok(), crate::rules::PHOBOS_ENABLED);
+    assert_eq!(color(31).is_ok(), crate::rules::PHOBOS_ENABLED);
 }
 
 #[test]

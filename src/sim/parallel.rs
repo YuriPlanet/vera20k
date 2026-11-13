@@ -16,16 +16,6 @@ pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) 
     items.par_iter().map(&work).collect()
 }
 
-/// [`map`] into `out`, whose storage it reuses: `out` ends holding the
-/// results in item order.
-pub(crate) fn map_into<T: Sync, R: Send>(
-    items: &[T],
-    out: &mut Vec<R>,
-    work: impl Fn(&T) -> R + Sync,
-) {
-    items.par_iter().map(&work).collect_into_vec(out);
-}
-
 /// [`map`] that starts the items in slice order, each on the next free
 /// worker, with the results in item order. Starting the costliest items
 /// first keeps the slowest from running alone at the end. `work` also gets
@@ -111,7 +101,7 @@ pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool
 /// hold this thread's `&mut` borrows and read its thread-locals. A panic in
 /// either resumes on the caller.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     rayon::in_place_scope(|scope| {
         scope.spawn(move |_| pooled());
         here();
@@ -123,9 +113,18 @@ pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
 /// on the pool) finishes before `here` starts. The two share only reads, so
 /// their order changes no result.
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     pooled();
     here();
+}
+
+/// Drop `value` on the worker pool, so the caller does not wait for it to be
+/// freed. The browser drops it here: its pool may not run.
+pub fn drop_on_pool<T: Send + 'static>(value: T) {
+    #[cfg(not(target_arch = "wasm32"))]
+    rayon::spawn(move || drop(value));
+    #[cfg(target_arch = "wasm32")]
+    drop(value);
 }
 
 #[cfg(test)]
