@@ -281,8 +281,6 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         - native["balance"].as_i64().unwrap()) as i32;
     let score =
         (native["expected"]["score"].as_i64().unwrap() - native["score"].as_i64().unwrap()) as i32;
-    #[cfg(feature = "ares")]
-    let _ = score;
     assert_eq!(native["bales"], 40);
     let ore = retail
         .rules
@@ -352,8 +350,9 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
                 assert_eq!(credits(&s), cash_before + payout - spent);
                 // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no
                 // score.
-                #[cfg(not(feature = "ares"))]
-                assert_eq!(s.sim.houses[&owner].economy().score(), score);
+                if !s.rules.ares() {
+                    assert_eq!(s.sim.houses[&owner].economy().score(), score);
+                }
                 assert_eq!(after.object(), before.object());
                 assert_eq!(after.queue(), first.queue());
                 assert_eq!(after.insertion_seq(), first.insertion_seq());
@@ -418,8 +417,9 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         assert_eq!(s.sim.houses[&owner].economy().spent_credits(), spent);
         assert_eq!(credits(&s), 50 + payout - spent);
         // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
-        #[cfg(not(feature = "ares"))]
-        assert_eq!(s.sim.houses[&owner].economy().score(), score);
+        if !s.rules.ares() {
+            assert_eq!(s.sim.houses[&owner].economy().score(), score);
+        }
         assert!(!sample(&s, s.miner).tethered);
     }
     assert_eq!(phases, [true, true]);

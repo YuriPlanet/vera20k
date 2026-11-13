@@ -714,9 +714,9 @@ fn native_eruption_births_and_main_draws_match_the_original() {
 /// 0x6FD64A/0x6FD79C): GetFLH takes FireAt's weapon index, and Beam.Color,
 /// Beam.Duration and Beam.Amplitude replace the stock colour, 15 and 40;
 /// Beam.IsHouseColor keeps the firer House's colour.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_beam_keys_and_weapon_index_shape_the_copied_beam() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(
             "[InfantryTypes]\n0=BEAMER\n1=MARK\n[BEAMER]\nPrimary=TINT\nSecondary=HOUSE\n\

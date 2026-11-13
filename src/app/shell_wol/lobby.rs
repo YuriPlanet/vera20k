@@ -4277,25 +4277,38 @@ pub(crate) fn status_help(state: &AppState) -> String {
     }
 }
 
-/// VERA's help for a modern player row: the name, then its badge's name and
-/// the season's rank and OS as the player card shows them, or Unranked; the
-/// name alone without a badge.
+/// VERA's help for a modern player row ([`badge_help`]); the name alone
+/// without a badge.
 fn modern_user_help(state: &AppState, row: &WolPlayerRow) -> String {
-    let Some(badge) = row
-        .score_icons
+    row.score_icons
         .iter()
         .find(|(_, x)| *x == PLAYER_BADGE_X)
-        .and_then(|(file, _)| badge_name_key(file))
-        .map(|key| csf(state, key))
-    else {
-        return row.name.clone();
-    };
+        .and_then(|(file, _)| badge_help(state, &row.name, file))
+        .unwrap_or_else(|| row.name.clone())
+}
+
+/// VERA: the badge `name`'s high-score record gives, which the modern player
+/// list, the player card and VERA's online room show.
+pub(crate) fn player_badge(state: &AppState, name: &str) -> Option<&'static str> {
+    state
+        .frontend
+        .wol_lobby_globals
+        .high_scores
+        .get(&name.to_ascii_lowercase())
+        .map(|record| crate::ui::wol_lobby::badge(record.points))
+}
+
+/// VERA's help for a player with the `badge` PCX, in the modern player list
+/// and VERA's online room: the name, then the badge's name and the season's
+/// rank and OS as the player card shows them, or Unranked.
+pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<String> {
+    let badge = csf(state, badge_name_key(badge)?);
     let ladder = &state.frontend.wol_lobby_globals.ladder;
-    match ladder.get(&row.name.to_ascii_lowercase()) {
+    Some(match ladder.get(&name.to_ascii_lowercase()) {
         Some(record) => crate::i18n::fill(
             &csf(state, "VERA:PlayerHelp"),
             &[
-                ("name", &row.name),
+                ("name", &name),
                 ("badge", &badge),
                 ("rank", &record.rank),
                 ("os", &record.os_text()),
@@ -4303,9 +4316,9 @@ fn modern_user_help(state: &AppState, row: &WolPlayerRow) -> String {
         ),
         None => crate::i18n::fill(
             &csf(state, "VERA:PlayerHelpUnranked"),
-            &[("name", &row.name), ("badge", &badge)],
+            &[("name", &name), ("badge", &badge)],
         ),
-    }
+    })
 }
 
 /// `0x00780A90`: `"<nick> : "`, then `TXT_RANK` and the ladder rank or

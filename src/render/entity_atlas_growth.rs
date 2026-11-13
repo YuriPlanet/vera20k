@@ -1,21 +1,20 @@
-//! Live entity-atlas growth: the voxel and SHP sprites a match draws after
-//! map load, rasterized on worker threads so the frame that first shows a
-//! new model does not wait for its raster.
+//! Live SHP-atlas growth: the SHP sprites a match draws after map load,
+//! rasterized on a worker thread so the frame that first shows a new object
+//! type does not wait for its raster. Voxel pictures need no growth: the
+//! unit atlas draws each one the first time a frame asks for it
+//! ([`crate::render::unit_atlas::UnitAtlas::get`]).
 //!
-//! [`EntityAtlasGrowth::start`] checks coverage per object model, prepares the
+//! [`EntityAtlasGrowth::start`] checks coverage per object type, prepares the
 //! missing keys on the calling thread, where Rules, ART and the asset manager
 //! stay, and hands the raster to a worker. [`EntityAtlasGrowth::publish`]
 //! completes a finished raster into the atlas it was prepared against. One
-//! growth per atlas runs at a time; an atlas whose growth is running is
-//! checked again once it publishes.
+//! growth runs at a time; the atlas is checked again once it publishes.
 //!
 //! Until a growth lands, the sprites it carries are missing from the picture,
-//! so a new model or object type appears a few frames late. This is a
+//! so a new object type appears a few frames late. This is a
 //! presentation-only difference, since gamemd has no atlas and draws from its
 //! files on first use; the simulation never reads these atlases.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
 use crate::assets::asset_manager::AssetManager;
@@ -24,7 +23,6 @@ use crate::render::batch::BatchRenderer;
 use crate::render::sprite_atlas::{
     self, PreparedSpriteAtlas, ShpAtlasUpload, ShpRasterOutput, ShpRasterWork, SpriteAtlas,
 };
-use crate::render::unit_atlas::{self, UnitAtlas, UnitAtlasUpload, UnitRasterOutput};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 use crate::util::time::Instant;
@@ -42,10 +40,9 @@ pub(crate) struct GrowthSource<'a> {
     pub(crate) max_texture_dimension_2d: u32,
 }
 
-/// The growths running for a match's entity atlases.
+/// The growth running for a match's SHP atlas.
 #[derive(Default)]
 pub(crate) struct EntityAtlasGrowth {
-    unit: Option<Growth<UnitRasterOutput, UnitAtlasUpload>>,
     sprite: Option<Growth<ShpRasterOutput, ShpAtlasUpload>>,
     /// Growths published so far. Each one draws sprites the previous picture
     /// lacked, so the redraw gate keys on it.
@@ -58,16 +55,6 @@ struct Growth<Output, Upload> {
     upload: Upload,
     began: Instant,
     prepare_ms: f64,
-    /// Stops a voxel raster whose growth is dropped unpublished.
-    _cancel: Option<CancelOnDrop>,
-}
-
-struct CancelOnDrop(Arc<AtomicBool>);
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
 }
 
 fn elapsed_ms(since: Instant) -> f64 {
@@ -75,50 +62,13 @@ fn elapsed_ms(since: Instant) -> f64 {
 }
 
 impl EntityAtlasGrowth {
-    /// Start a growth for each atlas without one running that lacks a voxel
-    /// model, an object (type, house colour), an AnimClass colour remap, the
-    /// harvest overlay or a FoggedObject frame the world now draws. The checks
-    /// are per object model, never per sprite key, so this is cheap enough to
-    /// run on every spawn, death, ownership change and Limbo.
-    pub(crate) fn start(
-        &mut self,
-        source: &GrowthSource,
-        unit_atlas: Option<&UnitAtlas>,
-        sprite_atlas: Option<&SpriteAtlas>,
-    ) {
+    /// Start a growth, unless one is running, when the atlas lacks an object
+    /// (type, house colour), an AnimClass colour remap, the harvest overlay
+    /// or a FoggedObject frame the world now draws. The checks are per object
+    /// type, never per sprite key, so this is cheap enough to run on every
+    /// spawn, death, ownership change and Limbo.
+    pub(crate) fn start(&mut self, source: &GrowthSource, sprite_atlas: Option<&SpriteAtlas>) {
         let sim = source.sim;
-        if self.unit.is_none()
-            && !unit_atlas::atlas_covers_world(
-                unit_atlas,
-                sim.entities(),
-                source.rules,
-                Some(sim.interner()),
-            )
-        {
-            log::info!("Refreshing the unit atlas: new voxel models");
-            let began = Instant::now();
-            let (work, upload) = unit_atlas::prepare_unit_atlas(
-                sim.entities(),
-                source.asset_manager,
-                source.rules,
-                unit_atlas,
-                Some(sim.interner()),
-            );
-            let cancel = Arc::new(AtomicBool::new(false));
-            match work.spawn(cancel.clone(), unit_atlas::RasterCores::BesideMatch) {
-                Ok(raster) => {
-                    self.unit = Some(Growth {
-                        raster,
-                        upload,
-                        began,
-                        prepare_ms: elapsed_ms(began),
-                        _cancel: Some(CancelOnDrop(cancel)),
-                    });
-                }
-                Err(err) => log::error!("Unit atlas growth not started: {err}"),
-            }
-        }
-
         if self.sprite.is_some() {
             return;
         }
@@ -182,7 +132,6 @@ impl EntityAtlasGrowth {
                     upload,
                     began,
                     prepare_ms: elapsed_ms(began),
-                    _cancel: None,
                 });
             }
             Err(err) => log::error!("Sprite atlas growth not started: {err}"),
@@ -195,29 +144,21 @@ impl EntityAtlasGrowth {
         self.grow_sprites(work, upload, Instant::now());
     }
 
-    /// Complete the finished growths into the atlases they were prepared
-    /// against; `wait` blocks for every running one. Whether any published:
-    /// the caller then starts the growths the world still needs. A growth
-    /// that leaves its atlas as it was, such as an abandoned SHP refresh, is
-    /// not published; the sim tick's next refresh retries it, so a waiting
-    /// publish never restarts it for ever.
+    /// Complete a finished growth into the atlas it was prepared against;
+    /// `wait` blocks for a running one. Whether it published: the caller then
+    /// starts the growth the world still needs. A growth that leaves its
+    /// atlas as it was, such as an abandoned SHP refresh, is not published;
+    /// the sim tick's next refresh retries it, so a waiting publish never
+    /// restarts it for ever.
     pub(crate) fn publish(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-        unit_atlas: &mut Option<UnitAtlas>,
         sprite_atlas: &mut Option<SpriteAtlas>,
         wait: bool,
     ) -> bool {
         let published = self.published;
-        if let Some((growth, output)) = finished(&mut self.unit, wait)
-            && growth.publish("Unit", output, |upload, output| {
-                upload.finish(device, queue, batch, output, unit_atlas)
-            })
-        {
-            self.published += 1;
-        }
         if let Some((growth, output)) = finished(&mut self.sprite, wait)
             && growth.publish("Sprite", output, |upload, output| {
                 upload.finish(device, queue, batch, output, sprite_atlas)
@@ -228,10 +169,9 @@ impl EntityAtlasGrowth {
         self.published != published
     }
 
-    /// Drop the running growths unpublished. Called wherever the atlases they
-    /// were prepared against are freed or replaced.
+    /// Drop the running growth unpublished. Called wherever the atlas it was
+    /// prepared against is freed or replaced.
     pub(crate) fn cancel(&mut self) {
-        self.unit = None;
         self.sprite = None;
     }
 
@@ -241,7 +181,7 @@ impl EntityAtlasGrowth {
 
     #[cfg(test)]
     pub(crate) fn running(&self) -> bool {
-        self.unit.is_some() || self.sprite.is_some()
+        self.sprite.is_some()
     }
 }
 

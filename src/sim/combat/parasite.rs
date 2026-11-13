@@ -835,8 +835,7 @@ impl Simulation {
         // 0x62A2F8): a non-naval Unit or an Infantry owner whose victim is
         // at least two levels up (GetHeight 208) drops from the victim's
         // Location as a bomb (+0x8D, +0x8F).
-        #[cfg(feature = "ares")]
-        let coords = {
+        let coords = if rules.ares() {
             let terrain = self.resolved_terrain.as_ref();
             let falls =
                 self.substrate
@@ -865,6 +864,8 @@ impl Simulation {
                 eater.begin_bomb_fall();
             }
             drop.or(coords)
+        } else {
+            coords
         };
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
@@ -1109,7 +1110,7 @@ impl Simulation {
     ) -> bool {
         use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
         let (Some(terrain), Some(zones)) =
-            (self.resolved_terrain.as_ref(), self.zone_grid.as_deref())
+            (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return false;
         };
@@ -1301,7 +1302,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let removed = !crate::rules::ARES_ENABLED || removed;
+        let removed = !rules.ares() || removed;
         let Some(eater) = self
             .substrate
             .entities
@@ -1369,8 +1370,9 @@ impl Simulation {
         else {
             return;
         };
-        let sonic = rules
-            .warhead(self.interner.resolve(warhead))
+        let sonic = self
+            .interner
+            .warhead_type(warhead, rules)
             .is_some_and(|w| w.sonic);
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);

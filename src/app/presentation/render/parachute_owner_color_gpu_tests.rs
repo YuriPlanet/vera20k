@@ -230,6 +230,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let hidden = BTreeSet::new();
     let input = DisplayEffectInputs {
         sim: &sim,
+        frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
         rules: &rules,
         camera: view_camera,
         render_size: size,

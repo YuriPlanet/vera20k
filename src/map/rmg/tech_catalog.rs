@@ -44,11 +44,17 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// is a main family drawn from `seed` by family size, then a second one; the
 /// main family leads, inside the eighteen entries the pass may reuse.
 /// The foots are Ares' default `[Urban]` lists, kept where the Rules define
-/// the type.
+/// the type. The props are the theater's surveyed street furniture
+/// (`[THEATER.PROPS]`) of one cell with body art; the trees are the kinds
+/// authored towns of the theater use. The farms and landmarks of the
+/// Countryside and Landmark Extras are the buildings `extras` names
+/// (`RMGMD.INI [Extras] Farms=`, `Landmarks=`).
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,
     tech: &[TechType],
+    extras: &crate::map::rmg::extras::ExtrasSettings,
     theater_ext: &str,
     theater_name: &str,
     seed: u16,
@@ -81,6 +87,8 @@ pub fn resolve_vera_urban(
     ];
 
     let surveyed = surveyed_urban_names(theater_name);
+    let surveyed_props = surveyed_urban_names(&format!("{theater_name}.PROPS")).unwrap_or_default();
+    let mut props = Vec::new();
     let registry = rules.art();
     let mut families: Vec<(String, Vec<UrbanStructure>)> = Vec::new();
     for id in &rules.building_ids {
@@ -88,6 +96,34 @@ pub fn resolve_vera_urban(
             continue;
         };
         let upper = id.to_ascii_uppercase();
+        if surveyed_props.contains(&upper.as_str()) {
+            // One-cell furniture; a letter after the number is a piece of a
+            // composite landmark, as below.
+            let footprint = footprint_for(art, id);
+            let bytes = upper.as_bytes();
+            let piece = bytes.len() >= 2
+                && bytes[bytes.len() - 1].is_ascii_alphabetic()
+                && bytes[bytes.len() - 2].is_ascii_digit();
+            let image_id = registry.resolve_effective_image_id(id, &object.image);
+            if footprint.len() == 1
+                && !piece
+                && crate::rules::art_data::building_body_shp_candidates(
+                    Some(registry),
+                    &object.image,
+                    &image_id,
+                    theater_ext,
+                    theater_name,
+                )
+                .iter()
+                .any(|file| has_file(file))
+            {
+                props.push(UrbanStructure {
+                    name: id.clone(),
+                    footprint: Some(footprint),
+                });
+                continue;
+            }
+        }
         if surveyed
             .as_ref()
             .is_some_and(|names| !names.contains(&upper.as_str()))
@@ -196,11 +232,56 @@ pub fn resolve_vera_urban(
             })
             .collect()
     };
+    // The farm buildings and monuments of the Countryside and Landmark
+    // Extras: the named types the Rules define whose body art exists on this
+    // theater, the test the town buildings above pass.
+    let named = |names: &[String]| -> Vec<UrbanStructure> {
+        names
+            .iter()
+            .filter_map(|name| {
+                let id = rules
+                    .building_ids
+                    .iter()
+                    .find(|id| id.eq_ignore_ascii_case(name))?;
+                let object = rules.object(id)?;
+                let image_id = registry.resolve_effective_image_id(id, &object.image);
+                crate::rules::art_data::building_body_shp_candidates(
+                    Some(registry),
+                    &object.image,
+                    &image_id,
+                    theater_ext,
+                    theater_name,
+                )
+                .iter()
+                .any(|file| has_file(file))
+                .then(|| UrbanStructure {
+                    name: id.clone(),
+                    footprint: Some(footprint_for(art, id)),
+                })
+            })
+            .collect()
+    };
     UrbanCatalog {
         structures,
         infantry: feet(&INFANTRY),
         vehicles: feet(&VEHICLES),
+        props,
+        trees: street_trees(theater_name),
+        farms: named(&extras.farms),
+        landmarks: named(&extras.landmarks),
     }
+}
+
+/// The `TREExx` terrain objects authored towns of a theater stand along
+/// their streets (the same survey): temperate kinds, snow-laden ones on Snow
+/// and palms and cacti on Desert.
+fn street_trees(theater_name: &str) -> Vec<String> {
+    let range = match theater_name.to_ascii_uppercase().as_str() {
+        "SNOW" => 20..=28,
+        "DESERT" => 31..=36,
+        _ => 1..=12,
+    };
+    range.map(|index| format!("TREE{index:02}")).collect()
 }
 
 /// The `[THEATER]` row of `urban_survey.ini`: the civilian buildings
@@ -252,6 +333,7 @@ pub fn resolve_ares_urban(
             .collect(),
         infantry: feet(&settings.urban_infantry, UrbanTypeKind::Infantry),
         vehicles: feet(&settings.urban_vehicles, UrbanTypeKind::Vehicle),
+        ..Default::default()
     }
 }
 

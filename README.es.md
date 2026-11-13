@@ -14,13 +14,11 @@
 
 # VERA20K
 
-VERA20K es una reescritura del motor original, `gamemd.exe`, impulsada por la comunidad. Usa los
-archivos originales del juego, así que necesitarás tu propia copia de Red Alert 2: Yuri's Revenge.
+VERA20K es una reescritura del motor original, `gamemd.exe`, impulsada por la comunidad. Trae tu propia copia de
+Red Alert 2: Yuri's Revenge para empezar a desarrollar o a jugar.
 
 VERA20K está hecho por jugadores y para jugadores, y son los jugadores quienes tienen la última
 palabra sobre su rumbo.
-
-**No tengas miedo de enviar un PR.** No tiene que ser perfecto; te ayudaremos con el resto.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: pantalla de configuración de escaramuza y vista de una partida" width="100%">
 
@@ -44,6 +42,8 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 [configuración del cliente sin conexión](integrations/cncnet/README.md).
 
 ## Contribuir
+
+**No tengas miedo de enviar un PR.** No tiene que ser perfecto; te ayudaremos con el resto.
 
 Toda ayuda es bienvenida, y estas áreas son las que más la necesitan. Cada una enlaza a su
 página en la hoja de ruta, con el trabajo en curso y el siguiente paso:

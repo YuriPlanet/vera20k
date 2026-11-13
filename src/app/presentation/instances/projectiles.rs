@@ -70,6 +70,7 @@ pub(crate) fn projectile_visitor<'a>(
     order: &'a NativeDisplayOrder,
 ) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
     let rt = state.match_state.sim_runtime.presentation()?;
+    let frame = state.match_state.sim_runtime.frame()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let assets = state.process_assets.manager();
     let sim = &rt.simulation;
@@ -84,7 +85,7 @@ pub(crate) fn projectile_visitor<'a>(
     let axis = super::helpers::depth_axis(state);
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
     // retained +114 House's scheme, else the local player's.
-    let house_colors = &state.match_state.match_presentation.house_color_map;
+    let house_colors = state.match_state.match_presentation.effective_house_color_map();
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_scheme = local_owner
         .as_deref()
@@ -125,6 +126,7 @@ pub(crate) fn projectile_visitor<'a>(
             && !state.match_state.sandbox_full_visibility
             && super::helpers::translucent_fog_conceals_bullet(
                 sim,
+                frame,
                 projectile,
                 [position.x, position.y, position.z],
                 local_owner.as_deref(),
@@ -306,7 +308,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
     }
     let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
-    let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y);
+    let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y)?;
     let geometry = geometry(
         position,
         ground_z,

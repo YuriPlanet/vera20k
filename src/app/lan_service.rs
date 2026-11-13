@@ -1195,6 +1195,20 @@ fn direct(endpoint: SocketAddrV4) -> GlobalDestination {
     }
 }
 
+/// Android: close the lobby's sockets and open new ones on the network the
+/// process is bound to now, then show the emptied game and player lists. A
+/// failed open reports the ports as unavailable, as entering the lobby does.
+#[cfg(target_os = "android")]
+fn reopen_lobby_on_new_network(state: &mut AppState) {
+    close(state);
+    open(state);
+    if state.match_state.lan_service.is_some() {
+        project_games(state);
+        project_players(state);
+    }
+    log::info!("LAN network changed; announcing on the new Wi-Fi network");
+}
+
 pub(crate) fn open(state: &mut AppState) {
     // Deterministic hidden-window capture drivers own explicit service events.
     // Their existing request/response transcript must not race real sockets.
@@ -1653,6 +1667,19 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if !matches!(mode, Some(SessionMode::Lan | SessionMode::Wol)) {
         return;
     }
+    // Android: a Wi-Fi network that appeared, left or changed leaves the
+    // visit's sockets on a network that may be gone. Only the lobby list acts
+    // on it: a room, loading or a match keeps its transport, and the change
+    // waits until the player is back in the lobby.
+    #[cfg(target_os = "android")]
+    if mode == Some(SessionMode::Lan)
+        && state.match_state.live_network.is_none()
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::LanLobby
+        && crate::util::lan_network::take_changed()
+    {
+        reopen_lobby_on_new_network(state);
+        return;
+    }
     let now = super::match_runtime::frame_pacer::frame_bucket(now_ms);
     if state.match_state.live_network.is_none()
         && state
@@ -2108,11 +2135,17 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
                 };
                 choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                let change = state.match_state.session.accept_lan_peer_choices(
+                // A guest's own team pick keeps to the room's Teams.
+                let refused = state
+                    .match_state
+                    .session
+                    .admit_network_team(source, &mut choices);
+                let mut change = state.match_state.session.accept_lan_peer_choices(
                     source,
                     choices,
                     values[0] == -3,
                 )?;
+                change.options |= refused;
                 // A VERA room's guest who starts or stops watching changes
                 // rows: the roster, then the options, as WOL's R arm.
                 let mut deferred = Vec::new();

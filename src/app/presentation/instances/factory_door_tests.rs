@@ -2,6 +2,7 @@
 //! retail art keys, the art an unloading factory selects, the under-door
 //! piece and the bib. The atlas half is synthetic; real pixels come from captures.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::draw_state::DrawDecision;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::rules::ruleset::RuleSet;
@@ -85,13 +86,18 @@ fn unloading_factory(rules: &RuleSet, product: &str, unload: bool) -> (Simulatio
 }
 
 fn selected_art(sim: &Simulation, rules: &RuleSet, factory: u64) -> Option<[Option<String>; 2]> {
-    let entity = sim.entities().get(factory).unwrap();
     let object = rules.object("GAWEAP").unwrap();
     let art = rules
         .art()
         .resolve_metadata_entry("GAWEAP", &object.image)
         .unwrap();
-    factory_unload_art(sim, rules, entity, art).map(|art| {
+    factory_unload_art(
+        sim,
+        rules,
+        &ObjectRecord::of_test_sim(sim, rules, factory),
+        art,
+    )
+    .map(|art| {
         assert_eq!(art.palette, ShpPaletteContext::SelectedScheme);
         [
             art.body.map(|(name, z)| format!("{name} {z}")),
@@ -174,7 +180,7 @@ fn the_under_door_draws_its_damage_frame_and_shadow_after_the_bib() {
             &atlas,
             rules,
             Some(object),
-            sim.entities().get(factory).unwrap(),
+            &ObjectRecord::of_test_sim(&sim, rules, factory),
             key(0),
             [100.0, 50.0],
             0,
@@ -258,11 +264,10 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
         emit_building_bib(
             &mut pieces,
             &atlas,
-            rules.art(),
-            Some(rules),
-            "GAWEAP",
+            Some(object),
+            Some(art),
             BibDraw {
-                entity,
+                entity: &ObjectRecord::of_test_sim(&sim, rules, factory),
                 cells: None,
                 decision: DrawDecision {
                     visible: true,
@@ -337,7 +342,8 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             PlannedObjectInstance::building(parent(factory), Vec::new()),
             PlannedObjectInstance::object(parent(product), Vec::new()),
         ];
-        crate::app::presentation::instances::assign_tether_redraws(&sim, &mut planned);
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
+        crate::app::presentation::instances::assign_tether_redraws(&frame, &mut planned);
         let expected: Vec<u64> = if unload { vec![product] } else { Vec::new() };
         assert_eq!(planned[0].tether_redraws, expected, "unload {unload}");
         assert_eq!(planned[1].drawn_by_tether, unload, "unload {unload}");

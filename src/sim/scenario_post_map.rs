@@ -216,9 +216,11 @@ impl Simulation {
 
         // Full_Init687C16, after Post_Map_Init and the deferred-finalization
         // drain, in every mode: Ares ValidateThings100677B0's CanMakeStuffUp
-        // draws. Restore never enters this fresh-only owner.
-        #[cfg(feature = "ares")]
-        self.ares_make_stuff_up_rules(input.rules);
+        // draws, only when Ares plays. Restore never enters this fresh-only
+        // owner.
+        if input.rules.ares() {
+            self.ares_make_stuff_up_rules(input.rules);
+        }
 
         // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
         // and the particle/OreTwinkle tail. Every nonnull House participates;

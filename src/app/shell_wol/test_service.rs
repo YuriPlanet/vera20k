@@ -127,6 +127,11 @@ fn answer_setup(state: &mut AppState, request: NetworkSetupRequest) {
         }
         return;
     }
+    // The stand-in lobby rates nobody, so its balance moves nobody.
+    if let NetworkSetupRequest::Balance { .. } = request {
+        crate::app::shell_network_setup::balance_answered(state);
+        return;
+    }
     // 0x0078F000: the stand-in server keeps the host's new record.
     if request == NetworkSetupRequest::Advertise {
         super::lobby::republish_channel(state);

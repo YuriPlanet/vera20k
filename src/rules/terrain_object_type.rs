@@ -12,7 +12,6 @@ use crate::util::native_x87::NativeF32Bits;
 
 /// The stock forest-fire Rules keys gamemd reads but never consumes; Ares
 /// 3.0's terrain fire (`sim::terrain_fire`) is their consumer.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ForestFireRules {
     /// `[AudioVisual] TreeFire=` (TypeList<AnimTypeClass*>, ReadAudioVisual
@@ -25,7 +24,6 @@ pub(crate) struct ForestFireRules {
     pub(crate) tree_flammability: crate::util::native_x87::NativeF64Bits,
 }
 
-#[cfg(feature = "ares")]
 impl Default for ForestFireRules {
     fn default() -> Self {
         Self {
@@ -347,6 +345,7 @@ impl PhobosSpawnsTiberium {
         section: &IniSection,
         mut find_particle: impl FnMut(&str) -> Option<String>,
     ) {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         self.tiberium_type = section.read_ares_int("SpawnsTiberium.Type", self.tiberium_type);
         self.range = section.read_ares_int("SpawnsTiberium.Range", self.range);
         self.growth_stage =

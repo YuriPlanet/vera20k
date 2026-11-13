@@ -102,12 +102,13 @@ impl App {
         }
         state.match_state.scenario_restart_requested = false;
         state.match_state.debug_pause = false;
+        crate::app::input::pause_menu::on_match_end(state);
+        state.match_state.match_presentation.options_page_category = None;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
         // A match's 0xCF ends with the game: its pump 0x00623120 stops the
         // loop once Main_Tick reports the game over (0x0062314E..0x00623157).
         crate::app::shell_wol::page::close_page_dialog(state);
-        state.match_state.match_presentation.in_game_options_anchor = None;
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
         state.match_state.match_presentation.surrender_buttons = Default::default();
@@ -338,15 +339,10 @@ impl App {
         use crate::ui::pause_menu::InGameMenuState;
 
         let current = state.match_state.match_presentation.in_game_menu;
-        // Escape and Back leave Options the same way — apply and persist the
-        // touched `[Options]` values, then return to the menu — so the two
-        // cannot disagree about what was saved.
-        if current == InGameMenuState::Options {
-            crate::app::persistence::options::accept_in_game_options(state);
-            log::info!(
-                "In-game Options closed at {} tps",
-                state.match_state.sim_speed_tps
-            );
+        if current == InGameMenuState::Menu
+            && crate::app::input::pause_menu::close_options_list(state)
+        {
+            return;
         }
         Self::enter_in_game_menu_state(state, current.on_escape());
     }
@@ -372,6 +368,14 @@ impl App {
         }
         if !previous.is_open() && next.is_open() && !Self::state_machine_admits_modal(state) {
             return;
+        }
+        if previous == InGameMenuState::Menu {
+            crate::app::input::pause_menu::on_close(state);
+        }
+        if !next.is_open() {
+            // Back in play by any route (Resume, or a cancelled Abort or
+            // Surrender): the next Escape opens on Game Controls again.
+            state.match_state.match_presentation.options_page_category = None;
         }
         let was_open = previous.is_open();
         let will_be_open = next.is_open();
@@ -444,15 +448,6 @@ impl App {
         }
         if next == InGameMenuState::AbortConfirm {
             crate::app::input::abort::on_open(state);
-        }
-
-        // Leaving Options: drop the cached `0xBBB` hit-test anchor so the
-        // overlay's own mouse handler cannot claim clicks aimed at the menu.
-        if previous == InGameMenuState::Options {
-            state.match_state.match_presentation.in_game_options_anchor = None;
-        }
-        if next == InGameMenuState::Options {
-            crate::app::input::in_game_options::on_open(state);
         }
 
         // An open modal is the pause (`MatchState::paused`); any transition

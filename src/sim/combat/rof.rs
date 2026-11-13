@@ -137,9 +137,9 @@ pub(crate) struct RofQuery<'a> {
     /// and mid-burst returns never reach it.
     pub ae_rof: f64,
     /// Installed Ares GetROF hooks10047A40/10047A60. None describes the
-    /// unpatched retail kernel for native controls; Ares gameplay supplies
-    /// Some even at identity, including the building-ammo shortcut bypass.
-    #[cfg(feature = "ares")]
+    /// unpatched retail kernel, which is what a game without Ares gets; an
+    /// Ares game supplies Some even at identity, including the building-ammo
+    /// shortcut bypass.
     pub attached_rof: Option<NativeF64Bits>,
     /// Phobos `ROF.RandomDelay` as `0x006FD0B5` resolves it (the weapon's,
     /// else `[CombatDamage]`). None describes the unpatched kernel for native
@@ -181,9 +181,8 @@ pub(crate) struct RofQuery<'a> {
 /// Every draw is Scenario `RandomRanged`; all x87 steps run under the
 /// process control word (53-bit, chop).
 pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
-    let stock_building_shortcut = query.building_ammo.is_some_and(|ammo| ammo > 1);
-    #[cfg(feature = "ares")]
-    let stock_building_shortcut = stock_building_shortcut && query.attached_rof.is_none();
+    let stock_building_shortcut =
+        query.building_ammo.is_some_and(|ammo| ammo > 1) && query.attached_rof.is_none();
     if stock_building_shortcut {
         return 1;
     }
@@ -225,7 +224,6 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
     // Installed Ares TechnoClass_GetROF_AttachEffect10047A40 hooks6FD0BF,
     // after FILD weaponROF, before House FMUL6FD0C5 and jitter FIADD6FD0CB.
     // Direct particle/sonic and mid-burst returns never reach that hook.
-    #[cfg(feature = "ares")]
     let weapon_rof = query
         .attached_rof
         .map_or(weapon_rof, |factor| X::mul(weapon_rof, X::load_f64(factor)));
@@ -288,7 +286,6 @@ mod tests {
                 unit_burst_delays: None,
                 house_rof: NativeF64Bits::ONE,
                 ae_rof: 1.0,
-                #[cfg(feature = "ares")]
                 attached_rof: None,
                 rof_random_delay: Some(range),
                 rof_ability: false,
@@ -342,7 +339,6 @@ mod tests {
                 unit_burst_delays: None,
                 house_rof: NativeF64Bits::ONE,
                 ae_rof,
-                #[cfg(feature = "ares")]
                 attached_rof: None,
                 #[cfg(feature = "phobos")]
                 rof_random_delay: None,
@@ -380,7 +376,7 @@ mod tests {
         // Only class/weapon/House query boundaries were supplied. These four
         // cases distinguish pre-jitter multiplication, decimal chop and the
         // installed BuildingHack10047A60 bypass; no new native corpus.
-        for (raw_rof, house, _factor, ammo, stock, ares) in [
+        for (raw_rof, house, factor, ammo, stock, ares) in [
             (
                 45,
                 0x3ff0_0000_0000_0000,
@@ -416,35 +412,38 @@ mod tests {
         ] {
             let ini = IniFile::from_str(&format!("[GUN]\nROF={raw_rof}\nBurst=1\n"));
             let weapon = WeaponType::from_ini_section("GUN", ini.section("GUN").unwrap());
-            let query = RofQuery {
-                building_ammo: ammo,
-                weapon: Some(&weapon),
-                live: LiveParticles::default(),
-                burst_index: 1,
-                unit_burst_delays: None,
-                house_rof: NativeF64Bits::from_bits(house),
-                ae_rof: 1.0,
-                #[cfg(feature = "ares")]
-                attached_rof: Some(NativeF64Bits::from_bits(_factor)),
-                #[cfg(feature = "phobos")]
-                rof_random_delay: None,
-                rof_ability: false,
-                veteran_rof: 1.0,
-                occupants: None,
-                bunkered: false,
-                occupy_rof_multiplier: 1.0,
-                bunker_rof_multiplier: 1.0,
-            };
-            let mut rng = SimRng::new(31);
-            assert_eq!(
-                get_rof(&query, &mut rng),
-                if cfg!(feature = "ares") { ares } else { stock }
-            );
-            let mut expected_rng = SimRng::new(31);
-            if cfg!(feature = "ares") || ammo.is_none() {
-                expected_rng.next_range_u32_inclusive(0, 2);
+            // Nothing installs the hook without Ares, so the query carries no
+            // factor and the unpatched kernel answers, building shortcut and all.
+            for (attached, expected) in [
+                (None, stock),
+                (Some(NativeF64Bits::from_bits(factor)), ares),
+            ] {
+                let query = RofQuery {
+                    building_ammo: ammo,
+                    weapon: Some(&weapon),
+                    live: LiveParticles::default(),
+                    burst_index: 1,
+                    unit_burst_delays: None,
+                    house_rof: NativeF64Bits::from_bits(house),
+                    ae_rof: 1.0,
+                    attached_rof: attached,
+                    #[cfg(feature = "phobos")]
+                    rof_random_delay: None,
+                    rof_ability: false,
+                    veteran_rof: 1.0,
+                    occupants: None,
+                    bunkered: false,
+                    occupy_rof_multiplier: 1.0,
+                    bunker_rof_multiplier: 1.0,
+                };
+                let mut rng = SimRng::new(31);
+                assert_eq!(get_rof(&query, &mut rng), expected);
+                let mut expected_rng = SimRng::new(31);
+                if attached.is_some() || ammo.is_none() {
+                    expected_rng.next_range_u32_inclusive(0, 2);
+                }
+                assert_eq!(rng.logical_state(), expected_rng.logical_state());
             }
-            assert_eq!(rng.logical_state(), expected_rng.logical_state());
         }
     }
 
@@ -506,7 +505,6 @@ mod tests {
                 unit_burst_delays: (class == 1).then_some(delays),
                 house_rof: NativeF64Bits::from_bits(hex("house_bits", "3ff0000000000000")),
                 ae_rof: 1.0,
-                #[cfg(feature = "ares")]
                 attached_rof: None,
                 #[cfg(feature = "phobos")]
                 rof_random_delay: None,

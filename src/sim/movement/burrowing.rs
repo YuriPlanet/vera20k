@@ -69,7 +69,7 @@ fn zone_id(
     bridge: bool,
 ) -> Result<u32, String> {
     sim.zone_grid
-        .as_deref()
+        .as_ref()
         .ok_or("burrowing route requires zone topology")?
         .get_zone_id_native_in_query(
             cells.terrain(),
@@ -97,7 +97,7 @@ fn normal_reachable(
         .map_size_diamond()
         .ok_or("burrowing route requires Map Size")?;
     sim.zone_grid
-        .as_deref()
+        .as_ref()
         .ok_or("burrowing route requires zone topology")?
         .can_reach_native(
             cells,
@@ -164,7 +164,7 @@ fn bridge_endpoint(
 ) -> Result<CellCoord, String> {
     let records = sim
         .zone_grid
-        .as_deref()
+        .as_ref()
         .ok_or("burrowing route requires bridge records")?;
     let result = resolve_bridge_endpoint(
         cells,
@@ -401,7 +401,7 @@ impl Simulation {
                 // exception measures E(A,A) against E(D,D), not E(A,D).
                 let records = self
                     .zone_grid
-                    .as_deref()
+                    .as_ref()
                     .ok_or("burrowing setter requires bridge records")?
                     .bridge_records();
                 let source_record =

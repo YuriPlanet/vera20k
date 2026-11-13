@@ -3,7 +3,6 @@
 
 use super::*;
 use crate::rules::ruleset::RuleSet;
-#[cfg(feature = "ares")]
 use crate::rules::ruleset::SideIdx;
 
 fn advance(processed: ProcessedRulesLayers, pass: IniFile) -> ProcessedRulesLayers {
@@ -16,12 +15,10 @@ fn advance(processed: ProcessedRulesLayers, pass: IniFile) -> ProcessedRulesLaye
         .unwrap()
 }
 
-#[cfg(feature = "ares")]
 fn native() -> &'static serde_json::Value {
     crate::test_fixture::json("tools/rules_oracle/ares_side_sidebar.json")
 }
 
-#[cfg(feature = "ares")]
 fn registry_ini(order: &serde_json::Value) -> IniFile {
     let mut sides = IniSection::new("Sides".into());
     for id in order.as_array().unwrap() {
@@ -30,7 +27,6 @@ fn registry_ini(order: &serde_json::Value) -> IniFile {
     IniFile::from_sections_for_test([sides])
 }
 
-#[cfg(feature = "ares")]
 fn selected_pass(values: &serde_json::Value) -> IniFile {
     let mut section = IniSection::new("FourthSynthetic".into());
     for (key, value) in values.as_object().unwrap() {
@@ -39,7 +35,6 @@ fn selected_pass(values: &serde_json::Value) -> IniFile {
     IniFile::from_sections_for_test([section])
 }
 
-#[cfg(feature = "ares")]
 fn assert_selected(rules: &RuleSet, id: &str, expected: &serde_json::Value) {
     let index = rules.side_index(id).unwrap();
     assert_eq!(
@@ -54,9 +49,9 @@ fn assert_selected(rules: &RuleSet, id: &str, expected: &serde_json::Value) {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_side_sidebar_defaults_and_retained_layers_match_native_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let initial = &native()["initial"];
     let processed = RulesLayerStack::new(registry_ini(&initial["fixture_side_order"]))
         .process()
@@ -111,9 +106,9 @@ fn ares_side_sidebar_defaults_and_retained_layers_match_native_controls() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_side_sidebar_waits_for_full_type_pass_and_preserves_failed_process_state() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let root = IniFile::from_str(
         "[Countries]\n0=COUNTRY\n[COUNTRY]\nSide=FourthSynthetic\n\
          [FourthSynthetic]\nSidebar.MixFileIndex=4\nSidebar.YuriFileNames=yes\n",
@@ -213,9 +208,9 @@ fn ares_side_sidebar_waits_for_full_type_pass_and_preserves_failed_process_state
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_side_sidebar_retained_values_enter_configuration_identity() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let make = |row: usize| {
         let initial =
             RulesLayerStack::new(registry_ini(&native()["retained"]["fixture_side_order"]))

@@ -97,10 +97,13 @@ impl Simulation {
                 // 0x4DAAE7 does not depend on PlayAt's device/admission result.
                 started = true;
             }
-            let entity = substrate.entities.get_mut(stable_id).unwrap();
-            entity.move_sound.active = state.active || started;
             // 0x4DAA87 reaches this even when the configured vector is empty.
-            entity.move_sound.countdown = 3;
+            // A sound already running with a full countdown keeps both.
+            if started || state.countdown != 3 {
+                let entity = substrate.entities.get_mut(stable_id).unwrap();
+                entity.move_sound.active = state.active || started;
+                entity.move_sound.countdown = 3;
+            }
         } else if state.active {
             let entity = substrate.entities.get_mut(stable_id).unwrap();
             if state.countdown == 0 || falling_or_crashing {

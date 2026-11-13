@@ -577,6 +577,10 @@ const FP_SCALE: f32 = (1 << FP_SHIFT) as f32; // 65536.0
 pub struct VxlRenderParams {
     /// HVA animation frame index (0-based). Use 0 for idle pose.
     pub frame: u32,
+    /// One physical VXL section, or every section. VoxelAnim DrawIt749DCE
+    /// submits its signed VoxelIndex to7540F0; ordinary Techno draws submit
+    /// all sections. This does not change the first-section lighting owner.
+    pub section: Option<usize>,
     /// Facing angle: 0–255 maps to 0–360° (RA2 convention).
     pub facing: u8,
     /// Terrain slope type (0–16). 0 = flat, 1-4 = edge ramps (full-edge tilt),
@@ -634,6 +638,7 @@ impl Default for VxlRenderParams {
         );
         Self {
             frame: 0,
+            section: None,
             facing: 0,
             slope_type: 0,
             slope_blend: None,
@@ -646,6 +651,19 @@ impl Default for VxlRenderParams {
             diffuse: 0.4,
             light_dir,
         }
+    }
+}
+
+/// Shared selection for geometry, native paint and preview fallback. Keep
+/// original indices: HVA transforms and GPU limb identities index the source
+/// file, even when a draw submits only one section.
+fn section_indices(vxl: &VxlFile, section: Option<usize>) -> Option<std::ops::Range<usize>> {
+    match section {
+        Some(index) => {
+            vxl.limbs.get(index)?;
+            Some(index..index + 1)
+        }
+        None => Some(0..vxl.limbs.len()),
     }
 }
 
@@ -804,7 +822,7 @@ pub struct SpriteBounds {
 
 /// Native VXL destination rectangle relative to the part's draw anchor.
 /// `VXL_Submit_BoundingBox 0x7540F0` transforms the full tailer min/max
-/// extents (grid 0..size), unions all limbs, and `0x754510` pads that one
+/// extents (grid 0..size), unions the submitted limbs, and `0x754510` pads that one
 /// union. This is intentionally independent of atlas voxel-center storage
 /// bounds, SPRITE_MARGIN, splat footprint and zero/nonzero palette pixels.
 ///
@@ -818,15 +836,27 @@ pub fn native_vxl_draw_bounds(
     params: &VxlRenderParams,
 ) -> Option<[i32; 4]> {
     let draw_matrix = voxel_params_draw_rotation(params, voxel_facing_step(params.facing));
-    if params.scale == 1.0 && vxl.limbs.iter().all(|limb| limb.native_spans.is_some()) {
-        let geometry =
-            native::prepare_geometry(vxl, hva, params.frame, draw_matrix, params.use_buffer)?;
+    let indices = section_indices(vxl, params.section)?;
+    if params.scale == 1.0
+        && indices
+            .clone()
+            .all(|index| vxl.limbs[index].native_spans.is_some())
+    {
+        let geometry = native::prepare_geometry(
+            vxl,
+            hva,
+            params.frame,
+            draw_matrix,
+            params.use_buffer,
+            params.section,
+        )?;
         let [x, y, _, _, width, height] = geometry.rect;
         return Some([x, y, width, height]);
     }
     let mut minimum = [f32::INFINITY; 2];
     let mut maximum = [f32::NEG_INFINITY; 2];
-    for (limb_index, limb) in vxl.limbs.iter().enumerate() {
+    for limb_index in indices {
+        let limb = &vxl.limbs[limb_index];
         if limb.size_x == 0 || limb.size_y == 0 || limb.size_z == 0 {
             return None;
         }
@@ -900,6 +930,9 @@ pub fn prepare_limb_data(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
 ) -> (Vec<LimbRenderData>, f32) {
+    let Some(indices) = section_indices(vxl, params.section) else {
+        return (Vec::new(), 1.0);
+    };
     // Facing is quantized to 32 steps before the rotation matrix is built, so
     // every voxel body, turret and barrel renders at exactly 1 of 32 orientations.
     let facing_step: u8 = voxel_facing_step(params.facing);
@@ -930,7 +963,8 @@ pub fn prepare_limb_data(
     let mut limb_data: Vec<LimbRenderData> = Vec::new();
     let mut max_footprint: f32 = 1.0;
 
-    for (limb_idx, limb) in vxl.limbs.iter().enumerate() {
+    for limb_idx in indices {
+        let limb = &vxl.limbs[limb_idx];
         if limb.voxels.is_empty() {
             continue;
         }

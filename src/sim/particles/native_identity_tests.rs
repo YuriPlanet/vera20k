@@ -1,5 +1,8 @@
 //! Original constructor/Logic continuation, bounded to the flat Spark controls
 //! in `procedural_drawing_oracle/electric_bolt` and the retained save envelope.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60), so the
+// stock control runs without the feature.
+#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use super::{Particle, ParticleSystem};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
@@ -154,6 +157,7 @@ fn assert_state(sim: &Simulation, id: u64, expected: &Value) {
     }
 }
 
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state() {
     let corpus = corpus();

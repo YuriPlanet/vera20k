@@ -91,7 +91,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
 
 fn assert_mission_state(sim: &Simulation, id: u64, expected: &Value) {
     let entity = sim.substrate.entities.get(id).unwrap();
-    let state = entity.mission;
+    let state = entity.mission.clone();
     for (key, actual) in [
         ("mission", i64::from(state.current().raw())),
         ("suspended_mission", i64::from(state.suspended().raw())),

@@ -55,7 +55,8 @@ pub struct RippleFrames {
 impl RippleFrames {
     /// One immutable native-generated table shared by simulation and drawing.
     pub fn shared() -> &'static Self {
-        static FRAMES: std::sync::OnceLock<RippleFrames> = std::sync::OnceLock::new();
+        static FRAMES: crate::util::sync::OnceLock<RippleFrames> =
+            crate::util::sync::OnceLock::new();
         FRAMES.get_or_init(|| Self::generate(TrigTable::embedded()))
     }
 

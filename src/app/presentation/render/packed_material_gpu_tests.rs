@@ -3,6 +3,7 @@ use super::super::draw_plan_lowering::{
     ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
 };
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::batch::{InstanceBufferPool, SpriteInstance};
 use crate::render::draw_state::{DrawState, FX_CLOAK};
 use crate::render::palette_light::PaletteLight;
@@ -548,7 +549,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
             let light = PaletteLight::color_scheme([1000; 3], int(&arm["intensity"]))
                 .with_colour_word(int(&arm["word"]) as u16);
             let (tint, light) = techno_effect_light(
-                &unit,
+                &ObjectRecord::of_test(&unit),
                 [1.; 3],
                 light,
                 &sim,
@@ -556,7 +557,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 crate::app::presentation::lighting::TechnoDraw::Voxel,
             );
             let (tint, light) = unit_voxel_effect_light(
-                &unit,
+                &ObjectRecord::of_test(&unit),
                 tint,
                 light,
                 Some(&rules_by_selector[&(int(&arm["iron_color"]), int(&arm["berserk_color"]))]),

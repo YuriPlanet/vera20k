@@ -36,6 +36,19 @@ use crate::ui::sidebar::{
     build_sidebar_view_with_spec, hit_test_item,
 };
 
+/// The presentation frame of `sim` as `owner` sees it: the sidebar reads its
+/// cameo answers from the frame's local player.
+fn frame_for(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> crate::app::presentation::frame::PresentationFrame {
+    let mut sim = sim.clone();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules)
+}
+
 #[path = "ready_building_placement_tests/pending_production_tests.rs"]
 mod pending_production_tests;
 #[path = "ready_building_placement_tests/produced_build_limit_tests.rs"]
@@ -131,7 +144,8 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
             overlay_registry: fixture.overlays.clone(),
             terrain_template: Some(terrain),
             ..crate::sim::runtime::SimResources::empty()
-        }.into(),
+        }
+        .into(),
     };
     let prepared = crate::app::persistence::PreparedLoad::from_repository(
         crate::app::persistence::LoadPreparationView::from_runtime(
@@ -200,7 +214,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
             )
             .expect("ordinary paid production frame");
         for fact in output.lifecycle_outputs {
-            projection.apply_lifecycle_output(&fact, Some(owner));
+            projection.apply_lifecycle_output(&fact, Some(owner), crate::rules::ARES_BUILD);
         }
         if production::ready_buildings_for_owner(&sim, &rules, "Americans").len() == 2 {
             break;
@@ -300,6 +314,7 @@ fn refresh_fixture_sidebar(
     fixture.projection.apply_cameo_draw_state(
         &mut view,
         &fixture.sim,
+        &frame_for(&fixture.sim, &fixture.rules, fixture.owner),
         &fixture.rules,
         fixture.owner,
         armed_building,
@@ -721,7 +736,11 @@ fn loaded_ready_tabs_wait_for_the_saved_factory_changed_edge() {
             None,
         );
         assert_eq!(
-            fixture.projection.ready_building_tabs(&fixture.sim, owner),
+            fixture.projection.ready_building_tabs(
+                &fixture.sim,
+                &frame_for(&fixture.sim, RuleSet::empty_for_test(), owner),
+                owner
+            ),
             [true, true],
         );
         let published = advance_commands(&mut fixture, &[]);
@@ -1097,9 +1116,10 @@ fn consume_lifecycle_output(
     output: &LifecycleOutput,
     local_house: Option<InternedId>,
 ) -> bool {
-    if let Some(cursor_clear) = fixture
-        .projection
-        .apply_lifecycle_output(output, local_house)
+    if let Some(cursor_clear) =
+        fixture
+            .projection
+            .apply_lifecycle_output(output, local_house, crate::rules::ARES_BUILD)
     {
         fixture
             .input
@@ -2870,6 +2890,7 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
             construction_order: pill_order,
         },
         Some(owner),
+        crate::rules::ARES_BUILD,
     );
     production::object_find_factory(&fixture.sim, &fixture.rules, power_product, false, false)
         .expect("the real completed product finds its healthy builder");
@@ -2911,9 +2932,10 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         .unwrap();
     let mut clears = 0;
     for (index, output) in frame.lifecycle_outputs.iter().enumerate() {
-        if let Some(cursor_clear) = fixture
-            .projection
-            .apply_lifecycle_output(output, Some(owner))
+        if let Some(cursor_clear) =
+            fixture
+                .projection
+                .apply_lifecycle_output(output, Some(owner), crate::rules::ARES_BUILD)
         {
             clears += 1;
             fixture

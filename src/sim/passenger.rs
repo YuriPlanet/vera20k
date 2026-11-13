@@ -342,6 +342,7 @@ impl PassengerCargo {
     }
 
     /// Clear the live CargoClass contents while preserving type configuration.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_contents(&mut self) {
         self.passengers.clear();
         self.passenger_sizes.clear();
@@ -395,7 +396,6 @@ impl BuildingOccupants {
     }
     /// Ares 3.0 doTraverseTo (`100130E0`): `Occupants.RemoveItem(0)`, the
     /// head shifted out without changing +69C.
-    #[cfg(feature = "ares")]
     pub(crate) fn remove_head(&mut self) -> Option<u64> {
         (!self.ids.is_empty()).then(|| self.ids.remove(0))
     }
@@ -518,7 +518,6 @@ impl Simulation {
     /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
     /// takes the same steps with VocClass::VoicesEnabled cleared around
     /// AddPassenger (`voices` false). Answers whether the hold took it.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_abduct_into_hold(
         &mut self,
         passenger: u64,
@@ -625,7 +624,7 @@ enum Role {
     #[default]
     None,
     /// Entity owns a CargoClass hold.
-    Transport { cargo: PassengerCargo },
+    Transport { cargo: Box<PassengerCargo> },
     /// Entity is inside a transport (hidden from map, not targetable).
     Inside {
         transport_id: u64,
@@ -645,7 +644,9 @@ impl PassengerRole {
     /// The role of a Cargo carrier (`Passengers=`), with its empty hold.
     pub fn transport(cargo: PassengerCargo) -> Self {
         Self {
-            role: Role::Transport { cargo },
+            role: Role::Transport {
+                cargo: Box::new(cargo),
+            },
             occupants: BuildingOccupants::default(),
             transporter: None,
         }
@@ -683,27 +684,23 @@ impl PassengerRole {
 
     /// The whole carrier relation, for a caller that restores it.
     pub(crate) fn carrier_link(&self) -> Option<CarrierLink> {
-        let (Role::Inside {
-            transport_id,
-            open_topped,
-        }
-        | Role::Transport {
-            cargo:
-                PassengerCargo {
-                    carrier_relation:
-                        CarrierRelation::Inside {
-                            transport_id,
-                            open_topped,
-                        },
-                    ..
-                },
-        }) = &self.role
-        else {
-            return None;
+        let (transport_id, open_topped) = match &self.role {
+            Role::Inside {
+                transport_id,
+                open_topped,
+            } => (*transport_id, *open_topped),
+            Role::Transport { cargo } => match cargo.carrier_relation {
+                CarrierRelation::Inside {
+                    transport_id,
+                    open_topped,
+                } => (transport_id, open_topped),
+                CarrierRelation::Outside => return None,
+            },
+            Role::None => return None,
         };
         Some(CarrierLink {
-            transport_id: *transport_id,
-            open_topped: *open_topped,
+            transport_id,
+            open_topped,
         })
     }
 
@@ -798,7 +795,9 @@ impl PassengerRole {
             };
             let mut cargo = PassengerCargo::new(0, 0.0);
             cargo.carrier_relation = carrier_relation;
-            self.role = Role::Transport { cargo };
+            self.role = Role::Transport {
+                cargo: Box::new(cargo),
+            };
         }
         match &mut self.role {
             Role::Transport { cargo } => cargo,
@@ -1508,7 +1507,7 @@ fn receive_gunner(
         != 0;
     if substrate.temporal_receive_gunner(transport_id, pax_id) {
         if let Some(transport) = substrate.entities.get_mut(transport_id) {
-            transport.set_gunner_weapon(7, object);
+            transport.set_gunner_weapon(7, object, rules.ares());
         }
         if donor_rearming {
             rearm_transferred_gunner(
@@ -1529,7 +1528,7 @@ fn receive_gunner(
         .and_then(|passenger| interner.object_type(passenger.type_ref(), rules))
         .map_or(0, |passenger| passenger.ifv_mode);
     if let Some(transport) = substrate.entities.get_mut(transport_id) {
-        transport.set_gunner_weapon(mode, object);
+        transport.set_gunner_weapon(mode, object, rules.ares());
     }
 }
 
@@ -1540,7 +1539,6 @@ impl Simulation {
     /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
     /// The caller retains ownership of the passenger's carrier link until
     /// its placement or UnInit; this operation only changes the Cargo list.
-    #[cfg(feature = "ares")]
     pub(crate) fn remove_cargo_passenger(
         &mut self,
         transport_id: u64,
@@ -1642,7 +1640,7 @@ impl Simulation {
             );
         }
         if let Some(transport) = self.substrate.entities.get_mut(transport_id) {
-            transport.set_gunner_weapon(0, object);
+            transport.set_gunner_weapon(0, object, rules.ares());
         }
     }
 }

@@ -50,6 +50,7 @@ fn child(owner: &NativeRulesProcessOwner) -> &crate::rules::country_loading::Are
 
 #[test]
 fn ares_country_loading_prefix_exposes_both_primary_passes_before_type_reset() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut owner = owner(ROOT);
     enter_shell(&mut owner);
     let early = child(&owner).clone();
@@ -83,6 +84,7 @@ fn ares_country_loading_prefix_exposes_both_primary_passes_before_type_reset() {
 
 #[test]
 fn ares_country_loading_prefix_consumes_original_constructor_receipt_without_rereading() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Paratrooper= still allocates through the original reader; Ares reads
     // the paradrop lists Find-only (Buf_General 1005BB00, hook 0x66D55E).
     let root = format!("{ROOT}[General]\nParatrooper=BEFORE\n");
@@ -128,6 +130,7 @@ fn ares_country_loading_prefix_consumes_original_constructor_receipt_without_rer
 
 #[test]
 fn ares_country_loading_prefix_cancel_keeps_registry_and_rejects_stale_or_implicit_reuse() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut owner = owner(ROOT);
     let initial = owner
         .load_scenario(

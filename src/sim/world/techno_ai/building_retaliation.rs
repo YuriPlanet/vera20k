@@ -76,7 +76,7 @@ impl Simulation {
     /// native detaches a destroyed object (a bullet's source is cleared when
     /// its firer expires). `malicious` is the hit warhead's Ares
     /// `Malicious=` (BuildingClass_ReceiveDamage_Malicious, hook 0x442974,
-    /// hands it to NotifyUnderAttack); default builds pass true.
+    /// hands it to NotifyUnderAttack); a game without Ares passes true.
     pub(crate) fn building_hit_response(
         &mut self,
         id: u64,

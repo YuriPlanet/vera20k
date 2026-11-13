@@ -287,7 +287,7 @@ fn history(
         case.strength,
         "full constructor HP, no supplied damage prior"
     );
-    assert!(!hostile_latch(target) && !target.repairing.is_on());
+    assert!(!hostile_latch(target) && !target.building.repairing.is_on());
     assert!(
         target.lifecycle.object_alive() && target.lifecycle.cell_marked() && !target.in_limbo()
     );
@@ -434,7 +434,7 @@ fn history(
             before.mission.effective().known(),
             Some(MissionType::Selling)
         );
-        assert!(!before.repairing.is_on());
+        assert!(!before.building.repairing.is_on());
         if with_device && !observing && hp_before < case.strength / 4 {
             audio
                 .sfx_player

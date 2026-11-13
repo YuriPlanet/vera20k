@@ -176,7 +176,7 @@ fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> Pa
 /// arena that already holds objects, bridges or navigation builds its own.
 fn install_empty_arena_navigation(
     substrate: &ObjectSubstrate,
-    zone_grid: &mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    zone_grid: &mut Option<ZoneGrid>,
     path_grid: &mut Option<Arc<PathGrid>>,
     resolved_terrain: &Option<ResolvedTerrainGrid>,
     bridge_state: &Option<BridgeRuntimeState>,
@@ -365,7 +365,7 @@ pub fn install_status_miner_cargo(
             .chain(std::iter::repeat_with(|| bale(1, ResourceType::Gem)).take(gems))
             .collect(),
     );
-    entity.miner = Some(miner);
+    entity.miner = Some(Box::new(miner));
 }
 
 /// Explicit Foot+694 prior for an object-action consumer comparison. Actual
@@ -383,11 +383,11 @@ pub fn install_status_capture_count(
     count: u32,
 ) {
     let victims: Vec<_> = (0..count).map(|index| u64::from(index) + 10_000).collect();
-    entity.capture_manager = Some(
+    entity.capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(
             capacity, infinite, &victims,
         ),
-    );
+    ));
 }
 
 /// One physical retail scene shared by the flight/rearm and presentation tests.
@@ -526,5 +526,5 @@ pub fn install_status_ammo_state(
 }
 /// Explicit DrawExtras consumer prior; repair lifecycle tests use ToggleRepair.
 pub fn install_status_repair(entity: &mut crate::sim::game_entity::GameEntity, repairing: bool) {
-    entity.repairing.set_for_test(repairing);
+    entity.building.repairing.set_for_test(repairing);
 }

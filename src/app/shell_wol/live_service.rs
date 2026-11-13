@@ -1970,12 +1970,19 @@ fn accepted_human_matches(accepted: &Value, human: &Value) -> bool {
 
 /// Whether the accepted options hold a player's requested choices in
 /// whatever row the host seated it: the host's `choices` takes no row, and a
-/// guest's first choices leave before its seat is known.
+/// guest's first choices leave before its seat is known. With Teams set, the
+/// host's game puts every seated player on a team itself
+/// (`MatchSession::admit_network_team`), so it answers with whatever team
+/// it gave.
 fn accepted_choices_match(accepted: &Value, human: &Value) -> bool {
+    let any_team = !accepted["launch"]["options"]["teams"].is_null();
     let seatless = |human: &Value| {
         let mut human = human.clone();
         if let Some(fields) = human.as_object_mut() {
             fields.remove("raw_slot_index");
+            if any_team && let Some(slot) = fields.get_mut("slot").and_then(Value::as_object_mut) {
+                slot.remove("team");
+            }
         }
         human
     };
@@ -2191,6 +2198,13 @@ fn request_setup(
             }
         }
         NetworkSetupRequest::RequestPings => service.command("ping", json!({})),
+        // VERA's room: the host's Balance is `/balance` as typed, Balance
+        // automatically the lobby's quiet `balance` command
+        // (docs/lobby-protocol.md).
+        NetworkSetupRequest::Balance { automatic: true } => service.command("balance", json!({})),
+        NetworkSetupRequest::Balance { automatic: false } => {
+            service.command("chat", json!({"text":"/balance","to":[],"action":false}))
+        }
         NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new()),
         NetworkSetupRequest::WolEmote(text) => service.command(
             "chat",
@@ -2336,6 +2350,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             "leave" => service.leave_completed(id),
             "logout" => service.logout_completed(id),
             "relay_ready" | "latency_ready" => service.report_completed(id),
+            "balance" => crate::app::shell_network_setup::balance_answered(state),
             _ => {}
         },
         http::Response::CommandFailed {
@@ -2364,6 +2379,17 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service.start_preparation = None;
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
+            "options" if failure == http::CommandFailure::InvalidOptions => {
+                // A lobby from before Teams, Balance automatically or the
+                // join queue refuses the field: the room goes on without it
+                // and publishes its options again.
+                let text = crate::app::shell_network_setup::lobby_refused_option(state)
+                    .unwrap_or("VERA:OnlineRequestRefused");
+                notice(state, &tr(text));
+            }
+            // The room no longer balances itself, or the lobby refused it:
+            // the next change of who plays asks again.
+            "balance" => crate::app::shell_network_setup::balance_answered(state),
             "choices"
                 if service
                     .pending_choices
@@ -4447,6 +4473,32 @@ mod completion_tests {
             !pending.answered_by(&json!({"launch":other})),
             "other choices still wait"
         );
+    }
+
+    #[test]
+    fn a_room_with_teams_answers_choices_with_the_team_it_gave() {
+        // A guest's first choices ask for no team; with Teams set the host
+        // keeps the guest on the team it gave.
+        use crate::skirmish_launch::LaunchTeam;
+        let session = setup_session();
+        let mut launch = session.network_setup().unwrap().clone();
+        let mut human = launch.humans[1].clone();
+        human.slot.team = LaunchTeam::None;
+        let expected_human = serde_json::to_value(&human).unwrap();
+        human.slot.country_random = true;
+        let pending = PendingChoices {
+            request_id: 1,
+            expected_human,
+            expected_random: serde_json::to_value(&human).unwrap(),
+            deadline: Instant::now() + RELAY_TIMEOUT,
+        };
+        launch.humans[1].slot.team = LaunchTeam::Team(1);
+        assert!(
+            !pending.answered_by(&json!({"launch":launch})),
+            "without Teams another team still waits"
+        );
+        launch.options.teams = Some(2);
+        assert!(pending.answered_by(&json!({"launch":launch})));
     }
 
     #[test]

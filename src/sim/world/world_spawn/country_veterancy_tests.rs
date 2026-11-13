@@ -154,9 +154,9 @@ fn country_starting_rank_reaches_held_construction_and_map_percent_overrides() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_building_rank_matches_native_init_manager_hook() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = crate::test_fixture::json("tools/rules_oracle/ares_country_veterancy.json");
     for row in corpus["building_creation"].as_array().unwrap() {
         let members = row["members"]

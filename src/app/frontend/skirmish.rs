@@ -57,7 +57,8 @@ pub(crate) fn house_color_map_for_launch_session(
         // `slot.color_index` is the colour priority gamemd hands
         // `Game_GetLinkedColor` (0x69A310); resolve it to a `[Colors]` entry
         // index. The vanilla build divides the priority table's odd index by
-        // two; Phobos SkirmishUnlimitedColors makes the index itself the entry.
+        // two, VERA's extra lobby colours name their entry, and Phobos
+        // SkirmishUnlimitedColors makes the index itself the entry.
         let entry = skirmish_colors.entry_for_priority(slot.color_index as i32) as u8;
         colors.insert(slot.owner_name, HouseColorIndex(entry));
     }

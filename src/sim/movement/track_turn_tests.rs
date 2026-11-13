@@ -427,7 +427,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
                 ai_counter: 11,
                 dispatch_timer: MissionDispatchTimer::from_raw(3, 90),
             });
-        let before = sim.substrate.entities.get(1).unwrap().mission;
+        let before = sim.substrate.entities.get(1).unwrap().mission.clone();
         sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
             .unwrap();
         assert!(!retained(sim.substrate.entities.get(1).unwrap(), kind).1);
@@ -441,7 +441,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
             None,
             crate::sim::world::FrameEffects::default(),
         );
-        let mission = sim.substrate.entities.get(1).unwrap().mission;
+        let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         assert_eq!(mission.current().known(), Some(MissionType::Unload));
         assert_eq!(mission.queued(), MissionId::NONE);
         assert_eq!(mission.handler_state(), 0);

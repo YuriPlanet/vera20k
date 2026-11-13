@@ -116,15 +116,13 @@ pub(crate) fn parse_prerequisites(
     let Some(tokens) = tokens else {
         return prior.to_vec();
     };
-    #[cfg(not(feature = "ares"))]
-    let _ = ares;
     tokens
         .into_iter()
         .filter_map(|token| {
-            // Ares 3.0 Parse @ 0x100085F0 replaces the retail parser.
+            // Ares 3.0 Parse @ 0x100085F0 replaces the retail parser. The
+            // catalog exists only in Rules read the Ares way.
             // Execution evidence: rules_oracle/ares_prerequisites.json's
             // building_before_group_name and group_lookup_case_insensitive.
-            #[cfg(feature = "ares")]
             if let Some(groups) = ares {
                 return building_index(token)
                     .map(Prerequisite::Building)

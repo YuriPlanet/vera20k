@@ -470,3 +470,29 @@ fn threat_receivers_ask_their_own_ally_masks() {
         );
     }
 }
+
+/// The presentation copy of the world holds no House threat grid, and the
+/// live world keeps its own as it was.
+#[test]
+fn the_presentation_copy_leaves_the_threat_grids_with_the_live_world() {
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    let grid = sim
+        .houses
+        .get(&owner)
+        .unwrap()
+        .spatial_threat_values()
+        .to_vec();
+    assert!(!grid.is_empty());
+
+    let copy = sim.presentation_copy(None, None);
+
+    let copied = copy.houses.get(&owner).unwrap();
+    assert!(copied.spatial_threat_values().is_empty());
+    assert_eq!(
+        sim.houses.get(&owner).unwrap().spatial_threat_values(),
+        grid
+    );
+}

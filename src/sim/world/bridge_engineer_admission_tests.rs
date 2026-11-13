@@ -119,7 +119,7 @@ fn ordinary_per_cell_prefix_matches_original_effective_mission_and_ground_target
         }
         let (sim, rules) = fixture(input, "");
         let infantry = sim.substrate.entities.get(INFANTRY).unwrap();
-        let mission_before = infantry.mission;
+        let mission_before = infantry.mission.clone();
         let rng_before = (
             sim.scenario_rng.logical_state(),
             sim.main_rng.logical_state(),

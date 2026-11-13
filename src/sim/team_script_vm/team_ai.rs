@@ -101,6 +101,7 @@ pub(super) fn center_sample(
 pub(super) fn center_of(
     samples: &[CenterSample],
     focus: Option<[i32; 2]>,
+    ares: bool,
 ) -> Option<([i32; 2], Option<u64>)> {
     let mut sum = [0i32; 2];
     let mut count = 0i32;
@@ -116,7 +117,7 @@ pub(super) fn center_of(
             continue;
         }
         let distance = focus.map_or(0, |focus| {
-            crate::util::native_coord::squared_xy_distance(sample.xy, focus)
+            crate::util::native_coord::squared_xy_distance(sample.xy, focus, ares)
         });
         if closest_distance == 0 || distance < closest_distance {
             closest_distance = distance;
@@ -264,7 +265,7 @@ impl Simulation {
     /// `0x006E9227..0x006E9299`: a team still forming, or a `Reinforce=`
     /// team below full strength, recruits for each short TaskForce entry,
     /// unless its house is human and it has been full.
-    fn team_recruit_short_entries(
+    pub(super) fn team_recruit_short_entries(
         &mut self,
         team_id: u64,
         rules: &RuleSet,
@@ -283,6 +284,7 @@ impl Simulation {
         {
             return;
         }
+        let mut walks = super::membership::RecruitWalks::default();
         let mut slot = 0;
         loop {
             let vm = &self.team_script_vm;
@@ -294,7 +296,7 @@ impl Simulation {
                 return;
             };
             if super::membership::entry_short(entry.count, team.slot_counts[slot]) {
-                self.team_recruit(team_id, slot, rules, registry, frame_effects);
+                self.team_recruit(team_id, slot, &mut walks, rules, registry, frame_effects);
             }
             slot += 1;
         }
@@ -424,7 +426,7 @@ impl Simulation {
             })
             .collect();
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(&samples, focus) {
+        let (zone, closest) = match center_of(&samples, focus, rules.ares()) {
             None => (None, None),
             Some((mean, closest)) => {
                 // CalcCenter6EB331 selects Map565730's Cell before CanEnter.

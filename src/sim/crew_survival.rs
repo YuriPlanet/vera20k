@@ -102,7 +102,6 @@
 //!   such a Bio Reactor (more infantry than foundation cells) starts Phase B
 //!   past the list (open native question); VERA skips Phase B's cells.
 
-#[cfg(feature = "ares")]
 mod ares_survivors;
 
 use crate::map::entities::EntityCategory;
@@ -291,7 +290,7 @@ impl Simulation {
         if !object.crewed {
             return None;
         }
-        let captured = entity.has_been_captured.is_set();
+        let captured = entity.building.has_been_captured.is_set();
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
         let house = houses.get(&entity.owner())?;
         #[cfg(feature = "ares")]
@@ -349,7 +348,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        if entity.no_survivor.is_set() || !object.crewed {
+        if entity.building.no_survivor.is_set() || !object.crewed {
             return 0;
         }
         let Some(house) = self.houses.get(&entity.owner()) else {
@@ -370,7 +369,7 @@ impl Simulation {
         if divisor == 0 || (side_divisor.is_some() && divisor < 0) {
             return 0;
         }
-        let divisor = if entity.has_been_captured.is_set() {
+        let divisor = if entity.building.has_been_captured.is_set() {
             divisor.wrapping_add(divisor)
         } else {
             divisor
@@ -412,11 +411,12 @@ impl Simulation {
         };
         let owner = entity.owner();
         let origin = (entity.position.rx(), entity.position.ry());
-        let captured = entity.has_been_captured.is_set();
+        let captured = entity.building.has_been_captured.is_set();
         let cells = foundation_cells(origin.0, origin.1, &object.foundation);
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
         let c4_source = entity
+            .building
             .pending_c4_detonation
             .pending()
             .and_then(|pending| pending.source_entity_id());
@@ -589,7 +589,7 @@ impl Simulation {
             return 0;
         };
         // `0x00442F2A`, `0x0044A4CA`.
-        let no_survivor = building.no_survivor.is_set();
+        let no_survivor = building.building.no_survivor.is_set();
         let absorbs = self
             .object_type(building.type_ref(), rules)
             .is_some_and(|object| object.absorbs_passengers());
@@ -1476,7 +1476,6 @@ fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -
 /// Installed Ares GetCrew707D20 hook1004C780..1004C867. This is the optional
 /// replacement of the retail query above, shared by every Ares crew caller.
 /// Side readers10021230/10021520 and1002DE60/1002E170 preserve explicit NULL.
-#[cfg(feature = "ares")]
 fn ares_techno_crew_type(
     rng: &mut SimRng,
     rules: &RuleSet,

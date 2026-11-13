@@ -55,6 +55,8 @@ pub(crate) enum ShellSlideKind {
     MoviesAndCredits,
     /// Dialog 0x129 — movie list (Play Movie and Back).
     MovieList,
+    /// VERA's Mods page, from the Mods button of Options.
+    Mods,
     /// Dialog 0x102 — offline skirmish setup.
     Skirmish,
     /// Dialog 0x94 — campaign selection.
@@ -124,6 +126,7 @@ impl ShellSlideKind {
             ShellSlideKind::SinglePlayer => 0x0100,
             ShellSlideKind::MoviesAndCredits => 0x0101,
             ShellSlideKind::MovieList => 0x0129,
+            ShellSlideKind::Mods => crate::ui::mods_shell::DIALOG.0,
             ShellSlideKind::Skirmish => 0x0102,
             ShellSlideKind::Campaign => 0x0094,
             ShellSlideKind::LoadSavedGame => 0x00B7,
@@ -153,7 +156,8 @@ impl ShellSlideKind {
 
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
-    /// error. Options slides VERA's page buttons under retail's Keyboard.
+    /// error. Options slides VERA's page buttons and its Mods button under
+    /// retail's Keyboard.
     /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
@@ -240,6 +244,9 @@ pub(crate) enum ShellExitThen {
     PlayMovie,
     /// Movie list Back (state `0xE` result -1).
     MovieListBack,
+    /// VERA's Mods page Back: Options is built again, on the page it was
+    /// left from.
+    ModsBack,
     /// Skirmish Start Game (result `0x617`) with the session packed and
     /// resolved when it was pressed.
     SkirmishStart(Box<crate::skirmish_launch::SkirmishLaunchSession>),
@@ -357,6 +364,7 @@ impl ShellExitThen {
             Self::SinglePlayer(_) => ShellSlideKind::SinglePlayer,
             Self::MoviesCredits(_) => ShellSlideKind::MoviesAndCredits,
             Self::PlayMovie | Self::MovieListBack => ShellSlideKind::MovieList,
+            Self::ModsBack => ShellSlideKind::Mods,
             Self::SkirmishStart(_) | Self::SkirmishBack => ShellSlideKind::Skirmish,
             Self::CampaignBack | Self::CampaignStart(_) => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
@@ -667,6 +675,7 @@ impl<'a> ShellLifecycleReducer<'a> {
             ShellSlideKind::SinglePlayer
             | ShellSlideKind::MoviesAndCredits
             | ShellSlideKind::MovieList
+            | ShellSlideKind::Mods
             | ShellSlideKind::Campaign
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
@@ -929,6 +938,8 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         ShellSlideKind::MoviesAndCredits
     } else if state.frontend.shell_route.movie_list() {
         ShellSlideKind::MovieList
+    } else if state.frontend.shell_route.mods() {
+        ShellSlideKind::Mods
     } else if state.frontend.shell_route.campaign() {
         ShellSlideKind::Campaign
     } else if state.frontend.shell_route.load_saved_game() {
@@ -1146,6 +1157,9 @@ pub(crate) fn render_shell_first_paint_slide(
                 encoder,
                 destination,
             )?
+        }
+        ShellSlideKind::Mods => {
+            crate::app::frontend::mods_render::render_mods_page(state, encoder, destination)?
         }
         ShellSlideKind::Campaign => {
             crate::app::frontend::campaign_shell_render::render_campaign_page(
@@ -1525,6 +1539,7 @@ mod tests {
             (column.top_buttons, column.bottom_button, column.map_button)
         };
         assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
+        assert_eq!(top_and_bottom(ShellSlideKind::Mods), (2, true, false));
         assert_eq!(
             top_and_bottom(ShellSlideKind::SinglePlayer),
             (3, true, false)
@@ -1538,14 +1553,19 @@ mod tests {
         // and Load Setup slide under them.
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA leaves Network out
-        // and slides its six page buttons under Keyboard.
+        // and slides its six page buttons under Keyboard, then its Mods
+        // button where the build has mods.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()
                 .top_buttons,
             2
         );
-        assert_eq!(top_and_bottom(ShellSlideKind::Options), (7, true, false));
+        let mods = u32::from(crate::ui::main_menu_dialogs::options::HAS_MODS);
+        assert_eq!(
+            top_and_bottom(ShellSlideKind::Options),
+            (7 + mods, true, false)
+        );
     }
 
     #[test]

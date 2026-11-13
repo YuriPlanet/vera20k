@@ -20,6 +20,7 @@ pub(crate) struct BountyTypeRules {
 
 impl BountyTypeRules {
     pub(crate) fn read_pass(&mut self, section: &IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Rank reader1003F750..1003F833: common value first copies to all
         // ranks; then Rookie, Veteran and Elite override independently.
         // Missing/invalid Ares integer reads retain the current destination.
@@ -89,6 +90,7 @@ impl Default for BountyGlobalRules {
 
 impl BountyGlobalRules {
     pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         //1002ADB1..1002ADC6, Valueable<double>1000EB00, AudioVisual.
         if let Some(section) = pass.section("AudioVisual") {
             self.display_delay =
@@ -100,6 +102,7 @@ impl BountyGlobalRules {
     /// General/BountyEnablers1002AAAB. Successful empty results clear it;
     /// failed or absent ReadString retains it. Order and duplicates survive.
     pub(crate) fn read_after_type_data(&mut self, pass: &IniFile, enablers: Option<Vec<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(enablers) = enablers {
             self.enablers = enablers;
         }
@@ -138,6 +141,7 @@ mod tests {
 
     #[test]
     fn bounty_readers_retain_layers_rank_overrides_and_noninherited_country_gate() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let root = "[Countries]\n0=PARENT\n1=CHILD\n[PARENT]\nGivesBounty=no\n\
             [CHILD]\nParentCountry=PARENT\n[VehicleTypes]\n0=HUNTER\n1=TARGET\n\
             [BuildingTypes]\n0=BANK\n[General]\nBountyEnablers=BANK,UNKNOWN,BANK\n\

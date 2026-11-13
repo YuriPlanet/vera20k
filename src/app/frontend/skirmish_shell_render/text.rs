@@ -64,8 +64,23 @@ fn team_label_spec(team: i32) -> (&'static str, &'static str) {
 }
 
 pub(super) fn team_label(state: &AppState, team: i32) -> String {
-    let (key, fallback) = team_label_spec(team);
-    localized_label(state, key, fallback)
+    room_team_label(team).unwrap_or_else(|| {
+        let (key, fallback) = team_label_spec(team);
+        localized_label(state, key, fallback)
+    })
+}
+
+/// A VERA room's teams past gamemd's A to D, as the lobby names them: the
+/// alphabet's next letters.
+fn room_team_label(team: i32) -> Option<String> {
+    let team = u32::try_from(team)
+        .ok()
+        .filter(|team| *team >= u32::from(crate::skirmish_launch::NATIVE_TEAMS))?;
+    Some(
+        char::from_u32(u32::from(b'A') + team)
+            .filter(char::is_ascii_uppercase)
+            .map_or_else(|| (team + 1).to_string(), String::from),
+    )
 }
 
 pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> String {
@@ -704,7 +719,7 @@ pub(super) fn build_shell_text_draws(
         scale,
     );
 
-    for (slot, row, opponent) in shell.paged_opponents() {
+    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -817,6 +832,7 @@ fn push_right_panel_text_draws(
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
     let save = tr("VERA:SaveSetup");
     let load = tr("VERA:LoadSetup");
+    let team_starts = tr("VERA:TeamStarts");
     let back = localized_label(state, "GUI:Back", "Back");
     let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
@@ -846,12 +862,21 @@ fn push_right_panel_text_draws(
             load_disabled,
         ),
         (
+            team_starts.as_str(),
+            layout.team_starts_button,
+            OwnerDrawButton::TeamStarts,
+            false,
+        ),
+        (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(_, rect, _, _)| rect.w > 0)
+    {
         push_button_label_draw(
             shell_draws,
             state,
@@ -897,7 +922,41 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // label reads "Environment" even though the control writes the map type.
     // VERA: the Advanced view labels its sliders and shows each value in the
     // slider's plaque, as the Players slider does.
-    if modal.advanced {
+    // VERA: the Extras view labels its rows and shows each row's value or
+    // tool in the row's face.
+    for (row, entry) in modal.extras_rows().into_iter().enumerate() {
+        use crate::ui::skirmish_shell::ExtrasValue;
+        if modal.extras_row(row).is_none() {
+            continue;
+        }
+        let (key, fallback) = entry.label();
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            rect_to_text_rect(layout.advanced_label_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+            scale.factor(),
+        );
+        let value = match modal.extras_value(entry) {
+            ExtrasValue::Label(key, fallback) => localized_label(state, key, fallback),
+            ExtrasValue::Number(number) => number.to_string(),
+            ExtrasValue::Page(page, pages) => format!("{page} / {pages}"),
+        };
+        push_text_draw(
+            out,
+            state,
+            &value,
+            rect_to_text_rect(layout.advanced_control_rects[row]),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+            scale.factor(),
+        );
+    }
+    if modal.advanced && modal.extras_page.is_none() {
         for field in crate::ui::skirmish_shell::AdvancedField::ALL {
             let (key, fallback) = field.label();
             let color = if modal.is_enabled(RandomMapSetupControl::Advanced(field)) {
@@ -1025,10 +1084,18 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             layout.cancel,
             RandomMapSetupControl::Cancel0x5c0,
         ),
-        if modal.advanced {
+        // The toggle names the view its press shows next.
+        if modal.extras_page.is_some() {
             (
                 "VERA:RandomMapBasic",
                 "Basic",
+                layout.advanced,
+                RandomMapSetupControl::AdvancedToggle,
+            )
+        } else if modal.advanced {
+            (
+                "VERA:RandomMapExtras",
+                "Extras",
                 layout.advanced,
                 RandomMapSetupControl::AdvancedToggle,
             )
@@ -1040,15 +1107,71 @@ pub(super) fn push_random_map_setup_modal_text_draws(
                 RandomMapSetupControl::AdvancedToggle,
             )
         },
+        if modal.exported {
+            (
+                "VERA:RandomMapExported",
+                "Map Exported",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        } else {
+            (
+                "VERA:RandomMapExport",
+                "Export Map",
+                layout.export,
+                RandomMapSetupControl::ExportMap,
+            )
+        },
+        if modal.options.fair_starts {
+            (
+                "VERA:RandomMapFairStartsOn",
+                "Fair Starts: On",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        } else {
+            (
+                "VERA:RandomMapFairStartsOff",
+                "Fair Starts: Off",
+                layout.fair_starts,
+                RandomMapSetupControl::FairStartsToggle,
+            )
+        },
+        {
+            let (key, fallback) = modal.preset.map_or(
+                ("VERA:RandomMapPresets", "Presets"),
+                crate::ui::skirmish_shell::RandomMapPreset::label,
+            );
+            (
+                key,
+                fallback,
+                layout.preset,
+                RandomMapSetupControl::PresetCycle,
+            )
+        },
     ]
     .into_iter()
     .filter(|(_, _, _, control)| {
-        !sliding && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+        let vera = matches!(
+            control,
+            RandomMapSetupControl::AdvancedToggle
+                | RandomMapSetupControl::ExportMap
+                | RandomMapSetupControl::FairStartsToggle
+                | RandomMapSetupControl::PresetCycle
+        );
+        !sliding && (!vera || modal.extended)
     }) {
+        let mut caption = localized_label(state, key, fallback);
+        // One of the player's own presets is named by its number.
+        if control == RandomMapSetupControl::PresetCycle
+            && let Some(crate::ui::skirmish_shell::RandomMapPreset::Mine(slot)) = modal.preset
+        {
+            caption = caption.replace("{number}", &(u32::from(slot) + 1).to_string());
+        }
         push_text_draw(
             out,
             state,
-            &localized_label(state, key, fallback),
+            &caption,
             button_text_rect(rect, modal.pressed_control == Some(control), scale),
             button_label_color_for_disabled(!modal.is_enabled(control)),
             ShellAlign::BUTTON_CAPTION,
@@ -1116,6 +1239,48 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             out,
             state,
             &localized_label(state, "GUI:WorkingPleaseWait", "Working, please wait..."),
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
+    } else if let Some((key, fallback)) = modal.extras_note {
+        // VERA: what the last Extras tool did, where the progress text goes.
+        push_text_draw(
+            out,
+            state,
+            &localized_label(state, key, fallback),
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
+    } else if let Some(report) = modal.fairness.filter(|_| modal.extended && modal.generated) {
+        // VERA: how evenly the map on show treats its starts.
+        let readout = report.readout();
+        let text = localized_label(
+            state,
+            "VERA:RandomMapFairness",
+            "Fairness: ore {ore}%, 2nd field {expansion}%, room {room}%, spacing {spacing}%",
+        )
+        .replace("{ore}", &readout.ore.to_string())
+        .replace("{expansion}", &readout.expansion.to_string())
+        .replace("{room}", &readout.room.to_string())
+        .replace("{spacing}", &readout.spacing.to_string());
+        // The water near the starts joins the line with Sea Access on.
+        let text = match readout.sea.filter(|_| report.sea_wanted) {
+            Some(sea) => {
+                text + &localized_label(state, "VERA:RandomMapFairnessSea", ", sea {sea}%")
+                    .replace("{sea}", &sea.to_string())
+            }
+            None => text,
+        };
+        push_text_draw(
+            out,
+            state,
+            &text,
             rect_to_text_rect(layout.progress_text),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
@@ -1211,15 +1376,18 @@ pub(super) fn push_choose_map_modal_text_draws(
                 ChooseMapModalButton::Cancel0x5c0,
             ),
             (
-                // VERA: under Online Maps this button stars the map.
-                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
-                    Some(true) => tr("VERA:RemoveFavorite"),
-                    Some(false) => tr("VERA:AddFavorite"),
-                    None if modal.online_maps_selected() => tr("VERA:AddFavorite"),
-                    None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
-                },
+                localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
                 layout.create_random_map_button,
                 ChooseMapModalButton::CreateRandomMap0x583,
+            ),
+            (
+                // VERA: stars the highlighted map, or takes its star away.
+                match modal.favorite_button(state.frontend.scenario_catalog.records()) {
+                    Some(true) => tr("VERA:RemoveFavorite"),
+                    _ => tr("VERA:AddFavorite"),
+                },
+                layout.favorite_button,
+                ChooseMapModalButton::Favorite,
             ),
         ] {
             let disabled = !modal.button_enabled(button);
@@ -1263,6 +1431,8 @@ pub(super) fn push_choose_map_modal_text_draws(
     {
         let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
             tr("VERA:OnlineMaps")
+        } else if *mode_id == crate::ui::skirmish_shell::FAVORITES_ROW {
+            tr("VERA:Favorites")
         } else {
             let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
                 continue;
@@ -1303,8 +1473,9 @@ pub(super) fn push_choose_map_modal_text_draws(
                 .records()
                 .get(*record_idx)
                 .map(|record| {
-                    // Starred online maps carry a star.
-                    if modal.is_favorite(record) {
+                    // Starred maps carry a star, except under Favorites,
+                    // where every map is one.
+                    if !modal.favorites_selected() && modal.is_favorite(record) {
                         format!("* {}", record.display_name)
                     } else {
                         record.display_name.clone()
@@ -1331,13 +1502,27 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: an empty Online Maps list says why, wrapped down the list.
-    if modal.online_maps_selected() && modal.filtered_record_indices.is_empty() {
+    // VERA: an empty Online Maps or Favorites list says why, wrapped down
+    // the list.
+    let empty = if !modal.filtered_record_indices.is_empty() {
+        None
+    } else if modal.online_maps_selected() {
+        Some(crate::app::map_library::empty_online_maps_text(state))
+    } else if modal.favorites_selected() && modal.search.is_empty() {
+        Some(tr(if modal.favorites.is_empty() {
+            "VERA:NoFavorites"
+        } else {
+            "VERA:NoFavoritesHere"
+        }))
+    } else {
+        None
+    };
+    if let Some(empty) = empty {
         let row = geometry.row(0);
         push_text_draw(
             out,
             state,
-            &crate::app::map_library::empty_online_maps_text(state),
+            &empty,
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,
@@ -1350,33 +1535,76 @@ pub(super) fn push_choose_map_modal_text_draws(
             scale.factor(),
         );
     }
-    // VERA: the search line under the map list; typing anywhere fills it.
-    let search = if modal.search.is_empty() {
-        tr("VERA:MapSearchHint")
+    // VERA: the search box over the map list; typing anywhere fills it. An
+    // empty box says so in the label colour: the disabled red does not read
+    // over the chooser's background.
+    let field = scale.derive_rect(layout.map_search, |rect| {
+        RectPx::new(
+            rect.x + LIST_TEXT_INSET,
+            rect.y,
+            rect.w - LIST_TEXT_INSET,
+            rect.h,
+        )
+    });
+    let hint;
+    let (search, rgb) = if modal.search.is_empty() {
+        hint = tr("VERA:MapSearchHint");
+        (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
-        tr_fill("VERA:MapSearch", &[("search", &modal.search)])
+        let box_w = scale.base_rect(layout.map_search).w;
+        let (tail, _) = map_search_tail(&state.renderer.bit_font, &modal.search, box_w);
+        (tail, SHELL_LABEL_TEXT_RGB)
     };
-    let list = layout.map_list;
-    let px = |value: f32| (value * scale.factor()).round() as i32;
     push_text_draw(
         out,
         state,
-        &search,
-        rect_to_text_rect(RectPx::new(
-            list.x,
-            list.y + list.h + px(10.0),
-            list.w,
-            px(20.0),
-        )),
-        if modal.search.is_empty() {
-            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-        } else {
-            SHELL_LABEL_TEXT_RGB
-        },
+        search,
+        rect_to_text_rect(field),
+        rgb,
         ShellAlign::V_CENTER,
         SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
         scale.factor(),
     );
+}
+
+/// The search caret's width, in 800x600 numbers like a NewEdit's.
+pub(super) const MAP_SEARCH_CARET_W: i32 = 2;
+
+/// The end of `search` that fits a `box_w` wide search box with the caret
+/// after it, and that text's width: a long search scrolls its start out of
+/// the box. All in 800x600 numbers.
+pub(super) fn map_search_tail<'a>(font: &BitFont, search: &'a str, box_w: i32) -> (&'a str, i32) {
+    let room = box_w - 2 * LIST_TEXT_INSET - MAP_SEARCH_CARET_W;
+    let mut tail = search;
+    loop {
+        let width = font.text_width(tail) as i32;
+        let mut chars = tail.chars();
+        if width <= room || chars.next().is_none() {
+            return (tail, width);
+        }
+        tail = chars.as_str();
+    }
+}
+
+/// Where the search caret goes: after the text, inside the box. `None`
+/// while the box is empty and shows its hint.
+pub(super) fn map_search_caret_rect(
+    font: &BitFont,
+    search: &str,
+    map_search: RectPx,
+    scale: ShellScale,
+) -> Option<RectPx> {
+    if search.is_empty() {
+        return None;
+    }
+    let base = scale.base_rect(map_search);
+    let (_, width) = map_search_tail(font, search, base.w);
+    Some(scale.scale_rect(RectPx::new(
+        base.x + LIST_TEXT_INSET + width,
+        base.y + 2,
+        MAP_SEARCH_CARET_W,
+        base.h - 4,
+    )))
 }
 
 pub(super) fn push_validation_modal_text_draws(
@@ -1874,6 +2102,14 @@ mod tests {
     }
 
     #[test]
+    fn room_teams_past_d_take_the_lobby_letters() {
+        assert_eq!(room_team_label(-2), None);
+        assert_eq!(room_team_label(3), None);
+        assert_eq!(room_team_label(4).as_deref(), Some("E"));
+        assert_eq!(room_team_label(14).as_deref(), Some("O"));
+    }
+
+    #[test]
     fn trackbar_value_text_uses_normal_shell_yellow_source() {
         assert_eq!(trackbar_value_text_color(), SHELL_LABEL_TEXT_RGB);
     }
@@ -1953,6 +2189,25 @@ mod tests {
 
         assert_eq!(label.as_ref(), "ab");
         assert!(font.text_width(label.as_ref()) <= 14);
+    }
+
+    /// A search longer than its box keeps its end and the caret inside the
+    /// box; an empty box shows its hint and no caret.
+    #[test]
+    fn a_long_map_search_scrolls_to_keep_its_end_and_caret_in_the_box() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
+        let field = RectPx::new(338, 119, 196, 17);
+        let long = "a".repeat(40);
+        // 196 less two 2 px insets and the 2 px caret leaves 190: 27 of the
+        // font's 7 px advances.
+        assert_eq!(map_search_tail(&font, &long, field.w), (&long[13..], 189));
+        let caret = map_search_caret_rect(&font, &long, field, ShellScale::RETAIL).unwrap();
+        assert_eq!(caret, RectPx::new(529, 121, 2, 13));
+        assert!(caret.x + caret.w <= field.x + field.w - LIST_TEXT_INSET);
+        assert_eq!(
+            map_search_caret_rect(&font, "", field, ShellScale::RETAIL),
+            None
+        );
     }
 
     /// A map name wider than its row (a file name with no description) used to

@@ -16,6 +16,7 @@
 //! update instead, so its callers' requests are subsumed.
 
 use crate::map::houses::HouseColorMap;
+use crate::render::snapshot::SnapshotObject;
 use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
@@ -86,16 +87,17 @@ impl RadarProjectionFacts {
 }
 
 pub(super) fn radar_entity_owner_color(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &impl crate::render::snapshot::SnapshotObject,
     interner: Option<&crate::sim::intern::StringInterner>,
     house_colors: &HouseColorMap,
     ramps: &HouseColorRamps,
-    observer: Option<InternedId>,
     owner_allied_with_observer: bool,
 ) -> [u8; 4] {
     // Radar655F48 asks the class's +D0(0) only when +C4 says disguised.
-    let color_owner = if entity.disguise.as_ref().is_some_and(|d| d.is_disguised()) {
-        entity.disguise_house(false, observer, owner_allied_with_observer)
+    let color_owner = if entity.disguise().is_some_and(|d| d.is_disguised()) {
+        // `GameEntity::disguise_house(false, observer, ..)`, captured for
+        // the frame's local player, the observer.
+        entity.radar().disguise_house[usize::from(owner_allied_with_observer)]
     } else {
         Some(entity.owner())
     };
@@ -124,9 +126,8 @@ pub(super) fn radar_entity_owner_color(
 /// RESIDUAL: `FlashFrameTime=0` divides by zero natively; here it never
 /// flashes.
 pub(super) fn radar_combat_flash_inverts(
-    entity: &crate::sim::game_entity::GameEntity,
+    entity: &impl crate::render::snapshot::SnapshotObject,
     current_player: Option<InternedId>,
-    binary_frame: u32,
     rules: Option<&RuleSet>,
 ) -> bool {
     let Some(period) = rules
@@ -135,7 +136,8 @@ pub(super) fn radar_combat_flash_inverts(
     else {
         return false;
     };
-    let remaining = entity.radar_combat_flash.remaining(binary_frame as i32);
+    // Captured at the frame's committed binary frame.
+    let remaining = entity.radar().combat_flash_remaining;
     remaining > 0 && (remaining - 1) / period % 2 == 1 && current_player == Some(entity.owner())
 }
 
@@ -143,7 +145,7 @@ pub(super) fn radar_combat_flash_inverts(
 /// inverse (`0x00655CB8..0x00655D03`) names for the entry's pixel.
 pub(super) fn radar_pixel_candidate_eligible(
     entry: RadarTrackerEntry,
-    entities: &crate::sim::entity_store::EntityStore,
+    frame: &impl crate::render::snapshot::SnapshotObjects,
     houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
@@ -155,7 +157,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     pixel_cell: Option<(u16, u16)>,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> bool {
-    let Some(entity) = entities.get(entry.stable_id) else {
+    let Some(entity) = frame.object(entry.stable_id) else {
         return false;
     };
     let object = rules
@@ -164,7 +166,7 @@ pub(super) fn radar_pixel_candidate_eligible(
 
     if let Some(local_owner) = local_owner {
         if !full_visibility {
-            let (rx, ry) = pixel_cell.unwrap_or((entity.position.rx(), entity.position.ry()));
+            let (rx, ry) = pixel_cell.unwrap_or((entity.position().rx(), entity.position().ry()));
             let owner_is_human =
                 radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero);
             if radar_cell_shrouded(fog, cells, local_owner, (rx, ry)) && !owner_is_human {
@@ -318,15 +320,15 @@ impl RetainedRadarTracker {
     /// native radar registration is independent of LogicVector membership.
     pub fn remove_absent_or_ineligible(
         &mut self,
-        entities: &crate::sim::entity_store::EntityStore,
+        frame: &impl crate::render::snapshot::SnapshotObjects,
     ) {
         let stale: Vec<u64> = self
             .objects
             .keys()
             .copied()
             .filter(|&stable_id| {
-                entities.get(stable_id).is_none_or(|entity| {
-                    entity.lifecycle.in_limbo() || !entity.lifecycle.object_alive()
+                frame.object(stable_id).is_none_or(|entity| {
+                    entity.lifecycle().in_limbo() || !entity.lifecycle().object_alive()
                 })
             })
             .collect();

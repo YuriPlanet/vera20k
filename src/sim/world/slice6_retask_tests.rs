@@ -416,27 +416,35 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // #3710 folds the game options' room bans (all off here): hash composition
 // only. A temporary control omitting that fold gave the previous value, with
 // every tripwire above green. Control removed. Previous: 0xD3E2_D02E_809A_1CCD.
-// Ares builds also fold two retained Ares states for every actor here:
+// An Ares game also folds two retained Ares states for every actor here:
 // AttachEffectClass::Update10058E00 (TechnoClass_Update hook 0x6F9E50 ->
 // 1004B320) settles the type-effect state at Disabled on each actor's first
 // update, since no type sets AttachEffect.Duration, and RecalculateStats
 // 100460A0's attached-cloak byte folds even while false. Hash composition
-// only: a temporary control skipping just those two folds in an Ares build
-// gave the default value, every per-frame replay diagnostic field matched
-// the default build's, and every tripwire above stayed green. Control removed.
-// Ares builds now also fold each Unit's TechnoExt AltOccupation (hooks
+// only: a temporary control skipping just those two folds in an Ares game
+// gave the stock value, every per-frame replay diagnostic field matched
+// the stock game's, and every tripwire above stayed green. Control removed.
+// An Ares game now also folds each Unit's TechnoExt AltOccupation (hooks
 // 0x7441B6/0x744216): hash composition only. A temporary control skipping
 // that fold gave the previous value, with every tripwire above green.
 // Control removed. Previous: 0xF21F_9A9D_57BE_D7E7.
-// Both builds now fold each entity's UpdateVisceroid direction (UnitClass+0x6D4,
+// Both games now fold each entity's UpdateVisceroid direction (UnitClass+0x6D4,
 // `idle_wander`): hash composition only. A temporary control skipping that fold
-// gave the previous values in both builds. Control removed. Previous:
-// 0x5171_FBD3_06C4_D828 (Ares), 0xD8C3_5827_8CA8_5375 (default).
-const SLICE6_BASELINE_HASH: u64 = if cfg!(feature = "ares") {
-    0x7D9F_30F7_1CBF_1016
-} else {
-    0xCBF9_C392_848C_13BA
-};
+// gave the previous values in both games. Control removed. Previous:
+// 0x5171_FBD3_06C4_D828 (Ares), 0xD8C3_5827_8CA8_5375 (stock).
+// An Ares game no longer folds RecalculateStats100460A0's attached-cloak
+// byte while it is false: the byte moved into the object's Ares part, which a
+// game without Ares never writes, so the fold asks first. Hash composition
+// only, in an Ares game alone: the stock value above is unchanged, and the
+// tripwires below stayed green in both games.
+// Previous Ares: 0x7D9F_30F7_1CBF_1016.
+fn slice6_baseline_hash(ares: bool) -> u64 {
+    if ares {
+        0x949A_7C55_B2F8_4F0B
+    } else {
+        0xCBF9_C392_848C_13BA
+    }
+}
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -739,7 +747,7 @@ fn replay_hash_stable_through_slice6() {
     );
     assert_eq!(
         sim.state_hash(),
-        SLICE6_BASELINE_HASH,
+        slice6_baseline_hash(rules.ares()),
         "scripted-retask state drifted: establish the changed behavior, RNG producer, or hash composition before updating"
     );
 }

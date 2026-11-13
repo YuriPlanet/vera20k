@@ -263,28 +263,36 @@ impl Simulation {
         // Native class-array order is constructor/registration order. Stable
         // object IDs are monotonic construction IDs, so filtering the ordered
         // store preserves each class array's order without a second registry.
-        for entity in self.substrate.entities.values_sorted() {
-            if entity.category() == EntityCategory::Infantry {
-                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-                checksum.fold_infantry(x, y, entity.body_facing_current(frame));
-            }
+        // Each walk picks its class from the store's category column and loads
+        // only that class's records, as native walks only that class's array.
+        for entity in self
+            .substrate
+            .entities
+            .values_of_category(EntityCategory::Infantry)
+        {
+            let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+            checksum.fold_infantry(x, y, entity.body_facing_current(frame));
         }
-        for entity in self.substrate.entities.values_sorted() {
-            if entity.category() == EntityCategory::Unit {
-                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-                checksum.fold_unit(
-                    x,
-                    y,
-                    entity.body_facing_current(frame),
-                    secondary_facing(entity, frame),
-                );
-            }
+        for entity in self
+            .substrate
+            .entities
+            .values_of_category(EntityCategory::Unit)
+        {
+            let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+            checksum.fold_unit(
+                x,
+                y,
+                entity.body_facing_current(frame),
+                secondary_facing(entity, frame),
+            );
         }
-        for entity in self.substrate.entities.values_sorted() {
-            if entity.category() == EntityCategory::Structure {
-                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-                checksum.fold_building(x, y, entity.body_facing_current(frame));
-            }
+        for entity in self
+            .substrate
+            .entities
+            .values_of_category(EntityCategory::Structure)
+        {
+            let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+            checksum.fold_building(x, y, entity.body_facing_current(frame));
         }
 
         if self.houses.order().len() != self.houses.len() {

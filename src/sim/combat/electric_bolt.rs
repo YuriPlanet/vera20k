@@ -20,7 +20,7 @@ pub struct ElectricBoltBirth {
     /// Ares `Bolt.Color1..3` of the weapon that made the bolt
     /// (EBolt_Draw_Colors, Ares.dll 100561F0, hook 0x4C1F33): each set colour
     /// replaces the palette colour of the first outer, second outer and
-    /// centre strand. Always `None` in default builds.
+    /// centre strand. Always `None` when Ares does not play.
     pub colors: [Option<[u8; 3]>; 3],
     /// The firer [`fired`] names for `EBolt::SetOwner @ 0x004C2BD0`
     /// (bolt `+0x20`/`+0x24`); the app keeps it only while the Unit holds
@@ -170,7 +170,7 @@ pub(crate) fn create(
         z_adjust,
         weapon,
         owner,
-        cfg!(feature = "ares"),
+        rules.ares(),
     );
 }
 
@@ -202,14 +202,8 @@ fn emit(
     ares_ext: bool,
 ) {
     let alternate_color = weapon.is_alternate_color;
-    #[cfg(feature = "ares")]
     let visuals = ares_ext.then_some(&weapon.ares_visuals);
-    #[cfg(not(feature = "ares"))]
-    let _ = ares_ext;
-    #[cfg(feature = "ares")]
     let colors = visuals.map_or([None; 3], |visuals| visuals.bolt_colors);
-    #[cfg(not(feature = "ares"))]
-    let colors = [None; 3];
     // Init4C2AA3 draws from process Main, before constructing SparkSys. The
     // shared RNG owns every rejection retry. EBolt itself allocates no ID.
     let phase = world.main_rng.next_range_i32_inclusive(0, 256);
@@ -237,13 +231,10 @@ fn emit(
     // Ares EBolt_Fire_Particles (Ares.dll 100562C0, hook 0x4C2AFF): a bolt
     // with WeaponTypeExt spawns Bolt.ParticleSystem instead, with the same
     // arguments; an explicit `none` spawns nothing.
-    #[cfg(feature = "ares")]
     let system = match visuals.and_then(|visuals| visuals.bolt_particle_system.as_ref()) {
         Some(system) => system.as_deref(),
         None => default_system(),
     };
-    #[cfg(not(feature = "ares"))]
-    let system = default_system();
     if let Some(system_type) = system.and_then(|name| rules.ps_type_id_by_name(name)) {
         world.spawn_particle_system(
             system_type,

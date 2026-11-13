@@ -119,7 +119,7 @@ impl DirectiveOptions {
     /// `$Include` takes over from its `[#include]`.
     pub fn production() -> Self {
         Self {
-            ares: crate::rules::ARES_ENABLED,
+            ares: crate::rules::ARES_BUILD,
             phobos: crate::rules::PHOBOS_ENABLED,
             ..Self::default()
         }

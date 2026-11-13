@@ -1538,8 +1538,9 @@ fn splits_detonates_once_and_emits_only_its_cluster() {
 }
 
 #[test]
-#[cfg(all(feature = "phobos", feature = "ares"))]
+#[cfg(feature = "phobos")]
 fn phobos_replaces_ares_airburst() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = rules_ini(
         "Airburst=yes\nAirburstWeapon=CHILD_GUN\nCluster=1\n\
          AirburstSpread=1.5\nAirburst.UseCluster=yes\n",

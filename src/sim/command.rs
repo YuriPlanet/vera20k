@@ -732,17 +732,14 @@ impl CycleProducerRecord {
 
 /// Ares 3.0 `AresNetEvent::Events::TrenchRedirectClick`: a selected
 /// trench's occupants move into the trench on the clicked Cell.
-#[cfg(feature = "ares")]
 pub const ARES_TRENCH_REDIRECT_OPCODE: u8 = 0x60;
 /// Its payload length (Ares.dll `1006A130` answers 10 for 0x60).
-#[cfg(feature = "ares")]
 pub const ARES_TRENCH_REDIRECT_PAYLOAD_LEN: u8 = 10;
 
 /// Typed view of the Ares TrenchRedirectClick event (0x60): the target
 /// Cell's five-byte TargetClass token, then the source Building's
 /// (RaiseTrenchRedirectClick `1006A170`). The Cell token is
 /// `x + y * 1000`, kind `0x0B` unless the value is 0, which leaves kind 0.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AresTrenchRedirectRecord {
     pub house_id: i8,
@@ -751,7 +748,6 @@ pub struct AresTrenchRedirectRecord {
     pub source: MegaMissionTarget,
 }
 
-#[cfg(feature = "ares")]
 impl AresTrenchRedirectRecord {
     /// `cell` is the clicked building's Cell, `source_id` the selected
     /// building's ID.

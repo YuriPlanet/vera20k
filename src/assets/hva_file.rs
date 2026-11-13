@@ -130,64 +130,66 @@ impl HvaFile {
     }
 }
 
+/// A minimal HVA for tests, client tests included: 2 frames of one section
+/// named `body`, identity then translated by (1, 2, 3).
+#[cfg(any(test, feature = "test-support"))]
+pub fn minimal_test_hva() -> Vec<u8> {
+    let mut data: Vec<u8> = Vec::new();
+
+    // Filename (16 bytes).
+    data.extend_from_slice(b"test.hva\0\0\0\0\0\0\0\0");
+
+    // Frame count = 2, section count = 1.
+    data.extend_from_slice(&2u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+
+    // Section name (16 bytes).
+    data.extend_from_slice(b"body\0\0\0\0\0\0\0\0\0\0\0\0");
+
+    // Frame 0: identity matrix (3×4 row-major).
+    // Row 0: [1, 0, 0, 0]
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    // Row 1: [0, 1, 0, 0]
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    // Row 2: [0, 0, 1, 0]
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+
+    // Frame 1: translated by (1, 2, 3).
+    // Row 0: [1, 0, 0, 1]
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    // Row 1: [0, 1, 0, 2]
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&2.0f32.to_le_bytes());
+    // Row 2: [0, 0, 1, 3]
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&0.0f32.to_le_bytes());
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&3.0f32.to_le_bytes());
+
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Build a minimal HVA: 2 frames, 1 section, identity matrices.
-    fn make_test_hva() -> Vec<u8> {
-        let mut data: Vec<u8> = Vec::new();
-
-        // Filename (16 bytes).
-        data.extend_from_slice(b"test.hva\0\0\0\0\0\0\0\0");
-
-        // Frame count = 2, section count = 1.
-        data.extend_from_slice(&2u32.to_le_bytes());
-        data.extend_from_slice(&1u32.to_le_bytes());
-
-        // Section name (16 bytes).
-        data.extend_from_slice(b"body\0\0\0\0\0\0\0\0\0\0\0\0");
-
-        // Frame 0: identity matrix (3×4 row-major).
-        // Row 0: [1, 0, 0, 0]
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        // Row 1: [0, 1, 0, 0]
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        // Row 2: [0, 0, 1, 0]
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-
-        // Frame 1: translated by (1, 2, 3).
-        // Row 0: [1, 0, 0, 1]
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        // Row 1: [0, 1, 0, 2]
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&2.0f32.to_le_bytes());
-        // Row 2: [0, 0, 1, 3]
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes());
-        data.extend_from_slice(&3.0f32.to_le_bytes());
-
-        data
-    }
-
     #[test]
     fn test_parse_hva_basic() {
-        let data: Vec<u8> = make_test_hva();
+        let data: Vec<u8> = minimal_test_hva();
         let hva: HvaFile = HvaFile::from_bytes(&data).expect("Should parse");
         assert_eq!(hva.frame_count, 2);
         assert_eq!(hva.section_count, 1);
@@ -198,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_get_transform() {
-        let data: Vec<u8> = make_test_hva();
+        let data: Vec<u8> = minimal_test_hva();
         let hva: HvaFile = HvaFile::from_bytes(&data).expect("Should parse");
 
         // Frame 0: identity (translation = 0,0,0 at indices 3,7,11).

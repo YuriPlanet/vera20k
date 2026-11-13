@@ -104,8 +104,8 @@ pub struct WaveDamageRequest {
     pub recorded_cells: Vec<WaveRecordedCell>,
     pub wave_z: i32,
     /// Ares WaveClass_DamageCell (Ares.dll 10056FA0, hook 0x75F38F): the
-    /// wave's own weapon replaces the owner's GetWeapon(0). Always `None` in
-    /// default builds.
+    /// wave's own weapon replaces the owner's GetWeapon(0). `None` unless
+    /// Ares plays.
     pub ares_weapon: Option<crate::sim::intern::InternedId>,
 }
 
@@ -159,7 +159,7 @@ pub struct WaveUpdateContext {
     /// Native What_Am_I==1 reverses type3's geometry arguments.
     pub target_is_unit: bool,
     /// Ares WaveClass_Update_Beam's verdict for a wave with WaveExt data;
-    /// always `None` in default builds.
+    /// `None` unless Ares plays.
     pub ares: Option<AresWaveTracking>,
 }
 
@@ -207,7 +207,6 @@ pub struct Wave {
     recorded_cells: Vec<WaveRecordedCell>,
     /// Ares `WeaponTypeExt::WaveExt[this]`: the weapon CreateWave (Ares.dll
     /// 10055160) registered for this wave before its constructor.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_weapon: Option<crate::sim::intern::InternedId>,
 }
@@ -370,19 +369,16 @@ impl Wave {
             direction_octant: 0,
             intensity: Self::DEFAULT_LASER_INTENSITY,
             recorded_cells: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_weapon: None,
         }
     }
 
     /// CreateWave 10055160 registers the firing weapon in WaveExt.
-    #[cfg(feature = "ares")]
     pub(crate) fn with_ares_weapon(mut self, weapon: crate::sim::intern::InternedId) -> Self {
         self.ares_weapon = Some(weapon);
         self
     }
 
-    #[cfg(feature = "ares")]
     pub const fn ares_weapon(&self) -> Option<crate::sim::intern::InternedId> {
         self.ares_weapon
     }
@@ -762,7 +758,6 @@ impl std::hash::Hash for Wave {
         self.direction_octant.hash(state);
         self.intensity.hash(state);
         self.recorded_cells.hash(state);
-        #[cfg(feature = "ares")]
         if let Some(weapon) = self.ares_weapon {
             b"ares-wave-weapon-v1".hash(state);
             weapon.hash(state);
@@ -846,7 +841,6 @@ impl WaveStore {
     /// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50): the cells
     /// the previous update recorded, for the damage it runs before updating.
     /// A wave without an owner damages nothing (DamageArea's +0x1D4 test).
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_damage_request(&self, id: u64) -> Option<WaveDamageRequest> {
         let wave = self.get(id)?;
         Some(WaveDamageRequest {
@@ -933,7 +927,7 @@ pub fn wave_sine_table<const N: usize>(frequency: NativeF64Bits) -> [i16; N] {
 /// The 500-entry Sonic table at `0x00B46254` (frequency 0.125). WaveClass's
 /// Sonic pixel displacement and AI_Fire's stream wobble (`0x0062FC90`) read it.
 pub fn sonic_wave_table() -> &'static [i16; 500] {
-    static TABLE: std::sync::OnceLock<[i16; 500]> = std::sync::OnceLock::new();
+    static TABLE: crate::util::sync::OnceLock<[i16; 500]> = crate::util::sync::OnceLock::new();
     TABLE.get_or_init(|| wave_sine_table(NativeF64Bits::from_bits(0x3fc0_0000_0000_0000)))
 }
 

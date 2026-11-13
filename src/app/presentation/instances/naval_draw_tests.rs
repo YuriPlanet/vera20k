@@ -1,5 +1,6 @@
 //! Physical AEGIS type -> production model/raster -> parent waterline input.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::sinking::SinkingWaterlines;
 use crate::util::sha256::sha256_hex;
 
@@ -49,7 +50,7 @@ fn sinking_unit_draw_admission_matches_original_projection_boundaries() {
         let entity = native_draw_entity(input);
         let viewport = std::array::from_fn(|i| input["viewport"][i].as_i64().unwrap() as f32);
         let camera = native_camera(input);
-        let anchor = unit_draw_anchor(&entity, camera, viewport, None);
+        let anchor = unit_draw_anchor(&ObjectRecord::of_test(&entity), camera, viewport, None);
         assert_eq!(
             anchor.is_some(),
             row["output"]["admitted"].as_bool().unwrap(),
@@ -77,9 +78,25 @@ fn visible_ground_shadow_keeps_high_aircraft_in_the_draw_plan() {
     entity.position.set_exact_z_leptons_for_test(Some(10000));
     let camera = [-320.0, 215.0];
     let viewport = [640.0, 480.0];
-    assert!(unit_draw_anchor(&entity, camera, viewport, None).is_none());
-    assert!(unit_draw_anchor(&entity, camera, viewport, Some([0.0, 330.0])).is_some());
-    assert!(unit_draw_anchor(&entity, [5000.0, 5000.0], viewport, Some([0.0, 330.0])).is_none());
+    assert!(unit_draw_anchor(&ObjectRecord::of_test(&entity), camera, viewport, None).is_none());
+    assert!(
+        unit_draw_anchor(
+            &ObjectRecord::of_test(&entity),
+            camera,
+            viewport,
+            Some([0.0, 330.0])
+        )
+        .is_some()
+    );
+    assert!(
+        unit_draw_anchor(
+            &ObjectRecord::of_test(&entity),
+            [5000.0, 5000.0],
+            viewport,
+            Some([0.0, 330.0])
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -107,8 +124,13 @@ fn offscreen_first_sinking_draw_survives_descent_camera_pan_and_save_load() {
         let input = &step["input"];
         let entity = native_draw_entity(input);
         let viewport = std::array::from_fn(|i| input["viewport"][i].as_i64().unwrap() as f32);
-        let anchor = unit_draw_anchor(&entity, native_camera(input), viewport, None)
-            .expect("original Unit DrawIt admits this offscreen or camera-panned anchor");
+        let anchor = unit_draw_anchor(
+            &ObjectRecord::of_test(&entity),
+            native_camera(input),
+            viewport,
+            None,
+        )
+        .expect("original Unit DrawIt admits this offscreen or camera-panned anchor");
         let bounds = composite_draw_bounds([(entry, anchor)]);
         let clip = bounds.unit_waterline(&mut cache, entity.stable_id(), true);
         let expected = step["output"]["waterline_after"].as_i64().unwrap() as i16 + 15;

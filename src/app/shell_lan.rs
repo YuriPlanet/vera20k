@@ -196,13 +196,21 @@ impl App {
             .match_state
             .session
             .enter_network(NetworkReturnContext::LanLobby);
-        let local = state.frontend.multiplayer_shell_runtime.local_participant();
-        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-        let mut runtime = LanShellRuntime::new(&local.name, observer);
+        let owner = &mut state.frontend.multiplayer_shell_runtime;
+        let local = owner.local_participant();
+        // The name box shows the name as typed; the lobby row shows it as
+        // every other player sees it.
+        let name = owner.open_lan_name_box();
+        let mut runtime = LanShellRuntime::new(&name, owner.lan_observer());
         runtime
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
         state.frontend.lan = Some(runtime);
+        // Android routes a socket by the process's network when the socket is
+        // made: bind the process to Wi-Fi before the visit opens its sockets,
+        // and watch that network while the lobby is open.
+        #[cfg(target_os = "android")]
+        crate::util::lan_network::acquire();
         crate::app::lan_service::open(state);
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         shell_transition::invalidate_main_menu_dialog_instance(state);
@@ -220,6 +228,8 @@ impl App {
             .persist_lan_preferences();
         state.frontend.lan = None;
         crate::app::lan_service::close(state);
+        #[cfg(target_os = "android")]
+        crate::util::lan_network::release();
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
         state
@@ -548,7 +558,16 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             .multiplayer_shell_runtime
             .set_lan_observer(value),
         LanLobbyAction::NameChanged(value) => {
-            state.frontend.multiplayer_shell_runtime.set_handle(&value);
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .set_lan_name(&value);
+            // The row shows the name as sent, as the service's rebuild does.
+            let name = state
+                .frontend
+                .multiplayer_shell_runtime
+                .local_participant()
+                .name;
             let runtime = state.frontend.lan.as_mut().unwrap();
             runtime
                 .requests
@@ -560,8 +579,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             if runtime.lobby.game_list.selected == Some(0) {
                 let mut players = runtime.lobby.players.clone();
                 match players.first_mut() {
-                    Some(local) => local.name = value,
-                    None => players.push(local_lobby_row(&value)),
+                    Some(local) => local.name = name,
+                    None => players.push(local_lobby_row(&name)),
                 }
                 runtime.lobby.replace_players(players);
             }

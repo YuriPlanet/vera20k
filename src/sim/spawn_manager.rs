@@ -259,7 +259,6 @@ pub struct SpawnManagerState {
 impl SpawnManagerState {
     /// Ares capture10045D76..10045D8B resumes the manager's +50 AI gate
     /// only from its -1 start sentinel, preserving the retained duration.
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_update_timer(&mut self, frame: i32) {
         self.update_timer.resume(frame);
     }
@@ -268,7 +267,6 @@ impl SpawnManagerState {
     /// timers, the SpawnTimer (`+0x5C`) then the UpdateTimer (`+0x50`):
     /// `held` pauses each at its time left (0 at least), otherwise each
     /// resumes from its -1 start.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_hold_timers(&mut self, held: bool, frame: i32) {
         for timer in [&mut self.spawn_timer, &mut self.update_timer] {
             if held {
@@ -475,13 +473,14 @@ impl SpawnManagerState {
 /// created here; the world-owned constructor transaction materialises every
 /// child before the parent attempts Unlimbo. The constructor
 /// (`0x006B6C90`) writes every node timer and the SpawnTimer as
-/// `{Frame, 0}` and the UpdateTimer as `{Frame, 20}`.
+/// `{Frame, 0}` and the UpdateTimer as `{Frame, 20}`. Boxed as the entity
+/// keeps it (`GameEntity::spawn_manager`).
 pub fn init_spawn_manager(
     obj: &crate::rules::object_type::ObjectType,
     rules: &RuleSet,
     interner: &mut crate::sim::intern::StringInterner,
     frame: u32,
-) -> Option<SpawnManagerState> {
+) -> Option<Box<SpawnManagerState>> {
     let spawn_type_name = obj.spawns.as_deref()?;
     if obj.spawns_number <= 0 {
         return None;
@@ -511,7 +510,7 @@ pub fn init_spawn_manager(
         })
         .collect();
 
-    Some(SpawnManagerState {
+    Some(Box::new(SpawnManagerState {
         spawn_type: interner.intern(spawn_type_name),
         missile_family,
         regen_rate: obj.spawn_regen_rate,
@@ -523,7 +522,7 @@ pub fn init_spawn_manager(
         current_target: None,
         queued_target: None,
         mode: SpawnManagerMode::Idle,
-    })
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -1314,7 +1313,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                 overlay_grid: sim.overlay_grid.as_ref(),
                 overlay_registry: self.context.registry(),
                 alliances: Some(&sim.house_alliances),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         )

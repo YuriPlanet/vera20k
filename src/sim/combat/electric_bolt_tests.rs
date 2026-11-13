@@ -521,6 +521,9 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
     }
 }
 
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass() {
     let Some((retail, assets)) = retail_with_bound_animation_assets() else {
@@ -553,6 +556,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let now = sim.session.binary_frame() as i32;
     let entity = sim.substrate.entities.get_mut(source).unwrap();
     entity
+        .building
         .pending_building_fire
         .set_for_test(Some(PendingBuildingFire::new(
             1,
@@ -673,6 +677,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             .entities
             .get(source)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .is_none()
@@ -871,6 +876,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
         );
         let entity = sim.substrate.entities.get_mut(source).unwrap();
         entity
+            .building
             .pending_building_fire
             .set_for_test(Some(PendingBuildingFire::new(
                 1,
@@ -1033,9 +1039,9 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
 /// Ares TechnoClass_FireEBolt (Ares.dll 10056350) and EBolt_Fire_Particles
 /// (100562C0): a 6FD460 bolt carries its weapon's Bolt.Color1..3 and spawns
 /// Bolt.ParticleSystem instead of DefaultSparkSystem; `none` spawns nothing.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_bolt_keys_choose_colors_and_spark_system() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
         "[InfantryTypes]\n0=ZAPPER\n1=MARK\n[ZAPPER]\nPrimary=ZAP\nSecondary=OFF\n[MARK]\n\
          [CombatDamage]\nDefaultSparkSystem=SPARKSYS\n\

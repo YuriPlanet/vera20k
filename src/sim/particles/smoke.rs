@@ -134,14 +134,10 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         // that frame and the timer below still moves on.
         let divisor = X87::ftol_i32_low_masked(X87::load_f32(timer));
         if (sim.session.binary_frame() as i32).checked_rem(divisor) == Some(0)
-            //62F080..62F098: Foot flag4 with signed tube byte+684 >= 0
-            //skips emission BEFORE its offset/constructor RNG draws. Existing
-            //particles, spawn accumulator and system lifetime still advance.
-            && !owner
-                .and_then(|id| sim.substrate.entities.get(id))
-                .is_some_and(|owner| {
-                    owner.category().is_foot() && owner.low_bridge_tube_state.is_some()
-                })
+            //62F080..62F098: the tube test skips emission BEFORE its
+            //offset/constructor RNG draws. Existing particles, spawn
+            //accumulator and system lifetime still advance.
+            && !owner_in_tube(sim, owner)
         {
             // gamemd traps on `SpawnRadius=-1`; the helper's zero modulus
             // makes VERA spawn at the system's own X and Y, with no draw.
@@ -191,6 +187,15 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             sys.done_spawning = true;
         }
     }
+}
+
+/// The smoke spawn's tube test (`0x0062F080..0x0062F098`, and Ares' UpdateSmoke
+/// `10027DAA..10027E02`): the owner is a Foot (flag 4) whose signed tube byte
+/// `+0x684` is not negative.
+pub(super) fn owner_in_tube(sim: &Simulation, owner: Option<u64>) -> bool {
+    owner
+        .and_then(|id| sim.substrate.entities.get(id))
+        .is_some_and(|owner| owner.category().is_foot() && owner.low_bridge_tube_state.is_some())
 }
 
 /// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.

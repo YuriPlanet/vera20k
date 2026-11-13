@@ -180,7 +180,7 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         // 0x480534) answers the any-wall query by `Wall=`, which the retail
         // GASAND has: the sandbag cell then takes the update the native wall
         // case (same cell, GAWALL) records.
-        let expected = if cfg!(feature = "ares") && case["name"] == "sandbag" {
+        let expected = if rules.ares() && case["name"] == "sandbag" {
             native_case("wall")
         } else {
             case

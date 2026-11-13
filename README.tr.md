@@ -15,13 +15,11 @@
 # VERA20K
 
 VERA20K, özgün oyun motoru `gamemd.exe`'nin topluluk öncülüğünde geliştirilen yeniden
-yazımıdır. Orijinal oyun dosyalarını kullandığı için kendi Red Alert 2: Yuri's Revenge
-kopyanıza ihtiyacınız var.
+yazımıdır. Geliştirmeye ya da oynamaya başlamak için kendi
+Red Alert 2: Yuri's Revenge kopyanızı getirin.
 
 VERA20K oyuncular tarafından, oyuncular için yapılıyor ve projenin nereye gideceğine son sözü
 oyuncular söylüyor.
-
-**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K çatışma ayarları ekranı ve oyun içi görünüm" width="100%">
 
@@ -44,6 +42,8 @@ Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden
 [çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
 
 ## Katkıda bulunma
+
+**PR göndermekten çekinmeyin.** Mükemmel olması gerekmiyor; gerisi için biz yardımcı oluruz.
 
 Her alanda yardımınızı bekliyoruz; en çok yardıma ihtiyaç duyan alanlar aşağıda. Her biri yol
 haritasındaki sayfasına bağlanır; orada süren çalışmayı ve sonraki adımı bulabilirsiniz:

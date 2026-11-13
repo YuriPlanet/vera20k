@@ -171,6 +171,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         vegetation: 30,
         urban_presence: 40,
         urban_enabled: false,
+        fair_starts: false,
         seed: 4242,
         description: "Unit 2 lifecycle".into(),
         ..Default::default()
@@ -476,6 +477,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let mut retention = RandomMapGenerationRetention::default();
     retention.finish_generation(poison);
@@ -512,6 +514,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         start_waypoints: accepted_start_waypoints.clone(),
         stages_run: Vec::new(),
         unfilled_start_slots: 0,
+        fairness: None,
     };
     let mut direct_retention = RandomMapGenerationRetention::default();
     direct_retention.finish_generation(direct_preview);

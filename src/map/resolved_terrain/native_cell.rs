@@ -842,6 +842,13 @@ impl ResolvedTerrainGrid {
         self.shared_cell_dummy.clone()
     }
 
+    /// Give this grid its own Dummy, a copy of the one it shared: a
+    /// presentation copy of the world (`Simulation::presentation_copy`) must
+    /// not read the live Dummy the simulation stamps while it ticks.
+    pub(crate) fn fork_cell_dummy(&mut self) {
+        self.shared_cell_dummy = self.shared_cell_dummy.fork_query_identity();
+    }
+
     /// Resolve one already-narrowed native fixed-grid coordinate to an
     /// allocated real CellClass slot. The caller owns dummy coordinate stamping
     /// on `None`, because some native probes test admission without GetCell.

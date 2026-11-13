@@ -64,7 +64,7 @@ fn browser_admission_rejects_other_build_capability() {
     // Any other capability combination must be refused; flip every bit so this
     // stays a foreign mode as capabilities are added.
     let other_capability = crate::rules::compatibility::RulesCompatibility::from_capabilities(
-        !crate::rules::ARES_ENABLED,
+        !crate::rules::ARES_BUILD,
         !crate::rules::PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
         !crate::rules::VERAX_ENABLED,

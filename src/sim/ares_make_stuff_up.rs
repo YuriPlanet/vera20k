@@ -353,6 +353,7 @@ mod tests {
     /// written values survive a save and change the state hash.
     #[test]
     fn ares_make_stuff_up_draws_in_dll_order_and_saves_the_values() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules("CanMakeStuffUp=yes");
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
         let mut replay = sim.scenario_rng.clone();
@@ -427,6 +428,7 @@ mod tests {
     /// RandomRanged(0, 99) per standing infantryman; below 8 it panics.
     #[test]
     fn ares_make_stuff_up_rolls_each_infantryman_every_ninety_frames() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules("CanMakeStuffUp=yes");
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
         sim.intern_rule_type_ids(&rules);

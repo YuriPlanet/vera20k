@@ -4,6 +4,7 @@
 use super::draw_plan_lowering::{
     NativeDisplayOrder, PlannedObjectInstance, lower_ground_object_instances,
 };
+use crate::app::presentation::frame::ObjectRecord;
 use crate::app::presentation::ui_overlays::{StatusViewport, techno_extras_for_parent};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::entities::EntityCategory;
@@ -93,7 +94,7 @@ fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
         }
         let status = techno_extras_for_parent(
             &sim,
-            entity,
+            &ObjectRecord::of_test_sim(&sim, &retail.rules, 1),
             Some(&retail.rules),
             &overlay,
             None,
@@ -323,9 +324,11 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let mut cam = camera(size);
     cam.camera_pos = [x - 64.0, y - 60.0];
+    let record =
+        crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &retail.rules, id);
     let strip = techno_extras_for_parent(
         &sim,
-        entity,
+        &record,
         Some(&retail.rules),
         &overlay,
         None,
@@ -464,7 +467,7 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
         let extras = techno_extras_for_parent(
             &sim,
-            entity,
+            &ObjectRecord::of_test_sim(&sim, &retail.rules, id),
             Some(&retail.rules),
             &overlay,
             None,
@@ -542,7 +545,7 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
         sim.resubmit_entity_display_for_test(1);
         techno_extras_for_parent(
             &sim,
-            sim.entities().get(1).unwrap(),
+            &ObjectRecord::of_test_sim(&sim, rules, 1),
             Some(rules),
             &overlay,
             Some(1),
@@ -603,6 +606,8 @@ fn native_carrier_spawn_pips_preserve_color_a_z_and_parent_order() {
     );
 }
 
+// Ares GetPassengerPips (10044C90, hook 0x709D38) starts at the cargo tail.
+#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; original Bio Reactor PIPS cargo-head order and Building pip rows"]
 fn native_bio_reactor_pips_preserve_color_a_z_and_parent_order() {
@@ -712,7 +717,7 @@ fn native_self_heal_draw_fault_order() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             techno_extras_for_parent(
                 &sim,
-                sim.entities().get(1).unwrap(),
+                &ObjectRecord::of_test_sim(&sim, &rules, 1),
                 Some(&rules),
                 &overlay,
                 None,
@@ -819,7 +824,7 @@ fn production_self_heal_status_workload_timing() {
                         );
                         let strip = techno_extras_for_parent(
                             &sim,
-                            sim.entities().get(id).unwrap(),
+                            &ObjectRecord::of_test_sim(&sim, rules, id),
                             Some(rules),
                             &overlay,
                             None,
@@ -939,6 +944,9 @@ fn production_self_heal_status_workload_timing() {
     }
 }
 
+// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C) replaces
+// the wrench frame.
+#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; original GAPOWR wrench prefix, MOUSEPAL N1 and both Extras visits"]
 fn native_repair_wrenches_preserve_color_a_z_and_parent_order() {
@@ -1227,6 +1235,7 @@ fn native_building_status_labels(fixture: &'static str) {
             }
             let labels = build_building_status_render_instances(
                 &sim,
+                &crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules),
                 &opportunities,
                 owner,
                 &colors,
@@ -1617,7 +1626,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
                     cloak.set_state_for_test(state as i32);
-                    entity.cloak = Some(cloak);
+                    entity.cloak = Some(Box::new(cloak));
                 }
                 if actor["disguised"].as_bool().unwrap_or(false) {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
@@ -1698,7 +1707,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                         "{} original CountDockedSpawns6B7D50",
                         row["name"]
                     );
-                    entity.spawn_manager = Some(manager);
+                    entity.spawn_manager = Some(Box::new(manager));
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
@@ -1974,7 +1983,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 let mut strip = techno_extras_for_parent(
                     &sim,
-                    sim.entities().get(id).unwrap(),
+                    &ObjectRecord::of_test_sim(&sim, rules, id),
                     Some(rules),
                     &overlay,
                     actor["hovered"].as_bool().unwrap_or(false).then_some(id),
@@ -2262,7 +2271,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
             }
             if let Some(font) = &font {
                 let labels = crate::app::presentation::ui_overlays::build_control_group_status_render_instances(
-                    &sim, &groups,
+                    &sim, &crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules), &groups,
                     input["actors"].as_array().unwrap().iter().enumerate()
                         .find(|(_, actor)| actor["hovered"].as_bool().unwrap_or(false))
                         .map(|(index, _)| if index == 0 { 901 } else { 2 }),
@@ -2494,6 +2503,8 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             parent,
                             bomb_clock: None,
                             wrench: None,
+                            #[cfg(feature = "ares")]
+                            power_off: None,
                             rank: *rank,
                             background: *background,
                             shield_background: None,

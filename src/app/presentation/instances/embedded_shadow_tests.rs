@@ -2,6 +2,7 @@
 //! Synthetic atlas entries isolate admission/coordinates; physical masks and
 //! the real dispatcher are checked by the retail GPU and normal-game runs.
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::map::resolved_terrain::{NativeCellQuery, test_flat_cell, test_grid};
 use crate::render::draw_state::DrawDecision;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
@@ -63,7 +64,7 @@ fn infantry_embedded_shadow_matches_original_positive_and_no_shadow_controls() {
         let piece = embedded_shp_shadow_piece(
             &atlas,
             rules.object("CONTROL"),
-            &entity,
+            &ObjectRecord::of_test_in(&entity, None, &rules),
             None,
             &key,
             &entry,
@@ -140,7 +141,7 @@ fn unit_shadow_matches_original_type_gate_point_and_read_only_policy() {
         let piece = embedded_shp_shadow_piece(
             &atlas,
             rules.object("MGTK"),
-            &entity,
+            &ObjectRecord::of_test_in(&entity, Some(&terrain), &rules),
             Some(&cells),
             &key,
             &entry,
@@ -220,7 +221,16 @@ fn unit_and_infantry_shadow_query_live_ground_and_bridge_height() {
             entity.position.set_exact_z_leptons_for_test(Some(z));
             entity.set_on_bridge(bridge);
             assert_eq!(
-                embedded_shp_shadow_admitted(None, &entity, Some(&cells), decision),
+                embedded_shp_shadow_admitted(
+                    None,
+                    &ObjectRecord::of_test_in(
+                        &entity,
+                        Some(&terrain),
+                        crate::rules::ruleset::RuleSet::empty_for_test()
+                    ),
+                    Some(&cells),
+                    decision
+                ),
                 admitted,
                 "{category:?}: worldZ={z}, OnBridge={bridge}"
             );

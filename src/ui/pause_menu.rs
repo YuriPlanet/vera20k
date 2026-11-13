@@ -17,11 +17,16 @@
 //! | 8 | Diplomacy (dialog 0x73) | the sidebar Diplomacy button, Tab | Return: 0 |
 //! | 9 | mission restate briefing (dialog 0x10C) | the sidebar Diplomacy button in campaign and Cooperative | Return: 0 |
 //!
+//! VERA has no state 5: gamemd's Game Controls (dialog BBB) is the first page
+//! of the in-game menu here, with its Sound (state 6) and Keyboard (state 4)
+//! dialogs opened from the menu and returning to it.
+//!
 //! Two re-entry rules matter to the player and are reproduced here:
 //!
 //! * **Options is a child of the menu.** When the Options dialog returns, the
 //!   state machine re-enters state 1 — closing Options puts you back on the
-//!   menu, it does not resume the mission.
+//!   menu, it does not resume the mission. VERA's Sound and Keyboard keep
+//!   that rule.
 //! * **Cancelling the abort confirmation resumes the mission**, it does not
 //!   return to the menu: the confirm dialog's cancel result matches no case in
 //!   the state machine's switch, so it falls through to state 0.
@@ -71,11 +76,11 @@ pub enum InGameMenuState {
     Surrender,
     /// The abort-mission confirmation. (gamemd: 3)
     AbortConfirm,
-    /// Game Controls / Options — a child of [`InGameMenuState::Menu`]. (gamemd: 5)
-    Options,
-    /// Sound options, active B8 (native state6).
+    /// Sound options, active B8 (native state6). gamemd reaches it and
+    /// Keyboard from Game Controls (BBB, its state 5), which VERA shows as
+    /// the first page of [`InGameMenuState::Menu`] rather than as a state.
     Sound,
-    /// Shared Keyboard A3, child of Game Controls (native state4).
+    /// Shared Keyboard A3 (native state4).
     Keyboard,
     /// The WOL page dialog 0xCF, opened by PageUser. (gamemd: 7) It is a
     /// compact popup over the live battlefield, not a full-screen shell.
@@ -120,8 +125,6 @@ impl InGameMenuState {
             // B6 callback4F1A37..4F1A97 ignores IDCANCEL2. Its explicit
             // Resume686 and default IDOK1 resume instead.
             Self::AbortConfirm => Self::AbortConfirm,
-            // Options is a child of the menu.
-            Self::Options => Self::Menu,
             // The 0x73 proc resolves its command by GetDlgCtrlID(lParam)
             // (0x006581A7). IDCANCEL names no child window, so the id is 0:
             // neither Return 0x423 nor in its box tables. Escape is ignored.
@@ -133,7 +136,7 @@ impl InGameMenuState {
             | Self::Diplomacy
             | Self::MissionBriefing
             | Self::Page => self,
-            Self::Keyboard => Self::Options,
+            Self::Keyboard => Self::Menu,
             // ShellMessageBox's callback 0x005D36A0 answers IDCANCEL with
             // result 1: no surrender, state 0.
             Self::Surrender => Self::Closed,
@@ -212,7 +215,7 @@ mod tests {
         assert!(!InGameMenuState::Closed.is_open());
         assert!(InGameMenuState::Menu.is_open());
         assert!(InGameMenuState::AbortConfirm.is_open());
-        assert!(InGameMenuState::Options.is_open());
+        assert!(InGameMenuState::Keyboard.is_open());
         assert!(InGameMenuState::Diplomacy.is_open());
         assert!(InGameMenuState::MissionBriefing.is_open());
     }
@@ -235,12 +238,11 @@ mod tests {
         );
     }
 
-    /// Options is a child of the menu: Game Controls enters it, and both ways
-    /// out of it — its own Back control and Escape — return to the menu (5 → 1)
-    /// rather than resuming the mission.
+    /// Keyboard is a child of the menu: Escape returns to the menu rather
+    /// than resuming the mission.
     #[test]
-    fn options_returns_to_the_menu_not_to_the_mission() {
-        assert_eq!(InGameMenuState::Options.on_escape(), InGameMenuState::Menu);
+    fn keyboard_returns_to_the_menu_not_to_the_mission() {
+        assert_eq!(InGameMenuState::Keyboard.on_escape(), InGameMenuState::Menu);
     }
 
     /// Explicit Resume ends at state 0, while native IDCANCEL is ignored.
@@ -302,7 +304,7 @@ mod tests {
         for open in [
             InGameMenuState::Menu,
             InGameMenuState::AbortConfirm,
-            InGameMenuState::Options,
+            InGameMenuState::Keyboard,
         ] {
             assert!(escape_belongs_to_modal_machine(open));
         }

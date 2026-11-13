@@ -149,7 +149,9 @@ pub struct ZoneField {
     /// impassable zones hold 1, merged passable groups 2..
     derived: Vec<u16>,
     /// The base zone `RebuildZoneConnectivity @ 0x0056C510` returns: the
-    /// strictly largest component, the first (lowest id) on ties.
+    /// strictly largest component, the first (lowest id) on ties. Only the
+    /// native comparisons read it.
+    #[cfg_attr(not(test), allow(dead_code))]
     largest: u16,
     /// Derived zone of the largest base component (first wins ties).
     pub reference: u16,

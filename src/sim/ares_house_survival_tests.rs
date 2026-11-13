@@ -3,7 +3,7 @@
 //! or downstream Blowup_All parity.
 
 use super::HouseTracking;
-use crate::rules::ARES_ENABLED;
+use crate::rules::ARES_BUILD;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
@@ -35,7 +35,7 @@ fn keep_alive_physical_reader_matches_executed_nullable_histories() {
             );
             let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
             let expected =
-                (ARES_ENABLED && step["after"]["is_set"] == 1).then(|| step["after"]["value"] == 1);
+                (ARES_BUILD && step["after"]["is_set"] == 1).then(|| step["after"]["value"] == 1);
             assert_eq!(
                 rules.object("CONTROL").unwrap().keep_alive(),
                 expected,
@@ -201,20 +201,20 @@ fn keep_alive_retains_nullable_input_through_rules_registry_save() {
     assert_eq!(absent.object("CONTROL").unwrap().keep_alive(), None);
     assert_eq!(
         yes.object("CONTROL").unwrap().keep_alive(),
-        ARES_ENABLED.then_some(true)
+        ARES_BUILD.then_some(true)
     );
     assert_eq!(
         no.object("CONTROL").unwrap().keep_alive(),
-        ARES_ENABLED.then_some(false)
+        ARES_BUILD.then_some(false)
     );
     assert_eq!(
         yes.simulation_config_hash() != no.simulation_config_hash(),
-        ARES_ENABLED,
+        ARES_BUILD,
         "identical current layers retain the earlier effective input",
     );
     assert_eq!(
         absent.simulation_config_hash() != no.simulation_config_hash(),
-        ARES_ENABLED,
+        ARES_BUILD,
         "unset and explicit false are distinct type state",
     );
 }
@@ -237,7 +237,7 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
         .spawn_object_limbo_at_height("BEACON", "First", 10, 10, 0, 0, &rules)
         .unwrap();
     let survives = |tracking: &HouseTracking| tracking.game_alive(true, [], None, |_| false);
-    assert_eq!(survives(sim.houses[&first].tracking()), ARES_ENABLED);
+    assert_eq!(survives(sim.houses[&first].tracking()), ARES_BUILD);
     assert_eq!(sim.houses[&first].tracking().units_for_test(), 0);
     #[cfg(feature = "ares")]
     assert_eq!(
@@ -248,7 +248,7 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
     );
     sim.change_owner(beacon, second);
     assert!(!survives(sim.houses[&first].tracking()));
-    assert_eq!(survives(sim.houses[&second].tracking()), ARES_ENABLED);
+    assert_eq!(survives(sim.houses[&second].tracking()), ARES_BUILD);
     #[cfg(feature = "ares")]
     {
         let capture = &native_corpus()["capture"]["after"];
@@ -268,7 +268,7 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), before);
-    assert_eq!(survives(restored.houses[&second].tracking()), ARES_ENABLED);
+    assert_eq!(survives(restored.houses[&second].tracking()), ARES_BUILD);
     for candidate in [&mut sim, &mut restored] {
         candidate.uninit_with_rules(beacon, &rules);
         candidate.flush_pending_delete();

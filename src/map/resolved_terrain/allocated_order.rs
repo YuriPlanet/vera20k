@@ -5,7 +5,9 @@
 
 use super::ResolvedTerrainGrid;
 use super::native_cell::NativeAllocatedCellCursor;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+
+use crate::util::sync::OnceLock;
 
 #[cfg(test)]
 #[path = "allocated_order_tests.rs"]

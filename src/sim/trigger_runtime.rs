@@ -141,7 +141,6 @@ pub enum TriggerEffect {
     /// Ares trigger action 148 (TActionExt::Execute 100396C0) selects the
     /// announcer voice, VoxClass::EVAIndex: a process cache the client's
     /// announcer owns, which applies the voice-count bound.
-    #[cfg(feature = "ares")]
     EvaVoice {
         index: i32,
     },
@@ -1142,14 +1141,12 @@ struct TagEventInput {
     cell: (i16, i16),
     force: bool,
     /// A non-Techno object Ares passes in the Techno source slot.
-    #[cfg(feature = "ares")]
     ares_source: Option<AresEventSource>,
 }
 
 /// What Ares 3.0 passes as RaiseEvent's `TechnoClass*` source when it is not
 /// a Techno. TEventExt::HasOccured (1004F7A0) reads it only for the kind it
 /// was raised with.
-#[cfg(feature = "ares")]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum AresEventSource {
     /// A HouseClass: an abductee's previous owner (74) or a destroyer's
@@ -3033,7 +3030,7 @@ impl Simulation {
                     //are asymmetric; do not reverse these endpoints.
                     let source_bridge = cells.flags(cells.lookup(attached)) & 0x100 != 0;
                     let movement_zone = self.object_type(entity.type_ref(), rules)?.movement_zone;
-                    self.zone_grid.as_deref()?.can_reach_native(
+                    self.zone_grid.as_ref()?.can_reach_native(
                         &cells,
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(attached),
                         crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(destination),
@@ -4198,7 +4195,7 @@ impl Simulation {
                             self.object_type(e.type_ref(), rules)
                                 .is_some_and(|o| o.has_spotlight)
                         })
-                        .and_then(|e| e.building_light.light());
+                        .and_then(|e| e.building.building_light.light());
                     if let Some(light) = light
                         && self.tag_contains_live_trigger(TagAttachment::Object(id), live)
                     {
@@ -5907,7 +5904,6 @@ fn count_techtype(sim: &Simulation, object: &crate::rules::object_type::ObjectTy
         .count()
 }
 
-#[cfg(feature = "ares")]
 #[path = "trigger_runtime_ares.rs"]
 mod ares;
 

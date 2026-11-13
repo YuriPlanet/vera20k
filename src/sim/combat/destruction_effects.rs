@@ -130,7 +130,6 @@ pub enum DeathAnimFollowUp {
     /// victim: InfDeath (10025DE0, hook 0x5185C8) and the InfantryVirus and
     /// InfantryMutate arms (10025F50, 10025EB0) also as invoker, the other
     /// anim arms (10025D20) none.
-    #[cfg(feature = "ares")]
     AresMakeInfOwner {
         invoker: Option<InternedId>,
         victim: InternedId,
@@ -149,7 +148,6 @@ pub enum DeathAnimFollowUp {
 }
 
 /// What an Ares death-anim producer does after SetMakeInfOwner.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AresMakeInfTail {
     None,
@@ -281,7 +279,6 @@ impl Simulation {
             Some(DeathAnimFollowUp::Remap(remap)) => {
                 self.substrate.anims.set_anim_remap(anim, remap);
             }
-            #[cfg(feature = "ares")]
             Some(DeathAnimFollowUp::AresMakeInfOwner {
                 invoker,
                 victim,
@@ -323,7 +320,6 @@ impl Simulation {
     /// finds becomes the anim's owner (`+0x180`), and for a `MakeInfantry=`
     /// type its colour scheme's Convert the anim's remap (`+0xD4`). Answers
     /// the type's `MakeInfantryOwner`.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_set_make_inf_owner(
         &mut self,
         anim: crate::sim::anim_class::AnimId,
@@ -470,8 +466,6 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = (registry, effects);
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -509,8 +503,9 @@ impl Simulation {
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
         // `RET`): no effect. Ares 3.0 1004BD90 (hook 0x738749) puts the
         // TiberiumExplosive blast there (`sim::ares_tiberium`).
-        #[cfg(feature = "ares")]
-        self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+        if rules.ares() {
+            self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+        }
         if !object.destroy_anims.is_empty() {
             let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
@@ -572,14 +567,16 @@ impl Simulation {
         self.clear_building_damage_fire_slots(building_id, rules);
         // Ares 3.0 10015A90 (hook 0x0044161C): the destroyed building shows
         // its production to nobody (`sim::spy_infiltration`).
-        #[cfg(feature = "ares")]
-        if let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.display_production_to.clear();
+        if rules.ares()
+            && let Some(building) = self.substrate.entities.get_mut(building_id)
+        {
+            building.ares.display_production_to.clear();
         }
         // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
         // sensor array ahead of the gap and RevealToAll steps.
-        #[cfg(feature = "ares")]
-        self.ares_sensor_array_dispatch(building_id, false, rules, None);
+        if rules.ares() {
+            self.ares_sensor_array_dispatch(building_id, false, rules, None);
+        }
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };
@@ -708,9 +705,10 @@ impl Simulation {
         // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
         // the building and House, spilling with TiberiumSpill
         // (`sim::ares_tiberium_storage`). The stock spill has no store to
-        // read in default builds.
-        #[cfg(feature = "ares")]
-        self.ares_destroy_refinery_storage(building_id, rules, effects);
+        // read without Ares.
+        if rules.ares() {
+            self.ares_destroy_refinery_storage(building_id, rules, effects);
+        }
 
         // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
         // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a
@@ -724,6 +722,7 @@ impl Simulation {
         let frame = self.session.binary_frame() as i32;
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
             building
+                .building
                 .pending_c4_detonation
                 .arm_destruction(frame, if outlives { 0 } else { 8 });
             if outlives {
@@ -763,7 +762,7 @@ impl Simulation {
                     house: owner,
                     palette: self.interner.intern(name),
                 })
-            } else if crate::rules::ARES_ENABLED {
+            } else if rules.ares() {
                 Some(crate::sim::anim_class::AnimRemap::House(owner))
             } else {
                 None
@@ -774,7 +773,7 @@ impl Simulation {
         // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
         // the killing call's IgnoreDefenses becomes NoSurvivor.
         if ignore_defenses && let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.no_survivor.mark();
+            building.building.no_survivor.mark();
         }
     }
 }

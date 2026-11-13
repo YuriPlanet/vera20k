@@ -66,6 +66,7 @@ pub(crate) use drive_locomotion::drive_do_turn;
 pub(crate) mod approach_oracle_seam;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_path::FindPathResult;
+pub(crate) use foot_path::Code2Chain;
 pub(crate) use foot_path::FootPathOutcome;
 pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};

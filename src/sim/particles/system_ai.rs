@@ -193,8 +193,20 @@ pub(crate) fn tick_particle_system(
         return false;
     };
     let behavior = rules.particle_system_type(sys.type_id).behaves_like;
+    let ares = sys.ares.is_some();
     // AI_Railgun reads the done byte first (`0x0062F242`).
     apply_fire_link_release(sim, id);
+    // Ares 3.0 ParticleSystemClass_Update (Ares.dll 100290D0, hook 0x62FD60
+    // at the AI's entry, returning to its `ret` at 0x62FE43): ExtData::Update
+    // (10026C70) runs Ares' own Spark, Railgun or Smoke update, then the same
+    // lifetime count and retirement as the stock tail, its records counted.
+    if ares {
+        let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
+        super::ares_system::update(&mut sys, sim, rules);
+        sim.substrate.particle_systems.reinsert_after_tick(sys);
+        finish_system_visit(sim, id, context);
+        return true;
+    }
     if behavior == ParticleSystemBehavesLike::Gas {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
@@ -243,8 +255,9 @@ pub(super) fn finish_system_visit(
         sys.mark_done_spawning();
     }
 
-    // `alive && this[+0xF8] && particle_count == 0`, from the same function.
-    let retires = sys.done_spawning && sys.particles.is_empty();
+    // `alive && this[+0xF8] && particle_count == 0`, from the same function
+    // (with Ares' records empty too, 10026C70).
+    let retires = sys.done_spawning && sys.holds_no_particles();
     if retires {
         sim.retire_particle_system(id, context);
     }
@@ -524,7 +537,14 @@ mod tests {
 
     #[test]
     fn mixed_hosts_preserve_gas_source_house_for_allied_and_enemy_receivers() {
-        for behavior in ["Smoke", "Fire", "Spark"] {
+        // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
+        // and never visits their ParticleClass children.
+        let behaviors: &[&str] = if crate::rules::ARES_BUILD {
+            &["Fire"]
+        } else {
+            &["Smoke", "Fire", "Spark"]
+        };
+        for &behavior in behaviors {
             let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
                 "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
                  [TARGET]\nStrength=100\nArmor=light\n\

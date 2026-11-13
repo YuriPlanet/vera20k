@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::sim::command::{Command, CommandEnvelope};
 
 /// Original Fly4CF830, composed by Aircraft414613 and Foot4DAF6D.
@@ -78,7 +79,13 @@ fn retail_harrier_move_bobs_only_its_body_at_the_committed_draw_frame() {
         // Both stable and posed body paths consume this point before bounds
         // and depth; shadows continue to use the physical screen position.
         assert_eq!(
-            aircraft_body_anchor(&sim, entity, Some(&rules), cells.as_ref(), anchor),
+            aircraft_body_anchor(
+                &sim,
+                &ObjectRecord::of_test_sim(&sim, &rules, plane),
+                Some(&rules),
+                cells.as_ref(),
+                anchor
+            ),
             [anchor[0], anchor[1] + expected as f32],
             "phase{phase}, height{height}"
         );

@@ -139,7 +139,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
         .substrate
         .entities
         .get_mut(building_id)
-        .and_then(|b| b.bunker_runtime.as_mut())
+        .and_then(|b| b.building.bunker_runtime.as_mut())
     {
         rt.occupy();
     }
@@ -512,7 +512,7 @@ pub fn break_links_on_despawn(substrate: &mut ObjectSubstrate, id: u64) {
         && let Some(b) = substrate.entities.get_mut(building_id)
     {
         b.bunker.occupant = None;
-        if let Some(rt) = b.bunker_runtime.as_mut() {
+        if let Some(rt) = b.building.bunker_runtime.as_mut() {
             *rt = BunkerRuntime::idle();
         }
     }
@@ -523,7 +523,7 @@ pub fn break_links_on_despawn(substrate: &mut ObjectSubstrate, id: u64) {
 /// (`0x0045959C`) and UpdateBunker's no-object arm (`0x00458E85`).
 pub(super) fn reset_bunker_idle(substrate: &mut ObjectSubstrate, building_id: u64) {
     if let Some(b) = substrate.entities.get_mut(building_id)
-        && let Some(rt) = b.bunker_runtime.as_mut()
+        && let Some(rt) = b.building.bunker_runtime.as_mut()
     {
         *rt = BunkerRuntime::idle();
     }
@@ -660,7 +660,7 @@ mod tests {
             5,
             false,
         );
-        ge.bunker_runtime = Some(BunkerRuntime::idle());
+        ge.building.bunker_runtime = Some(BunkerRuntime::idle());
         sim.substrate.entities.insert(ge);
     }
 
@@ -838,7 +838,7 @@ mod tests {
         let bunker = sim.substrate.entities.get(2).unwrap();
         assert_eq!(bunker.bunker.occupant(), Some(1));
         assert_eq!(
-            bunker.bunker_runtime.unwrap().state(),
+            bunker.building.bunker_runtime.unwrap().state(),
             BunkerState::Occupied
         );
 
@@ -1145,6 +1145,7 @@ mod tests {
                 .entities
                 .get(bunker)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .as_ref()
                 .unwrap()
@@ -1159,6 +1160,7 @@ mod tests {
                 .entities
                 .get(bunker)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .as_ref()
                 .unwrap()

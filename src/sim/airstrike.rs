@@ -22,10 +22,12 @@ use std::hash::{Hash, Hasher};
 
 /// Techno+294 has one identity: an owned manager or a borrowed aircraft/marker
 /// link. Its manager ID is the owning Techno's stable ID, not a second entity.
+/// The manager is boxed: only a type with an airstrike team constructs one,
+/// and every object carries this state.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AirstrikeState {
     link: Option<u64>,
-    manager: Option<AirstrikeManager>,
+    manager: Option<Box<AirstrikeManager>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,7 +121,7 @@ impl Simulation {
         };
         let e = substrate.entities.get_mut(owner).unwrap();
         e.airstrike.link = Some(owner);
-        e.airstrike.manager = Some(AirstrikeManager {
+        e.airstrike.manager = Some(Box::new(AirstrikeManager {
             settings,
             aircraft: Vec::new(),
             remaining: 0,
@@ -127,7 +129,7 @@ impl Simulation {
             active: false,
             target: None,
             returned_at: None,
-        });
+        }));
     }
 
     /// Bullet469705..469789 admits any Techno target through the firer's link.
@@ -615,7 +617,7 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn airstrike_manager(&self, owner: u64) -> Option<&AirstrikeManager> {
-        self.entities.get(owner)?.airstrike.manager.as_ref()
+        self.entities.get(owner)?.airstrike.manager.as_deref()
     }
 
     /// Whether `target` is a Structure whose strike owner's manager targets it.
@@ -640,7 +642,11 @@ impl crate::sim::world::ObjectSubstrate {
             .link = Some(owner);
     }
     fn airstrike_manager_mut(&mut self, owner: u64) -> Option<&mut AirstrikeManager> {
-        self.entities.get_mut(owner)?.airstrike.manager.as_mut()
+        self.entities
+            .get_mut(owner)?
+            .airstrike
+            .manager
+            .as_deref_mut()
     }
 }
 

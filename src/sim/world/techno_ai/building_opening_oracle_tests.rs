@@ -33,7 +33,7 @@ fn prior_building(sim: &mut Simulation, rules: &RuleSet, name: &str, x: u16, y: 
     // excludes Unlimbo/discovery. The Unlimbo queues Construction, so its
     // discovery cannot run Grand_Opening; restore the supplied constructor
     // MissionCom before the join.
-    let prior_mission = sim.substrate.entities.get(id).unwrap().mission;
+    let prior_mission = sim.substrate.entities.get(id).unwrap().mission.clone();
     assert!(
         sim.reveal_constructed_object_at_height(
             id,
@@ -70,7 +70,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
         let entity = sim.substrate.entities.get_mut(yard).unwrap();
         entity.finish_building_construction_for_test();
         entity.building_art.set_actually_placed_for_test(true);
-        entity.building_last_operational.set_for_test(true);
+        entity.building.building_last_operational.set_for_test(true);
     }
     // The original corpus supplies these already admitted actors, then starts
     // its Scenario ID cursor and streams before the entry under comparison.
@@ -170,7 +170,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         "{context}: placement"
     );
     assert_eq!(
-        u64::from(entity.building_last_operational.is_operational()),
+        u64::from(entity.building.building_last_operational.is_operational()),
         frame["old_operational"].as_u64().unwrap(),
         "{context}: operational sample"
     );

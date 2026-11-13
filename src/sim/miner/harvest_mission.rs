@@ -61,9 +61,10 @@ pub(crate) fn mission_harvest(
     let result = harvest_mission_step(sim, rules, overlay_registry, &mut snap, frame_effects);
     // Snapshot fields written before a failing resource read remain native
     // state; do not roll them back or run the mission timer epilogue.
-    commit_miner_snapshot(&mut sim.substrate, &snap);
+    let delay = snap.dispatch_delay;
+    commit_miner_snapshot(&mut sim.substrate, snap);
     result?;
-    Ok(Some(snap.dispatch_delay))
+    Ok(Some(delay))
 }
 
 fn harvest_mission_step(

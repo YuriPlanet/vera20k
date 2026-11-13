@@ -1260,7 +1260,7 @@ fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
     for row in rows {
         let (mut sim, rules) = fixture(&serde_json::json!({"input":{"z":900,"target":900}}));
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        let mut mission = serde_json::to_value(entity.mission).unwrap();
+        let mut mission = serde_json::to_value(entity.mission.clone()).unwrap();
         mission["current"] = row["current"].clone();
         mission["queued"] = row["queued"].clone();
         entity.mission = serde_json::from_value(mission).unwrap();

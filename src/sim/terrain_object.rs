@@ -71,7 +71,6 @@ pub struct TerrainObjectState {
     /// `TerrainClass+0xCC` IsOnFire (constructor false). Only the Ares
     /// terrain fire sets it (`sim::terrain_fire`); stock YR never calls
     /// `Catch_Fire @ 0x0071C5B0`.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     on_fire: bool,
 }
@@ -88,7 +87,6 @@ impl std::hash::Hash for TerrainObjectState {
         self.occupation_bits.hash(state);
         self.spawns_tiberium.hash(state);
         self.lifecycle.hash(state);
-        #[cfg(feature = "ares")]
         if self.on_fire {
             b"ares-terrain-on-fire-v1".hash(state);
         }
@@ -146,7 +144,6 @@ impl TerrainObjectState {
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
             spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle,
-            #[cfg(feature = "ares")]
             on_fire: false,
         }
     }
@@ -247,7 +244,6 @@ impl TerrainObjectState {
             occupation_bits: 0,
             spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
-            #[cfg(feature = "ares")]
             on_fire: false,
         }
     }
@@ -455,7 +451,6 @@ impl TerrainObjectState {
     }
 
     /// `TerrainClass+0xCC` IsOnFire.
-    #[cfg(feature = "ares")]
     pub(crate) const fn on_fire(&self) -> bool {
         self.on_fire
     }
@@ -504,8 +499,8 @@ pub struct TerrainObjectStore {
     #[serde(skip)]
     cell_grid: CellGrid,
     animations: BTreeMap<u64, TerrainAnimationState>,
-    /// Shared copy-on-write with presentation frames (docs/sim-thread.md).
-    objects: crate::util::shared::Shared<BTreeMap<u64, TerrainObjectState>>,
+    /// Synced into the presentation copy (docs/sim-thread.md).
+    objects: crate::util::synced::Synced<BTreeMap<u64, TerrainObjectState>>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,
     #[serde(skip)]
@@ -655,7 +650,6 @@ impl TerrainObjectStore {
 
     /// Write `TerrainClass+0xCC` IsOnFire, the Ares terrain fire's one
     /// writer (`sim::terrain_fire`). False for an object not stored.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_on_fire(&mut self, stable_id: u64, on_fire: bool) -> bool {
         let Some(terrain) = self.objects.get_mut(&stable_id) else {
             return false;
@@ -1355,6 +1349,31 @@ pub(crate) fn damage_terrain_object_at_cell(
     };
     let _ = area_state.restore_into(store, raw_occupation);
     result
+}
+
+impl TerrainObjectStore {
+    /// Bring `mirror`, the presentation copy of the world's terrain objects,
+    /// up to this store (docs/sim-thread.md).
+    pub(crate) fn sync_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cell_grid,
+            animations,
+            objects,
+            cells,
+            tiberium_spawning_cells,
+            touched,
+            membership_epoch,
+        } = self;
+        mirror.cell_grid.clone_from(cell_grid);
+        mirror.animations.clone_from(animations);
+        objects.sync_into(&mut mirror.objects);
+        mirror.cells.clone_from(cells);
+        mirror
+            .tiberium_spawning_cells
+            .clone_from(tiberium_spawning_cells);
+        mirror.touched = touched.clone();
+        mirror.membership_epoch = *membership_epoch;
+    }
 }
 
 #[cfg(test)]

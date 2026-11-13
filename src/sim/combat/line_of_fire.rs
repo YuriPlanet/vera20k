@@ -21,7 +21,7 @@
 //! 0x0081B0F4, read at 0x0046C02C) enter the walk at all — 0x004CC10B tests
 //! both and returns immediately when neither is set.
 //!
-//! Ares builds replace all three (`AresTrajectoryHelper`,
+//! While Ares plays it replaces all three (`AresTrajectoryHelper`,
 //! `FindFirstImpenetrableObstacle 1006E1F0`, `FindFirstObstacle 1006E2B0`,
 //! `GetObstacle 1006E540`): InRange calls them through hooks 0x6F7511 and
 //! 0x6F7631 (`1004D120`) with the firer and its target, and the bullet's
@@ -67,8 +67,9 @@ const CLIFF_STEP_LEVELS: i32 = 4;
 /// therefore always evaluated.
 ///
 /// `alliances` is consulted only under `[WallModel] AlliedWallTransparency`,
-/// which stock rules set to `no` (and, in Ares builds, under `[CombatDamage]
-/// AlliedSolidTransparency` and for `SolidLevel=` penetration).
+/// which stock rules set to `no` (and, while Ares plays, under
+/// `[CombatDamage] AlliedSolidTransparency` and for `SolidLevel=`
+/// penetration).
 #[derive(Clone, Copy, Default)]
 pub struct LineOfFireInputs<'a> {
     pub overlay_grid: Option<&'a OverlayGrid>,
@@ -77,7 +78,6 @@ pub struct LineOfFireInputs<'a> {
     /// Ares: the buildings standing in the map's cells, which a
     /// `SubjectToBuildings=` projectile tests. `None` (terrain-only
     /// fixtures) is the same answer as "no building on the line".
-    #[cfg(feature = "ares")]
     pub buildings: Option<CellBuildings<'a>>,
 }
 
@@ -89,7 +89,6 @@ impl<'a> LineOfFireInputs<'a> {
             overlay_grid: None,
             overlay_registry: None,
             alliances: None,
-            #[cfg(feature = "ares")]
             buildings: None,
         }
     }
@@ -97,14 +96,12 @@ impl<'a> LineOfFireInputs<'a> {
 
 /// The cell object lists the Ares building test reads: `CellClass::GetBuilding`
 /// (`0x0047C520`, the first building on the ground list) and that building.
-#[cfg(feature = "ares")]
 #[derive(Clone, Copy)]
 pub struct CellBuildings<'a> {
     pub(crate) occupancy: &'a crate::sim::occupancy::OccupancyGrid,
     pub(crate) entities: &'a crate::sim::entity_store::EntityStore,
 }
 
-#[cfg(feature = "ares")]
 impl<'a> CellBuildings<'a> {
     /// The live world's buildings.
     pub fn of(world: &'a crate::sim::world::Simulation) -> Self {
@@ -129,16 +126,14 @@ impl<'a> CellBuildings<'a> {
     }
 }
 
-/// Who fires along the line: the firing house (the walls' and, in Ares
-/// builds, the buildings' alliance argument) and, in Ares builds, the firer
+/// Who fires along the line: the firing house (the walls' and, while Ares
+/// plays, the buildings' alliance argument) and, while Ares plays, the firer
 /// and its target, whose own buildings never block (`AresTrajectoryHelper`
 /// `pSource`/`pTarget`, `1006E702..1006E710`).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct LineOfFireParties {
     pub firing_house: Option<InternedId>,
-    #[cfg(feature = "ares")]
     pub source_object: Option<u64>,
-    #[cfg(feature = "ares")]
     pub target_object: Option<u64>,
 }
 
@@ -147,31 +142,32 @@ pub(crate) struct LineOfFireParties {
 pub(crate) struct LineOfFireShot {
     pub subject_to_cliffs: bool,
     pub subject_to_walls: bool,
-    /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`).
-    #[cfg(feature = "ares")]
+    /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`); false unless Ares
+    /// plays, so the walk's building arm is dead in a stock game.
     pub subject_to_solid: bool,
     pub parties: LineOfFireParties,
 }
 
 impl LineOfFireShot {
-    /// `projectile`'s flags (`BulletType+0x296`, `+0x298`; Ares ext `+0x8`).
-    pub(crate) fn of(projectile: Option<&ProjectileType>, parties: LineOfFireParties) -> Self {
+    /// `projectile`'s flags (`BulletType+0x296`, `+0x298`; Ares ext `+0x8`,
+    /// read only when Ares plays).
+    pub(crate) fn of(
+        projectile: Option<&ProjectileType>,
+        parties: LineOfFireParties,
+        ares: bool,
+    ) -> Self {
         Self {
             subject_to_cliffs: projectile.is_some_and(|p| p.subject_to_cliffs),
             subject_to_walls: projectile.is_some_and(|p| p.subject_to_walls),
-            #[cfg(feature = "ares")]
-            subject_to_solid: projectile.is_some_and(|p| p.bullet_type_ext.subject_to_solid),
+            subject_to_solid: ares
+                && projectile.is_some_and(|p| p.bullet_type_ext.subject_to_solid),
             parties,
         }
     }
 
     /// 0x004CC10B's gate; Ares `SubjectToAnything` adds the buildings.
     fn subject_to_anything(&self) -> bool {
-        #[cfg(feature = "ares")]
-        let solid = self.subject_to_solid;
-        #[cfg(not(feature = "ares"))]
-        let solid = false;
-        self.subject_to_cliffs || self.subject_to_walls || solid
+        self.subject_to_cliffs || self.subject_to_walls || self.subject_to_solid
     }
 }
 
@@ -252,7 +248,8 @@ fn houses_allied(
 /// Native4CC360: one cliff/wall probe shared by range checks and Bullet AI.
 /// Its geometry tail4CC489..671 is live: getters/requery can observe and
 /// change the same Dummy identity even when a real-cell verdict is unchanged.
-/// Ares builds answer with `GetObstacle 1006E540` instead (`ares_obstacle`).
+/// While Ares plays, `GetObstacle 1006E540` answers instead
+/// (`ares_obstacle`).
 pub(crate) fn cell_blocks_line_of_fire<'a>(
     probe: CellObstructionProbe<'a>,
     interner: &StringInterner,
@@ -271,18 +268,14 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
         (probe.sample.y / LEPTONS_PER_CELL) as i16,
     );
     let cell = lookup(packed);
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         ares_obstacle(&probe, cell, interner, rules, los)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         native_obstacle(probe, cell, packed, interner, rules, los, lookup)
     }
 }
 
 /// 0x004CC360's verdict and geometry tail for the sampled `cell`.
-#[cfg(not(feature = "ares"))]
 fn native_obstacle<'a>(
     probe: CellObstructionProbe<'a>,
     cell: CellRef<'a>,
@@ -364,7 +357,6 @@ fn native_obstacle<'a>(
 ///   set (negative: the type's `Height=`) and whose top, that many levels
 ///   of 256 leptons over `MapClass::GetCellFloorHeight @ 0x00578080` at the
 ///   sample, is at or above the sample.
-#[cfg(feature = "ares")]
 fn ares_obstacle<'a>(
     probe: &CellObstructionProbe<'a>,
     cell: CellRef<'a>,
@@ -507,15 +499,14 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
         )
     };
     //4CC20D/222 happen even for a same-cell shot, retaining their Dummy writes.
-    #[cfg(not(feature = "ares"))]
-    let (source, target) = {
-        let source = lookup((sx, sy));
-        (source, lookup((tx, ty)))
-    };
-    #[cfg(feature = "ares")]
-    let (source, target) = {
+    // FindFirstObstacle 1006E2DB looks the target up first, so the retained
+    // Dummy ends on the source cell instead.
+    let (source, target) = if rules.ares() {
         let target = lookup((tx, ty));
         (lookup((sx, sy)), target)
+    } else {
+        let source = lookup((sx, sy));
+        (source, lookup((tx, ty)))
     };
     let mut previous = source.clone();
     let mut offset = [0i32; 3];
@@ -588,7 +579,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
     let hit = walk_line_for_blocking_cell(
         src,
         tgt,
-        LineOfFireShot::of(projectile, parties),
+        LineOfFireShot::of(projectile, parties, rules.ares()),
         rules,
         cells,
         interner,
@@ -609,8 +600,9 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
         return (!warhead_breaks_walls).then_some(hit);
     }
 
-    #[cfg(feature = "ares")]
-    if let Some(building) = los.buildings.and_then(|buildings| buildings.building(&hit)) {
+    if rules.ares()
+        && let Some(building) = los.buildings.and_then(|buildings| buildings.building(&hit))
+    {
         // The firer's house is the receiver (1006E860..1006E87D).
         let allied = houses_allied(parties.firing_house, Some(building.owner()), interner, los);
         let building_level = interner
@@ -740,9 +732,9 @@ mod tests {
     /// Ares `GetObstacle 1006E540` (`1006E5F5..1006E645`) raises a cell by 4
     /// for the bridge bit 0x100 (`(Flags >> 6) & 4`), where 0x004CC360's
     /// `GetEffectiveHeight @ 0x00487D50` adds 4 for the anchor bit 0x80.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_cliff_counts_the_bridge_bit() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let blocks = |flags| {
             let mut terrain = crate::map::resolved_terrain::test_grid(
                 8,
@@ -779,9 +771,9 @@ mod tests {
     /// shot's own target or the projectile's `SolidLevel=` reaches the
     /// building's; `AlliedSolidTransparency` lets an ally's building through,
     /// and an ally's building is never pierced.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_solid_building_blocks_the_line_until_pierced() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::map::entities::EntityCategory;
         use crate::sim::game_entity::GameEntity;
         use crate::sim::intern::{test_intern, test_interner};

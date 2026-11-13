@@ -297,92 +297,94 @@ fn parse_limb(
     })
 }
 
+/// A minimal valid VXL for tests, client tests included: one limb named
+/// `body`, a 2×2×2 grid, a few voxels.
+#[cfg(any(test, feature = "test-support"))]
+pub fn minimal_test_vxl() -> Vec<u8> {
+    let mut data: Vec<u8> = Vec::new();
+
+    // File header (32 bytes).
+    data.extend_from_slice(b"Voxel Animation\0"); // 0: magic (16 bytes)
+    data.extend_from_slice(&1u32.to_le_bytes()); // 16: palette_count
+    data.extend_from_slice(&1u32.to_le_bytes()); // 20: limb_count
+    data.extend_from_slice(&1u32.to_le_bytes()); // 24: tailer_count
+    let body_size_offset: usize = data.len();
+    data.extend_from_slice(&0u32.to_le_bytes()); // 28: body_size (patch later)
+    // Palette page: 1 prefix byte + 768 RGB + 1 suffix byte = 770 bytes.
+    data.push(0); // prefix byte
+    data.extend_from_slice(&[128u8; 768]); // internal palette (256 RGB triplets)
+    data.push(0); // suffix byte
+    assert_eq!(data.len(), VXL_FILE_HEADER_SIZE + VXL_PALETTE_PAGE_SIZE);
+
+    // Section header (28 bytes).
+    data.extend_from_slice(b"body\0\0\0\0\0\0\0\0\0\0\0\0");
+    data.extend_from_slice(&[0u8; 12]); // limb_number + unk1 + unk2
+
+    let body_start: usize = data.len();
+
+    // Column start offsets (4 columns × i32). Relative to data_base.
+    let span_start_pos: usize = data.len() - body_start;
+    data.extend_from_slice(&0i32.to_le_bytes()); // col 0: offset 0
+    data.extend_from_slice(&(-1i32).to_le_bytes()); // col 1: empty
+    data.extend_from_slice(&(-1i32).to_le_bytes()); // col 2: empty
+    data.extend_from_slice(&7i32.to_le_bytes()); // col 3: after col 0
+
+    // Column end offsets (4 columns × i32). Not used by parser.
+    let span_end_pos: usize = data.len() - body_start;
+    data.extend_from_slice(&[0u8; 16]);
+
+    // Voxel span data.
+    let data_span_pos: usize = data.len() - body_start;
+
+    // Column 0: 2 voxels at z=0,1.
+    data.push(0);
+    data.push(2); // z_skip=0, count=2
+    data.push(10);
+    data.push(20); // voxel 0: color=10, normal=20
+    data.push(11);
+    data.push(21); // voxel 1: color=11, normal=21
+    data.push(2); // dup_count
+
+    // Column 3: 1 voxel at z=1.
+    data.push(1);
+    data.push(1); // z_skip=1, count=1
+    data.push(50);
+    data.push(60); // voxel: color=50, normal=60
+    data.push(1); // dup_count
+
+    let body_size: u32 = (data.len() - body_start) as u32;
+    let bs: [u8; 4] = body_size.to_le_bytes();
+    data[body_size_offset..body_size_offset + 4].copy_from_slice(&bs);
+
+    // Section tailer (92 bytes).
+    data.extend_from_slice(&(span_start_pos as u32).to_le_bytes());
+    data.extend_from_slice(&(span_end_pos as u32).to_le_bytes());
+    data.extend_from_slice(&(data_span_pos as u32).to_le_bytes());
+    data.extend_from_slice(&1.0f32.to_le_bytes()); // scale
+    // Identity transform (12 floats).
+    for k in 0..12 {
+        let v: f32 = if k == 0 || k == 4 || k == 8 { 1.0 } else { 0.0 };
+        data.extend_from_slice(&v.to_le_bytes());
+    }
+    // Bounds [0,0,0, 2,2,2].
+    for &v in &[0.0f32, 0.0, 0.0, 2.0, 2.0, 2.0] {
+        data.extend_from_slice(&v.to_le_bytes());
+    }
+    data.push(2);
+    data.push(2);
+    data.push(2);
+    data.push(4); // size + normals_mode
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Build a minimal valid VXL: 1 limb, 2×2×2 grid, a few voxels.
-    fn make_test_vxl() -> Vec<u8> {
-        let mut data: Vec<u8> = Vec::new();
-
-        // File header (32 bytes).
-        data.extend_from_slice(b"Voxel Animation\0"); // 0: magic (16 bytes)
-        data.extend_from_slice(&1u32.to_le_bytes()); // 16: palette_count
-        data.extend_from_slice(&1u32.to_le_bytes()); // 20: limb_count
-        data.extend_from_slice(&1u32.to_le_bytes()); // 24: tailer_count
-        let body_size_offset: usize = data.len();
-        data.extend_from_slice(&0u32.to_le_bytes()); // 28: body_size (patch later)
-        // Palette page: 1 prefix byte + 768 RGB + 1 suffix byte = 770 bytes.
-        data.push(0); // prefix byte
-        data.extend_from_slice(&[128u8; 768]); // internal palette (256 RGB triplets)
-        data.push(0); // suffix byte
-        assert_eq!(data.len(), VXL_FILE_HEADER_SIZE + VXL_PALETTE_PAGE_SIZE);
-
-        // Section header (28 bytes).
-        data.extend_from_slice(b"body\0\0\0\0\0\0\0\0\0\0\0\0");
-        data.extend_from_slice(&[0u8; 12]); // limb_number + unk1 + unk2
-
-        let body_start: usize = data.len();
-
-        // Column start offsets (4 columns × i32). Relative to data_base.
-        let span_start_pos: usize = data.len() - body_start;
-        data.extend_from_slice(&0i32.to_le_bytes()); // col 0: offset 0
-        data.extend_from_slice(&(-1i32).to_le_bytes()); // col 1: empty
-        data.extend_from_slice(&(-1i32).to_le_bytes()); // col 2: empty
-        data.extend_from_slice(&7i32.to_le_bytes()); // col 3: after col 0
-
-        // Column end offsets (4 columns × i32). Not used by parser.
-        let span_end_pos: usize = data.len() - body_start;
-        data.extend_from_slice(&[0u8; 16]);
-
-        // Voxel span data.
-        let data_span_pos: usize = data.len() - body_start;
-
-        // Column 0: 2 voxels at z=0,1.
-        data.push(0);
-        data.push(2); // z_skip=0, count=2
-        data.push(10);
-        data.push(20); // voxel 0: color=10, normal=20
-        data.push(11);
-        data.push(21); // voxel 1: color=11, normal=21
-        data.push(2); // dup_count
-
-        // Column 3: 1 voxel at z=1.
-        data.push(1);
-        data.push(1); // z_skip=1, count=1
-        data.push(50);
-        data.push(60); // voxel: color=50, normal=60
-        data.push(1); // dup_count
-
-        let body_size: u32 = (data.len() - body_start) as u32;
-        let bs: [u8; 4] = body_size.to_le_bytes();
-        data[body_size_offset..body_size_offset + 4].copy_from_slice(&bs);
-
-        // Section tailer (92 bytes).
-        data.extend_from_slice(&(span_start_pos as u32).to_le_bytes());
-        data.extend_from_slice(&(span_end_pos as u32).to_le_bytes());
-        data.extend_from_slice(&(data_span_pos as u32).to_le_bytes());
-        data.extend_from_slice(&1.0f32.to_le_bytes()); // scale
-        // Identity transform (12 floats).
-        for k in 0..12 {
-            let v: f32 = if k == 0 || k == 4 || k == 8 { 1.0 } else { 0.0 };
-            data.extend_from_slice(&v.to_le_bytes());
-        }
-        // Bounds [0,0,0, 2,2,2].
-        for &v in &[0.0f32, 0.0, 0.0, 2.0, 2.0, 2.0] {
-            data.extend_from_slice(&v.to_le_bytes());
-        }
-        data.push(2);
-        data.push(2);
-        data.push(2);
-        data.push(4); // size + normals_mode
-        data
-    }
-
     /// Header 0 selects tailer 1 while the file retains one header and two
     /// independently sized tailers.
     fn make_test_vxl_with_nonidentity_tailer() -> Vec<u8> {
-        let mut data = make_test_vxl();
+        let mut data = minimal_test_vxl();
         data[24..28].copy_from_slice(&2u32.to_le_bytes());
 
         let section_header_start = VXL_FILE_HEADER_SIZE + VXL_PALETTE_PAGE_SIZE;
@@ -402,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_parse_vxl_basic() {
-        let vxl: VxlFile = VxlFile::from_bytes(&make_test_vxl()).expect("Should parse");
+        let vxl: VxlFile = VxlFile::from_bytes(&minimal_test_vxl()).expect("Should parse");
         assert_eq!(vxl.limb_count, 1);
         assert_eq!(vxl.limbs.len(), 1);
         let limb: &VxlLimb = &vxl.limbs[0];
@@ -441,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_voxel_span_decode() {
-        let vxl: VxlFile = VxlFile::from_bytes(&make_test_vxl()).expect("Should parse");
+        let vxl: VxlFile = VxlFile::from_bytes(&minimal_test_vxl()).expect("Should parse");
         let limb: &VxlLimb = &vxl.limbs[0];
         assert_eq!(limb.voxels.len(), 3);
 
@@ -460,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_reject_bad_magic() {
-        let mut data: Vec<u8> = make_test_vxl();
+        let mut data: Vec<u8> = minimal_test_vxl();
         data[0] = b'X';
         assert!(VxlFile::from_bytes(&data).is_err());
     }

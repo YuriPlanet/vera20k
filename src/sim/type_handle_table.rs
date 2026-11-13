@@ -5,17 +5,23 @@
 //! `RuleSet::object(name)` (a hash lookup of the name). This table collapses the
 //! second hop to a precomputed array index, so resolution is two array indexes
 //! with no hashing. It keeps each id's native class-array indexes
-//! (`RuleSet::type_array_index`) the same way.
+//! (`RuleSet::type_array_index`), its projectile type (`RuleSet::projectile`,
+//! which a bullet's AI reads every frame) and its warhead (`RuleSet::warhead`,
+//! which every hit reads) the same way.
 //!
 //! The `StringInterner` owns it: `StringInterner::bind_types` builds it from a
 //! `RuleSet` and the strings interned so far (after
-//! `Simulation::intern_rule_type_ids`, so every type id is present), and
-//! `StringInterner::object_type`, `StringInterner::object_type_in_category`
-//! and `StringInterner::type_array_index` read it. It answers exactly as the
-//! name path does: a `RuleSet`'s name indexes never change after it is built,
-//! and an id interned after the build, or a `RuleSet` other than the one it
-//! was built from, takes the name path. Debug builds compare every table
-//! answer with the name path
+//! `Simulation::intern_rule_type_ids`, so every object type id is present),
+//! `StringInterner::cover_types` adds the strings interned since (a
+//! projectile's or warhead's name is first interned when something fires
+//! it), and `StringInterner::object_type`,
+//! `StringInterner::object_type_in_category`,
+//! `StringInterner::type_array_index`, `StringInterner::projectile_type` and
+//! `StringInterner::warhead_type` read it. It answers exactly as the name
+//! path does: a `RuleSet`'s name indexes never change after it is built, and
+//! an id interned after the last build or cover, or a `RuleSet` other than
+//! the one it was built from, takes the name path. Debug builds compare every
+//! table answer with the name path
 //! ([`live_read_check_enabled`](crate::sim::touch_log::live_read_check_enabled)).
 //! A derived cache: never serialized or hashed; a load rebuilds it.
 //!
@@ -24,7 +30,9 @@
 //!   render/ui/audio/net.
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
-use crate::rules::ruleset::{RuleSet, TypeHandle};
+use crate::rules::projectile_type::ProjectileType;
+use crate::rules::ruleset::{ProjectileHandle, RuleSet, TypeHandle, WarheadHandle};
+use crate::rules::warhead_type::WarheadType;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::touch_log::live_read_check_enabled;
 
@@ -61,6 +69,18 @@ pub struct TypeHandleTable {
     /// [`RuleSet::type_handle_in_category`] answers for its name. Dense by
     /// `InternedId` index, like `by_interned`.
     category_handles: Vec<[Option<TypeHandle>; 4]>,
+    /// Each id's projectile type, as [`RuleSet::projectile`] answers for its
+    /// name. Dense by `InternedId` index, like `by_interned`. gamemd's bullet
+    /// holds its BulletType pointer (`+0xAC`, `BulletClass::Construct @
+    /// 0x004664C0`); a bullet here holds the name's id, so this column stands
+    /// in for that pointer.
+    projectiles: Vec<Option<ProjectileHandle>>,
+    /// Each id's warhead, as [`RuleSet::warhead`] answers for its name. Dense
+    /// by `InternedId` index, like `by_interned`. gamemd's bullet keeps the
+    /// WarheadTypeClass pointer `BulletClass::Construct @ 0x004664C0` is given,
+    /// and its damage calls pass that pointer on; here they hold the name's
+    /// id, so this column stands in for the pointer.
+    warheads: Vec<Option<WarheadHandle>>,
     /// [`RuleSet::serial`] of the set the handles came from; 0 while unbuilt,
     /// which no set has.
     rules_serial: u64,
@@ -70,19 +90,81 @@ impl TypeHandleTable {
     /// Build from every string currently in the interner. Each id that resolves
     /// to an object (case-insensitively) gets its handle; the rest stay `None`.
     pub fn build(rules: &RuleSet, interner: &StringInterner) -> Self {
-        let names =
-            || (0..interner.len() as u32).map(|idx| interner.resolve(InternedId::from_index(idx)));
-        Self {
-            by_interned: names().map(|name| rules.type_handle(name)).collect(),
-            array_indices: names()
-                .map(|name| CLASS_ARRAYS.map(|category| rules.type_array_index(category, name)))
-                .collect(),
-            category_handles: names()
-                .map(|name| {
-                    CLASS_ARRAYS.map(|category| rules.type_handle_in_category(category, name))
-                })
-                .collect(),
+        let mut table = Self {
             rules_serial: rules.serial(),
+            ..Self::default()
+        };
+        table.cover(rules, interner);
+        table
+    }
+
+    /// Whether `interner` holds ids this table could add from `rules`
+    /// ([`Self::cover`]).
+    pub fn lags(&self, interner: &StringInterner, rules: &RuleSet) -> bool {
+        self.by_interned.len() < interner.len() && self.rules_serial == rules.serial()
+    }
+
+    /// Add the ids `interner` made since this table was built or last
+    /// covered, when `rules` is the set it was built from; else nothing.
+    pub fn cover(&mut self, rules: &RuleSet, interner: &StringInterner) {
+        if self.rules_serial != rules.serial() {
+            return;
+        }
+        for idx in self.by_interned.len() as u32..interner.len() as u32 {
+            let name = interner.resolve(InternedId::from_index(idx));
+            self.by_interned.push(rules.type_handle(name));
+            self.array_indices
+                .push(CLASS_ARRAYS.map(|category| rules.type_array_index(category, name)));
+            self.category_handles
+                .push(CLASS_ARRAYS.map(|category| rules.type_handle_in_category(category, name)));
+            self.projectiles.push(rules.projectile_handle(name));
+            self.warheads.push(rules.warhead_handle(name));
+        }
+    }
+
+    /// The projectile type `id` names in `rules`, as
+    /// `rules.projectile(interner.resolve(id))` answers: from the table when
+    /// it was built from `rules` and covers `id`, else by name.
+    #[inline]
+    pub fn projectile<'r>(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ProjectileType> {
+        match self.projectiles.get(id.index() as usize) {
+            Some(&handle) if self.rules_serial == rules.serial() => {
+                debug_assert!(
+                    !live_read_check_enabled()
+                        || handle == rules.projectile_handle(interner.resolve(id)),
+                    "type table answers projectile {handle:?} for {id:?}, unlike its name"
+                );
+                handle.map(|handle| rules.projectile_by_handle(handle))
+            }
+            _ => rules.projectile(interner.resolve(id)),
+        }
+    }
+
+    /// The warhead `id` names in `rules`, as
+    /// `rules.warhead(interner.resolve(id))` answers: from the table when it
+    /// was built from `rules` and covers `id`, else by name.
+    #[inline]
+    pub fn warhead<'r>(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r WarheadType> {
+        match self.warheads.get(id.index() as usize) {
+            Some(&handle) if self.rules_serial == rules.serial() => {
+                debug_assert!(
+                    !live_read_check_enabled()
+                        || handle == rules.warhead_handle(interner.resolve(id)),
+                    "type table answers warhead {handle:?} for {id:?}, unlike its name"
+                );
+                handle.map(|handle| rules.warhead_by_handle(handle))
+            }
+            _ => rules.warhead(interner.resolve(id)),
         }
     }
 
@@ -309,6 +391,47 @@ mod tests {
                 .map(std::ptr::from_ref),
             name_path(e1, &rules)
         );
+    }
+
+    /// A projectile and a warhead named after the build are covered by
+    /// `cover`, and the table answers as `RuleSet::projectile` and
+    /// `RuleSet::warhead` do for their names, in any case, for the set it was
+    /// built from and for another.
+    #[test]
+    fn types_interned_after_the_build_answer_as_their_names() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nPrimary=M60\n\
+             [M60]\nDamage=20\nProjectile=InvisibleLow\nWarhead=SA\n\
+             [InvisibleLow]\nAG=yes\n[SA]\nCellSpread=0\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let other = RuleSet::from_ini(&ini).unwrap();
+        let mut interner = StringInterner::new();
+        interner.intern("E1");
+        let mut table = TypeHandleTable::build(&rules, &interner);
+        let bullet = interner.intern("invisiblelow");
+        let warhead = interner.intern("sa");
+        table.cover(&other, &interner);
+        assert!(table.lags(&interner, &rules));
+        table.cover(&rules, &interner);
+        assert!(!table.lags(&interner, &rules));
+        assert!(table.projectiles[bullet.index() as usize].is_some());
+        assert!(table.warheads[warhead.index() as usize].is_some());
+        for set in [&rules, &other] {
+            for id in [bullet, warhead] {
+                let name = interner.resolve(id);
+                assert_eq!(
+                    table.projectile(&interner, id, set).map(std::ptr::from_ref),
+                    set.projectile(name).map(std::ptr::from_ref)
+                );
+                assert_eq!(
+                    table.warhead(&interner, id, set).map(std::ptr::from_ref),
+                    set.warhead(name).map(std::ptr::from_ref)
+                );
+            }
+            assert!(table.projectile(&interner, bullet, set).is_some());
+            assert!(table.warhead(&interner, warhead, set).is_some());
+        }
     }
 
     /// The per-registry lookup answers as `RuleSet::object_in_category` does

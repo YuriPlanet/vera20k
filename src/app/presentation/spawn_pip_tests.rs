@@ -18,10 +18,17 @@ fn frames(sim: &Simulation, rules: &RuleSet, carrier: u64, hover: Option<u64>) -
         sim.mapgen_rng().native_state_hex(),
         entity.spawn_manager.clone(),
     );
-    let result = super::ui_overlays::scale_pip_draws(sim, entity, hover, Some(OWNER), rules)
-        .into_iter()
-        .map(|pip| pip.frame)
-        .collect();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    let result = super::ui_overlays::scale_pip_draws(
+        sim,
+        frame.object(carrier).unwrap(),
+        hover,
+        Some(OWNER),
+        rules,
+    )
+    .into_iter()
+    .map(|pip| pip.frame)
+    .collect();
     assert_eq!(
         before,
         (

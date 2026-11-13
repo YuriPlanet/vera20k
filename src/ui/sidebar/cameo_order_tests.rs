@@ -302,6 +302,7 @@ fn original_trigger_tabs_and_cameo_flash_deadlines() {
                 control["duration"].as_i64().unwrap() as i32,
                 control["frame"].as_i64().unwrap() as i32,
                 index_of,
+                crate::rules::ARES_BUILD,
             );
         }
         let (deadlines, redraw_until) = strips.saved_flash();
@@ -337,6 +338,7 @@ fn original_trigger_tabs_and_cameo_flash_deadlines() {
             control["duration"].as_i64().unwrap() as i32,
             control["frame"].as_i64().unwrap() as i32,
             index_of,
+            crate::rules::ARES_BUILD,
         );
         let (deadlines, redraw_until) = strips.saved_flash();
         assert_eq!(
@@ -994,7 +996,14 @@ fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
         CameoId::Object(id) => ids.iter().position(|known| *known == id).map(|i| i as i32),
         CameoId::SuperWeapon(_) => None,
     };
-    strips.flash_type_index(SidebarTab::Vehicle, 119, 30, 1000, index_of);
+    strips.flash_type_index(
+        SidebarTab::Vehicle,
+        119,
+        30,
+        1000,
+        index_of,
+        crate::rules::ARES_BUILD,
+    );
     let (deadlines, _) = strips.saved_flash();
     let at = strips
         .items(SidebarTab::Vehicle)

@@ -1394,11 +1394,22 @@ pub(crate) fn state4_descend(
             let refused =
                 !admitted || (!bridge && (answer > 2 || (answer == 2 && !runtime.landing_latched)));
             if refused {
-                // VERA `LandNearby=` (a deviation from `0x0054C6F5`'s stop,
+                // VERA `LandNearby=` (a deviation from `0x0054CA43`'s stop,
                 // off by default): fly to the nearest clear cell and land
                 // there. No RNG draw; with none in range, the original's stop.
                 if let Some(cell) = nearby_landing_cell(dest_cell, here, host) {
                     host.set_destination_cell(cell, runtime);
+                    if !host.has_installed_jumpjet() {
+                        return runtime.phase;
+                    }
+                    // It leaves for the cruise as State 4's own re-aim does
+                    // (`0x0054C5F9..0x0054C610`): Mark(UP), then `+0x74`
+                    // restored. Below two levels Update's Mark(DOWN)
+                    // (`0x0054D6A6`) has linked it in this cell's list, and
+                    // the cruise moves it with no Mark pair (`0x0054D134`).
+                    let marked = host.marked();
+                    host.mark(false);
+                    host.replace_marked_byte(marked);
                     return STATE_TRANSLATE;
                 }
                 return host.stop_moving(runtime);

@@ -89,6 +89,7 @@ impl BulletTypeExtRules {
     /// `100193C0`'s reads of these keys, in its order; absent, empty or
     /// invalid values keep the constructor's.
     pub(crate) fn from_section(section: &IniSection) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut ext = Self::default();
         ext.subject_to_solid = section.read_ares_bool("SubjectToBuildings", ext.subject_to_solid);
         ext.solid_level = section.read_ares_int("SolidLevel", ext.solid_level);
@@ -106,7 +107,10 @@ impl BulletTypeExtRules {
         ext.splits = section.read_ares_bool("Splits", ext.splits);
         ext.retarget_self = section.read_ares_bool("RetargetSelf", ext.retarget_self);
         ext.around_target = section.read_ares_nullable_bool("AroundTarget", ext.around_target);
-        ext.ignores_firestorm = section.read_bool("IgnoresFirestorm", ext.ignores_firestorm);
+        // Retail projectiles already set the TS key.
+        ext.ignores_firestorm = crate::rules::ares_switch::not_ares_read(|| {
+            section.read_bool("IgnoresFirestorm", ext.ignores_firestorm)
+        });
         ext
     }
 
@@ -151,6 +155,7 @@ mod tests {
     /// the original `0`/`BallisticScatter / 2` and `BallisticScatter`.
     #[test]
     fn ballistic_scatter_bounds_override_each_arm_separately() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[MIN]\nBallisticScatter.Min=1\nBallisticScatter.Max=bad\n\
              [BOTH]\nBallisticScatter.Min=0.5\nBallisticScatter.Max=2.5\n[NONE]\nArm=1\n",
@@ -170,6 +175,7 @@ mod tests {
     /// unset AroundTarget; an invalid value keeps the current one.
     #[test]
     fn split_keys_read_over_the_constructor_defaults() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[SET]\nSplits=yes\nRetargetSelf=no\nRetargetAccuracy=0.25\n\
              AirburstSpread=2.5\nAroundTarget=no\n[BAD]\nSplits=maybe\nAroundTarget=x\n",

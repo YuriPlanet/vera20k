@@ -1355,7 +1355,10 @@ mod tests {
             assert_eq!(prepared.sample_rate, 22_050);
             let file = assets.get_ref(&format!("{}.wav", entry.sound)).unwrap();
             let whole = crate::audio::sfx::decode_wav(file, key).unwrap().samples;
-            assert!(prepared.eq(whole), "{key} streams its whole decode");
+            assert!(
+                prepared.eq(whole.iter().copied()),
+                "{key} streams its whole decode"
+            );
         }
         let intro = assets
             .resolve_ref("Drok.wav")

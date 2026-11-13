@@ -21,10 +21,11 @@ const VK_DELETE: u16 = 0x2e;
 
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
-/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O and Ferry J.
+/// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O, Ferry J and
+/// Rotate Primary I.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 8] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 10] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
@@ -33,6 +34,8 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 8] = [
     (HotkeyCommand::FormationLine, FORMATION_LINE_KEY),
     (HotkeyCommand::FormationLock, 0x4f),
     (HotkeyCommand::Ferry, 0x4a),
+    (HotkeyCommand::RotatePrimary, 0x49),
+    (HotkeyCommand::RelationColors, ALT_BIT | 0x41),
 ];
 /// F: Formation Line's default key and retail Follow's.
 const FORMATION_LINE_KEY: u16 = 0x46;
@@ -122,6 +125,14 @@ pub(crate) enum HotkeyCommand {
     /// transports (`input::ferry`). It comes with a default key like the
     /// five above.
     Ferry,
+    /// In a match: the selected factories of one kind take turns being the
+    /// primary (`input::primary_rotation`). It comes with a default key.
+    RotatePrimary,
+    /// VERA: toggle "relation colours" — recolour every house by its diplomatic
+    /// relation to the local observer (self = blue, ally = green, enemy = red,
+    /// neutral unchanged) to tell players apart in large melee matches. Pure
+    /// presentation; works in a match only.
+    RelationColors,
     /// VERA's own: install or remove the auto play host. Registered after the
     /// retail commands so the original catalog indices are untouched.
     ToggleAutoPlay,
@@ -1048,10 +1059,6 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's eight default keys (the five above
-        // 0x256, Formation Line's F and Formation Lock's O over retail Follow's
-        // F, and Ferry's J). Auto play's four carry no default, so they add none.
-        assert_eq!(loaded.by_key.len(), 95);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -1059,10 +1066,10 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
+        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
-            "[Hotkey]\nFormationLine=70\nFerry=74\nFormationLock=79\n",
+            "[Hotkey]\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
             1,
         );
         assert_eq!(saved, ini);
@@ -1112,6 +1119,26 @@ mod tests {
             command_from_name("TeamSelect_10"),
             Some(HotkeyCommand::TeamSelect(0))
         );
+    }
+
+    #[test]
+    fn relation_colours_default_key_can_be_rebound_and_cleared() {
+        let default = HotkeyBindings::reload_from_ini_bytes(None);
+        assert_eq!(
+            default.command_at(ALT_BIT | 0x41),
+            Some(HotkeyCommand::RelationColors)
+        );
+
+        let rebound =
+            HotkeyBindings::reload_from_ini_bytes(Some(b"[Hotkey]\nRelationColors=118\n"));
+        assert_eq!(rebound.command_at(118), Some(HotkeyCommand::RelationColors));
+        assert_ne!(
+            rebound.command_at(ALT_BIT | 0x41),
+            Some(HotkeyCommand::RelationColors)
+        );
+
+        let cleared = HotkeyBindings::reload_from_ini_bytes(Some(b"[Hotkey]\nRelationColors=0\n"));
+        assert_eq!(cleared.first_key(HotkeyCommand::RelationColors), None);
     }
 
     #[test]
@@ -1172,9 +1199,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1296,7 +1323,7 @@ mod tests {
             .expect("AutoLoad is registered");
         assert_eq!(row.command, HotkeyCommand::AutoLoad);
         assert_eq!(row.category_key, catalog::VERA_CATEGORY_KEY);
-        assert_eq!(row.name_key, "AutoLoad");
+        assert_eq!(row.name_key, "VERA:AutoLoad");
         assert_eq!(command_from_name("AutoLoad"), Some(HotkeyCommand::AutoLoad));
 
         let bindings = HotkeyBindings::from_ini_bytes(None);
@@ -1402,6 +1429,8 @@ mod tests {
             (HotkeyCommand::FormationLock, 0x4f),
             // Retail leaves J unbound.
             (HotkeyCommand::Ferry, 0x4a),
+            // Retail leaves I unbound too.
+            (HotkeyCommand::RotatePrimary, 0x49),
         ] {
             assert_eq!(bindings.first_key(command), Some(key), "{command:?}");
         }

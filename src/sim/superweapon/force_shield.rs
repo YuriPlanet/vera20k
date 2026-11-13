@@ -134,6 +134,7 @@ pub fn launch(
                 frame,
                 general.force_shield_duration,
                 InvulnKind::ForceShield,
+                rules.ares(),
             );
         }
     }

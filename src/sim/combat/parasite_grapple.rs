@@ -426,8 +426,7 @@ impl Simulation {
         };
         // Ares ParasiteClass_UpdateSquiddy_Culling (10053AC0, hook 0x629BC0)
         // replaces the red/elite-at-yellow test with CanCull 10052590.
-        #[cfg(feature = "ares")]
-        let admitted = {
+        let admitted = if rules.ares() {
             let (health, strength) = (target.health, kind.strength);
             let Some(veterancy) = self
                 .substrate
@@ -446,10 +445,7 @@ impl Simulation {
                 rules.general.condition_yellow,
                 &mut self.scenario_rng,
             )
-        };
-        #[cfg(not(feature = "ares"))]
-        let admitted = {
-            let _ = warhead;
+        } else {
             match crate::sim::combat::health_category(
                 target.health.current(),
                 kind.strength,
@@ -490,12 +486,10 @@ impl Simulation {
         // Ares 10053AC0 resumes past this experience block (0x629C5D) when
         // the victim's house counts the squid's house an ally (the owner
         // itself included), else at the block (0x629BF3).
-        #[cfg(feature = "ares")]
-        let gains = !self
-            .house_alliances
-            .is_allied(&self.interner, target.owner(), source.owner());
-        #[cfg(not(feature = "ares"))]
-        let gains = true;
+        let gains = !rules.ares()
+            || !self
+                .house_alliances
+                .is_allied(&self.interner, target.owner(), source.owner());
         if gains && source_type.trainable {
             self.substrate
                 .entities

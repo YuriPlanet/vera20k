@@ -460,7 +460,6 @@ impl FlyRuntime {
     /// Ares 3.0 FlyLocomotionClass_UpdateLanding 1004D8A0 (hook 0x4CE85A):
     /// a HunterSeeker that found a target stops landing (+0x51) and climbs
     /// back to its type's flight level (+0x38).
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_hunt(&mut self, flight_level: i32) {
         self.landing = false;
         self.target_height = flight_level;
@@ -468,7 +467,6 @@ impl FlyRuntime {
 
     /// Ares 3.0 1004DA90 (hook 0x4CD9C8): a HunterSeeker's
     /// MovingDestination (`+0x1C`) follows its Target every frame.
-    #[cfg(feature = "ares")]
     pub(crate) fn hunt_destination(&mut self, at: DriveCoord) {
         self.destination = [at.x, at.y, at.z];
     }

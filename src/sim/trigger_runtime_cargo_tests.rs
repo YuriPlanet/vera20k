@@ -250,6 +250,9 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
         .spawn_object_at_height("CARGOTRUCK", "Americans", 16, 15, 0, 0, &rules)
         .unwrap();
     let money = crate::sim::credit_income::available_money(&sim.houses, owner);
+    // A campaign's Money crate pays PlayerPtr for a human collector: the
+    // player's own House here.
+    sim.session.set_current_house_for_test(Some(owner));
     assert!(sim.pickup_crate_at(
         collector,
         (slot.cell_x, slot.cell_y),

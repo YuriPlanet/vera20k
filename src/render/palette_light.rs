@@ -311,7 +311,11 @@ mod tests {
         assert_eq!(native["constructor_palette_index"], 16);
         let colors = native["colors"].as_array().unwrap();
         assert_eq!(colors.len(), 21);
-        assert_eq!(rules.color_schemes.len(), colors.len());
+        // VERA's built-in extra lobby colours follow the rules' own entries.
+        assert_eq!(
+            rules.color_schemes.len(),
+            colors.len() + crate::rules::skirmish_colors::MAX_EXTRA_COLORS
+        );
         for (index, row) in colors.iter().enumerate() {
             let scheme = &rules.color_schemes[index];
             assert_eq!(scheme.name, row["name"].as_str().unwrap());

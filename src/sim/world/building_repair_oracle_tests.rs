@@ -309,7 +309,10 @@ fn toggle_repair_matches_the_original() {
             5,
             false,
         );
-        building.repairing.set_for_test(input["repairing"] == 1);
+        building
+            .building
+            .repairing
+            .set_for_test(input["repairing"] == 1);
         sim.substrate.entities.insert(building);
         let timer_before = *sim.houses[&owner].repair_latch_timer();
         let latch_before = sim.houses[&owner].repair_start_latch();
@@ -332,7 +335,15 @@ fn toggle_repair_matches_the_original() {
             "{name}"
         );
         assert_eq!(
-            u64::from(sim.substrate.entities.get(1).unwrap().repairing.is_on()),
+            u64::from(
+                sim.substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .building
+                    .repairing
+                    .is_on()
+            ),
             row["repairing"].as_u64().unwrap(),
             "{name}: +0x6E8"
         );
@@ -443,8 +454,12 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
     building.lifecycle.set_in_limbo_for_test(false);
     building.set_in_playfield(true);
     building.estimated_health = EstimatedHealth::from_raw(int("estimate", health.into()));
-    building.repairing.set_for_test(flag("repairing", false));
     building
+        .building
+        .repairing
+        .set_for_test(flag("repairing", false));
+    building
+        .building
         .has_been_captured
         .set_for_test(flag("captured", false));
     building
@@ -541,7 +556,7 @@ fn update_repair_and_power_matches_the_original() {
             json!([
                 building.health.current(),
                 building.estimated_health.get(),
-                u8::from(building.repairing.is_on()),
+                u8::from(building.building.repairing.is_on()),
                 u8::from(building.building_art.damage_state_active()),
             ]),
             json!([
@@ -684,7 +699,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
             assert_eq!(
                 json!([
                     building.health.current(),
-                    u8::from(building.repairing.is_on()),
+                    u8::from(building.building.repairing.is_on()),
                     house.economy().credits(),
                     u8::from(house.repair_start_latch()),
                     [
@@ -859,7 +874,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             false,
         );
         building.estimated_health = EstimatedHealth::from_raw(estimate);
-        building.repairing.set_for_test(true);
+        building.building.repairing.set_for_test(true);
         sim.substrate.entities.insert(building);
         production::update_repair_and_power(
             &mut sim,
@@ -873,7 +888,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             (
                 building.health.current(),
                 building.estimated_health.get(),
-                building.repairing.is_on()
+                building.building.repairing.is_on()
             ),
             (expected_actual, expected_estimate, repairing),
             "strength={strength} actual={actual}"
@@ -909,7 +924,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
             .strength;
         let entity = s.sim.substrate.entities.get_mut(building).unwrap();
         entity.health.set_for_test(strength / 2);
-        entity.repairing.set_for_test(repairing);
+        entity.building.repairing.set_for_test(repairing);
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
             s.sim.session.tick() + 1,
@@ -943,7 +958,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
                 .count();
             frames.push((
                 entity.mission.handler_state(),
-                entity.repairing.is_on(),
+                entity.building.repairing.is_on(),
                 clicks,
             ));
         }
@@ -964,9 +979,11 @@ fn a_sale_s_first_visit_stops_the_repair() {
 /// Ares 3.0 10014630 (hook 0x4509B4): with `[General]
 /// RepairStopOnInsufficientFunds=no` a human player's broke repair stays on
 /// and heals nothing; a computer house's stops as in stock.
+// Runs again once production's repair step for a broke human house moves to the switch.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_broke_human_repair_stays_on_without_repair_stop() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (human, repairing) in [(true, true), (false, false)] {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nRepairStep=4\nRepairStopOnInsufficientFunds=no\n[InfantryTypes]\n\
@@ -993,7 +1010,7 @@ fn ares_broke_human_repair_stays_on_without_repair_stop() {
             5,
             false,
         );
-        building.repairing.set_for_test(true);
+        building.building.repairing.set_for_test(true);
         sim.substrate.entities.insert(building);
         production::update_repair_and_power(
             &mut sim,
@@ -1004,9 +1021,72 @@ fn ares_broke_human_repair_stays_on_without_repair_stop() {
         );
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
-            (building.health.current(), building.repairing.is_on()),
+            (
+                building.health.current(),
+                building.building.repairing.is_on()
+            ),
             (500, repairing),
             "human={human}"
         );
     }
+}
+
+/// VERA Auto Repair asks which of a house's buildings want the Repair order
+/// ([`production::buildings_wanting_repair`]).
+#[test]
+fn buildings_wanting_repair_are_the_damaged_idle_ones_the_owner_can_pay_for() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = fixture.rules;
+    let strength = rules.object("GAPOWR").unwrap().strength;
+    let wanting = |credits: i32| {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let other = sim.interner.intern("Russians");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, true, credits, 10));
+        sim.houses
+            .register(HouseState::new(other, 0, None, true, 1000, 10));
+        let kind = sim.interner.intern("GAPOWR");
+        // 1 damaged, 2 whole, 3 damaged and repairing, 4 another house's.
+        for (id, house, health) in [
+            (1, owner, strength / 2),
+            (2, owner, strength),
+            (3, owner, strength / 2),
+            (4, other, strength / 2),
+        ] {
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    12 + id as u16 * 4,
+                    12,
+                    0,
+                    0,
+                    house,
+                    Health::new(health),
+                    kind,
+                    EntityCategory::Structure,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        sim.substrate
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .building
+            .repairing
+            .set_for_test(true);
+        production::buildings_wanting_repair(&sim, &rules, owner)
+    };
+    assert_eq!(wanting(1000), [1]);
+    // A house that cannot pay one step gets none: the step would stop it.
+    assert!(wanting(0).is_empty());
+    // Building 3's running repair pays its step first; 1 needs a second.
+    let step = production::repair_step_cost(&rules, rules.object("GAPOWR").unwrap());
+    assert!(wanting(2 * step - 1).is_empty());
+    assert_eq!(wanting(2 * step), [1]);
 }

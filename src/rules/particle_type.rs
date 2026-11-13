@@ -154,8 +154,8 @@ pub struct ParticleType {
     pub z_velocity_range: i32,
     /// Ares ParticleTypeExt+0x18 `DamageRange` (Valueable<double>, constructor
     /// 0; LoadFromINIFile 100291A0, hook 0x645405), in cells: above zero a Gas
-    /// particle damages every object within it (`particles::gas`).
-    #[cfg(feature = "ares")]
+    /// particle damages every object within it (`particles::gas`). Read in
+    /// every Rules mode; only Ares' gas damage consumes it.
     pub(crate) ares_damage_range: NativeF64Bits,
 }
 
@@ -260,7 +260,6 @@ impl ParticleType {
             y_velocity: section.read_int("YVelocity", 1),
             min_z_velocity: section.read_int("MinZVelocity", 0),
             z_velocity_range: section.read_int("ZVelocityRange", 1),
-            #[cfg(feature = "ares")]
             ares_damage_range: section
                 .read_ares_double_bits("DamageRange", NativeF64Bits::POSITIVE_ZERO),
         }

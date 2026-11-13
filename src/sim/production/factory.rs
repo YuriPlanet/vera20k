@@ -993,16 +993,20 @@ impl FactoryRegistry {
     /// either expiry control: only a matching held product (+58) is cleared.
     /// The factory, queue, stage, balance, rates and timers remain intact.
     /// Source: cameo_order.md current/saved product-expiry histories.
-    pub(crate) fn pointer_expired(&mut self, entity_id: u64) {
+    /// Answers whether any factory held `entity_id`.
+    pub(crate) fn pointer_expired(&mut self, entity_id: u64) -> bool {
+        let mut held = false;
         for factory in self.factories.values_mut() {
             if factory
                 .object
                 .as_ref()
                 .is_some_and(|object| object.entity_id == Some(entity_id))
             {
+                held = true;
                 factory.object = None;
             }
         }
+        held
     }
 
     /// `FactoryClass::CountTotal @ 0x004CA670` on `owner`'s factory for

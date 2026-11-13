@@ -309,6 +309,7 @@ impl PreparedLoad {
         // clock. This user-file seam is separate from internal continuations.
         simulation.restart_cloak_progress_after_player_load();
         simulation.reconstruct_building_repair_progress_after_player_load();
+        simulation.validate_ares_state_for_load(rules.ares())?;
         simulation.restore_after_snapshot_load()?;
         crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
         simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);

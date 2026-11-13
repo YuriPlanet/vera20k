@@ -444,7 +444,7 @@ fn restore_production_pair(sim: &Simulation, rules: &RuleSet) -> Simulation {
         assert!(
             restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .is_native_load_pending()
         );
@@ -452,7 +452,7 @@ fn restore_production_pair(sim: &Simulation, rules: &RuleSet) -> Simulation {
         assert!(
             !restored
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .unwrap()
                 .is_native_load_pending()
         );

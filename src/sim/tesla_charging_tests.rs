@@ -108,6 +108,7 @@ impl Fixture {
             .entities
             .get(self.coil)
             .unwrap()
+            .building
             .tesla_charge
     }
 
@@ -232,7 +233,9 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     // The complete detonation still runs its existing animation tail. Only
     // ElectricAssault's list refresh itself must leave RNG untouched.
     let rng = f.sim.scenario_rng.logical_state();
-    f.sim.substrate.electric_assault_detonation(a, Some(f.coil));
+    f.sim
+        .substrate
+        .electric_assault_detonation(a, Some(f.coil), crate::rules::ARES_BUILD);
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
     assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
 
@@ -266,6 +269,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
             .entities
             .get(hostile_plant)
             .unwrap()
+            .building
             .tesla_charge
             .chargers(),
         &[a]
@@ -293,6 +297,7 @@ fn operational_power_and_overpowered_weapon_use_different_thresholds() {
             .entities
             .get_mut(f.coil)
             .unwrap()
+            .building
             .tesla_charge = BuildingCharge::default();
         f.set_power(output, drain);
         for i in 0..count {
@@ -442,7 +447,13 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
     loaded.restore_after_snapshot_load().unwrap();
     assert_eq!(
-        loaded.substrate.entities.get(f.coil).unwrap().tesla_charge,
+        loaded
+            .substrate
+            .entities
+            .get(f.coil)
+            .unwrap()
+            .building
+            .tesla_charge,
         *f.charge()
     );
     assert!(
@@ -467,6 +478,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .entities
             .get(f.coil)
             .unwrap()
+            .building
             .tesla_charge
             .is_default()
     );
@@ -481,6 +493,7 @@ fn snapshot_preserves_order_intent_and_stale_latch_then_rejects_invalid_referenc
             .entities
             .get_mut(f.coil)
             .unwrap()
+            .building
             .tesla_charge
             .chargers = invalid;
         let bytes = GameSnapshot::save(&f.sim, 0, 0, "Tesla-invalid", 0);
@@ -502,6 +515,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.coil)
         .unwrap()
+        .building
         .tesla_charge
         .chargers = f.troopers.to_vec();
     let list = f.sim.state_hash();
@@ -511,6 +525,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.coil)
         .unwrap()
+        .building
         .tesla_charge
         .chargers
         .reverse();
@@ -521,6 +536,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
         .entities
         .get_mut(f.coil)
         .unwrap()
+        .building
         .tesla_charge
         .overpowered = true;
     let latch = f.sim.state_hash();

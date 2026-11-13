@@ -6,8 +6,6 @@
 use crate::app::AppState;
 use crate::map::entities::EntityCategory;
 use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend};
-use crate::sim::movement::air_movement::current_fly_height;
-use crate::sim::movement::ground_pose::object_get_coords;
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 use std::collections::BTreeMap;
@@ -148,15 +146,19 @@ pub(crate) fn build_selection_bracket_lines(
     let Some(rules) = state.rules() else {
         return BTreeMap::new();
     };
-    let terrain = sim.resolved_terrain();
+    let Some(frame) = state.match_state.sim_runtime.frame() else {
+        return BTreeMap::new();
+    };
     parents
         .into_iter()
-        .filter_map(|id| sim.entities().get(id))
+        .filter_map(|id| frame.object(id))
         .filter(|e| e.category() == EntityCategory::Structure && e.selection.is_selected())
         .filter_map(|e| {
             let object = rules.object(sim.interner().resolve(e.type_ref()))?;
-            let center = object_get_coords(e, terrain);
-            let color = palette[usize::from(current_fly_height(e, terrain) < -4)];
+            // `ground_pose::object_get_coords` and
+            // `air_movement::queried_flight_height` (GetHeight), captured.
+            let center = e.hud.get_coords;
+            let color = palette[usize::from(e.place.flight_height < -4)];
             let correction = crate::render::locomotor_visual::building_terrain_correction(
                 i32::from(e.position.z() as i8),
             );
@@ -182,6 +184,7 @@ mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;
     use crate::sim::game_entity::GameEntity;
+    use crate::sim::movement::ground_pose::object_get_coords;
     use serde_json::Value;
 
     fn native() -> &'static Value {

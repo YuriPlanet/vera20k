@@ -100,6 +100,14 @@ impl GameEntity {
         }
     }
 
+    /// Whether [`Self::update_voxel_recoil`] moves a part: one is recoiling.
+    /// A part at rest (state 0) keeps its values.
+    pub(crate) fn voxel_recoil_moves(&self) -> bool {
+        self.voxel_recoil
+            .as_ref()
+            .is_some_and(|recoil| recoil.parts.iter().any(|part| part.state != 0))
+    }
+
     pub(crate) fn update_voxel_recoil(&mut self) {
         if let Some(recoil) = self.voxel_recoil.as_mut() {
             for part in &mut recoil.parts {

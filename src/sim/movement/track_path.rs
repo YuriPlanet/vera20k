@@ -678,7 +678,15 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(actor) = self.substrate.entities.get_mut(id) else {
+        // A quiet unit is owed no setter (`world::quiet_units`).
+        if self.quiet(id) {
+            return;
+        }
+        let Some(actor) = self
+            .substrate
+            .entities
+            .get_mut_if(id, |actor| actor.navigation.destination_setter_owed())
+        else {
             return;
         };
         if !actor.navigation.take_destination_setter() {

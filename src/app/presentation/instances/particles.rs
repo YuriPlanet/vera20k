@@ -135,6 +135,7 @@ pub(super) fn build_particle_system_instance(
         system,
         kind,
         &mut input.detail.borrow_mut(),
+        input.rules.ares(),
     );
     if let Some(mut record) = record {
         record.coord = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
@@ -291,6 +292,56 @@ pub(super) fn build_particle_instance(
     let Ok(frame) = u16::try_from(native_frame) else {
         return;
     };
+    let flags = particle_draw_flags(detail_level, particle.translucency());
+    let Some((piece, page)) =
+        particle_shp_piece(atlas, image, frame, coord, point, flags, &mut parent, axis)
+    else {
+        return;
+    };
+    if let (Some(rows), Some(system)) = (observations.as_mut(), system) {
+        rows.push(ParticleDrawObservation {
+            system_id: system.stable_id(),
+            particle_id: parent.id,
+            particle_native_id: particle.native_unique_id(),
+            display_layer: parent.layer.0,
+            display_order: parent.display_order,
+            image: image.to_owned(),
+            frame,
+            atlas_page: page,
+            source_palette: piece.instance.source_palette,
+            position: piece.instance.position,
+            size: piece.instance.size,
+            uv_origin: piece.instance.uv_origin,
+            uv_size: piece.instance.uv_size,
+            native_flags: flags,
+            z_adjust: piece.instance.z_adjust,
+            z_gradient: piece.instance.z_gradient,
+            palette_light: piece.instance.palette_light.0,
+            render_z: match piece.render_z {
+                RenderZPolicy::ReadOnly => "read_only",
+                _ => unreachable!("ParticleDraw62CEC0 never writes render Z"),
+            },
+        });
+    }
+    objects.push(PlannedObjectInstance::object(parent, vec![piece]));
+}
+
+/// Particle62CFF9's DrawSHP of one frame at `coord` (screen `point`): global
+/// ANIM87F6C0 at brightness 1000 (PUSH0x3E8), independently of cell lighting,
+/// depth `-15 - AdjustForZ` and the vertical Z gradient, with the `flags`
+/// translucency selector. Ares' ExtData::Draw (`10026430`) passes the same for
+/// its smoke records. Returns the piece and its atlas page.
+#[allow(clippy::too_many_arguments)]
+fn particle_shp_piece(
+    atlas: &crate::render::sprite_atlas::SpriteAtlas,
+    image: &str,
+    frame: u16,
+    coord: glam::IVec3,
+    point: (f32, f32),
+    flags: u32,
+    parent: &mut crate::render::tactical_draw_plan::ObjectDraw,
+    axis: crate::render::batch::DepthAxis,
+) -> Option<(ObjectPieceInstance, usize)> {
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::Particle,
         type_id: image.into(),
@@ -298,10 +349,7 @@ pub(super) fn build_particle_instance(
         frame,
         house_color: HouseColorIndex(0),
     };
-    let Some(entry) = atlas.get(&key) else {
-        return;
-    };
-    let flags = particle_draw_flags(detail_level, particle.translucency());
+    let entry = atlas.get(&key)?;
     if flags & 6 != 0 {
         parent.policy = BlitPolicy::translucent(SpriteEncoding::Plain, RenderZPolicy::ReadOnly);
     }
@@ -324,8 +372,6 @@ pub(super) fn build_particle_instance(
             tint: crate::map::lighting::DEFAULT_TINT,
             alpha: 1.0,
             draw_state: DrawState::from_native_selector(0, (flags & 6) as u8),
-            // Particle62CFF9 passes decimal1000 (PUSH0x3E8) and
-            // global ANIM87F6C0, independently of cell lighting.
             palette_light: PaletteLight::plain(53, 1000),
             // 62D01D: this is the depth argument, not a screen-Y lift.
             z_adjust: -15. - lift,
@@ -333,32 +379,162 @@ pub(super) fn build_particle_instance(
             ..Default::default()
         },
     };
-    if let (Some(rows), Some(system)) = (observations.as_mut(), system) {
-        rows.push(ParticleDrawObservation {
-            system_id: system.stable_id(),
-            particle_id: parent.id,
-            particle_native_id: particle.native_unique_id(),
-            display_layer: parent.layer.0,
-            display_order: parent.display_order,
-            image: image.to_owned(),
-            frame,
-            atlas_page: entry.page as usize,
-            source_palette: piece.instance.source_palette,
-            position: piece.instance.position,
-            size: piece.instance.size,
-            uv_origin: piece.instance.uv_origin,
-            uv_size: piece.instance.uv_size,
-            native_flags: flags,
-            z_adjust: piece.instance.z_adjust,
-            z_gradient: piece.instance.z_gradient,
-            palette_light: piece.instance.palette_light.0,
-            render_z: match piece.render_z {
-                RenderZPolicy::ReadOnly => "read_only",
-                _ => unreachable!("ParticleDraw62CEC0 never writes render Z"),
-            },
-        });
+    Some((piece, entry.page as usize))
+}
+
+/// Frame-local parents for the Ares draw: past every simulation id and after
+/// every retained Air member, in the order the draw visits them.
+const ARES_DRAW_ID_BASE: u64 = 0xA4E5_0000_0000_0000;
+const ARES_DRAW_ORDER_BASE: u64 = 1 << 62;
+
+/// Ares 3.0 DrawParticleSystems (Ares.dll `10026760`), which the hook at
+/// `0x6D9427` (`10029100`) runs after the Air layer: every system's Ares
+/// records (`ExtData::Draw @ 10026430`), in ParticleSystemClass::Array order,
+/// when the detail level is above 0 and `RulesExt::DetailsCurrentlyEnabled`
+/// holds (the frame rate reaches `60 / GameSpeed` or the minimum). Spark and
+/// railgun records are single points with the stock point's A and Z tests;
+/// those on shrouded cells are skipped under FogOfWar. Smoke records draw
+/// their type's frame `State`.
+///
+/// RESIDUAL (presentation): the smoke draws through ANIM.PAL, not the
+/// particle type's Ares `Palette=` (`ParticleTypeExt`, not ported), and a
+/// point whose colour index has no next entry is skipped where Ares reads past
+/// the list.
+pub(super) fn build_ares_particle_draws(
+    input: &DisplayEffectInputs<'_>,
+    context: &ParticleDrawContext,
+    objects: &mut Vec<PlannedObjectInstance>,
+) {
+    use crate::render::tactical_compat::{
+        PreparedSparkPoint, adjust_for_z, project_spark_point, z_candidate,
+    };
+    use crate::render::tactical_draw_plan::{ObjectDraw, TacticalLayer};
+
+    // Without the game's Ares switch no system has records, and the hook's
+    // Detail query below must not touch the stock Detail latch.
+    if !input.rules.ares() {
+        return;
     }
-    objects.push(PlannedObjectInstance::object(parent, vec![piece]));
+    let sim = input.sim;
+    let systems = sim.particle_systems();
+    if systems.is_empty() || input.detail_level == 0 {
+        return;
+    }
+    let enabled = {
+        let mut detail = input.detail.borrow_mut();
+        let current = detail.frame_rate();
+        let speed = sim.session().game_options().game_speed.clamp(1, 6) as u32;
+        current >= 60 / speed || current >= detail.minimum_frame_rate()
+    };
+    if !enabled {
+        return;
+    }
+    // ignoreShroud unless FogOfWar (SpecialFlags 0x1000) is on.
+    let fog_viewer = input
+        .local_owner
+        .filter(|_| sim.session().game_options().fog_of_war);
+    let cells = sim
+        .resolved_terrain()
+        .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    let viewport = context.point_viewport;
+    let mut sequence = 0;
+    let mut next_parent = |policy: BlitPolicy| {
+        let parent = ObjectDraw {
+            id: ARES_DRAW_ID_BASE + sequence,
+            layer: TacticalLayer(3),
+            display_order: ARES_DRAW_ORDER_BASE + sequence,
+            policy,
+        };
+        sequence += 1;
+        parent
+    };
+    for (_, system) in systems.iter() {
+        let Some(ext) = system.ares() else {
+            continue;
+        };
+        let held = input.rules.particle_type(ext.held_type());
+        for record in ext.particles() {
+            let coord = record.coords();
+            if let (Some(viewer), Some(cells)) = (fog_viewer, cells.as_ref())
+                && crate::sim::vision::point_is_shrouded(
+                    sim.fog(),
+                    cells,
+                    viewer,
+                    crate::sim::components::DriveCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    },
+                )
+            {
+                continue;
+            }
+            let Ok(screen) = project_spark_point(coord, viewport) else {
+                continue;
+            };
+            if !viewport.clip.contains(screen) {
+                continue;
+            }
+            let Ok(adjust) = adjust_for_z(coord.z, viewport.adjust_for_z_multiplier) else {
+                continue;
+            };
+            let Some(rgb) = record.draw_color(&held.color_list) else {
+                continue;
+            };
+            let point = PreparedSparkPoint {
+                screen,
+                candidate_z: z_candidate(
+                    viewport.z_origin_term,
+                    viewport.z_bottom_term,
+                    screen.y,
+                    adjust,
+                ),
+                rgb: rgb.map(i32::from),
+            };
+            let mut planned = PlannedObjectInstance::object(
+                next_parent(BlitPolicy::z_read(SpriteEncoding::Plain)),
+                Vec::new(),
+            );
+            planned.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
+            objects.push(planned);
+        }
+        let Some(atlas) = input.atlas else {
+            continue;
+        };
+        for smoke in ext.smoke() {
+            let kind = input.rules.particle_type(smoke.type_id());
+            let Ok(frame) = u16::try_from(smoke.state()) else {
+                continue;
+            };
+            let coord = smoke.location();
+            let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+            if !projection_admitted([point.0, point.1], context.camera, context.viewport) {
+                continue;
+            }
+            // 100266CE..100266F7: 25, 50 and (unsigned) 75 or more select
+            // the translucent leaves at the highest detail level.
+            let selector = match smoke.translucency() {
+                _ if input.detail_level != 2 => 0,
+                25 => 2,
+                50 => 4,
+                75.. => 6,
+                _ => 0,
+            };
+            let mut parent = next_parent(BlitPolicy::z_read(SpriteEncoding::Plain));
+            if let Some((piece, _)) = particle_shp_piece(
+                atlas,
+                kind.image.as_str(),
+                frame,
+                coord,
+                point,
+                0x2E00 | selector,
+                &mut parent,
+                context.axis,
+            ) {
+                objects.push(PlannedObjectInstance::object(parent, vec![piece]));
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 #[test]
 fn script_conversion_retains_registered_identity_through_layers_save_and_hash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let root = "[InfantryTypes]\n0=SOURCE\n1=TARGET\n2=OTHER\n3=CLEAR\n4=UNSET\n\
                 [SOURCE]\nConvert.Script=TARGET\nTurretROT=4\nHasSpotlight=yes\n\
                 Spotlight.StartHeight=520\nSpotlight.Distance=700\nSpotlight.AttachedTo=barrel\nSpotlight.DisableColor=yes\n\
@@ -95,6 +96,7 @@ fn script_conversion_retains_registered_identity_through_layers_save_and_hash() 
 
 #[test]
 fn surface_conversion_retains_nullable_bindings_layers_save_and_hash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let root = "[VehicleTypes]\n0=LAND\n1=WATER\n2=CLEAR\n3=UNSET\n\
                 [LAND]\nConvert.Water=WATER\nConvert.Land=LAND\n\
                 [CLEAR]\nConvert.Water=WATER\nConvert.Land=LAND\n";

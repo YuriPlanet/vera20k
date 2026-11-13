@@ -25,6 +25,10 @@ use crate::sim::world::ObjectSubstrate;
 /// -1), a set SuppressUnitLost (TechnoExt `+0x9F`, the callers'
 /// `UnitLost.Suppress` test) silences it, and the line plays whether or not
 /// the radar event is admitted.
+///
+/// Still on the `ares` feature: the line and the radar flag are Ares fields of
+/// `UnitLostEvent` and of `SimSoundEvent::UnitLost`, which the app reads, so
+/// this chain moves with that event, not with combat.
 pub(crate) fn death_announcement_event(
     obj: &crate::rules::object_type::ObjectType,
     type_id: InternedId,

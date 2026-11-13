@@ -376,6 +376,18 @@ pub(super) fn run(state: &mut AppState) {
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
 pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
+    // VERA: Quick Match pairs players who agreed on nothing, so it plays the
+    // original game. With a mod in use the pre-match check would refuse any
+    // opponent without the same mod; say so here, and what to do, and end
+    // the runner.
+    if state.frontend.mods.active.is_some() {
+        lobby::quick_match_box(
+            state,
+            "VERA:QuickMatchNoMod",
+            lobby::QuickMatchBoxThen::Return,
+        );
+        return;
+    }
     let prefix = if quick_coop(state) {
         QUICK_COOP_PREFIX
     } else {
@@ -575,6 +587,13 @@ fn request(state: &mut AppState) -> bool {
                 .local_participant()
                 .slot,
         ),
+    };
+    // Quick Match plays in YR's eight colours: one of VERA's extra lobby
+    // colours goes as Random, which the paired games draw from the eight.
+    let color = if (0..crate::skirmish_launch::HOUSE_COLOR_COUNT as i32).contains(&color) {
+        color
+    } else {
+        crate::app::frontend::skirmish_session::RANDOM_ITEM_DATA
     };
     csf_line(state, "WOL:RequestingMatch", REQUEST_COLOR);
     service::request(
@@ -949,7 +968,11 @@ fn build_host_options(
         1,
         guest_seat,
         false,
-        PeerChoicePolicy::Wol { countries: None },
+        PeerChoicePolicy::Wol {
+            countries: None,
+            teams: None,
+        },
+        crate::skirmish_launch::HOUSE_COLOR_COUNT,
     );
     draw_random_picks(&mut launch.humans, countries, pairing.seed)?;
     Ok(crate::app::shell_network_setup::HostOptions {

@@ -75,9 +75,8 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
 }
 
 fn picked_target(sim: &Simulation, target: u64) -> HoverTargetKindWithId {
-    let (x, y) = crate::app::presentation::instances::entity_screen_position(
-        sim.entities().get(target).unwrap(),
-    );
+    let (x, y) =
+        crate::render::locomotor_visual::screen_position(sim.entities().get(target).unwrap());
     let hover =
         crate::app::input::entity_pick::hover_target_at_point(sim, x, y, "Americans", false)
             .expect("revealed ordinary tank is picked");
@@ -111,7 +110,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
                 && case["alt"] == false
                 && row["no_manual_fire_native_reader_value"] == u64::from(setting)
         }) {
-            let expected = if crate::rules::ARES_ENABLED {
+            let expected = if crate::rules::ARES_BUILD {
                 row
             } else {
                 rows.iter()
@@ -161,7 +160,7 @@ fn ares_no_manual_fire_object_click_keeps_native_movement_fallback() {
             }
         }
         let (sim, actor, _) = object_pair(&battle.rules, "MTNK", "enemy");
-        let effective = setting && crate::rules::ARES_ENABLED;
+        let effective = setting && crate::rules::ARES_BUILD;
         let native_cell = rows
             .iter()
             .find(|row| {

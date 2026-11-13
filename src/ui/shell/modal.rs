@@ -1,10 +1,9 @@
-//! Front-end modal substrate: `ModalKind` table + native result conventions.
+//! Front-end modal substrate: `ModalKind` table + the message-box result codes.
 //!
-//! Render-agnostic data describing the YR front-end pop-up modals as plain Rust:
-//! which RT_DIALOG template each `ModalKind` loads, the native "count-rule" the
-//! generic CSF message-box helper uses to pick a template from its populated
-//! string slots, and the TWO distinct result conventions the modals resolve under
-//! (the message-box helper vs the in-game Options own dialog proc). Depends only on
+//! Render-agnostic data describing the YR front-end pop-up message boxes as plain
+//! Rust: which RT_DIALOG template each `ModalKind` loads, the native "count-rule"
+//! the generic CSF message-box helper uses to pick a template from its populated
+//! string slots, and the result codes those boxes resolve to. Depends only on
 //! the shared shell descriptor/geometry types (no sim/render/assets), so it honors
 //! the ui/ layering rule. The shared modal renderer consumes these descriptors.
 
@@ -39,42 +38,15 @@ pub enum ModalKind {
     /// 0x121 — adds a fourth owner-draw button. Reachable but unused by the three
     /// target modals; render-UNTESTED, excluded from the in-game OK acceptance.
     ThreeButton,
-    /// 0xBBB (active game) / 0xF5 (shell) — the in-game Options dialog. A SEPARATE
-    /// full-shell mechanism (its own dialog proc), NOT the count-rule message box;
-    /// it must not be passed to `build_message_box_descriptor`.
-    InGameOptions,
 }
 
 impl ModalKind {
-    /// The RT_DIALOG resource id this modal loads. Only `InGameOptions` varies with
-    /// `in_active_game`: its own proc reads a byte discriminator and selects 0xBBB
-    /// when that byte equals 1 (active game), else 0xF5 (shell). The compare is an
-    /// equality test (`== 1`), PROOFED from the binary (no emulate gate). The
-    /// message-box template ids are fixed and ignore `in_active_game`.
-    pub fn template_id(self, in_active_game: bool) -> u16 {
+    /// The RT_DIALOG resource id this message box loads.
+    pub fn template_id(self) -> u16 {
         match self {
             ModalKind::BodyOk => 0x00CE,
             ModalKind::Confirm => 0x0120,
             ModalKind::ThreeButton => 0x0121,
-            ModalKind::InGameOptions => {
-                if in_active_game {
-                    0x0BBB
-                } else {
-                    0x00F5
-                }
-            }
-        }
-    }
-
-    /// Which native result convention this modal resolves under. Keeping the two
-    /// conventions explicit prevents reading a message-box code (0/1/2) as an
-    /// Options code (1/2) or vice-versa — the slice's highest-risk parity fact.
-    pub fn result_convention(self) -> ResultConvention {
-        match self {
-            ModalKind::BodyOk | ModalKind::Confirm | ModalKind::ThreeButton => {
-                ResultConvention::MessageBox
-            }
-            ModalKind::InGameOptions => ResultConvention::OwnProc,
         }
     }
 }
@@ -109,31 +81,16 @@ fn slot_populated(slot: Option<&str>) -> bool {
     matches!(slot, Some(s) if !s.is_empty() && !s.starts_with('\0'))
 }
 
-/// The native result convention a modal resolves under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResultConvention {
-    /// Count-rule message-box helper: writes 0 (OK), 1 (Cancel/IDCANCEL), or 2
-    /// (third button); the caller inits the result slot to -1 (dismissed/unset).
-    MessageBox,
-    /// In-game Options own dialog proc: writes 1 for every close button (persist),
-    /// and 2 only when the game ends while the modal is open (no persist).
-    OwnProc,
-}
-
 /// Result value the message-box helper leaves when no button resolved the dialog
 /// (the caller inits the result slot to -1 before pumping it).
 pub const MESSAGE_BOX_DISMISSED: i32 = -1;
 
-/// A resolved modal outcome, tagged by convention so the two native result codings
-/// can never be confused.
+/// A resolved message-box outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalResult {
     /// Count-rule message-box family (0xCE/0x120/0x121): 0=OK, 1=Cancel/ESC,
     /// 2=third button, -1=dismissed (slot left at its init value).
     MessageBox(i32),
-    /// In-game Options own proc (0xBBB/0xF5): 1=persist (any close button),
-    /// 2=game-ended (no persist).
-    InGameOptions(i32),
 }
 
 impl ModalResult {
@@ -157,13 +114,6 @@ impl ModalResult {
     pub fn quit_confirm_quits(self) -> bool {
         matches!(self, ModalResult::MessageBox(0))
     }
-
-    /// In-game Options persist semantics: result == 1 (every close button) writes
-    /// the settings; result == 2 (game ended) does not. No discard-without-save
-    /// path exists.
-    pub fn options_persists(self) -> bool {
-        matches!(self, ModalResult::InGameOptions(1))
-    }
 }
 
 /// DLU rects for the message-box controls, taken from the parsed RT_DIALOG
@@ -181,14 +131,8 @@ pub struct MessageBoxRects {
 /// modal. Background is mode-2 SHP (PUDLGBGN + DIALOGN), centered (no fullscreen
 /// re-anchor), not slide-eligible. The control SET follows the count rule: body
 /// static + OK always; Cancel (control 2) for `Confirm`/`ThreeButton`; the third
-/// button (`0x5AF`) for `ThreeButton`. `InGameOptions` is NOT a message box and
-/// must not be passed here (it builds a full-shell owner-draw descriptor in a
-/// later slice).
+/// button (`0x5AF`) for `ThreeButton`.
 pub fn build_message_box_descriptor(kind: ModalKind, rects: &MessageBoxRects) -> DialogDescriptor {
-    debug_assert!(
-        kind.result_convention() == ResultConvention::MessageBox,
-        "build_message_box_descriptor is only for the count-rule message-box family"
-    );
     let mut controls = vec![
         modal_control(control::BODY_STATIC, ControlKind::Static, rects.body),
         modal_control(control::OK, ControlKind::Button, rects.ok),
@@ -204,9 +148,7 @@ pub fn build_message_box_descriptor(kind: ModalKind, rects: &MessageBoxRects) ->
         controls.push(modal_control(control::THIRD, ControlKind::Button, rect));
     }
     DialogDescriptor {
-        // in_active_game is irrelevant for message-box ids (only InGameOptions
-        // varies); the debug_assert above guarantees we never reach here for it.
-        id: DialogId(kind.template_id(false)),
+        id: DialogId(kind.template_id()),
         controls,
         bg_kind: BgKind::ModalShp,
         slide_eligible: false,
@@ -326,7 +268,6 @@ fn message_box_layout_in(kind: ModalKind, area: RectPx) -> MessageBoxLayout {
         ModalKind::BodyOk => 175,
         ModalKind::Confirm => 155,
         ModalKind::ThreeButton => 135,
-        ModalKind::InGameOptions => panic!("Options is not a count-rule message box"),
     };
     MessageBoxLayout {
         dialog,
@@ -1012,13 +953,9 @@ mod tests {
 
     #[test]
     fn template_id_table() {
-        assert_eq!(ModalKind::BodyOk.template_id(false), 0x00CE);
-        assert_eq!(ModalKind::BodyOk.template_id(true), 0x00CE);
-        assert_eq!(ModalKind::Confirm.template_id(false), 0x0120);
-        assert_eq!(ModalKind::ThreeButton.template_id(false), 0x0121);
-        // Only InGameOptions varies with the active-game discriminator (== 1).
-        assert_eq!(ModalKind::InGameOptions.template_id(true), 0x0BBB);
-        assert_eq!(ModalKind::InGameOptions.template_id(false), 0x00F5);
+        assert_eq!(ModalKind::BodyOk.template_id(), 0x00CE);
+        assert_eq!(ModalKind::Confirm.template_id(), 0x0120);
+        assert_eq!(ModalKind::ThreeButton.template_id(), 0x0121);
     }
 
     #[test]
@@ -1043,26 +980,6 @@ mod tests {
             ModalKind::Confirm
         );
         assert_eq!(message_box_kind(Some(""), Some("")), ModalKind::BodyOk);
-    }
-
-    #[test]
-    fn result_convention_split() {
-        assert_eq!(
-            ModalKind::BodyOk.result_convention(),
-            ResultConvention::MessageBox
-        );
-        assert_eq!(
-            ModalKind::Confirm.result_convention(),
-            ResultConvention::MessageBox
-        );
-        assert_eq!(
-            ModalKind::ThreeButton.result_convention(),
-            ResultConvention::MessageBox
-        );
-        assert_eq!(
-            ModalKind::InGameOptions.result_convention(),
-            ResultConvention::OwnProc
-        );
     }
 
     #[test]
@@ -1092,12 +1009,6 @@ mod tests {
         assert!(!ModalResult::MessageBox(1).quit_confirm_quits()); // Cancel / ESC
         assert!(!ModalResult::MessageBox(2).quit_confirm_quits());
         assert!(!ModalResult::MessageBox(MESSAGE_BOX_DISMISSED).quit_confirm_quits());
-    }
-
-    #[test]
-    fn options_persists_only_on_result_one() {
-        assert!(ModalResult::InGameOptions(1).options_persists());
-        assert!(!ModalResult::InGameOptions(2).options_persists());
     }
 
     #[test]

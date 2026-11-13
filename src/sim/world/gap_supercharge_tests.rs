@@ -117,6 +117,7 @@ fn a_retail_gap_generator_supercharges_and_discharges_through_its_unload() {
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .active(),
@@ -132,6 +133,7 @@ fn a_retail_gap_generator_supercharges_and_discharges_through_its_unload() {
         .entities
         .get(gap)
         .unwrap()
+        .building
         .gap_generator
         .viewers()[&owner];
     assert!(deposit.active());
@@ -148,6 +150,7 @@ fn a_retail_gap_generator_supercharges_and_discharges_through_its_unload() {
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()[&owner]
             .active()
@@ -195,6 +198,7 @@ fn low_power_discharges_a_supercharged_gap_generator() {
         .entities
         .get(gap)
         .unwrap()
+        .building
         .gap_generator
         .viewers()[&owner];
     assert!(deposit.active());
@@ -218,7 +222,7 @@ fn powering_off_keeps_the_supercharge_without_its_drain() {
         run(&mut sim, rules, &grid, &[]);
     }
     let entity = sim.substrate.entities.get(gap).unwrap();
-    assert!(!entity.gap_generator.viewers()[&owner].active());
+    assert!(!entity.building.gap_generator.viewers()[&owner].active());
     assert!(entity.gap_supercharged());
     assert_eq!(totals(&sim, owner), (10000, 0));
 
@@ -237,7 +241,7 @@ fn powering_off_keeps_the_supercharge_without_its_drain() {
     let entity = sim.substrate.entities.get(gap).unwrap();
     assert!(entity.building_online());
     assert!(entity.gap_supercharged());
-    assert!(entity.gap_generator.viewers()[&owner].active());
+    assert!(entity.building.gap_generator.viewers()[&owner].active());
     assert_eq!(totals(&sim, owner), (10000, 9100));
 }
 
@@ -264,7 +268,7 @@ fn an_unpowered_gap_generator_unload_keeps_the_normal_radius_and_no_charge() {
 
     sim.toggle_gap_supercharge(gap, rules);
     let entity = sim.substrate.entities.get(gap).unwrap();
-    let deposit = entity.gap_generator.viewers()[&owner];
+    let deposit = entity.building.gap_generator.viewers()[&owner];
     assert_eq!((deposit.active(), deposit.radius()), (false, 10));
     assert!(!entity.gap_supercharged());
     assert!(!sim.power_states[&owner].power_recheck_for_test());
@@ -278,7 +282,7 @@ fn an_unpowered_gap_generator_unload_keeps_the_normal_radius_and_no_charge() {
     assert_eq!(sim.building_operational_state(gap, rules), Some(true));
     sim.toggle_gap_supercharge(gap, rules);
     let entity = sim.substrate.entities.get(gap).unwrap();
-    let deposit = entity.gap_generator.viewers()[&owner];
+    let deposit = entity.building.gap_generator.viewers()[&owner];
     assert_eq!((deposit.active(), deposit.radius()), (true, 15));
     assert!(entity.gap_supercharged());
     assert!(sim.power_states[&owner].power_recheck_for_test());
@@ -343,6 +347,7 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
             .entities
             .get(gap)
             .unwrap()
+            .building
             .gap_generator
             .viewers()
             .clone()
@@ -374,7 +379,7 @@ fn an_allied_current_house_without_the_gap_keeps_the_charge_through_the_outage()
     );
     // The kept 9000 drain holds the House in low power.
     assert!(
-        !entity.building_last_operational.is_operational(),
+        !entity.building.building_last_operational.is_operational(),
         "the outage ran the off edge"
     );
     assert_eq!(totals(&sim, owner), (10000, 10100));

@@ -346,6 +346,8 @@ pub(crate) fn bind_rules_art_metadata(
     theater_ext: &str,
     theater_name: &str,
 ) {
+    // ARTMD is read the way the game's Rules were (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(fixed_art));
     let (populated, fallback) = rules.populate_anim_frame_dims(assets, theater_ext, theater_name);
     log::info!("Anim frame dims: {populated} populated, {fallback} fallback (defaults to 30x30)");
@@ -367,6 +369,8 @@ pub(crate) fn bind_rules_asset_closure(
     theater_name: &str,
     terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
 ) -> anyhow::Result<()> {
+    // The asset closures follow the way the game's Rules were read.
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
     let tolerant_roots = tolerant_anim_class_roots(rules);
@@ -425,7 +429,7 @@ mod presentation_jobs;
 pub(crate) use presentation_jobs::PresentationAtlasJob;
 
 pub(crate) struct PreparedManifest {
-    unit_work: Option<(unit_atlas::UnitRasterWork, unit_atlas::UnitAtlasUpload)>,
+    unit_atlas: Option<UnitAtlas>,
     sprite_work: Option<sprite_atlas::PreparedSpriteAtlas>,
     palette_set: Option<crate::render::palette_textures::PaletteSet>,
 }
@@ -525,15 +529,19 @@ pub(crate) fn prepare_presentation_manifest(
     // `load_theater` publishes them and mid-match atlas growth re-reads them.
     // Without a loaded theater nothing renders, so no entity atlas is built.
     let palette = theater_unit_palette;
-    let unit_work = palette.map(|_| {
-        unit_atlas::prepare_unit_atlas(
+    // The world's voxel models, admitted without drawing a picture: each is
+    // drawn the first time a frame shows it.
+    let mut unit_atlas = None;
+    if palette.is_some() {
+        unit_atlas::admit_world_models(
+            &mut unit_atlas,
             sim.entities(),
             asset_manager,
             rules,
-            None,
             Some(sim.interner()),
-        )
-    });
+            gpu.device.limits().max_texture_dimension_2d,
+        );
+    }
     // Mid-match growth collects the same coverage; only the scenario-start
     // crate remaps are load-only.
     let mut coverage = sprite_atlas::EntityAtlasCoverage::collect(sim, rules, house_colors);
@@ -581,7 +589,7 @@ pub(crate) fn prepare_presentation_manifest(
             crate::render::palette_textures::PaletteSet::new(gpu, pal, global, house_ramps, &active)
         });
     PreparedManifest {
-        unit_work,
+        unit_atlas,
         sprite_work,
         palette_set,
     }

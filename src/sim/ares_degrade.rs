@@ -147,6 +147,7 @@ mod tests {
     /// spared.
     #[test]
     fn low_power_degrades_consumers_above_the_percentage() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nDamageDelay=.1\nDegrade.Enabled=yes\nDegrade.AmountConsumer=10\n\
              Degrade.Percentage=50%\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
@@ -207,6 +208,7 @@ mod tests {
     /// multiples of the duration, or every frame below one.
     #[test]
     fn the_damage_delay_expires_on_each_multiple() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         assert!(!damage_delay_expires(0, 900));
         assert!(!damage_delay_expires(899, 900));
         assert!(damage_delay_expires(900, 900));

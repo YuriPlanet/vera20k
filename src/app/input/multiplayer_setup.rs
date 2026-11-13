@@ -47,10 +47,10 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 }
 
 /// Whether the room's map thumbnail shows a picture with nothing over it: no
-/// combo list, Game Options or missing-map offer.
+/// combo list, box (Game Options, Teams) or missing-map offer.
 fn preview_box_shows(state: &AppState, view: &SetupView, layout: &MultiplayerSetupLayout) -> bool {
     !view.preview_hidden
-        && !view.options_open
+        && view.open_box.is_none()
         && !view.map_offer_open
         && state.frontend.skirmish_preview_texture.is_some()
         && state
@@ -128,7 +128,7 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
             .frontend
             .multiplayer_setup
             .as_ref()
-            .is_some_and(|ui| !ui.options_open && ui.map_offer.is_none())
+            .is_some_and(|ui| ui.open_box.is_none() && ui.map_offer.is_none())
 }
 
 /// The chat NewEdit while it takes keys, for the input method
@@ -149,7 +149,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .multiplayer_setup
         .as_ref()
         .filter(|ui| {
-            routed && ui.focused_control == CHAT && !ui.options_open && ui.map_offer.is_none()
+            routed && ui.focused_control == CHAT && ui.open_box.is_none() && ui.map_offer.is_none()
         })
         .map(|_| layout(state).chat)
 }
@@ -185,8 +185,8 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     };
     // NewEdit consumes all keyboard input while chat has focus. Escape is
     // inert there; a free Escape opens VERA's Esc menu before it gets here.
-    // Enter appends CRLF before shared5EDD00/5DE360 submission. VERA's Game
-    // Options popup takes the keys first and closes on Escape or Enter.
+    // Enter appends CRLF before shared5EDD00/5DE360 submission. VERA's boxes
+    // (Game Options, Teams) take the keys first and close on Escape or Enter.
     let action = if let Some(offer) = &ui.map_offer {
         match code {
             // Keys meant for the chat just before it opened do not answer it.
@@ -197,12 +197,12 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             Some(KeyCode::Escape) => Some(SetupAction::MapOffer { download: false }),
             _ => None,
         }
-    } else if ui.options_open {
+    } else if ui.open_box.is_some() {
         matches!(
             code,
             Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
         )
-        .then_some(SetupAction::GameOptions { open: false })
+        .then_some(SetupAction::OpenBox(None))
     } else if ui.focused_control == CHAT {
         let key = match code {
             Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
@@ -264,16 +264,22 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let over_preview = over.is_none()
         && layout.map_preview.contains(x, y)
         && preview_box_shows(state, &view, &layout);
-    let help = over
-        .or(over_preview.then_some(MAP_PREVIEW))
-        .and_then(|id| tooltip_key(view.dialog, id))
-        .and_then(|key| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .and_then(|csf| csf.get(&key))
-                .map(str::to_owned)
+    // VERA's online room names the badge, rank and OS of the player whose
+    // name is under the pointer.
+    let player =
+        over.and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
+    let help = player
+        .or_else(|| {
+            over.or(over_preview.then_some(MAP_PREVIEW))
+                .and_then(|id| tooltip_key(view.dialog, id))
+                .and_then(|key| {
+                    state
+                        .process_assets
+                        .csf
+                        .as_ref()
+                        .and_then(|csf| csf.get(&key))
+                        .map(str::to_owned)
+                })
         })
         .unwrap_or_default();
     let help = if over_preview {
@@ -395,7 +401,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     y,
                 );
                 cue = press.cue().map(LauncherCue::from);
-            } else if CHECKBOXES.contains(&control) || ROOM_CHECKBOXES.contains(&control) {
+            } else if CHECKBOXES.contains(&control)
+                || ROOM_CHECKBOXES.contains(&control)
+                || control == AUTO_BALANCE
+            {
                 if crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.control_rect(control).expect("checkbox rect"),
                     layout.page.scale,
@@ -451,10 +460,15 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 PAGE => Some(SetupAction::Page),
                 PREVIOUS_ROWS => Some(SetupAction::RosterPage { forward: false }),
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
-                GAME_OPTIONS => Some(SetupAction::GameOptions { open: true }),
-                GAME_OPTIONS_OK => Some(SetupAction::GameOptions { open: false }),
+                GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
+                TEAMS => Some(SetupAction::OpenBox(Some(RoomBox::Teams))),
+                GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
+                TEAM_STARTS => Some(SetupAction::TeamStarts),
+                TEAM_COLORS => Some(SetupAction::TeamColors),
+                BALANCE => Some(SetupAction::Balance),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),
+                control if team_join_row(control).is_some() => Some(SetupAction::Join { control }),
                 _ => None,
             };
         }

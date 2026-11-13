@@ -330,6 +330,7 @@ impl MouseCursors {
     /// hotspots (`left`/`center`/`right` @ 10076BC0, `top`/`middle`/`bottom`
     /// @ 10076C40); a token that does not parse keeps its field.
     pub(crate) fn read_pass(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let section = pass.section_or_empty("MouseCursors");
         for name in section.keys() {
             self.find_or_allocate(name);
@@ -386,6 +387,7 @@ impl MouseCursors {
     /// entry stores its index, `none`/`<none>` (`IsBlank`) stores -1, and
     /// anything else, like an absent key, keeps `current`.
     pub(crate) fn read(&self, section: &IniSection, key: &str, current: i32) -> i32 {
+        let _ares = crate::rules::ares_switch::ares_reads();
         section.read_ares_mouse_cursor(key, current, |name| self.find(name))
     }
 }
@@ -422,6 +424,7 @@ impl Default for TechnoCursors {
 impl TechnoCursors {
     /// The six TechnoTypeExt reads, in `1003DFB0`'s order.
     pub(crate) fn read_techno_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.deploy = cursors.read(section, "Cursor.Deploy", self.deploy);
         self.no_deploy = cursors.read(section, "Cursor.NoDeploy", self.no_deploy);
         self.enter = cursors.read(section, "Cursor.Enter", self.enter);
@@ -432,6 +435,7 @@ impl TechnoCursors {
 
     /// BuildingTypeExt `Cursor.Spy` (`1000DD40`).
     pub(crate) fn read_building_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.spy = cursors.read(section, "Cursor.Spy", self.spy);
     }
 }
@@ -455,6 +459,7 @@ impl Default for WeaponCursors {
 
 impl WeaponCursors {
     pub(crate) fn read_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.attack = cursors.read(section, "Cursor.Attack", self.attack);
         self.attack_out_of_range =
             cursors.read(section, "Cursor.AttackOutOfRange", self.attack_out_of_range);
@@ -518,6 +523,7 @@ impl SuperWeaponCursors {
     }
 
     pub(crate) fn read_pass(&mut self, section: &IniSection, cursors: &MouseCursors) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.cursor = cursors.read(section, "Cursor", self.cursor);
         self.no_cursor = cursors.read(section, "NoCursor", self.no_cursor);
     }
@@ -528,6 +534,7 @@ mod tests {
     use super::*;
 
     fn pass(text: &str) -> IniFile {
+        let _ares = crate::rules::ares_switch::ares_reads();
         IniFile::from_str(text)
     }
 
@@ -535,6 +542,7 @@ mod tests {
     /// `0x52BA78` animates and the nine Ares cursors after it.
     #[test]
     fn defaults_copy_the_compiled_table_and_append_the_ares_cursors() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/mouse_oracle/cursor_table.json",
         ))
@@ -582,6 +590,7 @@ mod tests {
     /// names exactly.
     #[test]
     fn mouse_cursors_entries_parse_tokens_or_copy_a_named_entry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut cursors = MouseCursors::default();
         cursors.read_pass(&pass(
             "[MouseCursors]\n\
@@ -621,6 +630,7 @@ mod tests {
     /// unknown name or an empty value keeps the current one.
     #[test]
     fn cursor_keys_store_an_entry_index_or_none() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = pass(
             "[MouseCursors]\nSpin=1,1\n\
              [HTNK]\nCursor.Move=spin\nCursor.NoMove=none\nCursor.Enter=Unknown\nCursor.Deploy=\n\
@@ -644,6 +654,7 @@ mod tests {
     /// handler Initialize names its cursor.
     #[test]
     fn rules_bind_cursor_keys_to_their_types() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
             &pass(
                 "[MouseCursors]\nSpin=100,8,2\n\

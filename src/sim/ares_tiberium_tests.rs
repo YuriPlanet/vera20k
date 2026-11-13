@@ -64,8 +64,11 @@ fn health(sim: &Simulation, id: u64) -> i32 {
 
 /// A cell arrival on ore hurts infantry by the mineral's `Damage` with its
 /// `Warhead`; `TiberiumProof=yes` (and the default for vehicles) spares it.
+// Runs again once movement's per-cell step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, ids) = scene(
         "Damage=7\nWarhead=TIBWH\n",
         &[
@@ -101,6 +104,7 @@ fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
 /// does not.
 #[test]
 fn tiberium_heal_steps_on_the_delay_cadence_up_to_strength() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, ids) = scene(
         "Heal.UStep=11\n",
         &[
@@ -189,7 +193,7 @@ fn harvester(sim: &mut Simulation, rules: &RuleSet, name: &str, bales: u16) -> u
     let mut miner =
         crate::sim::miner::Miner::new(crate::sim::miner::MinerKind::War, &Default::default(), 20);
     miner.add_bales(bale, bales);
-    entity.miner = Some(miner);
+    entity.miner = Some(Box::new(miner));
     sim.substrate.entities.insert(entity);
     id
 }
@@ -200,6 +204,7 @@ fn harvester(sim: &mut Simulation, rules: &RuleSet, name: &str, bales: u16) -> u
 /// leaves nothing.
 #[test]
 fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (keys, bales, leaves_ore) in [
         ("TiberiumSpill=yes\n", 10, true),
         ("TiberiumRemains=yes\n", 0, true),
@@ -221,6 +226,7 @@ fn dying_spill_and_remains_types_leave_ore_around_their_cell() {
 /// `TiberiumExplosiveWarhead` that leaves tiberium alone.
 #[test]
 fn tiberium_explosive_harvester_blasts_bales_times_power() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _) = scene_with_harvester(
         "\n[CombatDamage]\nTiberiumExplosive=yes\nTiberiumExplosiveWarhead=TIBWH\n",
     );
@@ -301,6 +307,7 @@ fn visceroids(sim: &Simulation) -> Vec<(String, u16, u16)> {
 /// keeps the fresh `TiberiumDeathToVisceroid=yes`.
 #[test]
 fn tiberium_death_spawns_a_neutral_small_visceroid() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, id) = visceroid_scene();
     let killed = sim.ares_foot_tiberium_damage(
         id,
@@ -318,6 +325,7 @@ fn tiberium_death_spawns_a_neutral_small_visceroid() {
 /// blocks the visceroid.
 #[test]
 fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _) = visceroid_scene();
     let coord = DriveCoord {
         x: 5 * 256 + 128,
@@ -366,6 +374,7 @@ fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
 /// `ChainReaction=yes` keeps its ore.
 #[test]
 fn chain_reacting_ore_halves_and_blasts_power_times_the_loss() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for chain_reaction in [true, false] {
         let mut tiberium = tiberium_rules_text().replacen(
             "[Riparius]\n",

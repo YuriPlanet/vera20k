@@ -1128,8 +1128,9 @@ pub fn atlas_covers_world(
 }
 
 /// Every (type, house colour) pair the world's objects draw: each placed
-/// non-voxel object in its owner's colour, and every building a unit can
-/// deploy into in every house colour. Every sprite key an object needs
+/// non-voxel object in its owner's colour, each active Infantry disguise in
+/// its disguise house's colour, and every building a unit can deploy into in
+/// every house colour. Every sprite key an object needs
 /// derives from one of these pairs, so the atlas records coverage per pair.
 /// Objects of one type and owner give one pair between them, at the first.
 fn object_pairs<'a>(
@@ -1141,16 +1142,38 @@ fn object_pairs<'a>(
     let mut asked = crate::util::lookup_hash::LookupSet::default();
     let placed = entities
         .values()
-        .filter(move |entity| {
-            !entity.is_voxel() && asked.insert((entity.type_ref(), entity.owner()))
+        .filter(|entity| !entity.is_voxel())
+        .flat_map(|entity| {
+            // InfantryClass::DrawIt @ 0x00518DDF and TechnoClass::GetRemapColour
+            // @ 0x00705D70 (branch 0x00705DAB) select its type and house. Keep both
+            // images resident across the viewer-dependent cycle, even when
+            // no real infantryman supplies that type/colour to the atlas.
+            let disguise = if entity.category() == EntityCategory::Infantry {
+                entity
+                    .disguise
+                    .as_ref()
+                    .filter(|disguise| disguise.is_disguised())
+                    .and_then(|disguise| {
+                        Some((
+                            disguise.type_id()?,
+                            disguise.house().unwrap_or(entity.owner()),
+                        ))
+                    })
+            } else {
+                None
+            };
+            [Some((entity.type_ref(), entity.owner())), disguise]
+                .into_iter()
+                .flatten()
         })
-        .map(move |entity| {
-            let owner = interner.map_or("", |i| i.resolve(entity.owner()));
+        .filter(move |pair| asked.insert(*pair))
+        .map(move |(type_id, owner)| {
+            let owner = interner.map_or("", |i| i.resolve(owner));
             let color = house_colors
                 .get(owner)
                 .copied()
                 .unwrap_or(crate::rules::house_colors::NO_REMAP);
-            (interner.map_or("", |i| i.resolve(entity.type_ref())), color)
+            (interner.map_or("", |i| i.resolve(type_id)), color)
         });
     let deploy_targets = extra_building_types
         .iter()
@@ -3971,7 +3994,7 @@ impl<S: AsRef<[RenderedShpSprite]>, P: AsRef<[(usize, [u32; 2])]>> Iterator
 /// Upload the sprites `placed` on a blank index page (sprite index and origin,
 /// shelf by shelf from the top) in bands of whole shelves. A band takes shelves
 /// until its rows reach `band_bytes`, so it holds at least one shelf. Bands
-/// share no row, as [`atlas_growth::write_band`] requires. A band decodes its
+/// share no row, as [`atlas_growth::gather_band`] requires. A band decodes its
 /// sprites' frames as it is gathered, and its staging copy is retired before
 /// the next band is gathered, so the upload holds one band of pixels at a time.
 fn upload_shelves(
@@ -4001,7 +4024,7 @@ fn upload_shelves(
 }
 
 /// Upload sprites placed on rows of an index page that hold no other sprite,
-/// in one [`atlas_growth::write_band`], decoding each frame as it is gathered.
+/// in one [`atlas_growth::gather_band`], decoding each frame as it is gathered.
 fn write_sprite_band<'s>(
     queue: &wgpu::Queue,
     indices: &wgpu::Texture,

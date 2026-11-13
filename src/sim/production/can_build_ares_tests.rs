@@ -503,3 +503,39 @@ fn ares_requirement_gates_answer_in_dll_order() {
     sim.spawn_object("MEMBER", "H0", 10, 10, 0, &rules).unwrap();
     assert_eq!(status(&sim), RequirementStatus::Forbidden);
 }
+
+/// Ares 10024F80 (hook 0x50B370) counts the factory's held object once under
+/// a positive limit: the house's counters already hold it.
+#[test]
+fn check_build_limit_counts_the_held_object_once() {
+    let (mut sim, rules, owner) = lifecycle_world("BuildLimit=2");
+    let product = rules.object("Q").unwrap();
+    sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
+        .unwrap();
+    let q = sim.interner.get("Q").unwrap();
+    assert!(sim.production.factories_mut().test_enqueue_kernel(
+        owner,
+        ProductionCategory::Vehicle,
+        q,
+        1,
+        0
+    ));
+    assert!(!check_build_limit(&sim, &rules, owner, product));
+    sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
+        .unwrap();
+    assert!(check_build_limit(&sim, &rules, owner, product));
+}
+
+/// Under its limit a type is still at it without a usable factory
+/// (10024F80's FindFactory 10020D40 answer below 3).
+#[test]
+fn check_build_limit_needs_a_usable_factory() {
+    let rules = prerequisite_rules_with_factory(IniFile::from_str(
+        "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n[Q]\nStrength=100\nBuildLimit=2\n",
+    ));
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    let product = rules.object("Q").unwrap();
+    assert!(check_build_limit(&sim, &rules, owner, product));
+    spawn_prerequisite_factory(&mut sim, &rules);
+    assert!(!check_build_limit(&sim, &rules, owner, product));
+}

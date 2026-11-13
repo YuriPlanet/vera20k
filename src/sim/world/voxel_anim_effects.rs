@@ -34,12 +34,10 @@ use crate::sim::voxel_anim::VoxelAnimAiStep;
 pub(crate) enum BounceContactDamage {
     Anim(i32),
     /// The shared Type field, written back by each receiver.
-    #[cfg_attr(feature = "ares", allow(dead_code))]
     VoxelType(VoxelAnimTypeId),
     /// Ares 3.0 VoxelAnimClass_Update_Damage (1005D640, hook 0x74A884):
     /// the Voxel walk with a copy of the type's Damage per object, each
     /// object's successor read before its receiver.
-    #[cfg(feature = "ares")]
     AresVoxel(i32),
 }
 
@@ -206,14 +204,13 @@ impl Simulation {
                         let warhead = self.interner.intern(name);
                         // 1005D640: a negative DamageRadius or a Damage of
                         // zero skips the walk.
-                        #[cfg(feature = "ares")]
-                        let source = {
+                        let source = if rules.ares() {
                             let damage = self.voxel_type_damage(type_id, rules);
                             (kind.damage_radius >= 0 && damage != 0)
                                 .then_some(BounceContactDamage::AresVoxel(damage))
+                        } else {
+                            Some(BounceContactDamage::VoxelType(type_id))
                         };
-                        #[cfg(not(feature = "ares"))]
-                        let source = Some(BounceContactDamage::VoxelType(type_id));
                         if let Some(source) = source {
                             changed |= self.apply_bounce_contact_damage(
                                 body.position_leptons(),
@@ -476,7 +473,7 @@ impl Simulation {
         let mut current = self.cell_objects(cell, MovementLayer::Ground).next();
         let mut changed = false;
         while let Some(target) = current {
-            #[cfg(feature = "ares")]
+            // Only Ares' walk (`AresVoxel`) reads the successor first.
             let ares_next = matches!(source, BounceContactDamage::AresVoxel(_))
                 .then(|| self.next_cell_object(target));
             let center = match target {
@@ -484,7 +481,6 @@ impl Simulation {
                     self.substrate.entities.get(id).map(|entity| match source {
                         BounceContactDamage::Anim(_) => object_center_xy(entity),
                         BounceContactDamage::VoxelType(_) => position_world_xy(&entity.position),
-                        #[cfg(feature = "ares")]
                         BounceContactDamage::AresVoxel(_) => position_world_xy(&entity.position),
                     })
                 }
@@ -507,7 +503,6 @@ impl Simulation {
                             self.voxel_type_damage(id, rules),
                             Some(DamageWriteback::VoxelType(id)),
                         ),
-                        #[cfg(feature = "ares")]
                         BounceContactDamage::AresVoxel(value) => (value, None),
                     };
                     let receipt = match target {
@@ -553,7 +548,6 @@ impl Simulation {
                     changed |= receipt.bridge_state_changed;
                 }
             }
-            #[cfg(feature = "ares")]
             if let Some(next) = ares_next {
                 current = next;
                 continue;

@@ -261,7 +261,7 @@ fn stock_airburst_reads_live_source_and_requires_a_represented_parent() {
 }
 
 /// The children of one detonation, in creation order.
-#[cfg(all(feature = "ares", not(feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 fn children(world: &Simulation, parent: u64) -> Vec<&crate::sim::projectile::Projectile> {
     let mut children: Vec<_> = world
         .projectiles
@@ -277,8 +277,9 @@ fn children(world: &Simulation, parent: u64) -> Vec<&crate::sim::projectile::Pro
 /// cell within `AirburstSpread=` (1.5) of its cell, row-major, each after one
 /// Scenario `RandomRanged(0, 31)`; Cluster= does not count them.
 #[test]
-#[cfg(all(feature = "ares", not(feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 fn ares_airburst_sends_one_child_to_each_cell_within_the_spread() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut world, rules, source, request) = scene(600);
     let mut expected_rng = world.scenario_rng.clone();
     for _ in 0..9 {
@@ -315,8 +316,9 @@ fn ares_airburst_sends_one_child_to_each_cell_within_the_spread() {
 /// Techno within 1280 leptons (here the firer, `RetargetSelf=` default) or
 /// at one of the random cells within 3 of the burst's cell.
 #[test]
-#[cfg(all(feature = "ares", not(feature = "phobos")))]
+#[cfg(not(feature = "phobos"))]
 fn ares_splits_send_cluster_children_to_nearby_technos_or_random_cells() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut world, rules, source, request) = scene_with(600, rules_with("Splits=yes\n"));
     detonate(&mut world, &rules, request);
     let children = children(&world, request.projectile_id);

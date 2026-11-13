@@ -271,7 +271,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
         let (ground, structural) =
-            floor_probe(terrain, projectile.position().x, projectile.position().y);
+            floor_probe(terrain, projectile.position().x, projectile.position().y).unwrap();
         assert_eq!(
             structural,
             flags & 0x100 != 0,

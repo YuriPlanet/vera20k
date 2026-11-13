@@ -58,6 +58,7 @@ fn build_nuke(
     )]);
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         Some("NukeSpecial"),

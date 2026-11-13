@@ -936,7 +936,7 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         level0.push_edge(1, ZoneEdgeRecord::new(2, 0));
         level0.push_edge(2, ZoneEdgeRecord::new(1, 0));
         sim.zone_grid
-            .as_deref_mut()
+            .as_mut()
             .expect("zone grid")
             .set_hierarchy(ZoneHierarchy::new(level0, level1, level2));
 

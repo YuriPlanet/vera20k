@@ -1294,6 +1294,7 @@ impl ReplayRunner {
         // acquisition timing and are hashed.
         loaded.runtime.simulation.batch_path_searches();
         loaded.runtime.simulation.batch_target_scans();
+        loaded.runtime.simulation.sleep_idle_objects_in_match();
         let mut playback = ReplayPlayback::prepare(
             &mut loaded.runtime,
             std::sync::Arc::new(replay.clone()),

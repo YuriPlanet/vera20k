@@ -516,14 +516,12 @@ impl WarheadType {
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_rules_mut(
         &mut self,
     ) -> Option<&mut crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_mut()
     }
     /// The Ares 3.0 damage-modifier group of this warhead's WarheadTypeExt.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_combat(&self) -> Option<&crate::rules::ares_warhead::WarheadCombatRules> {
         self.ares.as_ref().map(|ares| ares.combat())
     }
@@ -538,34 +536,23 @@ impl WarheadType {
     /// `0x0075CED0`): what a warhead whose sections name no `InfDeath=` keeps.
     pub(crate) const DEFAULT_INF_DEATH: i32 = 0;
 
+    /// A warhead read the Ares way holds the retained Ares verses; a stock
+    /// read leaves them `None` and uses the original WH+A0 array.
     pub fn interaction(&self, armor: ArmorId) -> ArmorInteraction {
-        #[cfg(feature = "ares")]
-        {
-            self.ares_verses
-                .as_ref()
-                .expect("Ares build requires its retained warhead extension")
-                .interaction(armor)
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
+        match &self.ares_verses {
+            Some(verses) => verses.interaction(armor),
+            None => ArmorInteraction::retail(crate::util::native_x87::NativeF64Bits::from_bits(
                 self.verses_f64[armor.index()].to_bits(),
-            ))
+            )),
         }
     }
 
     /// WH+149 controls an Infantry passive-target class shortcut. The
     /// installed Ares75DDCC hook skips its native derivation and clears it;
-    /// effective extension entries must never reintroduce that shortcut.
+    /// effective extension entries must never reintroduce that shortcut, so
+    /// a warhead read the Ares way (it holds Ares verses) never uses it.
     pub fn uses_medium_wood_target_mask(&self) -> bool {
-        #[cfg(feature = "ares")]
-        {
-            false
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
-        }
+        self.ares_verses.is_none() && self.verses_f64[4] == 0.0 && self.verses_f64[6] == 0.0
     }
 
     pub(crate) fn install_ares_verses(&mut self, state: Option<&AresWarheadVerses>) {
@@ -603,11 +590,15 @@ impl WarheadType {
 
         // The IntVector reader (`0x0075DD22` -> `0x00475D70`). Ares 3.0
         // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
-        // reads it through ParseList<int> (1005B030) instead.
-        #[cfg(feature = "ares")]
-        let debris_maximums = section.read_ares_int_list("DebrisMaximums");
-        #[cfg(not(feature = "ares"))]
-        let debris_maximums = section.read_int_list("DebrisMaximums");
+        // reads it through ParseList<int> (1005B030) instead when the Rules
+        // are read the Ares way.
+        let debris_maximums = if crate::rules::ares_switch::ares_way() {
+            crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int_list("DebrisMaximums")
+            })
+        } else {
+            section.read_int_list("DebrisMaximums")
+        };
         let debris_maximums: Vec<i32> = debris_maximums.unwrap_or_default();
 
         // `WarheadTypeClass::ReadINI @ 0x0075DA95..0x0075DAE6`: MaxDebris is
@@ -632,7 +623,7 @@ impl WarheadType {
             id: id.to_string(),
             particle_system: None,
             verses_f64,
-            ares_verses: cfg!(feature = "ares").then(AresWarheadVerses::default),
+            ares_verses: crate::rules::ares_switch::ares_way().then(AresWarheadVerses::default),
             ares: None,
             cell_spread_f64,
             cell_inset_f32,

@@ -20,6 +20,7 @@ const REGISTRY: &str = "\
 
 #[test]
 fn ares_country_paradrop_overrides_resolve_by_identity() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!(
         "{REGISTRY}[Countries]\n0=Greece\n\
          [Greece]\n\
@@ -40,6 +41,7 @@ fn ares_country_paradrop_overrides_resolve_by_identity() {
 
 #[test]
 fn ares_country_paradrop_absence_defers_and_types_without_counts_stay_country_lists() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let unset = processed(&format!("{REGISTRY}[Countries]\n0=Greece\n[Greece]\n"));
     assert_eq!(unset.country_paradrop_lists("Greece"), None);
     assert_eq!(unset.country_paradrop_aircraft("Greece"), None);
@@ -61,6 +63,7 @@ fn ares_country_paradrop_absence_defers_and_types_without_counts_stay_country_li
 /// `0x1001CC10`, `0x1000EDD0`, `0x1000ED00`).
 #[test]
 fn ares_country_child_paradrop_keys_override_the_parent_copy() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut countries = IniSection::new("Countries".into());
     countries.set("0", "Greece");
     countries.set("1", "Rome");
@@ -104,6 +107,7 @@ fn ares_country_child_paradrop_keys_override_the_parent_copy() {
 /// file, so a later (map) pass sets the country's plane.
 #[test]
 fn ares_country_paradrop_is_read_on_later_passes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(IniFile::from_str(&format!(
         "{REGISTRY}[Countries]\n0=Greece\n[Greece]\n"
     )));

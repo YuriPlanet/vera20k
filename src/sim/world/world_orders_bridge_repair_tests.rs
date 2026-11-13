@@ -278,7 +278,7 @@ fn advance_until_c4_plant(
             .substrate
             .entities
             .get(target_id)
-            .and_then(|b| b.pending_c4_detonation.pending())
+            .and_then(|b| b.building.pending_c4_detonation.pending())
         {
             return pending.timer().start_frame() as u64;
         }
@@ -525,7 +525,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
         sim.substrate
             .entities
             .get(cabhut)
-            .and_then(|b| b.pending_c4_detonation.pending())
+            .and_then(|b| b.building.pending_c4_detonation.pending())
             .is_none(),
         "adjacent SEAL must not plant C4 before entering CABHUT"
     );
@@ -572,7 +572,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
     );
     assert!(!hut.death.is_dying(), "hut must not be marked dying");
     assert!(
-        hut.pending_c4_detonation.pending().is_none(),
+        hut.building.pending_c4_detonation.pending().is_none(),
         "CABHUT pending C4 marker must clear after bridge dispatch"
     );
 
@@ -610,6 +610,7 @@ fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
         .entities
         .get_mut(target)
         .unwrap()
+        .building
         .pending_c4_detonation
         .plant(frame, rules.c4_delay_frames(), seal);
 }
@@ -661,7 +662,10 @@ fn c4_on_cabhut_without_a_collapsible_bridge_changes_nothing() {
         let hut = sim.substrate.entities.get(cabhut).unwrap();
         assert_eq!(hut.health.current(), cabhut_max_hp, "{case}");
         assert!(!hut.death.is_dying(), "{case}");
-        assert!(hut.pending_c4_detonation.pending().is_none(), "{case}");
+        assert!(
+            hut.building.pending_c4_detonation.pending().is_none(),
+            "{case}"
+        );
     }
 }
 
@@ -706,7 +710,7 @@ fn c4_on_cabhut_collapses_concrete_and_wooden_strips_even_when_invulnerable() {
         assert_eq!(hut.health.current(), hut_hp, "overlay {overlay:#x}");
         assert!(!hut.death.is_dying(), "overlay {overlay:#x}");
         assert!(
-            hut.pending_c4_detonation.pending().is_none(),
+            hut.building.pending_c4_detonation.pending().is_none(),
             "overlay {overlay:#x}"
         );
         assert!(changed, "overlay {overlay:#x}");

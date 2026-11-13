@@ -99,6 +99,10 @@ impl BuildingBody {
     pub(crate) const fn queued(&self) -> i32 {
         self.queued
     }
+    /// Whether a mode is queued, which [`Self::apply_queued`] applies or clears.
+    pub(crate) const fn is_queued(&self) -> bool {
+        self.queued != -1
+    }
     fn control(&self) -> [i32; 3] {
         if self.state == 0 {
             self.construction_control
@@ -136,7 +140,7 @@ impl BuildingBody {
         options: &GameOptions,
         selling: bool,
     ) {
-        if self.queued != -1 {
+        if self.is_queued() {
             if self.queued != self.state {
                 self.apply(stage, now, true, options, selling);
             } else {
@@ -186,7 +190,7 @@ impl BuildingBody {
             return false;
         }
         if !stepped {
-            return self.state == -1 || stage.rate() == 0;
+            return self.ready_unstepped(stage);
         }
         let [start, count, control_rate] = self.control();
         let end = start.wrapping_add(count);
@@ -196,6 +200,11 @@ impl BuildingBody {
             stage.restart(start, now, options.speed_normalize(control_rate));
         }
         done
+    }
+    /// [`Self::update`]'s answer when `stage` does not step: ready while the
+    /// body is unset or its clock stands still.
+    pub(crate) fn ready_unstepped(&self, stage: &StageClass) -> bool {
+        self.state == -1 || stage.rate() == 0
     }
 }
 

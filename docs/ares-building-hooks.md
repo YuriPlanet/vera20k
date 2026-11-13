@@ -87,7 +87,10 @@ SizeLimit=15              ; the largest Size= that may enter
   captor dropped, `EnterTransportSound=` played, limboed
   (EnterTunnel `10009000`). Self-clicking an entrance whose network holds
   a Foot unloads it (`100173A0`), last in first out, one per Unload
-  dispatch (UnloadOne `100098A0`, `sim::transport_unload`). When the last
+  dispatch (UnloadOne `100098A0`, `sim::transport_unload`). A
+  `PipScale=Passengers` entrance's passenger pips show the network, as many
+  as GetPipMax and the tunnel's MaxCap allow (GetPassengerPips `10044C90`:
+  an infantryman's `Pip=`, else frame 4; `ui_overlays::scale_pip_draws`). When the last
   entrance (no other alive, unlimboed building of the type that is neither
   built nor sold) dies or is erased, the network dies with it, credited
   to the C4 planter or the eraser (`100093C0`); when it is sold, every
@@ -115,10 +118,7 @@ SizeLimit=15              ; the largest Size= that may enter
 - Tunnels: the building click that radios a clicked unit (`0x10`, hook
   `0x44351A`, `100172F0`) has no host, since VERA does not port the
   absorbers' arm of `BuildingClass::ClickedAction_Object` (no RESERVE_DOCK
-  radio, `sim::radio`); the tunnel arm of the passenger pips
-  (`TechnoExt::GetPassengerPips 10044C90`: the network's members, frame
-  4 or the infantry's `Pip=`) is not drawn, as that function is not
-  ported; EnterTunnel clears OnBridge after Limbo instead of before (as
+  radio, `sim::radio`); EnterTunnel clears OnBridge after Limbo instead of before (as
   `board_passenger` does); UnloadOne keeps a member whose nearest-cell
   search or Unlimbo fails, where native puts a vehicle on cell (0, 0) or
   drops it.
@@ -144,7 +144,7 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x509303` | `10015EE0` | HouseClass_AllyWith_unused | not applicable: gamemd `0x005092F0` has no caller |
 | `0x4557BC` | `10016DF0` | BuildingClass_SensorArray_BuildingRedraw | not applicable: marks a cloaked enemy building for redraw; VERA redraws every frame |
 | `0x455923` | `10016DF0` | BuildingClass_SensorArray_BuildingRedraw | not applicable: as above |
-| `0x443414` | `10016F60` | BuildingClass_ActionOnObject | ported: `app::input::context_order::building_object_orders` raises event 0x60 (`AresTrenchRedirectRecord`; handler `Simulation::ares_respond_to_trench_redirect`); its Deactivated arm is the deactivated-click residual of [ares-cloak-power.md](ares-cloak-power.md) |
+| `0x443414` | `10016F60` | BuildingClass_ActionOnObject | ported: `app::input::context_order::building_object_orders` raises event 0x60 (`AresTrenchRedirectRecord`; handler `Simulation::ares_respond_to_trench_redirect`); its Deactivated arm is `Simulation::click_order_receivers` ([ares-techno-hooks.md](ares-techno-hooks.md)) |
 | `0x44725F` | `100171B0` | BuildingClass_GetActionOnObject_TargetABuilding | ported: `app::input::cursor::capability_cursor_for_hover` and the click release, through `Simulation::ares_can_traverse_to` |
 | `0x4C6CCD` | `1006A540` | Networking_RespondToEvent | ported for 0x60: `decode_native_command_record` keeps the record raw and `apply_command` runs `Simulation::ares_respond_to_trench_redirect`; the 0x61 FirewallToggle arm has no raiser ([ares-firestorm.md](ares-firestorm.md)) |
 | `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `net::event_packet::event_payload_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |

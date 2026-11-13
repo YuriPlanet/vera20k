@@ -331,7 +331,7 @@ impl ResolvedTerrainGrid {
         effects: &mut E,
     ) -> Result<LoadCellRecalcOutcome, LoadCellRecalcError<E::Error>> {
         // The recalc reads and writes its cell through a private copy, kept
-        // only if it changed (see `cow_cells`); partial writes before an
+        // only if it changed (see `terrain_cells`); partial writes before an
         // error are kept as before.
         self.cells.begin_shadow(index);
         let outcome =

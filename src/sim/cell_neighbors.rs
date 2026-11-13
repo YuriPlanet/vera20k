@@ -194,7 +194,6 @@ impl Simulation {
 
     /// Ares survivor placement10044762/100447F3 stores retained Cell+24
     /// directly, without a neighbor-count increment/decrement.
-    #[cfg(feature = "ares")]
     pub(crate) fn foot_neighbors_store_retained_cell(
         substrate: &mut ObjectSubstrate,
         id: u64,

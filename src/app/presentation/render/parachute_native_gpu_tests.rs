@@ -216,12 +216,14 @@ impl Scene {
         frame: u16,
     ) -> PlannedObjectInstance {
         let sim = &self.runtime.simulation;
+        let presented = crate::app::presentation::frame::PresentationFrame::capture(&self.runtime);
         let order = NativeDisplayOrder::from_display(sim.display_layers());
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(
             &ShpInputs {
                 runtime: &self.runtime,
+                frame: &presented,
                 atlas: Some(atlas),
                 overlay_atlas: None,
                 unit_atlas: None,
@@ -260,6 +262,7 @@ impl Scene {
         let hidden = Default::default();
         let input = DisplayEffectInputs {
             sim,
+            frame: &presented,
             rules: &self.runtime.resources.rules,
             camera: vera_camera(),
             render_size: SIZE,

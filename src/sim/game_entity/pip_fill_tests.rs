@@ -62,11 +62,11 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
     }
     if let Some(count) = input["capture_count"].as_u64() {
         let victims: Vec<_> = (10..10 + count).collect();
-        entity.capture_manager = Some(CaptureManagerState::with_victims_for_test(
+        entity.capture_manager = Some(Box::new(CaptureManagerState::with_victims_for_test(
             object.pip_max(rules),
             true,
             &victims,
-        ));
+        )));
     }
     if let Some(count) = input["cargo_count"].as_u64() {
         let mut cargo = PassengerCargo::new(object.passengers as u32, object.size_limit);
@@ -99,7 +99,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
         ];
         let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 0);
         miner.set_cargo_for_test(bales.clone());
-        entity.miner = Some(miner);
+        entity.miner = Some(Box::new(miner));
         // The same native integer Storage total is already represented by
         // the slave owner's bales. Test its fallback without claiming a
         // complete SLAV draw/lifecycle comparison or inventing new goldens.

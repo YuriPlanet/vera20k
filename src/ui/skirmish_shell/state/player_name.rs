@@ -11,7 +11,7 @@ use crate::ui::shell::list::ListScrollInteraction;
 use crate::ui::shell::trackbar::TrackbarHold;
 
 use super::super::SkirmishStatics;
-use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId};
+use super::super::layout::{SkirmishShellLayout, SkirmishTrackbarId, shown_player_rows};
 use super::trackbars::SkirmishTrackbarBounds;
 use super::{
     ChooseMapModalState, DropdownScrollDragState, DropdownScrollbarPressState, OpenComboDropdown,
@@ -338,6 +338,9 @@ impl CountryMenuCatalog {
 #[derive(Debug, Clone)]
 pub struct SkirmishShellState {
     pub(crate) country_catalog: CountryMenuCatalog,
+    /// The colours the loaded rules list for a lobby: every colour combo,
+    /// claim and random draw of the shell reads this copy.
+    pub(crate) lobby_colors: crate::rules::skirmish_colors::SkirmishColorMode,
     pub selected_map_idx: usize,
     pub selected_mode_id: i32,
     pub player_name_edit: PlayerNameEditState,
@@ -408,7 +411,13 @@ pub enum SkirmishShellDialog {
 impl SkirmishShellState {
     pub fn refresh_country_catalog(&mut self, rules: &crate::rules::ruleset::RuleSet) {
         self.country_catalog = CountryMenuCatalog::from_rules(rules);
+        self.lobby_colors = rules.skirmish_colors();
         self.open_combo_dropdown = None;
+    }
+
+    /// The colours this shell's lobbies list.
+    pub fn lobby_colors(&self) -> crate::rules::skirmish_colors::SkirmishColorMode {
+        self.lobby_colors
     }
 
     /// The dialog that shows on top of the Skirmish stack: the one decision
@@ -436,6 +445,7 @@ impl Default for SkirmishShellState {
         let options = SkirmishLaunchOptions::default();
         Self {
             country_catalog: CountryMenuCatalog::default(),
+            lobby_colors: Default::default(),
             selected_map_idx: 0,
             selected_mode_id: 1,
             player_name_edit: PlayerNameEditState::default(),
@@ -508,15 +518,15 @@ impl SkirmishShellState {
         std::mem::take(&mut self.pending_ui_sounds)
     }
 
-    /// The retail row slot (`0..8`) showing player row `row`: the player's
-    /// own row always takes slot 0, a computer row only while scrolled into
-    /// view.
-    pub fn row_slot(&self, row: usize) -> Option<usize> {
+    /// The row slot (`0..shown`, [`SkirmishShellLayout::shown_rows`])
+    /// showing player row `row`: the player's own row always takes slot 0, a
+    /// computer row only while scrolled into view.
+    pub fn row_slot(&self, row: usize, shown: usize) -> Option<usize> {
         if row == 0 {
             return Some(0);
         }
         row.checked_sub(self.first_opponent)
-            .filter(|slot| (1..SKIRMISH_PLAYER_SLOT_COUNT).contains(slot))
+            .filter(|slot| (1..shown).contains(slot))
     }
 
     /// The player row that retail row slot `slot` shows.
@@ -528,11 +538,14 @@ impl SkirmishShellState {
         }
     }
 
-    /// The computer rows in view, as (retail row slot, player row, its
-    /// opponent); the map's capacity still hides rows
+    /// The computer rows in view of `shown` row slots, as (row slot, player
+    /// row, its opponent); the map's capacity still hides rows
     /// ([`player_row_visible`]).
-    pub fn paged_opponents(&self) -> impl Iterator<Item = (usize, usize, &SkirmishShellOpponent)> {
-        (1..SKIRMISH_PLAYER_SLOT_COUNT).filter_map(move |slot| {
+    pub fn paged_opponents(
+        &self,
+        shown: usize,
+    ) -> impl Iterator<Item = (usize, usize, &SkirmishShellOpponent)> {
+        (1..shown).filter_map(move |slot| {
             let row = self.slot_row(slot);
             self.opponents
                 .get(row - 1)
@@ -577,11 +590,12 @@ pub fn player_row_visible(state: &SkirmishShellState, maps: &[MapMenuEntry], row
     if row == 0 {
         return true;
     }
-    row < selected_player_rows(state, maps) && state.row_slot(row).is_some()
+    let rows = selected_player_rows(state, maps);
+    row < rows && state.row_slot(row, shown_player_rows(rows)).is_some()
 }
 
 /// The player rows the selected map admits: the retail eight with no map.
-pub(super) fn selected_player_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> usize {
+pub fn selected_player_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> usize {
     maps.get(state.selected_map_idx)
         .map_or(SKIRMISH_PLAYER_SLOT_COUNT, |map| {
             admitted_player_rows(map.player_capacity)
@@ -595,10 +609,10 @@ fn admitted_player_rows(capacity: i32) -> usize {
 }
 
 /// The last [`SkirmishShellState::first_opponent`] for `rows` admitted player
-/// rows, which shows the map's last seven computer rows; 0 for eight rows or
-/// fewer.
+/// rows, which shows the map's last computer rows; 0 while every row shows
+/// ([`shown_player_rows`]).
 pub(super) fn last_first_opponent(rows: usize) -> usize {
-    rows.saturating_sub(SKIRMISH_PLAYER_SLOT_COUNT)
+    rows.saturating_sub(shown_player_rows(rows))
 }
 
 fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) {

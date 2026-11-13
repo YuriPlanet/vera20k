@@ -171,7 +171,8 @@ fn emit_admitted(
     slot_admitted: &dyn Fn(u64) -> bool,
 ) -> Vec<PlannedObjectInstance> {
     let mut out = Vec::new();
-    let building = sim.entities().get(building).unwrap();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    let building = frame.object(building).unwrap();
     let grid = crate::map::lighting::CellLightGrid::new();
     emit_building_anims(
         &mut out,
@@ -186,6 +187,7 @@ fn emit_admitted(
         &grid,
         (building.position.rx(), building.position.ry()),
         sim,
+        &frame,
         Some(building.owner()),
         building,
         slot_admitted,
@@ -776,6 +778,7 @@ fn slot_preparation_keeps_only_slots_display_can_admit() {
     let viewport = [800.0, 600.0];
     let prepared = |sim: &Simulation, beyond: f32| {
         let camera = [x - viewport[0] - beyond, y];
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules);
         emit_admitted(
             sim,
             &rules,
@@ -784,7 +787,9 @@ fn slot_preparation_keeps_only_slots_display_can_admit() {
             &order,
             PaletteLight::default(),
             DrawState::default(),
-            &|anim| super::super::overlays::slot_anim_admissible(sim, anim, camera, viewport),
+            &|anim| {
+                super::super::overlays::slot_anim_admissible(sim, &frame, anim, camera, viewport)
+            },
         )
         .len()
     };

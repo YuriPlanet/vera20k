@@ -188,7 +188,6 @@ impl MissileSpawnParams {
     /// Ares `Missile.Custom` block (TechnoTypeExt+0x330): the constructor
     /// `1003C710` memsets the 0x34-byte RocketStruct to zero, and its owner
     /// type stands as its Type.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_custom(type_name: &str) -> Self {
         let zero = NativeF32Bits::POSITIVE_ZERO;
         Self {
@@ -216,8 +215,8 @@ impl MissileSpawnParams {
     /// a failed read. `RaiseRate` is read as a float and truncated (`F2I`,
     /// 100772B0). The final `<prefix>.Type` read is dead: TechnoTypeExt's
     /// reader overwrites Type with its own AircraftType right after.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_ares(&mut self, section: &IniSection, prefix: &str) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let key = |suffix: &str| format!("{prefix}.{suffix}");
         self.pause_frames = section.read_ares_int(&key("PauseFrames"), self.pause_frames);
         self.tilt_frames = section.read_ares_int(&key("TiltFrames"), self.tilt_frames);

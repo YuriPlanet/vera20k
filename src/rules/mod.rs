@@ -117,7 +117,6 @@
 
 pub mod aircraft_trailer;
 pub mod airstrike;
-pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
 pub mod airstrike_targets;
 pub mod attach_effect;
@@ -154,8 +153,13 @@ pub mod phobos_shields;
 pub mod phobos_sw_sidebar;
 #[cfg(feature = "phobos")]
 pub mod phobos_warhead_anim;
-/// Whether this binary includes the supported Ares extensions. INIs cannot change it.
-pub const ARES_ENABLED: bool = cfg!(feature = "ares");
+pub(crate) mod threat_coefficients;
+/// Whether this binary compiles the supported Ares extensions. Whether Ares
+/// plays in a game is the per-game switch [`ruleset::RuleSet::ares`], decided
+/// from the game's data by [`ares_switch`]; this gates only what still forks
+/// at build time: Rules loading before that answer exists, launch and network
+/// identity, and the `cfg(feature = "ares")` sites not yet converted.
+pub const ARES_BUILD: bool = cfg!(feature = "ares");
 /// Whether this binary includes the supported Phobos extensions. INIs cannot change it.
 pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
 /// Whether this binary includes supported NPatch behavior. INIs cannot change it.
@@ -170,52 +174,36 @@ pub mod alpha_image_assets;
 pub mod animation_sequence;
 pub(crate) mod ares_abilities;
 pub(crate) mod ares_armor;
-#[cfg(feature = "ares")]
+pub(crate) mod ares_bounty;
+pub(crate) mod ares_building_type;
+pub(crate) mod ares_bullet_type;
+pub mod ares_cloak_power;
 pub(crate) mod ares_country_paradrop;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_country_presentation;
 pub(crate) mod ares_crew;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_driver;
 pub(crate) mod ares_emp;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_side_extension;
-pub(crate) mod ares_warhead;
-#[cfg(feature = "ares")]
-pub mod ares_weapon;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_spotlight;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_bounty;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_infiltration;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_building_type;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_bullet_type;
-#[cfg(feature = "ares")]
 pub(crate) mod ares_firestorm;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_prism_forwarding;
-#[cfg(feature = "ares")]
-pub mod ares_cloak_power;
-#[cfg(feature = "ares")]
-pub mod ares_mouse_cursor;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_veterancy;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_production;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_techno_type;
-#[cfg(feature = "ares")]
-pub(crate) mod ares_tiberium;
-pub mod armor;
-pub mod country_loading;
+pub(crate) mod ares_infiltration;
 #[cfg(test)]
 mod ares_manual_control_tests;
+pub mod ares_mouse_cursor;
 pub(crate) mod ares_prerequisites;
+pub(crate) mod ares_prism_forwarding;
+pub(crate) mod ares_production;
+pub(crate) mod ares_side_extension;
+pub(crate) mod ares_spotlight;
+pub mod ares_switch;
+#[cfg(test)]
+mod ares_switch_tests;
+pub(crate) mod ares_techno_type;
+pub(crate) mod ares_tiberium;
 #[cfg(test)]
 mod ares_type_selection_tests;
+pub(crate) mod ares_veterancy;
+pub(crate) mod ares_warhead;
+pub mod ares_weapon;
+pub mod armor;
 pub mod art_data;
 pub mod bridge_warheads;
 pub mod building_extra_power;
@@ -231,6 +219,7 @@ pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
 pub mod compatibility;
+pub mod country_loading;
 #[cfg(test)]
 mod country_parent_tests;
 #[cfg(test)]
@@ -282,7 +271,6 @@ pub mod shp_vehicle_sequence;
 pub mod skirmish_colors;
 pub mod smudge_type;
 pub mod sound_ini;
-#[cfg(feature = "ares")]
 pub(crate) mod superweapon_influence;
 pub mod superweapon_targeting;
 pub mod superweapon_type;
@@ -296,11 +284,14 @@ pub mod unit_role;
 pub mod voxel_anim_type;
 pub mod voxel_asset_catalog;
 pub mod voxel_frame_catalog;
+mod voxel_model_plan;
 pub mod warhead_type;
 #[cfg(all(test, not(feature = "ares")))]
 mod warhead_verses_tests;
 pub mod weapon_type;
 
+#[cfg(test)]
+mod allow_shrouded_subterannean_moves_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod area_guard_tests;
 #[cfg(any(test, feature = "test-support"))]
@@ -315,8 +306,6 @@ mod mirage_disguise_tests;
 pub mod move_sound_tests;
 #[cfg(test)]
 mod path_delay_rules_tests;
-#[cfg(test)]
-mod allow_shrouded_subterannean_moves_tests;
 #[cfg(test)]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]

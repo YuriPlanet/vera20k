@@ -343,8 +343,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
     });
     for (key, value) in fields.as_object().unwrap() {
         // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
-        #[cfg(feature = "ares")]
-        if key == "score" {
+        if s.rules.ares() && key == "score" {
             continue;
         }
         assert_eq!(value, &native[key], "{context}: {key}");

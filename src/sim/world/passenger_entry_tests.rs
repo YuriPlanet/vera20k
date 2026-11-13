@@ -106,9 +106,9 @@ fn a_moving_carrier_turns_passengers_away() {
 /// Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) and Unit 1004BEA0 (hook
 /// 0x74031A): a `NoManualEnter` carrier offers no passenger row, so the
 /// base action stands.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_no_manual_enter_carrier_offers_no_entry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let patch = crate::rules::ini_parser::IniFile::from_str("[FV]\nNoManualEnter=yes\n");
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
     else {
@@ -128,9 +128,9 @@ fn ares_no_manual_enter_carrier_offers_no_entry() {
 /// player's Harrier over the player's Airforce Command, which its `Dock=`
 /// lists and whose Helipad CAN_LOAD takes an aircraft, answers Enter; over a
 /// Service Depot its `Dock=` does not list it keeps Select (stock NoEnter).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_harrier_enters_its_listed_dock_and_keeps_select_elsewhere() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
         return;
     };

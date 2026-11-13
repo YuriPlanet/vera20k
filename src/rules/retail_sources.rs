@@ -50,7 +50,7 @@ enum OptionalIniSelection {
 }
 
 pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
-    if crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED {
+    if crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED {
         select_ini_with_options(assets, name, DirectiveOptions::production())
     } else {
         select_physical_ini(assets, name)
@@ -206,6 +206,8 @@ pub struct RetailRulesSources {
     langrule_selection_failure: Option<String>,
     pub artmd: SelectedIni,
     personal_rules: PersonalRules,
+    /// Startup mounted `ares.mix` (`AssetManager::ships_ares`).
+    ships_ares: bool,
 }
 
 impl RetailRulesSources {
@@ -224,6 +226,7 @@ impl RetailRulesSources {
             langrule_selection_failure,
             artmd,
             personal_rules: PersonalRules::default(),
+            ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
         })
     }
 
@@ -250,7 +253,7 @@ impl RetailRulesSources {
             (None, Some(error)) => Some(NativeLangRuleSource::SelectionFailed(error)),
             (None, None) => None,
         };
-        NativeRulesProcessOwner::from_named_cold_start_sources(
+        let owner = NativeRulesProcessOwner::from_named_cold_start_sources(
             self.rulesmd.ini,
             langrule,
             self.artmd.ini,
@@ -261,8 +264,10 @@ impl RetailRulesSources {
                 self.artmd.source.logical_name,
             ],
             self.personal_rules,
+            self.ships_ares,
         )
-        .map_err(|error| format!("Native rules cold startup failed: {error}"))
+        .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
+        Ok(owner)
     }
 
     pub fn into_startup(

@@ -124,6 +124,15 @@ impl PartialEq for HouseAlliances {
 impl Eq for HouseAlliances {}
 
 impl HouseAlliances {
+    /// A copy that shares no storage with this one, for the presentation
+    /// copy of the world (docs/sim-thread.md); its matrix builds on demand.
+    pub(crate) fn detached(&self) -> Self {
+        Self {
+            graph: Arc::new((*self.graph).clone()),
+            matrix: OnceLock::new(),
+        }
+    }
+
     /// A graph with no matrix built yet.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn new(graph: HouseAllianceMap) -> Self {

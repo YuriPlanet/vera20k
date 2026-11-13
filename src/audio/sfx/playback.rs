@@ -324,7 +324,10 @@ impl RingState {
                 continue;
             };
             // The clip plays in the buffer's format (see chained_samples).
-            let samples = self.reinterpreted.get(&index).unwrap_or(&clip.samples);
+            let samples = self
+                .reinterpreted
+                .get(&index)
+                .map_or(&*clip.samples, Vec::as_slice);
             let available = samples.len().saturating_sub(self.clip_offset);
             if available == 0 {
                 empty_selections += 1;

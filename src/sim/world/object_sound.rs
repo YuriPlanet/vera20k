@@ -69,7 +69,7 @@ const AMBIENT_SOUND_TAG: u64 = 1 << 59;
 const CUSTOM_SOUND_TAG: u64 = 1 << 58;
 
 /// The owner of an object's `+0x3C` AmbientSound handle.
-pub(crate) const fn ambient_sound_owner(object: u64) -> u64 {
+pub const fn ambient_sound_owner(object: u64) -> u64 {
     object | AMBIENT_SOUND_TAG
 }
 
@@ -79,7 +79,7 @@ pub(crate) const fn custom_sound_owner(object: u64) -> u64 {
 }
 
 /// The object whose `+0x3C` or `+0x50` handle `owner` names.
-pub(crate) const fn object_sound_object(owner: u64) -> Option<u64> {
+pub const fn object_sound_object(owner: u64) -> Option<u64> {
     if owner & (AMBIENT_SOUND_TAG | CUSTOM_SOUND_TAG) != 0 {
         Some(owner & !(AMBIENT_SOUND_TAG | CUSTOM_SOUND_TAG))
     } else {
@@ -130,8 +130,7 @@ impl Simulation {
         // Ares 3.0 TActionClass_PlayAudioAtRandomWP (10039B60, hook 0x6E1780,
         // #1004906) replaces the scan: every defined slot is a candidate,
         // without the 400 cap, and no candidate means no draw and no sound.
-        #[cfg(feature = "ares")]
-        let cell = {
+        let cell = if rules.ares() {
             let candidates: Vec<i32> = (0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32)
                 .filter(|&index| self.session.waypoint_is_valid(index))
                 .collect();
@@ -149,9 +148,7 @@ impl Simulation {
                 return true;
             };
             cell
-        };
-        #[cfg(not(feature = "ares"))]
-        let cell = {
+        } else {
             let mut candidates = Vec::new();
             for index in 0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32 {
                 if self.session.waypoint_is_valid(index) {
@@ -309,6 +306,9 @@ impl Simulation {
 
     /// `ObjectClass::Set_Custom_Sound @ 0x005F6CB0`.
     fn set_custom_sound(&mut self, object: u64, sound: Option<&str>) {
+        // The object's next visit plays the sound (`ObjectClass::AI
+        // @ 0x005F3E70`); a sleeping one must take it (`world::idle_sleep`).
+        self.substrate.entities.wake(object);
         match sound {
             Some(sound_id) => {
                 self.object_custom_sounds

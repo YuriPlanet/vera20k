@@ -52,6 +52,7 @@ fn on_fire(sim: &Simulation, id: u64) -> bool {
 /// the SetOwnerObject callback 0x424BB0) puts the fire out.
 #[test]
 fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for sparky in [true, false] {
         let rules = fire_rules(sparky);
         let mut sim = Simulation::new();
@@ -107,6 +108,7 @@ fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
 /// neighbour refuses.
 #[test]
 fn ares_a_burning_tree_spreads_to_its_flammable_neighbours() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = fire_rules(true);
     let mut sim = Simulation::new();
     sim.resolve_type_handles(&rules);

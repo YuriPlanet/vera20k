@@ -45,6 +45,10 @@ pub(crate) struct PlanningInputState {
     /// AC4CB0 set by the right press 0x0063AAC0, holding the hover AC4CCC
     /// that 0x00638E60 then stops updating, until the release 0x0063AB00.
     right_hover: Option<Option<u64>>,
+    /// The hover node last found with the world home, which a draw beside
+    /// a lent tick reads (docs/sim-thread.md): the hover asks the selection,
+    /// which reads the live objects.
+    hover_seen: std::cell::RefCell<Option<u64>>,
 }
 
 impl PlanningInputState {
@@ -529,14 +533,23 @@ fn queue_orders_in_sim(
 /// selection may connect to. While a right press holds AC4CB0 it keeps the
 /// node it had at the press (0x00638E60's early return).
 pub(crate) fn hover_node(state: &AppState) -> Option<u64> {
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     if let Some(held) = state.match_state.input.planning.right_hover {
+        // Planning nodes are not objects: the presentation copy keeps them.
+        let sim = &state.match_state.sim_runtime.runtime()?.simulation;
         return held.filter(|&node| sim.planning_node_exists(node));
     }
     live_hover_node(state)
 }
 
 fn live_hover_node(state: &AppState) -> Option<u64> {
+    crate::app::match_runtime::sim_host::home_answer(
+        &state.match_state.sim_runtime,
+        &state.match_state.input.planning.hover_seen,
+        || find_hover_node(state),
+    )
+}
+
+fn find_hover_node(state: &AppState) -> Option<u64> {
     let point = hover_native_screen(state)?;
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = sim.session().current_house()?;

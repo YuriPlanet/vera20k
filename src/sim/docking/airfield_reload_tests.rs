@@ -172,3 +172,125 @@ fn retail_reload_rate_services_every_270_frames() {
     }
     assert_eq!(reload_visit(rules.general.reload_rate, &mut Reloading), 270);
 }
+
+/// A scripted host for Ares' per-docker visit: each contact keeps its own
+/// mission and answers, and the visit's calls are logged.
+#[cfg(feature = "ares")]
+struct AresDock {
+    frame: i32,
+    contacts: Vec<Option<u64>>,
+    missions: Vec<MissionType>,
+    reloads: Vec<bool>,
+    timers: DockReloadTimers,
+    calls: Vec<String>,
+}
+
+#[cfg(feature = "ares")]
+impl ReloadHost for AresDock {
+    fn capacity(&mut self) -> usize {
+        self.contacts.len()
+    }
+
+    fn contact(&mut self, slot: usize) -> Option<u64> {
+        self.contacts[slot]
+    }
+
+    fn roger(&mut self, contact: u64, message: RadioMessage) -> bool {
+        self.calls.push(format!("{message:?} {contact}"));
+        match message {
+            RadioMessage::NeedToMove => true,
+            RadioMessage::Reload => self.reloads[contact as usize],
+            _ => false,
+        }
+    }
+
+    fn full_strength(&mut self, _: u64) -> bool {
+        true
+    }
+
+    fn mission(&mut self, contact: u64) -> MissionId {
+        MissionId::from_known(self.missions[contact as usize])
+    }
+
+    fn queue_sleep(&mut self, contact: u64) {
+        self.calls.push(format!("sleep {contact}"));
+        self.missions[contact as usize] = MissionType::Sleep;
+    }
+
+    fn release(&mut self, contact: u64) {
+        self.calls.push(format!("release {contact}"));
+    }
+
+    fn queue_guard(&mut self) {
+        self.calls.push("guard".into());
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresReloadHost for AresDock {
+    fn frame(&mut self) -> i32 {
+        self.frame
+    }
+
+    fn reload_rate(&mut self, contact: u64) -> f64 {
+        // 0.1 minutes for contact 0, 0.2 for contact 1: 90 and 180 frames.
+        0.1 * (contact + 1) as f64
+    }
+
+    fn timers(&mut self) -> &mut DockReloadTimers {
+        &mut self.timers
+    }
+}
+
+/// Ares 10014190 (hook 0x44C844): each docker sleeps on arrival, then
+/// reloads on its own type's timer, and the airfield revisits every frame.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_dockers_reload_on_their_own_timers() {
+    let mut dock = AresDock {
+        frame: 100,
+        contacts: vec![Some(0), Some(1)],
+        missions: vec![MissionType::Guard, MissionType::Guard],
+        reloads: vec![true, true],
+        timers: DockReloadTimers::default(),
+        calls: Vec::new(),
+    };
+    assert_eq!(ares_reload_visit(&mut dock), 1);
+    assert_eq!(
+        dock.calls,
+        [
+            "QueryReloaded 0",
+            "NeedToMove 0",
+            "sleep 0",
+            "QueryReloaded 1",
+            "NeedToMove 1",
+            "sleep 1",
+        ]
+    );
+    // Asleep with a cleared timer, which is not this frame: each timer moves
+    // on by its own rate and nothing reloads yet.
+    dock.frame = 101;
+    dock.calls.clear();
+    assert_eq!(ares_reload_visit(&mut dock), 1);
+    assert_eq!(dock.timers.get(0), 101 + 90);
+    assert_eq!(dock.timers.get(1), 101 + 180);
+    // At frame 191 only the first docker is due; a refused RELOAD and
+    // REPAIR release it.
+    dock.frame = 191;
+    dock.reloads[0] = false;
+    dock.calls.clear();
+    assert_eq!(ares_reload_visit(&mut dock), 1);
+    assert_eq!(
+        dock.calls,
+        [
+            "QueryReloaded 0",
+            "NeedToMove 0",
+            "Reload 0",
+            "RepairTick 0",
+            "release 0",
+            "QueryReloaded 1",
+            "NeedToMove 1",
+        ]
+    );
+    assert_eq!(dock.timers.get(0), -1);
+}

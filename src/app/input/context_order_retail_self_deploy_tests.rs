@@ -51,6 +51,31 @@ fn self_click(
     )
 }
 
+/// Ares hook 0x73FD5A (1004CF50): a Deactivated MCV's What_Action over
+/// itself is GetDeactivatedAction's Select, so it neither shows Deploy nor
+/// deploys.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_deactivated_mcv_selects_itself_instead_of_deploying() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 12, 12, 0, rules)
+        .expect("mcv");
+    sim.entities_mut_for_test()
+        .get_mut(mcv)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    assert_eq!(
+        self_click(&sim, rules, mcv, HoverTargetKind::FriendlyUnit, false),
+        (CursorFeedbackKind::Select, None)
+    );
+}
+
 /// The player's MCV offers Deploy where its Construction Yard fits with the
 /// MCV lifted, and NoDeploy with no order once a tank stands on the yard's
 /// foundation (`0x0073FF9C..0x0073FFA6`).

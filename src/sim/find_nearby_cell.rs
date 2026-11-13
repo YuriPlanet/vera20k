@@ -936,7 +936,7 @@ impl crate::sim::world::Simulation {
                 overlay_grid: self.overlay_grid.as_ref(),
                 occupancy: Some(&self.substrate.occupancy),
                 entities: Some(&self.substrate.entities),
-                zone_grid: self.zone_grid.as_deref(),
+                zone_grid: self.zone_grid.as_ref(),
                 playfield_bounds: self.playfield_bounds(),
             },
             args.options,
@@ -978,7 +978,7 @@ impl crate::sim::world::Simulation {
         };
         let zone = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .zip(self.resolved_terrain.as_ref())
             .and_then(|(zones, terrain)| {
                 zones.get_zone_id_native(
@@ -1022,7 +1022,7 @@ impl crate::sim::world::Simulation {
     ) -> Option<(u16, u16)> {
         let zone = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .zip(self.resolved_terrain.as_ref())
             .and_then(|(zones, terrain)| {
                 zones.get_zone_id_native(terrain, seed, movement_zone, false)

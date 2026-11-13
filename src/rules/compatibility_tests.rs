@@ -3,7 +3,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
-use crate::rules::{ARES_ENABLED, PHOBOS_ENABLED, VERAX_ENABLED};
+use crate::rules::{ARES_BUILD, PHOBOS_ENABLED, VERAX_ENABLED};
 
 fn processed() -> ProcessedRulesLayers {
     RulesLayerStack::new(IniFile::from_str(
@@ -29,7 +29,7 @@ fn compiled_capability_controls_real_readers_and_roundtrip() {
     assert_eq!(reveal.kind, SuperWeaponKind::PsychicReveal);
     assert_eq!(reveal.aux_building.as_deref(), Some("GATE"));
     assert_eq!(reveal.recharge_time_frames, 1800);
-    if ARES_ENABLED {
+    if ARES_BUILD {
         assert_eq!(reveal.money_amount, -500);
         assert_eq!(
             reveal.building_requirements.as_ref().unwrap().negative,
@@ -88,7 +88,7 @@ fn stock_rules_hash_records_the_compiled_capability() {
     // Each build configuration's validation receipts compare this actual
     // production hash for identical stock input. No extension tags decide the mode.
     println!(
-        "BUILD_CAPABILITY_HASH ares={ARES_ENABLED} phobos={PHOBOS_ENABLED} verax={VERAX_ENABLED} hash={}",
+        "BUILD_CAPABILITY_HASH ares={ARES_BUILD} phobos={PHOBOS_ENABLED} verax={VERAX_ENABLED} hash={}",
         rules.simulation_config_hash()
     );
 }
@@ -146,7 +146,7 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         "the compiled build matches its own mode"
     );
     let other = RulesCompatibility::from_capabilities(
-        !ARES_ENABLED,
+        !ARES_BUILD,
         !PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
         !VERAX_ENABLED,

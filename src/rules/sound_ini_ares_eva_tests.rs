@@ -71,7 +71,7 @@ fn filenames_match_native_columns_and_keep_stock_fallback_without_ares() {
     let entry = registry.entry("EVA_TEST").unwrap();
     for row in controls().iter().filter(|row| row["kind"] == "filename") {
         let voice = i32::try_from(row["voice_index"].as_i64().unwrap()).unwrap();
-        let expected = if crate::rules::ARES_ENABLED || (0..=2).contains(&voice) {
+        let expected = if crate::rules::ARES_BUILD || (0..=2).contains(&voice) {
             row["filename"].as_str().unwrap()
         } else {
             "STOCK_Y"
@@ -88,14 +88,15 @@ fn filenames_match_native_columns_and_keep_stock_fallback_without_ares() {
     assert_eq!(entry.column(EvaSide::Yuri), Some("STOCK_Y"));
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn extra_columns_match_native_read_and_missing_reread_clears_previous_sample() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut registry = registry();
     let samples = |entry: &EvaEntry| {
         entry
             .extra_columns
             .iter()
+            .flatten()
             .map(|sample| sample.as_deref().unwrap_or(""))
             .map(str::to_string)
             .collect::<Vec<_>>()
@@ -121,13 +122,14 @@ fn extra_columns_match_native_read_and_missing_reread_clears_previous_sample() {
         registry.entries[0]
             .extra_columns
             .iter()
+            .flatten()
             .all(Option::is_none)
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn registered_none_spellings_are_resolved_before_side_none_handling() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for row in controls()
         .iter()
         .filter(|row| row["kind"] == "none_tag_precedence")

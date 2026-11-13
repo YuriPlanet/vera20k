@@ -220,7 +220,8 @@ fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
 pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     if parent == KeyboardParent::GameControls {
         // BBB52C sets state4/result1;4E1D9A applies+writes before dispatcher48CA03.
-        crate::app::persistence::options::accept_in_game_options(state);
+        // VERA's Game Controls is a page of the in-game menu, which applies and
+        // writes its controls as it closes for this state.
         App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Keyboard);
     }
     // Phobos registers `FireTacticalSW1..10` and `ToggleSWSidebar` only when
@@ -345,10 +346,11 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     }
     match dialog.parent {
         KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
-        // State_Machine 0x0048CA0D writes state 5 after A3 returns; BBB is
-        // recreated, and its init reads the Options values A3 left untouched.
+        // State_Machine 0x0048CA0D writes state 5 after A3 returns, where
+        // gamemd recreates BBB. VERA's Game Controls is the in-game menu's
+        // page, so the menu is what comes back.
         KeyboardParent::GameControls => {
-            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Options)
+            App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu)
         }
     }
     state.platform.window.request_redraw();

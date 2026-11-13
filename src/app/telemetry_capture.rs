@@ -50,8 +50,12 @@ fn reset_live_window(state: &mut AppState) {
 }
 
 pub(crate) fn synchronize_observer(state: &mut AppState) {
-    // The observer writes the live world: a tick still out finishes first.
-    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
+    // The observer writes the live world. A tick still on the simulation
+    // thread leaves it to the pass that finds the tick back, so the draw
+    // never waits for it (docs/sim-thread.md).
+    if state.match_state.sim_runtime.is_lent() {
+        return;
+    }
     let active = state.diag.telemetry_active();
     let simulation = state
         .match_state
@@ -480,7 +484,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
             .match_presentation
             .unit_atlas
             .as_ref()
-            .map(|atlas| atlas.rendered as u32),
+            .map(|atlas| u32::try_from(atlas.sprite_count()).unwrap_or(u32::MAX)),
         entities_at_cursor,
         footprint,
         selected: capture_selection(sim),

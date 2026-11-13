@@ -153,6 +153,12 @@ pub(crate) fn snap_after_successful_unlimbo(
     }
 }
 
+/// Whether [`sample_process_entry`] changes `entity`'s slope state for
+/// `sampled_slope`: it has one, and the slope differs from its target.
+pub(crate) fn process_entry_changes(entity: &GameEntity, sampled_slope: u8) -> bool {
+    state_for_entity(entity).is_some_and(|state| state.current_slope != sampled_slope)
+}
+
 /// Drive Process `0x004B050B..0x004B0557` and Ship Process
 /// `0x0069FC1B..0x0069FC67` sample before any track/movement branch.
 pub(crate) fn sample_process_entry(entity: &mut GameEntity, sampled_slope: u8, binary_frame: u32) {

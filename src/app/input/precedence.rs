@@ -41,6 +41,8 @@ pub(crate) enum ScreenPage {
     FullscreenMovie,
     CreditsRoll,
     MovieList,
+    /// VERA's Mods page.
+    Mods,
     Campaign,
     LanLobby,
     NetworkSetup,
@@ -101,6 +103,7 @@ struct Layers {
     fullscreen_movie: bool,
     credits_roll: bool,
     movie_list: bool,
+    mods: bool,
     campaign: bool,
     wol: bool,
     load_saved_game: bool,
@@ -137,6 +140,7 @@ impl Layers {
             fullscreen_movie: frontend.fullscreen_movie.is_some(),
             credits_roll: frontend.credits_roll.is_some(),
             movie_list: App::movie_list_active(state),
+            mods: App::mods_page_active(state),
             campaign: App::campaign_active(state),
             wol: App::wol_active(state),
             load_saved_game: App::load_saved_game_active(state),
@@ -189,6 +193,7 @@ impl Layers {
                     // The Esc menu opens Options over any route's page.
                     (self.launcher_options, ScreenPage::LauncherOptions),
                     (self.movie_list, ScreenPage::MovieList),
+                    (self.mods, ScreenPage::Mods),
                     (self.campaign, ScreenPage::Campaign),
                     (self.route.lan_lobby(), ScreenPage::LanLobby),
                     (self.route.network_setup(), ScreenPage::NetworkSetup),
@@ -349,6 +354,21 @@ mod tests {
         };
         assert_eq!(over_menu.page(), None);
         assert_eq!(over_menu.input(), InputLayer::Screen(ScreenPage::MainMenu));
+    }
+
+    /// VERA's Mods page takes input while it is open; its restart question
+    /// takes it over the page, which stays drawn.
+    #[test]
+    fn the_mods_page_takes_input_until_its_question_is_asked() {
+        let mut layers = Layers {
+            route: ShellRoute::Mods,
+            mods: true,
+            ..Default::default()
+        };
+        assert_eq!(layers.input(), InputLayer::Screen(ScreenPage::Mods));
+        layers.shell_message_box = true;
+        assert_eq!(layers.input(), InputLayer::Page(ModalPage::ShellMessageBox));
+        assert_eq!(layers.screen_page(), ScreenPage::Mods);
     }
 
     /// Options opened from a page is what shows and takes input; the route

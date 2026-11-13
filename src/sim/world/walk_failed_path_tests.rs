@@ -97,7 +97,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
     for _ in 0..30 {
         sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
         frames += 1;
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         if mission.queued() == guard || mission.current() == guard {
             break;
         }

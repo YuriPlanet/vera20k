@@ -5,7 +5,8 @@ in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
 `Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`; these take no INI
 keys. Default builds keep the original behaviour, bugs included. Each Rust
 port sits in the engine owner of the hooked gamemd function, behind
-`cfg(feature = "ares")` or `rules::ARES_ENABLED`, with the Ares.dll function
+`cfg(feature = "ares")` or the per-game switch `RuleSet::ares` (on when the
+game's data uses Ares, see `rules::ares_switch`), with the Ares.dll function
 and the gamemd hook cited next to it. Part 2 (the Buffer and Perf rows at
 the end of the table) also has `sim::ares_bugfixes_buffer_tests` and
 `sim::combat::ares_cliff_tests`.
@@ -76,7 +77,8 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x51F716` | `1005CD20` | A deployed man's Unload returns 1 after Guard instead of 450 | ported: `deploy::infantry_mission_unload` |
 | `0x52070F` | `1005CDD0` | A cloaked infantryman surfaces to fire only in range | ported: `world_fire` infantry case 9 (no test: fire-path fixture) |
 | `0x52BA78` | `1005D7F0` | Animated ParaDrop, Chronosphere, IronCurtain, Detonate, BlueMove and IvanBomb cursors | presentation (cursor timing) |
-| `0x52BB64`, `0x53029E`, `0x6BD7E3`, `0x6BE9BD` | `1005C940`, `1005CE30`, `1005C950`, `1005D840` | MIX bootstrap and Ares resources | n/a: DLL/resource plumbing |
+| `0x52BB64`, `0x53029E`, `0x6BD7E3` | `1005C940`, `1005CE30`, `1005C950` | Base MIX files mount before LANGMD.MIX, and `ares.mix` after the expansion archives, ahead of the masters | ported: `AssetManager::mount_base_mix_files` |
+| `0x6BE9BD` | `1005D840` | Ares resources | n/a: DLL/resource plumbing |
 | `0x531726`, `0x53173F` | `1005D130`, `1005D140` | Loading screen pips | presentation |
 | `0x534F89`, `0x5C9A6E`, `0x5FDDA4`, `0x615BD3`, `0x6BB9DD`, `0x720A61`, `0x720C42`, `0x720DE8`, `0x720F37` | various | Log lines | n/a: logging |
 | `0x547043` | `1005E270` | Fatal error for a missing tileset file | n/a: loader diagnostics |

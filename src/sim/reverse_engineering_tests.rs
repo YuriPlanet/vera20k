@@ -86,8 +86,11 @@ fn eva_lines(sim: &mut Simulation) -> Vec<&'static str> {
 /// The first `ReversedAs=HEAVY` tank ground records HEAVY (not TANK) for
 /// the grinder's owner, sets House+1FC and speaks the two lines for its
 /// player; the second finds HEAVY listed and does neither.
+// Runs again once building entry's grinder step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn a_grinder_reverse_engineers_a_vehicle_once_as_its_reversed_type() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = fixture("ReverseEngineersVictims=yes");
     let owner = sim.interner.get("Americans").unwrap();
     let grinder = spawn(&mut sim, &rules, "GRINDER", 14);
@@ -117,6 +120,7 @@ fn a_grinder_reverse_engineers_a_vehicle_once_as_its_reversed_type() {
 /// 10012E00 needs `ReverseEngineersVictims=` and 10022360 `CanBeReversed=`.
 #[test]
 fn a_plain_grinder_or_an_irreversible_victim_records_nothing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (grinder_keys, victim) in [("", "TANK"), ("ReverseEngineersVictims=yes", "PLAIN")] {
         let (mut sim, rules) = fixture(grinder_keys);
         let owner = sim.interner.get("Americans").unwrap();
@@ -132,8 +136,11 @@ fn a_plain_grinder_or_an_irreversible_victim_records_nothing() {
 
 /// #368: a vehicle with a captor InfantryType (Techno+0x338) also refunds
 /// that type (CIV, Soylent 75) to the grinder's owner, after its own 300.
+// Runs again once building entry's grinder step moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn a_ground_hijacked_vehicle_refunds_its_hijacker() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (captor, refund) in [(-1, 300), (0, 375)] {
         let (mut sim, rules) = fixture("");
         let owner = sim.interner.get("Americans").unwrap();

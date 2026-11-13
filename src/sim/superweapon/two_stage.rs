@@ -218,7 +218,7 @@ pub(super) fn source_available(
     if !instance.is_active || instance.is_suspended {
         return false;
     }
-    let (provided, online) = super::provider_supers(sim, rules, owner);
+    let providers = super::provider_supers(sim, rules, owner);
     let low_power = sim
         .power_states
         .get(&owner)
@@ -229,8 +229,10 @@ pub(super) fn source_available(
             sw,
             house.is_defeated(),
             sim.session.game_options().super_weapons || !sw.disableable_from_shell,
-            provided.contains(&source),
-            !low_power && online.contains(&source),
+            providers.provided.contains(&source),
+            !low_power && providers.online.contains(&source),
+            providers.charging.contains(&source),
+            rules.ares(),
         ),
         super::SuperHold::Unchanged | super::SuperHold::Suspend(false)
     )

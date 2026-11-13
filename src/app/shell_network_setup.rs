@@ -18,6 +18,8 @@ pub(crate) use service::{
     fail_go_handoff, invalidate_network_agreement, poll, prepare_lan_guest_handoff,
     refuse_local_acceptance, service_event, set_network_map_progress,
 };
+mod teams;
+pub(crate) use teams::{balance_answered, lobby_refused_option};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -104,6 +106,12 @@ pub(crate) enum NetworkSetupRequest {
     },
     /// `0078F000`: channel mode/topic/limit advertisement of this game.
     Advertise,
+    /// VERA's room: the host's Balance sends `/balance` as typed, and
+    /// Balance automatically the lobby's quiet `balance` command
+    /// (`teams::poll_balance`).
+    Balance {
+        automatic: bool,
+    },
     /// C2 0x497 and timer 0x14AF8: one ping request per channel user
     /// (API2+0x18, 1000 ms timeout).
     RequestPings,
@@ -189,7 +197,35 @@ pub(crate) struct NetworkSetupProtocol {
     /// which seats both players without a join. The next join is the
     /// partner coming back to that seat.
     cooperative_rematch_seat: bool,
+    /// VERA's rooms: where the host's options last put the local player
+    /// (its team, and whether it watches), and where the player last asked
+    /// to be, so that a move the host made is told in chat
+    /// (`service::tell_moved`).
+    seat_place: Option<SeatPlace>,
+    asked_place: Option<SeatPlace>,
+    /// VERA's rooms: the local player's place in the join queue in the
+    /// host's last options (`service::tell_moved`).
+    queue_place: Option<usize>,
+    /// VERA's room Balance automatically (`teams::poll_balance`): the Teams
+    /// count, who played and whether there was anything to balance when it
+    /// last looked, when the next balance is due, and whether one waits for
+    /// the lobby's answer.
+    balance_roster: Option<(u8, Vec<String>, bool)>,
+    balance_due: Option<Instant>,
+    balance_sent: bool,
     requests: Vec<NetworkSetupRequest>,
+}
+
+/// A player's place in VERA's room: its team, and whether it watches.
+type SeatPlace = (crate::skirmish_launch::LaunchTeam, bool);
+
+/// A move of the local player that the host made, told in its chat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostMove {
+    Team(u8),
+    OffTeam,
+    Spectators,
+    Seat,
 }
 
 /// The native blocking GO loops decide which global packets are consumed.
@@ -344,6 +380,27 @@ struct PreviewOffer {
 }
 
 impl NetworkSetupProtocol {
+    /// The host's options put the local player at `place`: the move to tell
+    /// it, if any. The first options are none, and neither is the place the
+    /// player last asked for; options the host sent before an ask arrived
+    /// leave the ask waiting, and any move ends it.
+    fn host_placed(&mut self, place: SeatPlace) -> Option<HostMove> {
+        let before = self.seat_place.replace(place)?;
+        if before == place || self.asked_place.take() == Some(place) {
+            return None;
+        }
+        match (before.1, place) {
+            (false, (_, true)) => Some(HostMove::Spectators),
+            (true, (_, false)) => Some(HostMove::Seat),
+            (false, (crate::skirmish_launch::LaunchTeam::Team(team), false)) => {
+                Some(HostMove::Team(team))
+            }
+            (false, (crate::skirmish_launch::LaunchTeam::None, false)) => Some(HostMove::OffTeam),
+            // A spectator's team plays no part.
+            (true, (_, true)) => None,
+        }
+    }
+
     fn new(dialog: SetupDialog, quick_match: bool) -> Self {
         let host = dialog.host;
         // C2's 0x497 (the advertisement, the pings and their timer) never
@@ -376,6 +433,12 @@ impl NetworkSetupProtocol {
             received_preview_bounds: None,
             received_preview_count: 0,
             cooperative_rematch_seat: false,
+            seat_place: None,
+            asked_place: None,
+            queue_place: None,
+            balance_roster: None,
+            balance_due: None,
+            balance_sent: false,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -743,10 +806,7 @@ impl App {
         let agreed_seed = if dialog.wol() {
             wol::resident_seed(state)
         } else {
-            let main = crate::app::state::process_main_draws(
-                state.match_state.sim_runtime.runtime(),
-                &state.frontend.frontend_main_rng,
-            );
+            let main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
             initialize_host_seed(&main, &mut state.frontend.legacy_crt_rng)
         };
         state
@@ -1255,6 +1315,33 @@ mod tests {
         );
         guest.record_remote_user_left(false, false);
         assert!(guest.take_service_requests().is_empty());
+    }
+
+    /// A guest is told the moves its host made, not the answers to its own
+    /// asks: options the host sent before an ask arrived change nothing.
+    #[test]
+    fn a_guest_is_told_only_the_moves_its_host_made() {
+        use crate::skirmish_launch::LaunchTeam::{None as NoTeam, Team};
+        let mut guest = NetworkSetupProtocol::new(
+            SetupDialog {
+                host: false,
+                flavor: SetupFlavor::Lan,
+                modern: true,
+            },
+            false,
+        );
+        assert_eq!(guest.host_placed((NoTeam, false)), None);
+        guest.asked_place = Some((Team(1), false));
+        assert_eq!(guest.host_placed((NoTeam, false)), None);
+        assert_eq!(guest.host_placed((Team(1), false)), None);
+        assert_eq!(guest.host_placed((Team(2), false)), Some(HostMove::Team(2)));
+        assert_eq!(
+            guest.host_placed((Team(2), true)),
+            Some(HostMove::Spectators)
+        );
+        assert_eq!(guest.host_placed((Team(0), true)), None);
+        assert_eq!(guest.host_placed((Team(0), false)), Some(HostMove::Seat));
+        assert_eq!(guest.host_placed((NoTeam, false)), Some(HostMove::OffTeam));
     }
 
     #[test]

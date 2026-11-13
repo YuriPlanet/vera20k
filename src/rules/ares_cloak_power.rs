@@ -42,6 +42,7 @@ impl CloakPowerTypeRules {
     /// The registry supplies the Find-only BuildingType vector read10010850
     /// of `PoweredBy`: a reached list replaces, a failed read retains.
     pub(crate) fn read_pass(&mut self, section: &IniSection, powered_by: Option<Vec<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // Valueable<int>1000A570.
         self.radar_jam_radius = section.read_ares_int("RadarJamRadius", self.radar_jam_radius);
         if let Some(powered_by) = powered_by {
@@ -101,13 +102,6 @@ pub enum DeactivateDim {
     Operator = 2,
 }
 
-/// Index of [`CloakPowerGlobalRules::speak_delay`]'s delays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum DetectedSpeech {
-    Stealth = 0,
-    Subterranean = 1,
-}
-
 impl Default for CloakPowerGlobalRules {
     fn default() -> Self {
         // Constructor1002A360: CloakHeight unset; the dim factors 0.5, 0.8
@@ -127,6 +121,7 @@ impl Default for CloakPowerGlobalRules {
 impl CloakPowerGlobalRules {
     /// LoadBeforeTypeData1002AB60: Valueable<double>1000EB00 in AudioVisual.
     pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
@@ -152,6 +147,7 @@ impl CloakPowerGlobalRules {
     /// LoadAfterTypeData1002A800: General's Nullable<int>10008CC0, after
     /// the AudioVisual DecloakSound that the sound binder owns.
     pub(crate) fn read_after_type_data(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(section) = pass.section("General") {
             self.cloak_height = section.read_ares_nullable_int("CloakHeight", self.cloak_height);
         }
@@ -164,9 +160,5 @@ impl CloakPowerGlobalRules {
 
     pub fn deactivate_dim(&self, kind: DeactivateDim) -> f64 {
         f64::from_bits(self.deactivate_dim[kind as usize].bits())
-    }
-
-    pub(crate) fn speak_delay(&self, kind: DetectedSpeech) -> f64 {
-        f64::from_bits(self.speak_delay[kind as usize].bits())
     }
 }

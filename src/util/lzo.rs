@@ -243,12 +243,24 @@ pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, 
 /// `[u16 compressed_len][u16 uncompressed_len]`.
 ///
 /// RESIDUAL: native compresses each block with LZO1X-1 (`0x0055BB90`); this
-/// writes valid LZO1X literal runs, which decode to the same bytes but are
-/// larger.
+/// writes valid LZO1X streams of literal runs and back-references found by
+/// its own greedy search, which decode to the same bytes but are not the
+/// bytes native writes.
 pub fn compress_chunks(data: &[u8], block_size: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() + data.len() / block_size.max(1) * 8 + 8);
-    for block in data.chunks(block_size.max(1)) {
-        let stream = literal_stream(block);
+    let mut out = Vec::with_capacity(data.len() / 2 + 16);
+    // A block's stream must fit the frame's 16-bit length. As one literal
+    // run it does whatever the block holds (its bytes, a run header and the
+    // end marker). With matches it can grow past the block, where short
+    // matches from far back cost as much as the bytes they stand for; the
+    // literal run is then written when it is shorter.
+    for block in data.chunks(block_size.clamp(1, 0xFE00)) {
+        let mut stream = lzo1x_stream(block, true);
+        if stream.len() > block.len() {
+            let literal = lzo1x_stream(block, false);
+            if literal.len() < stream.len() {
+                stream = literal;
+            }
+        }
         out.extend_from_slice(&(stream.len() as u16).to_le_bytes());
         out.extend_from_slice(&(block.len() as u16).to_le_bytes());
         out.extend_from_slice(&stream);
@@ -256,23 +268,110 @@ pub fn compress_chunks(data: &[u8], block_size: usize) -> Vec<u8> {
     out
 }
 
-/// One LZO1X stream holding `block` as a single literal run, encoded the way
-/// LZO1X-1 encodes its final run at the stream start, then the end marker.
-fn literal_stream(block: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(block.len() + 40);
-    let t = block.len();
-    if t > 0 && t <= 238 {
-        out.push(17 + t as u8);
-    } else if t > 238 {
+/// The run-length extension [`read_vle`] reads back: zero bytes of 255
+/// each, then the rest (1..=255).
+fn write_vle(out: &mut Vec<u8>, mut extra: usize) {
+    while extra > 255 {
         out.push(0);
-        let mut tt = t - 18;
-        while tt > 255 {
-            tt -= 255;
-            out.push(0);
-        }
-        out.push(tt as u8);
+        extra -= 255;
     }
-    out.extend_from_slice(block);
+    out.push(extra as u8);
+}
+
+/// One LZO1X stream of `block`, then the end marker; without
+/// `search_matches`, the block as one literal run.
+///
+/// A greedy search over a table of the last place each three-byte group was
+/// seen. Each instruction is one [`lzo1x_decompress`] reads:
+/// - Literals before the first match: `17 + count` up to 238 bytes, else
+///   the long run `0` with its extension.
+/// - Literals after a match: one to three ride in the match's two state
+///   bits; four or more are a run `count - 3` (to 18) or `0` with its
+///   extension.
+/// - A match of 3..=8 bytes within 2048 is M2 (`cmd >= 64`); any other is
+///   M3 (`32..64`), whose distance reaches 16384; nothing farther back is
+///   matched.
+///
+/// A run of four or more is always followed by a match or the end marker,
+/// never by a `cmd < 16`, which the decoder would read as an M1 match.
+fn lzo1x_stream(block: &[u8], search_matches: bool) -> Vec<u8> {
+    const HASH_BITS: u32 = 13;
+    const MIN_MATCH: usize = 3;
+    const MAX_DISTANCE: usize = 16384;
+    let hash = |at: usize| {
+        let group =
+            u32::from(block[at]) | u32::from(block[at + 1]) << 8 | u32::from(block[at + 2]) << 16;
+        (group.wrapping_mul(0x9E37_79B1) >> (32 - HASH_BITS)) as usize
+    };
+    let mut seen = vec![usize::MAX; 1 << HASH_BITS];
+    let mut out = Vec::with_capacity(block.len() / 2 + 16);
+    // Where the last match keeps its state bits, while literals may still
+    // ride in them.
+    let mut state_at: Option<usize> = None;
+    let mut literals_from = 0;
+    let mut at = 0;
+
+    let write_literals = |out: &mut Vec<u8>, state_at: &mut Option<usize>, run: &[u8]| {
+        let count = run.len();
+        if count == 0 {
+            return;
+        }
+        match *state_at {
+            Some(state) if count <= 3 => out[state] |= count as u8,
+            _ if out.is_empty() && count <= 238 => out.push(17 + count as u8),
+            _ if out.is_empty() || count > 18 => {
+                out.push(0);
+                write_vle(out, count - 18);
+            }
+            _ => out.push((count - 3) as u8),
+        }
+        out.extend_from_slice(run);
+        *state_at = None;
+    };
+
+    while search_matches && at + MIN_MATCH <= block.len() {
+        let slot = hash(at);
+        let candidate = seen[slot];
+        seen[slot] = at;
+        let matches = candidate != usize::MAX
+            && at - candidate <= MAX_DISTANCE
+            && block[candidate..candidate + MIN_MATCH] == block[at..at + MIN_MATCH];
+        if !matches {
+            at += 1;
+            continue;
+        }
+        let distance = at - candidate;
+        let mut length = MIN_MATCH;
+        while at + length < block.len() && block[candidate + length] == block[at + length] {
+            length += 1;
+        }
+        write_literals(&mut out, &mut state_at, &block[literals_from..at]);
+        if length <= 8 && distance <= 2048 {
+            // M2: [length - 1 : 3][distance low : 3][state : 2], distance high.
+            state_at = Some(out.len());
+            out.push(((length - 1) as u8) << 5 | (((distance - 1) & 7) as u8) << 2);
+            out.push(((distance - 1) >> 3) as u8);
+        } else {
+            // M3: 32 | (length - 2), extended past 31; then the distance and
+            // the state in a little-endian word.
+            if length - 2 <= 31 {
+                out.push(32 | (length - 2) as u8);
+            } else {
+                out.push(32);
+                write_vle(&mut out, length - 2 - 31);
+            }
+            let word = ((distance - 1) << 2) as u16;
+            state_at = Some(out.len());
+            out.extend_from_slice(&word.to_le_bytes());
+        }
+        // Remember the groups the match covers, so later data finds them.
+        for covered in at + 1..(at + length).min(block.len().saturating_sub(MIN_MATCH - 1)) {
+            seen[hash(covered)] = covered;
+        }
+        at += length;
+        literals_from = at;
+    }
+    write_literals(&mut out, &mut state_at, &block[literals_from..]);
     out.extend_from_slice(&[0x11, 0x00, 0x00]);
     out
 }
@@ -393,6 +492,74 @@ mod tests {
             assert_eq!(uncompressed, len.min(0x2000));
         }
         assert!(compress_chunks(&[], 0x2000).is_empty());
+    }
+
+    /// Repeating data comes back whole and smaller: map cell records, one
+    /// long run, short repeats with one to three bytes between them, and a
+    /// repeat that begins at the block's second byte.
+    #[test]
+    fn written_chunks_shrink_repeating_data_and_decode_back() {
+        // 11-byte IsoMapPack5-like records: coordinates count up, the rest
+        // repeats.
+        let records: Vec<u8> = (0..3000u16)
+            .flat_map(|cell| {
+                let [x, y] = cell.to_le_bytes();
+                [x, y, 30, 0, 12, 0, 0, 0, (cell % 3) as u8, 2, 0]
+            })
+            .collect();
+        let run = vec![0x5Au8; 20_000];
+        let stitched: Vec<u8> = (0..4000usize)
+            .flat_map(|i| {
+                let gap = i % 4;
+                let mut piece = b"ABCDEFGH".to_vec();
+                piece.extend(std::iter::repeat_n((i * 31) as u8, gap));
+                piece
+            })
+            .collect();
+        let early = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab".to_vec();
+        for (name, data, shrinks_to) in [
+            ("records", &records, 2),
+            ("run", &run, 100),
+            ("stitched", &stitched, 2),
+            ("early", &early, 2),
+        ] {
+            let chunks = compress_chunks(data, 0x2000);
+            assert_eq!(
+                &decompress_chunks(&chunks, data.len()).expect("decodes"),
+                data,
+                "{name}"
+            );
+            assert!(
+                chunks.len() * shrinks_to < data.len(),
+                "{name}: {} bytes from {}",
+                chunks.len(),
+                data.len()
+            );
+        }
+    }
+
+    /// A full-size block of three-byte repeats from more than 2048 bytes
+    /// back, each before four new bytes: those matches cost as much as the
+    /// bytes they stand for, yet the block still fits its frame's 16-bit
+    /// length and decodes back.
+    #[test]
+    fn a_block_of_costly_matches_still_fits_its_frame() {
+        let mut state = 0x2545_F491u32;
+        let mut noise = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as u8
+        };
+        let mut data: Vec<u8> = (0..4096).map(|_| noise()).collect();
+        while data.len() < 0xFE00 {
+            let from = data.len() - 2100;
+            data.extend_from_within(from..from + 3);
+            data.extend((0..4).map(|_| noise()));
+        }
+        data.truncate(0xFE00);
+        let chunks = compress_chunks(&data, 0xFE00);
+        assert_eq!(decompress_chunks(&chunks, data.len()).ok(), Some(data));
     }
 
     #[test]

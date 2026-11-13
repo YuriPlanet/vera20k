@@ -32,10 +32,9 @@ impl Default for BuildingStorage {
         }
     }
 }
-#[cfg(feature = "ares")]
 impl super::BuildingArt {
     /// The store leaves the building for its House at Added_To_Game
-    /// (`sim::ares_tiberium_storage`, Ares builds).
+    /// (`sim::ares_tiberium_storage`, while Ares plays).
     pub(crate) fn take_storage_amounts(&mut self) -> [NativeF32Bits; 4] {
         std::mem::replace(&mut self.storage.amounts, [NativeF32Bits::POSITIVE_ZERO; 4])
     }
@@ -83,12 +82,11 @@ fn active_slot(tier: i32) -> Option<u8> {
     }
 }
 impl Simulation {
-    /// The building's storage as the art reads it: in Ares builds a store
-    /// its House holds in game comes from that House
+    /// The building's storage as the art reads it: a store its House holds
+    /// in game (only while Ares plays) comes from that House
     /// ([`Simulation::ares_ledger_store`]).
     fn storage_view(&self, id: u64) -> Option<BuildingStorage> {
         let storage = self.entities().get(id)?.building_art.storage;
-        #[cfg(feature = "ares")]
         if let Some(store) = self.ares_ledger_store(id) {
             return Some(BuildingStorage {
                 amounts: store.amounts(),

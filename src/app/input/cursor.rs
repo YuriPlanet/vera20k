@@ -85,6 +85,9 @@ impl CursorVisibility {
 /// the cursor ([`crate::app::input::entity_pick::cursor_hover_object`]). Both
 /// walk every object, so a draw reads them once and also hands them to the
 /// hover health bar, the target lines and the placement rings.
+/// Read with the world home and kept for the draws beside a lent tick
+/// (`sim_host::home_answer`).
+#[derive(Clone, Debug, Default)]
 pub(crate) struct CursorTargets {
     pub(crate) selected: Vec<u64>,
     pub(crate) hover: Option<HoverObject>,
@@ -92,15 +95,44 @@ pub(crate) struct CursorTargets {
 
 impl CursorTargets {
     pub(crate) fn read(state: &AppState) -> Self {
-        Self {
-            selected: crate::app::input::dispatch::selected_in_order(state),
-            hover: crate::app::input::entity_pick::cursor_hover_object(state),
-        }
+        crate::app::match_runtime::sim_host::home_answer(
+            &state.match_state.sim_runtime,
+            &state.match_state.input.cursor_targets_seen,
+            || Self {
+                selected: crate::app::input::dispatch::selected_in_order(state),
+                hover: crate::app::input::entity_pick::cursor_hover_object(state),
+            },
+        )
     }
 }
 
-/// The cursor feedback for this frame's `targets`.
+/// The cursor feedback for this frame's `targets`. Its action asks the live
+/// objects, so it is answered with the world home and kept for the draws
+/// beside a lent tick (`sim_host::home_answer`).
 pub(crate) fn current_cursor_feedback_kind(
+    state: &AppState,
+    targets: &CursorTargets,
+) -> Option<CursorFeedbackKind> {
+    crate::app::match_runtime::sim_host::home_answer(
+        &state.match_state.sim_runtime,
+        &state.match_state.input.cursor_feedback_seen,
+        || find_cursor_feedback_kind(state, targets),
+    )
+}
+
+/// Ask, with the world home, every question a draw answers from a kept
+/// answer beside a lent tick (`sim_host::home_answer`): the cursor's targets
+/// and action, the ferry's armed drop and the planning hover. Asked before
+/// each tick leaves (`sim_tick::advance_one_simulation_frame`), when no draw
+/// may find the world home until the ticks stop being lent.
+pub(crate) fn answer_kept_questions(state: &AppState) {
+    let targets = CursorTargets::read(state);
+    current_cursor_feedback_kind(state, &targets);
+    crate::app::input::ferry::armed_click_accepted(state);
+    crate::app::input::planning_mode::hover_node(state);
+}
+
+fn find_cursor_feedback_kind(
     state: &AppState,
     targets: &CursorTargets,
 ) -> Option<CursorFeedbackKind> {
@@ -848,6 +880,25 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
+    // Ares hooks at the head of each class What_Action over an object: a
+    // Deactivated cursor owner answers GetDeactivatedAction alone.
+    #[cfg(feature = "ares")]
+    if let (Some(actor), Some(rules)) = (best_id, rules)
+        && let Some(action) = super::context_order::ares_deactivated_action(
+            sim,
+            rules,
+            selected,
+            actor,
+            hover.stable_id,
+        )
+    {
+        use super::context_order::AresDeactivatedAction;
+        return match action {
+            AresDeactivatedAction::Detonate => CursorFeedbackKind::Detonate,
+            AresDeactivatedAction::Select => CursorFeedbackKind::Select,
+            AresDeactivatedAction::None => CursorFeedbackKind::Default,
+        };
+    }
     // Ares 3.0 100171B0 (hook 0x44725F): Building What_Action answers Enter
     // before Techno What_Action when the building's occupants may traverse
     // into the hovered one (canTraverseTo 10011690).
@@ -881,6 +932,8 @@ pub(super) fn capability_cursor_for_hover(
         hover,
         rules,
         sim.session().current_house(),
+        modifier,
+        force_move_key,
     ) {
         return kind;
     }
@@ -1423,6 +1476,12 @@ fn no_selection_cursor(
 
 /// The display mapping for Unit's shared repair-object action. Original
 /// Display4AAE90 rows33/17/19 are saved in bunker_attack_action repair_rows.
+///
+/// With `ares` the healer arms (`1004E5A0` at `0x73FDBD`, `1004E2E0` at
+/// `0x51E710`) set InfantryHeal (0x5A) over an Organic or Infantry target and
+/// UnitRepair (0x5B) otherwise: a Unit's GRepair (0x1D) takes the override, an
+/// Infantryman's Heal (0x1B) shows it.
+#[allow(clippy::too_many_arguments)]
 fn unit_repair_feedback(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1430,6 +1489,8 @@ fn unit_repair_feedback(
     hover: &crate::app::input::entity_pick::HoverTargetKindWithId,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     issuing_house: Option<crate::sim::intern::InternedId>,
+    modifier: super::context_order::OrderModifier,
+    force_move_key: bool,
 ) -> Option<CursorFeedbackKind> {
     if selected == [hover.stable_id] || hover.kind == HoverTargetKind::HiddenEnemy {
         return None;
@@ -1437,9 +1498,55 @@ fn unit_repair_feedback(
     let id = best_id?;
     let rules = rules?;
     let house = issuing_house?;
+    let keys = super::context_order::heal_arm_keys(
+        sim,
+        rules,
+        id,
+        hover.stable_id,
+        modifier,
+        force_move_key,
+    );
+    #[cfg(feature = "ares")]
+    let heal_cursor = || {
+        let organic = sim.entities().get(hover.stable_id).is_some_and(|target| {
+            target.category() == crate::map::entities::EntityCategory::Infantry
+                || sim
+                    .interner()
+                    .object_type(target.type_ref(), rules)
+                    .is_some_and(|object| object.organic)
+        });
+        if organic {
+            crate::rules::ares_mouse_cursor::index::INFANTRY_HEAL
+        } else {
+            crate::rules::ares_mouse_cursor::index::UNIT_REPAIR
+        }
+    };
+    // The Ares cursor owner (`ares_cursor`, `AresAction`) is still built
+    // only with the `ares` feature; the switch decides within it.
+    #[cfg(feature = "ares")]
+    if rules.ares()
+        && sim
+            .entities()
+            .get(id)
+            .is_some_and(|actor| actor.category() == crate::map::entities::EntityCategory::Infantry)
+    {
+        sim.ares_infantry_heal_action(id, hover.stable_id, house, keys, rules)?;
+        return u16::try_from(heal_cursor())
+            .ok()
+            .map(CursorFeedbackKind::AresAction);
+    }
     Some(
-        match sim.unit_repair_action(id, hover.stable_id, house, rules)? {
-            crate::sim::world::UnitRepairAction::Repair => CursorFeedbackKind::RepairAction(true),
+        match sim.unit_repair_action(id, hover.stable_id, house, keys, rules)? {
+            crate::sim::world::UnitRepairAction::Repair => {
+                #[cfg(feature = "ares")]
+                if rules.ares() {
+                    super::ares_cursor::set_cursor(
+                        heal_cursor(),
+                        super::ares_cursor::action::GREPAIR,
+                    );
+                }
+                CursorFeedbackKind::RepairAction(true)
+            }
             crate::sim::world::UnitRepairAction::Select => CursorFeedbackKind::FriendlyUnit,
             crate::sim::world::UnitRepairAction::Move => CursorFeedbackKind::Invalid,
         },
@@ -1596,8 +1703,8 @@ pub(crate) enum ActionDistanceTarget {
 /// cell centre at height 0 when a cell was supplied, else to the target
 /// object's GetCoords.
 ///
-/// RESIDUAL: score 1 is never given. VERA has no producer for EMP (`+0x504`)
-/// or a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
+/// RESIDUAL: score 1 comes from the EMP counter (`+0x504`) alone; VERA has no
+/// producer for a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
 pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1636,6 +1743,8 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
+        } else if entity.emp_remaining() > 0 {
+            1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())
         }) {

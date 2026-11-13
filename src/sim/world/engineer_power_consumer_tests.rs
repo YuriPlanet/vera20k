@@ -361,6 +361,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             .entities
             .get_mut(PLANT)
             .unwrap()
+            .building
             .repairing
             .set_for_test(true);
         assert_joined(&sim, &rules, owner, prior);

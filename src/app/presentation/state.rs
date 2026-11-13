@@ -22,6 +22,7 @@ use crate::render::sidebar_chrome::SidebarChromeSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::tile_atlas::TileAtlas;
 use crate::render::unit_atlas::UnitAtlas;
+use crate::rules::house_colors::{RELATION_ALLY, RELATION_ENEMY, RELATION_SELF};
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 
 pub(crate) struct MatchPresentationState {
@@ -42,6 +43,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
+    /// An atlas refresh asked beside a lent tick, which the tick's tail runs
+    /// (`sim_tick::refresh_entity_atlases`).
+    pub(crate) atlas_refresh_owed: bool,
     pub(crate) overlay_atlas: Option<OverlayAtlas>,
     pub(crate) bridge_atlas: Option<BridgeAtlas>,
     pub(crate) sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
@@ -68,6 +72,20 @@ pub(crate) struct MatchPresentationState {
     /// Owner name → house color index mapping for atlas key lookups.
     pub(crate) house_color_map: HouseColorMap,
     pub(crate) house_roster: HouseRoster,
+    /// VERA "relation colours" toggle: when on, `relation_color_map` overrides
+    /// each owner's player colour with its relation to the local house (self
+    /// = blue, ally = green, enemy = red; passive houses keep their colour).
+    /// Presentation only — never simulation input, so it cannot affect
+    /// determinism, networking, or replays.
+    pub(crate) relation_colors: bool,
+    /// Owner name → effective house-colour index under the relation-colours
+    /// toggle ([`relation_house_colors`]). `None` while the toggle is off or
+    /// there is no local house, so colour sites use `house_color_map`.
+    pub(crate) relation_color_map: Option<HouseColorMap>,
+    /// Bumped every time `relation_color_map` changes, so cached renderers
+    /// (e.g. the minimap) can detect a relation-colours change and repaint even
+    /// when the simulation is paused and nothing else would trigger a redraw.
+    pub(crate) relation_color_generation: u64,
     pub(crate) lighting: super::lighting::MatchLighting,
     pub(crate) line_trails: super::line_trails::LineTrails,
     pub(crate) lasers: super::lasers::Lasers,
@@ -225,7 +243,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) beacons: crate::app::match_runtime::beacons::BeaconManager,
     /// In-scenario modal state — the port of gamemd's in-scenario state
     /// variable. Owns the in-game menu, the abort-mission confirmation and the
-    /// parent/child relationship with the `0xBBB` Options dialog.
+    /// menu's child dialogs (Sound, Keyboard, Surrender, Diplomacy).
     pub(crate) in_game_menu: crate::ui::pause_menu::InGameMenuState,
     /// `[0x822CFC]`, State_Machine's admission latch: `Main_Game` sets it at
     /// each scenario start (`0x0048CE7E`) and a confirmed Abort clears it
@@ -238,8 +256,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
     /// FF's trackbars (WOL in-game menu), recreated on every state-1 entry.
     pub(crate) internet_pause: crate::app::input::pause_menu::InternetPauseControls,
-    /// VERA's Display group (Zoom, Full Screen) in every in-game menu.
-    pub(crate) display_pause: crate::app::input::pause_menu::DisplayPauseControls,
+    /// VERA's Options pages on the in-game menu, while it is open.
+    pub(crate) options_page: Option<crate::app::input::pause_menu::InGameOptionsPage>,
+    /// The page the menu showed when it left for one of its dialogs, which it
+    /// returns to. `None` from play: Escape opens on Game Controls.
+    pub(crate) options_page_category: Option<crate::ui::main_menu_dialogs::options::Category>,
     /// What B6 init (4F1840) made of control712 when the dialog last opened;
     /// its stored results stay for that dialog's lifetime.
     pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,
@@ -257,16 +278,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) restate_text: String,
     pub(crate) saved_game_browser:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
-    /// Client-side in-game Options (0xBBB) state: the six [Options] values plus
-    /// transient interaction flags. `game_speed` mirrors the launched sim and
-    /// queues an authoritative transition on close; `sim_speed_tps` is its local
-    /// presentation readout. App/ui-level.
+    /// What BBB's init (4E1FE0) reads when the menu opens: the [Options]
+    /// values, the speed context and whether the Game Speed row shows.
+    /// `game_speed` mirrors the launched sim; a moved Game Speed on the menu's
+    /// Game Controls page queues an authoritative transition on close.
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
-    /// Laid-out 0xBBB anchor cached by the overlay render pass each frame it draws,
-    /// so the paused mouse handler hit-tests the exact rects that were rendered
-    /// (the sidebar-anchored button Y is render-derived; see KD-6). None until the
-    /// overlay first renders.
-    pub(crate) in_game_options_anchor: Option<crate::ui::shell::layout::InGameOptionsAnchor>,
 }
 
 impl MatchPresentationState {
@@ -283,5 +299,101 @@ impl MatchPresentationState {
         let bytes = assets?.get_ref("palette.pal")?;
         let palette = crate::assets::pal_file::Palette::from_bytes(bytes).ok()?;
         Some(self.surface_palette.get_or_init(|| palette))
+    }
+
+    /// The house colours drawing reads: the relation colours while that
+    /// toggle has a map, else each owner's player colour.
+    pub(crate) fn effective_house_color_map(&self) -> &HouseColorMap {
+        self.relation_color_map
+            .as_ref()
+            .unwrap_or(&self.house_color_map)
+    }
+
+    /// Bring the relation colours up to date with `sim`, as `local_owner`
+    /// sees it: when the toggle flips and after each committed frame, so an
+    /// alliance made or broken recolours that house. The generation moves
+    /// only when a colour changes.
+    pub(crate) fn rebuild_relation_color_map(
+        &mut self,
+        sim: &crate::sim::world::Simulation,
+        local_owner: Option<&str>,
+    ) {
+        let map = if self.relation_colors {
+            relation_house_colors(sim, &self.house_color_map, local_owner)
+        } else {
+            None
+        };
+        if map != self.relation_color_map {
+            self.relation_color_map = map;
+            self.relation_color_generation = self.relation_color_generation.wrapping_add(1);
+        }
+    }
+}
+
+/// Each owner's colour under the relation-colours toggle, as `local_owner`
+/// sees the houses: its own blue, its allies green, everyone else red.
+/// Passive houses (civilians, tech buildings) and owners the world does not
+/// know keep their own colour. `None` without a local house: an observer's
+/// houses keep their player colours.
+pub(crate) fn relation_house_colors(
+    sim: &crate::sim::world::Simulation,
+    house_colors: &HouseColorMap,
+    local_owner: Option<&str>,
+) -> Option<HouseColorMap> {
+    let local = local_owner?;
+    let allied = crate::map::houses::ally_test(sim.house_alliances().as_map(), local);
+    Some(
+        house_colors
+            .iter()
+            .map(|(owner, &color)| {
+                let passive = sim.interner().get(owner.as_str()).is_none_or(|id| {
+                    sim.houses()
+                        .get(&id)
+                        .is_some_and(|house| house.multiplay_passive())
+                }) || owner.eq_ignore_ascii_case("Neutral");
+                let color = if passive {
+                    color
+                } else if owner.eq_ignore_ascii_case(local) {
+                    RELATION_SELF
+                } else if allied(owner.as_str()) {
+                    RELATION_ALLY
+                } else {
+                    RELATION_ENEMY
+                };
+                (owner.clone(), color)
+            })
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod relation_colour_tests {
+    use super::*;
+    use crate::rules::house_colors::HouseColorIndex;
+    use crate::sim::house_state::HouseState;
+    use crate::sim::world::Simulation;
+
+    /// Passive houses keep their own colour, and an observer, with no house
+    /// of its own, sees every player colour unchanged.
+    #[test]
+    fn relation_colours_spare_passive_houses_and_observers() {
+        let mut sim = Simulation::with_seed(1);
+        let mut colors = HouseColorMap::new();
+        for (index, name) in ["Player", "Friend", "Foe", "Civ"].into_iter().enumerate() {
+            let id = sim.intern(name);
+            let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+            house.set_multiplay_passive_for_test(name == "Civ");
+            sim.register_house(house);
+            colors.insert(name.to_owned(), HouseColorIndex(index as u8 + 3));
+        }
+        sim.house_alliances_mut_for_test()
+            .insert("PLAYER".into(), ["FRIEND".into()].into());
+
+        let seen = relation_house_colors(&sim, &colors, Some("Player")).unwrap();
+        assert_eq!(seen["Player"], RELATION_SELF);
+        assert_eq!(seen["Friend"], RELATION_ALLY);
+        assert_eq!(seen["Foe"], RELATION_ENEMY);
+        assert_eq!(seen["Civ"], colors["Civ"]);
+        assert_eq!(relation_house_colors(&sim, &colors, None), None);
     }
 }

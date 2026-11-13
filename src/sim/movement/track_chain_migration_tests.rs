@@ -162,7 +162,7 @@ fn production_chain_code3_opens_gate_without_consuming_the_queue() {
         CANDIDATE.1,
         EntityCategory::Structure,
     );
-    gate.building_gate = Some(BuildingGateRuntime::default());
+    gate.building.building_gate = Some(BuildingGateRuntime::default());
     gate.lifecycle.set_object_alive_for_test(true);
     gate.lifecycle.set_in_limbo_for_test(false);
     gate.lifecycle.set_cell_marked_for_test(true);

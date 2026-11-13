@@ -16,6 +16,7 @@ mod search_table;
 pub mod path_smooth;
 
 // Terrain and movement costs
+pub mod drive_distance;
 pub mod passability;
 pub mod terrain_speed;
 

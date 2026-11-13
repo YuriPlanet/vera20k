@@ -128,6 +128,7 @@ fn actual_signed_object_commit_matches_original_packet_results_and_callbacks() {
             input["kind"] == "building" && input["can_c4"] == false,
             0.25,
             false,
+            crate::rules::ARES_BUILD,
         );
         drop(host);
         assert_eq!(

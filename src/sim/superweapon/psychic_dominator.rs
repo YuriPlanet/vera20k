@@ -231,7 +231,8 @@ pub(super) fn process(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     // Ares hook 53AF40 (10037B40) skips the stock Process; its state
-    // machine (10070BA0) runs in its place.
+    // machine (10070BA0) runs in its place. On the build like the Ares
+    // launch and AbortFire in `fire.rs` that start this state.
     if cfg!(feature = "ares") {
         #[cfg(feature = "ares")]
         return ares_process(sim, rules, overlay_registry, frame_effects);

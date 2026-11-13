@@ -7,8 +7,9 @@
 //! saved order is restored verbatim.
 //!
 //! Dependency rules: part of sim/ — depends only on std, serde, the crate's
-//! lookup hasher and the live-read check switch.
+//! lookup hasher, the live-read check switch and the world's [`ObjectKind`].
 
+use super::substrate::ObjectKind;
 use crate::util::lookup_hash::LookupMap;
 
 /// `ObjectClass+0x98`, IsInLogic: the object is in LogicClass's active vector.
@@ -47,9 +48,10 @@ impl LogicMembership {
 pub struct LogicVector {
     order: Vec<u64>,
     /// VERA-only: where [`Self::remove_first`] finds an id's first slot
-    /// without walking the order. `order` is the source of truth; every
-    /// writer below keeps this beside it, and a load or test order rebuilds
-    /// it ([`Self::from_order`]). Never saved or hashed.
+    /// without walking the order, and the kind its registration named
+    /// ([`Self::kind_of`]). `order` is the source of truth; every writer
+    /// below keeps this beside it, and a load or test order rebuilds it
+    /// ([`Self::from_order`]). Never saved or hashed.
     slots: SlotIndex,
     /// Deterministic seam for the lifecycle transaction's append-failure test.
     /// Never exists in production builds and is never serialized.
@@ -64,14 +66,24 @@ struct SlotIndex {
     /// Each slot's append number, beside `order`. An append takes the next
     /// number and a removal keeps the others', so the column ascends.
     appended: Vec<u64>,
-    /// Each stored id's first slot's append number.
-    first: LookupMap<u64, u64>,
+    /// Each stored id's first slot.
+    first: LookupMap<u64, FirstSlot>,
     /// Slots whose id an earlier slot holds. Registration is gated on the
     /// membership flag and a load rejects a repeated id, so only fixtures
     /// make one; the removal of an id with a repeat walks to its next slot.
     repeats: usize,
     /// The next append's number.
     next: u64,
+}
+
+/// An id's first slot, and the kind its registration named.
+#[derive(Debug, Clone, Copy)]
+struct FirstSlot {
+    /// The slot's append number.
+    number: u64,
+    /// The store the id's registration found it in; `None` after a load or
+    /// a test order until [`LogicVector::note_kind`].
+    kind: Option<ObjectKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +105,8 @@ impl LogicVector {
     /// gamemd-derived: active YR's unsorted LogicClass path calls
     /// `LayerClass__Insert @ 0x005519B0` with a zero sort argument, which
     /// appends the new element at the current tail after capacity succeeds.
-    pub(crate) fn try_push(&mut self, id: u64) -> Result<(), LogicInsertError> {
+    /// `kind` is the store that holds `id`, kept for [`Self::kind_of`].
+    pub(crate) fn try_push(&mut self, id: u64, kind: ObjectKind) -> Result<(), LogicInsertError> {
         #[cfg(any(test, feature = "test-support"))]
         if std::mem::take(&mut self.fail_next_insert) {
             return Err(LogicInsertError::ForcedTestFailure);
@@ -104,7 +117,7 @@ impl LogicVector {
         self.slots.appended.try_reserve(1).map_err(capacity)?;
         self.slots.first.try_reserve(1).map_err(capacity)?;
         self.order.push(id);
-        self.slots.append(id);
+        self.slots.append(id, Some(kind));
         Ok(())
     }
 
@@ -117,7 +130,7 @@ impl LogicVector {
     /// instead of a walk; debug builds check it against the walk (the
     /// live-read check).
     pub(crate) fn remove_first(&mut self, id: u64) -> bool {
-        let Some(number) = self.slots.first.remove(&id) else {
+        let Some(first) = self.slots.first.remove(&id) else {
             debug_assert!(
                 !crate::sim::touch_log::live_read_check_enabled() || !self.order.contains(&id),
                 "the Logic slot index misses {id}, which the order holds"
@@ -127,7 +140,7 @@ impl LogicVector {
         let index = self
             .slots
             .appended
-            .binary_search(&number)
+            .binary_search(&first.number)
             .expect("an id's first slot is stored");
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled()
@@ -139,9 +152,13 @@ impl LogicVector {
         if self.slots.repeats > 0
             && let Some(offset) = self.order[index..].iter().position(|&other| other == id)
         {
-            self.slots
-                .first
-                .insert(id, self.slots.appended[index + offset]);
+            self.slots.first.insert(
+                id,
+                FirstSlot {
+                    number: self.slots.appended[index + offset],
+                    kind: first.kind,
+                },
+            );
             self.slots.repeats -= 1;
         }
         true
@@ -151,13 +168,29 @@ impl LogicVector {
     fn from_order(order: Vec<u64>) -> Self {
         let mut slots = SlotIndex::default();
         for &id in &order {
-            slots.append(id);
+            slots.append(id, None);
         }
         Self {
             order,
             slots,
             #[cfg(any(test, feature = "test-support"))]
             fail_next_insert: false,
+        }
+    }
+
+    /// The kind `id`'s registration named, if `id` is in the order and that
+    /// is known. VERA-only: a hint that spares
+    /// [`Simulation::classify_object`](super::Simulation::classify_object)
+    /// probing every store; it confirms the hint with that kind's store.
+    pub(crate) fn kind_of(&self, id: u64) -> Option<ObjectKind> {
+        self.slots.first.get(&id).and_then(|first| first.kind)
+    }
+
+    /// Record the kind of `id`, which the order holds since a load or a test
+    /// order ([`Self::from_order`] knows no kinds).
+    pub(crate) fn note_kind(&mut self, id: u64, kind: ObjectKind) {
+        if let Some(first) = self.slots.first.get_mut(&id) {
+            first.kind = Some(kind);
         }
     }
 
@@ -204,11 +237,14 @@ impl<'de> serde::Deserialize<'de> for LogicVector {
 
 impl SlotIndex {
     /// Number a slot appended for `id`.
-    fn append(&mut self, id: u64) {
+    fn append(&mut self, id: u64, kind: Option<ObjectKind>) {
         self.appended.push(self.next);
         match self.first.entry(id) {
             std::collections::hash_map::Entry::Vacant(first) => {
-                first.insert(self.next);
+                first.insert(FirstSlot {
+                    number: self.next,
+                    kind,
+                });
             }
             std::collections::hash_map::Entry::Occupied(_) => self.repeats += 1,
         }
@@ -219,6 +255,25 @@ impl SlotIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An id's kind lasts while the id is in the order, moves to its repeat,
+    /// and is unknown after a load until noted.
+    #[test]
+    fn the_kind_follows_the_id_through_removal_and_load() {
+        let mut v = LogicVector::new();
+        v.try_push(1, ObjectKind::Projectile).unwrap();
+        v.try_push(2, ObjectKind::Anim).unwrap();
+        assert_eq!(v.kind_of(1), Some(ObjectKind::Projectile));
+        assert!(v.remove_first(1));
+        assert_eq!(v.kind_of(1), None);
+        assert_eq!(v.kind_of(2), Some(ObjectKind::Anim));
+
+        let mut loaded: LogicVector = serde_json::from_str("[7, 7]").unwrap();
+        assert_eq!(loaded.kind_of(7), None);
+        loaded.note_kind(7, ObjectKind::Wave);
+        assert!(loaded.remove_first(7));
+        assert_eq!(loaded.kind_of(7), Some(ObjectKind::Wave));
+    }
 
     #[test]
     fn unregister_removes_only_first_matching_slot() {
@@ -234,10 +289,10 @@ mod tests {
     fn remove_first_finds_the_first_slot_through_appends_removals_and_loads() {
         let mut v = LogicVector::new();
         for id in 1..=5 {
-            v.try_push(id).unwrap();
+            v.try_push(id, ObjectKind::Entity).unwrap();
         }
         assert!(v.remove_first(3));
-        v.try_push(3).unwrap();
+        v.try_push(3, ObjectKind::Entity).unwrap();
         assert!(v.remove_first(1));
         assert!(!v.remove_first(1));
         assert!(v.remove_first(4));
@@ -248,7 +303,7 @@ mod tests {
         assert!(loaded.remove_first(3));
         assert!(loaded.remove_first(7));
         assert_eq!(loaded.snapshot(), [2, 7]);
-        loaded.try_push(7).unwrap();
+        loaded.try_push(7, ObjectKind::Entity).unwrap();
         assert!(loaded.remove_first(7));
         assert_eq!(loaded.snapshot(), [2, 7]);
     }

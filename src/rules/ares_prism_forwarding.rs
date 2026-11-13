@@ -100,6 +100,7 @@ impl PrismForwardingRules {
         prism_type: Option<&str>,
         targets: Option<Vec<String>>,
     ) -> bool {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if !self.initialized {
             self.initialized = true;
             if prism_type == Some(type_id) {
@@ -242,6 +243,7 @@ mod tests {
     /// below 1 becomes 1 (`10010680`).
     #[test]
     fn prism_type_seeds_the_tower_and_disabled_towers_skip_the_keys() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[TWR]\nPrismForwarding.MaxFeeds=3\n\
              [OTHER]\nPrismForwarding.MaxFeeds=3\n\
@@ -270,6 +272,7 @@ mod tests {
     /// rules pass, where CombatDamage follows the types.
     #[test]
     fn support_weapon_takes_a_free_slot_and_the_c4_warhead() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
         let mut layers = RulesLayerStack::new(IniFile::from_str(

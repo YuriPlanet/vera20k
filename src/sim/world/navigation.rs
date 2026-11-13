@@ -97,7 +97,7 @@ pub(super) fn structure_blocked_among(
 }
 
 pub(super) struct NavigationCaches<'a> {
-    pub(super) zones: &'a mut Option<crate::util::shared::Shared<ZoneGrid>>,
+    pub(super) zones: &'a mut Option<ZoneGrid>,
     pub(super) path: &'a mut Option<Arc<PathGrid>>,
     /// The live overlay surface the path projection reads for bridge sprites.
     pub(super) overlays: Option<&'a OverlayGrid>,
@@ -117,8 +117,7 @@ impl NavigationCaches<'_> {
         let cell = terrain
             .cell(coord.0, coord.1)
             .ok_or("Recalc cell is outside terrain")?;
-        // Only a changed cell takes the grid mutably, which copies it while
-        // a presentation frame shares it (docs/sim-thread.md).
+        // Only a changed cell rewrites the grid.
         if let Some(zones) = self.zones.as_mut()
             && !zones.base_cell_attributes_current(terrain, coord.0, coord.1)
         {

@@ -39,6 +39,7 @@ fn weapon_wave_visible(
 #[cfg(feature = "ares")]
 pub(crate) fn ares_wave_blend(
     sim: &Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     rules: &crate::rules::ruleset::RuleSet,
     house_colors: &crate::map::houses::HouseColorMap,
     wave: &crate::sim::wave::Wave,
@@ -49,7 +50,7 @@ pub(crate) fn ares_wave_blend(
     };
     let owner_rgb = wave
         .owner_id()
-        .and_then(|owner| sim.entities().get(owner))
+        .and_then(|owner| frame.object(owner))
         .map(|owner| {
             let index = house_colors
                 .get(sim.interner().resolve(owner.owner()))

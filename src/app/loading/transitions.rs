@@ -295,6 +295,9 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.overlay_names = assets.overlay_names;
     state.match_state.match_presentation.overlay_radar_colors = assets.overlay_radar_colors;
     state.match_state.match_presentation.house_color_map = assets.house_color_map;
+    // VERA relation colours start each scenario off, in the player colours.
+    state.match_state.match_presentation.relation_colors = false;
+    state.match_state.match_presentation.relation_color_map = None;
     state.match_state.match_presentation.house_roster = map.house_roster;
     state.process_assets.csf = assets.csf;
     state.match_state.match_presentation.theater_name = map.theater_name;
@@ -584,6 +587,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             simulation.publish_scenario_started();
             simulation.batch_path_searches();
             simulation.batch_target_scans();
+            simulation.sleep_idle_objects_in_match();
             crate::sim::runtime::SimRuntime {
                 simulation,
                 resources: crate::sim::runtime::SimResources {
@@ -824,8 +828,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // playable match. Its diagnostics owner blocks every tick/input.
             Ok(())
         }
-        crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { .. }
-        | crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {
+        crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { session, .. } => {
+            state.match_state.startup.install_legacy(session);
+            Ok(())
+        }
+        crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {
             state.match_state.startup.clear();
             Ok(())
         }

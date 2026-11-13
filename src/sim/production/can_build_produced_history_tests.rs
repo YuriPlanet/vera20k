@@ -236,7 +236,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                 };
                 // These answers execute the complete stock gamemd CanBuild;
                 // Ares's replaced factory/limit path has its own executed corpus.
-                if !crate::rules::ARES_ENABLED {
+                if !crate::rules::ARES_BUILD {
                     for control in query["can_build"].as_array().unwrap() {
                         let args = control["args"].as_array().unwrap();
                         let answer = can_build(
@@ -255,11 +255,14 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                         assert_eq!(answer, int(&control["answer"]), "{context}: {name}");
                     }
                 }
-                assert_eq!(
-                    check_build_limit(&sim, &rules, owner, obj),
-                    query["check_build_limit"].as_bool().unwrap(),
-                    "{context}: {name}"
-                );
+                // Ares hook 0x50B370 (10024F80) replaces CheckBuildLimit too.
+                if !crate::rules::ARES_BUILD {
+                    assert_eq!(
+                        check_build_limit(&sim, &rules, owner, obj),
+                        query["check_build_limit"].as_bool().unwrap(),
+                        "{context}: {name}"
+                    );
+                }
             }
             compared_phases += 1;
         }

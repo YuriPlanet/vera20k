@@ -37,6 +37,8 @@ const DEFAULT_MIN_ANGULAR_VELOCITY: NativeF64Bits = NativeF64Bits::POSITIVE_ZERO
 /// Constructor literal `0x3FC656ED_1CE64946`, written at74ADC4/74AE01.
 /// The reader's separate degree conversion must use its own file constant.
 const DEFAULT_MAX_ANGULAR_VELOCITY: NativeF64Bits = NativeF64Bits::from_bits(0x3fc6_56ed_1ce6_4946);
+pub(crate) const DEFAULT_ANGULAR_VELOCITIES: [NativeF64Bits; 2] =
+    [DEFAULT_MIN_ANGULAR_VELOCITY, DEFAULT_MAX_ANGULAR_VELOCITY];
 const DEFAULT_MIN_Z_VEL: f64 = 3.5;
 const DEFAULT_MAX_Z_VEL: f64 = 5.0;
 const DEFAULT_MAX_XY_VEL: f64 = 15.0;
@@ -111,6 +113,7 @@ pub struct VoxelAnimType {
     pub share_body_data: bool,
     pub share_turret_data: bool,
     pub share_barrel_data: bool,
+    pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
 
 impl VoxelAnimType {
@@ -148,6 +151,7 @@ impl VoxelAnimType {
             share_body_data: false,
             share_turret_data: false,
             share_barrel_data: false,
+            model_slots: Default::default(),
         }
     }
 
@@ -165,10 +169,10 @@ impl VoxelAnimType {
         out.duration = section.read_int("Duration", out.duration);
 
         out.elasticity = section.read_double_bits("Elasticity", out.elasticity);
-        out.min_angular_velocity =
-            read_angular_velocity(section, "MinAngularVelocity", out.min_angular_velocity);
-        out.max_angular_velocity =
-            read_angular_velocity(section, "MaxAngularVelocity", out.max_angular_velocity);
+        [out.min_angular_velocity, out.max_angular_velocity] = read_angular_velocities(
+            section,
+            [out.min_angular_velocity, out.max_angular_velocity],
+        );
         out.min_z_vel = section.read_double_bits("MinZVel", out.min_z_vel);
         out.max_z_vel = section.read_double_bits("MaxZVel", out.max_z_vel);
         out.max_xy_vel = section.read_double_bits("MaxXYVel", out.max_xy_vel);
@@ -210,6 +214,19 @@ impl VoxelAnimType {
 /// value, including a previous contact write. Shared by cold and retained reads.
 pub(crate) fn read_damage(section: &IniSection, current: i32) -> i32 {
     section.read_int("Damage", current)
+}
+
+/// VoxelAnimTypeReadINI74B107..167 runs these reads on every reached body,
+/// with literal -1 defaults; zero alone preserves the previous type value.
+/// Both cold and ordered loading use the same sentinel/conversion owner.
+pub(crate) fn read_angular_velocities(
+    section: &IniSection,
+    current: [NativeF64Bits; 2],
+) -> [NativeF64Bits; 2] {
+    [
+        read_angular_velocity(section, "MinAngularVelocity", current[0]),
+        read_angular_velocity(section, "MaxAngularVelocity", current[1]),
+    ]
 }
 
 /// The two angular-velocity keys, including native's sentinel bug.

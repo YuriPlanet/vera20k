@@ -37,10 +37,15 @@ impl PowerHealthSample {
         self.0
     }
 
+    /// Whether [`Self::sample`] of `current` changes the sample.
+    pub(crate) const fn differs(self, current: i32) -> bool {
+        self.0 != current
+    }
+
     /// Sample `current`: answers whether it changed, which invalidates the
     /// owning House's power.
     pub(crate) fn sample(&mut self, current: i32) -> bool {
-        if self.0 == current {
+        if !self.differs(current) {
             return false;
         }
         self.0 = current;
@@ -94,7 +99,6 @@ pub struct PowerState {
     /// House+5779 receiver.
     radar_available: bool,
     /// Ares HouseExt power the Battery super weapon lends.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares: AresHousePower,
 }
@@ -106,7 +110,6 @@ pub struct PowerState {
 /// active battery's BuildingType. Trigger action 0x92 also adds AuxPower
 /// ([`PowerState::add_aux_power`]); script action 0x41 does natively but is
 /// not ported.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresHousePower {
     aux_power: i32,
@@ -133,7 +136,6 @@ impl Default for PowerState {
             radar_dirty: true,
             radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
             radar_available: false,
-            #[cfg(feature = "ares")]
             ares: AresHousePower::default(),
         }
     }
@@ -289,7 +291,6 @@ impl PowerState {
             self.radar_outage_timer.hash(hasher);
         }
         // Likewise a House no battery ever reached.
-        #[cfg(feature = "ares")]
         if self.ares != AresHousePower::default() {
             b"ares-house-power-v1".hash(hasher);
             self.ares.hash(hasher);
@@ -314,7 +315,6 @@ impl PowerState {
     /// Ares trigger action 0x92 (TActionExt::Execute 100396C0, hook
     /// 0x6DD8D7): HouseExt AuxPower += the action's Value2, then
     /// RecheckPower (House+5778).
-    #[cfg(feature = "ares")]
     pub(crate) fn add_aux_power(&mut self, power: i32) {
         self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
         self.invalidate(false);
@@ -351,7 +351,6 @@ impl PowerState {
     }
 
     /// BatteryKeepOnline holds this BuildingType (hook4555D5, 100140B0).
-    #[cfg(feature = "ares")]
     pub(crate) fn keeps_online(&self, building_type: &str) -> bool {
         self.ares
             .keep_online
@@ -527,7 +526,7 @@ pub(crate) fn building_power_drain(
         return 0;
     };
     let mut drain = native_building_power_drain(object.power);
-    if entity.gap_generator.supercharged() {
+    if entity.building.gap_generator.supercharged() {
         drain = drain.wrapping_add(object.extra_power.drain());
     }
     let upgrades = entity.building_upgrades();
@@ -1073,7 +1072,7 @@ fn radar_provider_available(
         // nonzero counter still ends the scan as508F12 does.
         #[cfg(feature = "ares")]
         {
-            if entity.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+            if entity.ares.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
                 continue;
             }
             if entity.emp_remaining() != 0 {

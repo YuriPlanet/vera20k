@@ -285,9 +285,9 @@ fn declared_cameo_comes_from_the_rules_image_section_before_the_type_section() {
     assert_eq!(reg.resolve_declared_cameo_id("UNKNOWN", "FOO"), "FOO");
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn pcx_cameos_read_only_the_rules_image_art_section() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[TYPE]\nCameoPCX=wrong-type.pcx\n\
          [IMAGE]\nImage=BODY\nCameoPCX=Normal.PCX\nAltCameoPCX=Elite.PCX\n\
@@ -1529,9 +1529,9 @@ fn retail_metadata_entries_match_the_full_resolution() {
 /// Ares art palettes read as named (CustomPalette::LoadFromINI): the
 /// AnimTypeExt `CustomPalette` (1000A4B0) and the TechnoTypeExt
 /// `CameoPalette` (1003DFB0, from ImageFile); an empty value keeps none.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_art_palettes_keep_the_named_file() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = ArtRegistry::from_ini(&IniFile::from_str(
         "[FIRE]\nCustomPalette=fire~~~.pal\n[SMOKE]\nCustomPalette=\n\
          [MTNK]\nCameoPalette=cameo2.pal\n[HTNK]\nImage=MTNK\n[E1]\nCameo=E1ICON\n",

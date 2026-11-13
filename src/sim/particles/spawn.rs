@@ -367,6 +367,14 @@ impl Simulation {
             owner_fire_link: false,
             alive: true,
             in_limbo: false,
+            // Ares 3.0 ParticleSystemClass_CTOR (Ares.dll 10028D10, hook
+            // 0x62DF05 at the constructor's end) allocates the extension,
+            // whose constructor (100267E0) picks Ares' own simulation.
+            ares: rules
+                .ares()
+                .then(|| super::ares_system::AresParticleSystemExt::for_system(pst, rules))
+                .flatten()
+                .map(Box::new),
         };
         debug_assert!(
             !self.substrate.entities.contains(stable_id)
@@ -609,6 +617,12 @@ pub(super) fn spawn_particle(
     rules: &RuleSet,
     sim: &mut Simulation,
 ) -> bool {
+    // Ares 3.0 ParticleSystemClass_SpawnParticle (Ares.dll 100290B0, hook
+    // 0x62E380 at the entry, returning to its `ret 8` at 0x62E428): a system
+    // Ares simulates constructs no ParticleClass.
+    if sys.ares.is_some() {
+        return false;
+    }
     let pst = rules.particle_system_type(sys.type_id);
     let Some(pt_id) = pst.holds_what else {
         return false;
@@ -1047,6 +1061,9 @@ mod tests {
         assert_eq!(sys.facing, 0x1D);
     }
 
+    // A Smoke system holding a Smoke (or behaviour-less) type is simulated by
+    // Ares, whose SpawnParticle hook (0x62E380) builds no ParticleClass.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn explicit_particle_birth_has_no_ai_particle_cap_gate() {
         let rules = build_rules("Smoke", 3);
@@ -1112,6 +1129,9 @@ mod tests {
         assert_eq!(sim.particle_rng().state(), reference.state());
     }
 
+    // A Smoke system holding a Smoke (or behaviour-less) type is simulated by
+    // Ares, whose SpawnParticle hook (0x62E380) builds no ParticleClass.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn spawn_particle_constructs_empty_named_type_when_holds_what_unset() {
         // ParticleSystemTypeReadINI64430F binds the empty-named ParticleType.

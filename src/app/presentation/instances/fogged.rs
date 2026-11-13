@@ -44,7 +44,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         rules: &runtime.resources.rules,
         atlas,
         lighting: presentation.lighting.grid(),
-        house_colors: &presentation.house_color_map,
+        house_colors: presentation.effective_house_color_map(),
         axis: super::depth_axis(state),
         building_zshape: presentation.building_zshape.is_some(),
         detail_level: presentation.in_game_options.detail_level as i32,

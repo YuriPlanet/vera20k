@@ -844,7 +844,6 @@ pub(crate) fn resolved_unit_in_range(
                 overlay_grid: sim.overlay_grid(),
                 overlay_registry,
                 alliances: Some(sim.house_alliances()),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
             selection_target,
@@ -911,6 +910,59 @@ struct AttackDispatch {
     select_fallback: bool,
 }
 
+/// The keys a healer's object action reads ([`crate::sim::world::HealArmKeys`]):
+/// Alt, the ForceMove binding (held for Ctrl+Alt too), and the admitted
+/// Ctrl+Alt GuardArea base action ([`object_key_action`]).
+pub(super) fn heal_arm_keys(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> crate::sim::world::HealArmKeys {
+    crate::sim::world::HealArmKeys {
+        force_move: matches!(
+            modifier,
+            OrderModifier::ForceMove | OrderModifier::GuardArea
+        ) || (modifier == OrderModifier::AttackMove && force_move_key),
+        guard_area: object_key_action(
+            sim,
+            rules,
+            actor,
+            target,
+            Some(target),
+            modifier,
+            force_move_key,
+        ) == Some(ObjectKeyAction::GuardArea),
+    }
+}
+
+/// A healer's object action: a Unit's repair arm
+/// ([`crate::sim::world::Simulation::unit_repair_action`]) or, with `ares`,
+/// an Infantryman's Heal (`ares_infantry_heal_action`), which its
+/// ClickedAction (`0x0051F190`) sends as the same Attack.
+pub(super) fn healer_object_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    issuing_house: InternedId,
+    keys: crate::sim::world::HealArmKeys,
+) -> Option<crate::sim::world::UnitRepairAction> {
+    if rules.ares()
+        && sim
+            .entities()
+            .get(actor)
+            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
+    {
+        return sim
+            .ares_infantry_heal_action(actor, target, issuing_house, keys, rules)
+            .map(|_| crate::sim::world::UnitRepairAction::Repair);
+    }
+    sim.unit_repair_action(actor, target, issuing_house, keys, rules)
+}
+
 /// Unit73FD7C's post-processing precedes the generic friendly selection and
 /// Ctrl attack paths. Selection/keyboard and mission promotion stay with their
 /// existing owners. Shift and one selected object's self action precede
@@ -951,14 +1003,17 @@ fn unit_repair_branch_orders(
     if friendly
         && matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove)
         && !cursor_owner(sim, rules, current_objects, target.stable_id).is_some_and(|id| {
-            sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
+            let keys = heal_arm_keys(sim, rules, id, target.stable_id, modifier, force_move_key);
+            healer_object_action(sim, rules, id, target.stable_id, issuing_house, keys)
                 == Some(UnitRepairAction::Repair)
         })
     {
         return output;
     }
     for &id in receivers {
-        let Some(action) = sim.unit_repair_action(id, target.stable_id, issuing_house, rules)
+        let keys = heal_arm_keys(sim, rules, id, target.stable_id, modifier, force_move_key);
+        let Some(action) =
+            healer_object_action(sim, rules, id, target.stable_id, issuing_house, keys)
         else {
             continue;
         };
@@ -2087,8 +2142,13 @@ fn berserk_selection_click(
     let action = if action_zero {
         ReleaseAction::Zero
     } else if hover.is_some_and(|target| {
-        sim.unit_repair_action(best_id, target.stable_id, issuing_house, rules)
-            == Some(crate::sim::world::UnitRepairAction::Select)
+        sim.unit_repair_action(
+            best_id,
+            target.stable_id,
+            issuing_house,
+            crate::sim::world::HealArmKeys::default(),
+            rules,
+        ) == Some(crate::sim::world::UnitRepairAction::Select)
     }) {
         ReleaseAction::Select
     } else {
@@ -2190,7 +2250,7 @@ pub(crate) fn try_queue_context_order(
         // selection's size see every selected object. Orders go only to the
         // objects whose ClickedAction can still send one.
         let current_objects = selected_ids;
-        let selected_ids = sim.click_order_receivers(&current_objects);
+        let selected_ids = sim.click_order_receivers(&current_objects, resources.rules.ares());
 
         let mut selected_units: Vec<u64> = Vec::new();
 
@@ -2315,6 +2375,33 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
+        #[cfg(feature = "ares")]
+        if let Some(release) = ares_deactivated_selection_click(
+            sim,
+            &resources.rules,
+            &current_objects,
+            hover.as_ref(),
+            (target_rx, target_ry),
+        ) {
+            return match release {
+                // Detonate passes the ClickedAction refusal (0x4D74EC).
+                Err(bombed) => {
+                    if let Some(record) = sim.encode_detonate_record(bombed) {
+                        queued.push(CommandEnvelope::new(
+                            owner_id,
+                            execute_tick,
+                            Command::SynchronizedRecord { record },
+                        ));
+                    }
+                    finish_order(state, queued, None, rally_announce, None)
+                }
+                Ok(LeftRelease::Dispatch) => {
+                    finish_order(state, queued, speaker_id, rally_announce, None)
+                }
+                Ok(LeftRelease::Nothing) => true,
+                Ok(LeftRelease::Select) => false,
+            };
+        }
         if selected_ids.is_empty() {
             return match berserk_selection_click(
                 sim,
@@ -3279,8 +3366,9 @@ fn formation_units(
     sim: &crate::sim::world::Simulation,
     current_objects: &[u64],
     place: impl Fn(&crate::sim::game_entity::GameEntity) -> (i32, i32),
+    ares: bool,
 ) -> Vec<(u64, (i32, i32))> {
-    sim.click_order_receivers(current_objects)
+    sim.click_order_receivers(current_objects, ares)
         .into_iter()
         .filter_map(|id| {
             let entity = sim.entities().get(id)?;
@@ -3301,7 +3389,13 @@ pub(crate) fn formation_unit_count(state: &AppState) -> usize {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    formation_units(&rt.simulation, &current_objects, standing_cell).len()
+    formation_units(
+        &rt.simulation,
+        &current_objects,
+        standing_cell,
+        rt.resources.rules.ares(),
+    )
+    .len()
 }
 
 /// The cell a unit stands on.
@@ -3369,7 +3463,7 @@ pub(crate) fn queue_formation_line(
     let sim = &rt.simulation;
     let owner_id: InternedId = sim.interner().get(&owner).unwrap_or_default();
     let execute_tick = sim.session().tick();
-    let units = formation_units(sim, &current_objects, standing_cell);
+    let units = formation_units(sim, &current_objects, standing_cell, resources.rules.ares());
     if units.len() < 2 {
         return false;
     }
@@ -3458,7 +3552,12 @@ pub(crate) fn toggle_formation_lock(state: &mut AppState) {
         return;
     };
     let sim = &rt.simulation;
-    let units = formation_units(sim, &current_objects, heading_cell);
+    let units = formation_units(
+        sim,
+        &current_objects,
+        heading_cell,
+        rt.resources.rules.ares(),
+    );
     let ids: Vec<u64> = units.iter().map(|&(id, _)| id).collect();
     let locks = &mut state.match_state.input.formation_locks;
     locks.retain(|id| sim.entities().get(id).is_some());
@@ -3631,7 +3730,7 @@ pub(super) fn self_detonates(
     // let Detonate through (0x51F1D8, 0x7388EB, 0x4D74EC: 10056BF0,
     // 10056DA0, 1004CBC0).
     let exits = |entity: &crate::sim::game_entity::GameEntity| {
-        !cfg!(feature = "ares") && (entity.berserk.is_active() || entity.is_warped_out())
+        !rules.ares() && (entity.berserk.is_active() || entity.is_warped_out())
     };
     selected_ids == [target]
         && sim.entities().get(target).is_some_and(|entity| {
@@ -3641,6 +3740,98 @@ pub(super) fn self_detonates(
             ) && !exits(entity)
         })
         && sim.bomb_detonate_action(target, rules)
+}
+
+/// What a Deactivated (`+0x1C8`) object answers over an object.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AresDeactivatedAction {
+    Detonate,
+    Select,
+    None,
+}
+
+/// Ares hooks at the head of each class What_Action over an object (Unit
+/// `0x73FD5A`, Infantry `0x51E440`, Aircraft `0x417CCB`, Building
+/// `0x447218`; Ares.dll `1004CF50`, `1004CC30`, `1004CB00`, `1004CB70`):
+/// a Deactivated `actor` answers `TechnoExt::GetDeactivatedAction @
+/// 10044AD0` alone, None when it is not Deactivated. Detonate over itself as
+/// the lone selection when its bomb may be set off ([`self_detonates`]),
+/// Select over an allied (`HouseClass::IsAlliedWith`) selectable object,
+/// else 0.
+#[cfg(feature = "ares")]
+pub(super) fn ares_deactivated_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    actor: u64,
+    target: u64,
+) -> Option<AresDeactivatedAction> {
+    let actor = sim
+        .entities()
+        .get(actor)
+        .filter(|actor| actor.deactivated.is_offline())?;
+    Some(if self_detonates(sim, rules, selected, target) {
+        AresDeactivatedAction::Detonate
+    } else if sim.entities().get(target).is_some_and(|target| {
+        sim.house_alliances()
+            .is_allied(sim.interner(), actor.owner(), target.owner())
+    }) && sim.object_is_selectable(target, rules)
+    {
+        AresDeactivatedAction::Select
+    } else {
+        AresDeactivatedAction::None
+    })
+}
+
+/// The left release when the selection's cursor owner
+/// ([`crate::app::input::cursor::select_best_for_action`]) is Deactivated:
+/// DetermineAction takes its action for the whole selection (`0x00692634`,
+/// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
+/// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
+/// the other two reach [`left_release`], so no object receives an order.
+#[cfg(feature = "ares")]
+fn ares_deactivated_selection_click(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    current_objects: &[u64],
+    hover: Option<&HoverTargetKindWithId>,
+    cell: (u16, u16),
+) -> Option<Result<LeftRelease, u64>> {
+    use crate::app::input::cursor::ActionDistanceTarget;
+    let target = hover.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |target| {
+        ActionDistanceTarget::Object(target.stable_id)
+    });
+    let best = crate::app::input::cursor::select_best_for_action(
+        sim,
+        current_objects,
+        target,
+        Some(rules),
+    )?;
+    let Some(target) = hover else {
+        return sim
+            .entities()
+            .get(best)
+            .is_some_and(|best| best.deactivated.is_offline())
+            .then_some(Ok(LeftRelease::Nothing));
+    };
+    Some(
+        match ares_deactivated_action(sim, rules, current_objects, best, target.stable_id)? {
+            AresDeactivatedAction::Detonate => Err(target.stable_id),
+            AresDeactivatedAction::Select => Ok(left_release(
+                sim,
+                rules,
+                ReleaseAction::Select,
+                Some(target.stable_id),
+            )),
+            AresDeactivatedAction::None => Ok(left_release(
+                sim,
+                rules,
+                ReleaseAction::Zero,
+                Some(target.stable_id),
+            )),
+        },
+    )
 }
 
 /// The command a click on the one selected object issues when it clicks
@@ -3681,6 +3872,18 @@ pub(super) fn self_click_command(
     let target = hover?;
     if planning_refuses_self(sim, local_owner, selected_ids, target, planning)
         || self_is_warped_out(sim, target)
+    {
+        return None;
+    }
+    // Ares hooks 0x73FD5A, 0x51E440, 0x417CCB and 0x447218 answer a
+    // Deactivated object's What_Action over itself with GetDeactivatedAction
+    // 10044AD0 (Detonate or Select), never Self, so it neither deploys nor
+    // repacks.
+    #[cfg(feature = "ares")]
+    if sim
+        .entities()
+        .get(target.stable_id)
+        .is_some_and(|entity| entity.deactivated.is_offline())
     {
         return None;
     }
@@ -8677,7 +8880,7 @@ mod tests {
                 sim.entities_mut_for_test()
                     .get_mut(engineer)
                     .unwrap()
-                    .spawn_manager = Some(SpawnManagerState::for_test(spawn_type, slots));
+                    .spawn_manager = Some(Box::new(SpawnManagerState::for_test(spawn_type, slots)));
             }
             let before = sim.state_hash();
             let actor = serde_json::to_value(sim.entities().get(engineer).unwrap()).unwrap();

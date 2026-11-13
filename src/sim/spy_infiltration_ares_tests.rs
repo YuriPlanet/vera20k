@@ -75,7 +75,11 @@ fn custom_infiltration_takes_the_ares_arms_instead_of_the_original() {
     assert_eq!(sim.houses[&owner].economy().credits(), 1300);
     assert_eq!(sim.houses[&spy].economy().credits(), 700);
     let fuse = sim.substrate.entities.get(building).unwrap();
-    let pending = fuse.pending_c4_detonation.pending().expect("armed");
+    let pending = fuse
+        .building
+        .pending_c4_detonation
+        .pending()
+        .expect("armed");
     assert_eq!(
         [pending.timer().start_frame(), pending.timer().duration()],
         [FRAME as i32, rules.c4_delay_frames()]
@@ -337,6 +341,7 @@ fn a_saboteur_plants_one_charge_and_is_spent() {
         .entities
         .get(plant)
         .unwrap()
+        .building
         .pending_c4_detonation
         .pending();
     let timer = pending.expect("planted").timer();
@@ -351,6 +356,7 @@ fn a_saboteur_plants_one_charge_and_is_spent() {
             .entities
             .get(plant)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending(),
         pending
@@ -361,6 +367,7 @@ fn a_saboteur_plants_one_charge_and_is_spent() {
             .entities
             .get(vault)
             .unwrap()
+            .building
             .pending_c4_detonation
             .pending()
             .is_none()

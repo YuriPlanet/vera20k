@@ -88,6 +88,37 @@ pub(crate) fn apply_unit_facing(
     }
 }
 
+/// Whether the Facing slot leaves a Unit with no target and no NavCom, whose
+/// turret does not spin (`TurretSpins=`), as it is at `binary_frame` and at
+/// every later frame while its state stays: hull and turret stand still, the
+/// latch is clear, and the turret already faces the hull at the type's
+/// `rot`, so arm B's idle return `Set`s nothing whether or not its dwell has
+/// run out, and the latch store writes the clear latch again.
+pub(crate) fn facing_rests(entity: &GameEntity, rot: i32, binary_frame: u32) -> bool {
+    let before = UnitFacing::of(entity);
+    if before.latch
+        || before.hull.is_rotating(binary_frame)
+        || before
+            .barrel
+            .is_some_and(|barrel| barrel.is_rotating(binary_frame))
+    {
+        return false;
+    }
+    let mut after = before;
+    after.apply(
+        &crate::sim::combat::UnitFacingUpdate {
+            entity_id: 0,
+            turret_destination: Some(entity.body_facing_current(binary_frame)),
+            turret_spins: false,
+            hull_destination: None,
+            turret_destination_is_idle_return: true,
+        },
+        rot,
+        binary_frame,
+    );
+    after == before
+}
+
 /// The turret rotation latch, `UnitClass+0x6AF`, written only by
 /// `UnitClass::Facing_Update @ 0x00736990` (cleared at `0x00736AD5`, re-set
 /// from `FacingClass::Is_Rotating` at `0x00736B16`): the Facing slot's store

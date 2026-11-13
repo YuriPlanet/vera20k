@@ -8,9 +8,7 @@
 //! The target and house masks are read with Ares's own readers, not the
 //! donor's alias parser.
 
-#[cfg(feature = "ares")]
 use crate::rules::ini_parser::IniSection;
-#[cfg(feature = "ares")]
 use crate::util::native_x87::NativeF64Bits;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -29,15 +27,14 @@ impl TargetMask {
     pub const ALL_CONTENTS: Self = Self(60);
     pub const ALL: Self = Self(255);
 
-    #[cfg(feature = "ares")]
     pub(crate) fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 
     /// Ares SuperWeaponTarget reader10034430, tokens1009BC40; same
     /// comma-only list and keep-on-failure rules as [`HouseMask::read_ares`].
-    #[cfg(feature = "ares")]
     pub(crate) fn read_ares(section: &IniSection, key: &str) -> Option<Self> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         read_native_mask(section, key, &TARGET_TOKENS).map(Self)
     }
 }
@@ -53,21 +50,19 @@ impl HouseMask {
     pub const TEAM: Self = Self(3);
     pub const ALL: Self = Self(7);
 
-    #[cfg(feature = "ares")]
     pub(crate) fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 
     /// Ares household-mask reader100341D0, tokens1009BCE0: successful
     /// native comma-only lists replace; absent or unknown keeps the prior.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_ares(section: &IniSection, key: &str) -> Option<Self> {
+        let _ares = crate::rules::ares_switch::ares_reads();
         read_native_mask(section, key, &HOUSE_TOKENS).map(Self)
     }
 }
 
 /// Ares AffectedHouse names1009BCE0..1009BD20, read by100341D0.
-#[cfg(feature = "ares")]
 const HOUSE_TOKENS: [(&str, u8); 8] = [
     ("owner", 1),
     ("allies", 2),
@@ -80,7 +75,6 @@ const HOUSE_TOKENS: [(&str, u8); 8] = [
 ];
 
 /// Ares SuperWeaponTarget names1009BC40..1009BC80, read by10034430.
-#[cfg(feature = "ares")]
 const TARGET_TOKENS: [(&str, u8); 8] = [
     ("land", 1),
     ("water", 2),
@@ -97,7 +91,6 @@ const TARGET_TOKENS: [(&str, u8); 8] = [
 /// spaces and must each `_strcmpi` (7C8D20) a table name. An empty read or
 /// any unknown token writes nothing (100341E8/10034231), so the caller keeps
 /// its prior mask; a present list without tokens stores 0.
-#[cfg(feature = "ares")]
 fn read_native_mask<T>(section: &IniSection, key: &str, tokens: &[(&str, T)]) -> Option<T>
 where
     T: Copy + Default + std::ops::BitOr<Output = T>,
@@ -114,7 +107,6 @@ where
 
 /// Ares targeting-constraint names1009B9A0..1009B9F0, read by10034290 with
 /// the same comma-only list and keep-on-failure rules as the masks above.
-#[cfg(feature = "ares")]
 const CONSTRAINT_TOKENS: [(&str, u16); 10] = [
     ("none", 0),
     ("offensive_cell_clear", OFFENSIVE_CELL_CLEAR),
@@ -128,34 +120,23 @@ const CONSTRAINT_TOKENS: [(&str, u16); 10] = [
     ("defensive_cell_set", DEFENSIVE_CELL_SET),
 ];
 
-#[cfg(feature = "ares")]
 const OFFENSIVE_CELL_CLEAR: u16 = 0x1;
-#[cfg(feature = "ares")]
 const DEFENSIVE_CELL_CLEAR: u16 = 0x2;
-#[cfg(feature = "ares")]
 const ENEMY: u16 = 0x4;
-#[cfg(feature = "ares")]
 const LIGHTNING_STORM_INACTIVE: u16 = 0x8;
-#[cfg(feature = "ares")]
 const DOMINATOR_INACTIVE: u16 = 0x10;
-#[cfg(feature = "ares")]
 const ATTACKED: u16 = 0x20;
-#[cfg(feature = "ares")]
 const LOW_POWER: u16 = 0x40;
-#[cfg(feature = "ares")]
 const OFFENSIVE_CELL_SET: u16 = 0x80;
-#[cfg(feature = "ares")]
 const DEFENSIVE_CELL_SET: u16 = 0x100;
 
 /// SWTypeExt's effective AI-targeting constraints: the explicit
 /// `SW.AITargeting.Constraints` or the mode row's default.
-#[cfg(feature = "ares")]
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
 pub struct TargetConstraints(u16);
 
-#[cfg(feature = "ares")]
 impl TargetConstraints {
     /// `IsTargetConstraintsEligible`10032110 with its manual argument set, as
     /// Phobos's SWButtonClass and Ares's sidebar hooks (10034E88, 10034F52)
@@ -197,7 +178,6 @@ impl TargetConstraints {
 
 /// The world facts [`TargetConstraints::allows_automatic_fire`] reads after
 /// the manual return.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AutomaticConstraintObservations {
     pub lightning_storm_active: bool,
@@ -218,7 +198,6 @@ pub struct TargetRequirements {
 
 /// An Ares AITargeting mode, in the order of its names at 1009BAF8 (reader
 /// 10034350), which is SWTypeExt+0x210's value.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiTargetingMode {
     None,
@@ -246,7 +225,6 @@ pub(crate) enum AiTargetingMode {
 
 /// `SW.AITargeting.Preference`: the names at 1009BAB4 in reader order
 /// (100343C0).
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiTargetPreference {
     None,
@@ -254,7 +232,6 @@ pub(crate) enum AiTargetPreference {
     Defensive,
 }
 
-#[cfg(feature = "ares")]
 const AI_TARGET_PREFERENCES: [(&str, AiTargetPreference); 3] = [
     ("none", AiTargetPreference::None),
     ("offensive", AiTargetPreference::Offensive),
@@ -267,7 +244,6 @@ const AI_TARGET_PREFERENCES: [(&str, AiTargetPreference); 3] = [
 /// preference byte +4, used while SW.AITargeting.Preference is unset; and
 /// bytes +5/+6, the AI target and house masks used while
 /// SW.AIRequiresTarget/SW.AIRequiresHouse are unset.
-#[cfg(feature = "ares")]
 const AI_TARGETING_MODES: [(&str, AiTargetingMode, u16, u8, u8, u8); 21] = {
     use AiTargetingMode as M;
     [
@@ -295,7 +271,6 @@ const AI_TARGETING_MODES: [(&str, AiTargetingMode, u16, u8, u8, u8); 21] = {
     ]
 };
 
-#[cfg(feature = "ares")]
 const OFFENSIVE_MODE: u8 = 8;
 
 /// The mode each Ares type handler's Initialize (vtable +0x14) stores at
@@ -303,7 +278,6 @@ const OFFENSIVE_MODE: u8 = 8;
 /// the section, for a new Type or the stock Type's handler (1006CFB0).
 /// ChronoSphere's (1006EF10) and ChronoWarp's (100700B0) store nothing and
 /// EMPulse's stores 0 (1007146B), so they keep the constructor's 0.
-#[cfg(feature = "ares")]
 fn handler_initial_mode(type_name: &str) -> u8 {
     const MODES: [(&str, u8); 17] = [
         ("MultiMissile", 1),                // 100733BC
@@ -339,7 +313,6 @@ fn handler_initial_mode(type_name: &str) -> u8 {
 /// `SW.RequiresHouse` (+0x241/+0x23D), the nullable
 /// `SW.AIRequiresTarget`/`SW.AIRequiresHouse` (+0x242/+0x23E) and
 /// SW.RangeMinimum/Maximum (+0x460/+0x468).
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresSuperWeaponTargetingState {
     /// LoadFromINIFile10033250 has left state+4 = 0.
@@ -365,7 +338,6 @@ pub(crate) struct AresSuperWeaponTargetingState {
     chrono_affect_buildings: bool,
 }
 
-#[cfg(feature = "ares")]
 impl Default for AresSuperWeaponTargetingState {
     fn default() -> Self {
         // SWTypeExt ctor10031460: the dword 0x01010007 at 10031733 leaves
@@ -398,7 +370,6 @@ impl Default for AresSuperWeaponTargetingState {
     }
 }
 
-#[cfg(feature = "ares")]
 impl AresSuperWeaponTargetingState {
     /// LoadFromINIFile10033250 with this type's section. Only its first call
     /// runs the `Type` handler's Initialize (10033337), which stores the
@@ -414,6 +385,7 @@ impl AresSuperWeaponTargetingState {
     /// else keeps the prior value. The Nullable wrappers set their flag only
     /// on a successful read.
     pub(crate) fn read_pass(&mut self, section: &IniSection, type_name: Option<&str>) -> bool {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let initialize = !self.initialized;
         let is =
             |name: &str| type_name.is_some_and(|type_name| type_name.eq_ignore_ascii_case(name));
@@ -625,7 +597,6 @@ pub struct LaunchSite {
     pub range_maximum_override: Option<f64>,
 }
 
-#[cfg(feature = "ares")]
 impl LaunchSite {
     pub fn admits(self, target: (i32, i32), range: (f64, f64)) -> bool {
         let minimum = self.range_minimum_override.unwrap_or(range.0);
@@ -643,7 +614,6 @@ impl LaunchSite {
     }
 }
 
-#[cfg(feature = "ares")]
 fn valid_range((minimum, maximum): (f64, f64)) -> bool {
     minimum.is_finite()
         && maximum.is_finite()
@@ -654,7 +624,6 @@ fn valid_range((minimum, maximum): (f64, f64)) -> bool {
 /// manual return. The second defensive cell (+0x54F8/+0x54FA) has no writer
 /// in VERA (see `sim::superweapon::ai_fire`'s residuals), so it is always
 /// (0, 0) here.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HouseTargetingObservations {
     /// `House+0x5600` is not -1.
@@ -679,7 +648,6 @@ pub struct TargetPreflightInput<'a> {
 
 /// Port of Evaluate: same ordered gates and rejection categories. A missing
 /// terrain/visibility observation is not invented as water or shroud.
-#[cfg(feature = "ares")]
 pub fn evaluate_target(input: &TargetPreflightInput<'_>) -> Result<(), TargetReject> {
     let TargetRequirements {
         target: target_mask,
@@ -758,6 +726,6 @@ pub fn evaluate_target(input: &TargetPreflightInput<'_>) -> Result<(), TargetRej
     Ok(())
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "superweapon_targeting_tests.rs"]
 mod tests;

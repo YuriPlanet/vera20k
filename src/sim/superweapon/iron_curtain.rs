@@ -303,6 +303,7 @@ pub(crate) fn curtain_object(
                                 frame,
                                 duration,
                                 InvulnKind::IronCurtain,
+                                rules.ares(),
                             );
                         }
                     }
@@ -339,7 +340,14 @@ pub(crate) fn curtain_object(
             let frame = sim.session.binary_frame();
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 let object = sim.interner.object_type(entity.type_ref(), rules);
-                techno_iron_curtain(entity, object, frame, duration, InvulnKind::IronCurtain);
+                techno_iron_curtain(
+                    entity,
+                    object,
+                    frame,
+                    duration,
+                    InvulnKind::IronCurtain,
+                    rules.ares(),
+                );
             }
         }
     }
@@ -436,7 +444,14 @@ fn foot_iron_curtain(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.parasite.end_paralysis(frame);
         let object = sim.interner.object_type(entity.type_ref(), rules);
-        techno_iron_curtain(entity, object, frame, duration, InvulnKind::IronCurtain);
+        techno_iron_curtain(
+            entity,
+            object,
+            frame,
+            duration,
+            InvulnKind::IronCurtain,
+            rules.ares(),
+        );
     }
 }
 

@@ -42,24 +42,17 @@ pub(crate) enum Multiplier {
 /// separately from derived Techno+158/+160. The constructor seeds both baselines
 /// to 1.0; only the Armor and Firepower arms ([`apply_multiplier_crate`]) write
 /// these permanent baselines. Each arm skips a baseline that is not exactly 1.0.
-/// The attachment owner separately recomputes effective values. The receiver's
-/// damage build reads the armor multiplier;
-/// `FireAt`'s damage build folds in the firepower one
-/// (`0x006FE33D..0x006FE34D`).
+/// The attachment owner separately recomputes effective values, which live in
+/// the object's Ares part. The receiver's damage build reads the effective
+/// armor multiplier (`GameEntity::armor_multiplier`); `FireAt`'s damage build
+/// folds in the firepower one (`GameEntity::firepower_multiplier`,
+/// `0x006FE33D..0x006FE34D`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CrateMultipliers {
     #[serde(default = "one")]
     armor: NativeF64Bits,
     #[serde(default = "one")]
     firepower: NativeF64Bits,
-    /// Ares derived Techno+160; None retains the permanent Ext+80 baseline.
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    attached_firepower: Option<NativeF64Bits>,
-    /// Ares derived Techno+158; None retains the permanent Ext+88 baseline.
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    attached_armor: Option<NativeF64Bits>,
 }
 
 fn one() -> NativeF64Bits {
@@ -72,71 +65,33 @@ impl Default for CrateMultipliers {
         Self {
             armor: NativeF64Bits::ONE,
             firepower: NativeF64Bits::ONE,
-            #[cfg(feature = "ares")]
-            attached_firepower: None,
-            #[cfg(feature = "ares")]
-            attached_armor: None,
         }
     }
 }
 
 impl CrateMultipliers {
-    /// `Techno+0x158`.
-    pub(crate) const fn armor(self) -> NativeF64Bits {
-        #[cfg(feature = "ares")]
-        if let Some(value) = self.attached_armor {
-            return value;
-        }
-        self.armor
-    }
-
-    /// Permanent armor crate baseline (Ares Ext+88), never an AE product.
+    /// Permanent armor crate baseline (Ares Ext+88), never an AE product:
+    /// `Techno+0x158` itself in a game Ares doesn't play in.
     pub(crate) const fn crate_armor(self) -> NativeF64Bits {
         self.armor
     }
 
-    #[cfg(feature = "ares")]
-    pub(crate) fn set_attached_armor(&mut self, value: NativeF64Bits) {
-        self.attached_armor = (value != self.armor).then_some(value);
-    }
-
-    /// Effective Techno+160, read by both FireAt and EstimateDamage.
-    pub(crate) const fn firepower(self) -> NativeF64Bits {
-        #[cfg(feature = "ares")]
-        if let Some(value) = self.attached_firepower {
-            return value;
-        }
-        self.firepower
-    }
-
-    /// Permanent firepower crate baseline (Ares Ext+80), never an AE product.
+    /// Permanent firepower crate baseline (Ares Ext+80), never an AE product:
+    /// `Techno+0x160` itself in a game Ares doesn't play in.
     pub(crate) const fn crate_firepower(self) -> NativeF64Bits {
         self.firepower
-    }
-
-    #[cfg(feature = "ares")]
-    pub(crate) fn set_attached_firepower(&mut self, value: NativeF64Bits) {
-        self.attached_firepower = (value != self.firepower).then_some(value);
     }
 
     /// Install a fixture's armor multiplier.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_armor_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.armor = value;
-        #[cfg(feature = "ares")]
-        {
-            self.attached_armor = None;
-        }
     }
 
     /// Install a fixture's firepower multiplier.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_firepower_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.firepower = value;
-        #[cfg(feature = "ares")]
-        {
-            self.attached_firepower = None;
-        }
     }
 }
 

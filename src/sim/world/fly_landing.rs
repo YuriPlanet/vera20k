@@ -70,7 +70,6 @@ impl Simulation {
     /// level (vt+0xBC into +0x38), the hunter sends NotifyUnlink to its first
     /// contact (vt+0x274(3)), queues Attack (vt+0x1E8(1, 0)) and commences
     /// it (vt+0x1EC). Process (1004D7A0, hook 0x4CCB84) runs the same block.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_hunter_seeker_reacquire(
         &mut self,
         id: u64,
@@ -129,13 +128,13 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(id)
-            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
-            .is_some_and(|object| object.hunter_seeker)
+        if rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.hunter_seeker)
         {
             self.ares_hunter_seeker_reacquire(id, rules, registry, frame_effects);
             return;
@@ -1096,9 +1095,9 @@ mod tests {
     /// HunterSeeker never lands. With no target to acquire, its landing
     /// callback leaves the Fly landing at its speed; the stock callback of
     /// the same Fly asks a stop.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_hunter_seeker_skips_the_landing_callback() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/fly_landing_phase.json",
         ))

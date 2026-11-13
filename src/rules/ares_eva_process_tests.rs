@@ -25,6 +25,7 @@ fn owner(root: &str, langrule: Option<&str>, eva: Arc<EvaRegistry>) -> NativeRul
 
 #[test]
 fn fixed_catalog_reaches_real_side_passes_and_saved_projection() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let eva = fixed_eva();
     let mut process = owner(
         "[Sides]\nGDI=ONE\nNod=TWO\nThirdSide=THREE\nFourth=FOUR\n\
@@ -79,6 +80,7 @@ fn fixed_catalog_reaches_real_side_passes_and_saved_projection() {
 
 #[test]
 fn a_side_created_after_the_hook_never_reads_an_earlier_orphan_tag() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut process = owner(
         "[Countries]\n0=FOUR\n[FOUR]\nSide=LateSide\n\
          [LateSide]\nEVA.Tag=VoiceA\n",

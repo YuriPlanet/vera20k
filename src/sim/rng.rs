@@ -5,7 +5,9 @@
 //! inclusive sorted ranged draws, and rejection sampling.
 
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::util::sync::Mutex;
 
 use crate::rng_continuation::MapGenRngContinuation;
 use crate::util::native_random;
@@ -118,9 +120,11 @@ pub struct SimRng {
     state: Vec<u32>,
 }
 
-/// Owner of process Main886B88. Simulation, frontend and retained playback
-/// capabilities address the same cell; sharing never copies its cursor.
-/// Main remains outside Scenario saves and the deterministic world hash.
+/// Owner of process Main886B88. The frontend and retained playback
+/// capabilities address the app's cell; a scenario's simulation draws its own
+/// cell, seeded from the app's at install, so the simulation thread and the
+/// app share no RNG (docs/sim-thread.md). Main remains outside Scenario saves
+/// and the deterministic world hash.
 #[derive(Debug)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
@@ -154,6 +158,14 @@ impl MainRng {
         Self {
             state: Arc::clone(&self.state),
         }
+    }
+
+    /// A cell of its own at this cursor, sharing nothing with this one: the
+    /// presentation copy of the world's (docs/sim-thread.md), and the
+    /// simulation's own cell at a scenario install
+    /// ([`crate::sim::world::Simulation::install_fresh_process_main`]).
+    pub(crate) fn detached_copy(&self) -> Self {
+        self.staged_copy()
     }
 
     /// Stage a transactional saved-load candidate. Draws made while the load

@@ -47,14 +47,13 @@ const IFV_TURRET_READS: [(&str, &str, i32); 17] = [
 
 /// Immutable runtime projection of the process-resident TechnoType table.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(not(feature = "ares"), derive(Copy))]
 pub struct GunnerTurrets {
     gunner: bool,
     charge_turret: bool,
     turrets: [i32; WEAPON_SLOT_COUNT],
-    #[cfg(feature = "ares")]
+    // The Ares extension table and mode labels; only a read the Ares way
+    // fills them.
     extra_turrets: Vec<i32>,
-    #[cfg(feature = "ares")]
     ui_names: Vec<Option<String>>,
 }
 
@@ -64,9 +63,7 @@ impl Default for GunnerTurrets {
             gunner: false,
             charge_turret: false,
             turrets: [-1; WEAPON_SLOT_COUNT],
-            #[cfg(feature = "ares")]
             extra_turrets: Vec::new(),
-            #[cfg(feature = "ares")]
             ui_names: Vec::new(),
         }
     }
@@ -83,22 +80,16 @@ impl GunnerTurrets {
         // TechnoType::ReadINI714A49..714A5D retains the Gunner byte.
         self.gunner = section.read_bool("Gunner", self.gunner);
         self.charge_turret = section.read_bool("IsChargeTurret", self.charge_turret);
-        #[cfg(feature = "ares")]
-        {
-            let _ = id;
+        if crate::rules::ares_switch::ares_way() {
             // UnitRead747BCF ->1004C620 tests Gunner, not the FV identity.
             if category == ObjectCategory::Vehicle && self.gunner {
                 self.read_ares_mapping(section, weapon_count);
             }
             return;
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = weapon_count;
-        #[cfg(not(feature = "ares"))]
         if category != ObjectCategory::Vehicle || !id.eq_ignore_ascii_case("FV") {
             return;
         }
-        #[cfg(not(feature = "ares"))]
         for (index_key, weapon_key, default_index) in IFV_TURRET_READS {
             let turret = section.read_int(index_key, default_index);
             let weapon = section.read_int(weapon_key, -1);
@@ -118,7 +109,6 @@ impl GunnerTurrets {
     /// Turret indices from 18 on are the extension table that
     /// TechnoTypeClass_SetWeaponTurretIndex (100425A0, hook 0x717890) and
     /// TechnoTypeClass_GetWeaponTurretIndex (10042540, hook 0x7178B0) use.
-    #[cfg(feature = "ares")]
     pub(crate) fn prepare_numbered_read(&mut self, weapon_count: i32) {
         let extra = usize::try_from(weapon_count)
             .unwrap_or(0)
@@ -127,20 +117,24 @@ impl GunnerTurrets {
         self.ui_names.resize(extra, None);
     }
 
-    #[cfg(feature = "ares")]
     fn read_ares_mapping(&mut self, section: &IniSection, weapon_count: i32) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let count = usize::try_from(weapon_count).unwrap_or(0);
         self.extra_turrets
             .resize(count.saturating_sub(WEAPON_SLOT_COUNT), -1);
         self.ui_names.resize(count, None);
         //1003FE80..1003FF20: named aliases precede numbered overrides.
         // Negative weapon/turret values are skipped, never charge-byte writes.
+        // The stock IFV keys, which the Ares way reads here instead.
         for (index_key, weapon_key, default_index) in IFV_TURRET_READS {
-            let weapon = section.read_ares_int(weapon_key, -1);
+            let weapon =
+                crate::rules::ares_switch::not_ares_read(|| section.read_ares_int(weapon_key, -1));
             if weapon < 0 {
                 continue;
             }
-            let turret = section.read_ares_int(index_key, default_index);
+            let turret = crate::rules::ares_switch::not_ares_read(|| {
+                section.read_ares_int(index_key, default_index)
+            });
             if turret >= 0 {
                 self.set_turret(weapon as usize, turret);
             }
@@ -163,7 +157,6 @@ impl GunnerTurrets {
         }
     }
 
-    #[cfg(feature = "ares")]
     fn set_turret(&mut self, slot: usize, turret: i32) {
         let entry = if slot < WEAPON_SLOT_COUNT {
             self.turrets.get_mut(slot)
@@ -180,7 +173,6 @@ impl GunnerTurrets {
     }
 
     /// UnitGetUIName746B89 ->1004BF20 selects the current weapon's full name.
-    #[cfg(feature = "ares")]
     pub fn weapon_ui_name(&self, weapon: i32) -> Option<&str> {
         self.ui_names
             .get(usize::try_from(weapon).ok()?)
@@ -200,7 +192,6 @@ impl GunnerTurrets {
             return -1;
         };
         let turret = self.turrets.get(slot);
-        #[cfg(feature = "ares")]
         let turret =
             turret.or_else(|| self.extra_turrets.get(slot.checked_sub(WEAPON_SLOT_COUNT)?));
         turret.copied().unwrap_or(-1)
@@ -213,8 +204,11 @@ impl std::hash::Hash for GunnerTurrets {
         std::hash::Hash::hash(&self.gunner, state);
         std::hash::Hash::hash(&self.charge_turret, state);
         std::hash::Hash::hash(&self.turrets, state);
-        #[cfg(feature = "ares")]
-        std::hash::Hash::hash(&self.extra_turrets, state);
+        // Only a read the Ares way fills the extension table; an empty one
+        // adds nothing, so a stock game's hash stays as it was.
+        if !self.extra_turrets.is_empty() {
+            std::hash::Hash::hash(&self.extra_turrets, state);
+        }
     }
 }
 

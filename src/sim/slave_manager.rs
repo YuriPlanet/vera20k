@@ -260,7 +260,6 @@ impl SlaveManager {
     /// SlaveManagerClass::SuspendWork as Ares inlines it (EnableEMPEffect2
     /// 10062980, the driver change 100458F3..10045953): the AI timer's start
     /// becomes -1 and keeps its duration, a duration of 0 raised to 1.
-    #[cfg(feature = "ares")]
     pub(crate) fn suspend_work(&mut self) {
         let duration = self.ai_timer.duration();
         self.ai_timer = CdTimer::from_raw(-1, if duration == 0 { 1 } else { duration });
@@ -268,7 +267,6 @@ impl SlaveManager {
 
     /// SlaveManagerClass::ResumeWork as Ares inlines it (DisableEMPEffect2
     /// 10062650, the driver change): a -1 start becomes `now`.
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_work(&mut self, now: i32) {
         self.ai_timer.resume(now);
     }
@@ -425,7 +423,11 @@ fn cell_distance(dx: i16, dy: i16) -> i32 {
 
 impl Simulation {
     fn slave_manager(&self, master: u64) -> Option<&SlaveManager> {
-        self.substrate.entities.get(master)?.slave_manager.as_ref()
+        self.substrate
+            .entities
+            .get(master)?
+            .slave_manager
+            .as_deref()
     }
 
     fn now_frame(session: &ScenarioSession) -> i32 {
@@ -487,7 +489,9 @@ impl Simulation {
         let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
-            parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));
+            parent.slave_manager = Some(Box::new(SlaveManager::new(
+                slave_type, slaves, regen, reload, now,
+            )));
         }
     }
 
@@ -1081,7 +1085,7 @@ impl Simulation {
             crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
             rules.general.slave_miner_kick_frame_delay,
         );
-        if !(crate::rules::ARES_ENABLED && delay < 0)
+        if !(rules.ares() && delay < 0)
             && delay.wrapping_add(stamp) < Self::now_frame(&self.session)
         {
             let range = crate::sim::miner::ore_scan::scan_cells(
@@ -1240,7 +1244,7 @@ impl Simulation {
         };
         let search = DeployCellSearch::new(owner_cell(owner), seed, foundation);
         let terrain = self.resolved_terrain.as_ref()?;
-        let zone = self.zone_grid.as_deref().and_then(|zones| {
+        let zone = self.zone_grid.as_ref().and_then(|zones| {
             zones.get_zone_id_native(
                 terrain,
                 (search.zone_cell.0 as u16, search.zone_cell.1 as u16),
@@ -1308,7 +1312,7 @@ impl Simulation {
             crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
             rules.general.slave_miner_kick_frame_delay,
         );
-        if crate::rules::ARES_ENABLED && delay < 0
+        if rules.ares() && delay < 0
             || delay.wrapping_add(started) >= Self::now_frame(&self.session)
         {
             return Ok(None);
@@ -1788,11 +1792,11 @@ impl Simulation {
             .get_mut(master)?
             .slave_manager
             .take()
+            .map(|manager| *manager)
     }
 
     /// Ares100458F3..10045953: FreeSlaves, then100038E0 clears every node,
     /// reattach the owner and pause/resume its AI clock before ChangeOwner.
-    #[cfg(feature = "ares")]
     pub(crate) fn free_slaves_for_driver_change(
         &mut self,
         master: u64,
@@ -1825,7 +1829,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(master)
             && entity.slave_manager.is_none()
         {
-            entity.slave_manager = Some(manager);
+            entity.slave_manager = Some(Box::new(manager));
         }
     }
 
@@ -1946,7 +1950,10 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
-        self.entities.get_mut(master)?.slave_manager.as_mut()
+        self.entities
+            .get_mut_if(master, |entity| entity.slave_manager.is_some())?
+            .slave_manager
+            .as_deref_mut()
     }
     fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
         if let Some(manager) = self.slave_manager_mut(master) {

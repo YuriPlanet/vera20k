@@ -169,6 +169,7 @@ impl RadSite {
         frame: u32,
         theater: &str,
         effective: &EffectiveRadiation,
+        ares: bool,
     ) -> bool {
         let light = &mut self.light;
         light.timer = CdTimer::started(frame as i32, effective.light_delay);
@@ -195,14 +196,12 @@ impl RadSite {
         // `0x65B5FB` -> `0x10056DB0`) always resumes at `0x65B604`, past
         // the substitution, so Mental Omega's `RadColor=200,100,0` stays
         // amber on snow maps.
-        let channels = if !crate::rules::PHOBOS_ENABLED
-            && !crate::rules::ARES_ENABLED
-            && theater.eq_ignore_ascii_case("SNOW")
-        {
-            [-128, i32::from(effective.color.1), -128]
-        } else {
-            [effective.color.0, effective.color.1, effective.color.2].map(i32::from)
-        };
+        let channels =
+            if !crate::rules::PHOBOS_ENABLED && !ares && theater.eq_ignore_ascii_case("SNOW") {
+                [-128, i32::from(effective.color.1), -128]
+            } else {
+                [effective.color.0, effective.color.1, effective.color.2].map(i32::from)
+            };
         light.base_tint =
             channels.map(|channel| scaled(channel * LIGHT_UNIT / 255, effective.tint_factor));
         // The selected retail levels have at least one light step. Preserve
@@ -697,11 +696,12 @@ impl RadiationState {
         frame: u32,
         theater: &str,
         effective: &EffectiveRadiation,
+        ares: bool,
     ) -> bool {
         if let Some(site) = self.sites.get_mut(&center) {
             site.level_steps = site.duration / effective.level_delay;
             site.level_timer = CdTimer::started(frame as i32, effective.level_delay);
-            site.activate_light(frame, theater, effective)
+            site.activate_light(frame, theater, effective, ares)
         } else {
             false
         }
@@ -833,7 +833,7 @@ impl RadiationState {
                 site.remaining = duration;
             }
         }
-        let light_changed = self.activate_site(center, frame, theater, &effective);
+        let light_changed = self.activate_site(center, frame, theater, &effective, rules.ares());
         self.spread_site(center, terrain);
         // RadSite activation65B7CA/65B7E8 publishes source changes in this
         // interval, even if another change later returns to the same inputs.

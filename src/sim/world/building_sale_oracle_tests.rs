@@ -156,6 +156,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_side_index_for_test(input["side"].as_i64().unwrap() as i32);
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
+        .building
         .has_been_captured
         .set_for_test(input["captured"] == true);
     building
@@ -243,7 +244,7 @@ fn compare_infantry(s: &SlaveScene, id: u64, expected: &Value, context: &str) {
 #[test]
 fn sale_stage_one_matches_the_original_survivors_and_sounds() {
     // Stock oracle; Ares replaces Building and Techno GetCrew (44EB10, 707D20).
-    if cfg!(feature = "ares") {
+    if crate::rules::ares_switch::ares_way() {
         return;
     }
     let corpus = corpus();

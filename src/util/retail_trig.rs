@@ -19,7 +19,7 @@
 use crate::util::native_x87::{
     MaskedX87Chop53, MaskedX87Value, NativeF32Bits, NativeF64Bits, X87Chop53, X87Value,
 };
-use std::sync::OnceLock;
+use crate::util::sync::OnceLock;
 
 /// Virtual address of the sine table in the retail image.
 #[cfg(any(test, feature = "test-support"))]

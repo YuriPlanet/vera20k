@@ -207,8 +207,7 @@ impl Simulation {
             // a BalloonHover unit, a bay of the other Naval kind, an
             // aircraft factory, a helipad, or a hover pad without
             // `SeparateAircraft=` is passed over without the query.
-            #[cfg(feature = "ares")]
-            if !self.ares_repair_bay_accepts(id, station, rules) {
+            if rules.ares() && !self.ares_repair_bay_accepts(id, station, rules) {
                 continue;
             }
             let answer = transmit(
@@ -221,9 +220,7 @@ impl Simulation {
                 effects,
             );
             // 1005CB50 also takes only ROGER; the original any answer.
-            if answer == RadioResponse::None
-                || crate::rules::ARES_ENABLED && answer != RadioResponse::Roger
-            {
+            if answer == RadioResponse::None || rules.ares() && answer != RadioResponse::Roger {
                 continue;
             }
             let (Some(unit), Some(building)) = (
@@ -250,7 +247,6 @@ impl Simulation {
     /// unit's (`+0xCCE`), and the bay is no aircraft factory (`Factory=` RTTI
     /// 3, `+0xEB8`), no `Helipad=` (`+0x16CB`) and no `HoverPad=` (`+0x154E`)
     /// unless `[General] SeparateAircraft=yes`.
-    #[cfg(feature = "ares")]
     fn ares_repair_bay_accepts(&self, unit: u64, bay: u64, rules: &RuleSet) -> bool {
         let (Some(unit), Some(bay)) = (
             self.substrate

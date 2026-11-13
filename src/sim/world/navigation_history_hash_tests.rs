@@ -45,7 +45,7 @@ fn identical_source_and_houses_with_different_retained_threat_seed_hash_differen
     let mut a = world(terrain());
     let mut b = world(terrain());
     assert_eq!(a.state_hash(), b.state_hash());
-    let zones = b.zone_grid.as_deref_mut().unwrap();
+    let zones = b.zone_grid.as_mut().unwrap();
     let mut hierarchy = zones
         .hierarchy_for(crate::rules::locomotor_type::MovementZone::Normal)
         .unwrap()

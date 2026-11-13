@@ -58,7 +58,7 @@ fn replay_selector_events(entity: &mut GameEntity, object: &ObjectType, events: 
     let before_delay = entity.turret_selection.charge_turret_delay;
     for event in events.as_array().unwrap() {
         assert_eq!(event["event"], "set_gunner", "unexpected native event");
-        entity.set_gunner_weapon(int(event, "mode"), object);
+        entity.set_gunner_weapon(int(event, "mode"), object, crate::rules::ARES_BUILD);
     }
     assert_eq!(entity.rearm_timer.timer(), before_timer);
     assert_eq!(entity.turret_selection.charge_turret_delay, before_delay);
@@ -211,9 +211,9 @@ fn fireat_rearm_copy_matches_original_normal_and_disk_writers() {
 
 /// Ares `PassengerTurret` (TechnoClass_Update 1004B320, hook 0x6F9E50):
 /// the current turret is the passenger count, capped by `TurretCount - 1`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_passenger_turret_follows_the_passenger_count() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=IFV\n[IFV]\nPassengers=5\nTurretCount=3\nPassengerTurret=yes\n",
     ))

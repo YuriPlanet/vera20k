@@ -462,6 +462,7 @@ fn survivor_count_divides_the_refund_by_the_side_divisor() {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .has_been_captured
             .set_for_test(captured);
         assert_eq!(
@@ -473,6 +474,7 @@ fn survivor_count_divides_the_refund_by_the_side_divisor() {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .no_survivor
             .set_for_test(true);
         assert_eq!(sim.building_survivor_count(&rules, id), 0, "NoSurvivor");
@@ -491,6 +493,7 @@ fn a_captured_building_remembers_it() {
             .entities
             .get(id)
             .unwrap()
+            .building
             .has_been_captured
             .is_set()
     );
@@ -498,6 +501,7 @@ fn a_captured_building_remembers_it() {
         .entities
         .get_mut(id)
         .unwrap()
+        .building
         .repairing
         .set_for_test(true);
     sim.sound_events.clear_for_test();
@@ -510,8 +514,8 @@ fn a_captured_building_remembers_it() {
         crate::sim::world::FrameEffects::default(),
     );
     let building = sim.substrate.entities.get(id).unwrap();
-    assert!(building.has_been_captured.is_set());
-    assert!(!building.repairing.is_on());
+    assert!(building.building.has_been_captured.is_set());
+    assert!(!building.building.repairing.is_on());
     assert!(
         !sim.sound_events
             .iter()
@@ -600,6 +604,7 @@ fn a_captured_yard_rolls_one_in_nine_without_the_engineer_draw() {
         .entities
         .get_mut(yard)
         .unwrap()
+        .building
         .has_been_captured
         .set_for_test(true);
     let mut replay = sim.scenario_rng.clone();
@@ -692,6 +697,7 @@ fn a_building_owing_no_survivor_draws_and_marks_nothing() {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .no_survivor
             .set_for_test(no_survivor);
         let before = sim.scenario_rng.state();
@@ -724,6 +730,7 @@ fn survivors_of_a_c4_charged_building_attack_an_enemy_planter() {
                 .entities
                 .get_mut(plant)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
                     crate::sim::timer::CdTimer::started(0, 100),
@@ -905,9 +912,11 @@ fn no_survivor_uninits_the_absorbed_infantry() {
     let absorbed = load_absorbed(&mut sim, &rules, reactor, 2);
     let mut replay = sim.scenario_rng.clone();
     let reactor_entity = sim.substrate.entities.get_mut(reactor).unwrap();
-    reactor_entity.no_survivor.set_for_test(true);
-    reactor_entity.pending_c4_detonation.set_for_test(Some(
-        crate::sim::c4_plant::PendingC4Detonation::new(
+    reactor_entity.building.no_survivor.set_for_test(true);
+    reactor_entity
+        .building
+        .pending_c4_detonation
+        .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
             crate::sim::timer::CdTimer::started(0, 100),
             Some(planter),
         ),
@@ -2374,6 +2383,7 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
         .entities
         .get_mut(reactor)
         .unwrap()
+        .building
         .no_survivor
         .set_for_test(true);
     let stats = |sim: &Simulation| {

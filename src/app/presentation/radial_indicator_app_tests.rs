@@ -58,6 +58,7 @@ fn query(sim: &Simulation, rules: &RuleSet, ids: &[u64], ms: u64) -> Vec<RadialI
     let mut pulse = RangePulse::default();
     let result = build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         ids,
         None,
@@ -102,6 +103,7 @@ fn target_query(
     )]);
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         armed_super_weapon,
@@ -517,6 +519,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
         );
         let draws = build(
             Some(&sim),
+            Some(&crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules)),
             Some(rules),
             &[],
             Some("NukeSpecial"),
@@ -578,6 +581,7 @@ fn action_query(
     let [placement, superweapon] = pulses;
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         super_weapon,
@@ -910,6 +914,7 @@ fn placement_query(
     let mut pulse = RangePulse::default();
     build(
         Some(sim),
+        Some(&crate::app::presentation::frame::PresentationFrame::of_test(sim, rules)),
         Some(rules),
         &[],
         None,

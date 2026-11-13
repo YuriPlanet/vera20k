@@ -2499,7 +2499,7 @@ fn repair_snapshot(state: &AppState, id: u64, frame: u32) -> Result<RepairSnapsh
         owner: sim.interner().resolve(building.owner()).into(),
         health: building.health.current(),
         estimated_health: building.estimated_health.get(),
-        repairing: building.repairing.is_on(),
+        repairing: building.building.repairing.is_on(),
         credits: economy.credits(),
         spent: economy.spent_credits(),
     })
@@ -2579,7 +2579,7 @@ fn sale_snapshot(
         .map(|building| SaleBuildingSnapshot {
             health: building.health.current(),
             estimated_health: building.estimated_health.get(),
-            repairing: building.repairing.is_on(),
+            repairing: building.building.repairing.is_on(),
             in_limbo: building.in_limbo(),
             mission: building.mission.current().raw(),
             queued_mission: building.mission.queued().raw(),

@@ -289,10 +289,15 @@ pub(crate) struct ShellMessageBox {
 }
 
 impl ShellMessageBox {
-    /// VERA's Esc menu asks over the page that is showing. gamemd's callers
-    /// destroy their dialog first and ask over the empty backdrop.
+    /// VERA's Esc menu and the Mods page's restart question ask over the
+    /// page that is showing, so an answer that changes nothing leaves the
+    /// page as it was. gamemd's callers destroy their dialog first and ask
+    /// over the empty backdrop.
     pub(crate) fn keeps_page(&self) -> bool {
-        matches!(self.purpose, ShellMessageBoxPurpose::ShellMenu(_))
+        matches!(
+            self.purpose,
+            ShellMessageBoxPurpose::ShellMenu(_) | ShellMessageBoxPurpose::ModRestart(_)
+        )
     }
 
     /// The settings VERA's Esc menu shows.
@@ -341,4 +346,7 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// An OK notice (`0xCE`): the updater's failure or what its check found,
     /// or why a mod is not in use (`app::mods`).
     Notice,
+    /// The Mods page's Use This Mod: Restart keeps this folder, or the
+    /// original game, for the next start and starts the game again.
+    ModRestart(Option<String>),
 }

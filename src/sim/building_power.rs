@@ -8,13 +8,11 @@ use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 /// Techno+270/278: GoOnline can set it while a Temporal chain still exists.
 /// Steam gamemd.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(not(feature = "ares"), serde(transparent))]
 pub(crate) struct BuildingOnline {
     online: bool,
     /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`, constructor true):
     /// the state the last GoOnline/GoOffline left, which a Temporal release
     /// restores instead of forcing the latch on.
-    #[cfg(feature = "ares")]
     toggle_power_has_power: bool,
 }
 
@@ -22,7 +20,6 @@ impl Default for BuildingOnline {
     fn default() -> Self {
         Self {
             online: true,
-            #[cfg(feature = "ares")]
             toggle_power_has_power: true,
         }
     }
@@ -50,7 +47,6 @@ impl BuildingOnline {
     }
 
     /// Whether the last GoOffline is still in force (hashed with the latch).
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_toggled_off(&self) -> bool {
         !self.toggle_power_has_power
     }
@@ -59,7 +55,15 @@ impl BuildingOnline {
 impl GameEntity {
     /// Building+660, read by4555D0/44E88F/508EA3/50B020 and factory queries.
     pub fn building_online(&self) -> bool {
-        self.building_online.online
+        self.building.building_online.online
+    }
+
+    /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`) clear: the last
+    /// GoOffline is still in force. TechnoClass_DrawExtras_PowerOff
+    /// (10049FE0, hook `0x6F526C`) draws the power-off marker from it.
+    #[cfg(feature = "ares")]
+    pub fn ares_toggled_off(&self) -> bool {
+        self.building.building_online.ares_toggled_off()
     }
 
     /// Phobos `TechnoExt::IsActive` (`src/Ext/Techno/Body.cpp`) plus the power
@@ -78,7 +82,7 @@ impl GameEntity {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_building_online_for_test(&mut self, online: bool) {
-        self.building_online.online = online;
+        self.building.building_online.online = online;
     }
 }
 
@@ -111,6 +115,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .building_online
             .toggle(false);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
@@ -155,6 +160,7 @@ impl Simulation {
             .entities
             .get_mut(id)
             .unwrap()
+            .building
             .building_online
             .toggle(true);
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
@@ -185,23 +191,41 @@ impl Simulation {
     /// queue order or another refresh in between reads the old hold.
     ///
     /// [`ObjectSubstrate::set_building_online_for_temporal`]: crate::sim::world::ObjectSubstrate::set_building_online_for_temporal
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_refresh_temporal_factories(
         &mut self,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         for id in self.substrate.take_ares_temporal_factory_refresh() {
-            let Some(entity) = self.substrate.entities.get(id) else {
-                continue;
-            };
-            let owner = entity.owner();
-            if let Some(category) = self
-                .object_type(entity.type_ref(), rules)
-                .and_then(crate::sim::production::factory_category_for_building)
-            {
-                crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
-            }
+            self.ares_update_factory_queues(id, rules, effects);
+        }
+    }
+
+    /// BuildingExt::UpdateFactoryQueues `10013250`: a building's owner runs
+    /// `HouseClass::Update_FactoriesQueues @ 0x00509140` for the building's
+    /// `Factory=` type and `Naval=`, BuildCat DontCare; a building with no
+    /// `Factory=` or no longer stored does nothing. Callers: the temporal
+    /// refresh above, and Ares Activate `1004CCB0` / Deactivate `1004CDC0`
+    /// on a Building's transition (`Simulation::techno_reactivate`,
+    /// `Simulation::techno_deactivate`).
+    pub(crate) fn ares_update_factory_queues(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.category() != EntityCategory::Structure {
+            return;
+        }
+        let owner = entity.owner();
+        if let Some(category) = self
+            .object_type(entity.type_ref(), rules)
+            .and_then(crate::sim::production::factory_category_for_building)
+        {
+            crate::sim::production::update_factory_queue(self, rules, owner, category, effects);
         }
     }
 }
@@ -232,7 +256,7 @@ impl crate::sim::world::ObjectSubstrate {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        entity.building_online.temporal(online);
+        entity.building.building_online.temporal(online);
         let slots = *entity.building_art.anim_slots();
         #[cfg(feature = "ares")]
         self.queue_ares_temporal_factory_refresh(id);

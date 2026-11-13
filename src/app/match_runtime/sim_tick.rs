@@ -760,10 +760,7 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
         &state.process_assets,
         state.frontend.loading_session.as_ref(),
     );
-    let mut main = crate::app::state::process_main_draws(
-        state.match_state.sim_runtime.runtime(),
-        &state.frontend.frontend_main_rng,
-    );
+    let mut main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
     state.audio.service_audio(
         now_ms,
         paused,
@@ -1286,29 +1283,63 @@ fn advance_in_game_runtime_mode(
                 .frame_pacer
                 .record_admitted_frame(frame_start_ms);
         }
-        // Only the last frame before the draw goes to the simulation thread
-        // (docs/sim-thread.md): one the service or debug speed follows with
-        // another ticks inline, as before the thread, and publishes nothing.
-        // It goes only when that saves this thread time: a tick expected to
-        // cost less here than the last lent one did, in its frame's copy and
-        // drop and the wait for it, ticks inline too.
+        // Which frames go to the simulation thread: [`frame_ticks_inline`]
+        // (docs/sim-thread.md).
         let (game_speed, network_fps) = local_pacing_inputs(state);
         let pacer = &state.platform.frame_pacer;
-        let worth_lending = super::sim_host::sim_thread_always()
-            || state
+        let hashes_state = !replaying
+            && state
                 .match_state
                 .sim_runtime
-                .lend_cost()
-                .is_none_or(|lent| pacer.expected_frame_cost() > lent);
-        let inline = frame_stepping
-            || matches!(mode, RuntimeAdvanceMode::ExactOneStep)
-            || !worth_lending
-            || pacer.another_pass_follows(
-                crate::util::time::Instant::now(),
+                .runtime()
+                .is_some_and(|rt| rt.simulation.next_frame_hashes_state());
+        let now = crate::util::time::Instant::now();
+        // Online, the relay's frontier and the online pacer admit the next
+        // frame (the catch-up loop in `App::service_match_runtime`).
+        let another_pass_follows = match state
+            .match_state
+            .live_network
+            .as_ref()
+            .filter(|live| live.uses_sequenced_lockstep() && !live.has_terminal_network_error())
+        {
+            Some(live) => state.match_state.sim_runtime.runtime().is_some_and(|rt| {
+                let session = rt.simulation.session();
+                let next_frame = session.binary_frame().wrapping_add(1);
+                let receipt = live
+                    .sequenced_timing()
+                    .filter(|_| {
+                        !replaying
+                            && !frame_stepping
+                            && !state.match_state.paused()
+                            && !state.focus_freeze_active()
+                            && !session.scenario_paused()
+                    })
+                    .map(|timing| {
+                        let recovering = live.recovery_status(wall_ms as u32, next_frame).is_some();
+                        (timing, recovering)
+                    });
+                pacer.another_online_pass_follows(
+                    now,
+                    next_frame,
+                    live.committed_frontier(),
+                    receipt,
+                )
+            }),
+            None => pacer.another_pass_follows(
+                now,
                 crate::app::match_runtime::frame_pacer::wall_clock_ms(),
                 game_speed,
                 network_fps,
-            );
+            ),
+        };
+        let inline = frame_ticks_inline(
+            frame_stepping || matches!(mode, RuntimeAdvanceMode::ExactOneStep),
+            super::sim_host::sim_thread_always(),
+            hashes_state,
+            another_pass_follows,
+            state.match_state.sim_runtime.lend_cost(),
+            pacer.expected_frame_cost(),
+        );
         let debug_frames = if !frame_stepping && !replaying && debug_speed_allowed(state) {
             state.platform.frame_pacer.debug_speed().saturating_sub(1)
         } else {
@@ -1464,16 +1495,65 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
     }
 }
 
+/// A pass that finds a tick still on the simulation thread
+/// (docs/sim-thread.md): it admits no frame, as a pass the pacer does not
+/// admit, and takes nothing from the world, reading the frame published for
+/// the tick. The camera takes the steps its own clock owes, so scrolling
+/// keeps the picture rate however long the tick takes, and the per-pass
+/// presentation services run.
+pub(crate) fn service_beside_tick(state: &mut AppState) {
+    if state.frontend.screen != GameScreen::InGame {
+        return;
+    }
+    let replaying = state.match_state.match_diagnostics.is_replay_playback();
+    let scenario_paused = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|rt| rt.simulation.session().scenario_paused());
+    let decision = decide_runtime_pass(RuntimePassInputs {
+        exact_step: false,
+        window_active: state.platform.window_active,
+        focus_frozen: state.focus_freeze_active(),
+        startup_admitted: state.match_state.startup.admits_ordinary_tick(),
+        frame_stepping: false,
+        paused: state.match_state.paused(),
+        scenario_paused: scenario_paused && !replaying,
+        menu_open: state.match_state.match_presentation.in_game_menu.is_open(),
+        session_mode: state.match_state.session_mode(),
+        pacer_timing_admits: false,
+        network_wait: state.match_state.network_wait.waiting(),
+        network_dialog_open: state.match_state.network_wait.dialog_open(),
+    });
+    let scroll_steps = crate::app::input::camera::take_scroll_steps(
+        &mut state.match_state.input,
+        decision.camera_scroll,
+        decision.frames_running,
+        false,
+    );
+    if let Some(request) =
+        crate::app::input::camera::sample_mouse_scroll(state, decision.scroll_input, scroll_steps)
+    {
+        crate::app::input::camera::commit_camera_scroll(state, request);
+    }
+    // A held key release has not reached the keys yet: an arrow it lets go
+    // must not keep scrolling until the tick is back.
+    let keyboard_steps = if state.platform.window_events_held {
+        0
+    } else {
+        scroll_steps
+    };
+    after_simulation_pass(state, decision, false, keyboard_steps, replaying);
+}
+
 /// Move the simulation's pending radar-terrain marks into the minimap's
 /// backlog. Without a minimap they stay with the simulation.
 pub(crate) fn drain_radar_terrain_marks(match_state: &mut super::state::MatchState) {
-    if let (Some(minimap), Some(runtime)) = (
-        match_state.match_presentation.minimap.as_mut(),
-        match_state
-            .sim_runtime
-            .write_sim(super::sim_host::SimWrite::Presentation),
-    ) {
-        minimap.queue_radar_terrain_cells(runtime.take_radar_terrain_dirty());
+    let Some(minimap) = match_state.match_presentation.minimap.as_mut() else {
+        return;
+    };
+    if let Some(cells) = match_state.sim_runtime.take_radar_terrain_marks() {
+        minimap.queue_radar_terrain_cells(cells);
     }
 }
 
@@ -1541,6 +1621,46 @@ fn after_simulation_pass(
         update_building_placement_preview(state);
     }
     decision.run_sim
+}
+
+/// Whether an admitted frame ticks on this thread instead of going to the
+/// simulation thread (docs/sim-thread.md). A frame goes only when that saves
+/// this thread time: one expected to cost less here than the last lent one
+/// did (`lend_cost`: its copy, drop and any wait) ticks inline. A frame that
+/// another pass of the service follows (`another_pass_follows`) ticks inline
+/// too unless lending it is measured cheaper. A frame that hashes its state
+/// for the replay log always goes: it costs far more than the frames around
+/// it, whose cost the estimate follows, and its tick is known before it runs.
+fn frame_ticks_inline(
+    must_tick_inline: bool,
+    always_lend: bool,
+    hashes_state: bool,
+    another_pass_follows: bool,
+    lend_cost: Option<std::time::Duration>,
+    expected_cost: std::time::Duration,
+) -> bool {
+    let lending_is_cheaper = lend_cost.is_some_and(|lent| expected_cost > lent);
+    let worth_lending = always_lend || hashes_state || lend_cost.is_none() || lending_is_cheaper;
+    must_tick_inline
+        || !worth_lending
+        || (another_pass_follows && !(lending_is_cheaper || hashes_state))
+}
+
+/// How often an offline match hashes its state for the replay log: every
+/// 300th tick, about five seconds at GameSpeed 1, and after the frame that
+/// ends the match. Only the replay log's diagnostic checks read it, and
+/// replay verification compares only the ticks the log recorded; on a large
+/// map with many houses one hash costs more than a frame's budget. Network
+/// matches keep [`crate::sim::replay::PLAY_HASH_INTERVAL`].
+const OFFLINE_REPLAY_HASH_INTERVAL: std::num::NonZeroU64 = std::num::NonZeroU64::new(300).unwrap();
+
+/// The replay-log hash interval of normal play: offline or `network`.
+fn play_hash_interval(network: bool) -> std::num::NonZeroU64 {
+    if network {
+        crate::sim::replay::PLAY_HASH_INTERVAL
+    } else {
+        OFFLINE_REPLAY_HASH_INTERVAL
+    }
 }
 
 /// The GameSpeed and network FPS (with lag delay) the local pacer times
@@ -1616,6 +1736,10 @@ enum FrameResume {
     NetworkWait,
     NetworkLeave,
     OutcomeWait,
+    /// Queue_AI of a network frame whose Logic ran on the simulation thread
+    /// (`DeferredClientEffects::hands_off_queue`). It resumes as a network
+    /// wait does; the thread's part already counted the frame's cost.
+    QueueHandoff,
 }
 
 /// House+56F9, the House colour an Ares `Beam.IsHouseColor` birth keeps
@@ -1691,7 +1815,8 @@ fn advance_one_simulation_frame(
     if threaded_finished.is_some()
         && (crate::app::App::house_outcome_wait_pending(state)
             || super::network_failure::pending(state)
-            || state.match_state.frame_stopped)
+            || state.match_state.frame_stopped
+            || pending_network_wait(state))
     {
         // The next pass resumes that frame inline.
         return threaded_finished.unwrap_or(false);
@@ -1725,7 +1850,13 @@ fn advance_one_simulation_frame(
         let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
         state.match_state.match_diagnostics.retain_replay_startup(
             rt,
-            state.match_state.session.network_setup(),
+            // A network match's session owns its launch; an offline
+            // skirmish's stays with the startup that installed it.
+            state
+                .match_state
+                .session
+                .network_setup()
+                .or_else(|| state.match_state.startup.offline_launch()),
             state.match_state.loaded_map_source.as_ref(),
             state.match_state.loaded_map_hash,
             state
@@ -1769,14 +1900,31 @@ fn advance_one_simulation_frame(
     let prefix_eva_text: std::cell::RefCell<Vec<crate::app::input::messages::HudMessage>> =
         std::cell::RefCell::new(Vec::new());
     let fps_panel_shown = state.renderer.performance_overlay.is_visible();
+    let observing_commands = state.match_state.match_diagnostics.observes_commands();
+    // docs/sim-thread.md: a network frame lent to the simulation thread runs
+    // there up to Queue_AI. A restore replays many frames per pass, each
+    // waiting for the last, so it stays inline.
+    let queue_handoff = state.match_state.sim_runtime.thread_enabled()
+        && !inline
+        && resume == FrameResume::None
+        && tick_lane == TickLane::Ordinary
+        && !replaying
+        && !observing_commands
+        && initial_save.is_none()
+        && state
+            .match_state
+            .live_network
+            .as_ref()
+            .is_some_and(|live| !live.restoring_match());
     // docs/sim-thread.md: a frame that can run without the lent client
     // owners takes what it reads from them now and records its writes.
-    let deferred = super::deferred_effects::DeferredClientEffects::applies(
-        state,
-        replaying,
-        state.match_state.match_diagnostics.observes_commands(),
-        initial_save.is_some(),
-    )
+    let deferred = (queue_handoff
+        || super::deferred_effects::DeferredClientEffects::applies(
+            state,
+            replaying,
+            observing_commands,
+            initial_save.is_some(),
+        ))
     .then(|| {
         super::deferred_effects::DeferredClientEffects::take(
             state.match_state.input.planning.active(),
@@ -1784,22 +1932,23 @@ fn advance_one_simulation_frame(
             &state.process_assets,
             &state.match_state.scenario_outcome,
             defer_verdict_to_clip,
+            queue_handoff,
         )
     });
-    // An ordinary offline frame runs on the simulation thread
-    // (off with `VERA20K_SIM_THREAD=0`); drawing reads its last published
-    // frame.
+    // An ordinary frame runs on the simulation thread; drawing reads its last
+    // published frame.
     let threaded = deferred.is_some()
         && !inline
         && resume == FrameResume::None
         && tick_lane == TickLane::Ordinary
-        && super::sim_host::sim_thread_enabled();
+        && state.match_state.sim_runtime.thread_enabled();
     if threaded {
         // The frame published for this tick shows every cell ticked so far;
         // their radar-terrain marks go to the minimap with it, since no draw
         // takes them while the tick is out (`App::drain_radar_terrain_marks`).
         drain_radar_terrain_marks(&mut state.match_state);
     }
+    let hash_interval = play_hash_interval(state.match_state.live_network.is_some());
     let Some((rt, frame_checksums)) = state.match_state.sim_runtime.tick_parts() else {
         return threaded_finished.unwrap_or(false);
     };
@@ -1808,12 +1957,12 @@ fn advance_one_simulation_frame(
     if !resuming {
         sim.prepare_unit_voice_visits(unit_voice_owners);
     }
-    // Normal play hashes its state once every PLAY_HASH_INTERVAL
-    // frames and on the frame that ends the match, for the replay log.
+    // Normal play hashes its state once every `play_hash_interval` frames
+    // and on the frame that ends the match, for the replay log.
     sim.hash_state_every(if replaying {
         std::num::NonZeroU64::MIN
     } else {
-        crate::sim::replay::PLAY_HASH_INTERVAL
+        hash_interval
     });
     // Report points need the ledger whether or not a dashboard is
     // attached; `publish_if_due` only runs with a client. Elsewhere
@@ -1883,6 +2032,7 @@ fn advance_one_simulation_frame(
     if threaded {
         let job = move |rt: &mut crate::sim::runtime::SimRuntime| -> super::sim_host::SimJobResult {
             let started = crate::util::time::Instant::now();
+            let logic_started_ms = super::frame_pacer::wall_clock_ms();
             let deferred = finish
                 .deferred
                 .as_ref()
@@ -1900,8 +2050,15 @@ fn advance_one_simulation_frame(
                 finish,
                 output,
                 tick_cost: started.elapsed(),
+                logic_ms: (logic_started_ms, super::frame_pacer::wall_clock_ms()),
             })
         };
+        // The passes and draws beside the tick show the placement preview and
+        // the cursor's kept answers, which ask the live world. Answered now,
+        // with the world home, they are one tick late at most however many
+        // ticks in a row are lent; no draw may find the world home between.
+        update_building_placement_preview(state);
+        crate::app::input::cursor::answer_kept_questions(state);
         state.match_state.sim_runtime.lend(Box::new(job));
         if let Some(request) = mouse_scroll {
             crate::app::input::camera::commit_camera_scroll(state, request);
@@ -2034,7 +2191,8 @@ fn advance_one_simulation_frame(
         )
         .with_outcome_wait(&mut state.match_state.scenario_outcome)
         .with_deferred_verdict(defer_verdict_to_clip)
-        .with_eva_text(detailed_eva_text.then_some(&finish.prefix_eva_text));
+        .with_eva_text(detailed_eva_text.then_some(&finish.prefix_eva_text))
+        .with_quiet_sounds(&mut state.match_state.match_audio.quiet);
         let effects = FrameEffects::for_sound(&boundary)
             .with_tactical_radar(&boundary)
             .with_local_planning(&boundary)
@@ -2070,7 +2228,9 @@ fn advance_one_simulation_frame(
             let network = rt.simulation.session().game_mode().is_network();
             let advanced = match resume {
                 FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),
-                FrameResume::NetworkWait => rt.resume_network_wait(effects),
+                FrameResume::NetworkWait | FrameResume::QueueHandoff => {
+                    rt.resume_network_wait(effects)
+                }
                 FrameResume::NetworkLeave => rt.leave_network_wait(effects),
                 FrameResume::OutcomeWait => rt.resume_outcome_wait(effects),
                 FrameResume::None => {
@@ -2086,11 +2246,15 @@ fn advance_one_simulation_frame(
             }
         }
     };
-    let tick_cost = advance_started.elapsed();
-    state
-        .platform
-        .frame_pacer
-        .record_frame_cost(tick_cost, false);
+    // The thread's part of a handed-off frame counted its cost; the exchange
+    // adds no second sample.
+    let tick_cost = (resume != FrameResume::QueueHandoff).then(|| advance_started.elapsed());
+    if let Some(tick_cost) = tick_cost {
+        state
+            .platform
+            .frame_pacer
+            .record_frame_cost(tick_cost, false);
+    }
     let committed = finish_simulation_frame(state, finish, output, tick_cost, mouse_scroll);
     threaded_finished.unwrap_or(false) | committed
 }
@@ -2112,6 +2276,9 @@ struct ThreadedTick {
     finish: FrameFinish,
     output: Result<SimFrameOutput, crate::sim::world::FrameAdvanceError>,
     tick_cost: crate::util::time::Duration,
+    /// When the job started and ended (`wall_clock_ms`): for a network
+    /// frame, the Logic visit that Queue_AI measures.
+    logic_ms: (u64, u64),
 }
 
 /// VERA-only: a failed frame must not crash the game. A peer's malformed
@@ -2138,25 +2305,60 @@ fn finish_threaded_tick(state: &mut AppState, mouse_scroll: Option<(f32, f32)>) 
         finish,
         output,
         tick_cost,
+        logic_ms: (logic_started_ms, logic_finished_ms),
     } = *result
         .downcast::<ThreadedTick>()
         .expect("the simulation thread runs only frame ticks");
+    let network = finish
+        .deferred
+        .as_ref()
+        .is_some_and(|deferred| deferred.hands_off_queue());
     let output = match output {
         Ok(output) => output,
         Err(error) => {
-            stop_failed_frame(state, false, &error);
+            stop_failed_frame(state, network, &error);
             return Some(false);
         }
     };
+    // MainTick55D3DA/55DE0D times the Logic visit up to Queue_AI. It ran on
+    // the simulation thread, not until this thread resumes the exchange,
+    // whose own finish then finds the sample taken.
+    if output.network_waiting
+        && let Some(live) = state.match_state.live_network.as_mut()
+    {
+        live.begin_processing(logic_started_ms as u32);
+        live.finish_processing(logic_finished_ms as u32);
+    }
     state
         .platform
         .frame_pacer
         .record_frame_cost(tick_cost, true);
-    let committed = finish_simulation_frame(state, finish, output, tick_cost, mouse_scroll);
+    let committed = finish_simulation_frame(state, finish, output, Some(tick_cost), mouse_scroll);
     // The draw left this tick's radar-terrain marks with it
     // (`App::drain_radar_terrain_marks`); they go to the minimap now.
     drain_radar_terrain_marks(&mut state.match_state);
-    Some(committed)
+    // A network frame stopped at Queue_AI on the simulation thread; its
+    // exchange, dispatch and commit continue here, with the live session.
+    if !pending_network_wait(state) {
+        return Some(committed);
+    }
+    Some(
+        advance_one_simulation_frame(
+            state,
+            TickLane::Ordinary,
+            None,
+            FrameResume::QueueHandoff,
+            true,
+        ) | committed,
+    )
+}
+
+fn pending_network_wait(state: &AppState) -> bool {
+    state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|rt| rt.simulation.pending_network_wait())
 }
 
 /// A frame whose client writes are recorded ([`super::deferred_effects`]):
@@ -2178,8 +2380,8 @@ fn run_deferred_tick(
                          text: crate::sim::bounty::BountyText| {
         deferred.record(super::deferred_effects::DeferredEffect::Bounty(text));
     };
-    // Sound plays from the frame tail; network, replay, the initial save and
-    // command logs never reach this path.
+    // Sound plays from the frame tail; replay, the initial save and command
+    // logs never reach this path, and a network frame stops at Queue_AI.
     let effects = FrameEffects::empty()
         .with_tactical_radar(deferred)
         .with_local_planning(deferred)
@@ -2187,9 +2389,14 @@ fn run_deferred_tick(
         .with_outcome_wait(deferred);
     #[cfg(feature = "ares")]
     let effects = effects.with_bounty_text(&record_bounty);
+    let effects = if deferred.hands_off_queue() {
+        effects.with_network_commands(deferred)
+    } else {
+        effects
+    };
     match resume {
         FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),
-        FrameResume::NetworkWait => rt.resume_network_wait(effects),
+        FrameResume::NetworkWait | FrameResume::QueueHandoff => rt.resume_network_wait(effects),
         FrameResume::NetworkLeave => rt.leave_network_wait(effects),
         FrameResume::OutcomeWait => rt.resume_outcome_wait(effects),
         FrameResume::None => rt.advance_frame(due_commands, SIM_TICK_MS, tick_lane, effects),
@@ -2201,7 +2408,7 @@ fn finish_simulation_frame(
     state: &mut AppState,
     finish: FrameFinish,
     mut output: SimFrameOutput,
-    tick_cost: crate::util::time::Duration,
+    tick_cost: Option<crate::util::time::Duration>,
     mouse_scroll: Option<(f32, f32)>,
 ) -> bool {
     let FrameFinish {
@@ -2249,6 +2456,7 @@ fn finish_simulation_frame(
                         })
                     };
                     let delivered = output.sound_events_delivered;
+                    let quiet = &mut state.match_state.match_audio.quiet;
                     super::sound_dispatch::dispatch_sim_sound_events(
                         std::mem::take(&mut output.sound_events)
                             .into_iter()
@@ -2259,6 +2467,7 @@ fn finish_simulation_frame(
                                         event,
                                         crate::sim::world::SimSoundEvent::MatchOutcome { .. }
                                     ))
+                                    && quiet.admit(event, radar_frame)
                             }),
                         sim,
                         rules,
@@ -2273,65 +2482,72 @@ fn finish_simulation_frame(
                 }
                 return false;
             }
-            let tick_ms = tick_cost.as_secs_f32() * 1000.0;
-            state.match_state.network_quality.record_tick(tick_ms);
-            // The relay's pace reports carry the simulation's own cost.
-            if let Some(live) = state.match_state.live_network.as_mut() {
-                live.record_tick_cost(tick_cost);
-            }
-            #[cfg(feature = "telemetry-dashboard")]
-            {
-                let tick = rt.simulation.session().tick();
-                let entities = rt.simulation.entities().len();
-                let houses = rt.simulation.houses().len();
-                let batch = rt.simulation.path_batch_stats();
-                state.match_state.telemetry_timing.push(tick_ms);
-                state
-                    .match_state
-                    .telemetry_history
-                    .record_tick(tick, tick_ms, entities, houses, batch);
-                // A report point closes the profiling window, so it covers the
-                // five seconds since the previous point rather than the whole
-                // match.
-                if crate::app::match_runtime::telemetry::ReportHistory::due(tick) {
-                    let speed = crate::sim::game_options::clamp_game_speed(
-                        rt.simulation.session().game_options().game_speed,
-                    );
-                    let mut timing = state.match_state.telemetry_timing.summarize(
-                        state.platform.frame_pacer.budget_ms(
-                            speed,
-                            rt.simulation
-                                .session()
-                                .network_command_timing()
-                                .map(|timing| {
-                                    (
-                                        timing.frames_per_second(),
-                                        state.match_state.live_network.as_ref().map_or(0, |live| {
-                                            live.pacing_delay_millis(
-                                                rt.simulation
-                                                    .session()
-                                                    .network_max_ahead_frames()
-                                                    .unwrap_or(0),
-                                            )
-                                        }),
-                                    )
-                                }),
-                        ),
-                    );
-                    timing.fps = state.diag.frame_timer.fps();
-                    timing.tick_hz = state
+            // A network frame resumed after the simulation thread's Logic has
+            // its cost from that thread's part; the exchange adds no sample.
+            if let Some(tick_cost) = tick_cost {
+                let tick_ms = tick_cost.as_secs_f32() * 1000.0;
+                state.match_state.network_quality.record_tick(tick_ms);
+                // The relay's pace reports carry the simulation's own cost.
+                if let Some(live) = state.match_state.live_network.as_mut() {
+                    live.record_tick_cost(tick_cost);
+                }
+                #[cfg(feature = "telemetry-dashboard")]
+                {
+                    let tick = rt.simulation.session().tick();
+                    let entities = rt.simulation.entities().len();
+                    let houses = rt.simulation.houses().len();
+                    let batch = rt.simulation.path_batch_stats();
+                    state.match_state.telemetry_timing.push(tick_ms);
+                    state
                         .match_state
-                        .telemetry_tick_rate
-                        .rate(crate::util::time::Instant::now());
-                    let mut point = rt.simulation.report_point();
-                    point.timing = Some(timing);
-                    point.render = state.diag.render_timing.report();
-                    if let Some(report) = point.render {
-                        state.diag.render_report_cache = Some(report);
+                        .telemetry_history
+                        .record_tick(tick, tick_ms, entities, houses, batch);
+                    // A report point closes the profiling window, so it covers the
+                    // five seconds since the previous point rather than the whole
+                    // match.
+                    if crate::app::match_runtime::telemetry::ReportHistory::due(tick) {
+                        let speed = crate::sim::game_options::clamp_game_speed(
+                            rt.simulation.session().game_options().game_speed,
+                        );
+                        let mut timing = state.match_state.telemetry_timing.summarize(
+                            state.platform.frame_pacer.budget_ms(
+                                speed,
+                                rt.simulation
+                                    .session()
+                                    .network_command_timing()
+                                    .map(|timing| {
+                                        (
+                                            timing.frames_per_second(),
+                                            state.match_state.live_network.as_ref().map_or(
+                                                0,
+                                                |live| {
+                                                    live.pacing_delay_millis(
+                                                        rt.simulation
+                                                            .session()
+                                                            .network_max_ahead_frames()
+                                                            .unwrap_or(0),
+                                                    )
+                                                },
+                                            ),
+                                        )
+                                    }),
+                            ),
+                        );
+                        timing.fps = state.diag.frame_timer.fps();
+                        timing.tick_hz = state
+                            .match_state
+                            .telemetry_tick_rate
+                            .rate(crate::util::time::Instant::now());
+                        let mut point = rt.simulation.report_point();
+                        point.timing = Some(timing);
+                        point.render = state.diag.render_timing.report();
+                        if let Some(report) = point.render {
+                            state.diag.render_report_cache = Some(report);
+                        }
+                        state.match_state.report_history.push(point);
+                        rt.simulation.reset_frame_profile();
+                        state.diag.render_timing = Default::default();
                     }
-                    state.match_state.report_history.push(point);
-                    rt.simulation.reset_frame_profile();
-                    state.diag.render_timing = Default::default();
                 }
             }
             let admitted_commands = output.take_admitted_commands();
@@ -2453,11 +2669,12 @@ fn finish_simulation_frame(
             // option is on. A disabled switch passes None, so the dispatch
             // never builds a fact and no rules/CSF lookup follows.
             let mut eva_text_messages = Vec::new();
+            let quiet = &mut state.match_state.match_audio.quiet;
             super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events
                     .into_iter()
                     .skip(sound_events_delivered)
-                    // The same rule as the frame boundary's, for the facts
+                    // The same rules as the frame boundary's, for the facts
                     // that arrived after that boundary's last pass.
                     .filter(|event| {
                         !(defer_verdict_to_clip
@@ -2465,6 +2682,7 @@ fn finish_simulation_frame(
                                 event,
                                 crate::sim::world::SimSoundEvent::MatchOutcome { .. }
                             ))
+                            && quiet.admit(event, radar_frame)
                     }),
                 sim,
                 &resources.rules,
@@ -2515,12 +2733,6 @@ fn finish_simulation_frame(
         // world is no longer borrowed.
         if let Some(deferred) = deferred {
             deferred.apply(state);
-        }
-        // The simulation thread publishes a frame when it takes a tick
-        // (`SimHost::lend`); this is the phase 2 opt-in, a frame after every
-        // tick without the thread.
-        if frame_committed && super::sim_host::presentation_frames_enabled() {
-            state.match_state.sim_runtime.publish_presentation();
         }
         if frame_committed {
             state
@@ -2575,12 +2787,15 @@ fn finish_simulation_frame(
                 placement_armed,
             );
         }
+        let ares = state
+            .rules()
+            .is_some_and(crate::rules::ruleset::RuleSet::ares);
         for output in drained_lifecycle_outputs {
             if let Some(cursor_clear) = state
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .apply_lifecycle_output(&output, local_house)
+                .apply_lifecycle_output(&output, local_house, ares)
             {
                 state
                     .match_state
@@ -2736,6 +2951,11 @@ fn finish_simulation_frame(
             // VERA ferry: the routes' orders, as ordinary input for a later
             // frame.
             crate::app::input::ferry::frame_pass(state);
+            // VERA Auto Repair: Repair orders for damaged buildings, the same
+            // way.
+            crate::app::input::auto_repair::frame_pass(state);
+            // VERA primary rotation: the factory groups' turns.
+            crate::app::input::primary_rotation::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,
@@ -2790,11 +3010,18 @@ fn finish_simulation_frame(
         }
     }
 
+    // VERA relation colours follow the frame's alliances: an alliance made or
+    // broken recolours that house before the atlas check below.
+    if frame_committed && state.match_state.match_presentation.relation_colors {
+        state.match_state.refresh_relation_colors();
+    }
     // AnimClass producers can install a new palette after construction without
     // changing any entity identity. Unit deploy Anim+D4 (739C1A/739DFE) is one
     // such producer: its first ordinary draw needs the selected-scheme atlas
     // frames even when the tick reports no entity spawn or ownership change.
+    // A refresh asked beside the tick (`refresh_entity_atlases`) runs here.
     if refresh_atlases_after_tick
+        || state.match_state.match_presentation.atlas_refresh_owed
         || (frame_committed
             && state
                 .match_state
@@ -2804,13 +3031,19 @@ fn finish_simulation_frame(
                     !sprite_atlas::atlas_covers_anim_remaps(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &runtime.simulation,
-                        &state.match_state.match_presentation.house_color_map,
+                        state
+                            .match_state
+                            .match_presentation
+                            .effective_house_color_map(),
                     ) || !sprite_atlas::atlas_covers_sprite_keys(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &sprite_atlas::collect_fogged_sprite_keys(
                             &runtime.simulation,
                             &runtime.resources.rules,
-                            &state.match_state.match_presentation.house_color_map,
+                            state
+                                .match_state
+                                .match_presentation
+                                .effective_house_color_map(),
                         ),
                         Some(&runtime.resources.rules),
                     )
@@ -2893,7 +3126,6 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
-            #[cfg(feature = "ares")]
             TriggerEffect::EvaVoice { index } => {
                 if let (Some(sfx), Some(catalog)) = (
                     state.audio.sfx_player.as_mut(),
@@ -2974,6 +3206,12 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         // it is neither an abandon nor a permission to emit another PLACE.
         return;
     }
+    // The owner's buildings bound the build area (`is_within_build_area`),
+    // and the world copy beside a lent tick has no objects: the preview
+    // answered before the tick left stands until it is back.
+    if state.match_state.sim_runtime.is_lent() {
+        return;
+    }
     let owner = preferred_local_owner(state);
     let (Some(owner), Some(sim), Some(rules)) = (
         owner,
@@ -3033,14 +3271,24 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Start growing the entity atlases after entities spawn, die, change type or
-/// owner, or leave the display ([`EntityAtlasGrowth::start`]). The rasters run
-/// on workers; [`publish_entity_atlas_growth`] completes them. Reuses the
-/// process asset manager instead of creating a new one (avoids re-opening all
-/// MIX archives from disk).
+/// Admit the voxel models and grow the SHP atlas after entities spawn, die,
+/// change type or owner, or leave the display. A new voxel model's pictures
+/// are drawn the first time a frame shows them
+/// ([`crate::render::unit_atlas::admit_world_models`]); the SHP raster runs on
+/// a worker ([`EntityAtlasGrowth::start`]) and [`publish_entity_atlas_growth`]
+/// completes it. Reuses the process asset manager instead of creating a new
+/// one (avoids re-opening all MIX archives from disk).
 ///
 /// [`EntityAtlasGrowth::start`]: crate::render::entity_atlas_growth::EntityAtlasGrowth::start
 pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
+    // The refresh asks the live world's objects, which the world copy beside
+    // a lent tick lacks: a refresh asked then (a growth published beside the
+    // tick) waits for the tick's tail.
+    let lent = state.match_state.sim_runtime.is_lent();
+    state.match_state.match_presentation.atlas_refresh_owed = lent;
+    if lent {
+        return;
+    }
     let Some(rt) = state.match_state.sim_runtime.runtime() else {
         return;
     };
@@ -3049,17 +3297,27 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         return;
     };
     let presentation = &mut state.match_state.match_presentation;
+    crate::render::unit_atlas::admit_world_models(
+        &mut presentation.unit_atlas,
+        rt.simulation.entities(),
+        asset_manager,
+        Some(&rt.resources.rules),
+        Some(rt.simulation.interner()),
+        state.renderer.gpu.device.limits().max_texture_dimension_2d,
+    );
     presentation.atlas_growth.start(
         &crate::render::entity_atlas_growth::GrowthSource {
             sim: &rt.simulation,
             rules: Some(&rt.resources.rules),
             asset_manager,
-            house_colors: &presentation.house_color_map,
+            house_colors: presentation
+                .relation_color_map
+                .as_ref()
+                .unwrap_or(&presentation.house_color_map),
             theater_name: &presentation.theater_name,
             theater_ext: &presentation.theater_ext,
             max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
         },
-        presentation.unit_atlas.as_ref(),
         presentation.sprite_atlas.as_ref(),
     );
 }
@@ -3075,7 +3333,6 @@ pub(crate) fn publish_entity_atlas_growth(state: &mut AppState, wait: bool) {
             &gpu.device,
             &gpu.queue,
             &state.renderer.batch_renderer,
-            &mut presentation.unit_atlas,
             &mut presentation.sprite_atlas,
             wait,
         ) {
@@ -3221,8 +3478,8 @@ pub(crate) fn screen_point_to_world_cell(
 #[cfg(test)]
 mod tests {
     use super::{
-        ExactStepError, ExactStepReceipt, upsert_overlay_entries, validate_exact_step_receipt,
-        world_point_to_cell,
+        ExactStepError, ExactStepReceipt, frame_ticks_inline, upsert_overlay_entries,
+        validate_exact_step_receipt, world_point_to_cell,
     };
     use crate::map::overlay::OverlayEntry;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
@@ -3240,6 +3497,34 @@ mod tests {
             overlay_id,
             frame,
         }
+    }
+
+    /// A catch-up frame goes to the simulation thread when lending is
+    /// measured cheaper, a frame that hashes goes whatever the estimate
+    /// says, and the rest tick here as before.
+    #[test]
+    fn costly_frames_go_to_the_simulation_thread() {
+        let ms = |n| Some(std::time::Duration::from_millis(n));
+        // (hashes, another pass follows, last lent cost, expected cost)
+        let inline = |hashes, follows, lent, expected: Option<_>| {
+            frame_ticks_inline(false, false, hashes, follows, lent, expected.unwrap())
+        };
+        // Another pass follows: lent when the last lent frame cost less.
+        assert!(!inline(false, true, ms(1), ms(4)));
+        assert!(inline(false, true, ms(4), ms(1)));
+        // A frame that hashes goes, even with lending dearer.
+        assert!(!inline(true, true, ms(4), ms(1)));
+        // The last frame of a pass, lending dearer: here, as before.
+        assert!(inline(false, false, ms(4), ms(1)));
+        // Frame stepping and exact steps always tick here.
+        assert!(frame_ticks_inline(
+            true,
+            false,
+            true,
+            false,
+            None,
+            ms(1).unwrap()
+        ));
     }
 
     #[test]

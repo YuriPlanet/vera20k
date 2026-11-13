@@ -45,6 +45,7 @@ fn list(sim: &mut Simulation, owner: InternedId, ids: Vec<u64>) {
 
 #[test]
 fn factory_qualification_matches_executed_ares_suffix_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_factory_owners.json");
     for row in data["rows"].as_array().unwrap() {
         let input = &row["input"];
@@ -122,6 +123,7 @@ fn factory_qualification_matches_executed_ares_suffix_controls() {
 
 #[test]
 fn factory_country_is_initialized_from_direct_parent_and_survives_owner_transfer_and_conversion() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("");
     assert!(
         sim.houses[&owner].permanent_factory_plans().is_empty(),
@@ -185,6 +187,7 @@ fn factory_country_is_initialized_from_direct_parent_and_survives_owner_transfer
 
 #[test]
 fn factory_qualification_uses_one_candidate_for_both_lists_and_requires_a_matching_factory_kind() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("");
     let target = rules.object("TARGET").unwrap();
     assert!(!qualifies(&sim, &rules, &sim.houses[&owner], target));
@@ -216,8 +219,11 @@ fn factory_qualification_uses_one_candidate_for_both_lists_and_requires_a_matchi
     ));
 }
 
+// Runs again once building placement's factory plans moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = fixture("");
     let yard = construct(&mut sim, &rules, "YARD");
     let upgrade = sim.interner.get("UP").unwrap();

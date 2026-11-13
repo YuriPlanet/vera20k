@@ -1,15 +1,70 @@
-# Ares ground, airborne and powered-building EMP
+# Ares ground, airborne and building EMP
 
 This optional chain requires the compile-time `ares` feature. Default builds do
 not read the extension keys or run its Bullet/AI producers. It covers every Foot
 victim but a Tunnel mover: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet and
 Rocket, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
 a held Magnetron victim or a Temporal warp, harvesters, falling and
-mind-controlled victims, and the EMP.Threshold deaths. It also admits an
-independent ordinary powered building, a Radar or SpySat provider included,
-without linked Prism support or factory/occupant/undeploy dependencies, and
-announces a hit on the player's miners and base (announceAttack). Other victims
-are not treated as generic offline objects. This is partial EMP support.
+mind-controlled victims, and the EMP.Threshold deaths. It admits every
+EMP-prone building: powered ones, Radar and SpySat providers, factories and
+construction yards, Gap generators, superweapon, PowersUnit, Sensors, cloning,
+LaserFence, Tesla-charged, garrisonable, undeploying and Prism-linked ones. It
+spares a tank in a Tank Bunker and announces a hit on the player's miners and
+base (announceAttack). A Tunnel mover is the one victim still refused.
+
+## Building kinds
+
+IsTypeEMPProne (inlined in isEMPImmune10062D90) makes a BuildingType prone when
+it is Powered with a positive drain, or Radar, SuperWeapon/SuperWeapon2 (a
+resolved index), UndeploysInto, PowersUnit, Sensors, LaserFencePost or
+GapGenerator; InvisibleInGame never is. An explicit `ImmuneToEMP=no` makes any
+other type prone (a war factory, the Cloning Vats). Nothing in the delivery or
+the effect bodies tests a building's kind beyond Radar/SpySat and
+LaserFencePost: each kind's consequence is what gamemd's shared owners do with
+a Deactivated, DisableStuff'd, non-operational building whose House rechecks
+its tech tree and power. VERA reaches those owners:
+
+- Factories and construction yards: Ares Deactivate1004CDC0 and
+  Activate1004CCB0 (hooks 70FC90/70FBE0) refresh a Building's factory queues
+  (UpdateFactoryQueues10013250 -> Update_FactoriesQueues509140) on the
+  transition. Ares FindFactory10020D40 counts a Deactivated factory as
+  offline, so production is suspended while the factory is under EMP and the
+  system hold lifts when it reactivates. UpdateConstructionOptions' hook4456E5
+  drops an EMPed factory's cameos at the House tech pass; placement and Ares
+  CanBuild keep their own answers (AtLimit, not No). Both hooks also skip the
+  activation sound while IKnowWhatImDoing (A8E7AC, VERA's object placement
+  scope) is raised. A computer factory's own production (Factory_AI4500F0)
+  reads no deactivation and keeps building, as in gamemd.
+- Gap generators: DisableStuff452480 removes the gap at the hit; the next
+  operational sample (43FB20 -> 4549B0) restores it after expiry.
+- Superweapons: Ares replaces the House Super pass (hook 50AF10, 10039450;
+  grants 10039580) with GetSuperWeaponStatuses10038F10, whose provider is
+  powered only with HasPower, no EMP and an operator (10062F50), and Charging
+  only when also not warped out and neither current nor queued
+  Construction/Selling. An IsPowered type is held without a powered provider
+  (or on low power), any other type without a Charging one. The stock pass
+  never holds a type that is not IsPowered.
+- PowersUnit: the operational off edge loses the House's powered center
+  (LostPoweredCenter50E0E0) and the robots go offline; the on edge after
+  expiry brings them back (50E010), and Ares PoweredUnit100454F0 refuses a
+  center under EMP.
+- Cloning Vats: KickOutClones' lambda100112D0 skips a non-operational vat.
+- Tesla coils: Is_Operational4555D0 refuses an EMPed building whatever its
+  chargers, and the shared fire error (6FC2E0) refuses its shots.
+- Garrisonable buildings: the occupants stay inside; the building's fire goes
+  through the same fire error. Their click arms are the deactivated-cursor
+  chain ([ares-cloak-power.md](ares-cloak-power.md)).
+- Undeployers: a building hit while undeploying is not deactivated (Selling,
+  10062D60); Mission_Selling's hook44A04C (10053D60) gives the unit the
+  building's counter and its sparkle type when that is not the type default
+  (10062F70), and the unit deactivates at its next AI visit.
+- Prism towers: a tower in a forwarding network leaves it at its next
+  operational sample (Ares10016950, hook454B3D), as one that goes offline.
+- LaserFencePost: DisableEMPEffect100627F0 also enables its Stuff without
+  power. The fence recalc4533A0 both Stuff bodies call has no VERA port, since
+  VERA builds no fence sections.
+
+UpdateSparkleAnim10062FD0 draws a building's sparkle with ZAdjust -1024.
 
 ## Independent powered building
 
@@ -87,10 +142,9 @@ production capture are separate validation steps, not native-corpus claims.
 Airburst child fans and AttachEffect remain separate whole-weapon residuals.
 Parent `Airburst=yes` still enters the existing detonation receiver once, and
 EMP runs before ordinary damage and the later native Airburst tail; absence of
-a child-fan consumer is not a reason to suppress the parent's EMP. No complete
-Raccoon, factory, Gap, superweapon, PowersUnit, LaserFence,
-Tesla charging, occupied building, undeploy or linked Prism behavior is claimed.
-Positive-output buildings (including explicit ImmuneToEMP=no providers and
+a child-fan consumer is not a reason to suppress the parent's EMP. The
+building kinds above are covered through their own owners, not by this
+connected sample. Positive-output buildings (including explicit ImmuneToEMP=no providers and
 upgrade-added output) are not covered by the negative-power tower comparisons.
 Their EMP/output accounting and downstream House effects remain unproved;
 frequency is unknown and explicit use may expose incorrect power availability.
@@ -383,6 +437,10 @@ reused Hunt handler retains its existing cadence draw and the Anim constructor
 can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
+The building kinds add no draws or DetachAll of their own; their owners keep
+theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), and a factory
+queue's suspend/resume and a Super's hold/release pause and resume their
+timers. The undeploy copy writes the unit's counter only.
 
 Regressions through real fire on retail Hills rules, with an EMP gun layered
 in through the map, are in
@@ -390,17 +448,28 @@ in through the map, are in
 computer infantryman, the three miners, a Yuri-held tank, a falling
 paratrooper, a Hover APC and a Sea Scorpion, a V3 rocket tilting on its
 launcher, a Spy Satellite Uplink, and the player's miner and base warnings.
+[`emp_building_tests.rs`](../src/sim/game_entity/emp_building_tests.rs) adds
+the building kinds on the same rules: a tank in a Tank Bunker, a construction
+yard's held production, a yard hit while it repacks, a Gap Generator, the
+Psychic Sensor's Reveal, a Robot Control Center, a Prism supporter mid-charge,
+a Tesla Coil with a garrisonable building and Cloning Vats, and a LaserFencePost
+without power.
 
-Still open: a Tunnel mover, and the factory, Gap, superweapon, PowersUnit,
-LaserFence, Tesla charging, occupied, undeploy and linked Prism buildings, which
-the delivery reports as unsupported and leaves unaffected. Their trigger is an
-EMP hit on such a victim in a mod; the EMP effect is missing there. A landed
-Aircraft's Deactivate reaches Fly's Power_Off override4CFD20, whose
-Random(20, 30) spin and stop are not ported (`locomotor_power_off`); the base
-flag write runs instead, without those two scenario draws. Delivery's bunker
-test (a victim in a Building's bunker is spared unless the Warhead
-PenetratesBunker, 10062357..10062376) is not ported; a tank in a Tank Bunker takes the
-EMP. Native TypeImmune scanner indices18/19 have synthetic getter evidence,
+Delivery's bunker test (10062357..10062376) spares a victim whose
+BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
+PenetratesBunker; the bunker itself is an ordinary building victim.
+
+Still open: a Tunnel mover, which the delivery reports as unsupported and
+leaves unaffected (trigger: an EMP hit on a Tunnel unit in a mod; effect: no
+EMP there). A landed Aircraft's Deactivate reaches Fly's Power_Off
+override4CFD20, whose Random(20, 30) spin and stop are not ported
+(`locomotor_power_off`); the base flag write runs instead, without those two
+scenario draws. A LaserFencePost's fence sections are neither dropped by
+DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
+(trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
+mods with LaserFencePost types). The Super pass still reads only a provider's
+own type, not its upgrades' SuperWeapon keys (the existing residual of
+`superweapon::provided_supers`). Native TypeImmune scanner indices18/19 have synthetic getter evidence,
 but their production configuration meaning is not established; the shared 18-slot
 weapon owner is not expanded. The native lazy default-immunity cache is represented
 by an equivalent immutable Type/category decision on this chain, not persisted as

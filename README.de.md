@@ -15,13 +15,11 @@
 # VERA20K
 
 VERA20K ist eine von der Community getragene Neuimplementierung der ursprünglichen Engine,
-`gamemd.exe`. Sie verwendet die originalen Spieldateien, also brauchst du eine eigene Kopie von
-Red Alert 2: Yuri's Revenge.
+`gamemd.exe`. Bring deine eigene Kopie von Red Alert 2: Yuri's Revenge mit, um zu
+entwickeln oder zu spielen.
 
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
-
-**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: Gefechtseinstellungen und eine Szene aus dem Spiel" width="100%">
 
@@ -44,6 +42,8 @@ Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client st
 [Offline-Client-Einrichtung](integrations/cncnet/README.md).
 
 ## Mitmachen
+
+**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
 
 Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
 verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:

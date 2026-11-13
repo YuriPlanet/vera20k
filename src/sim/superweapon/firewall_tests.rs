@@ -93,6 +93,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
             .entities
             .get(wall)
             .unwrap()
+            .ares
             .ares_firestorm_wall
             .frame()
     };

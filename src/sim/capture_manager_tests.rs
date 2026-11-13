@@ -1147,7 +1147,7 @@ fn native_overload_update_corpus() {
             "{name}: constructor pip countdown"
         );
         let entity = sim.substrate.entities.get_mut(mind).unwrap();
-        entity.capture_manager = Some(manager);
+        entity.capture_manager = Some(Box::new(manager));
         if input.get("kill").is_some() {
             // Dies to the first damaging row, as the fixture's owner does.
             entity.health.set_for_test(50);
@@ -2038,6 +2038,7 @@ fn selling_a_psychic_tower_frees_its_captives() {
             .entities
             .get(tower)
             .unwrap()
+            .building
             .building_last_operational
             .is_operational()
     );

@@ -154,11 +154,6 @@ impl TunnelRuntime {
         self.state != TunnelState::Idle
     }
 
-    /// `Is_Moving_Now` (`0x00728A60`): moving and past PreDigIn.
-    pub(crate) fn is_moving_now(&self) -> bool {
-        self.is_moving() && self.state != TunnelState::PreDigIn
-    }
-
     /// `Destination` (`0x00728A90`): the stored coordinate while moving, else
     /// the owner's `location`.
     pub(crate) fn destination_or(&self, location: DriveCoord) -> DriveCoord {
@@ -375,11 +370,7 @@ mod tests {
             let mut runtime = TunnelRuntime::for_test(from, target);
             assert_eq!(runtime.stop_moving(), searches, "{from:?}");
             assert_eq!(runtime.state(), to, "{from:?}");
-            assert_eq!(
-                runtime.raw_destination() == NULL_COORD,
-                cleared,
-                "{from:?}"
-            );
+            assert_eq!(runtime.raw_destination() == NULL_COORD, cleared, "{from:?}");
         }
     }
 

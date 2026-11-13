@@ -1,16 +1,14 @@
-//! Client-side in-game Options (0xBBB) state: the six [Options] values plus the
-//! transient interaction state the overlay needs. App/ui-level only — never sim/.
+//! The in-game projection of the `[Options]` values gamemd's Game Controls
+//! (BBB) edits, which their live consumers read. App/ui-level only, never sim/.
+//! VERA shows those settings as the in-game menu's first page
+//! (`app::input::pause_menu`), which writes here as it commits.
 //!
 //! Stored native values remain unchanged. GameSpeed adds VERA's value 8 for
 //! 90 ticks/s; ScrollRate stays 0..6. DetailLevel is 0..2 direct.
 
-use super::game_speed::{MAX_POSITION, SpeedContext};
-use super::in_game_options::control;
-use crate::ui::shell::trackbar::{thumb_left, trackbar_position_from_x};
-use crate::ui::skirmish_shell::RectPx;
+use super::game_speed::SpeedContext;
 
 /// GameSpeed/ScrollRate internal range (0 = fastest .. 6 = slowest).
-pub const OPTIONS_SPEED_MIN: u32 = 0;
 pub const OPTIONS_SPEED_MAX: u32 = 6;
 /// DetailLevel range (0 = low .. 2 = high), direct (not inverted).
 pub const OPTIONS_DETAIL_MAX: u32 = 2;
@@ -21,20 +19,15 @@ pub struct InGameOptionsState {
     pub game_speed: u32,
     /// Display ordering only; simulation speed remains owned by GameOptions.
     pub speed_context: SpeedContext,
-    /// Internal ScrollRate 0..6 (0 = fastest). Slider position is `6 - scroll_rate`.
+    /// Internal ScrollRate 0..6 (0 = fastest).
     pub scroll_rate: u32,
-    /// DetailLevel 0..2 (direct). Hidden in 0xBBB but carried for persistence.
+    /// DetailLevel 0..2 (direct).
     pub detail_level: u32,
     pub unit_action_lines: bool,
     pub show_hidden: bool,
     pub tooltips: bool,
-    /// Transient: which owner-draw button is held (for the pressed frame).
-    pub buttons: super::button::ShellButtonInteraction<u16>,
-    /// Native4E2201..2229 projects the common audio-device predicate.
-    pub sound_enabled: bool,
-    /// Transient: control id of the slider currently being dragged, if any.
-    pub dragging_slider: Option<u16>,
-    /// Init hid the GameSpeed row this open (see `control_shown`).
+    /// BBB's init hides the GameSpeed row for this open
+    /// (`app::input::in_game_options::on_open`).
     pub game_speed_hidden: bool,
 }
 
@@ -50,67 +43,18 @@ impl Default for InGameOptionsState {
             unit_action_lines: true,
             show_hidden: false,
             tooltips: true,
-            buttons: Default::default(),
-            sound_enabled: true,
-            dragging_slider: None,
             game_speed_hidden: false,
         }
     }
 }
 
 impl InGameOptionsState {
-    pub fn slider_position(&self, id: u16) -> u32 {
-        match id {
-            control::GAME_SPEED => self
-                .speed_context
-                .visual_position(self.game_speed as i32)
-                .max(0) as u32,
-            control::SCROLL_RATE => speed_slider_pos(self.scroll_rate),
-            _ => 0,
-        }
+    /// Where the Game Speed slider stands for the speed in effect.
+    pub fn game_speed_position(&self) -> u32 {
+        self.speed_context
+            .visual_position(self.game_speed as i32)
+            .max(0) as u32
     }
-
-    /// Reset the transient interaction state when the overlay (re)opens; gamemd
-    /// recreates the dialog each open, and init decides the GameSpeed row.
-    pub fn on_open(&mut self, game_speed_hidden: bool) {
-        self.buttons = Default::default();
-        self.dragging_slider = None;
-        self.game_speed_hidden = game_speed_hidden;
-    }
-}
-
-pub const fn slider_max(id: u16) -> u32 {
-    if id == control::GAME_SPEED {
-        MAX_POSITION as u32
-    } else {
-        OPTIONS_SPEED_MAX
-    }
-}
-
-/// Slider position (0..6) shown for an internal speed value: `6 - value`.
-/// GameSpeed/ScrollRate only (DetailLevel is direct).
-pub fn speed_slider_pos(internal: u32) -> u32 {
-    OPTIONS_SPEED_MAX - internal.min(OPTIONS_SPEED_MAX)
-}
-
-/// Internal speed value from a slider position (0..6): `6 - pos`.
-pub fn speed_from_slider_pos(pos: u32) -> u32 {
-    OPTIONS_SPEED_MAX - pos.min(OPTIONS_SPEED_MAX)
-}
-
-/// Control-local thumb left for BBB's plain rail. Active 4E1FE0 sends 4AC=0
-/// at 4E207F..2089 / 4E2128..2132, disabling the default 50px plaque.
-/// Native 61DA52..61DA79 and 61E486..61E4A8 project using range, not range+1.
-pub fn plain_trackbar_thumb_left(position: u32, rect: RectPx, maximum: u32) -> i32 {
-    thumb_left(position.min(maximum) as i32, rect.w, 0, maximum as i32)
-}
-
-/// Quantized position for BBB's plain rail. Native 61DC00..61DC58 uses
-/// range+1 mouse partitions, unlike the range-based thumb projection above.
-/// The shared implementation has original-instruction goldens in
-/// tools/storage_oracle/launcher_trackbar.py; BBB supplies reserve=0 and range=6.
-pub fn trackbar_pos_from_mouse_x(mouse_x: i32, min: i32, max: i32, rect: RectPx) -> i32 {
-    min + trackbar_position_from_x(mouse_x - rect.x, rect.w, 0, (max - min).max(0))
 }
 
 #[cfg(test)]
@@ -122,42 +66,6 @@ mod tests {
         let s = InGameOptionsState::default();
         assert_eq!((s.game_speed, s.scroll_rate, s.detail_level), (3, 3, 2));
         assert!(s.unit_action_lines && !s.show_hidden && s.tooltips);
-    }
-
-    #[test]
-    fn plain_192_rail_matches_original_thumb_and_partition_boundaries() {
-        // Original-instruction fixture includes the ordinary BBB width192,
-        // reserve0, range6 path, preserving D5 comparisons in the same oracle.
-        let golden: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/launcher_trackbar.json",
-        ))
-        .unwrap();
-        let geometry = golden["geometries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|g| g["width"] == 192 && g["reserve"] == 0 && g["maximum"] == 6)
-            .expect("ordinary BBB plain rail fixture");
-        let rect = RectPx::new(216, 163, 192, 21);
-        let positions = geometry["positions"].as_array().unwrap();
-        let pointers = geometry["pointers"].as_array().unwrap();
-        assert_eq!((positions.len(), pointers.len()), (7, 209));
-        for sample in positions {
-            let position = sample["position"].as_u64().unwrap() as u32;
-            let left = plain_trackbar_thumb_left(position, rect, OPTIONS_SPEED_MAX);
-            assert_eq!(left, sample["thumb_left"].as_i64().unwrap() as i32);
-            assert_eq!(left + 12, sample["thumb_right"].as_i64().unwrap() as i32);
-        }
-        for sample in pointers {
-            let x = sample["x"].as_i64().unwrap() as i32;
-            let position = trackbar_pos_from_mouse_x(rect.x + x, 0, 6, rect);
-            assert_eq!(
-                position,
-                sample["position"].as_i64().unwrap() as i32,
-                "x={x}"
-            );
-            let left = plain_trackbar_thumb_left(position as u32, rect, OPTIONS_SPEED_MAX);
-            assert_eq!(left, sample["thumb_left"].as_i64().unwrap() as i32, "x={x}");
-        }
+        assert_eq!(s.game_speed_position(), 3);
     }
 }

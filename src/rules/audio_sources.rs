@@ -37,6 +37,11 @@ impl AudioDefinitions {
     /// against the process sample index, selected before these readers as
     /// startup does (`406CE8` before `52C796`).
     pub fn select_admitting(assets: &AssetManager, index: Option<&AudioIndex>) -> Self {
+        // Ares reads both its own way in a game that ships `ares.mix`
+        // (`ares_switch::ares_way`).
+        let _ares_way = crate::rules::ares_switch::read_ares_way(
+            crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
+        );
         // `[ini] sound`/`eva` override the profile's shared SOUNDMD/EVAMD names;
         // both readers stay presentation-only and unlayered.
         let roots = assets.ini_roots();
@@ -270,9 +275,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_eva_reads_retain_catalog_matches_through_layers_and_save() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::ProcessedRulesLayers;
         use crate::rules::process_owner::NativeScenarioRulesPrefix;
 
@@ -369,9 +374,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_eva_keeps_startup_catalog_after_files_change() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::process_owner::NativeScenarioRulesPrefix;
         use crate::rules::retail_sources::RetailRulesSources;
 

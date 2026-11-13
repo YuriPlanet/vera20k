@@ -129,7 +129,6 @@ impl LocomotorState {
     /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
     /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
     /// instance and its timers; VERA's derived type caches still need rebinding.
-    #[cfg(feature = "ares")]
     pub(crate) fn change_type_binding(
         &mut self,
         old_type_kind: LocomotorKind,

@@ -636,7 +636,7 @@ fn a_gattling_tank_spins_up_while_it_fights() {
         previous = now;
     }
     // Ares' stage test reads the charged value (hook 0x70DEBA): a frame earlier.
-    let stage_ups_at = if crate::rules::ARES_ENABLED {
+    let stage_ups_at = if crate::rules::ARES_BUILD {
         [(1, 200), (2, 400)]
     } else {
         [(1, 201), (2, 401)]

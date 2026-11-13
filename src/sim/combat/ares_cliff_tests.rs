@@ -44,6 +44,7 @@ fn world_with_cliff() -> Simulation {
 /// stops there without the CollapseChance draw.
 #[test]
 fn ares_railgun_ground_stop_spends_no_cliff_draw() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = world_with_cliff();
     let before = sim.scenario_rng.logical_state();
@@ -68,6 +69,7 @@ fn ares_railgun_ground_stop_spends_no_cliff_draw() {
 /// CollapseChance.
 #[test]
 fn ares_area_damage_rolls_the_impact_cliff() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = world_with_cliff();
     let mut expected = sim.scenario_rng.clone();

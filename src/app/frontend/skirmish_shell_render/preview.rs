@@ -297,7 +297,7 @@ pub(super) fn is_random_map_sentinel_file_name(file_name: &str) -> bool {
     name.eq_ignore_ascii_case(RANDMAP_SENTINEL_FILE_NAME)
 }
 
-pub(super) fn is_random_map_sentinel_entry(entry: &MapMenuEntry) -> bool {
+pub(crate) fn is_random_map_sentinel_entry(entry: &MapMenuEntry) -> bool {
     is_random_map_sentinel_file_name(&entry.file_name)
 }
 

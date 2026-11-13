@@ -181,8 +181,8 @@ pub struct TiberiumType {
     pub spread: i32,
     /// `SpreadPercentage=` as the native `TiberiumClass+0xA0` double.
     pub spread_percentage_bits: u64,
-    /// Ares TiberiumExt (`rules::ares_tiberium`).
-    #[cfg(feature = "ares")]
+    /// Ares TiberiumExt (`rules::ares_tiberium`); its default unless the
+    /// Rules are read the Ares way.
     ares: crate::rules::ares_tiberium::TiberiumExtRules,
 }
 
@@ -237,9 +237,10 @@ impl TiberiumTypeRegistry {
             }
             types.push(ty);
         }
-        #[cfg(feature = "ares")]
-        for (ty, ext) in types.iter_mut().zip(processed.tiberium_ext_states()) {
-            ty.ares = ext.clone();
+        if crate::rules::ares_switch::ares_way() {
+            for (ty, ext) in types.iter_mut().zip(processed.tiberium_ext_states()) {
+                ty.ares = ext.clone();
+            }
         }
         Self { types }
     }
@@ -297,7 +298,6 @@ impl TiberiumType {
     }
 
     /// The Ares TiberiumExt keys of this type.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares(&self) -> &crate::rules::ares_tiberium::TiberiumExtRules {
         &self.ares
     }
@@ -330,7 +330,6 @@ impl TiberiumType {
             spread_percentage_bits: section
                 .read_double("SpreadPercentage", CTOR_PERCENTAGE)
                 .to_bits(),
-            #[cfg(feature = "ares")]
             ares: Default::default(),
         }
     }

@@ -109,6 +109,7 @@ impl AresIvanBomb {
     /// LoadFromINIFile 10055520's reads of these keys, in its order. The
     /// warhead and the two sounds are bound by their own owners.
     pub(crate) fn read(section: &IniSection) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut bomb = Self::CONSTRUCTED;
         bomb.death_bomb = section.read_ares_bool("IvanBomb.DeathBomb", bomb.death_bomb);
         bomb.death_bomb_on_allies =
@@ -184,6 +185,7 @@ impl AresAbductor {
 
     /// LoadFromINIFile 10055520's reads of these keys, in its order.
     pub(crate) fn read(section: &IniSection) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut abductor = Self::CONSTRUCTED;
         abductor.abductor = section.read_ares_bool("Abductor", abductor.abductor);
         abductor.change_owner =
@@ -265,6 +267,7 @@ impl AresWeaponVisuals {
     /// vehicle reversal is seeded from this projection's IsMagBeam; native
     /// seeds it from the value after the first pass that read the weapon.
     pub(crate) fn read(section: &IniSection, is_mag_beam: bool) -> Self {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let mut visuals = Self::constructed(is_mag_beam);
         visuals.is_detached_railgun =
             section.read_ares_bool("IsDetachedRailgun", visuals.is_detached_railgun);
@@ -378,6 +381,7 @@ mod tests {
 
     #[test]
     fn keys_keep_constructor_defaults_and_nullable_presence() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let visuals = read("[W]\nBeam.Color=1,2\nWave.Color=5,6\n", true);
         assert_eq!(visuals, AresWeaponVisuals::constructed(true));
         assert!(visuals.wave_reversed_against(WaveReverseTarget::Vehicle));
@@ -402,6 +406,7 @@ mod tests {
     /// null, and a name no pass registered keeps the earlier pass's value.
     #[test]
     fn bolt_particle_system_finds_existing_types_across_passes() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
 
@@ -432,6 +437,7 @@ mod tests {
     /// non-allocating Find (`none` stores null, an unknown name retains).
     #[test]
     fn ivan_bomb_keys_read_over_passes() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
 
@@ -460,6 +466,7 @@ mod tests {
 
     #[test]
     fn wave_color_data_takes_kind_defaults_house_color_and_disables_on_zero() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut visuals = AresWeaponVisuals::constructed(false);
         assert_eq!(
             visuals.wave_color_data(true, false, Some([9, 9, 9])),
@@ -480,6 +487,7 @@ mod tests {
     /// which nothing consumes.
     #[test]
     fn laser_wave_and_detonation_keys_read_over_constructor_defaults() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let visuals = read("[W]\nWave.IsLaser=yes\nWave.IsBigLaser=x\n", false);
         assert_eq!(visuals.wave_is_laser, [true, false]);
         assert_eq!(visuals.laser_wave_type(), Some(1));

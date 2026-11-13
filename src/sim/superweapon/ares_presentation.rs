@@ -114,6 +114,25 @@ pub(super) fn on_launch(
     }
 }
 
+/// SWTypeExt::ExtData::IsTimerVisible (Ares.dll 10032E80), asked by
+/// TacticalClass_Draw_TimerVisibility (10035A80, hook `0x6D49D1`) before the
+/// stock hold test of each Super on the timer list: whether the local player
+/// (HouseClass::Player) sees `view`'s timer line. An observer sees what an
+/// ally sees; otherwise the owner's relation to the player (10021440: the
+/// owner, an ally, else an enemy, also when there is no player) picks the
+/// type's `SW.TimerVisibility` bit. A hidden Super takes no line (`0x6D4A71`).
+pub fn ares_timer_visible(sim: &Simulation, rules: &RuleSet, view: super::SuperTimerView) -> bool {
+    let Some(sw) = rules.super_weapon(sim.interner.resolve(view.sw_type())) else {
+        return true;
+    };
+    let relation = match sim.session.current_house() {
+        Some(player) if sim.session.is_observer_house(player) => HouseMask::ALLIES,
+        Some(player) => sim.ares_house_relation(view.owner(), player),
+        None => HouseMask::ENEMIES,
+    };
+    sw.presentation.timer_visibility.intersects(relation)
+}
+
 /// `AnimClass+0x19D` (Invisible) per viewer: hidden from each House the
 /// type's `SW.AnimationVisibility` excludes (IsAnimVisible, inlined in
 /// CreateChronoAnim 10032470 and Launch 10033060), from the owner's view.

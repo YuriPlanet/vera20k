@@ -129,7 +129,7 @@ impl Simulation {
         // Ares 3.0 UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA)
         // drops the airborne non-DeployToLand refusal: such a deployer
         // deploys where it is.
-        let airborne_refused = !cfg!(feature = "ares") && height > 0 && !object.deploy_to_land;
+        let airborne_refused = !rules.ares() && height > 0 && !object.deploy_to_land;
         if deploying {
             if !object.is_simple_deployer || airborne_refused || leaf.deployed() != 0 {
                 return Ok(());
@@ -150,7 +150,7 @@ impl Simulation {
         if deploying
             && !entity.landing_for_deploy()
             && height > 0
-            && (!cfg!(feature = "ares") || deploy_to_land)
+            && (!rules.ares() || deploy_to_land)
         {
             self.substrate
                 .entities

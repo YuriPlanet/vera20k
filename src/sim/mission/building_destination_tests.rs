@@ -124,7 +124,7 @@ fn building_destination_matches_64_native_mode_one_rows_for_all_target_shapes() 
             let mut sim = fixture(input, shape);
             let actor = sim.substrate.entities.get(1).unwrap();
             let navigation = actor.navigation.clone();
-            let mission = actor.mission;
+            let mission = actor.mission.clone();
             let rng = sim.scenario_rng.state();
             sim.assign_destination_represented(
                 1,
@@ -163,7 +163,7 @@ fn factory_stop_matches_24_native_event_destination_rows() {
         let mut sim = fixture(input, 0);
         let actor = sim.substrate.entities.get(1).unwrap();
         let navigation = actor.navigation.clone();
-        let mission = actor.mission;
+        let mission = actor.mission.clone();
         let rng = sim.scenario_rng.state();
         sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules));
         let actor = sim.substrate.entities.get(1).unwrap();

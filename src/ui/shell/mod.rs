@@ -15,7 +15,6 @@ pub mod descriptor;
 pub mod diplomacy;
 pub mod game_speed;
 pub mod geom;
-pub mod in_game_options;
 pub mod in_game_options_state;
 pub mod in_game_shell;
 pub mod layout;

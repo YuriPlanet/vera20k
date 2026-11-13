@@ -5,22 +5,16 @@ use crate::rules::armor::{ArmorId, armor_index};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 
-#[cfg(feature = "ares")]
 use super::*;
-#[cfg(feature = "ares")]
 use crate::rules::native_processing::ProcessedRulesLayers;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-#[cfg(feature = "ares")]
 use crate::util::save_codec;
-#[cfg(feature = "ares")]
 use serde_json::Value;
 
-#[cfg(feature = "ares")]
 fn native() -> &'static Value {
     crate::test_fixture::json("tools/rules_oracle/ares_armor.json")
 }
 
-#[cfg(feature = "ares")]
 fn row(name: &str) -> &'static Value {
     native()["cases"]
         .as_array()
@@ -30,7 +24,6 @@ fn row(name: &str) -> &'static Value {
         .unwrap_or_else(|| panic!("native armor control {name}"))
 }
 
-#[cfg(feature = "ares")]
 fn assert_versus(actual: Versus, expected: &Value) {
     assert_eq!(
         actual.multiplier.bits(),
@@ -44,7 +37,6 @@ fn assert_versus(actual: Versus, expected: &Value) {
     );
 }
 
-#[cfg(feature = "ares")]
 fn native_pass(control: &Value) -> IniFile {
     let mut ini = IniFile::empty();
     for event in control["events"].as_array().unwrap() {
@@ -65,8 +57,8 @@ fn native_pass(control: &Value) -> IniFile {
     ini
 }
 
-#[cfg(feature = "ares")]
 fn inherited_layers() -> RulesLayerStack {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut root = native_pass(row("warhead_inline_inheritance"));
     root.merge(&IniFile::from_str(
         "[Warheads]\n0=TestWH\n[VehicleTypes]\n0=TARGET\n[TARGET]\nArmor=paper\n",
@@ -74,8 +66,8 @@ fn inherited_layers() -> RulesLayerStack {
     RulesLayerStack::new(root)
 }
 
-#[cfg(feature = "ares")]
 fn compare_wh(processed: &ProcessedRulesLayers, expected: &Value) {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_processed_rules(processed).unwrap();
     let catalog = processed.ares_armors().unwrap();
     let state = rules.warhead("TestWH").unwrap();
@@ -87,8 +79,8 @@ fn compare_wh(processed: &ProcessedRulesLayers, expected: &Value) {
     }
 }
 
-#[cfg(feature = "ares")]
 fn continue_process(processed: ProcessedRulesLayers, pass: IniFile) -> ProcessedRulesLayers {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (_, trace) = processed.into_ini_and_native_type_construction_trace();
     RulesLayerStack::new(pass)
         .process_with_fixed_art_and_registry_state(
@@ -106,9 +98,9 @@ fn armor_domain_preserves_case_insensitive_native_lookup_without_implicit_trim()
     assert_eq!(armor_index(" heavy "), ArmorId::NONE);
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn token_numbers_and_independent_flags_match_executed_ares_parser() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut count = 0;
     for control in native()["cases"].as_array().unwrap() {
         if !control["name"].as_str().unwrap().starts_with("parse_") {
@@ -121,9 +113,9 @@ fn token_numbers_and_independent_flags_match_executed_ares_parser() {
     assert_eq!(count, 19);
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn can_fire_keeps_the_native_unordered_comparison_when_force_fire_is_false() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let control = row("can_fire_nan_false");
     let fixture = &control["fixture"];
     let interaction = ArmorInteraction::ares(
@@ -140,9 +132,9 @@ fn can_fire_keeps_the_native_unordered_comparison_when_force_fire_is_false() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn whole_record_inheritance_observes_earlier_overrides_and_later_reads_keep_children() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = inherited_layers();
     let first = layers.process().unwrap();
     compare_wh(&first, &row("warhead_inline_inheritance")["result"]);
@@ -156,9 +148,9 @@ fn whole_record_inheritance_observes_earlier_overrides_and_later_reads_keep_chil
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn registered_defaults_match_native_indices_and_numeric_fallback_records() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let processed = inherited_layers().process().unwrap();
     let catalog = processed.ares_armors().unwrap();
     for name in ["paper", "later", "magic"] {
@@ -176,9 +168,9 @@ fn registered_defaults_match_native_indices_and_numeric_fallback_records() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn unknown_armor_is_bound_once_until_the_object_explicitly_rereads_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = RulesLayerStack::new(IniFile::from_str(
         "[VehicleTypes]\n0=TARGET\n[TerrainTypes]\n0=TREE\n\
          [TARGET]\nArmor=future\n[TREE]\nArmor=future\n",
@@ -215,9 +207,9 @@ fn unknown_armor_is_bound_once_until_the_object_explicitly_rereads_it() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn retained_binding_changes_hash_even_when_current_source_and_catalog_match() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut unknown_first = RulesLayerStack::new(IniFile::from_str(
         "[VehicleTypes]\n0=TARGET\n[TARGET]\nArmor=future\n",
     ));
@@ -247,9 +239,9 @@ fn retained_binding_changes_hash_even_when_current_source_and_catalog_match() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn armor_id_above_255_reaches_the_same_warhead_record_after_saved_roundtrip() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut text = String::from("[ArmorTypes]\n");
     for index in 0..260 {
         text.push_str(&format!("custom{index}=steel\n"));
@@ -289,9 +281,9 @@ fn armor_id_above_255_reaches_the_same_warhead_record_after_saved_roundtrip() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn saved_handoff_retains_extension_history_but_scenario_reset_rebuilds_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut layers = inherited_layers();
     layers.push(
         RulesLayerKind::Scenario,
@@ -332,9 +324,9 @@ fn saved_handoff_retains_extension_history_but_scenario_reset_rebuilds_it() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn effective_extension_records_change_hash_for_identical_current_source() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let first = continue_process(inherited_layers().process().unwrap(), IniFile::empty());
     let mut later = inherited_layers();
     later.push(
@@ -351,9 +343,9 @@ fn effective_extension_records_change_hash_for_identical_current_source() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn raw11_stays_independent_and_ares_disables_the_infantry_mask() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[Warheads]\n0=TestWH\n[TestWH]\nVerses=50%,50%,50%,50%,0%,50%,0%,50%,50%,50%,50%\n",
     ))
@@ -368,9 +360,9 @@ fn raw11_stays_independent_and_ares_disables_the_infantry_mask() {
     assert!(!warhead.interaction(ArmorId::WOOD).can_fire());
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn malformed_saved_catalog_bound_indices_and_record_vectors_are_rejected() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let original = serde_json::to_value(inherited_layers().process().unwrap()).unwrap();
     for defect in [
         "catalog_index",

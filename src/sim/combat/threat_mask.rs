@@ -149,21 +149,14 @@ pub(super) fn preamble_rewrite(
     category: EntityCategory,
     healer: bool,
     engineer: bool,
+    ares: bool,
 ) -> u32 {
     // Ares 3.0 TechnoClass_FindTargetType_Heal (1004E4A0, hooks 0x6F8EE3 and
     // 0x6F8F1F) replaces both healer `or` instructions after their
     // `and ebx,3` with `or ebx,403Ch`: a healer of either class also looks
     // for the infantry, vehicle and aircraft target classes of attackers.
-    let infantry_heal = if cfg!(feature = "ares") {
-        0x403C
-    } else {
-        0x4008
-    };
-    let unit_heal = if cfg!(feature = "ares") {
-        0x403C
-    } else {
-        0x4010
-    };
+    let infantry_heal = if ares { 0x403C } else { 0x4008 };
+    let unit_heal = if ares { 0x403C } else { 0x4010 };
     match category {
         EntityCategory::Infantry if healer => (mask & 3) | infantry_heal,
         EntityCategory::Infantry if engineer => mask & !0x18,
@@ -346,19 +339,16 @@ mod tests {
     fn healers_and_engineers_rewrite_the_mask() {
         use EntityCategory::*;
         // Ares 1004E4A0 (hooks 0x6F8EE3/0x6F8F1F) has its own expectation.
-        #[cfg(not(feature = "ares"))]
-        {
-            assert_eq!(preamble_rewrite(0x21, Infantry, true, false), 0x4009);
-            assert_eq!(preamble_rewrite(0x22, Unit, true, false), 0x4012);
+        assert_eq!(preamble_rewrite(0x21, Infantry, true, false, false), 0x4009);
+        assert_eq!(preamble_rewrite(0x22, Unit, true, false, false), 0x4012);
+        assert_eq!(preamble_rewrite(0x21, Infantry, true, false, true), 0x403D);
+        assert_eq!(preamble_rewrite(0x22, Unit, true, false, true), 0x403E);
+        // The engineer and aircraft arms read no Ares rewrite.
+        for ares in [false, true] {
+            assert_eq!(preamble_rewrite(0x238, Infantry, false, true, ares), 0x220);
+            assert_eq!(preamble_rewrite(0x238, Unit, false, true, ares), 0x238);
+            assert_eq!(preamble_rewrite(0x21, Aircraft, true, true, ares), 0x21);
         }
-        #[cfg(feature = "ares")]
-        {
-            assert_eq!(preamble_rewrite(0x21, Infantry, true, false), 0x403D);
-            assert_eq!(preamble_rewrite(0x22, Unit, true, false), 0x403E);
-        }
-        assert_eq!(preamble_rewrite(0x238, Infantry, false, true), 0x220);
-        assert_eq!(preamble_rewrite(0x238, Unit, false, true), 0x238);
-        assert_eq!(preamble_rewrite(0x21, Aircraft, true, true), 0x21);
     }
 
     #[test]

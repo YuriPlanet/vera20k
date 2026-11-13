@@ -112,7 +112,7 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
         let anim = sim
             .projectiles
             .get(impact.projectile_id())
-            .and_then(|bullet| rules.warhead(sim.interner.resolve(bullet.payload().warhead)))
+            .and_then(|bullet| sim.interner.warhead_type(bullet.payload().warhead, rules))
             .and_then(|warhead| warhead.ares_rules())
             .and_then(|ares| ares.combat().pre_impact_anim())
             .map(str::to_owned);
@@ -163,14 +163,13 @@ fn await_impact_anim(
 /// Ares's impact hook (467E59, 10036960) for a bullet of `warhead` whose
 /// BulletExt NukeSW is `nuke_sw`: see [`crate::sim::projectile::AresNukeBall`].
 /// The flash's `Light.Enabled` gate is the superweapon type's.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_nuke_ball(
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
     warhead: InternedId,
     nuke_sw: Option<InternedId>,
 ) -> crate::sim::projectile::AresNukeBall {
-    let warhead = rules.warhead(interner.resolve(warhead));
+    let warhead = interner.warhead_type(warhead, rules);
     let combat = warhead
         .and_then(|warhead| warhead.ares_rules())
         .map(|ares| ares.combat());
@@ -329,7 +328,6 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
 /// type's non-null `SW.Warhead` else the payload's warhead, and its
 /// nonnegative `SW.Damage` else the payload's damage. `None` without a
 /// payload.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_payload_hit<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,

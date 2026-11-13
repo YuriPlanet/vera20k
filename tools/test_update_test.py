@@ -3,6 +3,7 @@ import contextlib
 import io
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -66,6 +67,21 @@ class UpdateTestRunTests(unittest.TestCase):
                   self.assertRaises(subprocess.CalledProcessError)):
                 update_test.main(argv)
         self.assertEqual(used, {"published": new, "installed": old})
+
+    @unittest.skipUnless(sys.platform == "darwin", "only a macOS run lists the processes naming the app")
+    def test_a_failed_run_lists_the_restart_helper_still_waiting_for_the_game(self):
+        # Like the helper an update starts, it waits for the end of its
+        # standard input before it would open the app.
+        helper = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()", "vera20k-restart",
+                                   "", "/usr/bin/open", str(update_test.MAC_APP)], stdin=subprocess.PIPE)
+        try:
+            with tempfile.TemporaryDirectory() as work, contextlib.redirect_stdout(io.StringIO()) as output:
+                update_test.report(Path(work), None)
+        finally:
+            helper.stdin.close()
+            helper.wait(timeout=30)
+        listing = output.getvalue().split("--- processes naming the app:\n", 1)[1].split("\n---")[0]
+        self.assertIn(str(helper.pid), [row.split()[0] for row in listing.splitlines()[1:] if row])
 
 
 if __name__ == "__main__":

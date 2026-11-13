@@ -170,6 +170,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_auto_repair(&mut self, enabled: bool) {
+        // The next logic frame's pass reads it; Options' accept writes it out.
+        self.persistence.options_profile.auto_repair = enabled;
+    }
     fn store_terrain_deformation(&mut self, enabled: bool) {
         // The next game's rules and every later network agreement read it;
         // Options' accept writes it out.
@@ -403,6 +407,10 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
             App::open_launcher_options_dialog(self.state);
         }
     }
+
+    fn route_mods(&mut self) {
+        App::open_mods_page(self.state);
+    }
 }
 
 /// The options profile's `[Video]` bytes behind HIRES and TOGGLE, which the
@@ -568,10 +576,7 @@ impl App {
             .frontend
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
-        let main = crate::app::state::process_main_draws(
-            state.match_state.sim_runtime.runtime(),
-            &state.frontend.frontend_main_rng,
-        );
+        let main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
         state
             .match_state
             .session
@@ -603,6 +608,14 @@ impl App {
             .frontend
             .multiplayer_shell_runtime
             .refresh_multiplayer_country_catalog(&state.process_assets);
+        // The lobby's colour list comes from the same rules as the shell's
+        // catalog above; its random draws and the room's claims follow it.
+        let lobby_colors = state.frontend.skirmish_shell_state.lobby_colors();
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .set_lobby_colors(lobby_colors);
+        state.match_state.session.set_lobby_colors(lobby_colors);
     }
 
     /// The score page `0x108` owns the result screen once its model is set
@@ -1248,7 +1261,7 @@ impl App {
     }
 
     /// The Options values as they stand now.
-    pub(super) fn launcher_options_from_state(
+    pub(crate) fn launcher_options_from_state(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::OptionsDialogState {
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
@@ -1275,7 +1288,7 @@ impl App {
     }
 
     /// The Options captions the string table names, in the language in use.
-    fn launcher_options_labels(
+    pub(crate) fn launcher_options_labels(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
         let mut labels =
@@ -1339,10 +1352,12 @@ impl App {
         }
         match output.result {
             // 0x0055FD06 tears D5 down before every continuation, including
-            // Keyboard and the final Main Menu return.
+            // Keyboard and the final Main Menu return. VERA's Mods leaves the
+            // same way.
             Some(
                 result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard),
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods),
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(
@@ -1356,6 +1371,7 @@ impl App {
                     &mut operations,
                     dialog,
                     result,
+                    None,
                 );
             }
             None => {
@@ -1372,17 +1388,18 @@ impl App {
     }
 
     /// `0xD5`'s teardown slide has run: commit the controls (`0x0055FAA0`),
-    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`) or
-    /// run the Keyboard page.
+    /// then write the profile and build `0xE2` (Main Menu, `0x005FAD10`), or
+    /// run the Keyboard page or VERA's Mods page.
     pub(super) fn commit_launcher_options_result(
         state: &mut AppState,
         result: crate::ui::main_menu_dialogs::options::LauncherParentResult,
     ) {
-        // The key page is a child of Options: closing it reopens the dialog
-        // on the page the player left. Back and Terminal end the dialog for
-        // good.
+        // The key page and VERA's Mods page are children of Options: closing
+        // one reopens the dialog on the page the player left. Back and
+        // Terminal end the dialog for good.
         state.frontend.options_reopen_at = match result {
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard => state
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+            | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods => state
                 .frontend
                 .options_dialog
                 .as_ref()
@@ -1397,6 +1414,23 @@ impl App {
             &mut operations,
             dialog,
             result,
+            None,
+        );
+    }
+
+    /// The in-game menu's Options page has closed: the controls the player
+    /// moved commit as the main menu's do, and the profile is written once.
+    pub(crate) fn commit_in_game_options_page(
+        state: &mut AppState,
+        dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
+        opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
+    ) {
+        let mut operations = AppStateLauncherParentOperations { state };
+        crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
+            &mut operations,
+            dialog,
+            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+            Some(opened),
         );
     }
 
@@ -1435,6 +1469,7 @@ impl App {
             &mut operations,
             dialog,
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Terminal,
+            None,
         );
     }
 
@@ -1558,7 +1593,7 @@ impl App {
             });
         }
         Some((
-            crate::ui::shell::descriptor::DialogId(kind.template_id(false)),
+            crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
         ))
     }
@@ -1664,6 +1699,14 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
             }
+            ShellMessageBoxPurpose::ModRestart(folder) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_restart(
+                    state,
+                    folder,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
         }
     }
 
@@ -1683,6 +1726,7 @@ impl App {
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
+        crate::app::input::pause_menu::on_match_end(state);
         if Self::native_skirmish_shell_active(state) {
             // A terminal exit has no Start/Back transaction, so pack the
             // page's current controls into the durable record first. The
@@ -1883,6 +1927,10 @@ impl App {
             }
             ShellExitThen::PlayMovie => Self::play_selected_movie(state),
             ShellExitThen::MovieListBack => Self::open_movies_credits_page(state),
+            ShellExitThen::ModsBack => {
+                Self::close_mods_page(state);
+                Self::open_launcher_options_dialog(state);
+            }
             ShellExitThen::SkirmishStart(session) => Self::commit_skirmish_start(state, *session),
             ShellExitThen::SkirmishBack => Self::commit_skirmish_back(state),
             ShellExitThen::CampaignBack => Self::commit_campaign_back(state),
@@ -2169,8 +2217,15 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::Network => Self::open_lan_lobby(state),
-            MainMenuShellAction::WwOnline => Self::open_wol_welcome_page(state),
+            // Both lead to a pre-match check, which compares a mod's files.
+            MainMenuShellAction::Network => {
+                state.process_assets.read_mod_files_ahead();
+                Self::open_lan_lobby(state)
+            }
+            MainMenuShellAction::WwOnline => {
+                state.process_assets.read_mod_files_ahead();
+                Self::open_wol_welcome_page(state)
+            }
         }
     }
 
@@ -2236,7 +2291,7 @@ impl App {
             return;
         };
         let dialog =
-            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
+            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id());
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push(dialog, true);
         }

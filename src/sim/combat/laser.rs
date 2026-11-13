@@ -62,8 +62,7 @@ pub(crate) fn fired(
         return;
     }
     // 100563D0 reads the fired weapon's extension (EBX), not the building
-    // arm's re-read below.
-    #[cfg(feature = "ares")]
+    // arm's re-read below, so it is sampled before the rebind.
     let thickness = weapon.ares_visuals.laser_thickness;
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
@@ -88,8 +87,33 @@ pub(crate) fn fired(
     } else {
         weapon
     };
-    #[cfg(not(feature = "ares"))]
-    let (width, supported) = {
+    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE) skips the stock
+    // widths (to 0x6FF656). The fired weapon's `LaserThickness=` (unset -1)
+    // sets them: a building's beam is it or 3, and a `PrismForwarding=` tower
+    // that can fire, with SupportingPrisms (Ares: the longest chain behind
+    // it), thickens by `-Intensity` (a negative one) or `Intensity` per link
+    // (a positive one) and is always supported. Any other firer's beam is it
+    // (supported above 3) or 2.
+    let (width, supported) = if rules.ares() {
+        if source.category() == EntityCategory::Structure {
+            let forwarding = obj.building_type_ext().prism_forwarding();
+            let base = if thickness < 0 { 3 } else { thickness };
+            if forwarding.can_attack() && prism_support_count > 0 {
+                let width = match forwarding.intensity() {
+                    intensity @ i32::MIN..0 => base.wrapping_sub(intensity),
+                    0 => base,
+                    intensity => base.wrapping_add(intensity.wrapping_mul(prism_support_count)),
+                };
+                (width, true)
+            } else {
+                (base, false)
+            }
+        } else if thickness < 0 {
+            (2, false)
+        } else {
+            (thickness, thickness > 3)
+        }
+    } else {
         let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
         let supported = prism && prism_support_count > 0;
         // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
@@ -103,32 +127,6 @@ pub(crate) fn fired(
             1
         };
         (width, supported)
-    };
-    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE) skips the stock
-    // widths (to 0x6FF656). The fired weapon's `LaserThickness=` (unset -1)
-    // sets them: a building's beam is it or 3, and a `PrismForwarding=` tower
-    // that can fire, with SupportingPrisms (Ares: the longest chain behind
-    // it), thickens by `-Intensity` (a negative one) or `Intensity` per link
-    // (a positive one) and is always supported. Any other firer's beam is it
-    // (supported above 3) or 2.
-    #[cfg(feature = "ares")]
-    let (width, supported) = if source.category() == EntityCategory::Structure {
-        let forwarding = obj.building_type_ext().prism_forwarding();
-        let base = if thickness < 0 { 3 } else { thickness };
-        if forwarding.can_attack() && prism_support_count > 0 {
-            let width = match forwarding.intensity() {
-                intensity @ i32::MIN..0 => base.wrapping_sub(intensity),
-                0 => base,
-                intensity => base.wrapping_add(intensity.wrapping_mul(prism_support_count)),
-            };
-            (width, true)
-        } else {
-            (base, false)
-        }
-    } else if thickness < 0 {
-        (2, false)
-    } else {
-        (thickness, thickness > 3)
     };
     if let Some(laser) = create(
         world,
@@ -221,8 +219,7 @@ pub(crate) fn create<'w>(
     );
     // Ares 3.0 TechnoClass_FireLaser (100563A0, hook 0x6FD438): a
     // `LaserThickness=` above 1 replaces the constructed width.
-    #[cfg(feature = "ares")]
-    if weapon.ares_visuals.laser_thickness > 1 {
+    if rules.ares() && weapon.ares_visuals.laser_thickness > 1 {
         birth.width = weapon.ares_visuals.laser_thickness;
     }
     Some(birth)
@@ -396,8 +393,8 @@ pub(crate) fn support_beam(
     birth.width = 3;
     // 10016490 gives a support weapon's beam its `LaserThickness=` when it
     // is not negative (the unset -1 keeps 3).
-    #[cfg(feature = "ares")]
-    if let Some(weapon) = weapon
+    if rules.ares()
+        && let Some(weapon) = weapon
         && weapon.ares_visuals.laser_thickness >= 0
     {
         birth.width = weapon.ares_visuals.laser_thickness;

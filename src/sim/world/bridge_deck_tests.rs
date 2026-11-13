@@ -192,7 +192,6 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
     let mut smudge = crate::sim::smudge_grid::SmudgeGrid::new(10, 10);
     let decal = crate::sim::smudge_grid::SmudgeCell {
         type_id: Some(1),
-        footprint_origin: Some((3, 4)),
         frame_offset: 0,
     };
     smudge.test_force_set(3, 4, decal);

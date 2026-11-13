@@ -18,9 +18,19 @@ pub struct SmudgeTypeDef {
     pub(crate) alpha_image: String,
     pub crater: bool,
     pub burn: bool,
-    pub width: u8,
-    pub height: u8,
+    pub width: i32,
+    pub height: i32,
     pub image_name: Option<String>,
+}
+
+impl SmudgeTypeDef {
+    /// Cell+11F is an unsigned byte, even though current Width is signed.
+    /// ClearSmudges588B3D/588B45 and SmudgeDraw6B5623..5661 use this same
+    /// quotient/remainder. Their callers decide whether data0 skips division.
+    pub fn encoded_cell_offset(&self, data: u8) -> Option<(i32, i32)> {
+        let data = i32::from(data);
+        Some((data.checked_rem(self.width)?, data.checked_div(self.width)?))
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -56,11 +66,10 @@ impl SmudgeTypeRegistry {
             let section = ini.section(source_name);
             let crater: bool = section.is_some_and(|s| s.read_bool("Crater", false));
             let burn: bool = section.is_some_and(|s| s.read_bool("Burn", false));
-            // ReadInt over the constructor's 1 (`0x006B5281`, `0x006B573F`,
-            // `0x006B5759`). RESIDUAL: native keeps the int unclamped; VERA
-            // clamps it into 1..=255. Retail sizes are 1 and 2.
-            let width: u8 = section.map_or(1, |s| s.read_int("Width", 1)).clamp(1, 255) as u8;
-            let height: u8 = section.map_or(1, |s| s.read_int("Height", 1)).clamp(1, 255) as u8;
+            // SmudgeCtor6B5281/6B5287 supplies1; ReadINI6B573F/6B5759
+            // retains the full signed ReadInt result without a clamp.
+            let width = section.map_or(1, |s| s.read_int("Width", 1));
+            let height = section.map_or(1, |s| s.read_int("Height", 1));
             // ObjectTypeClass `Image=`, ReadString 0x19 (`0x005F933B`).
             let image_name: Option<String> = section
                 .and_then(|s| s.read_name("Image", 0x19))

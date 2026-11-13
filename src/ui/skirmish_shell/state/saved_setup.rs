@@ -136,14 +136,14 @@ impl SkirmishSavedSetup {
 }
 
 /// The computer rows the selected map seats, as `opponents` indices.
-fn computer_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> Range<usize> {
+pub(super) fn computer_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> Range<usize> {
     0..selected_player_rows(state, maps)
         .saturating_sub(1)
         .min(state.opponents.len())
 }
 
 /// What the row's Side, Color, Start and Team combos show.
-fn seat_shown(state: &SkirmishShellState, row: usize) -> SkirmishSetupSeat {
+pub(super) fn seat_shown(state: &SkirmishShellState, row: usize) -> SkirmishSetupSeat {
     let shown = |id| selected_combo_item(state, id);
     SkirmishSetupSeat {
         country: match shown(SkirmishComboId::Side(row)) {
@@ -196,7 +196,7 @@ fn pick_seat(
 
 /// Pick `item` as a click on the combo's list would: only on an open combo
 /// that lists it.
-fn pick(
+pub(super) fn pick(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
     id: SkirmishComboId,

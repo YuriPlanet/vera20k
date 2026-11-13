@@ -129,7 +129,6 @@ pub struct FrameEffects<'a> {
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
     command_applied: Option<&'a dyn Fn(&Simulation, &CommandRecord, bool)>,
-    #[cfg(feature = "ares")]
     bounty_text: Option<&'a dyn Fn(&Simulation, &RuleSet, crate::sim::bounty::BountyText)>,
     production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
     production_request_cleared: Option<&'a dyn Fn(crate::sim::intern::InternedId)>,
@@ -155,7 +154,6 @@ impl<'a> FrameEffects<'a> {
             overlay_registry: None,
             before_logic: None,
             command_applied: None,
-            #[cfg(feature = "ares")]
             bounty_text: None,
             production_factories: &[],
             production_request_cleared: None,
@@ -172,7 +170,6 @@ impl<'a> FrameEffects<'a> {
             overlay_registry: None,
             before_logic: None,
             command_applied: None,
-            #[cfg(feature = "ares")]
             bounty_text: None,
             production_factories: &[],
             production_request_cleared: None,
@@ -188,7 +185,6 @@ impl<'a> FrameEffects<'a> {
 
     /// Client-only display delivery at the reached native call. The core
     /// consumed its pending sum/deadline before this optional observer runs.
-    #[cfg(feature = "ares")]
     pub fn with_bounty_text(
         self,
         boundary: &'a dyn Fn(&Simulation, &RuleSet, crate::sim::bounty::BountyText),
@@ -199,7 +195,6 @@ impl<'a> FrameEffects<'a> {
         }
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn emit_bounty_text(
         self,
         sim: &Simulation,

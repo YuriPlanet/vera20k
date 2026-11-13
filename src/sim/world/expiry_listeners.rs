@@ -491,8 +491,11 @@ mod tests {
         let mut entities = EntityStore::new();
         entities.insert(attacker(1, 3));
         let mut controller = GameEntity::test_default(2, "YURI", "Russians", 12, 12);
-        controller.capture_manager =
-            Some(CaptureManagerState::with_victims_for_test(3, false, &[3]));
+        controller.capture_manager = Some(Box::new(CaptureManagerState::with_victims_for_test(
+            3,
+            false,
+            &[3],
+        )));
         entities.insert(controller);
         entities.insert(GameEntity::test_default(3, "HTNK", "Russians", 14, 14));
         let mut docked = attacker(4, 3);
@@ -550,7 +553,7 @@ mod tests {
         );
         manager.set_current_target_for_test(Some(TargetKind::Entity(6)));
         manager.set_queued_target_for_test(Some(TargetKind::Cell(3, 3)));
-        launcher.spawn_manager = Some(manager);
+        launcher.spawn_manager = Some(Box::new(manager));
         let mut entities = EntityStore::new();
         entities.insert(launcher);
         let mut stores = Stores {

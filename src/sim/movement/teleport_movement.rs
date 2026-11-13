@@ -434,7 +434,6 @@ impl TeleportRuntime {
     /// Ares 3.0 InfantryClass_Remove_Teleport (1005CD50, hook 0x51DF27):
     /// Limbo resets `+0x28` to the null coordinate, so the next REMOVE leaves
     /// the Location's occupation instead of the old Marked one.
-    #[cfg(feature = "ares")]
     pub(crate) fn forget_resolved_destination(&mut self) {
         self.resolved = None;
     }
@@ -956,7 +955,7 @@ impl crate::sim::world::Simulation {
         };
         let required_zone_id = self
             .zone_grid
-            .as_deref()
+            .as_ref()
             .ok_or("Teleport resolution requires zone topology")?
             .get_zone_id_native(
                 terrain,
@@ -1059,7 +1058,7 @@ impl crate::sim::world::Simulation {
                 let (speed_type, movement_zone) = (object.speed_type, object.movement_zone);
                 let zone = self
                     .zone_grid
-                    .as_deref()
+                    .as_ref()
                     .zip(self.resolved_terrain.as_ref())
                     .and_then(|(zones, terrain)| {
                         zones.get_zone_id_native(

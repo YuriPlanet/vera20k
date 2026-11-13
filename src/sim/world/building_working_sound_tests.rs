@@ -150,7 +150,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
         planted |= sim
             .entities()
             .get(patriot)
-            .is_some_and(|entity| entity.pending_c4_detonation.pending().is_some());
+            .is_some_and(|entity| entity.building.pending_c4_detonation.pending().is_some());
         heard
             .calls
             .borrow()

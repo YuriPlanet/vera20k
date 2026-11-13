@@ -1281,9 +1281,9 @@ fn crash_smoke_matches_native_rows() {
 /// 0x415085), over the native smoke rows: `Smoke.Anim=none` neither puffs
 /// nor draws, and `Smoke.ChanceRed`/`Smoke.ChanceDead` of 100 puff on every
 /// draw.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_smoke_keys_replace_the_aircraft_smoke() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let smoke = |input: &serde_json::Value, extra: &str| {
         let mut input = input.clone();
         input["type_extra"] = serde_json::json!(extra);
@@ -1312,9 +1312,9 @@ fn ares_smoke_keys_replace_the_aircraft_smoke() {
 
 /// Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
 /// `CrashSpin=no` crashes without the spin and its three draws.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_crash_spin_no_skips_the_spin_draws() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = oracle()["crash"]
         .as_array()
         .unwrap()

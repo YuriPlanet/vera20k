@@ -287,10 +287,10 @@ pub(crate) fn player_choices(
     )
 }
 
-/// The VERA lobby's `balance` event, its answer to the host's `/balance` (no
-/// native counterpart): a team for each named player. It has `player_choices`'
-/// gates, and acts only in a mode that lets players ally outside a clan room,
-/// where the team combos show.
+/// The VERA lobby's `balance` event, its answer to the host's `/balance` or
+/// Balance automatically (no native counterpart): a team for each named
+/// player. It has `player_choices`' gates, and acts only in a mode that lets
+/// players ally outside a clan room, where the team combos show.
 pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
     if crate::app::shell_wol::in_match(state)
         || start_pending(state)
@@ -306,7 +306,11 @@ pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> any
     if !launch.mode.allies_allowed || session.network_room().clan {
         return Ok(());
     }
-    let moves = team_moves(launch, teams);
+    // Without Teams, the Team list's A to D (`team_choices`).
+    let count = session
+        .network_teams()
+        .unwrap_or(crate::skirmish_launch::NATIVE_TEAMS);
+    let moves = team_moves(launch, teams, count);
     if moves.is_empty() {
         return Ok(());
     }
@@ -314,14 +318,18 @@ pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> any
 }
 
 /// The participants `teams` move to another team: playing humans with a row,
-/// on a team the combos list (0..3, `team_choices`).
-fn team_moves(launch: &SkirmishLaunchSession, teams: &[(String, u8)]) -> Vec<(usize, u8)> {
+/// on one of the room's `count` teams.
+fn team_moves(
+    launch: &SkirmishLaunchSession,
+    teams: &[(String, u8)],
+    count: u8,
+) -> Vec<(usize, u8)> {
     teams
         .iter()
         .filter_map(|(name, team)| {
             let index = participant_in(launch, name)?;
             let human = &launch.humans[index];
-            (*team <= 3
+            (*team < count
                 && !human.is_observer()
                 && human.raw_slot_index.is_some()
                 && human.slot.team != LaunchTeam::Team(*team))
@@ -1086,7 +1094,10 @@ mod tests {
             ("Nobody", 1),
         ];
         let teams: Vec<_> = teams.map(|(name, team)| (name.to_owned(), team)).into();
-        assert_eq!(team_moves(&launch, &teams), [(0, 1)]);
-        assert_eq!(team_moves(&launch, &[("Guest".into(), 4)]), []);
+        assert_eq!(team_moves(&launch, &teams, 4), [(0, 1)]);
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 4)], 4), []);
+        // A room with Teams set takes its own teams only.
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 2)], 3), [(1, 2)]);
+        assert_eq!(team_moves(&launch, &[("Guest".into(), 2)], 2), []);
     }
 }

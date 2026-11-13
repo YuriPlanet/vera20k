@@ -63,7 +63,6 @@ impl RulesTypeReferences {
     }
 
     /// A kept pointer's current stored ID, `None` while it is null.
-    #[cfg(feature = "ares")]
     pub(crate) fn pointer(&self, key: &str) -> Option<&str> {
         self.pointers.get(key).map(String::as_str)
     }
@@ -77,6 +76,7 @@ impl RulesTypeReferences {
         for &(key, publish) in POINTERS
             .iter()
             .chain(&DEFAULT_PARTICLE_SYSTEMS)
+            .chain(ares_pointers())
             .chain(npatch_pointers())
         {
             publish(rules, self.pointers.get(key).map_or("", String::as_str));
@@ -96,6 +96,16 @@ fn named(id: &str) -> Option<String> {
     (!id.is_empty()).then(|| id.to_owned())
 }
 
+/// The pointers only Ares reads: kept when the Rules are read the Ares way
+/// (`ares_switch::ares_way`). ReadGeneral reads their keys either way.
+fn ares_pointers() -> &'static [(&'static str, PublishPointer)] {
+    if crate::rules::ares_switch::ares_way() {
+        ARES_POINTERS
+    } else {
+        &[]
+    }
+}
+
 /// The extension pointers this build's rules processor keeps: none without
 /// the capability, which never reads their keys.
 fn npatch_pointers() -> &'static [(&'static str, PublishPointer)] {
@@ -111,6 +121,7 @@ fn kept_pointer(key: &str) -> bool {
     POINTERS
         .iter()
         .chain(&DEFAULT_PARTICLE_SYSTEMS)
+        .chain(ares_pointers())
         .chain(npatch_pointers())
         .any(|&(kept, _)| kept == key)
 }
@@ -173,19 +184,6 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     // names resolve through FindOrAllocate `0x0075E3B0` (call `0x00669145`).
     ("EMPulseWarhead", |rules, id| {
         rules.general.empulse_warhead = named(id);
-    }),
-    // ReadGeneral's LargeVisceroid (ReadString returning at `0x0066E677`,
-    // UnitType FindOrAllocate), just before SmallVisceroid; Ares' visceroid
-    // merge reads it.
-    #[cfg(feature = "ares")]
-    ("LargeVisceroid", |rules, id| {
-        rules.general.large_visceroid = named(id);
-    }),
-    // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
-    // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
-    #[cfg(feature = "ares")]
-    ("SmallVisceroid", |rules, id| {
-        rules.general.small_visceroid = named(id);
     }),
     // ReadGeneral (`0x0066D530`), AnimTypes through `0x00428B80` unless
     // noted: OreTwinkle +1870 (`0x0066788E`, `0x0066D67B..0x0066D6A2`),
@@ -298,6 +296,21 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     }),
     ("ThirdCrew", |rules, id| {
         rules.general.third_crew = named(id);
+    }),
+];
+
+/// The pointers kept only when the Rules are read the Ares way.
+const ARES_POINTERS: &[(&str, PublishPointer)] = &[
+    // ReadGeneral's LargeVisceroid (ReadString returning at `0x0066E677`,
+    // UnitType FindOrAllocate), just before SmallVisceroid; Ares' visceroid
+    // merge reads it.
+    ("LargeVisceroid", |rules, id| {
+        rules.general.large_visceroid = named(id);
+    }),
+    // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
+    // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
+    ("SmallVisceroid", |rules, id| {
+        rules.general.small_visceroid = named(id);
     }),
 ];
 

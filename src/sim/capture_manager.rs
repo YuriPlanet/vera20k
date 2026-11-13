@@ -412,7 +412,6 @@ impl MindControlLink {
 
     /// Installed Ares KillDriver10045892 clears Techno+2CC explicitly;
     /// ordinary ChangeOwner deliberately preserves this separate controller.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_house_controller(&mut self) {
         self.house_controller = None;
     }
@@ -702,7 +701,7 @@ impl Simulation {
             .entities
             .get(controller_id)?
             .capture_manager
-            .as_ref()
+            .as_deref()
             .map(CaptureManagerState::count)
     }
 
@@ -1055,7 +1054,6 @@ impl Simulation {
     /// (vt+0xF8) and `PermaControlledAnimationType=` rings it
     /// (CreateMindControlRingAnim 10043F90 inlined: a building's ring at its
     /// height with ZAdjust -1024). Buildings are not refused.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_apply_perma_mc(
         &mut self,
         id: u64,
@@ -1139,7 +1137,6 @@ impl Simulation {
 
     /// Installed Ares capture10045C03..10045C1C clears permanent control
     /// and UnInit's the ring after any controller's FreeUnit has finished.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_permanent_control_and_ring(&mut self, id: u64, rules: &RuleSet) {
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
             object.mind_control.permanent = false;
@@ -1230,8 +1227,9 @@ impl Simulation {
         // Phobos `BulletClass_Detonate` uses
         // `pWHExt->MindControl_Anim.Get(ControlledAnimationType)`.
         #[cfg(feature = "phobos")]
-        let ring_anim = rules
-            .warhead(self.interner.resolve(current.payload.warhead))
+        let ring_anim = self
+            .interner
+            .warhead_type(current.payload.warhead, rules)
             .and_then(|warhead| warhead.mind_control_anim.as_deref());
         #[cfg(not(feature = "phobos"))]
         let ring_anim: Option<&str> = None;

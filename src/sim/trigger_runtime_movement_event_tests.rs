@@ -1105,6 +1105,7 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
                 .entities
                 .get(building)
                 .unwrap()
+                .building
                 .pending_c4_detonation
                 .pending()
                 .is_some(),

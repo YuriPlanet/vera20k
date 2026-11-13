@@ -6,7 +6,9 @@ Keep each PR small: one fix, one to three regression tests that fail without it,
 native function address cited next to the code, no native-execution corpora, and a PR
 description of about 15 lines. Leave code marked as a sim-scale deviation as it is: it
 differs from gamemd on purpose, so VERA can run 20,000 units. If it plays visibly wrong,
-open an issue. The rest is the contract for the maintainer's own agents:
+open an issue. Don't put game code behind a build feature such as
+`cfg(feature = "ares")`: Ares code checks the game's switch, `rules.ares()`. The rest is
+the contract for the maintainer's own agents:
 its build runner, retail-data checks, critic reviews, checkpoints and native comparisons
 don't apply to you. Where the two differ, the README wins.
 
@@ -25,8 +27,8 @@ What it is for, in the order that decides when two of these pull apart:
 3. **It runs big battles.** **20,000 units and 30 players**, also on older PCs. Where a
    player cannot notice the difference, speed wins over gamemd's execution order.
 4. **It adds to the original.** Ares and Phobos features, and new ones only VERA has,
-   are wanted, built so a modder or a player switches them on and tunes them from INI
-   files or the Options screen. The original stays the default.
+   are wanted: extensions switch on from a mod's or map's data, VERA's own features
+   from INI files or the Options screen. The original stays the default.
 5. **Playing online is easy.** A match starts from inside the game, and an older
    version is told plainly when it can no longer join.
 
@@ -116,11 +118,20 @@ and the network, never `unwrap`, `expect` or index on them, and carry on whereve
 gamemd would. When something fails for a player, say in the game what happened and
 what they can do, not only in the log.
 
-Stock play stays as gamemd plays it. What an extension (Ares, Phobos, NPatch, VeraX)
-or a VERA feature adds to play stays off until a player option, a build feature or an
-INI key from a mod or map turns it on; a bug gamemd itself has stays unless the
-maintainer asks for an opt-in fix (`npbug`). A change in or beside a
-[capability](docs/capabilities.md) compiles with it on as well as off
+Stock play stays as gamemd plays it, and game behavior never goes behind a build
+feature: what only some games use is switched on at run time, never by
+`cfg(feature = "...")`, `cfg!` or a build constant such as `ARES_BUILD`. Platform and
+tool features (`wasm`, `dev-overlays`, `test-support` and the like) stay build features.
+An engine extension (Ares, Phobos, NPatch, VeraX) is in every build, the release build
+too, and switches on from the game's data: its keys in the rules or map, or a mod that
+ships it. With retail data the game plays as gamemd. Ares has its switch
+(`RuleSet::ares`): Ares code reads its own keys or the switch, and all of it still
+behind the `ares` feature moves to the switch before that feature is deleted. Phobos,
+NPatch and VeraX get their switches the same way; until then their wrapped code stays
+as it is, and the first PR that adds code for one of them adds its switch. A VERA
+feature stays off until a player option or an INI key turns it on; a bug gamemd itself
+has stays unless the maintainer asks for an opt-in fix (`npbug`). A change in or beside
+a [capability](docs/capabilities.md) compiles with it on as well as off
 (`python -m tools.capability_tests build <name>`; `focus <name>` runs its tests).
 
 An extension behavior is a hook into gamemd: cite the hook address, the stock

@@ -119,6 +119,7 @@ mod tests {
     /// with power to spare it comes back, and only on multiples of the delay.
     #[test]
     fn computer_houses_switch_expendable_consumers_off_and_back_on() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nTogglePowerAllowed=yes\nTogglePowerDelay=45\n[IQ]\nTogglePower=0\n\
              [BuildingTypes]\n0=WALLGUN\n1=LAB\n\

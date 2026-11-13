@@ -563,7 +563,7 @@ pub(crate) fn respond_to_base_attack(
             );
             if !sim
                 .zone_grid
-                .as_deref()
+                .as_ref()
                 .expect("positive scan validated zone grid")
                 .can_reach_native(
                     &cells,

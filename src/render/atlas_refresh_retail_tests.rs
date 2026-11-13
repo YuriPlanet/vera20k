@@ -1,19 +1,20 @@
 //! Retail timing witness for entity-atlas refreshes during a match.
 //!
-//! Loads the stock Dustbowl skirmish map, builds the SHP sprite atlas and the
-//! voxel unit atlas as map load does, then spawns building types and a vehicle
-//! type the map did not start with and grows the atlases through
-//! [`EntityAtlasGrowth`], as a match does. It prints the calling thread's
-//! share of each growth (start and publish) and the wall time until it
-//! published, plus the coverage check that runs on every spawn, death and
-//! Limbo. Timings are printed for the record; the assertions pin what a growth
-//! must leave drawable, that it satisfies the coverage check, that nothing new
-//! starts no growth, that a cancelled growth publishes nothing, and that the
-//! grown atlases hold exactly what a map load of the same world builds.
+//! Loads the stock Dustbowl skirmish map, builds the SHP sprite atlas and
+//! admits the voxel models as map load does, then spawns building types and a
+//! vehicle type the map did not start with and grows the SHP atlas through
+//! [`EntityAtlasGrowth`] and admits the new voxel model, as a match does. It
+//! prints the calling thread's share of each growth (start and publish) and
+//! the wall time until it published, plus the coverage check that runs on
+//! every spawn, death and Limbo. Timings are printed for the record; the
+//! assertions pin what a growth must leave drawable, that it satisfies the
+//! coverage check, that nothing new starts no growth, that a cancelled growth
+//! publishes nothing, and that the grown atlases hold exactly what a map load
+//! of the same world builds.
 //!
 //! `VERA20K_ATLAS_PRELOAD=voxels` first places one of every vehicle and
-//! aircraft type that fits beside the player, so the map-load unit atlas holds
-//! nearly every stock voxel model (used to compare two builds' sprites).
+//! aircraft type that fits beside the player, so the map-load unit atlas
+//! admits nearly every stock voxel model.
 //!
 //! Run (release, so timings resemble the shipped game):
 //! RA2_DIR=<retail root> cargo test -p vera20k --lib --release \
@@ -202,32 +203,32 @@ fn retail_atlas_refresh_costs() {
         sprites.page_count()
     );
 
+    let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+    let admit = |sim: &crate::sim::world::Simulation, units: &mut Option<unit_atlas::UnitAtlas>| {
+        unit_atlas::admit_world_models(
+            units,
+            sim.entities(),
+            &assets,
+            Some(rules),
+            Some(sim.interner()),
+            max_texture_dimension_2d,
+        );
+    };
     let started = Instant::now();
-    let units = unit_atlas::build_unit_atlas(
-        &device,
-        &queue,
-        &batch,
-        sim.entities(),
-        &assets,
-        Some(rules),
-        None,
-        Some(sim.interner()),
-    )
-    .expect("initial unit atlas");
-    settle(&device, &queue);
+    let mut units = None;
+    admit(sim, &mut units);
+    let units = units.expect("initial unit atlas");
     let initial_unit_statistics = units.statistics().expect("initial texture descriptors");
-    assert!(initial_unit_statistics.resident_sprite_count > 0);
-    assert!(initial_unit_statistics.total_texel_payload_bytes > 0);
-    eprintln!(
-        "initial unit statistics: {}",
-        serde_json::to_string(&initial_unit_statistics).unwrap()
+    assert_eq!(
+        (
+            initial_unit_statistics.resident_sprite_count,
+            initial_unit_statistics.last_build_rasterized_sprite_count,
+            initial_unit_statistics.pages.len()
+        ),
+        (0, 0, 0),
+        "map load draws no voxel picture"
     );
-    eprintln!(
-        "initial unit atlas: {:.0} ms, {} sprites on {} pages",
-        ms(started.elapsed()),
-        units.sprite_count(),
-        units.page_count()
-    );
+    eprintln!("initial unit admission: {:.1} ms", ms(started.elapsed()));
 
     // Building types and a vehicle type the map did not start with.
     let present: HashSet<String> = sim
@@ -295,14 +296,15 @@ fn retail_atlas_refresh_costs() {
     );
     assert!(!covered.1, "a new vehicle type must request a unit refresh");
 
-    // Grow both atlases as a match does: prepared on this thread, drawn on
-    // workers and published by a later frame. This thread's share is the
-    // start and the publish; the wall time runs until the last publish.
-    let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+    // Grow the atlases as a match does: the SHP atlas prepared on this
+    // thread, drawn on a worker and published by a later frame, and the new
+    // voxel models admitted on this thread. This thread's share is the start
+    // and the publish; the wall time runs until the last publish.
     let start = |growth: &mut EntityAtlasGrowth,
                  sim: &crate::sim::world::Simulation,
                  sprites: &Option<sprite_atlas::SpriteAtlas>,
-                 units: &Option<unit_atlas::UnitAtlas>| {
+                 units: &mut Option<unit_atlas::UnitAtlas>| {
+        admit(sim, units);
         growth.start(
             &GrowthSource {
                 sim,
@@ -313,7 +315,6 @@ fn retail_atlas_refresh_costs() {
                 theater_ext,
                 max_texture_dimension_2d,
             },
-            units.as_ref(),
             sprites.as_ref(),
         );
     };
@@ -328,7 +329,7 @@ fn retail_atlas_refresh_costs() {
         let started = growth.running();
         while growth.running() {
             let publishing = Instant::now();
-            if growth.publish(&device, &queue, &batch, units, sprites, false) {
+            if growth.publish(&device, &queue, &batch, sprites, false) {
                 this_thread += publishing.elapsed();
             } else {
                 std::thread::sleep(Duration::from_millis(1));
@@ -374,23 +375,9 @@ fn retail_atlas_refresh_costs() {
         .unwrap()
         .statistics()
         .expect("grown texture descriptors");
-    assert!(
-        grown_unit_statistics.resident_sprite_count > initial_unit_statistics.resident_sprite_count
-    );
-    assert!(
-        grown_unit_statistics
-            .pages
-            .starts_with(&initial_unit_statistics.pages),
-        "growth preserves resident page resources"
-    );
-    assert!(
-        grown_unit_statistics.total_texel_payload_bytes
-            > initial_unit_statistics.total_texel_payload_bytes,
-        "new model demand allocates a growth page"
-    );
-    eprintln!(
-        "grown unit statistics: {}",
-        serde_json::to_string(&grown_unit_statistics).unwrap()
+    assert_eq!(
+        grown_unit_statistics, initial_unit_statistics,
+        "admitting a new voxel model draws no picture"
     );
 
     let before = sprites.as_ref().unwrap().sprite_count();
@@ -406,7 +393,7 @@ fn retail_atlas_refresh_costs() {
             .statistics()
             .expect("no-op texture descriptors"),
         grown_unit_statistics,
-        "a no-op retains pages, resident keys and the last actual build count"
+        "a no-op retains pages, resident keys and the rasterized count"
     );
 
     assert!(
@@ -427,11 +414,11 @@ fn retail_atlas_refresh_costs() {
         spawn_near(sim, third_building, 6),
         "{third_building} placed"
     );
-    start(&mut growth, sim, &sprites, &units);
+    start(&mut growth, sim, &sprites, &mut units);
     assert!(growth.running(), "a new building type starts a growth");
     growth.cancel();
     assert!(
-        !growth.publish(&device, &queue, &batch, &mut units, &mut sprites, true),
+        !growth.publish(&device, &queue, &batch, &mut sprites, true),
         "a cancelled growth never publishes"
     );
     assert!(!covers(sim, sprites.as_ref().unwrap(), units.as_ref().unwrap()).0);
@@ -442,7 +429,7 @@ fn retail_atlas_refresh_costs() {
         &mut units,
         "third new building type, after a cancel"
     ));
-    let (sprites, units) = (sprites.unwrap(), units.unwrap());
+    let (sprites, mut units) = (sprites.unwrap(), units.unwrap());
 
     for building in [first_building, second_building, third_building] {
         assert!(
@@ -458,20 +445,29 @@ fn retail_atlas_refresh_costs() {
             "the refreshed sprite atlas draws {building}"
         );
     }
+    let new_vehicle_body = UnitSpriteKey {
+        type_id: new_vehicle.into(),
+        turret_index: 0,
+        facing: 0,
+        layer: VxlLayer::Body,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    let started = Instant::now();
     assert!(
-        units
-            .get(&UnitSpriteKey {
-                type_id: new_vehicle.into(),
-                turret_index: 0,
-                facing: 0,
-                layer: VxlLayer::Body,
-                frame: 0,
-                slope_type: 0,
-                barrel_pitch: 0,
-            })
-            .is_some(),
+        units.get(&new_vehicle_body).is_some(),
         "the refreshed unit atlas draws the new vehicle"
     );
+    units.upload(&device, &queue, &batch);
+    settle(&device, &queue);
+    eprintln!(
+        "first draw of a new vehicle's body: {:.1} ms",
+        ms(started.elapsed())
+    );
+    let drawn_unit_statistics = units.statistics().expect("drawn texture descriptors");
+    assert_eq!(drawn_unit_statistics.resident_sprite_count, 1);
+    assert_eq!(drawn_unit_statistics.pages.len(), 1);
 
     // The grown atlases must hold exactly what a map load of the same world
     // builds: the same drawable keys and the same frame counts.
@@ -548,29 +544,12 @@ fn retail_atlas_refresh_costs() {
         }
     }
     eprintln!("buildings with their Buildup checked: {buildings}");
-    let loaded_units = unit_atlas::build_unit_atlas(
-        &device,
-        &queue,
-        &batch,
-        sim.entities(),
-        &assets,
-        Some(rules),
-        None,
-        Some(sim.interner()),
-    )
-    .expect("map-load unit atlas of the grown world");
-    assert_eq!(units.sprite_count(), loaded_units.sprite_count());
-    let loaded_unit_statistics = loaded_units
-        .statistics()
-        .expect("fresh texture descriptors");
-    assert_eq!(
-        grown_unit_statistics.resident_sprite_count,
-        loaded_unit_statistics.resident_sprite_count
+    let mut loaded_units = None;
+    admit(sim, &mut loaded_units);
+    let loaded_units = loaded_units.expect("map-load unit atlas of the grown world");
+    assert!(
+        units.admitted_keys() == loaded_units.admitted_keys(),
+        "the admissions hold the keys a map load of the same world admits"
     );
-    // A fresh pack and append-only growth have different packing histories;
-    // neither texture allocation is an estimate of the other's resource use.
-    eprintln!(
-        "fresh unit statistics: {}",
-        serde_json::to_string(&loaded_unit_statistics).unwrap()
-    );
+    assert_eq!(units.frame_counts, loaded_units.frame_counts);
 }

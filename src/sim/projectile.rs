@@ -384,7 +384,6 @@ pub struct ProjectileCollisionPolicy {
     pub arcing: bool,
     /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`): the shared probe's
     /// GetObstacle also stops at a solid building (`0x468BE2`).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     pub subject_to_solid: bool,
 }
@@ -406,7 +405,6 @@ impl ProjectileCollisionPolicy {
         gravity: None,
         elasticity_bits: 0x3fe8_0000_0000_0000,
         arcing: false,
-        #[cfg(feature = "ares")]
         subject_to_solid: false,
     };
 
@@ -466,7 +464,6 @@ pub enum ProjectileCollisionResponse {
     ImpactLadder(ImpactLadderWorld),
     /// The world's answer to [`ProjectileCollisionPhase::AresFirestorm`]:
     /// the bullet burns.
-    #[cfg(feature = "ares")]
     AresFirestorm,
 }
 
@@ -494,7 +491,6 @@ pub enum ProjectileCollisionPhase {
     /// Ares BulletClass_Update_Ranged (`1001AC90`, hook `0x467B94`) asks,
     /// after the commit, whether the candidate cell holds an active
     /// firestorm wall that burns the bullet.
-    #[cfg(feature = "ares")]
     AresFirestorm,
 }
 
@@ -1256,7 +1252,6 @@ pub struct Projectile {
     /// bullet is, set by SW_NuclearMissile::Activate (10072FF0), the silo's
     /// take-off hook (44CB4C, 10036660) and NukeMaker's propagation (46B423,
     /// 10036930); read by NukeMaker (46B371) and the impact hook (467E59).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_nuke_sw: Option<InternedId>,
     /// Bullet `+0x158`: set at a `NUKE` impact (`0x00467F3C`), cleared when
@@ -1483,7 +1478,6 @@ impl Projectile {
     }
 
     /// Ares BulletExt NukeSW.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_nuke_sw(&self) -> Option<InternedId> {
         self.ares_nuke_sw
     }
@@ -1516,7 +1510,6 @@ impl Projectile {
         // Ares hook 467E59 (10036960) replaces the `NUKE` test for every
         // bullet: a superweapon's bullet whose warhead is no NukeMaker rises
         // to the ground; a flash or a PreImpactAnim makes the impact.
-        #[cfg(feature = "ares")]
         if let Some(ares) = nuke.ares {
             let ball = ares(self.payload.warhead, self.ares_nuke_sw);
             if !ball.sw_bullet && ball.flash.is_none() && !ball.pre_impact_anim {
@@ -1555,7 +1548,6 @@ impl Projectile {
         Some(ProjectileNukeImpact {
             projectile_id: self.id,
             waits,
-            #[cfg(feature = "ares")]
             ares: None,
         })
     }
@@ -1620,7 +1612,6 @@ pub(crate) struct ProjectileNukeImpact {
     projectile_id: u64,
     waits: bool,
     /// The Ares impact hook's decision, when it made this impact.
-    #[cfg(feature = "ares")]
     ares: Option<AresNukeBall>,
 }
 
@@ -1631,7 +1622,6 @@ pub(crate) struct ProjectileNukeImpact {
 /// `NukeFlash.Duration`, else 30 for a superweapon's bullet and none for
 /// another, kept only above 0 and while the type's `Light.Enabled`), and the
 /// warhead's `PreImpactAnim` to wait on.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AresNukeBall {
     pub(crate) sw_bullet: bool,
@@ -1653,7 +1643,6 @@ impl ProjectileNukeImpact {
     }
 
     /// The Ares impact hook's decision.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares(self) -> Option<AresNukeBall> {
         self.ares
     }
@@ -1664,7 +1653,6 @@ impl ProjectileNukeImpact {
 pub struct NukeImpactContext<'a> {
     interner: &'a StringInterner,
     nuke_ball_type: &'a dyn Fn() -> bool,
-    #[cfg(feature = "ares")]
     ares: Option<&'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall>,
 }
 
@@ -1677,13 +1665,11 @@ impl<'a> NukeImpactContext<'a> {
         Self {
             interner,
             nuke_ball_type,
-            #[cfg(feature = "ares")]
             ares: None,
         }
     }
 
     /// The Ares impact hook's decision for (warhead, BulletExt NukeSW).
-    #[cfg(feature = "ares")]
     pub(crate) fn with_ares(
         self,
         ares: &'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall,
@@ -1762,7 +1748,6 @@ pub struct ProjectileAdvanceResult {
     nuke_impacts: Vec<ProjectileNukeImpact>,
     /// A firestorm wall burnt the bullet (Ares hook `0x467B94`); it is in
     /// `expired` too.
-    #[cfg(feature = "ares")]
     pub(crate) ares_firestormed: bool,
 }
 
@@ -1923,7 +1908,6 @@ impl ProjectileStore {
     /// Ares BulletClass_Detonate's neutering of an abducting bullet
     /// (100536E0, hook 0x46920B): Health (`+0x6C`) and DamageMultiplier
     /// (`+0x150`) zeroed, so the vanilla arms that follow deal nothing.
-    #[cfg(feature = "ares")]
     pub(crate) fn neuter(&mut self, id: u64) {
         if let Some(bullet) = self.get_mut(id) {
             bullet.payload.base_damage = 0;
@@ -2093,7 +2077,6 @@ impl ProjectileStore {
                 firer_house: None,
                 #[cfg(feature = "phobos")]
                 phobos_firer_house: None,
-                #[cfg(feature = "ares")]
                 ares_nuke_sw: None,
                 awaiting_anim: false,
                 awaited_anim: None,
@@ -2162,7 +2145,6 @@ impl ProjectileStore {
     /// Ares hook 46670F (1001AC10): while a bullet waits on its anim, a
     /// `PreImpactAnim.Moves` warhead's bullet takes the anim's coordinates as
     /// its Location (written directly) and the cell there as its target.
-    #[cfg(feature = "ares")]
     pub(crate) fn follow_awaited_anim(
         &mut self,
         id: u64,
@@ -2179,7 +2161,6 @@ impl ProjectileStore {
     }
 
     /// Ares BulletExt NukeSW's writers.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_ares_nuke_sw(&mut self, id: u64, sw_type: Option<InternedId>) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.ares_nuke_sw = sw_type;
@@ -2212,7 +2193,6 @@ impl ProjectileStore {
 
     /// Ares TechnoClass_Fire_FSW (`10024C00`) replaces only the Target
     /// (`+0x10C`) of a bullet whose path crosses a firestorm wall.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_firestorm_retarget(&mut self, id: u64, target: ProjectileTarget) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.target = target;
@@ -2304,7 +2284,6 @@ impl ProjectileStore {
                     ProjectileCollisionPhase::Ordinary { .. } => None,
                     ProjectileCollisionPhase::Shared => collides_at(projectile, candidate),
                     ProjectileCollisionPhase::ImpactLadder => None,
-                    #[cfg(feature = "ares")]
                     ProjectileCollisionPhase::AresFirestorm => None,
                 },
                 None,
@@ -2681,7 +2660,6 @@ impl ProjectileStore {
             .flatten()
             .map(|response| match response {
                 ProjectileCollisionResponse::TargetZClamp(impact) => impact,
-                #[cfg(feature = "ares")]
                 ProjectileCollisionResponse::AresFirestorm => {
                     unreachable!("only the shared probe answers here")
                 }

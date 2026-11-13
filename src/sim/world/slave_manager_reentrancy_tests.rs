@@ -242,7 +242,9 @@ impl Scene {
         for _ in 0..512 {
             self.frame();
             let master = self.sim.entities().get(self.master);
-            if let Some(charge) = master.and_then(|master| master.pending_c4_detonation.pending()) {
+            if let Some(charge) =
+                master.and_then(|master| master.building.pending_c4_detonation.pending())
+            {
                 assert_eq!(charge.source_entity_id(), Some(tanya));
                 planted = true;
             }

@@ -104,6 +104,7 @@ impl InfiltrationTypeRules {
     /// lookup (`detail::read<SuperWeaponTypeClass*> @ 1000CA80`): `None`
     /// keeps the field, `Some(None)` clears it for a blank value.
     pub(crate) fn read_pass(&mut self, section: &IniSection, super_weapon: Option<Option<String>>) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         self.custom = section.read_ares_bool("SpyEffect.Custom", self.custom);
         self.reveal_production =
             section.read_ares_bool("SpyEffect.RevealProduction", self.reveal_production);
@@ -181,6 +182,7 @@ mod tests {
     /// civilian occupation (`IsSabotagable @ 1000D790`).
     #[test]
     fn spy_effect_keys_read_as_the_dll_reads_them() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[SuperWeaponTypes]\n0=SW1\n[SW1]\nType=MultiMissile\n\
              [BuildingTypes]\n0=BANK\n1=HUT\n2=BARREL\n3=SAFE\n\

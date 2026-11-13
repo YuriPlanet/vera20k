@@ -2,8 +2,9 @@
 //! Choose Map lists the lobby's curated maps under its Online Maps row, and
 //! Use Map on one asks to download it. The download is saved in VERA's own
 //! Maps folder (never the game folder) as a loose `.yrm`, where it is an
-//! ordinary map from then on, in every game type's list. Players star maps they like; the stars are kept in
-//! `MapFavorites.txt` in the settings folder. VERA-only; gamemd has no map
+//! ordinary map from then on, in every game type's list. Players star maps they like, online or not; the stars are kept in
+//! `MapFavorites.txt` in the settings folder and list under Choose Map's
+//! Favorites row. VERA-only; gamemd has no map
 //! library.
 //!
 //! The catalog is read in the background when the player goes online, and
@@ -75,17 +76,13 @@ pub(crate) struct MapLibrary {
     phase: Phase,
     maps: Vec<OnlineMap>,
     download: Option<Download>,
-    /// Starred maps by SHA-256, read when the catalog read starts.
+    /// Starred maps by `favorite_key`, read when Choose Map opens.
     favorites: std::collections::BTreeSet<String>,
 }
 
 const FAVORITES_FILE: &str = "MapFavorites.txt";
 
 impl MapLibrary {
-    pub(crate) fn favorites(&self) -> &std::collections::BTreeSet<String> {
-        &self.favorites
-    }
-
     /// The library entry behind an Online Choose Map row.
     pub(crate) fn online_map(&self, record: &SkirmishScenarioRecord) -> Option<&OnlineMap> {
         let SkirmishScenarioSource::Online(sha256) = &record.source else {
@@ -104,10 +101,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let phase = match taken {
         // A launcher-started match has no Choose Map to fill.
         Phase::NotStarted if state.frontend.external_launch => Phase::Ready,
-        Phase::NotStarted if online => {
-            state.frontend.map_library.favorites = read_favorites(state);
-            fetch_catalog(state, false)
-        }
+        Phase::NotStarted if online => fetch_catalog(state, false),
         Phase::Fetching { result, retried } => match result.try_recv() {
             Ok(Ok(maps)) => {
                 log::info!("The online map library lists {} maps", maps.len());
@@ -377,13 +371,22 @@ fn in_online_play(state: &AppState) -> bool {
     state.frontend.wol.is_some()
 }
 
-/// Star or unstar a map, and keep the stars for later runs.
-pub(crate) fn set_favorite(state: &mut AppState, sha256: String, starred: bool) {
+/// Star or unstar a map, and keep the stars for later runs. The library
+/// owns the stars; an open Choose Map gets a fresh copy.
+pub(crate) fn set_favorite(state: &mut AppState, key: String, starred: bool) {
     let favorites = &mut state.frontend.map_library.favorites;
     if starred {
-        favorites.insert(sha256);
+        favorites.insert(key);
     } else {
-        favorites.remove(&sha256);
+        favorites.remove(&key);
+    }
+    if let Some(modal) = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_mut()
+    {
+        modal.favorites = state.frontend.map_library.favorites.clone();
     }
     let Some(path) = favorites_path(state) else {
         return;
@@ -393,7 +396,7 @@ pub(crate) fn set_favorite(state: &mut AppState, sha256: String, starred: bool) 
         .map_library
         .favorites
         .iter()
-        .map(|sha| format!("{sha}\n"))
+        .map(|key| format!("{key}\n"))
         .collect();
     if let Err(error) = std::fs::create_dir_all(path.parent().unwrap_or(&path))
         .and_then(|()| std::fs::write(&path, text))
@@ -410,19 +413,33 @@ fn favorites_path(state: &AppState) -> Option<std::path::PathBuf> {
         .map(|config| config.paths.settings_dir().join(FAVORITES_FILE))
 }
 
-/// The stars from earlier runs; a missing or unreadable file stars nothing.
-fn read_favorites(state: &AppState) -> std::collections::BTreeSet<String> {
-    favorites_path(state)
+/// The stars from earlier runs, read as Choose Map opens; a missing or
+/// unreadable file stars nothing. A line is an online map's SHA-256 or
+/// another map's lower-case file name.
+pub(crate) fn read_favorites(state: &mut AppState) -> std::collections::BTreeSet<String> {
+    let favorites: std::collections::BTreeSet<String> = favorites_path(state)
         .and_then(|path| crate::util::file_system::read(path).ok())
         .map(|bytes| {
             String::from_utf8_lossy(&bytes)
                 .lines()
                 .map(str::trim)
-                .filter(|sha| crate::map::source::valid_source_sha256(sha))
+                .filter(|key| valid_favorite_key(key))
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    state.frontend.map_library.favorites = favorites.clone();
+    favorites
+}
+
+/// A star's key as [`crate::ui::skirmish_shell::favorite_key`] writes it:
+/// one short line with no upper-case ASCII or control characters.
+fn valid_favorite_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 260
+        && !key
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_ascii_uppercase())
 }
 
 /// Use Map on an Online row: ask to download it first. False for a map
@@ -599,17 +616,25 @@ pub(crate) fn keep_map(
     let listed = records.iter().any(|record| {
         !record.is_online() && record.file_name.to_lowercase() == kept.name.to_lowercase()
     });
+    let mut carried_star = None;
     if online.is_some() || !listed {
         let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
         let record =
             crate::map::scenario_sources::loose_yrm_record(&kept.path, kept.name.clone(), ordinal)
                 .context("the kept map does not read as a map")?;
+        // A starred online map stays starred under its file name.
+        if online.is_some() && state.frontend.map_library.favorites.contains(&sha256) {
+            carried_star = crate::ui::skirmish_shell::favorite_key(&record);
+        }
         match online {
             Some(index) => records[index] = record,
             None => records.push(record),
         }
     }
     drop(records);
+    if let Some(key) = carried_star {
+        set_favorite(state, key, true);
+    }
     refresh_choose_map(state);
     Ok(kept.path)
 }

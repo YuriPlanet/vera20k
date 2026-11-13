@@ -453,7 +453,6 @@ pub struct AnimObject {
     /// a terrain owner apart from `owner_entity` and its stored coordinate
     /// absolute: a terrain object never moves, so native's owner-relative
     /// form adds the same constant back on every read.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     owner_terrain: Option<u64>,
 }
@@ -720,7 +719,6 @@ impl AnimObject {
     /// Ares `BuildingExt::ExtData::UpdateFirewall @ 10013280` stores its
     /// own anims in `building`'s `slot` and sets only Anim+0x118: the
     /// constructor's ZAdjust and YSortAdjust stay.
-    #[cfg(feature = "ares")]
     pub(crate) fn enter_ares_firewall_slot(&mut self, building: u64, slot: u8) {
         self.building_anim = true;
         self.building_slot = Some((building, slot));
@@ -772,7 +770,6 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "ares")]
             owner_terrain: None,
         }
     }
@@ -795,10 +792,7 @@ impl AnimObject {
     /// callback compares must be named here too.
     pub(crate) fn expiry_names(&self) -> [Option<u64>; 2] {
         // An anim names at most one owner at `+0xCC`.
-        #[cfg(feature = "ares")]
         let owner = self.owner_entity.or(self.owner_terrain);
-        #[cfg(not(feature = "ares"))]
-        let owner = self.owner_entity;
         [owner, self.attached_bullet]
     }
 
@@ -850,7 +844,6 @@ impl AnimObject {
             b"anim-flaming-guy-v1".hash(hasher);
             state.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if let Some(terrain) = self.owner_terrain {
             b"anim-owner-terrain-v1".hash(hasher);
             terrain.hash(hasher);
@@ -989,7 +982,6 @@ impl AnimStore {
 
     /// Drop the anim's Convert (`Anim+0xD4 = 0`): Ares
     /// InfantryClass_ReceiveDamage_InfantryVirus2 (10025F50, hook 0x51887B).
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_anim_remap(&mut self, id: AnimId) -> bool {
         let Some(anim) = self.get_mut(id) else {
             return false;
@@ -1035,7 +1027,6 @@ impl AnimStore {
 
     /// Write `id`'s terrain owner (`+0xCC` naming a TerrainClass), returning
     /// the one it replaced, or `None` when `id` is not stored.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_owner_terrain(
         &mut self,
         id: AnimId,
@@ -1050,7 +1041,6 @@ impl AnimStore {
     /// Whether a stored anim other than `id` names the terrain object
     /// `owner`: the Anim array scan of SetOwnerObject424B79..424BB6 for a
     /// terrain owner. Only burning trees own anims, so it walks the store.
-    #[cfg(feature = "ares")]
     pub(crate) fn another_owned_by_terrain(&self, id: AnimId, owner: u64) -> bool {
         self.anims
             .iter()
@@ -1058,7 +1048,6 @@ impl AnimStore {
     }
 
     /// Ares terrain fire: the anims a terrain object owns, in array order.
-    #[cfg(feature = "ares")]
     pub(crate) fn owned_by_terrain(&self, owner: u64) -> Vec<AnimId> {
         self.anims
             .iter()
@@ -1069,7 +1058,6 @@ impl AnimStore {
 
     /// `AnimClass::ClearLoopsForOwner @ 0x00422B80`: every anim naming
     /// `owner` at `+0xCC` ends after its current loop (`+0x195 = 0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_loops_for_terrain_owner(&mut self, owner: u64) {
         let stored = self.anims.len();
         for (&id, anim) in self.anims.iter_mut() {
@@ -1081,7 +1069,6 @@ impl AnimStore {
     }
 
     /// The terrain object an anim is attached to (`+0xCC`).
-    #[cfg(feature = "ares")]
     pub(crate) fn owner_terrain(&self, id: AnimId) -> Option<u64> {
         self.anims.get(&id).and_then(|anim| anim.owner_terrain)
     }
@@ -1317,6 +1304,15 @@ impl DamageFires {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_slot_for_test(&mut self, slot: usize, id: Option<AnimId>) {
         self.anim_ids[slot] = id;
+    }
+}
+
+/// An object that never lit a fire keeps no slots (`GameEntity::damage_fires`).
+impl crate::util::sparse::SparseDefault for DamageFires {
+    fn sparse_default() -> &'static Self {
+        static DEFAULT: std::sync::LazyLock<DamageFires> =
+            std::sync::LazyLock::new(DamageFires::default);
+        &DEFAULT
     }
 }
 
@@ -1881,12 +1877,13 @@ impl Simulation {
             .interner
             .resolve(descriptor.type_name)
             .to_ascii_uppercase();
+        // Borrowed from the rules, which outlive the spawn: the record is
+        // only read.
         let config = rules
             .art()
             .anim_runtime_config(&type_name)
-            .cloned()
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
-        let (effective_end, effective_loop_end) = effective_bounds(&type_name, &config)?;
+        let (effective_end, effective_loop_end) = effective_bounds(&type_name, config)?;
         let reverse = descriptor.reverse || config.reverse;
         let stop_sound_id = config
             .stop_sound
@@ -1953,7 +1950,6 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "ares")]
             owner_terrain: None,
         };
         // The insert must run in every build profile: wrapped in
@@ -1964,7 +1960,7 @@ impl Simulation {
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
             AnimConstructorInput::Runtime | AnimConstructorInput::AssignedIdentity(_) => {
-                match anim_constructor_draws(&config, world_coord, &mut self.scenario_rng) {
+                match anim_constructor_draws(config, world_coord, &mut self.scenario_rng) {
                     Ok(draws) => draws,
                     Err(error) => {
                         // VERA's explicit unsupported-arithmetic failure precedes
@@ -1975,7 +1971,7 @@ impl Simulation {
                 }
             }
         };
-        let rate_reload = Self::anim_rate(&self.session, &config, draws.random_rate);
+        let rate_reload = Self::anim_rate(&self.session, config, draws.random_rate);
         let frame_timer =
             CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let registered = self
@@ -2008,7 +2004,7 @@ impl Simulation {
         // and dispatch damage before the producer attaches its receiver.
         let start_reaches_display = descriptor.delay == 0
             && (config.tiberium_chain_reaction
-                || (middle_frame(&config).is_none()
+                || (middle_frame(config).is_none()
                     && (config.scorch
                         || config.crater
                         || (config.spawns_particle.is_some() && config.num_particles > 0))));
@@ -2026,7 +2022,7 @@ impl Simulation {
             self.reveal_drop_zone_from_anim(rules, initial_world_coord);
         }
         if descriptor.delay == 0 {
-            self.anim_start(stable_id, &config, rules, None, frame_effects)?;
+            self.anim_start(stable_id, config, rules, None, frame_effects)?;
         }
         if let Some(owner) = descriptor.owner {
             self.set_anim_owner_object(stable_id, Some(owner), rules);
@@ -2967,9 +2963,7 @@ impl Simulation {
         // A terrain owner (Ares terrain fire): the same detach, whose
         // last-anim callback is TerrainClass vt+0x17C, Finish_Fire_Death
         // (`0x00424BB0`). Its stored coordinate is already absolute.
-        #[cfg(feature = "ares")]
         let owner_terrain = anim.owner_terrain;
-        #[cfg(feature = "ares")]
         if let Some(terrain) = owner_terrain {
             if marked {
                 self.substrate.display.remove(id);
@@ -3003,7 +2997,6 @@ impl Simulation {
             let Some(owner_coord) = self.anim_owner_coords(owner_id) else {
                 return false;
             };
-            #[cfg(feature = "ares")]
             if !self.substrate.entities.contains(owner_id) {
                 // A terrain owner: attach without the coordinate conversion
                 // (see `AnimObject::owner_terrain`) or the Object+84 flag,
@@ -3056,10 +3049,7 @@ impl Simulation {
         use crate::rules::art_data::AnimLayer;
         use crate::sim::world::display_layers::DisplayLayer;
         let anim = self.substrate.anims.get(id)?;
-        #[cfg(feature = "ares")]
         let attached = anim.owner_entity.is_some() || anim.owner_terrain.is_some();
-        #[cfg(not(feature = "ares"))]
-        let attached = anim.owner_entity.is_some();
         if attached {
             return Some(DisplayLayer::GROUND);
         }
@@ -3105,7 +3095,6 @@ impl Simulation {
     pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
         // A terrain owner's centre is its GetCoords (Terrain VT+48 ->
         // Object5F65A0), for the Ares terrain fire.
-        #[cfg(feature = "ares")]
         if !self.substrate.entities.contains(owner_id) {
             let centre = self.terrain_objects.get(owner_id)?.world_coord();
             return Some(AnimWorldCoord {
@@ -3125,7 +3114,6 @@ impl Simulation {
     /// only when this Anim broadcasts its own pointer expiry (44EA45).
     pub(crate) fn detach_anim_from_owner(&mut self, id: AnimId, rules: &RuleSet) -> Option<u64> {
         // A terrain owner's +60 is the Object base, which keeps no anim.
-        #[cfg(feature = "ares")]
         if let Some(terrain) = self.substrate.anims.owner_terrain(id) {
             self.set_anim_owner_object(id, None, rules);
             return Some(terrain);
@@ -3154,12 +3142,9 @@ impl Simulation {
         rules: &RuleSet,
     ) -> bool {
         let mut changed = false;
-        #[cfg(feature = "ares")]
         let owner = self
             .anim(id)
             .and_then(|anim| anim.owner_entity.or(anim.owner_terrain));
-        #[cfg(not(feature = "ares"))]
-        let owner = self.anim(id).and_then(|anim| anim.owner_entity);
         if owner == Some(expired_id) {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DisplayRemove { stable_id: id });
@@ -3310,8 +3295,10 @@ impl Simulation {
         };
         let maximum = object_type.strength;
         let can_be_occupied = object_type.can_be_occupied;
-        let image = object_type.image.clone();
-        let foundation = object_type.foundation.clone();
+        // Borrowed from the rules, which outlive this visit: the image and
+        // foundation are read only when the fires start.
+        let image = &object_type.image;
+        let foundation = &object_type.foundation;
         let ratio = if can_be_occupied {
             rules.general.condition_red
         } else {
@@ -3334,7 +3321,7 @@ impl Simulation {
                 as usize;
             let offsets = rules
                 .art()
-                .get(&image)
+                .get(image)
                 .map(|entry| entry.damage_fire_offsets.clone())
                 .unwrap_or_default();
             let (foundation_w, foundation_h) = foundation.dimensions();
@@ -3594,7 +3581,7 @@ impl Simulation {
         };
         // Ares 3.0 AnimClass_UpdateBounce_Damage (1005C410, hook 0x4239F0):
         // a negative DamageRadius or a Damage of zero damages nothing.
-        if crate::rules::ARES_ENABLED && (config.damage_radius < 0 || damage == 0) {
+        if rules.ares() && (config.damage_radius < 0 || damage == 0) {
             return false;
         }
         let warhead_ref = self.interner.intern(warhead_name);
@@ -4256,16 +4243,16 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
-        let Some(config) = rules.art().anim_runtime_config(next).cloned() else {
+        let Some(config) = rules.art().anim_runtime_config(next) else {
             self.destroy_anim(id, rules);
             return Ok(());
         };
-        let Ok((effective_end, effective_loop_end)) = effective_bounds(next, &config) else {
+        let Ok((effective_end, effective_loop_end)) = effective_bounds(next, config) else {
             self.destroy_anim(id, rules);
             return Ok(());
         };
         let type_id = self.interner.intern(next);
-        let rate_reload = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, &config);
+        let rate_reload = Self::choose_anim_rate(&self.session, &mut self.scenario_rng, config);
         let frame_timer =
             CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let stop_sound_id = config
@@ -4295,7 +4282,7 @@ impl Simulation {
             anim.runtime.first_ai_guard = false;
             anim.runtime.inactive = false;
         }
-        self.anim_start(id, &config, rules, overlay_registry, frame_effects)
+        self.anim_start(id, config, rules, overlay_registry, frame_effects)
     }
 }
 

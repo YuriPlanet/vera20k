@@ -101,6 +101,5 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
   authored Rules. Trigger: `CanMakeStuffUp=yes`, set by no retail INI.
   Effect: the authored values stay in force; the draws, their order and the
   infantry pass match the DLL.
-- EMP: harvesters, the AI Walk path and mind-controlled victims stay
-  unsupported, and announceAttack (`10062150`) is not ported
-  ([ares-emp.md](ares-emp.md)).
+- EMP: a Tunnel mover stays unsupported; every other Foot and every
+  EMP-prone building is covered ([ares-emp.md](ares-emp.md)).

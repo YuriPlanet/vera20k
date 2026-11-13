@@ -201,10 +201,9 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
             "one native type per gate"
         );
         // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
-        #[cfg(feature = "ares")]
-        let _ = score;
-        #[cfg(not(feature = "ares"))]
-        assert_eq!(sim.houses[&owner].economy().score(), score);
+        if !rules.ares() {
+            assert_eq!(sim.houses[&owner].economy().score(), score);
+        }
         assert_eq!(
             sim.substrate
                 .entities

@@ -879,7 +879,6 @@ fn ares_chronoport(
 /// `ChronoWarpContainer`): the building, its target cell (its cell moved by
 /// the target's offset from the source), its Location when the warp began
 /// and whether it places like a vehicle.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresChronoWarpBuilding {
     building: u64,
@@ -891,7 +890,6 @@ pub(crate) struct AresChronoWarpBuilding {
 /// An Ares `ChronoWarpStateMachine`: its clock (SWStateMachine `Clock`,
 /// started at the launch for `ChronoDelay + 1` frames), the source Super's
 /// owner and type, and its buildings.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresChronoWarpMachine {
     start_frame: u32,
@@ -903,13 +901,11 @@ pub(crate) struct AresChronoWarpMachine {
 
 /// The running ChronoWarpStateMachines (Ares `SWStateMachine::Array`'s
 /// ChronoWarp entries), in registration order. Saved and hashed.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresChronoWarps {
     machines: Vec<AresChronoWarpMachine>,
 }
 
-#[cfg(feature = "ares")]
 impl AresChronoWarps {
     /// BuildingExt `AboutToChronoshift` (+0xD): set when the lambda
     /// registers a building (1006F4D0) and cleared when its machine brings it

@@ -221,7 +221,8 @@ fn link(sim: &Simulation, id: u64) -> TemporalLink {
     entity(sim, id)
         .temporal
         .link
-        .clone()
+        .as_deref()
+        .cloned()
         .expect("a Temporal firer")
 }
 
@@ -251,7 +252,7 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
             .get_mut(attacker)
             .unwrap()
             .temporal
-            .link = Some(link);
+            .link = Some(Box::new(link));
     }
     sim.substrate
         .entities
@@ -1265,7 +1266,9 @@ fn a_warped_superweapon_building_holds_its_super() {
 /// The online test asks for any online provider (`0x0050B04F`): with two
 /// silos, warping one leaves the Nuke charging and warping both holds it. A
 /// Super that is not `IsPowered=` (`SuperClass::IsPowered @ 0x006CC2A0`)
-/// charges on though its only provider is warped.
+/// charges on though its only provider is warped; with Ares (hook
+/// `0x50AF10`, 10039450) it is held without a Charging provider, which a
+/// warped one is not (10038F10).
 #[test]
 fn a_super_holds_only_while_no_provider_is_online() {
     let rules = rules_from(
@@ -1307,7 +1310,11 @@ fn a_super_holds_only_while_no_provider_is_online() {
     );
     step(&mut sim);
     assert!(!held(&sim, nuke), "the other silo is online");
-    assert!(!held(&sim, spy_plane), "not IsPowered=");
+    assert_eq!(
+        held(&sim, spy_plane),
+        crate::rules::ARES_BUILD,
+        "not IsPowered="
+    );
 
     sim.temporal_initiate_warp(
         clegs[1],
@@ -1318,7 +1325,11 @@ fn a_super_holds_only_while_no_provider_is_online() {
     );
     step(&mut sim);
     assert!(held(&sim, nuke), "no silo is online");
-    assert!(!held(&sim, spy_plane), "still charging");
+    assert_eq!(
+        held(&sim, spy_plane),
+        crate::rules::ARES_BUILD,
+        "still charging"
+    );
 }
 
 /// Through the production fire path: a Chrono Legionnaire ordered to attack
@@ -1750,7 +1761,7 @@ fn erasing_a_bunkered_tank_clears_its_bunker() {
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 11, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 12, 10);
     if let Some(building) = sim.substrate.entities.get_mut(bunker) {
-        building.bunker_runtime = Some(BunkerRuntime::idle());
+        building.building.bunker_runtime = Some(BunkerRuntime::idle());
     }
     // Occupied walls, as UpdateBunker's install leaves them.
     crate::sim::docking::bunker_link::install_bunker_link(&mut sim, bunker, tank, &rules);
@@ -1771,7 +1782,10 @@ fn erasing_a_bunkered_tank_clears_its_bunker() {
     let building = entity(&sim, bunker);
     assert_eq!(building.bunker.occupant(), None);
     assert_eq!(
-        building.bunker_runtime.map(|runtime| runtime.state()),
+        building
+            .building
+            .bunker_runtime
+            .map(|runtime| runtime.state()),
         Some(BunkerState::Idle)
     );
     assert_eq!(
@@ -2059,7 +2073,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     {
         let building = sim.substrate.entities.get_mut(plant).unwrap();
         building.health.set_for_test(300);
-        building.repairing.set_for_test(true);
+        building.building.repairing.set_for_test(true);
     }
     let americans = sim.interner.get("Americans").unwrap();
     sim.houses
@@ -2758,7 +2772,7 @@ fn native_initiate_warp_corpus() {
                 .get_mut(target)
                 .unwrap()
                 .temporal
-                .link = Some(TemporalLink::default());
+                .link = Some(Box::default());
             chain(&mut sim, other, &[target], 555);
         }
         sim.substrate
@@ -3322,7 +3336,7 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
     let target = spawn(&mut sim, &rules, "HTNK", "Russians", 20, 20);
     let attacker = spawn(&mut sim, &rules, "CLEG", "Americans", 22, 20);
     sim.update_ares_radar_jammer(target, &rules);
-    assert!(!entity(&sim, target).radar_jam.is_default());
+    assert!(!entity(&sim, target).ares.radar_jam.is_default());
     chain(&mut sim, target, &[attacker], 1_000_000);
     sim.temporal_update_head(
         attacker,
@@ -3330,5 +3344,22 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    assert!(entity(&sim, target).radar_jam.is_default());
+    assert!(entity(&sim, target).ares.radar_jam.is_default());
+}
+
+/// A tank with no head of its own that is neither warped out nor warping in
+/// costs the prologue one lookup, and its turn goes on.
+#[test]
+fn an_untouched_tank_costs_the_prologue_one_lookup() {
+    let rules = rules();
+    let mut sim = sim(1);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let before = sim.substrate.entities.lookups().0;
+    assert!(!sim.temporal_ai_prologue(
+        tank,
+        &rules,
+        crate::sim::world::ObjectAiCtx::default(),
+        &mut false,
+    ));
+    assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
 }

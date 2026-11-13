@@ -19,7 +19,7 @@ fn eligible_air_target(sim: &Simulation, rules: &RuleSet, aegis: u64) -> Option<
         sim.resolved_terrain.as_ref(),
         true,
         ScanMission::Guard,
-        sim.zone_grid.as_deref(),
+        sim.zone_grid.as_ref(),
         LineOfFireInputs {
             overlay_grid: sim.overlay_grid.as_ref(),
             alliances: Some(&sim.house_alliances),
@@ -183,7 +183,7 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
             );
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index instead.
-            if !cfg!(feature = "ares") {
+            if !scene.rules.ares() {
                 assert_eq!(
                     source.weapon_burst.index(),
                     0,
@@ -807,7 +807,7 @@ fn distributed_collection_flat_entry_clears_but_class_early_return_preserves() {
         sim.resolved_terrain.as_ref(),
         true,
         ScanMission::Guard,
-        sim.zone_grid.as_deref(),
+        sim.zone_grid.as_ref(),
         LineOfFireInputs::default(),
         Some(&sim),
         None,

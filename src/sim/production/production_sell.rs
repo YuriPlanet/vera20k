@@ -211,7 +211,9 @@ pub(crate) fn foot_on_sold(
 ) -> bool {
     // Ares FootClass_Sell_Detonate (hook 0x4D9F7B), On_Sold's first step.
     // RESIDUAL: a blast that destroys the unit ends the sale here; native
-    // runs the rest of On_Sold on the destroyed unit.
+    // runs the rest of On_Sold on the destroyed unit. Only Ares sells a
+    // Foot, so this whole function runs only while Ares plays; the bomb step
+    // moves to the switch with the bomb's Ares settings (combat).
     #[cfg(feature = "ares")]
     if !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects()) {
         return true;
@@ -430,7 +432,7 @@ pub(crate) fn sell_back(
                 // Get_Mission (`vt+0x184`): the current mission, else the
                 // queued one.
                 entity.mission.effective().known() == Some(MissionType::Selling),
-                entity.pending_c4_detonation.pending().is_some(),
+                entity.building.pending_c4_detonation.pending().is_some(),
             ))
         })
     else {
@@ -536,7 +538,7 @@ pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         );
     // Ares 3.0 10017200 (hook 0x4494D2): a raided building cannot be sold.
     #[cfg(feature = "ares")]
-    if entity.ares_raid.raided() {
+    if entity.ares.ares_raid.raided() {
         return false;
     }
     // Ares 3.0 BuildingClass_IsSellable_FirestormWall (10014A20, hook
@@ -793,7 +795,7 @@ pub(crate) fn sell_stage_one(
             // 0x44A8A2): the building remembers that its survivors are out
             // (NoSurvivor), so its death during the pack-up spawns none.
             #[cfg(feature = "ares")]
-            building.no_survivor.mark();
+            building.building.no_survivor.mark();
             building.begin_building_pack_up_stage_two(&mut status, now);
         }
         building.mission.set_handler_state(status);

@@ -382,7 +382,9 @@ impl App {
                 .map(|config| config.paths.settings_dir()),
             RetailOptionsLoad::from_settings,
         );
-        let profile_screen = options_load.startup_shell_screen;
+        let profile_screen = crate::app::persistence::options_profile::player_launch_window_size(
+            options_load.startup_shell_screen,
+        );
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
@@ -418,9 +420,10 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
-        // A player window opens at that size on every launch, as gamemd's
-        // shell does (`WinMain` 006BD9B5, `RetailOptionsLoad`), however large
-        // it was left.
+        // A player window opens at that size on every launch, however large it
+        // was left, as gamemd's shell does (`WinMain` 006BD9B5,
+        // `RetailOptionsLoad`); VERA opens it at 1024x768 where gamemd's shell
+        // is 800x600 (`player_launch_window_size`).
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
         } else {
@@ -1034,7 +1037,8 @@ impl App {
                     pause_menu_interaction: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
-                    display_pause: Default::default(),
+                    options_page: None,
+                    options_page_category: None,
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
@@ -1044,7 +1048,6 @@ impl App {
                     restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
-                    in_game_options_anchor: None,
                     combat_lights: Default::default(),
                     screen_shake: Default::default(),
                     line_trails: Default::default(),
@@ -1108,6 +1111,9 @@ impl App {
                     overlay_radar_colors: HashMap::new(),
                     house_color_map: HashMap::new(),
                     house_roster: HouseRoster::default(),
+                    relation_colors: false,
+                    relation_color_map: None,
+                    relation_color_generation: 0,
                     lighting: Default::default(),
                     tile_atlas: None,
                     unit_atlas: None,
@@ -1115,6 +1121,7 @@ impl App {
                     surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
+                    atlas_refresh_owed: false,
                     overlay_atlas: None,
                     bridge_atlas: None,
                     sidebar_cameo_atlas: None,

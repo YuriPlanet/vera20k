@@ -18,17 +18,30 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 /// stops a positive Foot speed and clears +68A. Refusal and Stop owners do not
 /// share this tail. Native controls: foot_scold_latch.json paid_tails.
 pub(super) fn finish_idle(entity: &mut GameEntity) {
-    if !entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
-            && loco.step_head().is_none()
-            && loco.walk_destination().is_none()
-    }) {
+    if !idle_walk(entity) {
         return;
     }
     if entity.foot_speed.speed_fraction_is_positive() {
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
     }
     entity.navigation.path_runtime_mut().clear_scold_latch();
+}
+
+/// Whether [`finish_idle`] changes `entity`: an idle Walk with a positive
+/// speed or a set scold latch.
+pub(super) fn finish_idle_writes(entity: &GameEntity) -> bool {
+    idle_walk(entity)
+        && (entity.foot_speed.speed_fraction_is_positive()
+            || entity.navigation.path_runtime().scold_latch_raw() != 0)
+}
+
+/// A Walk with no head and no destination, which [`finish_idle`] serves.
+fn idle_walk(entity: &GameEntity) -> bool {
+    entity.locomotor.as_ref().is_some_and(|loco| {
+        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
+            && loco.step_head().is_none()
+            && loco.walk_destination().is_none()
+    })
 }
 
 /// Publish Foot speed/facing and the provisional numeric step. The caller owns

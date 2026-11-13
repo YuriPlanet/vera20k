@@ -250,8 +250,8 @@ fn ares_deactivate_dims_replace_the_stock_unit_halving() {
     }
     let light = crate::render::palette_light::PaletteLight::color_scheme([1000; 3], 1000);
     let level = |sim: &Simulation, id: u64| {
-        let unit = sim.entities().get(id).unwrap();
-        unit_voxel_effect_light(unit, [1.; 3], light, Some(&rules), sim, 0)
+        let unit = crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, id);
+        unit_voxel_effect_light(&unit, [1.; 3], light, Some(&rules), sim, 0)
             .1
             .brightness()
     };

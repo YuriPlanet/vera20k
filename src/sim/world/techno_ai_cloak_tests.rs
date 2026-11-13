@@ -441,6 +441,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
             .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
         entity.weapon_burst.complete_shot(4);
         entity
+            .building
             .pending_building_fire
             .set_for_test(Some(PendingBuildingFire::new(
                 7,
@@ -455,7 +456,13 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     // CanAutoCloak and not from the outer CloakedByHouses gate.
     arm_cloak_field_for(&mut sim, cloaker_owner, cell);
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let mission_before = sim.substrate.entities.get(targeter).unwrap().mission;
+    let mission_before = sim
+        .substrate
+        .entities
+        .get(targeter)
+        .unwrap()
+        .mission
+        .clone();
     let hash_before = sim.state_hash();
 
     let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules, None);
@@ -486,7 +493,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     );
     assert_eq!(entity.weapon_burst.index(), 1);
     assert_eq!(
-        entity.pending_building_fire.pending(),
+        entity.building.pending_building_fire.pending(),
         Some(PendingBuildingFire::new(
             7,
             DelayedFire::Weapon(WeaponSlot::Secondary)

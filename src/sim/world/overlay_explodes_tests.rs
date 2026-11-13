@@ -8,10 +8,11 @@ use crate::sim::projectile::ProjectileCoord;
 fn scene() -> Option<(Simulation, RuleSet)> {
     // Ares 3.0 1002C8E0 (hook 0x48A2D9) keeps an Explodes overlay below
     // [General] OverlayExplodeThreshold (0); -1 keeps the stock outcomes.
-    #[cfg(feature = "ares")]
-    return scene_with("[General]\nOverlayExplodeThreshold=-1\n");
-    #[cfg(not(feature = "ares"))]
-    scene_with("")
+    scene_with(if crate::rules::ares_switch::ares_way() {
+        "[General]\nOverlayExplodeThreshold=-1\n"
+    } else {
+        ""
+    })
 }
 
 fn scene_with(patch: &str) -> Option<(Simulation, RuleSet)> {
@@ -395,9 +396,9 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
 
 /// Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes overlay blows up only from
 /// `damage >= [General] OverlayExplodeThreshold`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_overlay_explode_threshold_gates_the_explodes_tail() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut sim, rules)) = scene_with("[General]\nOverlayExplodeThreshold=50\n") else {
         return;
     };

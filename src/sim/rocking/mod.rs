@@ -17,7 +17,7 @@ pub mod self_destruct;
 mod rocking_tests;
 
 pub use impulse::{RockerImpulse, apply_rocker_impulse};
-pub(crate) use rocking_system::update;
+pub(crate) use rocking_system::{update, updates};
 
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X, X87Value};
@@ -52,6 +52,23 @@ impl crate::sim::game_entity::GameEntity {
 }
 
 impl RockingState {
+    /// Both axes at rest: no rate, and a positive-zero angle. The axis step
+    /// of an ordinary visit (`0x0070B700`/`0x0070B963`) zeroes the angle of
+    /// an axis without a rate and writes nothing else, so such a state keeps
+    /// its words.
+    pub(crate) fn at_rest(&self) -> bool {
+        [
+            (self.angle_sideways, self.vel_sideways),
+            (self.angle_forwards, self.vel_forwards),
+        ]
+        .into_iter()
+        .all(|(angle, rate)| {
+            angle == NativeF32Bits::POSITIVE_ZERO
+                && X::compare(load(rate), X::load_i32(0))
+                    == crate::util::native_x87::X87Ordering::Equal
+        })
+    }
+
     /// Compatibility boundary only; simulation and pose consumers retain the
     /// native words. A value outside I16F16 saturates at this read boundary.
     pub fn angle_sideways(&self) -> SimFixed {

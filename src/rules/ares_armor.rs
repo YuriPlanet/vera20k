@@ -7,15 +7,11 @@
 //! overrides each index before the next one, so backward inheritance sees the
 //! earlier override while a forward reference takes its own fallback record.
 
-#[cfg(feature = "ares")]
 use crate::rules::armor::ArmorInteraction;
 use crate::rules::armor::{ArmorId, RETAIL_ARMOR_NAMES};
-#[cfg(feature = "ares")]
 use crate::rules::ini_parser::{IniFile, IniSection};
-#[cfg(feature = "ares")]
 use crate::rules::ini_value::truncate_native_bytes;
 use crate::util::native_x87::NativeF64Bits;
-#[cfg(feature = "ares")]
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -37,7 +33,6 @@ impl Default for Versus {
     }
 }
 
-#[cfg(feature = "ares")]
 impl Versus {
     ///100523E0..100524B6. The numeric read is shared with the original
     /// Verses parser; only Ares's independent flag conventions are added.
@@ -144,7 +139,6 @@ impl ArmorCatalog {
             })
     }
 
-    #[cfg(feature = "ares")]
     fn find(&self, name: &str) -> Option<ArmorId> {
         self.armors
             .iter()
@@ -153,8 +147,8 @@ impl ArmorCatalog {
     }
 
     ///679A15's hook allocates all keys before reading any defaults.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, pass: &IniFile) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         let section = pass.section_or_empty("ArmorTypes");
         for name in section.keys() {
             if self.find(name).is_none() {
@@ -178,14 +172,17 @@ impl ArmorCatalog {
 
     /// Common ObjectType Armor reader4753F0 -> Ares10006E10. Bind against
     /// this read's catalog: an unknown name becomes None0 immediately.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_binding(&self, section: &IniSection, current: ArmorId) -> ArmorId {
-        section.read_name("Armor", 32).map_or(current, |name| {
-            self.find(name).unwrap_or_else(|| {
-                log::warn!("Unknown Ares armor {name:?} in [{}]", section.name);
-                ArmorId::NONE
-            })
-        })
+        let _ares = crate::rules::ares_switch::ares_reads();
+        crate::rules::ares_switch::not_ares_read(|| section.read_name("Armor", 32)).map_or(
+            current,
+            |name| {
+                self.find(name).unwrap_or_else(|| {
+                    log::warn!("Unknown Ares armor {name:?} in [{}]", section.name);
+                    ArmorId::NONE
+                })
+            },
+        )
     }
 }
 
@@ -211,8 +208,8 @@ impl AresWarheadVerses {
         self.entries.len() >= RETAIL_ARMOR_NAMES.len() && self.entries.len() <= catalog.len()
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: Option<&IniSection>, catalog: &ArmorCatalog) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         if let Some(tokens) = section.and_then(|section| section.read_list("Verses", 0x800)) {
             for (index, token) in tokens.into_iter().take(11).enumerate() {
                 self.entries[index] = Versus::parse(token);
@@ -242,7 +239,6 @@ impl AresWarheadVerses {
         }
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn interaction(&self, armor: ArmorId) -> ArmorInteraction {
         self.entries
             .get(armor.index())

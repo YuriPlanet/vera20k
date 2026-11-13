@@ -840,8 +840,8 @@ fn techno_what_weapon_should_i_use<'r>(
     // Ares TechnoClass_SelectWeapon_NoAmmoWeapon (Ares.dll 10047AE0, hook
     // 0x6F3410, before H): a type with `Ammo= >= 0` fires `NoAmmoWeapon`
     // once its count is at or below `NoAmmoAmount`.
-    #[cfg(feature = "ares")]
-    if obj.ammo >= 0
+    if rules.ares()
+        && obj.ammo >= 0
         && let Some(slot) = obj.techno_combat().ammo().no_ammo_weapon(attacker.ammo)
     {
         return slot;
@@ -1076,7 +1076,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         drain_target_active: entity.drain.target().is_some(),
         // `MissionClass::GetCurrentMission @ 0x005B3040`: current, else queued.
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
-        is_overpowered_building: entity.tesla_charge.is_overpowered(),
+        is_overpowered_building: entity.building.tesla_charge.is_overpowered(),
         aircraft_spawn_collision: false,
         ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
     }
@@ -1712,7 +1712,7 @@ mod tests {
             );
             assert_eq!(
                 primary_warhead_spares_medium_and_wood(&rules, obj, 0),
-                !crate::rules::ARES_ENABLED && medium != "0.001"
+                !crate::rules::ARES_BUILD && medium != "0.001"
             );
             assert!(
                 !primary_warhead_spares_medium_and_wood(&rules, obj, 200),
@@ -1971,9 +1971,9 @@ mod tests {
     /// Ares NoAmmoWeapon (Ares.dll 10047AE0, hook 0x6F3410): once Ammo is
     /// at or below `NoAmmoAmount` the ladder answers `NoAmmoWeapon` right
     /// after the open-topped arm; above it the ladder runs on to slot 0.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_no_ammo_weapon_answers_at_low_ammo() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=LAUNCH\n1=TGT\n[LAUNCH]\nStrength=100\nAmmo=4\n\
              NoAmmoAmount=1\nNoAmmoWeapon=1\nPrimary=W0\nSecondary=W1\n\

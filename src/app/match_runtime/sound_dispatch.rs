@@ -256,7 +256,6 @@ pub(super) fn dispatch_sim_sound_events(
                 sound_id,
                 type_id,
                 world,
-                #[cfg(feature = "ares")]
                 eva,
             } => {
                 // `HouseClass::IsHumanPlayer @ 0x0050B6F0` (`0x006FA089` /
@@ -276,22 +275,22 @@ pub(super) fn dispatch_sim_sound_events(
                         source: Some(anim_world_sound_source(world)),
                     });
                 }
-                // `0x006FA0C6 MOV ECX,0x843138 ("EVA_UnitPromoted") ; OR
-                // EDX,-1 ; CALL VoxClass::PlayEVA`: the voice slot, with
-                // the entry's own type (STANDARD LOW on stock data).
-                #[cfg(not(feature = "ares"))]
-                output.push(GameSoundEvent::Eva {
-                    event: "EVA_UnitPromoted".to_string(),
-                    type_override: None,
-                });
-                #[cfg(not(feature = "ares"))]
-                collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
-                // Ares UpdateVeterancy10046D4B..10046D54 queues the type's
-                // EVA.*Promoted index instead; -1 queues nothing.
-                #[cfg(feature = "ares")]
-                if let Some(eva) = eva {
+                if rules.ares() {
+                    // Ares UpdateVeterancy10046D4B..10046D54 queues the type's
+                    // EVA.*Promoted index instead; -1 queues nothing.
+                    if let Some(eva) = eva {
+                        output.push(GameSoundEvent::Eva {
+                            event: sim.interner().resolve(eva).to_string(),
+                            type_override: None,
+                        });
+                        collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
+                    }
+                } else {
+                    // `0x006FA0C6 MOV ECX,0x843138 ("EVA_UnitPromoted") ; OR
+                    // EDX,-1 ; CALL VoxClass::PlayEVA`: the voice slot, with
+                    // the entry's own type (STANDARD LOW on stock data).
                     output.push(GameSoundEvent::Eva {
-                        event: sim.interner().resolve(eva).to_string(),
+                        event: "EVA_UnitPromoted".to_string(),
                         type_override: None,
                     });
                     collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
@@ -991,7 +990,6 @@ pub(super) fn dispatch_sim_sound_events(
                 tech_building,
                 radar,
                 capture_eva_event,
-                #[cfg(feature = "ares")]
                 ares_tech,
             } => {
                 // `BuildingClass::ChangeOwner 0x004483C6/0x004483D1
@@ -1009,12 +1007,13 @@ pub(super) fn dispatch_sim_sound_events(
                 let capture_event = capture_eva_event.map(|id| sim.interner().resolve(id));
                 // Ares 3.0 10013E40 (hook 0x0044840B) plays the type's
                 // LostEvaEvent instead.
-                #[cfg(feature = "ares")]
-                let tech_lost = ares_tech
-                    .lost_eva_event
-                    .map(|id| sim.interner().resolve(id));
-                #[cfg(not(feature = "ares"))]
-                let tech_lost = Some(eva_producers::EVA_TECH_BUILDING_LOST);
+                let tech_lost = if rules.ares() {
+                    ares_tech
+                        .lost_eva_event
+                        .map(|id| sim.interner().resolve(id))
+                } else {
+                    Some(eva_producers::EVA_TECH_BUILDING_LOST)
+                };
                 for event in eva_producers::capture_eva_events(
                     tech_building,
                     radar_accepted,
@@ -2224,7 +2223,6 @@ mod tests {
             .set_current_house_for_test(Some(local));
         let sound = sim.intern("Promotion");
         let promoted_type = sim.intern("E1");
-        #[cfg(feature = "ares")]
         let eva = sim.intern("EVA_UnitPromoted");
         let promotion = |owner| SimSoundEvent::UnitPromoted {
             owner,
@@ -2236,7 +2234,6 @@ mod tests {
                 y: 7 * 256 + 128,
                 z: 0,
             },
-            #[cfg(feature = "ares")]
             eva: Some(eva),
         };
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
@@ -3644,7 +3641,8 @@ mod tests {
                     Some(&retail.fixed_art),
                 ),
                 ..SimResources::empty()
-            }.into(),
+            }
+            .into(),
         };
         let frame = |runtime: &mut SimRuntime, commands: &[CommandEnvelope]| {
             let output = runtime
@@ -3797,7 +3795,6 @@ mod tests {
         let remote = sim.intern("Remote");
         let building = sim.intern("GAPOWR");
         let unit = sim.intern("HTNK");
-        #[cfg(feature = "ares")]
         let promoted_eva = sim.intern("EVA_UnitPromoted");
         sim.session_mut_for_test()
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
@@ -3825,7 +3822,6 @@ mod tests {
                 sound_id: None,
                 type_id: unit,
                 world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
-                #[cfg(feature = "ares")]
                 eva: Some(promoted_eva),
             },
             SimSoundEvent::UnitPromoted {
@@ -3833,7 +3829,6 @@ mod tests {
                 sound_id: None,
                 type_id: unit,
                 world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
-                #[cfg(feature = "ares")]
                 eva: Some(promoted_eva),
             },
         ];

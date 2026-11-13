@@ -157,6 +157,21 @@ fn unit_delivery_zero_deferment_sets_human_area_guard_and_ai_hunt() {
     }
 }
 
+/// PlaceUnits10075A60 puts each payload with DirType (GetCellIndex & 7) << 5,
+/// so the facing follows the X of the chosen cell.
+#[test]
+fn unit_delivery_payload_faces_by_its_cell_index() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\n");
+    for (cell, facing) in [((12, 10), 0x80), ((13, 10), 0xA0)] {
+        let mut sim = world(&rules);
+        fire(&mut sim, &rules, "Americans", cell);
+        let ids = payloads(&sim, "MTNK");
+        let entity = sim.substrate.entities.get(ids[0]).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), cell);
+        assert_eq!(entity.body_facing_byte(sim.session.binary_frame()), facing);
+    }
+}
+
 #[test]
 fn unit_delivery_duplicate_payloads_find_free_cells_near_blocked_target() {
     let rules = rules("[Delivery]\nSW.Deferment=0\nDeliver.Types=MTNK,MTNK\n");
@@ -384,25 +399,27 @@ fn unit_delivery_base_override_survives_save_and_capture_without_affecting_ordin
     ));
 }
 
+/// PlaceUnits10075A60 searches once per payload (FNPC 0x56DC20) and the
+/// Foot passability test refuses a cell an infantryman already stands in,
+/// so each delivered infantryman takes its own cell near the target.
 #[test]
-fn unit_delivery_infantry_groups_use_legal_subcells() {
+fn unit_delivery_infantry_each_take_their_own_cell() {
     let rules = rules("[Delivery]\nSW.Deferment=0\nDeliver.Types=E1,E1,E1,E1,E1,E1\n");
     let mut sim = world(&rules);
     fire(&mut sim, &rules, "Americans", (12, 10));
     let ids = payloads(&sim, "E1");
     assert_eq!(ids.len(), 6);
-    let target_count = ids
+    let mut cells: Vec<_> = ids
         .iter()
-        .filter(|id| {
-            let entity = sim.substrate.entities.get(**id).unwrap();
-            (entity.position.rx(), entity.position.ry()) == (12, 10)
+        .map(|id| {
+            let entity = sim.substrate.entities.get(*id).unwrap();
+            (entity.position.rx(), entity.position.ry())
         })
-        .count();
-    assert_eq!(
-        target_count,
-        crate::sim::movement::bump_crush::FUNCTIONAL_SUB_CELLS.len(),
-        "use the existing native infantry spot capacity before nearby fallback"
-    );
+        .collect();
+    assert!(cells.contains(&(12, 10)));
+    cells.sort_unstable();
+    cells.dedup();
+    assert_eq!(cells.len(), 6);
 }
 
 #[test]
@@ -594,10 +611,11 @@ fn unit_delivery_ground_aircraft_avoids_an_occupied_target() {
     assert_eq!(plane.position.exact_z_leptons(), Some(0));
 }
 
+/// PlaceUnits10075A60 searches with allowBridge 0: a bridge cell is never
+/// picked, so a payload aimed at a bridge over water lands on the nearest
+/// ground and stays off the bridge plane.
 #[test]
-fn unit_delivery_foot_placement_commits_the_selected_bridge_plane() {
-    use crate::sim::movement::locomotor::MovementLayer;
-
+fn unit_delivery_never_picks_a_bridge_cell() {
     for name in ["MTNK", "E1"] {
         let rules = rules(&format!(
             "[Water]\nTrack=0%\nFoot=0%\nBuildable=no\n[Delivery]\nSW.Deferment=0\nDeliver.Types={name}\n"
@@ -616,35 +634,12 @@ fn unit_delivery_foot_placement_commits_the_selected_bridge_plane() {
         let ids = payloads(&sim, name);
         assert_eq!(ids.len(), 1, "{name}");
         let entity = sim.substrate.entities.get(ids[0]).unwrap();
-        assert_eq!(
+        assert_ne!(
             (entity.position.rx(), entity.position.ry()),
             (12, 10),
             "{name}"
         );
-        assert!(entity.on_bridge(), "{name}");
-        assert_eq!(
-            entity.position.exact_z_leptons(),
-            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
-            "{name}"
-        );
-        assert_eq!(
-            entity.locomotor.as_ref().unwrap().layer(),
-            MovementLayer::Bridge,
-            "{name}"
-        );
-        let occupancy = sim.substrate.occupancy.get(12, 10).unwrap();
-        assert!(
-            occupancy
-                .snapshot_layer(MovementLayer::Bridge)
-                .contains(&ids[0]),
-            "{name}"
-        );
-        assert!(
-            !occupancy
-                .snapshot_layer(MovementLayer::Ground)
-                .contains(&ids[0]),
-            "{name}"
-        );
+        assert!(!entity.on_bridge(), "{name}");
     }
 }
 
@@ -662,22 +657,27 @@ fn unit_delivery_building_is_centered_on_the_target_cell() {
     assert_eq!((building.position.rx(), building.position.ry()), (11, 9));
 }
 
+/// PlaceUnits10075A60 (3.0 reads no Deliver.Buildups, default true) queues
+/// a delivered building's Construction before its Put, so it builds up, with
+/// its ready byte (+0x6DD) set; the activation cue still comes first.
 #[test]
-fn unit_delivery_activation_cue_precedes_building_discovery() {
-    let rules = rules(
-        "[Delivery]\nSW.Deferment=0\nDeliver.Types=GAPOWR\nSW.ActivationSound=DeliveryCue\n[GAPOWR]\nSuperWeapon=Delivery\n",
-    );
+fn unit_delivery_building_builds_up() {
+    let rules =
+        rules("[Delivery]\nSW.Deferment=0\nDeliver.Types=GAPOWR\nSW.ActivationSound=DeliveryCue\n");
     let mut sim = world(&rules);
     sim.session
         .set_current_house_for_test(sim.interner.get("Americans"));
     fire(&mut sim, &rules, "Americans", (12, 10));
-    let cue = sim.sound_events.iter().position(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).expect("activation cue");
-    let discovery = sim
-        .sound_events
-        .iter()
-        .position(|event| matches!(event, SimSoundEvent::SuperWeaponDetected { .. }))
-        .expect("placed provider discovery");
-    assert!(cue < discovery);
+    assert!(sim.sound_events.iter().any(
+        |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")
+    ));
+    let ids = payloads(&sim, "GAPOWR");
+    assert_eq!(ids.len(), 1);
+    let building = sim.substrate.entities.get(ids[0]).unwrap();
+    assert_eq!(
+        building.mission.effective().known(),
+        Some(MissionType::Construction)
+    );
 }
 
 #[test]
@@ -921,4 +921,24 @@ fn unit_delivery_no_base_normal_building_still_serves_build_off_ally() {
             build_off_ally
         );
     }
+}
+
+/// PlaceUnits10075A60's tail: a payload that is not powered (IsPowered
+/// 100454F0: a `PoweredUnit=` type with no powering center) is Deactivated
+/// once it stands.
+#[test]
+fn unit_delivery_unpowered_payload_lands_deactivated() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\n[MTNK]\nPoweredUnit=yes\n");
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    let ids = payloads(&sim, "MTNK");
+    assert_eq!(ids.len(), 1);
+    assert!(
+        sim.substrate
+            .entities
+            .get(ids[0])
+            .unwrap()
+            .deactivated
+            .is_offline()
+    );
 }

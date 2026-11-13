@@ -213,7 +213,7 @@ pub(crate) struct GrowthShelf {
 }
 
 /// One refresh's sprites on one page. Their rows hold no earlier sprite, so
-/// each texture of the page takes them in a single [`write_band`].
+/// each texture of the page takes them in a single [`gather_band`].
 pub(crate) struct PagePlacements<T> {
     pub(crate) page: usize,
     pub(crate) sprites: Vec<([u32; 2], T)>,
@@ -281,7 +281,9 @@ pub(crate) fn place_on_growth_pages<T>(
 /// column 0 to the rightmost texel: returns the band's origin, size and
 /// tightly packed texels. `texels(i)` gives rectangle `i`'s tightly packed
 /// texels as it is copied in, so a caller can produce them one at a time.
-/// Texels no rectangle covers are zero.
+/// Texels no rectangle covers are zero, so a band is only written over rows
+/// no resident sprite occupies (a fresh shelf, see
+/// [`ShelfCursor::start_new_shelf`]).
 pub(crate) fn gather_band<T: AsRef<[u8]>>(
     rects: &[([u32; 2], [u32; 2])],
     bytes_per_texel: u32,
@@ -310,21 +312,6 @@ pub(crate) fn gather_band<T: AsRef<[u8]>>(
         }
     }
     Some(([0, top], [right, bottom - top], band))
-}
-
-/// Upload rectangles placed on rows no resident sprite occupies (a fresh
-/// shelf, see [`ShelfCursor::start_new_shelf`]) with one write, however many
-/// there are; per-rectangle writes cost a staging allocation each.
-pub(crate) fn write_band<T: AsRef<[u8]>>(
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    bytes_per_texel: u32,
-    rects: &[([u32; 2], [u32; 2])],
-    texels: impl FnMut(usize) -> T,
-) {
-    if let Some((origin, size, band)) = gather_band(rects, bytes_per_texel, texels) {
-        write_texels(queue, texture, origin, size, bytes_per_texel, &band);
-    }
 }
 
 /// Upload one tightly packed rectangle of texels into `texture` at `origin`.

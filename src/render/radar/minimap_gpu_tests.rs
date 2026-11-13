@@ -248,6 +248,7 @@ fn present(
     }
     let runtime = &scene.runtime;
     let view = runtime.view();
+    let frame = crate::app::presentation::frame::PresentationFrame::capture(runtime);
     let colors = HouseColorMap::new();
     let overlay_colors = HashMap::new();
     let mut first = None;
@@ -258,7 +259,7 @@ fn present(
                 Ok::<_, std::convert::Infallible>(minimap.update_unit_dots(
                     &gpu.device,
                     &gpu.queue,
-                    view.entities(),
+                    &frame,
                     view.logic_order(),
                     view.houses(),
                     &colors,
@@ -276,6 +277,7 @@ fn present(
                     &overlay_colors,
                     view.resolved_terrain(),
                     None,
+                    0,
                 ))
             },
         )

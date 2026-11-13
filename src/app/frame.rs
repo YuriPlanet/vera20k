@@ -36,7 +36,7 @@ pub(super) struct RuntimeServiceResult {
     /// Offset selected for this service's draw: normal Input result, the
     /// paused render-before-Input snapshot, or the last presented freeze value.
     pub(super) screen_shake_offset: Option<[i32; 2]>,
-    completed_frames: u32,
+    pub(super) completed_frames: u32,
     last_frame_completed: bool,
 }
 
@@ -130,6 +130,26 @@ impl App {
         }
     }
 
+    /// docs/sim-thread.md: once a pass finds back the tick that held the
+    /// window events, finish that tick and replay them in order, so they act
+    /// on its world before the pass services the next frame.
+    pub(super) fn release_held_events(&mut self, event_loop: &ActiveEventLoop) {
+        if self.held_window_events.is_empty() {
+            return;
+        }
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        if !state.match_state.sim_runtime.pass_may_run(false) {
+            return;
+        }
+        sim_tick::finish_threaded_frame(state);
+        state.platform.window_events_held = false;
+        for (window, event) in std::mem::take(&mut self.held_window_events) {
+            winit::application::ApplicationHandler::window_event(self, event_loop, window, event);
+        }
+    }
+
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
     /// admitted, each simulation advance due by now (only the first without
@@ -137,14 +157,37 @@ impl App {
     /// hidden-window service loop in `about_to_wait`, so the world keeps the
     /// same cadence whether or not a frame is drawn. Returns quit state and
     /// the pre-Logic Main_Tick admission for its later consumers.
+    /// `wait_for_tick` makes a desktop pass wait for a tick still on the
+    /// simulation thread instead of passing beside it, for captures whose
+    /// pictures must each follow a finished tick.
     pub(super) fn service_match_runtime(
         state: &mut AppState,
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
         catch_up_allowed: bool,
+        wait_for_tick: bool,
     ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
+        }
+        // No pass waits for a tick still on the simulation thread
+        // (docs/sim-thread.md). This one admits no frame and takes nothing
+        // from the world: the camera and the presentation services run as in
+        // a pass the pacer does not admit, and it draws the frame published
+        // for that tick. No Input, so the screen shake stands as last
+        // presented. The tick's end wakes the pass that finishes it.
+        if !state.match_state.sim_runtime.pass_may_run(wait_for_tick) {
+            sim_tick::service_beside_tick(state);
+            return RuntimeServiceResult {
+                screen_shake_offset: (state.frontend.screen == GameScreen::InGame).then(|| {
+                    state
+                        .match_state
+                        .match_presentation
+                        .screen_shake
+                        .service_offset_snapshot(None, false)
+                }),
+                ..RuntimeServiceResult::default()
+            };
         }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
@@ -204,7 +247,7 @@ impl App {
                     started.elapsed(),
                 )
                 // A tick is running beside this thread: draw. Another pass
-                // would only wait for it.
+                // would only find it running; its end wakes the next one.
                 || state.match_state.sim_runtime.is_lent()
             {
                 break;
@@ -678,7 +721,8 @@ impl App {
             ScreenPage::InGameShell(InGameMenuState::SavedGame(_)) => {
                 shell::render_saved_game_shell(state, encoder, destination)
             }
-            _ => shell::render_in_game_options_shell(state, encoder, destination),
+            // No other state draws the active-game shell.
+            _ => Ok(()),
         }
     }
 
@@ -869,6 +913,7 @@ impl App {
             event_loop,
             hidden_run.is_none() && !shell_capture_owns_simulation,
             catch_up_allowed,
+            shell_capture.is_some() || hidden_run.is_some(),
         );
         if runtime_pass.quit_requested {
             return Ok(FrameRenderOutcome::Unavailable);
@@ -1146,6 +1191,17 @@ impl App {
                                 &output.texture,
                             )? {
                                 presented_shell = PresentedShell::MovieList;
+                            } else {
+                                Self::render_shell_error(state, &mut encoder, &view)?;
+                            }
+                        }
+                        ScreenPage::Mods => {
+                            if crate::app::frontend::mods_render::render_mods_page(
+                                state,
+                                &mut encoder,
+                                &output.texture,
+                            )? {
+                                presented_shell = PresentedShell::Mods;
                             } else {
                                 Self::render_shell_error(state, &mut encoder, &view)?;
                             }
@@ -1498,8 +1554,8 @@ impl App {
                             // The relay drops a lapsed pass, which only the
                             // lobby can renew: then waiting cannot help.
                             let lapsed = live.relay_expires().is_some_and(|expires| {
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
+                                crate::util::time::SystemTime::now()
+                                    .duration_since(crate::util::time::UNIX_EPOCH)
                                     .is_ok_and(|now| now.as_secs() >= expires)
                             });
                             Some(crate::i18n::tr(if lapsed {

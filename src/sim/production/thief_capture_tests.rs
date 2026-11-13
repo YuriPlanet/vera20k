@@ -148,12 +148,12 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
     );
     let other = sim.interner.get("Russians").unwrap();
     sim.change_owner_with_rules(target, other, &rules, None, FrameEffects::default());
-    assert!(!super::check_build_limit(
-        &sim,
-        &rules,
-        owner,
-        rules.object("THIEF").unwrap(),
-    ));
+    // Under its limit again; Ares 10024F80 (hook 0x50B370) still wants a
+    // usable factory, and this house owns none.
+    assert_eq!(
+        super::check_build_limit(&sim, &rules, owner, rules.object("THIEF").unwrap()),
+        crate::rules::ARES_BUILD
+    );
     #[cfg(feature = "ares")]
     assert_eq!(
         super::ares_owned_build_limit_count(

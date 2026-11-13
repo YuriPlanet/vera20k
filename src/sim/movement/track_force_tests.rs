@@ -308,7 +308,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
         building.set_owner_for_test(sim.intern("Americans"));
         building.set_type_ref_for_test(sim.intern("NATBNK"));
         building.position.put_location(supplied(case));
-        building.bunker_runtime = Some({
+        building.building.bunker_runtime = Some({
             let mut runtime = BunkerRuntime::idle();
             runtime.set_state_for_test(BunkerState::TurnToBuilding);
             runtime
@@ -335,6 +335,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
                 .entities
                 .get(2)
                 .unwrap()
+                .building
                 .bunker_runtime
                 .unwrap()
                 .state(),

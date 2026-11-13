@@ -263,9 +263,9 @@ fn railgun_line_damage_matches_native_hits_and_ground_stop() {
 /// hooks 0x6FF1FB/0x6FF26E): an IsDetachedRailgun weapon strikes the line
 /// and builds its system without linking +0x314, so the next shot follows
 /// its ROF instead of waiting for the particles.
-#[cfg(feature = "ares")]
 #[test]
 fn a_detached_railgun_never_holds_its_particle_system() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(patched) =
         crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&IniFile::from_str(
             "[MTNK]\nPrimary=LtRail\n\

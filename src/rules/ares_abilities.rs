@@ -1,7 +1,6 @@
 //! The seven TypeExt rank abilities read by Ares100405A0. The retained
 //! processing registry owns these flags; individual effects only query them.
 
-#[cfg(feature = "ares")]
 use crate::util::native_x87::NativeF32Bits;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -11,8 +10,8 @@ pub(crate) struct PromotionAbilities {
 }
 
 impl PromotionAbilities {
-    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         // TypeExt1003E4FA/1003E510 -> ReadAbilities100405A0. An absent or
         // empty ReadString2048 keeps the tier. A nonempty value clears all
         // seven bytes before comma-only tokenization and table lookup.
@@ -20,8 +19,8 @@ impl PromotionAbilities {
         Self::read_tier(section, "EliteAbilities", &mut self.elite);
     }
 
-    #[cfg(feature = "ares")]
     fn read_tier(section: &crate::rules::ini_parser::IniSection, key: &str, flags: &mut [bool; 7]) {
+        let _ares = crate::rules::ares_switch::ares_reads();
         const NAMES: [&str; 7] = [
             "empimmune",
             "radimmune",
@@ -42,14 +41,12 @@ impl PromotionAbilities {
 
     /// CanKillDriver1004358F..100435CE samples the raw binary32 XP, not the
     /// cached rank. Above two, either tier protects; below one neither does.
-    #[cfg(feature = "ares")]
     pub(crate) fn driver_protected(&self, experience: NativeF32Bits) -> bool {
         self.has_at(2, experience)
     }
 
     /// `PSIONICSIMMUNE` (TypeExt+131/+138) by the same raw-XP test, as
     /// TechnoExt::ApplyPermaMC 10045E30 inlines HasAresAbility.
-    #[cfg(feature = "ares")]
     pub(crate) fn psionics_immune(&self, experience: NativeF32Bits) -> bool {
         self.has_at(5, experience)
     }
@@ -57,33 +54,28 @@ impl PromotionAbilities {
     /// `RADIMMUNE` (TypeExt+12D/+134): FootClass_Update_RadImmune
     /// (10049490, hook 0x4DA584) and ReceiveDamage_Abilities (1004A950,
     /// hook 0x701BFE).
-    #[cfg(feature = "ares")]
     pub(crate) fn rad_immune(&self, experience: NativeF32Bits) -> bool {
         self.has_at(1, experience)
     }
 
     /// `POISONIMMUNE` (TypeExt+130/+137), ReceiveDamage_Abilities.
-    #[cfg(feature = "ares")]
     pub(crate) fn poison_immune(&self, experience: NativeF32Bits) -> bool {
         self.has_at(4, experience)
     }
 
     /// `PSIONICWEAPONIMMUNE` (TypeExt+132/+139), ReceiveDamage_Abilities.
-    #[cfg(feature = "ares")]
     pub(crate) fn psionic_weapon_immune(&self, experience: NativeF32Bits) -> bool {
         self.has_at(6, experience)
     }
 
     /// `UNWARPABLE` (TypeExt+12F/+136) by the same raw-XP test, as
     /// TechnoExt::CanWarpTarget 1004F300 inlines HasAresAbility.
-    #[cfg(feature = "ares")]
     pub(crate) fn unwarpable(&self, experience: NativeF32Bits) -> bool {
         self.has_at(3, experience)
     }
 
     /// HasAresAbility over the raw binary32 XP: from two either tier, from
     /// one the veteran tier, below one none.
-    #[cfg(feature = "ares")]
     fn has_at(&self, ability: usize, experience: NativeF32Bits) -> bool {
         let experience = f32::from_bits(experience.bits());
         if experience >= 2.0 {
@@ -94,7 +86,7 @@ impl PromotionAbilities {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -104,6 +96,7 @@ mod tests {
 
     #[test]
     fn promotion_abilities_keep_tiers_through_rules_layers_saves_and_hash() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let root = "[VehicleTypes]\n0=TANK\n1=ELITE\n2=RESET\n\
                     [TANK]\nVeteranAbilities=EMPIMMUNE,protected_driver\n\
                     [ELITE]\nEliteAbilities=protected_driver\n\

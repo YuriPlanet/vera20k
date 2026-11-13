@@ -138,9 +138,8 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
     ) -> Result<bool, String> {
-        use crate::map::cell_index::NativeCellIdentity;
         use crate::sim::mission::MissionType;
-        use crate::sim::movement::{ScatterFlags, locomotor::MovementLayer};
+        use crate::sim::movement::ScatterFlags;
 
         let Some(infantry) = self.substrate.entities.get(stable_id) else {
             return Ok(false);
@@ -158,18 +157,8 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
         };
-        // The caller reads physical Object+9C, not virtual+4C navigation/bridge XY.
         let coord = movement::ground_pose::position_world_coord(&infantry.position);
-        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-        let NativeCellIdentity::Real(index) = cell else {
-            return Ok(false);
-        };
-        let c = &terrain.cells()[index];
-        let Some(building_id) =
-            self.substrate
-                .occupancy
-                .first_building_on_layer(c.rx, c.ry, MovementLayer::Ground)
-        else {
+        let Some(building_id) = self.ground_building_in_cell(infantry) else {
             return Ok(false);
         };
         let Some(building) = self.substrate.entities.get(building_id) else {
@@ -185,27 +174,26 @@ impl Simulation {
         // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
         // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
         // only while its owner's firestorm is up does the man scatter.
-        #[cfg(feature = "ares")]
-        if object.building_type_ext().is_passable {
-            return Ok(false);
-        }
-        #[cfg(feature = "ares")]
-        if object.building_type_ext().firestorm_wall {
-            if !self.ares_firestorm.is_active(building.owner()) {
+        if rules.ares() {
+            if object.building_type_ext().is_passable {
                 return Ok(false);
             }
-        } else if object.laser_fence {
-            return Ok(false);
+            if object.building_type_ext().firestorm_wall {
+                if !self.ares_firestorm.is_active(building.owner()) {
+                    return Ok(false);
+                }
+            } else if object.laser_fence {
+                return Ok(false);
+            }
         }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
         // with8/12 and reads its owner's Firestorm+1FA. Their runtime
         // owners are absent. Such types retain the prior no-Scatter behavior
         // until those separate mechanisms establish the required state.
         // Stock GAPILE and all ordinary barracks have both type flags false.
-        // (Ares builds own the firestorm arm above; the hook leaves the stock
-        // `FirestormWall=` flag unread.)
-        #[cfg(not(feature = "ares"))]
-        if object.laser_fence || object.firestorm_wall {
+        // (While Ares plays, its firestorm arm above takes this place; the
+        // hook leaves the stock `FirestormWall=` flag unread.)
+        if !rules.ares() && (object.laser_fence || object.firestorm_wall) {
             return Ok(false);
         }
         let slaves = crate::sim::slave_deposit::SlaveDepositQuery {
@@ -234,6 +222,28 @@ impl Simulation {
         )
     }
 
+    /// The first ground Building in the cell under `infantry`'s physical
+    /// location (Object+9C, not the virtual+4C navigation or bridge XY), which
+    /// [`Self::scatter_idle_infantry_from_building`] scatters it out of. A
+    /// sleeping infantryman is woken by one (`world::idle_sleep`).
+    pub(super) fn ground_building_in_cell(
+        &self,
+        infantry: &crate::sim::game_entity::GameEntity,
+    ) -> Option<u64> {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::locomotor::MovementLayer;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let coord = movement::ground_pose::position_world_coord(&infantry.position);
+        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
+        let NativeCellIdentity::Real(index) = cell else {
+            return None;
+        };
+        let c = &terrain.cells()[index];
+        self.substrate
+            .occupancy
+            .first_building_on_layer(c.rx, c.ry, MovementLayer::Ground)
+    }
+
     /// FootClass::AI's one call of the active locomotor's Process
     /// (`0x004DA877`, `ILocomotion` vtable `+0x40`).
     ///
@@ -254,10 +264,12 @@ impl Simulation {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let overlay_registry = ctx.overlay_registry;
         use crate::rules::locomotor_type::LocomotorKind;
+        // A quiet unit is not falling (`world::quiet_units`).
+        let quiet = self.quiet(stable_id);
         let admitted = self.substrate.entities.get(stable_id).and_then(|entity| {
             let sinking = entity.sinking.is_active();
             entity.locomotor.as_ref().and_then(|locomotor| {
-                (!sinking && !entity.is_falling_down() && !entity.lifecycle.in_limbo())
+                (!sinking && (quiet || !entity.is_falling_down()) && !entity.lifecycle.in_limbo())
                     .then(|| locomotor.active_kind())
             })
         });
@@ -267,12 +279,12 @@ impl Simulation {
         // Ares TechnoExt::CreateWithDroppod (10044030) installs the DropPod
         // locomotor over the Foot's own: its Process (`0x004B5B70`) is the
         // one this call makes until the pod lands.
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.ares_drop_pod().is_some())
+        if rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.ares_drop_pod().is_some())
         {
             self.process_drop_pod_locomotor(stable_id, rules, overlay_registry, ctx.effects);
             return Ok(LocomotorProcess::admitted());
@@ -604,11 +616,15 @@ impl Simulation {
         sim.complete_pending_order(stable_id, rules, overlay_registry, effects);
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && let Some(slope) = sim.resolved_terrain.as_ref().and_then(|terrain| {
-                terrain
-                    .cell(entity.position.rx(), entity.position.ry())
-                    .map(|cell| cell.slope_type)
+        let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
+            sim.resolved_terrain
+                .as_ref()?
+                .cell(entity.position.rx(), entity.position.ry())
+                .map(|cell| cell.slope_type)
+        });
+        if let Some(slope) = slope
+            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                movement::slope_transition::process_entry_changes(entity, slope)
             })
         {
             movement::slope_transition::sample_process_entry(
@@ -625,20 +641,19 @@ impl Simulation {
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
         }
-        let mut pending_movement = {
-            let current_grid = sim.path_grid_snapshot();
-            movement::movement_tick::begin_movement(
-                &mut sim.substrate.entities,
-                stable_id,
-                current_grid.as_deref(),
-                sim.session.binary_frame(),
-                sim.resolved_terrain.as_ref(),
-                sim.playfield_bounds,
-                &mut sim.interner,
-                rules,
-                &sim.houses,
-            )
-        };
+        // The grid is borrowed in place, beside the other fields: a snapshot
+        // would count a shared handle up and down for every mover's visit.
+        let mut pending_movement = movement::movement_tick::begin_movement(
+            &mut sim.substrate.entities,
+            stable_id,
+            sim.path_grid.as_deref(),
+            sim.session.binary_frame(),
+            sim.resolved_terrain.as_ref(),
+            sim.playfield_bounds,
+            &mut sim.interner,
+            rules,
+            &sim.houses,
+        );
         // Process_Movement's no-queue request and the Process_Track after it.
         // When the active-track Process_Track(0) ends its track, the same
         // Process continues into Process_Movement and Process_Track(1)
@@ -779,9 +794,11 @@ impl Simulation {
     }
 
     /// FootClass::AI's sound steps after the move sound, in native order.
+    /// `quiet`: the object is quiet now (`world::quiet_units`).
     fn foot_edge_sounds(
         &mut self,
         stable_id: u64,
+        quiet: bool,
         rules: &RuleSet,
         effects: super::FrameEffects<'_>,
     ) {
@@ -789,7 +806,12 @@ impl Simulation {
         // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
         // its type's VoiceFalling at its Location, before the sinking/crash
         // edges and looping-sound position update (PlayAt7509E0, ungated).
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+        // A quiet unit has no fall edge.
+        if !quiet
+            && let Some(entity) = sim.substrate.entities.get_mut_if(
+                stable_id,
+                crate::sim::game_entity::GameEntity::falling_edge_pending,
+            )
             && entity.observe_falling_edge()
             && let Some(voice) = sim
                 .interner
@@ -824,14 +846,20 @@ impl Simulation {
     }
 
     /// FootClass::AI's pending entry, then the eater's ParasiteClass AI.
+    /// `quiet`: the object is quiet now (`world::quiet_units`), and has
+    /// neither.
     fn foot_pending_entry_and_parasite(
         &mut self,
         stable_id: u64,
+        quiet: bool,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
     ) {
         let sim = self;
+        if quiet {
+            return;
+        }
         // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
         // clear, the pending entry (`Unit+0x500`) asks for its slot.
         if sim
@@ -882,6 +910,11 @@ impl Simulation {
         // Its garrisonable civilian buildings walk the Houses for the
         // Civilian-side one once between them (`CivilianSideHouse`).
         self.civilian_house_memo.begin();
+        // A projectile's or warhead's name is first interned when something
+        // fires it; bind the names interned since last frame, so a bullet's
+        // visits and hits find its types through handles (VERA-only, answers
+        // unchanged).
+        self.interner.cover_types(rules);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
@@ -889,7 +922,18 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
+            // A sleeping object's visit is counted, not run (`idle_sleep`).
+            let check = match sim.visit_sleeper(stable_id, rules, overlay_registry, effects) {
+                super::idle_sleep::SleepVisit::Counted => return Ok(()),
+                super::idle_sleep::SleepVisit::Awake => None,
+                super::idle_sleep::SleepVisit::Check(check) => Some(check),
+            };
             let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
+            if let Some(check) = check {
+                sim.finish_sleep_check(stable_id, *check);
+            }
+            sim.sleep_after_turn(stable_id, rules);
+            sim.quiet_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
@@ -927,16 +971,25 @@ impl Simulation {
         // object the whole live-object turn.  Capture before the leaf:
         // successful finalization clears the payload but must still skip
         // every ordinary locomotor tail and the second mission checkpoint.
-        let (tube_active_at_entry, was_structure) =
-            sim.substrate
-                .entities
-                .get(stable_id)
-                .map_or((false, false), |entity| {
-                    (
-                        tube_active(entity),
-                        entity.category() == EntityCategory::Structure,
-                    )
-                });
+        // A quiet unit holds no tube (`world::quiet_units`). The mark only
+        // clears during a turn, so a turn that starts loud stays loud and
+        // asks no more; one that starts quiet asks the live mark.
+        let (tube_active_at_entry, was_structure, entered_quiet) = sim
+            .substrate
+            .entities
+            .get_and_quiet(stable_id)
+            .map_or((false, false, false), |(entity, quiet)| {
+                (
+                    !quiet && tube_active(entity),
+                    entity.category() == EntityCategory::Structure,
+                    quiet,
+                )
+            });
+        let quiet = |sim: &Simulation| entered_quiet && sim.quiet(stable_id);
+        #[cfg(debug_assertions)]
+        if entered_quiet {
+            sim.check_quiet(stable_id, rules);
+        }
         let _building_area = was_structure
             .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
@@ -970,8 +1023,8 @@ impl Simulation {
         }
         // A temporal-warped object's leaf AI returned before its locomotor
         // Process (Unit 0x007362B5..0x007362CB, Infantry and Aircraft alike;
-        // `Simulation::temporal_ai_prologue`).
-        if entity.ai_frozen() {
+        // `Simulation::temporal_ai_prologue`). A quiet unit is not warped.
+        if !quiet(sim) && entity.ai_frozen() {
             return Ok(outcome);
         }
         // BuildingClass::AI calls no FootClass::AI. Every step below returns
@@ -985,23 +1038,17 @@ impl Simulation {
         // after the Process, before the first of them.
         if !foot && entity.locomotor.is_none() {
             if entity.lifecycle.object_alive() {
-                sim.foot_edge_sounds(stable_id, rules, object_ctx.effects);
+                // Only Units go quiet.
+                sim.foot_edge_sounds(stable_id, false, rules, object_ctx.effects);
                 sim.foot_pending_entry_and_parasite(
                     stable_id,
+                    false,
                     rules,
                     overlay_registry,
                     object_ctx.effects,
                 );
-                // A visit that fires nothing commits no consequences, which
-                // still delivers the overlay grid's pending navigation
-                // receipts and the smudge grid's dirty cells.
-                let receipt = super::damage_consequences::DamageConsequences::live_fire(
-                    Default::default(),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                )
-                .commit(sim, rules, overlay_registry, object_ctx.effects);
+                // A visit that fires nothing commits no consequences.
+                let receipt = sim.commit_no_fire(rules, overlay_registry, object_ctx.effects);
                 outcome.bridge_state_changed |= receipt.bridge_state_changed;
                 outcome.destroyed_structure |= receipt.structure_destroyed;
             }
@@ -1012,8 +1059,8 @@ impl Simulation {
         // an active firestorm wall, then heals one in tiberium, right after
         // FootAI's TechnoAI call; the hook then replays 4DA53E..548's
         // Object+90 reload, so a burnt Foot returns here.
-        #[cfg(feature = "ares")]
-        if !tube_active_at_entry
+        if rules.ares()
+            && !tube_active_at_entry
             && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
                 matches!(
                     entity.category(),
@@ -1035,12 +1082,15 @@ impl Simulation {
         }
         // Foot4DA54E follows the post-TechnoAI Object+90 gate above.
         // An entry-active Tube bypasses FootAI; it must retain the byte.
+        // A quiet unit's latch is clear (`world::quiet_units`).
         if !tube_active_at_entry
-            && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && matches!(
-                entity.category(),
-                EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            )
+            && !quiet(sim)
+            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                ) && entity.mission_leaf.foot_idle_entry_latch() != 0
+            })
         {
             entity.mission_leaf.set_foot_idle_entry_latch(0);
         }
@@ -1086,13 +1136,21 @@ impl Simulation {
 
         // Foot4DA80C captures +538 before locomotor Process. The sound tail
         // compares this same counter after its canonical cadence owner runs.
-        let Some(body_frame_before_process) = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .map(|entity| entity.body_frame_counter.get())
-        else {
-            return Ok(outcome);
+        // Only that owner below writes it (`animation::tick_foot_body_frame_counter`),
+        // so a quiet unit, which takes neither while it stays quiet
+        // (`world::quiet_units`), reads it only once something writes it.
+        let mut body_frame_before_process = if quiet(sim) {
+            None
+        } else {
+            let Some(counter) = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .map(|entity| entity.body_frame_counter.get())
+            else {
+                return Ok(outcome);
+            };
+            Some(counter)
         };
         // An entry-active TubeMovement leaf runs in place of the Foot AI and
         // its Process.
@@ -1126,16 +1184,28 @@ impl Simulation {
         // absolute binary frame, inside the Process admission
         // (`0x004DA81A` bypasses both). The global frame commits only after
         // the complete live-object pass.
-        if process.admitted && foot_body_counter_admitted(tube_active_at_entry) {
+        // Read now what the Process left unwritten if it made the unit loud.
+        if body_frame_before_process.is_none() && !quiet(sim) {
+            body_frame_before_process = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .map(|entity| entity.body_frame_counter.get());
+        }
+        if process.admitted
+            && foot_body_counter_admitted(tube_active_at_entry)
+            && body_frame_before_process.is_some()
+        {
             let foot_body_cadence = sim.substrate.entities.get(stable_id).and_then(|entity| {
                 if !entity.category().is_foot() {
                     return None;
                 }
                 let object = sim.interner.object_type(entity.type_ref(), rules)?;
-                #[cfg(feature = "ares")]
-                let air_rate = object.techno_combat().movement().air_rate();
-                #[cfg(not(feature = "ares"))]
-                let air_rate = 0;
+                let air_rate = if rules.ares() {
+                    object.techno_combat().movement().air_rate()
+                } else {
+                    0
+                };
                 Some((
                     crate::sim::animation::FootBodyCadence {
                         walk_rate: object.walk_rate,
@@ -1146,8 +1216,20 @@ impl Simulation {
                     air_rate,
                 ))
             });
-            if let (Some((cadence, hover_attack, deploy_to_land, air_rate)), Some(entity)) =
-                (foot_body_cadence, sim.substrate.entities.get_mut(stable_id))
+            let frame = sim.session.binary_frame();
+            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence
+                && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                    crate::sim::animation::foot_body_frame_due(
+                        entity,
+                        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+                        cadence,
+                        hover_attack,
+                        deploy_to_land,
+                        air_rate,
+                        sim.resolved_terrain.as_ref(),
+                        frame,
+                    )
+                })
             {
                 crate::sim::animation::tick_foot_body_frame_counter(
                     entity,
@@ -1174,18 +1256,20 @@ impl Simulation {
         // Foot4DAA01 MoveSound,4DABC7 sinking and4DACDD crash edges run
         // before Scatter/piggyback/pending-entry/Parasite callbacks. In
         // particular, a later Squid cull cannot run this visit's sound edge.
-        Self::tick_move_sound_after_process(
-            &sim.interner,
-            &sim.session,
-            &sim.main_rng,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &sim.houses,
-            stable_id,
-            body_frame_before_process,
-            rules,
-        );
-        sim.foot_edge_sounds(stable_id, rules, object_ctx.effects);
+        if let Some(body_frame_before_process) = body_frame_before_process {
+            Self::tick_move_sound_after_process(
+                &sim.interner,
+                &sim.session,
+                &sim.main_rng,
+                &mut sim.substrate,
+                &mut sim.sound_events,
+                &sim.houses,
+                stable_id,
+                body_frame_before_process,
+                rules,
+            );
+        }
+        sim.foot_edge_sounds(stable_id, quiet(sim), rules, object_ctx.effects);
 
         // FootClass::AI 0x004DADF5..0x004DAE59: the64-frame idle Scatter.
         match sim.foot_idle_scatter(stable_id, rules, overlay_registry, object_ctx.effects) {
@@ -1197,10 +1281,20 @@ impl Simulation {
         sim.try_end_piggyback(stable_id, rules);
         // Foot4DAECA clears the transient draw lift after piggyback callbacks,
         // before the warp-in/pending-entry predicate and ParasiteAI.
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
+        if let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(stable_id, |entity| entity.ion_blast_lift_pixels() != 0)
+        {
             entity.clear_ion_blast_lift();
         }
-        sim.foot_pending_entry_and_parasite(stable_id, rules, overlay_registry, object_ctx.effects);
+        sim.foot_pending_entry_and_parasite(
+            stable_id,
+            quiet(sim),
+            rules,
+            overlay_registry,
+            object_ctx.effects,
+        );
 
         // Unit73649C follows the complete Foot tail. Its disguise pick must
         // follow Foot's own Scenario draws and precede Unit's firing suffix.
@@ -1250,13 +1344,13 @@ impl Simulation {
             // gamemd51BCB2: out of limbo, Reload(+424) before idle Scatter.
             // The shared Techno owner supplies count/clock semantics; the
             // Unit-only MobileFire pause is deliberately not used here.
-            #[cfg(feature = "ares")]
-            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+            if rules.ares()
+                && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
                 && entity.is_object_alive()
                 && !entity.lifecycle.in_limbo()
                 && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
             {
-                entity.reload_techno_ammo(obj, sim.session.binary_frame() as i32);
+                entity.reload_techno_ammo(obj, sim.session.binary_frame() as i32, rules.ares());
             }
             //51BCA4..51BDCF follows the entire FootAI, including Process and
             // its tails. A successful Scatter invokes Process a second time
@@ -1305,28 +1399,37 @@ impl Simulation {
         // Unit7365E1 Fire_At_Target then7365E8 Facing_Update precede
         // its second Ready/Commence. FireAt appends into the live Logic walk.
         if !infantry {
-            let receipt = sim.commit_fire_visit(
-                crate::sim::combat::world_fire::FireVisit::UnitTarget(stable_id),
-                rules,
-                overlay_registry,
-                object_ctx.effects,
-            );
+            // A quiet unit's fire visit fires nothing and changes nothing
+            // (`world::quiet_units`); its commit remains.
+            let receipt = if quiet(sim) {
+                sim.commit_no_fire(rules, overlay_registry, object_ctx.effects)
+            } else {
+                sim.commit_fire_visit(
+                    crate::sim::combat::world_fire::FireVisit::UnitTarget(stable_id),
+                    rules,
+                    overlay_registry,
+                    object_ctx.effects,
+                )
+            };
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
             outcome.destroyed_structure |= receipt.structure_destroyed;
             // Unit73666B..736685: a visceroid's UpdateVisceroid737180.
             sim.unit_update_visceroid(stable_id, rules, overlay_registry, object_ctx.effects);
             // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
-            // precedes the second Ready/Commence. Infantry take theirs from
-            // the Ares hook above; an Aircraft has no class Reload at all
-            // (its rounds come from the airfield's RELOAD handover, which
-            // starts the same clock). The native post-Foot alive gate
-            // precedes firing; no second gate is added.
-            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-                && entity.category() == EntityCategory::Unit
-                && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
+            // precedes the second Ready/Commence. Aircraft/Infantry have
+            // no corresponding ordinary Reload dispatch here. The native
+            // post-Foot alive gate precedes firing; no second gate is added.
+            let now = sim.session.binary_frame() as i32;
+            if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                entity.category() == EntityCategory::Unit
+                    && sim
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|obj| entity.reload_unit_ammo_writes(obj, now))
+            }) && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
             {
                 entity
-                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32)
+                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32, rules.ares())
                     .map_err(|cause| super::FrameAdvanceError {
                         tick: sim.session.tick(),
                         binary_frame: sim.session.binary_frame(),

@@ -79,7 +79,7 @@ impl Simulation {
             return;
         };
         let owner = building.owner();
-        if owner == occupier_owner || building.ares_raid.raided() {
+        if owner == occupier_owner || building.ares.ares_raid.raided() {
             return;
         }
         let Some(object) = self.object_type(building.type_ref(), rules) else {
@@ -94,7 +94,7 @@ impl Simulation {
             return;
         }
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.ares_raid.owner_before_raid = Some(owner);
+            building.ares.ares_raid.owner_before_raid = Some(owner);
         }
         self.announce_building_capture(building_id, occupier_owner, rules);
         self.change_owner_with_rules(building_id, occupier_owner, rules, registry, effects);
@@ -114,7 +114,7 @@ impl Simulation {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return;
         };
-        let Some(owner) = building.ares_raid.owner_before_raid else {
+        let Some(owner) = building.ares.ares_raid.owner_before_raid else {
             return;
         };
         if !building.passenger_role.occupants().is_empty() {
@@ -128,7 +128,7 @@ impl Simulation {
             self.change_owner_with_rules(building_id, owner, rules, registry, effects);
         }
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.ares_raid.owner_before_raid = None;
+            building.ares.ares_raid.owner_before_raid = None;
         }
     }
 }

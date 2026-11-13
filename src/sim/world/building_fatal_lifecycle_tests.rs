@@ -499,7 +499,7 @@ impl Fixture {
             "{boundary}: queued Building body",
         );
         assert_eq!(
-            building.building_last_operational.is_operational(),
+            building.building.building_last_operational.is_operational(),
             native["building"]["old_operational"] == 1,
             "{boundary}: retained operational state",
         );
@@ -1347,7 +1347,7 @@ impl Fixture {
         let door_phase = actor.door_phase();
         assert_eq!(door_phase, crate::sim::door::DoorPhase::Opening);
         let door_timer = actor.door_timer_fields();
-        let mission = actor.mission;
+        let mission = actor.mission.clone();
         let grid = self.sim.smudge_grid.as_ref().unwrap();
         assert_eq!(grid.object_count(), constructors.len());
         for ((id, object), native) in grid.objects().zip(constructors) {
@@ -1424,7 +1424,11 @@ impl Fixture {
             })
         );
         let mut in_logic = GameSnapshot::load_unchecked(&bytes).unwrap().sim;
-        in_logic.substrate.logic.try_push(first).unwrap();
+        in_logic
+            .substrate
+            .logic
+            .try_push(first, super::ObjectKind::Smudge)
+            .unwrap();
         assert_eq!(
             in_logic.restore_after_snapshot_load(),
             Err(SnapshotRestoreError::InactiveLogicIdentity {
@@ -1555,7 +1559,7 @@ impl Fixture {
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
     // Stock oracle; Ares replaces the Unit tail (737F97) and GetCrew (707D20),
     // and Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the rearm jitter.
-    if cfg!(any(feature = "ares", feature = "phobos")) {
+    if crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED {
         return;
     }
     for path in [

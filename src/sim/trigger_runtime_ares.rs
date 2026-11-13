@@ -1,5 +1,5 @@
-//! Ares 3.0 trigger events and actions: TEventExt and TActionExt, absent
-//! from default builds. The parent Tag/Trigger owner calls these first, as the
+//! Ares 3.0 trigger events and actions: TEventExt and TActionExt, for a
+//! game where Ares plays. The parent Tag/Trigger owner calls these first, as the
 //! hooks at `0x71E949` (HasOccurred) and `0x6DD8D7` (Execute) run before the
 //! stock switches; an unhandled kind keeps the stock body.
 //!

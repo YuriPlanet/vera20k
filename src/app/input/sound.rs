@@ -1,9 +1,6 @@
 //! B8 orchestration and physical input. Original6B6300 owns control projection;
 //! Options/Theme retain values and playback, including while simulation is paused.
-use crate::app::persistence::options::{
-    self,
-    audio::{AudioVolume, apply_volume},
-};
+use crate::app::persistence::options::audio::{AudioVolume, apply_volume};
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::list::ListMetrics;
@@ -34,8 +31,10 @@ pub(crate) fn open(state: &mut AppState) {
     if !state.audio.launcher_audio_available {
         return;
     }
-    // 4E2370 -> accepted4E1D9A: parent apply/write precede state6/B8.
-    options::accept_in_game_options(state);
+    // 4E2370 -> accepted4E1D9A: parent apply/write precede state6/B8. The
+    // in-game menu, whose page the Sound button is on, does both as it closes
+    // for this state.
+    App::enter_in_game_menu_state(state, InGameMenuState::Sound);
     let positions = volume_positions(state);
     let rows = state
         .audio
@@ -69,7 +68,6 @@ pub(crate) fn open(state: &mut AppState) {
     // BBB's 0x52D writes state 6; State_Machine 0x0048C8B0 then runs B8
     // (0x006B6230 at 0x0048C9EF) inside the same pause bracket. The transition
     // owner clears B8's retained state, so the new dialog is installed after it.
-    App::enter_in_game_menu_state(state, InGameMenuState::Sound);
     state.match_state.match_presentation.sound_dialog = Some(SoundState::new(
         positions,
         rows,
@@ -111,9 +109,10 @@ fn back(state: &mut AppState) {
         return;
     };
     apply_back_volumes(state, dialog.positions);
-    // State_Machine 0x0048C9F4 writes state 5 after B8 returns: BBB is
-    // recreated, and its init reads the Options values B8 left untouched.
-    App::enter_in_game_menu_state(state, InGameMenuState::Options);
+    // State_Machine 0x0048C9F4 writes state 5 after B8 returns, where gamemd
+    // recreates BBB. VERA's Game Controls is the in-game menu's page, so the
+    // menu is what comes back.
+    App::enter_in_game_menu_state(state, InGameMenuState::Menu);
 }
 fn activate(state: &mut AppState, id: SoundButton) {
     let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();

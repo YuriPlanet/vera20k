@@ -7,6 +7,7 @@
 //! ## Dependency rules
 //! - Part of the app layer - reads sim state but never mutates it.
 
+use crate::app::presentation::frame::ObjectRecord;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -15,7 +16,6 @@ use crate::render::draw_state::{DrawState, FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZE
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
-use crate::sim::game_entity::GameEntity;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
 
@@ -23,7 +23,7 @@ use crate::sim::world::Simulation;
 const DURATION_TICKS: i32 = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ScreenPoint {
+pub(crate) struct ScreenPoint {
     x: f32,
     y: f32,
 }
@@ -35,13 +35,13 @@ impl From<(f32, f32)> for ScreenPoint {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SelectedLineKind {
+pub(crate) enum SelectedLineKind {
     Move,
     Attack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SelectedActionLine {
+pub(crate) struct SelectedActionLine {
     start: ScreenPoint,
     end: ScreenPoint,
     kind: SelectedLineKind,
@@ -118,6 +118,7 @@ pub(crate) fn build_target_line_instances(
     line_state: &TargetLineState,
     planning_active: bool,
     sim: Option<&Simulation>,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
     rules: Option<&RuleSet>,
     palette: Option<&crate::assets::pal_file::Palette>,
     house_colors: &HouseColorMap,
@@ -125,27 +126,23 @@ pub(crate) fn build_target_line_instances(
     viewport: TacticalViewport,
     mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
 ) -> Vec<SpriteInstance> {
-    let Some(sim) = sim else {
+    let (Some(sim), Some(frame)) = (sim, frame) else {
         return Vec::new();
     };
     // Tactical6D4764..6D478E: a Techno the local player does not control
     // draws its psychic detection line before the planning gate. Skip the
     // per-Techno 43B150 walk when the player has no operational detector.
     // Collect the player's detectors once for the frame's Techno walk.
-    let psychic = rules.and_then(|rules| {
-        let viewer = sim.session().current_house()?;
-        let sites: Vec<_> = sim.psychic_detection_sites(viewer, rules).collect();
-        (!sites.is_empty()).then_some((rules, viewer, sites))
-    });
-    let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
+    // The frame captured the walk (`Place::psychically_detected`).
+    let psychic = rules.filter(|_| frame.psychic_detection);
     let project = |p: ScreenPoint| {
         [
             p.x as i32 - viewport.camera[0],
             p.y as i32 - viewport.camera[1] + viewport.clip[1],
         ]
     };
-    let psychic_line_for = |entity: &GameEntity, instances: &mut Vec<SpriteInstance>| {
-        let Some((rules, viewer, sites)) = psychic.as_ref() else {
+    let psychic_line_for = |entity: &ObjectRecord, instances: &mut Vec<SpriteInstance>| {
+        let Some(rules) = psychic else {
             return;
         };
         if sim.house_is_human_player(entity.owner())
@@ -154,16 +151,11 @@ pub(crate) fn build_target_line_instances(
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
             )
             || entity.lifecycle.in_limbo()
-            || !sim.techno_intent_psychically_detected(
-                entity.stable_id(),
-                *viewer,
-                sites,
-                cells.as_ref(),
-            )
+            || !entity.place.psychically_detected
         {
             return;
         }
-        let Some(line) = action_line_endpoints(entity, sim, Some(*rules), cells.as_ref()) else {
+        let Some(line) = entity.place.action_line else {
             return;
         };
         let owner = sim.interner().resolve(entity.owner());
@@ -185,7 +177,7 @@ pub(crate) fn build_target_line_instances(
     if planning_active {
         let mut instances = Vec::new();
         if psychic.is_some() {
-            for entity in sim.entities().values() {
+            for entity in frame.objects() {
                 psychic_line_for(entity, &mut instances);
             }
         }
@@ -197,18 +189,18 @@ pub(crate) fn build_target_line_instances(
         .flatten()
         .map(|palette| [action_line_color(palette, 3), action_line_color(palette, 8)]);
     let mut control = rules
-        .map(|rules| super::control_links::prepare(sim, rules, house_colors, wall_ms, viewport))
+        .map(|rules| {
+            super::control_links::prepare(sim, frame, rules, house_colors, wall_ms, viewport)
+        })
         .unwrap_or_default();
     if colors.is_none() && control.is_empty() && after_entity.is_none() && psychic.is_none() {
         return Vec::new();
     }
-    let line_for = |entity: &GameEntity| {
-        selected_action_line_for_entity(entity, sim, rules, cells.as_ref()).map(|line| {
-            ProjectedActionLine {
-                start: project(line.start),
-                end: project(line.end),
-                kind: line.kind,
-            }
+    let line_for = |entity: &ObjectRecord| {
+        selected_action_line_for_entity(entity, sim).map(|line| ProjectedActionLine {
+            start: project(line.start),
+            end: project(line.end),
+            kind: line.kind,
         })
     };
     // Tactical6D4750 walks the construction-ordered Techno array, not the
@@ -219,7 +211,7 @@ pub(crate) fn build_target_line_instances(
         //Resolving all action lines before relationships would reverse
         //cross-object overlaps.
         let mut instances = Vec::new();
-        for entity in sim.entities().values() {
+        for entity in frame.objects() {
             if let Some(colors) = colors
                 && let Some(line) = line_for(entity)
             {
@@ -242,11 +234,7 @@ pub(crate) fn build_target_line_instances(
     let Some(colors) = colors else {
         return Vec::new();
     };
-    let lines = sim
-        .entities()
-        .values()
-        .filter_map(line_for)
-        .collect::<Vec<_>>();
+    let lines = frame.objects().filter_map(line_for).collect::<Vec<_>>();
     build_selected_action_line_instances(&lines, colors, viewport)
 }
 
@@ -483,25 +471,18 @@ pub(crate) struct TacticalViewport {
 /// Evidence: tools/procedural_drawing_oracle/rally.{py,json,meta.json}.
 pub(crate) fn build_factory_rally_line_instances(
     sim: Option<&Simulation>,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
     rules: Option<&RuleSet>,
     selected_ids: &[u64],
     house_color_map: &HouseColorMap,
     local_owner: Option<&str>,
     viewport: TacticalViewport,
 ) -> [Vec<SpriteInstance>; 2] {
-    use crate::map::resolved_terrain::NativeCellQuery;
-    use crate::sim::movement::ground_pose::{
-        object_get_coords, query_ground_height, target_get_coords,
-    };
     let mut instances = [Vec::new(), Vec::new()];
-    let (Some(sim), Some(rules), Some(local_owner)) = (sim, rules, local_owner) else {
+    let (Some(sim), Some(frame), Some(rules), Some(local_owner)) = (sim, frame, rules, local_owner)
+    else {
         return instances;
     };
-    let Some(terrain) = sim.resolved_terrain() else {
-        return instances;
-    };
-    // Presentation must not stamp the simulation's shared fallback CellClass.
-    let cells = NativeCellQuery::isolated(terrain);
     let project = |coord: crate::sim::components::DriveCoord| {
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
         [
@@ -510,7 +491,7 @@ pub(crate) fn build_factory_rally_line_instances(
         ]
     };
     for &id in selected_ids.iter().rev() {
-        let Some(entity) = sim.entities().get(id) else {
+        let Some(entity) = frame.object(id) else {
             continue;
         };
         if !entity.selection.is_selected()
@@ -529,23 +510,10 @@ pub(crate) fn build_factory_rally_line_instances(
         if !obj.has_rally_line() {
             continue;
         }
-        let Some(mut target) = entity
-            .archive_target()
-            .and_then(|target| target_get_coords(target, sim, Some(&cells)))
-        else {
+        let Some([start, target]) = entity.place.rally_line else {
             continue;
         };
-        let Ok(ground) = query_ground_height(&cells, target) else {
-            continue;
-        };
-        target.z = ground.wrapping_add(
-            if cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0 {
-                crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            },
-        );
-        let start = project(object_get_coords(entity, Some(terrain)));
+        let start = project(start);
         let end = project(target);
         let tint = rally_tint_for_owner(owner, house_color_map, &rules.house_color_ramps);
         emit_rally_line(
@@ -561,10 +529,8 @@ pub(crate) fn build_factory_rally_line_instances(
 }
 
 fn selected_action_line_for_entity(
-    entity: &GameEntity,
+    entity: &ObjectRecord,
     sim: &Simulation,
-    rules: Option<&RuleSet>,
-    cells: Option<&NativeCellQuery<'_>>,
 ) -> Option<SelectedActionLine> {
     if !entity.selection.is_selected()
         || entity.category() == EntityCategory::Structure
@@ -572,14 +538,40 @@ fn selected_action_line_for_entity(
     {
         return None;
     }
-    action_line_endpoints(entity, sim, rules, cells)
+    entity.place.action_line
+}
+
+/// A Structure's rally line in world coordinates (`TechnoClass::
+/// ArchiveTarget`'s coordinate, its deck-adjusted ground, and the building's
+/// GetCoords), captured into its presentation record.
+pub(crate) fn rally_line_coords(
+    entity: &crate::sim::game_entity::GameEntity,
+    sim: &Simulation,
+    cells: &NativeCellQuery<'_>,
+) -> Option<[crate::sim::components::DriveCoord; 2]> {
+    use crate::sim::movement::ground_pose::{
+        object_get_coords, query_ground_height, target_get_coords,
+    };
+    if entity.category() != EntityCategory::Structure {
+        return None;
+    }
+    let mut target = target_get_coords(entity.archive_target()?, sim, Some(cells))?;
+    let ground = query_ground_height(cells, target).ok()?;
+    target.z = ground.wrapping_add(
+        if cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0 {
+            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        } else {
+            0
+        },
+    );
+    Some([object_get_coords(entity, Some(cells.terrain())), target])
 }
 
 /// The endpoints Foot4DC060 and Foot4DC340 share: with a Target, the +300
 /// pivot to 70BCB0's lead coordinate; else, with a NavCom, the Location to
 /// the last queued waypoint or the NavCom.
-fn action_line_endpoints(
-    entity: &GameEntity,
+pub(crate) fn action_line_endpoints(
+    entity: &crate::sim::game_entity::GameEntity,
     sim: &Simulation,
     rules: Option<&RuleSet>,
     cells: Option<&NativeCellQuery<'_>>,
@@ -633,7 +625,7 @@ fn action_line_endpoints(
 /// laser's Techno6FF983/6FF9A4. FireAt shares the lead query; no presentation
 /// copy.
 fn attack_line_points(
-    entity: &GameEntity,
+    entity: &crate::sim::game_entity::GameEntity,
     sim: &Simulation,
     rules: &RuleSet,
 ) -> Option<[ScreenPoint; 2]> {
@@ -706,7 +698,7 @@ const TARGET_LASER_PATTERN: [u8; 16] = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0
 /// Residual: IsHumanPlayer is read now, not at the shot, so an owner change
 /// within the 15 frames after a shot shows or hides the rest of that laser.
 pub(crate) fn target_laser_draws<'a>(
-    entity: &GameEntity,
+    entity: &ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,
     palette: impl FnOnce() -> Option<&'a crate::assets::pal_file::Palette>,
@@ -718,7 +710,7 @@ pub(crate) fn target_laser_draws<'a>(
 
 /// [`target_laser_draws`] at native frame `frame`.
 fn target_laser_draws_at<'a>(
-    entity: &GameEntity,
+    entity: &ObjectRecord,
     sim: &Simulation,
     rules: &RuleSet,
     palette: impl FnOnce() -> Option<&'a crate::assets::pal_file::Palette>,
@@ -736,7 +728,12 @@ fn target_laser_draws_at<'a>(
     {
         return draws;
     }
-    let (Some(points), Some(palette)) = (attack_line_points(entity, sim, rules), palette()) else {
+    let points = entity
+        .place
+        .action_line
+        .filter(|line| line.kind == SelectedLineKind::Attack)
+        .map(|line| [line.start, line.end]);
+    let (Some(points), Some(palette)) = (points, palette()) else {
         return draws;
     };
     // 6D2140 then +886FA4 on y, as Foot4DC060 projects its endpoints. The
@@ -956,6 +953,10 @@ mod tests {
     #[test]
     fn relationship_interleave_visits_technos_when_action_lines_are_disabled_but_not_planning() {
         let sim = sim_with_selected_unit_that_has_attack_and_move();
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        );
         let mut state = TargetLineState::default();
         state.set_unit_action_lines_enabled(false);
         let mut visits = Vec::new();
@@ -968,6 +969,7 @@ mod tests {
                 &state,
                 false,
                 Some(&sim),
+                Some(&frame),
                 None,
                 None,
                 &HouseColorMap::new(),
@@ -991,6 +993,7 @@ mod tests {
                 &state,
                 true,
                 Some(&sim),
+                Some(&frame),
                 None,
                 None,
                 &HouseColorMap::new(),

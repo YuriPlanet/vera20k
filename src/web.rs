@@ -1,5 +1,7 @@
 //! Browser host boundary. App remains the owner of the frontend and match lifecycle.
 pub(crate) mod ime;
+#[cfg(feature = "wasm-threads")]
+pub(crate) mod sim_worker;
 
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
@@ -150,6 +152,14 @@ pub fn initialize() {
     let console = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let error = format!("Runtime error: {info}");
+        // A worker reaches neither the host nor the page: its message waits
+        // for the main thread, which panics with it (`SimHost`).
+        #[cfg(feature = "wasm-threads")]
+        if web_sys::window().is_none() {
+            sim_worker::note_worker_panic(&info.to_string());
+            console(info);
+            return;
+        }
         // A panic need not reach ApplicationHandler::exiting. Best effort
         // notification must not recursively borrow a lifecycle operation.
         let event = LIFECYCLE.with(|slot| {

@@ -113,7 +113,10 @@ pub struct TiberiumPlacementObjectContext<'a> {
     /// Live `CellClass+0x124`/`+0x128` occupation planes, read by
     /// `CellClass::CheckCellPassability @ 0x004834A0` when
     /// `OverlayClass::Mark` admits the new Overlay (called at `0x005FD00C`;
-    /// `0x005FD04F` for TIB01).
+    /// `0x005FD04F` for TIB01). Production Marks read the simulation's own
+    /// planes; only the test harness that builds a world from this context
+    /// copies these.
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
     raw_occupation: &'a RawCellOccupationGrid,
     rules: &'a RuleSet,
     interner: &'a StringInterner,

@@ -11,6 +11,7 @@ use crate::sim::world::Simulation;
 
 pub(crate) fn prepare(
     sim: &Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
     rules: &RuleSet,
     colors: &HouseColorMap,
     wall_ms: u32,
@@ -21,14 +22,15 @@ pub(crate) fn prepare(
     // each manager's last visit, preserving overlap order without quadratic
     // work for a manager with many captives. This temporary index has no state.
     let mut last_visit = std::collections::HashMap::new();
-    for (rank, (id, entity)) in sim.entities().iter_sorted().enumerate() {
+    for (rank, entity) in frame.objects().enumerate() {
+        let id = entity.stable_id();
         if entity.health.current() == 0 {
             continue;
         }
         if entity.capture_manager.is_some() {
             last_visit.insert(id, (rank * 2, id));
         }
-        if let Some(controller) = entity.mind_control.controller() {
+        if let Some(controller) = entity.hud.controller() {
             last_visit.insert(controller, (rank * 2 + 1, id));
         }
     }
@@ -40,7 +42,11 @@ pub(crate) fn prepare(
     let mut by_entity: std::collections::HashMap<u64, Vec<SpriteInstance>> =
         std::collections::HashMap::new();
     for (controller, (_, after_entity)) in managers {
-        for link in sim.capture_link_coordinates(controller, rules) {
+        // `Simulation::capture_link_coordinates`, captured.
+        let links = frame
+            .object(controller)
+            .map_or(&[][..], |controller| controller.hud.capture_links());
+        for &link in links {
             // Phobos `CaptureManagerClass_DrawLinkToVictim`: compare the
             // controller type's `MindControlLink.VisibleToHouse=` with the
             // local player's house (CurrentPlayer).

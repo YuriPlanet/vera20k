@@ -260,15 +260,20 @@ impl Simulation {
         let world: &Simulation = self;
         // Only the Logic list's objects take a turn.
         let logic = world.substrate.logic.as_slice();
+        let now = world.session.binary_frame();
         let mut answers = crate::sim::parallel::filter_map_indices(logic.len(), |index| {
             let id = logic[index];
-            let entity = world.substrate.entities.get(id)?;
+            let (entity, quiet) = world.substrate.entities.get_and_quiet(id)?;
+            if !scan_may_be_due(entity, now) {
+                return None;
+            }
             let (answer, stamped) = dummy.detached_stamps(|| {
                 let obj = world.entity_object_type(entity, rules)?;
                 if obj.distributed_fire {
                     return None;
                 }
-                let (mask, scan_coord) = world.scan_ahead(id, entity, rules, overlay_registry)?;
+                let (mask, scan_coord) =
+                    world.scan_ahead(id, entity, quiet, rules, overlay_registry)?;
                 let outcome = world.threat_scan(rules, overlay_registry, id, mask, scan_coord);
                 let pick_house = outcome
                     .object()
@@ -339,19 +344,22 @@ impl Simulation {
     /// Arrival_Target_Handler scans ([`Simulation::foot_arrival_step`]) with
     /// no target left, or Passive_Target_Acquire's gate passes with none
     /// held. A held target the drop step would drop is not foreseen: its
-    /// object scans live.
+    /// object scans live. A `quiet` unit is neither frozen nor in a tube
+    /// (`world::quiet_units`).
     fn scan_ahead(
         &self,
         id: u64,
         entity: &GameEntity,
+        quiet: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
     ) -> Option<(ScanMission, Option<[i32; 3]>)> {
-        if entity.ai_frozen()
-            || (matches!(
-                entity.category(),
-                EntityCategory::Unit | EntityCategory::Infantry
-            ) && entity.low_bridge_tube_state.is_some())
+        if !quiet
+            && (entity.ai_frozen()
+                || (matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry
+                ) && entity.low_bridge_tube_state.is_some()))
         {
             return None;
         }
@@ -464,6 +472,35 @@ impl Simulation {
     pub(crate) fn batched_scans_used(&self) -> usize {
         self.scan_batch.as_ref().map_or(0, |batch| batch.used)
     }
+}
+
+/// Whether `entity`'s turn can reach Greatest_Threat at `now` at all, from its
+/// own record: its Area Guard or Hunt handler runs with no target held
+/// ([`GameEntity::mission_handler_due`]), or its targeting slot runs
+/// ([`targeting_slot`](super::target_scan::targeting_slot)) and, for
+/// Passive_Target_Acquire, it holds no target. Every scan
+/// [`Simulation::scan_ahead`] foresees needs one of these, so the pass skips
+/// an object that fails them before its type lookup and the handlers' own
+/// lookups (VERA-only; the same answers).
+fn scan_may_be_due(entity: &GameEntity, now: u32) -> bool {
+    use crate::sim::mission::MissionType;
+    let unheld = entity.attack_target.target().is_none();
+    let handler_scans = unheld
+        && matches!(
+            entity.mission.current().known(),
+            Some(MissionType::AreaGuard | MissionType::Hunt)
+        )
+        && matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        )
+        && entity.mission_handler_due(now);
+    handler_scans
+        || match super::target_scan::targeting_slot(entity, now) {
+            TargetingSlot::Skip => false,
+            TargetingSlot::ArrivalHandler => true,
+            TargetingSlot::PassiveAcquire => unheld,
+        }
 }
 
 #[cfg(test)]

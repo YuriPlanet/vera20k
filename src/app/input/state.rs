@@ -191,6 +191,12 @@ pub(crate) struct MatchInputState {
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    /// The cursor's targets and feedback as last read with the world home
+    /// (`sim_host::home_answer`): both walk the live objects, which a draw
+    /// beside a lent tick may not read.
+    pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
+    pub(crate) cursor_feedback_seen:
+        std::cell::RefCell<Option<crate::app::types::CursorFeedbackKind>>,
     pub(crate) camera_x: f32,
     pub(crate) camera_y: f32,
     /// Camera-owned requests awaiting Tactical__AI's next single commit.
@@ -242,6 +248,10 @@ pub(crate) struct MatchInputState {
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
     /// VERA ferry order: the armed drop click and the local routes.
     pub(crate) ferry: super::ferry::FerryState,
+    /// VERA Auto Repair: the Repair orders sent and not yet seen to land.
+    pub(crate) auto_repair: super::auto_repair::AutoRepairState,
+    /// VERA primary rotation: the factory groups that take turns.
+    pub(crate) primary_rotation: super::primary_rotation::PrimaryRotationState,
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
@@ -462,6 +472,8 @@ impl MatchInputState {
         Self {
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
+            cursor_targets_seen: Default::default(),
+            cursor_feedback_seen: Default::default(),
             minimap_press_button: None,
             touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
             cursor_from_touch: false,
@@ -503,6 +515,8 @@ impl MatchInputState {
             formation_locks: super::formation_lock::FormationLocks::default(),
             planning: Default::default(),
             ferry: Default::default(),
+            auto_repair: Default::default(),
+            primary_rotation: Default::default(),
             category_navigation: Default::default(),
             cursor_coordinates: false,
             retail_screenshot_requested: false,
@@ -716,6 +730,10 @@ impl MatchInputState {
         self.planning.reset();
         self.formation_line = Default::default();
         self.formation_locks.clear();
+        // Its building ids and frames belong to the world that ended.
+        self.auto_repair = Default::default();
+        // Its factory ids and counts belong to the world that ended.
+        self.primary_rotation = Default::default();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;

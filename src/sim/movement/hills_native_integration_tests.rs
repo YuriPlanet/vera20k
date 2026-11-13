@@ -806,11 +806,12 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             );
             let urgency = control["urgency"].as_u64().unwrap() as u8;
             let multiplier = crate::sim::pathfinding::code2_multiplier(urgency, || {
-                sim.astar_code2_chain_jams(
+                sim.astar_code2_chain(
                     peer_cell,
                     crate::sim::movement::locomotor::MovementLayer::Ground,
                     None,
                 )
+                .map(|chain| chain.jams)
             })
             .unwrap();
             assert_eq!(

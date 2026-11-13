@@ -32,6 +32,7 @@ pub(crate) fn fixed_art(row: &Value) -> IniFile {
 }
 
 pub(crate) fn rules(row: &Value) -> RuleSet {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = fixed_art(row);
     let processed = RulesLayerStack::new(base_ini())
         .process_with_fixed_art(&art)
@@ -48,6 +49,7 @@ fn terminated(row: &Value) -> Value {
 
 #[test]
 fn custom_foundations_match_native_reader_geometry_and_retention() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::docking::building_dock::{foundation_exit_list, foundation_exit_pair};
     for row in native_rows() {
         let art = fixed_art(&row);
@@ -134,6 +136,7 @@ fn custom_foundations_match_native_reader_geometry_and_retention() {
 
 #[test]
 fn fixed_art_custom_geometry_affects_configuration_hash_and_rejects_unsupported_sizes() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = native_rows().remove(0);
     let original = rules(&row);
     let mut changed = row.clone();
@@ -159,6 +162,7 @@ fn fixed_art_custom_geometry_affects_configuration_hash_and_rejects_unsupported_
 
 #[test]
 fn custom_outline_backing_and_cursor_match_native_direct_consumers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::docking::building_dock::foundation_exit_pair;
     let packet: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rules_oracle/ares_foundation.json",
@@ -208,6 +212,7 @@ fn custom_outline_backing_and_cursor_match_native_direct_consumers() {
 /// 1x1 custom foundation undeploys.
 #[test]
 fn custom_foundation_answers_its_width_as_max_pips() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules_for = |cells: &str| {
         let art = IniFile::from_str(&format!(
             "[CUSTOM_ART]\nFoundation=Custom\n{cells}Foundation.0=0,0\nFoundation.1=1,0\n\

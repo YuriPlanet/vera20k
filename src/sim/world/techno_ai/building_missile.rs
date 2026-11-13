@@ -42,17 +42,14 @@ use crate::sim::projectile::{
     ProjectileCoord, ProjectilePayload, ProjectileTarget, cell_ground_coord,
 };
 use crate::sim::world::{SimSoundEvent, Simulation};
-#[cfg(not(feature = "ares"))]
 use crate::util::native_x87::NativeF64Bits;
 
 /// `PSIWARN`, the warning anim's type (`0x0081907C`, found by name at
 /// `0x0044C9FA`).
-#[cfg(not(feature = "ares"))]
 const WARNING_ANIM: &str = crate::rules::effect_asset_catalog::PSI_WARNING_ANIM;
 /// The missile's Construct speed, pushed as an immediate (`0x0044CAC8`).
 const MISSILE_SPEED: i32 = 0xFF;
 /// `[0x007E44A8]` = 10.0, the missile's launch velocity scale.
-#[cfg(not(feature = "ares"))]
 const MISSILE_VELOCITY_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x4024_0000_0000_0000);
 /// The take-off anim's ZAdjust, written after its constructor
 /// (`0x0044CC9D`).
@@ -195,8 +192,7 @@ fn emp_cannon(
         .as_building()
         .map_or(-1, |leaf| leaf.firing_super_weapon());
     if firing != -1 {
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             let super_target = entity.ares_super_target();
             if cannon {
                 if let Some(cell) = super_target
@@ -214,9 +210,7 @@ fn emp_cannon(
                 queue_guard(sim, id, rules);
                 return 1;
             }
-        }
-        #[cfg(not(feature = "ares"))]
-        if let Some(target) = sim.houses.get(&owner).map(|house| house.nuke_target()) {
+        } else if let Some(target) = sim.houses.get(&owner).map(|house| house.nuke_target()) {
             fire_weapon_zero(sim, id, rules, ctx, bridge_state_changed, target);
             queue_guard(sim, id, rules);
         }
@@ -258,24 +252,25 @@ fn emp_cannon(
             1
         }
         1 => {
-            #[cfg(feature = "ares")]
-            let (ball, delay) = match entity
-                .ares_super_weapon()
-                .and_then(|attached| {
-                    rules.super_weapon_metadata(sim.interner.resolve(attached.sw_type))
-                })
-                .map(|metadata| metadata.launch().emp_pulse())
-            {
-                Some(emp) => (
-                    emp.pulse_ball
-                        .clone()
-                        .unwrap_or_else(|| Some(PULSE_BALL_ANIM.to_owned())),
-                    emp.pulse_delay,
-                ),
-                None => (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY),
+            let (ball, delay) = if rules.ares() {
+                match entity
+                    .ares_super_weapon()
+                    .and_then(|attached| {
+                        rules.super_weapon_metadata(sim.interner.resolve(attached.sw_type))
+                    })
+                    .map(|metadata| metadata.launch().emp_pulse())
+                {
+                    Some(emp) => (
+                        emp.pulse_ball
+                            .clone()
+                            .unwrap_or_else(|| Some(PULSE_BALL_ANIM.to_owned())),
+                        emp.pulse_delay,
+                    ),
+                    None => (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY),
+                }
+            } else {
+                (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY)
             };
-            #[cfg(not(feature = "ares"))]
-            let (ball, delay) = (Some(PULSE_BALL_ANIM.to_owned()), PULSE_BALL_DELAY);
             let flh = fire_coordinate(
                 sim,
                 rules,
@@ -313,7 +308,6 @@ impl Simulation {
     /// Fire_Death_Weapon's bare `DetonateAtCoord`
     /// (`ProjectileDetonationReason::DeathWeapon`). Nothing without a
     /// weapon. Returns whether a bridge changed.
-    #[cfg(feature = "ares")]
     pub(crate) fn emp_cannon_detonate_self(
         &mut self,
         id: u64,
@@ -616,10 +610,11 @@ fn spawn_warning(
     let coord = cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
     // Ares hook 44C9FF (10036750): the firing type's `Nuke.PsiWarning`;
     // none skips the warning (0x0044CA7A).
-    #[cfg(feature = "ares")]
-    let warning = firing_nuke(sim, rules, id)?.psi_warning.clone()?;
-    #[cfg(not(feature = "ares"))]
-    let warning = WARNING_ANIM.to_owned();
+    let warning = if rules.ares() {
+        firing_nuke(sim, rules, id)?.psi_warning.clone()?
+    } else {
+        WARNING_ANIM.to_owned()
+    };
     let anim = spawn_anim(sim, rules, &warning, coord, true)?;
     sim.substrate.set_anim_owner_house(anim, owner);
     Some(anim)
@@ -683,23 +678,24 @@ fn launch_missile(
     }
     // Ares hook 44CB4C (10036660) replaces the vanilla velocity with (0, 0,
     // 10) for a `Vertical=` BulletType, else (0, 0, 100).
-    #[cfg(feature = "ares")]
-    let velocity = crate::sim::projectile::ProjectileVelocity::new(
-        0,
-        0,
-        if weapon
-            .projectile
-            .as_deref()
-            .and_then(|name| rules.projectile(name))
-            .is_some_and(|projectile| projectile.vertical)
-        {
-            10
-        } else {
-            100
-        },
-    );
-    #[cfg(not(feature = "ares"))]
-    let velocity = crate::sim::projectile::launch::missile_launch_velocity(MISSILE_VELOCITY_SCALE);
+    let velocity = if rules.ares() {
+        crate::sim::projectile::ProjectileVelocity::new(
+            0,
+            0,
+            if weapon
+                .projectile
+                .as_deref()
+                .and_then(|name| rules.projectile(name))
+                .is_some_and(|projectile| projectile.vertical)
+            {
+                10
+            } else {
+                100
+            },
+        )
+    } else {
+        crate::sim::projectile::launch::missile_launch_velocity(MISSILE_VELOCITY_SCALE)
+    };
     // The target is the CellClass `Map[NukeTarget]` gives (`0x0044CAB0..0x0044CAB5`,
     // then CreateBullet at `0x0044CAED`): the shared dummy for a cell off the map.
     let target = ProjectileTarget::looked_up_cell(sim.resolved_terrain.as_ref(), rx, ry);
@@ -729,8 +725,7 @@ fn launch_missile(
     // The hook also remembers the firing type on the missile (BulletExt
     // NukeSW) and takes its `Nuke.TakeOff`, else `[General] NukeTakeOff=`,
     // whose ZAdjust becomes -100 only while still 0.
-    #[cfg(feature = "ares")]
-    let take_off = {
+    let take_off = if rules.ares() {
         let firing_type = usize::try_from(firing)
             .ok()
             .and_then(|index| rules.super_weapon_order.get(index))
@@ -739,18 +734,18 @@ fn launch_missile(
         firing_nuke(sim, rules, id)
             .and_then(|nuke| nuke.take_off.clone())
             .unwrap_or_else(|| Some(rules.general.nuke_take_off.clone()))
+    } else {
+        Some(rules.general.nuke_take_off.clone())
     };
-    #[cfg(not(feature = "ares"))]
-    let take_off = Some(rules.general.nuke_take_off.clone());
     if let Some(anim) = take_off.and_then(|name| spawn_anim(sim, rules, &name, origin, false)) {
-        #[cfg(feature = "ares")]
-        let unset = sim
-            .substrate
-            .anims
-            .get(anim)
-            .is_some_and(|anim| anim.z_adjust() == 0);
-        #[cfg(not(feature = "ares"))]
-        let unset = true;
+        let unset = if rules.ares() {
+            sim.substrate
+                .anims
+                .get(anim)
+                .is_some_and(|anim| anim.z_adjust() == 0)
+        } else {
+            true
+        };
         if unset {
             sim.substrate.set_anim_z_adjust(anim, TAKE_OFF_Z_ADJUST);
         }
@@ -763,7 +758,6 @@ fn launch_missile(
 
 /// The SWTypeExt Nuke fields of the type the silo fires (`+0x5F8`, the
 /// type's `[SuperWeaponTypes]` index SW_NuclearMissile::Activate stores).
-#[cfg(feature = "ares")]
 fn firing_nuke<'r>(
     sim: &Simulation,
     rules: &'r RuleSet,
@@ -1003,8 +997,11 @@ mod tests {
                 .map(|bits| bits.as_u64().unwrap())
                 .collect();
             // Ares hook 44CB4C (10036660): (0, 0, 10) for the Vertical carrier.
-            #[cfg(feature = "ares")]
-            let native_velocity = [0.0_f64, 0.0, 10.0].map(f64::to_bits).to_vec();
+            let native_velocity = if rules.ares() {
+                [0.0_f64, 0.0, 10.0].map(f64::to_bits).to_vec()
+            } else {
+                native_velocity
+            };
             assert_eq!(velocity_bits(bullet.velocity()), native_velocity, "{row}");
             // Construct's damage and speed; the carrier's BulletType.
             let construct = events
@@ -1067,9 +1064,9 @@ mod tests {
     /// Ares hooks 44C9FF (10036750) and 44CB4C (10036660): the firing
     /// type's `Nuke.PsiWarning=none` skips the warning, its `Nuke.TakeOff`
     /// plays at the launch point, and the missile remembers the type.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_silo_missile_takes_the_firing_types_anims() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let art = IniFile::from_str(&format!("{ART}[FLAME]\n"));
         let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
         ini.merge(&IniFile::from_str(
@@ -1124,10 +1121,7 @@ mod tests {
             .set_handler_state(0);
         // Ares hook 44CCE7 (10036570): with a firing type, a building that
         // is not a cannon fires weapon 0, queues Guard and returns 1.
-        #[cfg(feature = "ares")]
-        let delay = 1;
-        #[cfg(not(feature = "ares"))]
-        let delay = int(&row["delay"]);
+        let delay = if rules.ares() { 1 } else { int(&row["delay"]) };
         assert_eq!(
             mission_missile(
                 &mut sim,

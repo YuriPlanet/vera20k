@@ -336,7 +336,7 @@ mod tests {
         master.set_type_ref_for_test(interner.intern("MASTER"));
         let slav = interner.intern("SLAV");
         // An existing manager that does not hold the slave refuses it.
-        master.slave_manager = Some(SlaveManager::new(slav, [None; 0], 0, 0, 0));
+        master.slave_manager = Some(Box::new(SlaveManager::new(slav, [None; 0], 0, 0, 0)));
         entities.insert(master);
         let mut slave = GameEntity::test_default(2, "SLAV", "Owner", 3, 4);
         slave.set_owner_for_test(owner);
@@ -397,7 +397,7 @@ mod tests {
             "failed selection restores the cleared current slot"
         );
         entities.get_mut(1).unwrap().slave_manager =
-            Some(SlaveManager::new(slav, [Some(2)], 0, 0, 0));
+            Some(Box::new(SlaveManager::new(slav, [Some(2)], 0, 0, 0)));
         assert!(prepare_step_head(
             &mut entities,
             2,

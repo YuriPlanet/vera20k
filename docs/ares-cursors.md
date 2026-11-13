@@ -80,8 +80,10 @@ reads the list or the overrides.
   superweapon actions reach a Foot's click; VERA's radar drops a NoCursor
   click instead of dispatching it. `0x4AB366`, `0x4AB44A` and `0x5BDD9F` are
   0.A hooks 3.0 no longer installs.
-- InfantryHeal and UnitRepair (`0x5A`/`0x5B`) belong to the unported Ares
-  heal actions (`0x51E710`, `0x73FDBD`).
+- InfantryHeal and UnitRepair (`0x5A`/`0x5B`): the heal arms (`0x51E710`,
+  `0x73FDBD`) set them over an Organic or Infantry target and over any other
+  one (`unit_repair_feedback`); an Infantryman's Heal shows the cursor
+  directly.
 - A cursor of -1 (`none`) or outside the list faults in Ares; VERA keeps the
   stock cursor. A zero Count, which Ares divides by, draws one frame.
 - Overrides another selected object's What_Action left in the same frame are

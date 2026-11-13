@@ -830,7 +830,7 @@ fn unit_source_arm_matches_original_execution() {
                 0,
             );
             miner.set_unload_active_for_test(true);
-            actor.miner = Some(miner);
+            actor.miner = Some(Box::new(miner));
         }
         let head = coord("head", [0, 0, 0]);
         if head != [0, 0, 0] {

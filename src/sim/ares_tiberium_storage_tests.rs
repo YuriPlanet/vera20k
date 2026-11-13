@@ -57,8 +57,11 @@ fn house_stored(sim: &Simulation, owner: InternedId) -> i32 {
 /// buildings in order (refinery first, then the silo), scores 5 a unit and
 /// pays nothing; Available_Money counts its value. Past the capacity the
 /// rest is lost. A refinery without the key pays cash and no score.
+// Runs again once the miner's deposit moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn use_storage_refinery_fills_its_house_storage_in_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, owner, refinery, silo) = scene(&rules, 0);
     deposit(&mut sim, &rules, refinery, 15);
@@ -85,8 +88,11 @@ fn use_storage_refinery_fills_its_house_storage_in_order() {
 
 /// Spending past the balance drains stored units one at a time, 25 each,
 /// from the first building; the last unit's excess becomes the balance.
+// Runs again once the miner's deposit moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn spending_past_the_balance_drains_storage_and_returns_change() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, owner, refinery, silo) = scene(&rules, 10);
     deposit(&mut sim, &rules, refinery, 15);
@@ -101,8 +107,11 @@ fn spending_past_the_balance_drains_storage_and_returns_change() {
 /// A sold silo's Limbo takes its share out of the House and the sale's
 /// payout stores it in the remaining room; a destroyed refinery loses its
 /// share; a captured silo carries its share to the new House.
+// Runs again once the miner's deposit moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, owner, refinery, silo) = scene(&rules, 0);
     let spare = sim

@@ -16,7 +16,6 @@
 //! foreign water fails softly and the whole attempt rolls back.
 
 use crate::map::rmg::rng::RANGE_K_BITS;
-use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
@@ -443,6 +442,7 @@ mod tests {
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};
     use crate::map::rmg::phases::water::PlayableRect;
     use crate::map::rmg::rng::RmgRng;
+    use crate::map::rmg::scratch::RmgScratch;
     use crate::map::rmg::tiles::TileIds;
     use crate::map::rmg::x87::Gaussian;
     use crate::map::theater::TheaterCliffRanges;

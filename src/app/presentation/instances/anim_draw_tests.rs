@@ -452,6 +452,7 @@ fn free_anim_draw_with(
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim: &sim,
+            frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
             rules: &rules,
             camera: [-1000.0; 2],
             render_size: [2000; 2],

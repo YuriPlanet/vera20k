@@ -2362,7 +2362,7 @@ impl Simulation {
         if !target.phobos_unkillable() || target.health.current() <= 0 || input == 0 {
             return false;
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
             return false;
         };
         let Some(object) = self.interner.object_type(target.type_ref(), rules) else {
@@ -2705,7 +2705,7 @@ impl Simulation {
         if damage <= 0 || self.reflected_warhead == Some(warhead_ref) {
             return;
         }
-        let Some(warhead) = rules.warhead(self.interner.resolve(warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
         let info = warhead.attach_effect.clone();
@@ -3099,7 +3099,7 @@ impl Simulation {
         effects: crate::sim::world::FrameEffects<'_>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
-        let Some(warhead) = rules.warhead(self.interner.resolve(warhead_ref)) else {
+        let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
         let info = warhead.attach_effect.clone();

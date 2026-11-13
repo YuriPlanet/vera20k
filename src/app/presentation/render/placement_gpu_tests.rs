@@ -382,7 +382,6 @@ fn paid_refinery_centering_and_free_unit(
     let foundation = rules.object(name).unwrap().foundation.clone();
     let selector = match &foundation {
         crate::rules::foundation::Foundation::Stock(index) => *index,
-        #[cfg(feature = "ares")]
         _ => panic!("retail fixture must retain a stock foundation"),
     };
     assert_eq!(selector, 12);

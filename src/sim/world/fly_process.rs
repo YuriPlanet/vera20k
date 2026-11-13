@@ -184,8 +184,9 @@ impl Simulation {
         // Ares 3.0 FlyLocomotionClass_ILocomotion_Process_HunterSeeker
         // (1004D7A0, hook 0x4CCB84) runs first; a reacquired hunter stops
         // landing.
-        #[cfg(feature = "ares")]
-        let in_phase = if self.ares_hunter_seeker_process(id, rules, registry, frame_effects) {
+        let in_phase = if rules.ares()
+            && self.ares_hunter_seeker_process(id, rules, registry, frame_effects)
+        {
             self.substrate
                 .entities
                 .get(id)
@@ -285,8 +286,9 @@ impl Simulation {
         }
         // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
         // (1004DA90, hook 0x4CD9C8).
-        #[cfg(feature = "ares")]
-        self.ares_hunter_seeker_update_target(id, rules);
+        if rules.ares() {
+            self.ares_hunter_seeker_update_target(id, rules);
+        }
         self.substrate.fly_guard_to_move(id);
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -701,24 +703,27 @@ impl Simulation {
         // hook 0x4CF3D0) takes the height block of a hunter with a Target.
         // Its detonation leaves the step (0x4CF5F2) with the facings the
         // two blocks above have already set.
-        #[cfg(feature = "ares")]
-        let ares_level = match self.ares_hunter_seeker_height(id, rules) {
-            crate::sim::hunter_seeker::HunterSeekerHeight::Stock => None,
-            crate::sim::hunter_seeker::HunterSeekerHeight::Level(level) => Some(level),
-            crate::sim::hunter_seeker::HunterSeekerHeight::Detonate => {
-                let entity = self.substrate.entities.get_mut(id).unwrap();
-                if let Some(primary) = primary {
-                    entity.body_facing.set(primary, frame);
-                }
-                if let Some(secondary) = secondary {
-                    entity.ensure_fly_secondary_facing();
-                    if let Some(facing) = entity.barrel_facing.as_mut() {
-                        facing.set(secondary, frame);
+        let ares_level = if rules.ares() {
+            match self.ares_hunter_seeker_height(id, rules) {
+                crate::sim::hunter_seeker::HunterSeekerHeight::Stock => None,
+                crate::sim::hunter_seeker::HunterSeekerHeight::Level(level) => Some(level),
+                crate::sim::hunter_seeker::HunterSeekerHeight::Detonate => {
+                    let entity = self.substrate.entities.get_mut(id).unwrap();
+                    if let Some(primary) = primary {
+                        entity.body_facing.set(primary, frame);
                     }
+                    if let Some(secondary) = secondary {
+                        entity.ensure_fly_secondary_facing();
+                        if let Some(facing) = entity.barrel_facing.as_mut() {
+                            facing.set(secondary, frame);
+                        }
+                    }
+                    self.ares_hunter_seeker_detonate(id, rules, registry, frame_effects);
+                    return 0;
                 }
-                self.ares_hunter_seeker_detonate(id, rules, registry, frame_effects);
-                return 0;
             }
+        } else {
+            None
         };
         let flight_level = self.fly_type_flight_level(id, rules);
         let entity = self.substrate.entities.get(id).unwrap();
@@ -748,7 +753,6 @@ impl Simulation {
         } else {
             flight_level
         };
-        #[cfg(feature = "ares")]
         let level = ares_level.unwrap_or(level);
         let slow = air_movement::fly_speed_facts(
             entity,

@@ -434,32 +434,30 @@ impl VxlPoseFrameCache {
     }
 
     /// Rasterize one `VoxelAnimClass` piece's body and ground shadow at its
-    /// bounce matrix and place both on this frame's page. `image` is the
-    /// type's `ImageFile`, which names its model (`%s.VXL`, `0x0074B56C`).
+    /// bounce matrix and place both on this frame's page. The rules asset
+    /// owner supplies the retained physical part (VoxelAnim74B4D0..74B5DB),
+    /// including a copied source model; this draw never reloads it by name.
     /// None when the model does not resolve, the piece is not drawable or the
     /// sprite exceeds the page size. `depth` is the shared depth map the body
     /// reads and writes; None draws it on a clear one.
     pub fn render_tumble(
         &mut self,
         asset_manager: &AssetManager,
-        image: &str,
+        model: &crate::rules::voxel_asset_catalog::VoxelPart,
         section: i32,
         matrix: glam::Mat4,
         use_buffer: bool,
         depth: Option<&mut crate::render::vxl_raster::DepthMap>,
     ) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)> {
         let vpl = load_vpl(&mut self.vpl, asset_manager);
-        let model = image_model(&mut self.image_models, asset_manager, image)
-            .model
-            .as_ref()?;
         if let Some(depth) = depth {
             let (body, shadow) =
-                model.render_tumble(section, matrix, vpl, use_buffer, Some(depth))?;
+                UnitModel::render_tumble(model, section, matrix, vpl, use_buffer, Some(depth))?;
             let shadow =
                 shadow.and_then(|sprite| place_sprite(&mut self.pages, sprite, None, false));
             return Some((place_sprite(&mut self.pages, body, None, false)?, shadow));
         }
-        let (body, shadow) = model.tumble_images(section, matrix, vpl, use_buffer)?;
+        let (body, shadow) = UnitModel::tumble_images(model, section, matrix, vpl, use_buffer)?;
         let shadow = shadow.and_then(|shadow| {
             place_image(&mut self.pages, &mut self.gpu, vpl, shadow, None, None)
         });

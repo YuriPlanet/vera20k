@@ -1,6 +1,7 @@
 //! Minimap click inverse and camera-window presentation adapters.
 
 use crate::render::batch::SpriteInstance;
+use crate::render::snapshot::SnapshotObject;
 
 use super::geometry::NativeRadarSurfaceGeometry;
 use super::minimap::MinimapRenderer;
@@ -140,10 +141,9 @@ impl RadarPick {
 fn native_input_target_at_pixel(
     pick: RadarPick,
     tracker: &super::tracker::RetainedRadarTracker,
-    simulation: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
+    frame: &impl crate::render::snapshot::SnapshotObjects,
 ) -> NativeRadarInputTarget {
-    let hit = tracker_object_signed_cell(tracker, simulation, rules, pick.object_pixel);
+    let hit = tracker_object_signed_cell(tracker, frame, pick.object_pixel);
     let signed =
         signed_tracker_or_inverse_cell(pick.inverse, pick.cell_pixel, hit.map(|(_, cell)| cell));
     NativeRadarInputTarget {
@@ -154,29 +154,17 @@ fn native_input_target_at_pixel(
 
 fn tracker_object_signed_cell(
     tracker: &super::tracker::RetainedRadarTracker,
-    simulation: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
+    frame: &impl crate::render::snapshot::SnapshotObjects,
     pixel: (i32, i32),
 ) -> Option<(u64, (i16, i16))> {
     let stable_id = tracker.object_at_pixel(pixel.0, pixel.1)?;
     // Original6567EF..656828 dispatches virtual+4C with a null requester,
-    // then truncates signed XY toward zero and packs each low word. A moving
-    // Foot's navigation head can precede its physical Object+48 cell. Do not
-    // perform a Map lookup here: the handler clamps these words first.
-    let point = simulation
-        .navigation_target_coordinate(
-            crate::sim::components::NavTargetRef::object(stable_id),
-            None,
-            rules,
-        )
-        .ok()?;
-    Some((
-        stable_id,
-        (
-            crate::util::lepton::lepton_to_cell_packed(point.x),
-            crate::util::lepton::lepton_to_cell_packed(point.y),
-        ),
-    ))
+    // then truncates signed XY toward zero and packs each low word
+    // (captured as `RadarFacts::click_cell`). A moving Foot's navigation
+    // head can precede its physical Object+48 cell. Do not perform a Map
+    // lookup here: the handler clamps these words first.
+    let cell = frame.object(stable_id)?.radar().click_cell?;
+    Some((stable_id, cell))
 }
 
 fn native_camera_cell_from_signed(
@@ -264,16 +252,14 @@ impl MinimapRenderer {
         screen: (f32, f32),
         centre: (f32, f32),
         rect: [f32; 4],
-        simulation: &crate::sim::world::Simulation,
-        rules: &crate::rules::ruleset::RuleSet,
+        frame: &impl crate::render::snapshot::SnapshotObjects,
     ) -> Option<NativeRadarInputTarget> {
         let surface = self.native_radar_surface?;
         let pick = RadarPick::at(surface, rect, self.hd_scale(), screen, centre)?;
         Some(native_input_target_at_pixel(
             pick,
             &self.radar_tracker,
-            simulation,
-            rules,
+            frame,
         ))
     }
 
@@ -288,8 +274,7 @@ impl MinimapRenderer {
         rect_y: f32,
         rect_w: f32,
         rect_h: f32,
-        simulation: &crate::sim::world::Simulation,
-        rules: &crate::rules::ruleset::RuleSet,
+        frame: &impl crate::render::snapshot::SnapshotObjects,
         terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
         map_size: (i32, i32),
         tactical_size: (i32, i32),
@@ -298,8 +283,7 @@ impl MinimapRenderer {
             (screen_x, screen_y),
             centre,
             [rect_x, rect_y, rect_w, rect_h],
-            simulation,
-            rules,
+            frame,
         )?;
         let signed = (input.cell.0 as i16, input.cell.1 as i16);
         let mut target =
@@ -584,9 +568,13 @@ mod tests {
             &crate::rules::ini_parser::IniFile::from_str("[General]\n"),
         )
         .unwrap();
-        let tracker_signed = tracker_object_signed_cell(&tracker, &simulation, &rules, (40, 60))
-            .unwrap()
-            .1;
+        let tracker_signed = tracker_object_signed_cell(
+            &tracker,
+            &crate::app::presentation::frame::PresentationFrame::of_test(&simulation, &rules),
+            (40, 60),
+        )
+        .unwrap()
+        .1;
         assert_eq!(tracker_signed, (55, 55));
         let tracker_target =
             native_camera_target_from_signed(tracker_signed, (100, 100), (632, 570), &terrain);
@@ -743,8 +731,11 @@ mod tests {
             update.origin = pixel;
             tracker.update_object(update, false);
         }
-        let input_target =
-            native_input_target_at_pixel(RadarPick::native(surface, pixel), &tracker, sim, rules);
+        let input_target = native_input_target_at_pixel(
+            RadarPick::native(surface, pixel),
+            &tracker,
+            &crate::app::presentation::frame::PresentationFrame::of_test(sim, rules),
+        );
         assert_eq!(
             input_target.tracker_hit,
             (input["tracked"] != false).then_some(id)
@@ -999,8 +990,12 @@ mod tests {
                 "[BuildingTypes]\n0=BLDG\n[BLDG]\nFoundation=4x3\n",
             ))
             .unwrap();
-        let signed = tracker_object_signed_cell(&tracker, &simulation, &rules, (40, 60))
-            .map(|(_, cell)| cell);
+        let signed = tracker_object_signed_cell(
+            &tracker,
+            &crate::app::presentation::frame::PresentationFrame::of_test(&simulation, &rules),
+            (40, 60),
+        )
+        .map(|(_, cell)| cell);
         assert_eq!(
             signed,
             Some((62, 61)),
@@ -1016,8 +1011,12 @@ mod tests {
         edge.position.set_rx_for_test(u16::MAX);
         edge.position.set_ry_for_test(u16::MAX);
         assert_eq!(
-            tracker_object_signed_cell(&tracker, &simulation, &rules, (40, 60))
-                .map(|(_, cell)| cell),
+            tracker_object_signed_cell(
+                &tracker,
+                &crate::app::presentation::frame::PresentationFrame::of_test(&simulation, &rules),
+                (40, 60)
+            )
+            .map(|(_, cell)| cell),
             Some((1, 0)),
             "GetCoords converts to wrapping native signed cell words"
         );

@@ -284,7 +284,7 @@ impl SavedTerrainTemplate {
             width: self.width,
             height: self.height,
             level_span: LevelSpan::of(self.cells.iter().map(|cell| cell.level)),
-            cells: super::cow_cells::CowCells::new(self.cells),
+            cells: super::terrain_cells::TerrainCells::new(self.cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
             native_tmp_draw_heights: Default::default(),

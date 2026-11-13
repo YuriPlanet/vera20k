@@ -39,6 +39,11 @@ pub(crate) struct ProcessAssets {
     /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
     /// lease reads the same files.
     mod_dir: Option<std::path::PathBuf>,
+    /// That folder's files as one digest (`app::mods::files_digest`), taken
+    /// once: the pre-match check compares it.
+    mod_files: std::sync::Arc<std::sync::OnceLock<Result<[u8; 32], String>>>,
+    /// [`ProcessAssets::read_mod_files_ahead`] has started its thread.
+    mod_files_ahead: std::sync::atomic::AtomicBool,
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
@@ -73,6 +78,13 @@ pub(crate) struct ProcessAssets {
     native_ini_hashes: Option<crate::rules::native_ini_hash::NativeIniHashes>,
 }
 
+fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
+    crate::app::mods::files_digest(dir).map_err(|error| {
+        log::warn!("Could not read the mod in {}: {error}", dir.display());
+        format!("the mod's files could not be read: {error}")
+    })
+}
+
 /// Immutable process sources; output players and match queues have separate
 /// lifetimes. Rules binding shares this exact SOUNDMD allocation.
 pub(crate) struct ProcessAudioCatalog {
@@ -99,6 +111,8 @@ impl ProcessAssets {
         Self {
             media_archive_mode,
             mod_dir: None,
+            mod_files: Default::default(),
+            mod_files_ahead: Default::default(),
             ini_config: Default::default(),
             selected_ini_roots: None,
             personal_rules: Default::default(),
@@ -136,6 +150,34 @@ impl ProcessAssets {
     pub(crate) fn with_mod_dir(mut self, mod_dir: Option<std::path::PathBuf>) -> Self {
         self.mod_dir = mod_dir;
         self
+    }
+
+    /// The player opened a multiplayer menu: start reading the mod's files
+    /// now, off the thread that draws, so the pre-match check that follows
+    /// rarely waits. A mod's archives take a moment to read, and a run that
+    /// never comes here (single player, a map picture) never reads them.
+    /// Where no thread starts, that check reads them itself.
+    pub(crate) fn read_mod_files_ahead(&self) {
+        use std::sync::atomic::Ordering;
+        let Some(dir) = self.mod_dir.clone() else {
+            return;
+        };
+        if self.mod_files_ahead.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let files = std::sync::Arc::clone(&self.mod_files);
+        let _ = std::thread::Builder::new()
+            .name("mod-files".into())
+            .spawn(move || {
+                files.get_or_init(|| mod_files_digest(&dir));
+            });
+    }
+
+    /// The launch's mod folder as one digest, or why it could not be read;
+    /// `None` without a mod.
+    fn mod_files(&self) -> Option<&Result<[u8; 32], String>> {
+        let dir = self.mod_dir.as_deref()?;
+        Some(self.mod_files.get_or_init(|| mod_files_digest(dir)))
     }
 
     /// The Options page's Terrain Deformation box: the next scenario's rules
@@ -360,6 +402,18 @@ impl ProcessAssets {
             if let Some(digest) = digest {
                 bytes.extend_from_slice(digest.as_bytes());
             }
+        }
+        // Whether Ares plays (`rules::ares_switch`) follows these sources and
+        // the map, which the map agreement covers, and whether `ares.mix`
+        // ships. A build without Ares never plays it and keeps the old bytes.
+        #[cfg(feature = "ares")]
+        bytes.push(u8::from(assets.ships_ares()));
+        // VERA: with a mod in use, its other files too (art, maps, archives),
+        // so players whose copies of a mod differ never start a match. Without
+        // a mod the digest is what it was before mods.
+        if let Some(files) = self.mod_files() {
+            bytes.extend_from_slice(b"mod files\0");
+            bytes.extend_from_slice(files.as_ref().map_err(String::clone)?);
         }
         Ok(crate::util::sha256::sha256_hex(&bytes))
     }
@@ -703,6 +757,42 @@ mod tests {
             original,
             fresh.multiplayer_rules_digest("mode.ini").unwrap()
         );
+    }
+
+    /// VERA: players whose copies of a mod differ in a file the rules do not
+    /// read never agree, nor a player with a mod and one without.
+    #[test]
+    fn a_mods_other_files_take_part_in_the_agreement() {
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("mod-files");
+        for (name, bytes) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        let mods = dir.path().join("mods-under-test");
+        for (folder, art) in [("one", "a"), ("same", "a"), ("other", "b")] {
+            std::fs::create_dir_all(mods.join(folder)).unwrap();
+            std::fs::write(mods.join(folder).join("tank.vxl"), art).unwrap();
+        }
+        let digest = |folder: Option<&str>| {
+            let mod_dir = folder.map(|folder| mods.join(folder));
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_mod_dir(mod_dir.clone());
+            let assets = AssetManager::with_mod(
+                dir.path(),
+                mod_dir.as_deref(),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            process.multiplayer_rules_digest("").unwrap()
+        };
+        assert_eq!(digest(Some("one")), digest(Some("same")));
+        assert_ne!(digest(Some("one")), digest(Some("other")));
+        assert_ne!(digest(Some("one")), digest(None));
     }
 
     #[test]

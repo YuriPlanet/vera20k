@@ -66,7 +66,6 @@ impl Simulation {
     /// unlike [`Self::convert_techno_type`]. The Type facts VERA caches, which
     /// native reads from the Type, follow; house tracking is left as native
     /// leaves it.
-    #[cfg(feature = "ares")]
     pub(crate) fn store_techno_type(
         &mut self,
         id: u64,

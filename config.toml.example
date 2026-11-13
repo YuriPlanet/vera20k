@@ -10,6 +10,7 @@ ra2_dir = "C:/Westwood/RA2"
 # settings_dir = "."
 # Optional mod to play with: the name of a folder in VERA20k's Mods folder,
 # read on top of the game folder (docs/modding.md). Without it, the original game.
+# The game's Mods menu writes this line.
 # mod = "MyMod"
 
 [ini]

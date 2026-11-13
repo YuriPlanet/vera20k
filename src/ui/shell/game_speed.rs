@@ -4,6 +4,19 @@ use crate::sim::game_options::GAME_SPEED_90_TPS;
 
 pub const MAX_POSITION: i32 = 7;
 
+/// The CSF keys of a speed's name by slider position, 0 the slowest: the
+/// table gamemd's Game Controls (BBB, 4E2278..4E232B) names its GameSpeed and
+/// ScrollRate positions from.
+const SPEED_LABEL_KEYS: [&str; 7] = [
+    "TXT_SLOWEST",
+    "TXT_SLOWER",
+    "TXT_SLOW",
+    "TXT_MEDIUM",
+    "TXT_FAST",
+    "TXT_FASTER",
+    "TXT_FASTEST",
+];
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SpeedContext {
     #[default]
@@ -35,7 +48,7 @@ impl SpeedContext {
             0 if self == Self::Offline => "VERA:Unlimited",
             0 => "VERA:GameSpeed60",
             speed if speed == i32::from(GAME_SPEED_90_TPS) => "VERA:GameSpeed90",
-            _ => super::in_game_options::speed_value_label_key((6 - stored).clamp(0, 6) as u32),
+            _ => SPEED_LABEL_KEYS[(6 - stored).clamp(0, 6) as usize],
         }
     }
 
@@ -64,6 +77,9 @@ mod tests {
         assert_eq!(SpeedContext::Offline.stored_speed(6), 8);
         assert_eq!(SpeedContext::Offline.stored_speed(7), 0);
         assert_eq!(SpeedContext::Offline.label_key(0), "VERA:Unlimited");
+        assert_eq!(SpeedContext::Offline.label_key(6), "TXT_SLOWEST");
+        assert_eq!(SpeedContext::Offline.label_key(3), "TXT_MEDIUM");
+        assert_eq!(SpeedContext::Network.label_key(1), "TXT_FASTER");
         assert_eq!(SpeedContext::Network.stored_speed(6), 0);
         assert_eq!(SpeedContext::Network.stored_speed(7), 8);
         assert_eq!(SpeedContext::Network.label_key(0), "VERA:GameSpeed60");

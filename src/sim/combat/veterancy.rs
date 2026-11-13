@@ -160,17 +160,16 @@ impl Veterancy {
     /// seeded for EVERY house's elite (`0x006FA0D0` is reached from the
     /// non-human branch too); only the sound and EVA are gated, and that gate
     /// belongs to the app layer, which knows the local player.
-    #[cfg_attr(feature = "ares", allow(dead_code))]
     pub(crate) fn sample_promotion(
         &mut self,
         flashing: &mut Flashing,
         elite_flash_timer: i32,
     ) -> Option<Promotion> {
-        let prev = self.rank_cache;
-        let curr = veterancy_level(self.raw);
-        if prev == curr {
+        if !self.rank_changed() {
             return None;
         }
+        let prev = self.rank_cache;
+        let curr = veterancy_level(self.raw);
         self.rank_cache = curr;
         if prev == LEVEL_UNSAMPLED {
             return None;
@@ -183,6 +182,12 @@ impl Veterancy {
             LEVEL_VETERAN => Some(Promotion::Veteran),
             _ => None,
         }
+    }
+
+    /// Whether the rank differs from the cached one: what
+    /// [`Self::sample_promotion`] acts on. Otherwise it changes nothing.
+    pub(crate) fn rank_changed(&self) -> bool {
+        self.rank_cache != veterancy_level(self.raw)
     }
 
     /// Award one kill's experience to its recipient, if the recipient can hold it.
@@ -211,13 +216,11 @@ impl Veterancy {
     /// The rank the accumulator holds now, in the `+0x13C` cache's codes.
     /// Ares UpdateVeterancy10046AFE..10046B1F tests the single with the same
     /// `>= 2.0` / `>= 1.0` order as `GetVeterancyLevel @ 0x00750030`.
-    #[cfg(feature = "ares")]
     pub(crate) fn level(&self) -> i8 {
         veterancy_level(self.raw)
     }
 
     /// Ares UpdateVeterancy10046D6C stores the (possibly re-ranked) level.
-    #[cfg(feature = "ares")]
     pub(crate) fn store_level(&mut self, level: i8) {
         self.rank_cache = level;
     }
@@ -227,7 +230,6 @@ impl Veterancy {
     /// above at `VeteranCap` (`ja`, so an equal sum stores itself) and, once
     /// stored as a single, floored at zero. Unlike `VeterancyClass::Add`'s
     /// caller, any nonzero recipient cost counts, so a negative one drains.
-    #[cfg(feature = "ares")]
     pub(crate) fn add_ares_kill_experience(
         &mut self,
         recipient_cost: i32,
@@ -266,7 +268,6 @@ impl Veterancy {
     /// Ares ApplyAcademy (`10020750`, `10020820..10020850`): a `bonus`
     /// above the current single replaces it, capped at `VeteranCap`, as a
     /// single; anything else leaves it.
-    #[cfg(feature = "ares")]
     pub(crate) fn apply_academy_bonus(
         &mut self,
         bonus: crate::util::native_x87::NativeF64Bits,
@@ -290,7 +291,6 @@ impl Veterancy {
     /// Promote.*Type conversion, a nonzero Promote.*Experience is added to
     /// the single, floored at zero, capped at `VeteranCap` and stored as a
     /// single. Returns whether it wrote.
-    #[cfg(feature = "ares")]
     pub(crate) fn add_promotion_experience(
         &mut self,
         experience: crate::util::native_x87::NativeF64Bits,
@@ -612,7 +612,7 @@ pub fn entity_mover_speed_leptons_per_second(
         object,
         veteran_speed,
         house_bonus,
-        entity.foot_speed.effective_multiplier(),
+        entity.speed_multiplier(),
     )
 }
 
@@ -644,6 +644,13 @@ pub fn self_heal_interval_frames(repair_rate_minutes: f64) -> i32 {
     crate::rules::ruleset::native_minutes_to_frames(repair_rate_minutes)
 }
 
+/// Step 1 of [`self_heal_eligible`], the virtual's ability gate:
+/// `Type->SelfHealing` (`+0xD14`), or a rank that holds `SELF_HEAL`.
+pub fn holds_self_heal(entity: &GameEntity, object: &ObjectType) -> bool {
+    object.self_healing
+        || has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::SelfHeal)
+}
+
 /// The self-heal eligibility virtual, `TechnoClass` vtable slot `0x294` →
 /// `FUN_0070BE80` (slot verified by `read_memory 0x007F4BF4`).
 ///
@@ -665,11 +672,8 @@ pub fn self_heal_eligible(
     frame: u32,
     interval_frames: i32,
 ) -> bool {
-    if !object.self_healing {
-        let rank = entity.veterancy.rank_kind();
-        if !has_weapon_ability(rank, object, Ability::SelfHeal) {
-            return false;
-        }
+    if !holds_self_heal(entity, object) {
+        return false;
     }
     if (frame as i32).checked_rem(interval_frames) != Some(0) {
         return false;
@@ -692,7 +696,6 @@ pub fn self_heal_eligible(
 ///    heals nothing), at most up to that cap.
 ///
 /// Both conversions are the CRT `_ftol2` (100772B0), INT_MIN out of range.
-#[cfg(feature = "ares")]
 pub fn ares_self_heal_amount(
     entity: &GameEntity,
     object: &ObjectType,
@@ -700,13 +703,13 @@ pub fn ares_self_heal_amount(
     repair_rate_minutes: f64,
 ) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X;
-    let combat = entity.ares_self_heal_combat;
+    let combat = entity.ares.ares_self_heal_combat;
     if combat.start_frame() != crate::sim::timer::PAUSED_START_FRAME && combat.remaining(frame) > 0
     {
         return 0;
     }
     let rank = entity.veterancy.rank_kind();
-    if !object.self_healing && !has_weapon_ability(rank, object, Ability::SelfHeal) {
+    if !holds_self_heal(entity, object) {
         return 0;
     }
     let ext = object.techno_combat().self_healing();

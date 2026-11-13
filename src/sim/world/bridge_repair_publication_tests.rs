@@ -945,13 +945,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
         replay.restore_after_snapshot_load().unwrap();
         replay.resolve_type_handles(&rules);
         assert!(replay.path_grid.is_none());
-        assert!(
-            replay
-                .zone_grid
-                .as_deref()
-                .unwrap()
-                .is_native_load_pending()
-        );
+        assert!(replay.zone_grid.as_ref().unwrap().is_native_load_pending());
         replay.rebuild_caches_after_load(map_terrain, sim.terrain_speed_config.clone(), &rules);
         replay
             .restore_map_authority_after_snapshot_load(&rules, &registry, None)

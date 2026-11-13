@@ -11,6 +11,24 @@ fn tone_rgb(tone: ListFrameTone) -> [f32; 3] {
     tone.rgb().map(|channel| f32::from(channel) / 255.0)
 }
 
+/// The list's two frame rings around `window`, for a list and for a box
+/// that sits against one.
+pub(crate) fn paint_list_frame(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    window: RectPx,
+) {
+    for (line, tone) in list_frame_lines(window) {
+        push_solid_rect(
+            out,
+            atlas,
+            line,
+            tone_rgb(tone),
+            SHELL_DROPDOWN_DEPTH - 0.00012,
+        );
+    }
+}
+
 /// A list over its dialog's background: the selected row's fill, the two
 /// frame rings around the window (the paint surface less its extra column
 /// and row) and, when the rows overflow, the scrollbar child. The native
@@ -46,9 +64,7 @@ pub(crate) fn paint_list(
     }
     let outer = geometry.outer;
     let window = RectPx::new(outer.x, outer.y, outer.w - 1, outer.h - 1);
-    for (line, tone) in list_frame_lines(window) {
-        push_solid_rect(out, atlas, line, tone_rgb(tone), depth - 0.00002);
-    }
+    paint_list_frame(out, atlas, window);
     let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) else {
         return;
     };

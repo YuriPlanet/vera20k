@@ -419,11 +419,8 @@ mod tests {
             image: None,
             cameo: None,
             alt_cameo: None,
-            #[cfg(feature = "ares")]
             cameo_pcx: None,
-            #[cfg(feature = "ares")]
             alt_cameo_pcx: None,
-            #[cfg(feature = "ares")]
             cameo_palette: None,
             new_theater: false,
             theater: false,

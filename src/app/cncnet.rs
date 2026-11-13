@@ -372,6 +372,7 @@ impl App {
                 .as_deref()
                 .unwrap_or_default()
         );
+        let request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
         if let SpawnGame::Network(network) = &request.game {
             match &network.transport {
                 // Browsers cannot open the UDP sockets direct play needs.

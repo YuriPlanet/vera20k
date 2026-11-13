@@ -205,8 +205,8 @@ fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64, pla
 }
 
 /// The `planar` argument of [`direct_reaches`] for `attacker`.
-fn direct_reach_is_planar(attacker: &GameEntity) -> bool {
-    crate::rules::ARES_ENABLED && attacker.category() == EntityCategory::Aircraft
+fn direct_reach_is_planar(attacker: &GameEntity, ares: bool) -> bool {
+    ares && attacker.category() == EntityCategory::Aircraft
 }
 
 /// `0x006F727E..0x006F729F`: an occupied building
@@ -590,7 +590,7 @@ pub(crate) fn compute_range_target(
         src,
         (tx, ty, tz),
         max_range_lep,
-        direct_reach_is_planar(attacker),
+        direct_reach_is_planar(attacker, rules.ares()),
     ) {
         return false;
     }
@@ -630,17 +630,13 @@ fn line_of_fire_clear(
     cells: &NativeCellQuery<'_>,
     los: &LineOfFireInputs<'_>,
 ) -> bool {
-    #[cfg(not(feature = "ares"))]
-    let _ = target;
     line_of_fire::line_of_fire_blocking_cell(
         src,
         target_xyz,
         weapon,
         line_of_fire::LineOfFireParties {
             firing_house: Some(attacker.owner()),
-            #[cfg(feature = "ares")]
             source_object: Some(attacker.stable_id()),
-            #[cfg(feature = "ares")]
             target_object: match target {
                 RangeTarget::Techno(target) => Some(target.stable_id()),
                 _ => None,
@@ -991,7 +987,6 @@ impl crate::sim::world::Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
-                    #[cfg(feature = "ares")]
                     buildings: Some(line_of_fire::CellBuildings::of(self)),
                 },
             )
@@ -1128,7 +1123,7 @@ pub fn mapless_in_range(
         src,
         target,
         range + foundation,
-        direct_reach_is_planar(attacker),
+        direct_reach_is_planar(attacker, rules.ares()),
     )
 }
 
@@ -2627,9 +2622,9 @@ mod tests {
     /// its target to `FindFirstImpenetrableObstacle 1006E1F0`: a solid
     /// building refuses a `SubjectToBuildings=` shot past it, while its own
     /// cells never block a shot at it.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_a_solid_building_refuses_shots_past_it_but_not_at_it() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::movement::locomotor::MovementLayer;
         use crate::sim::occupancy::CellListInsertion;
         let rules = RuleSet::from_ini_with_fixed_art_for_test(

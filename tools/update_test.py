@@ -383,8 +383,12 @@ def tamper(objects: Path, scenario: str, version: str) -> None:
 
 def report(work: Path, game: Game | None) -> None:
     """What a failed run leaves to explain it: the setup and game logs (the
-    Windows ones are all under `work`) and, on Windows, the game and setup
-    processes still running."""
+    Windows ones are all under `work`) and the processes still running. On
+    Windows those are the game and setup. On macOS they are the game and the
+    helper an update starts (src/app/updater/install.rs), which waits for the
+    game to exit and then starts the new version with `open`: all of them name
+    the app. The stacks of each game process show where it is stuck, and the
+    system log whether `open` ran."""
     logs = set(work.rglob("*.log"))
     if game and game.log.exists():
         logs.add(game.log)
@@ -394,6 +398,26 @@ def report(work: Path, game: Game | None) -> None:
         listing = subprocess.run(["tasklist", "/V", "/FI", "IMAGENAME eq vera20k*"], capture_output=True,
                                  text=True, timeout=30)
         print(f"--- vera20k* processes:\n{listing.stdout}{listing.stderr}", flush=True)
+    if platform() != "macos":
+        return
+    listing = subprocess.run(["ps", "-A", "-ww", "-o", "pid,ppid,pgid,stat,etime,args"], capture_output=True,
+                             text=True, timeout=30)
+    header, *rows = listing.stdout.splitlines() or [""]
+    rows = [row for row in rows if str(MAC_APP) in row]
+    print("--- processes naming the app:\n" + "\n".join([header, *rows]) + f"\n{listing.stderr}", flush=True)
+    if game is None:
+        return
+    for pid, *_, args in (row.split(None, 5) for row in rows):
+        if args.startswith(str(game.program)):
+            stacks = work / f"sample-{pid}.txt"
+            sampled = subprocess.run(["sample", pid, "1", "-file", stacks], capture_output=True, text=True,
+                                     timeout=120)
+            text = stacks.read_text("utf-8", "replace") if stacks.exists() else sampled.stdout + sampled.stderr
+            graph = text[max(text.find("Call graph:"), 0):].split("Binary Images:")[0]
+            print(f"--- process {pid}'s stacks, first 8000 characters:\n{graph[:8000]}", flush=True)
+    opened = subprocess.run(["log", "show", "--style", "compact", "--last", "20m", "--predicate",
+                             'process == "open"'], capture_output=True, text=True, timeout=120)
+    print(f"--- open in the system log, last 20 minutes:\n{opened.stdout[-4000:]}{opened.stderr}", flush=True)
 
 
 def command_run(args) -> None:

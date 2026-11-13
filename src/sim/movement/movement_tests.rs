@@ -873,26 +873,14 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
                 );
                 loaded.restore_after_snapshot_load().unwrap();
                 loaded.resolve_type_handles(&rules);
-                assert!(
-                    loaded
-                        .zone_grid
-                        .as_deref()
-                        .unwrap()
-                        .is_native_load_pending()
-                );
+                assert!(loaded.zone_grid.as_ref().unwrap().is_native_load_pending());
                 loaded.rebuild_caches_after_load(
                     terrain.clone(),
                     sim.terrain_speed_config().clone(),
                     &rules,
                 );
                 assert!(loaded.rebuild_dynamic_navigation(&rules));
-                assert!(
-                    !loaded
-                        .zone_grid
-                        .as_deref()
-                        .unwrap()
-                        .is_native_load_pending()
-                );
+                assert!(!loaded.zone_grid.as_ref().unwrap().is_native_load_pending());
                 let loaded_entries: Vec<_> = loaded
                     .substrate
                     .occupancy
