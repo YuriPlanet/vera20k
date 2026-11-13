@@ -418,7 +418,7 @@ impl MinimapRenderer {
     /// pixels, uploaded for [`Self::encode_composition`] to compose.
     /// Returns a dirty generation only after completion so the app can ack it;
     /// unchanged simulation/view inputs reuse the existing picture.
-    pub fn update_unit_dots(
+    pub(crate) fn update_unit_dots(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,

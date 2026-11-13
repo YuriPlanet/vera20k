@@ -233,6 +233,7 @@ impl MissionCom {
         self.movement_bypass_latch = 0;
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn increment_ai_counter(&mut self) {
         self.count_ai_visit();
     }

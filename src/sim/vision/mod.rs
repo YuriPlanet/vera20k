@@ -1254,6 +1254,7 @@ impl FogState {
 
     /// `viewer`'s accepted map contribution for source `id`. Native
     /// +0x250/+0x254/+0x260 metadata is kept by [`Self::source_sight`].
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn sight_admission(&self, id: u64, viewer: InternedId) -> Option<&SightAdmission> {
         self.sight_admissions.get(&(id, viewer))
     }

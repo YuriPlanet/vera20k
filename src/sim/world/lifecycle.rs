@@ -1212,6 +1212,7 @@ impl Simulation {
 
     /// [`Self::reveal`] for an entity, with the rules context the type-reading
     /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn reveal_entity_with_rules(
         &mut self,
         stable_id: u64,

@@ -17,7 +17,6 @@ use crate::sim::movement::infantry_entry::{InfantryEntryArgs, InfantryEntryClass
 use crate::sim::world::{
     FrameEffects, PlacementEvidence, RevealOutcome, RevealRequest, Simulation, UninitContext,
 };
-use crate::util::lepton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GarrisonEjectMode {
@@ -516,6 +515,7 @@ pub(crate) mod tests {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::LocomotorState;
+    use crate::util::lepton;
 
     /// A clear map with its playfield: `SellBuilding`'s exit probe and the
     /// occupants' Scatter read the live cells.

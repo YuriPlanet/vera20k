@@ -204,7 +204,6 @@ pub(crate) struct LocomotorView {
     rocket: Option<RocketDraw>,
     /// A Tunnel locomotor's `Is_To_Have_Shadow`.
     tunnel_has_shadow: Option<bool>,
-    speed_type: crate::rules::locomotor_type::SpeedType,
     /// A Drive locomotor's track destination and head.
     drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
 }
@@ -236,7 +235,6 @@ impl LocomotorView {
             tunnel_has_shadow: locomotor
                 .tunnel_runtime()
                 .map(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow),
-            speed_type: locomotor.speed_type(),
             drive_track: (kind == crate::rules::locomotor_type::LocomotorKind::Drive).then(|| {
                 [
                     locomotor.track_destination(TrackFamily::Drive),
@@ -265,10 +263,6 @@ impl LocomotorView {
     /// A Tunnel locomotor's `Is_To_Have_Shadow`; `None` for other kinds.
     pub(crate) fn tunnel_has_shadow(&self) -> Option<bool> {
         self.tunnel_has_shadow
-    }
-
-    pub(crate) fn speed_type(&self) -> crate::rules::locomotor_type::SpeedType {
-        self.speed_type
     }
 
     /// A Drive locomotor's track destination and head.
@@ -353,7 +347,6 @@ impl AirstrikeDesignation {
 /// What drawing reads of an object's radio contact 0.
 #[derive(Clone, Debug)]
 pub(crate) struct Contact {
-    pub(crate) id: u64,
     pub(crate) category: EntityCategory,
     pub(crate) type_ref: InternedId,
     pub(crate) mission: Mission,
@@ -496,7 +489,6 @@ impl Place {
                 .slot(0)
                 .and_then(|id| sim.entities().get(id))
                 .map(|contact| Contact {
-                    id: contact.stable_id(),
                     category: contact.category(),
                     type_ref: contact.type_ref(),
                     mission: Mission::of(&contact.mission),
@@ -1140,10 +1132,6 @@ pub(crate) struct Flashing {
 }
 
 impl Flashing {
-    pub(crate) fn frames(&self) -> i32 {
-        self.frames
-    }
-
     /// Bit 1 of the countdown (`sim::flashing::Flashing::flashed`).
     pub(crate) fn flashed(&self) -> bool {
         self.frames & 2 != 0
@@ -1153,7 +1141,6 @@ impl Flashing {
 /// Every stored object's record, for one world state and local player.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PresentationFrame {
-    binary_frame: u32,
     /// In ascending stable-id order, which [`Self::object`] searches.
     objects: Vec<ObjectRecord>,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
@@ -1211,17 +1198,11 @@ impl PresentationFrame {
             .collect();
         let psychic_detection = at.psychic.is_some();
         Self {
-            binary_frame: at.binary_frame,
             objects,
             anim_coords,
             scene,
             psychic_detection,
         }
-    }
-
-    /// The committed binary frame the records were captured at.
-    pub(crate) fn binary_frame(&self) -> u32 {
-        self.binary_frame
     }
 
     pub(crate) fn object(&self, id: u64) -> Option<&ObjectRecord> {

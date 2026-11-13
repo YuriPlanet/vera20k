@@ -2142,7 +2142,6 @@ fn disguise_inputs(
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
-        let local = crate::app::input::commands::preferred_local_owner_name(state);
         // The record the draw reads (`presentation::frame`).
         let frame = state
             .match_state
