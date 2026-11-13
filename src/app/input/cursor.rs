@@ -461,23 +461,21 @@ impl<'a> ActionQuery<'a> {
         })
     }
 
-    /// Whether `FootClass::What_Action_OnCell @ 0x004DDDE0` takes object
-    /// `id`'s answer back over `cell`: over a Cell centre its player's map
-    /// shrouds, a Foot turns any answer but 0 into Move or NoMove
-    /// (`0x004DDE64..0x004DDEBE`); the callers then answer the empty-cell
-    /// ladder. The Building wrapper (`0x00447540`) has no shroud test, so a
-    /// building keeps its Attack.
+    /// Foot's Cell wrapper (`FootClass::What_Action_OnCell @ 0x004DDDE0`,
+    /// [`Simulation::foot_cell_shroud_action`]) for object `id`'s Cell Attack
+    /// rung answer, as the cursor shows it: Move or NoMove over a Cell its
+    /// player's map shrouds. `None` keeps the answer, as a Building's wrapper
+    /// (`0x00447540`) does, and under the sandbox's full visibility.
     ///
-    /// RESIDUAL: a Foot that cannot move answers the forced Attack only with
-    /// the Cell in range (`0x00700600`), and the wrapper turns that into Move
-    /// or NoMove, where its empty-cell ladder here answers 0, the arrow.
-    /// Trigger: Ctrl over shroud with such a Foot leading the selection.
-    /// Effect: the cursor only, as neither order moves it. Rare; no
-    /// downstream risk.
-    fn foot_over_shroud(&self, id: u64, cell: (u16, u16)) -> bool {
-        self.sim.entities().get(id).is_some_and(|entity| {
-            entity.category() != crate::map::entities::EntityCategory::Structure
-        }) && self.cell_shrouded(cell)
+    /// [`Simulation::foot_cell_shroud_action`]: crate::sim::world::Simulation::foot_cell_shroud_action
+    fn foot_cell_shroud_feedback(&self, id: u64, cell: (u16, u16)) -> Option<CursorFeedbackKind> {
+        if self.full_visibility {
+            return None;
+        }
+        let action = self
+            .sim
+            .foot_cell_shroud_action(self.viewer?, id, cell, self.rules?)?;
+        Some(move_action_feedback(action, self.modifier, self.order_mode))
     }
 
     /// The best selected object's What_Action on `hover_object`, or on the
@@ -611,30 +609,34 @@ impl<'a> ActionQuery<'a> {
         // every ACTION_ATTACK arm when it fails. It consults ONE weapon slot, so
         // `Primary=`/`Secondary=` is the wrong test for a `TurretCount>0` type —
         // it hid the force-fire cursor for the Prism Tank and the Gattling Cannon.
-        // Over a shrouded Cell a Foot's wrapper takes the shot back to its Move
-        // rungs; a Building keeps it.
-        let foot_shrouded = best_id.is_some_and(|id| self.foot_over_shroud(id, (cell_rx, cell_ry)));
-        if forced && !foot_shrouded {
+        // Over a shrouded Cell a Foot's wrapper turns either rung's nonzero
+        // answer into Move or NoMove; a Building keeps it.
+        let cell = (cell_rx, cell_ry);
+        if forced {
             let target = combat::TargetKind::Cell(cell_rx, cell_ry);
-            if let Some(feedback) = best_id.and_then(|id| {
+            if let Some((id, feedback)) = best_id.and_then(|id| {
                 force_fire_feedback(sim, id, &target, selected.len(), self.rules, self.overlays)
+                    .map(|feedback| (id, feedback))
             }) {
-                return feedback;
+                return feedback
+                    .map(|kind| self.foot_cell_shroud_feedback(id, cell).unwrap_or(kind));
             }
         }
-        if let Some(feedback) = unforced_cell_attack_feedback(
-            sim,
-            foot_shrouded,
-            best_id,
-            (cell_rx, cell_ry),
-            modifier,
-            selected.len(),
-            self.rules,
-            self.overlays,
-        ) {
-            return Some(feedback);
+        if let Some((id, feedback)) = best_id.and_then(|id| {
+            unforced_cell_attack_feedback(
+                sim,
+                id,
+                cell,
+                modifier,
+                selected.len(),
+                self.rules,
+                self.overlays,
+            )
+            .map(|feedback| (id, feedback))
+        }) {
+            return Some(self.foot_cell_shroud_feedback(id, cell).unwrap_or(feedback));
         }
-        Some(self.empty_cell(best_id, (cell_rx, cell_ry)))
+        Some(self.empty_cell(best_id, cell))
     }
 
     /// The cursor over a Cell with no object offered: the resolved object's
@@ -722,15 +724,13 @@ pub(crate) fn terrain_object_feedback(
 /// rungs, so it answers under every chord but Ctrl (the forced rung above)
 /// and Ctrl+Alt. Its tail is the forced shot's; an answer other than Attack
 /// or a healing Unit's AttackSupport (the arrow, `0x007404FD`) falls through
-/// to the Move rungs. `foot_shrouded` is Foot's shroud wrapper turning it
-/// back into Move or NoMove ([`ActionQuery::foot_over_shroud`]).
+/// to the Move rungs. Foot's shroud wrapper comes after it
+/// ([`ActionQuery::foot_cell_shroud_feedback`]).
 ///
 /// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
-#[allow(clippy::too_many_arguments)]
 fn unforced_cell_attack_feedback(
     sim: &crate::sim::world::Simulation,
-    foot_shrouded: bool,
-    best_id: Option<u64>,
+    id: u64,
     cell: (u16, u16),
     modifier: crate::app::input::context_order::OrderModifier,
     selected_count: usize,
@@ -738,12 +738,10 @@ fn unforced_cell_attack_feedback(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<CursorFeedbackKind> {
     use crate::app::input::context_order::OrderModifier;
-    let id = best_id?;
     if matches!(
         modifier,
         OrderModifier::ForceFire | OrderModifier::GuardArea
-    ) || foot_shrouded
-        || !sim.cell_attack_rung_admits(id, cell, rules?, overlay_registry)
+    ) || !sim.cell_attack_rung_admits(id, cell, rules?, overlay_registry)
     {
         return None;
     }
@@ -816,14 +814,29 @@ fn empty_cell_cursor(
     if refinery_harvest {
         return CursorFeedbackKind::Harvest;
     }
-    match order_mode {
-        crate::app::presentation::render::OrderMode::Move
+    move_action_feedback(MoveAction::Move, modifier, order_mode)
+}
+
+/// A Move rung's answer as the cursor shows it: 0 the arrow, NoMove its row,
+/// and Move attack-move while the attack-move chord or mode is active.
+fn move_action_feedback(
+    action: crate::sim::world::MoveAction,
+    modifier: crate::app::input::context_order::OrderModifier,
+    order_mode: crate::app::presentation::render::OrderMode,
+) -> CursorFeedbackKind {
+    use crate::app::presentation::render::OrderMode;
+    use crate::sim::world::MoveAction;
+    match (action, order_mode) {
+        (MoveAction::None, _) => CursorFeedbackKind::Default,
+        (MoveAction::NoMove, _) => CursorFeedbackKind::Invalid,
+        (MoveAction::Harvest, _) => CursorFeedbackKind::Harvest,
+        (MoveAction::Move, OrderMode::Move)
             if modifier == super::context_order::OrderModifier::AttackMove =>
         {
             CursorFeedbackKind::AttackMove
         }
-        crate::app::presentation::render::OrderMode::Move => CursorFeedbackKind::Move,
-        crate::app::presentation::render::OrderMode::AttackMove => CursorFeedbackKind::AttackMove,
+        (MoveAction::Move, OrderMode::Move) => CursorFeedbackKind::Move,
+        (MoveAction::Move, OrderMode::AttackMove) => CursorFeedbackKind::AttackMove,
     }
 }
 
@@ -3065,8 +3078,7 @@ mod tests {
         let feedback = |cell, modifier| {
             super::unforced_cell_attack_feedback(
                 &sim,
-                false,
-                Some(tank),
+                tank,
                 cell,
                 modifier,
                 1,

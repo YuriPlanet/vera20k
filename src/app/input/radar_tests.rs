@@ -196,7 +196,9 @@ fn a_forced_ivan_over_a_bombed_dot_has_no_radar_action() {
 /// wrapper (`0x00447540`) keeps it, so the radar keeps it and its release
 /// fires as the tactical click does, while the tactical cursor's shrouded
 /// switch draws it as Move (`0x004AB35A`). A tank's Foot wrapper
-/// (`0x004DDDE0`) turns it into Move, unless the sandbox shows every Cell.
+/// (`0x004DDDE0`) turns it into Move, unless the sandbox shows every Cell,
+/// and so it does for a deactivated tank the player cannot order
+/// (`0x00700C40`), whose forced Attack Techno answers with the Cell in range.
 #[test]
 fn ctrl_over_shroud_keeps_a_buildings_attack() {
     let Some((mut sim, rules)) = scene() else {
@@ -204,8 +206,18 @@ fn ctrl_over_shroud_keeps_a_buildings_attack() {
     };
     let pillbox = spawn(&mut sim, &rules, "GAPILL", (12, 5));
     let tank = spawn(&mut sim, &rules, "MTNK", (4, 6));
+    let deactivated = spawn(&mut sim, &rules, "MTNK", (12, 6));
+    sim.entities_mut_for_test()
+        .get_mut(deactivated)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
     *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
     let (pillboxes, tanks) = ([pillbox], [tank]);
+    assert_eq!(
+        action(&ctrl(&sim, &rules, &[deactivated]), None, GROUND, None),
+        Some(RadarAction::Move)
+    );
     assert!(!ctrl(&sim, &rules, &pillboxes).cell_visible(GROUND));
     assert_eq!(
         action(&ctrl(&sim, &rules, &pillboxes), None, GROUND, None),
@@ -231,6 +243,39 @@ fn ctrl_over_shroud_keeps_a_buildings_attack() {
     assert_eq!(
         action(&revealed, None, GROUND, None),
         Some(RadarAction::Attack)
+    );
+}
+
+/// Foot's Cell wrapper asks IsShrouded (`0x00586360`) at the Cell centre
+/// raised to its bridge deck (`0x004DDDE0`), for the click as
+/// for the cursor: the river bridge Cell (9,6) is level 0 with its deck four
+/// levels up, so the test reads Cell (7,4), not (9,6).
+#[test]
+fn the_foot_shroud_test_reads_the_bridge_deck() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let (mut sim, rules, soldier) = Simulation::walk_cell_input_test_scene_with(battle.rules, true);
+    let local = sim.interner().get("Local").unwrap();
+    let mapped_but = |sim: &mut Simulation, hidden: (u16, u16)| {
+        let fog = sim.fog_mut_for_test();
+        *fog = crate::sim::vision::FogState::new(16, 16);
+        fog.reveal_cells_for_owner(
+            local,
+            (0..16)
+                .flat_map(|y| (0..16).map(move |x| (x, y)))
+                .filter(|&cell| cell != hidden),
+        );
+    };
+    mapped_but(&mut sim, (7, 4));
+    assert!(
+        sim.foot_cell_shroud_action(local, soldier, (9, 6), &rules)
+            .is_some()
+    );
+    mapped_but(&mut sim, (9, 6));
+    assert_eq!(
+        sim.foot_cell_shroud_action(local, soldier, (9, 6), &rules),
+        None
     );
 }
 
