@@ -1174,6 +1174,25 @@ pub(super) fn game_joined(state: &mut AppState, ok: bool) {
     }
 }
 
+/// The admission `0x0079BA60` refused the host's game, so `0x00789960`
+/// sends no join and the join answers false ([`game_joined`]).
+/// VERA: gamemd's Quick Match says no more; the refusal's line follows.
+/// A rules difference is worded as the pre-match check words it:
+/// `TXT_MISMATCH` sends players to Westwood's site for a newer version.
+pub(super) fn game_refused(state: &mut AppState, reason: Option<&'static str>) {
+    game_joined(state, false);
+    if let Some(key) = refusal_line(reason) {
+        csf_line(state, key, ERROR_COLOR);
+    }
+}
+
+fn refusal_line(reason: Option<&'static str>) -> Option<&'static str> {
+    match reason? {
+        "TXT_MISMATCH" => Some("VERA:MatchStartMismatch"),
+        key => Some(key),
+    }
+}
+
 /// `0x0077E900`'s Quick Match tail on the host: stage 9 (90 s) as
 /// StartGame goes out.
 pub(crate) fn start_requested(state: &mut AppState) {
@@ -1756,6 +1775,34 @@ mod tests {
             original_game_refusal(true, &changes),
             Some("VERA:QuickMatchNoMod")
         );
+    }
+
+    #[test]
+    fn a_refused_join_says_the_games_differ() {
+        use crate::ui::wol_lobby::{AdmissionContext, GAME_QUICK_MATCH, admit};
+        let host = WolChannel {
+            kind: GAME_CHANNEL,
+            max_users: 2,
+            users: 1,
+            game_flags: GAME_QUICK_MATCH,
+            name: "Host's_game".into(),
+            ex_info: "25,7,0,0,0,x".into(),
+            ..Default::default()
+        };
+        let same = AdmissionContext {
+            quick_match: true,
+            clan_id: 0,
+            local_hash: Some(7),
+            vera_rooms: true,
+        };
+        assert_eq!(admit(&host, false, same), Ok(()));
+        let changed = AdmissionContext {
+            local_hash: Some(8),
+            ..same
+        };
+        let reason = admit(&host, false, changed).unwrap_err();
+        assert_eq!(refusal_line(reason), Some("VERA:MatchStartMismatch"));
+        assert_eq!(refusal_line(None), None);
     }
 
     #[test]
