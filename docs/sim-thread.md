@@ -244,16 +244,21 @@ eight milliseconds): at GameSpeed 0, which never waits, that is up to eight
 frames a picture. A frame that another pass will follow
 (`LocalFramePacer::another_pass_follows`: another frame is due, and the
 budget is still open after this one's expected tick time) ticks inline, as
-it did before the thread, and publishes nothing. The frame nothing follows
-is lent, and the service ends there: another pass would only find it
-running.
+it did before the thread, and publishes nothing, unless lending it is
+measured cheaper (below). The frame nothing follows is lent, and the
+service ends there: another pass would only find it running; a lent
+catch-up frame ends it the same way, and the tick's end wakes the pass that
+runs the next frame due.
 Debug speed's extra frames follow the same rule.
 
 A lent tick frees the main thread from the tick and costs it the frame's
 copy when the tick leaves, any wait for it, and the frame's drop
 (`SimHost::lend_cost`). A frame whose
 tick is expected to cost the main thread less than the last lent one did
-ticks inline as well. In a 1v29 skirmish on the 30-start map the frame costs
+ticks inline as well (`sim_tick::frame_ticks_inline`). A frame that hashes
+its state for the replay log goes whatever the estimate says: it costs far
+more than the frames around it, which the estimate follows, and on a large
+map the hash alone can take longer than a frame's budget. In a 1v29 skirmish on the 30-start map the frame costs
 more than a tick until the battle is large, so lending every last frame made
 GameSpeed 0 run 8 to 22% slower there, and far slower when other programs
 kept the simulation thread waiting for a core.

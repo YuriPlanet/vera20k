@@ -1282,20 +1282,18 @@ fn advance_in_game_runtime_mode(
                 .frame_pacer
                 .record_admitted_frame(frame_start_ms);
         }
-        // Only the last frame before the draw goes to the simulation thread
-        // (docs/sim-thread.md): one the service or debug speed follows with
-        // another ticks inline, as before the thread, and publishes nothing.
-        // It goes only when that saves this thread time: a tick expected to
-        // cost less here than the last lent one did, in its frame's copy and
-        // drop and the wait for it, ticks inline too.
+        // Which frames go to the simulation thread: [`frame_ticks_inline`]
+        // (docs/sim-thread.md).
         let (game_speed, network_fps) = local_pacing_inputs(state);
         let pacer = &state.platform.frame_pacer;
-        let worth_lending = super::sim_host::sim_thread_always()
-            || state
-                .match_state
-                .sim_runtime
-                .lend_cost()
-                .is_none_or(|lent| pacer.expected_frame_cost() > lent);
+        let hashes_state = !replaying
+            && state.match_state.sim_runtime.runtime().is_some_and(|rt| {
+                rt.simulation
+                    .session()
+                    .tick()
+                    .saturating_add(1)
+                    .is_multiple_of(crate::sim::replay::PLAY_HASH_INTERVAL.get())
+            });
         let now = crate::util::time::Instant::now();
         // Online, the relay's frontier and the online pacer admit the next
         // frame (the catch-up loop in `App::service_match_runtime`).
@@ -1335,10 +1333,14 @@ fn advance_in_game_runtime_mode(
                 network_fps,
             ),
         };
-        let inline = frame_stepping
-            || matches!(mode, RuntimeAdvanceMode::ExactOneStep)
-            || !worth_lending
-            || another_pass_follows;
+        let inline = frame_ticks_inline(
+            frame_stepping || matches!(mode, RuntimeAdvanceMode::ExactOneStep),
+            super::sim_host::sim_thread_always(),
+            hashes_state,
+            another_pass_follows,
+            state.match_state.sim_runtime.lend_cost(),
+            pacer.expected_frame_cost(),
+        );
         let debug_frames = if !frame_stepping && !replaying && debug_speed_allowed(state) {
             state.platform.frame_pacer.debug_speed().saturating_sub(1)
         } else {
@@ -1618,6 +1620,29 @@ fn after_simulation_pass(
 
 /// The GameSpeed and network FPS (with lag delay) the local pacer times
 /// Main_Tick by; sequenced online play paces with its own clock instead.
+/// Whether an admitted frame ticks on this thread instead of going to the
+/// simulation thread (docs/sim-thread.md). A frame goes only when that saves
+/// this thread time: one expected to cost less here than the last lent one
+/// did (`lend_cost`: its copy, drop and any wait) ticks inline. A frame that
+/// another pass of the service follows (`another_pass_follows`) ticks inline
+/// too unless lending it is measured cheaper. A frame that hashes its state
+/// for the replay log always goes: it costs far more than the frames around
+/// it, whose cost the estimate follows, and its tick is known before it runs.
+fn frame_ticks_inline(
+    must_tick_inline: bool,
+    always_lend: bool,
+    hashes_state: bool,
+    another_pass_follows: bool,
+    lend_cost: Option<std::time::Duration>,
+    expected_cost: std::time::Duration,
+) -> bool {
+    let lending_is_cheaper = lend_cost.is_some_and(|lent| expected_cost > lent);
+    let worth_lending = always_lend || hashes_state || lend_cost.is_none() || lending_is_cheaper;
+    must_tick_inline
+        || !worth_lending
+        || (another_pass_follows && !(lending_is_cheaper || hashes_state))
+}
+
 pub(crate) fn local_pacing_inputs(state: &AppState) -> (u8, Option<(u16, u32)>) {
     let game_speed = state
         .match_state
@@ -3397,8 +3422,8 @@ pub(crate) fn screen_point_to_world_cell(
 #[cfg(test)]
 mod tests {
     use super::{
-        ExactStepError, ExactStepReceipt, upsert_overlay_entries, validate_exact_step_receipt,
-        world_point_to_cell,
+        ExactStepError, ExactStepReceipt, frame_ticks_inline, upsert_overlay_entries,
+        validate_exact_step_receipt, world_point_to_cell,
     };
     use crate::map::overlay::OverlayEntry;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
@@ -3416,6 +3441,34 @@ mod tests {
             overlay_id,
             frame,
         }
+    }
+
+    /// A catch-up frame goes to the simulation thread when lending is
+    /// measured cheaper, a frame that hashes goes whatever the estimate
+    /// says, and the rest tick here as before.
+    #[test]
+    fn costly_frames_go_to_the_simulation_thread() {
+        let ms = |n| Some(std::time::Duration::from_millis(n));
+        // (hashes, another pass follows, last lent cost, expected cost)
+        let inline = |hashes, follows, lent, expected: Option<_>| {
+            frame_ticks_inline(false, false, hashes, follows, lent, expected.unwrap())
+        };
+        // Another pass follows: lent when the last lent frame cost less.
+        assert!(!inline(false, true, ms(1), ms(4)));
+        assert!(inline(false, true, ms(4), ms(1)));
+        // A frame that hashes goes, even with lending dearer.
+        assert!(!inline(true, true, ms(4), ms(1)));
+        // The last frame of a pass, lending dearer: here, as before.
+        assert!(inline(false, false, ms(4), ms(1)));
+        // Frame stepping and exact steps always tick here.
+        assert!(frame_ticks_inline(
+            true,
+            false,
+            true,
+            false,
+            None,
+            ms(1).unwrap()
+        ));
     }
 
     #[test]
