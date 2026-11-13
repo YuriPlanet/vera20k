@@ -151,12 +151,14 @@ storage with the world the simulation thread ticks:
   its objects. It leaves out the objects (its entity store is
   `EntityStore::detached`, which panics on a read in debug builds, so a
   drawer that still reaches for an object shows up in any draw), the zone
-  and path grids, the team script VM and the other state only gameplay
-  reads. Its fog is only the local player's (`FogState::presentation_copy`);
-  its terrain, overlays, smudges, terrain objects, interner and occupation
-  grids are the previous copy brought up to date by copying only the chunks
-  a write changed (`util::synced`); its Dummy cell, ally graph and Main RNG
-  are its own. Release builds take it when a tick is lent; debug builds with
+  and path grids, the team script VM, the Houses' spatial threat grids and
+  the other state only gameplay reads. Its fog is only the local player's
+  (`FogState::presentation_copy`), whose shroud knowledge, like its terrain,
+  overlays, smudges, terrain objects, interner and occupation grids, is the
+  previous copy brought up to date by copying only the chunks a write
+  changed (`util::synced`); the clone of the rest and the fog copy run at
+  once beside those syncs. Its Dummy cell, ally graph and Main RNG are its
+  own. Release builds take it when a tick is lent; debug builds with
   every frame, so every test draw reads a lent tick's view.
 
 The app's Main RNG is its own cell from a scenario's install on

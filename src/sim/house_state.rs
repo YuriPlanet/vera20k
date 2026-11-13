@@ -2537,6 +2537,23 @@ impl HouseState {
         }
     }
 
+    /// Lend the spatial threat grid out, leaving none
+    /// ([`crate::sim::house_threat::HouseSpatialThreat::none`]).
+    pub(crate) fn take_spatial_threat(&mut self) -> crate::sim::house_threat::HouseSpatialThreat {
+        std::mem::replace(
+            &mut self.spatial_threat,
+            crate::sim::house_threat::HouseSpatialThreat::none(),
+        )
+    }
+
+    /// Give back the grid [`Self::take_spatial_threat`] lent out.
+    pub(crate) fn restore_spatial_threat(
+        &mut self,
+        grid: crate::sim::house_threat::HouseSpatialThreat,
+    ) {
+        self.spatial_threat = grid;
+    }
+
     pub(crate) fn configure_spatial_threat_grid(&mut self, grid: crate::map::cell_index::CellGrid) {
         self.spatial_threat.configure(grid);
     }

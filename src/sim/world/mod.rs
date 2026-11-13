@@ -4853,7 +4853,8 @@ impl Simulation {
     /// - it holds no objects (its entity store is [`EntityStore::detached`];
     ///   the presentation frame holds their draw records), and none of the
     ///   state only gameplay reads (the zone and path grids, the team script
-    ///   VM, the movement pass's kept products, the reveal pass's answers);
+    ///   VM, the movement pass's kept products, the reveal pass's answers,
+    ///   the Houses' spatial threat grids);
     /// - its fog is only what `viewer`, the local player, sees
     ///   ([`FogState::presentation_copy`]);
     /// - its terrain, overlays, smudges, terrain objects, interner and
@@ -4867,13 +4868,20 @@ impl Simulation {
         reuse: Option<Simulation>,
     ) -> Simulation {
         // What the copy leaves out.
-        let fog = std::mem::take(&mut self.fog);
+        let mut fog = std::mem::take(&mut self.fog);
         let entities = std::mem::replace(&mut self.substrate.entities, EntityStore::detached());
         let zone_grid = self.zone_grid.take();
         let path_grid = self.path_grid.take();
         let team_script_vm = std::mem::take(&mut self.team_script_vm);
         let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
         let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        // Each House's spatial threat grid (a large map's is 66,564 dwords,
+        // thirty Houses about 8 MB) is AI state only gameplay reads.
+        let spatial_threats: Vec<_> = self
+            .houses
+            .values_mut()
+            .map(HouseState::take_spatial_threat)
+            .collect();
         #[cfg(any(test, feature = "test-support"))]
         let test_recorders = (
             std::mem::take(&mut self.lifecycle_test_events),
@@ -4889,13 +4897,26 @@ impl Simulation {
             crate::sim::parallel::drop_on_pool(old);
             (theirs, old_fog)
         });
-        let mut rest = None;
+        let mut copy = None;
+        let mut fog_copy = None;
         let this = &*self;
+        let fog_ref = &mut fog;
+        // The three parts share only reads, so they run at once: the syncs
+        // and the viewer's fog on the pool, the clone of the rest here.
         crate::sim::parallel::alongside(
             || synced.sync_into(&mut theirs),
-            || rest = Some((this.clone(), fog.presentation_copy(viewer, old_fog))),
+            || {
+                crate::sim::parallel::alongside(
+                    || fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog)),
+                    || copy = Some(this.clone()),
+                )
+            },
         );
-        let (mut copy, fog_copy) = rest.expect("cloned beside the syncs");
+        for (house, grid) in self.houses.values_mut().zip(spatial_threats) {
+            house.restore_spatial_threat(grid);
+        }
+        let mut copy = copy.expect("cloned beside the syncs");
+        let fog_copy = fog_copy.expect("fog copied beside the clone");
         synced.put(self);
         theirs.put(&mut copy);
         copy.fog = fog_copy;
