@@ -389,17 +389,16 @@ Not done:
 
 - **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. Measured
   in a release build on sim-bench's 20,000-unit, 30-house march, on a
-  12-core machine other builds kept at a load of 30–50, the main thread's
-  part per lent tick: capturing the frame 5.0 ms (records and scene frame
-  side by side), syncing the world copy 3.8 ms, freeing the old frame 0 ms
-  (3.2 ms of pool work). Before these changes: 10.7 + 3.1 ms capture,
-  6.8 ms copy, 3.4 ms freeing. A record is 1,200 bytes. The records are
-  bound by reading 20,000 objects scattered in memory: each touches several
-  cache lines of its `GameEntity`. Left: answer placement, lighting and the
-  status strip only for objects near the screen (radar facts stay for
-  every object); slim the records (a Drive or Walk locomotor's payload is a
-  heap allocation per record); copy the fog plane into the previous copy's
-  buffers.
+  12-core machine other builds kept at a load of 30–40, the main thread's
+  part per lent tick: capturing the frame 5.0–5.6 ms (records and scene
+  frame side by side), syncing the world copy 3.5–3.8 ms, freeing the old
+  frame 0 ms (1.6–1.9 ms of pool work), 8.5–9.4 ms in all. The code before
+  these changes, run beside it: 9.3–10.6 + 2.7–3.0 ms capture, 6.4–7.4 ms
+  copy, 3.4–3.5 ms freeing, 21.8–24.5 ms in all. A record is 1,104 bytes.
+  The records are bound by reading 20,000 objects scattered in memory: each
+  touches several cache lines of its `GameEntity`. Left: answer placement,
+  lighting and the status strip only for objects near the screen (radar
+  facts stay for every object).
 - **The simulation thread ticking on its own**, several ticks per hand-off
   (Phase 4's first residual), is the next phase.
 
