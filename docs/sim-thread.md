@@ -162,8 +162,13 @@ Main is outside saves and the hash: only which random voice plays can
 differ from gamemd.
 
 Per-frame questions the cursor asks of the live world (its action, hover,
-the ferry preview) are answered with the world home and kept for the draws
-beside a lent tick (`sim_host::home_answer`), one tick late at most.
+the ferry preview, the planning hover) are answered with the world home and
+kept for the draws beside a lent tick (`sim_host::home_answer`). When every
+frame is lent no draw finds the world home, so each is also asked just
+before a tick leaves (`cursor::answer_kept_questions`), as is the building
+placement preview, which the passes beside the tick keep: all are one tick
+late at most. An atlas refresh asked beside a tick (a growth published
+then) waits for the tick's tail.
 
 Still shared, read-only: `SimResources` (the rules, the terrain template, the
 overlay registry), which nothing writes once a match is loaded.
@@ -177,8 +182,9 @@ copy 46 ms. Not yet within the 2 ms goal at 20,000 objects; see Status.
 
 `SimHost::lend` hands the runtime to a persistent simulation thread for
 one job. While it is away, `runtime()` serves the published presentation
-frame, so the sidebar, tooltips, cursor legality and the other cold readers
-see the last tick without waiting. Every write route (`write_sim`,
+frame, so the sidebar, tooltips and the other cold readers see the last
+tick without waiting; a reader that needs the objects keeps an answer taken
+with the world home (Phase 2). Every write route (`write_sim`,
 `tick_parts`, `install`, `take_runtime`) first takes the runtime back,
 waiting for the job; its result then waits in the host. A panic in the job
 resumes on the main thread.

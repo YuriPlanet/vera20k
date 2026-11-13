@@ -43,6 +43,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
+    /// An atlas refresh asked beside a lent tick, which the tick's tail runs
+    /// (`sim_tick::refresh_entity_atlases`).
+    pub(crate) atlas_refresh_owed: bool,
     pub(crate) overlay_atlas: Option<OverlayAtlas>,
     pub(crate) bridge_atlas: Option<BridgeAtlas>,
     pub(crate) sidebar_cameo_atlas: Option<SidebarCameoAtlas>,
