@@ -9,10 +9,10 @@
 //! reads in that section, or when the installed game or the mod ships
 //! `ares.mix` (Ares mounts it from `Load_Bootstrap_AresMIX`, hook
 //! `0x0053029E`). Retail data holds neither, so a retail game plays as
-//! gamemd. Every build carries the decision, but until the last Ares code
-//! leaves the `ares` build feature only a build with that feature or a test
-//! build lets it turn on ([`LIVE`]): the release build keeps Ares off, so a
-//! player never gets half of Ares.
+//! gamemd. Every build lets the switch turn on, the release build too. Until
+//! the last Ares code leaves the `ares` build feature, a build without that
+//! feature plays such a game with the Ares code already on this switch only:
+//! what the feature still holds (listed below) is missing there.
 //!
 //! Which keys count comes from the readers, not from a list. Every reader
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
@@ -58,20 +58,12 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Whether this build lets the switch turn on: a build with the `ares`
-/// feature, or a test build. Until every Ares reader and path has left that
-/// feature, a build without it (the release build) records nothing and keeps
-/// Ares off, so a player never gets half of Ares, while tests run the code
-/// already moved with the switch on in every build. The PR that deletes the
-/// feature deletes this constant.
-pub(crate) const LIVE: bool = cfg!(any(feature = "ares", test, feature = "test-support"));
-
-/// The Rules-reading mode a scope that asks for `on` gets: the Ares way only
-/// where the build lets Ares turn on ([`LIVE`]), and always in a build with
-/// the `ares` feature, which keeps reading every game as Ares.dll does, as it
-/// did before the switch. The PR that deletes the feature makes this `on`.
+/// The Rules-reading mode a scope that asks for `on` gets: `on`, and always
+/// the Ares way in a build with the `ares` feature, which keeps reading every
+/// game as Ares.dll does, as it did before the switch. The PR that deletes the
+/// feature makes this `on`.
 pub(crate) const fn reading_mode(on: bool) -> bool {
-    cfg!(feature = "ares") || (on && LIVE)
+    cfg!(feature = "ares") || on
 }
 
 /// Whether the Rules reads on this thread follow Ares.dll: its list
@@ -182,9 +174,6 @@ thread_local! {
 /// A reader found `key` in `section`. Called by the INI store's reader
 /// lookups only.
 pub(crate) fn note_found(section: &str, key: &str) {
-    if !LIVE {
-        return;
-    }
     RECORDER.with_borrow_mut(|recorder| {
         let ares = recorder.ares_depth > 0 && recorder.not_ares_depth == 0;
         if let Some(reads) = recorder.active.as_mut() {
