@@ -147,20 +147,46 @@ pub(super) fn deploy_yard_maker(
             obs.credits()
         );
     }
-    let Some((entity_id, cell, yard)) = brain
+    // Every maker gets the first-sighting test, not only the one the selection
+    // below happens to pick. Two captured MCVs were marked one at a time, so
+    // the second was never recalled at all and sat in the enemy's base until
+    // it was destroyed — the wishlist's "占领了俩基地只拉回一个".
+    for unit in &brain.census.units {
+        if !unit.traits.yard_maker || unit.hand {
+            continue;
+        }
+        let at_home = brain
+            .census
+            .base_cell
+            .is_some_and(|home| cell_distance(unit.cell, home) <= RETRIEVE_ARRIVED_CELLS);
+        if brain.seen_makers.insert(unit.entity_id) && !at_home {
+            brain.retrieve_makers.insert(unit.entity_id);
+            log::info!(
+                "auto play: maker {} first seen at {:?}, recalling it",
+                unit.entity_id,
+                unit.cell
+            );
+        }
+    }
+    // Prefer a maker under recall: with two of them the one already heading
+    // home must not be re-aimed while the other is still sitting there.
+    let makers: Vec<(u64, (u16, u16), &ObjectType)> = brain
         .census
         .units
         .iter()
-        .filter(|unit| unit.traits.yard_maker)
-        // A maker the player has grouped is theirs to deploy, and one a team
-        // script has recruited is the script's.
-        .filter(|unit| !unit.hand)
-        .find_map(|unit| {
+        .filter(|unit| unit.traits.yard_maker && !unit.hand)
+        .filter_map(|unit| {
             let ty = obs.object_type(rules, unit.type_id)?;
             let yard = rules.object(ty.deploys_into.as_deref()?)?;
             makes_a_yard(rules, ty).then_some((unit.entity_id, unit.cell, yard))
         })
-    else {
+        .collect();
+    let picked = makers
+        .iter()
+        .find(|(entity_id, _, _)| brain.retrieve_makers.contains(entity_id))
+        .or_else(|| makers.first())
+        .copied();
+    let Some((entity_id, cell, yard)) = picked else {
         return;
     };
     // A yard already stands, so this maker is not the way back from a loss: it
@@ -215,6 +241,8 @@ pub(super) fn deploy_yard_maker(
         // even through the house's own safe ground. Releasing it the moment it
         // reaches safety hands it straight back to the second-base search, which
         // is the same walk again, one turn of the loop later.
+        // The sighting test ran above for every maker; this one only repeats it
+        // for the maker the selection picked, which `seen_makers` makes a no-op.
         let at_home = home.is_some_and(|home| cell_distance(cell, home) <= RETRIEVE_ARRIVED_CELLS);
         if brain.seen_makers.insert(entity_id) && !at_home {
             brain.retrieve_makers.insert(entity_id);
