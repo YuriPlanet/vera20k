@@ -180,6 +180,11 @@ impl SimRuntime {
     /// ([`DirtyCells::take_radar`](crate::sim::dirty_cells::DirtyCells::take_radar)).
     /// The marks are presentation handoff state, not saved or hashed, so
     /// draining them cannot change lockstep state.
+    /// Whether [`Self::take_radar_terrain_dirty`] would hand any cell over.
+    pub fn has_radar_terrain_dirty(&self) -> bool {
+        !self.simulation.dirty_cells.radar().is_empty()
+    }
+
     pub fn take_radar_terrain_dirty(&mut self) -> Vec<(u16, u16)> {
         self.simulation.dirty_cells.take_radar()
     }
