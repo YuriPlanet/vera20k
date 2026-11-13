@@ -109,6 +109,7 @@ fn fire(
 
 #[test]
 fn superweapon_money_zero_fee_selection_requires_nonnegative_balance() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=0\n[Storm]\nMoney.Amount=1\n");
     let (mut sim, owner) = world(&rules, -1, true);
     let reveal = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -149,6 +150,7 @@ fn superweapon_money_zero_fee_selection_requires_nonnegative_balance() {
 
 #[test]
 fn superweapon_money_ordered_layers_and_saved_rules_keep_the_effective_value() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut base = IniFile::from_str(SOURCE);
     base.merge(&IniFile::from_str(
         "[Reveal]\nMoney.Amount=-500\nEVA.InsufficientFunds=CustomFunds\n",
@@ -193,6 +195,7 @@ fn superweapon_money_ordered_layers_and_saved_rules_keep_the_effective_value() {
 
 #[test]
 fn superweapon_money_insufficient_funds_preserve_charge_wallet_hash_and_effects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 499, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -207,6 +210,7 @@ fn superweapon_money_insufficient_funds_preserve_charge_wallet_hash_and_effects(
 
 #[test]
 fn superweapon_money_exact_funds_pay_once_through_house_wallet() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 500, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -221,6 +225,7 @@ fn superweapon_money_exact_funds_pay_once_through_house_wallet() {
 
 #[test]
 fn superweapon_money_positive_grant_changes_cash_not_spending_or_score() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=400\n");
     let (mut sim, owner) = world(&rules, 50, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -234,6 +239,7 @@ fn superweapon_money_positive_grant_changes_cash_not_spending_or_score() {
 
 #[test]
 fn superweapon_money_positive_grant_preserves_host_wrapping_add_credits() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=1\n");
     let (mut sim, owner) = world(&rules, i32::MAX, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -243,6 +249,7 @@ fn superweapon_money_positive_grant_preserves_host_wrapping_add_credits() {
 
 #[test]
 fn superweapon_money_minimum_signed_cost_cannot_overflow_into_a_reward() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=-2147483648\n");
     let (mut sim, owner) = world(&rules, i32::MAX, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -253,6 +260,7 @@ fn superweapon_money_minimum_signed_cost_cannot_overflow_into_a_reward() {
 
 #[test]
 fn superweapon_money_unready_or_charge_drain_does_not_pay() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for extra in ["", "UseChargeDrain=yes\n"] {
         let rules = rules(&format!("[Reveal]\nMoney.Amount=-500\n{extra}"));
         let (mut sim, owner) = world(&rules, 1000, true);
@@ -275,6 +283,7 @@ fn superweapon_money_unready_or_charge_drain_does_not_pay() {
 
 #[test]
 fn superweapon_money_busy_storm_refuses_without_a_second_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Storm]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let id = ready(&mut sim, &rules, owner, "Storm", false);
@@ -284,12 +293,6 @@ fn superweapon_money_busy_storm_refuses_without_a_second_charge() {
     assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
     assert_eq!(sim.state_hash(), before);
     // Installed Ares asks SW_LightningStorm::AbortFire (10072AB0).
-    #[cfg(not(feature = "ares"))]
-    assert!(matches!(
-        sim.sound_events.as_slice(),
-        [SimSoundEvent::LightningStormRefused { .. }]
-    ));
-    #[cfg(feature = "ares")]
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::AresSuperWeaponAborted { .. }]
@@ -298,6 +301,7 @@ fn superweapon_money_busy_storm_refuses_without_a_second_charge() {
 
 #[test]
 fn superweapon_money_one_time_grant_cannot_pay_or_reward_twice() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let rules = rules(&format!("[Reveal]\nMoney.Amount={amount}\n"));
         let (mut sim, owner) = world(&rules, 1000, true);
@@ -312,6 +316,7 @@ fn superweapon_money_one_time_grant_cannot_pay_or_reward_twice() {
 
 #[test]
 fn superweapon_money_ui_affordability_is_live_and_independent_of_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 499, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
@@ -332,6 +337,7 @@ fn superweapon_money_ui_affordability_is_live_and_independent_of_charge() {
 
 #[test]
 fn superweapon_money_ai_refuses_before_target_search_or_rng() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
     for (amount, balance) in [(-500, 499), (0, -1)] {
         let rules = rules(&format!("[Reveal]\nMoney.Amount={amount}\n"));
@@ -349,6 +355,7 @@ fn superweapon_money_ai_refuses_before_target_search_or_rng() {
 
 #[test]
 fn superweapon_money_zero_cost_chronosphere_keeps_native_source_and_warp() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let (mut sim, owner) = world(&rules, 1000, true);
     let sphere = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -362,6 +369,7 @@ fn superweapon_money_zero_cost_chronosphere_keeps_native_source_and_warp() {
 
 #[test]
 fn superweapon_money_resolved_amount_participates_in_configuration_hash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut rules = rules("");
     let baseline = rules.simulation_config_hash();
     rules.super_weapons.get_mut("Reveal").unwrap().money_amount = -500;
@@ -372,6 +380,7 @@ fn superweapon_money_resolved_amount_participates_in_configuration_hash() {
 
 #[test]
 fn superweapon_money_saved_wallet_and_charge_do_not_repeat_settlement() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::snapshot::GameSnapshot;
     let rules = rules("[Reveal]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
@@ -393,6 +402,7 @@ fn superweapon_money_saved_wallet_and_charge_do_not_repeat_settlement() {
 
 #[test]
 fn superweapon_money_funded_ai_uses_the_same_single_settlement() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Reveal]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 1000, false);
     sim.session
@@ -412,6 +422,7 @@ fn superweapon_money_funded_ai_uses_the_same_single_settlement() {
 
 #[test]
 fn superweapon_money_action_none_settles_the_native_direct_launch_event() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let rules = rules(&format!("[Reveal]\nAction=none\nMoney.Amount={amount}\n"));
         let (mut sim, owner) = world(&rules, 1000, true);
@@ -426,6 +437,7 @@ fn superweapon_money_action_none_settles_the_native_direct_launch_event() {
 
 #[test]
 fn superweapon_money_generic_payload_and_target_preflight_precede_settlement() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (override_tags, accepted) in [
         ("", true),
         ("SW.RequiresTarget=infantry\n", false),
@@ -465,6 +477,7 @@ fn superweapon_money_generic_payload_and_target_preflight_precede_settlement() {
 
 #[test]
 fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let rules = rules(&format!("[Sphere]\nMoney.Amount={amount}\n"));
         let (mut sim, owner) = world(&rules, 10_000, true);
@@ -496,6 +509,7 @@ mod two_stage_tests;
 /// them leaves a paid Chronosphere a two-stage source.
 #[test]
 fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nPreClick=no\nMoney.Amount=500\n[Warp]\nPostClick=no\n");
     let (sphere, warp) = (
         rules.super_weapon("Sphere").unwrap(),
@@ -511,6 +525,7 @@ fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags()
 
 #[test]
 fn superweapon_money_postclick_rejects_paid_predecessor_with_single_stage_flags() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         // A PreDependent pair the Ares handlers do not take: the warp is
         // an unredirected PostClick type.

@@ -78,8 +78,11 @@ fn fire(
     )
 }
 
+// Runs again once the power system moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn battery_drains_by_its_ratio_lends_power_and_stops_when_drain_money_runs_out() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Cell\n\
          [Cell]\nType=Battery\nRechargeTime=1\nIsPowered=no\nAction=Nuke\n\
@@ -161,6 +164,7 @@ fn battery_drains_by_its_ratio_lends_power_and_stops_when_drain_money_runs_out()
 
 #[test]
 fn always_granted_needs_no_provider_but_keeps_availability_gates() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Strike\n1=Plain\n\
          [Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.AlwaysGranted=yes\n\
@@ -184,6 +188,7 @@ fn always_granted_needs_no_provider_but_keeps_availability_gates() {
 
 #[test]
 fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Shield\n\
          [Shield]\nType=Protect\nRechargeTime=1\nIsPowered=no\nProtect.Duration=200\n\
@@ -235,6 +240,7 @@ fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
 
 #[test]
 fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_target() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Sonar\n1=Wide\n\
          [Sonar]\nType=SonarPulse\nRechargeTime=1\nIsPowered=no\nSonarPulse.Delay=100\n\
@@ -296,6 +302,7 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
 /// mask has the enemies bit, and an observer those with the allies bit.
 #[test]
 fn ares_timer_visibility_hides_an_owner_only_timer_from_other_players() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n0=Mine\n1=Open\n2=Team\n\
          [Mine]\nRechargeTime=1\nSW.TimerVisibility=owner\n\

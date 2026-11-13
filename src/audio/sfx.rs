@@ -2102,8 +2102,10 @@ impl SfxPlayer {
     /// nothing, so the paused taunt stays and the new one is dropped. A
     /// paused stream otherwise plays a new file at once: PlayFile sets the
     /// playing bit whatever the pause count `+0x80`.
-    /// RESIDUAL: the suppress counter `[0x00B1D480]` is taken as 0; its
-    /// writers `0x00753520`/`0x00753540` have no direct caller.
+    /// PlayTaunt's suppress counter `[0x00B1D480]` stays 0 in retail, so its
+    /// `== 0` test always passes: SpeechSystem init zeroes it (`0x00752B23`),
+    /// and the increment and decrement, `0x00753520`/`0x00753540`, have no
+    /// references (no call, jump or stored pointer).
     pub(crate) fn play_taunt(&mut self, byte: u8, assets: &AssetManager, pattern: Option<&str>) {
         const COUNTRIES: [&str; 10] = ["am", "ko", "fr", "ge", "br", "li", "ir", "cu", "ru", "yu"];
         let number = byte & 0xF;

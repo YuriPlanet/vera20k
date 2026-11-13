@@ -215,7 +215,6 @@ const fn last_attacker_house_index_default() -> i32 {
 }
 
 /// Ares HouseExt constructor's SWLastIndex.
-#[cfg(feature = "ares")]
 fn no_super_index() -> i32 {
     -1
 }
@@ -893,7 +892,6 @@ pub struct HouseState {
     /// 10032ED0). Fire_SW's PostClick pairing (hook 4FAE72, 10034C90), the
     /// ChronoWarp's source (1006FB60) and the PostClick presentation of the
     /// common Launch read it.
-    #[cfg(feature = "ares")]
     #[serde(default = "no_super_index")]
     ares_last_super: i32,
     /// House+2D8: how many of this house's `PowersUnit=` buildings are
@@ -2172,7 +2170,6 @@ impl HouseState {
 
     /// Inputs for Ares `IsTargetConstraintsEligible`10032110: the house's
     /// chosen enemy (`+0x5600`) and its scripted offensive cell (`+0x54F0`).
-    #[cfg(feature = "ares")]
     pub fn target_constraints_observations(
         &self,
     ) -> crate::rules::superweapon_targeting::HouseTargetingObservations {
@@ -2485,14 +2482,12 @@ impl HouseState {
     }
 
     /// Ares HouseExt SWLastIndex, -1 when no Super set it.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_last_super(&self) -> i32 {
         self.ares_last_super
     }
 
     /// The common Launch's write (10032F99): the House remembers the Super
     /// it launched last.
-    #[cfg(feature = "ares")]
     pub(crate) fn remember_ares_last_super(&mut self, index: i32) {
         self.ares_last_super = index;
     }
@@ -2500,9 +2495,6 @@ impl HouseState {
     /// Folded only once a launch set it, so other houses hash as earlier
     /// schemas did.
     pub(crate) fn hash_ares_last_super(&self, hasher: &mut impl std::hash::Hasher) {
-        #[cfg(not(feature = "ares"))]
-        let _ = hasher;
-        #[cfg(feature = "ares")]
         if self.ares_last_super != no_super_index() {
             std::hash::Hash::hash(b"ares-house-last-super-v1", hasher);
             std::hash::Hash::hash(&self.ares_last_super, hasher);
@@ -3042,7 +3034,6 @@ impl HouseState {
             ares_reverse_engineered: Vec::new(),
             #[cfg(feature = "ares")]
             ares_stolen_tech: 0,
-            #[cfg(feature = "ares")]
             ares_last_super: no_super_index(),
             powered_unit_centers: 0,
             discovered_by_current_house: false,

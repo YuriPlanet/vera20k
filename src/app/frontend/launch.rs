@@ -17,7 +17,9 @@ use crate::app::diagnostics::tactical_capture::profile::{
     CHECKPOINT_RADAR_ONLINE_V2, SealedJsonFile, TacticalCaptureContract, TacticalCaptureProfile,
     validate_new_output_directory,
 };
-use crate::app::frontend::startup_options::{RetailStartupOptions, consume_retail_switches};
+use crate::app::frontend::startup_options::{
+    RetailStartupOptions, StartupExit, consume_retail_switches,
+};
 use crate::skirmish_launch::SkirmishLaunchSession;
 
 use crate::app::diagnostics::tactical_capture::session::MapCaptureProfile;
@@ -168,9 +170,10 @@ pub enum AppLaunchMode {
     Spawn(RetailStartupOptions),
     /// Watch a strictly reconstructed recording through the normal renderer.
     Replay(ReplayLaunchRequest),
-    /// A help switch: print usage and terminate before any window is created,
-    /// exactly as native's switch parser makes `WinMain` bail.
-    Usage,
+    /// A help switch or an invalid `-X` tail: print its text and terminate
+    /// before any window is created, exactly as native's switch parser makes
+    /// `WinMain` bail.
+    Exit(StartupExit),
     ShellCapture(ShellCaptureRequest),
     TacticalCapture(TacticalCaptureRequest),
     /// A hidden run that draws one map's picture for the setup screens.
@@ -425,8 +428,8 @@ where
     }
     // This is the only process-argument owner for retail startup decisions.
     let (retail_options, args) = consume_retail_switches(args);
-    if retail_options.usage_requested {
-        return Ok(AppLaunchMode::Usage);
+    if let Some(exit) = retail_options.exit {
+        return Ok(AppLaunchMode::Exit(exit));
     }
     let spawn_count = args
         .iter()

@@ -47,7 +47,9 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
-    /// Personal rules are frozen at startup, like the selected game sources.
+    /// Personal rules are read once at startup, like the selected game
+    /// sources; only the Options switches change them later
+    /// ([`Self::set_terrain_deformation`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
@@ -76,6 +78,9 @@ pub(crate) struct ProcessAssets {
     /// The network games' Rules/AI/Art INI hashes, computed once from the
     /// process sources; `None` without them.
     native_ini_hashes: Option<crate::rules::native_ini_hash::NativeIniHashes>,
+    /// Game-folder files that change those sources from the retail copies,
+    /// found with the hashes.
+    changed_game_files: Vec<String>,
 }
 
 fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
@@ -126,6 +131,7 @@ impl ProcessAssets {
             csf: None,
             tile_variant_selector_cache: Default::default(),
             native_ini_hashes: None,
+            changed_game_files: Vec::new(),
         }
     }
 
@@ -187,6 +193,34 @@ impl ProcessAssets {
         if let Some(rules) = self.native_rules.as_mut() {
             rules.set_terrain_deformation(on);
         }
+    }
+
+    /// VERARULES.INI and the Options switches, as the network rules hash
+    /// ([`Self::native_ini_hashes`]) compares them.
+    pub(crate) fn personal_rules(&self) -> &crate::rules::personal_rules::PersonalRules {
+        &self.personal_rules
+    }
+
+    /// The Rules, Art and AI roots are the stock YR files; config.toml's
+    /// `[ini]` profiles and names can pick others.
+    pub(crate) fn stock_ini_roots(&self) -> bool {
+        let stock = crate::util::ini_roots::IniRoots::default();
+        self.selected_ini_roots.as_ref().is_none_or(|roots| {
+            [
+                (roots.rules(), stock.rules()),
+                (roots.art(), stock.art()),
+                (roots.ai(), stock.ai()),
+            ]
+            .iter()
+            .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
+        })
+    }
+
+    /// Loose files or archives in the game folder that change the rules the
+    /// network compares from the retail copies, e.g. `rulesmd.ini` or
+    /// `expandmd99.mix`; found at startup.
+    pub(crate) fn changed_game_files(&self) -> &[String] {
+        &self.changed_game_files
     }
 
     /// Recovery uses the process's already resolved choice, never a new Auto
@@ -447,6 +481,9 @@ impl ProcessAssets {
     /// Hash the process sources once (`crate::rules::native_ini_hash`):
     /// the selected rules root and ART, AIMD, each mode's INI by id
     /// `1..=count` and CoopCampMD.
+    /// VERA: also finds the game-folder files that change those sources or
+    /// LANGRULE.INI (VERA's own agreement compares it) from the retail
+    /// copies ([`Self::changed_game_files`]).
     pub(crate) fn install_native_ini_hashes(
         &mut self,
         assets: &AssetManager,
@@ -454,6 +491,28 @@ impl ProcessAssets {
     ) {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        let roots = assets.ini_roots();
+        // MPModesMD.ini is the mode roster: which mode INIs the hash adds.
+        let mut compared = vec![
+            roots.rules(),
+            roots.art(),
+            roots.ai(),
+            "langrule.ini",
+            "MPModesMD.ini",
+        ];
+        compared.extend(modes.iter().map(|mode| mode.override_file.as_str()));
+        compared
+            .push(crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI);
+        self.changed_game_files =
+            crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
+        log::info!(
+            "Game files that change the original rules: {}",
+            if self.changed_game_files.is_empty() {
+                "none".to_owned()
+            } else {
+                self.changed_game_files.join(", ")
+            }
+        );
         let Some(rules) = self.native_rules.as_ref() else {
             return;
         };

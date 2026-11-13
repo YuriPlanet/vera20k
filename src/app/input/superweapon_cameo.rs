@@ -54,7 +54,6 @@ pub(crate) fn press(
     if !view.can_fire || !view.can_afford || view.constraints_blocked {
         return SuperWeaponClick::Refused;
     }
-    #[cfg(feature = "ares")]
     if view.ares_refusal.is_some() {
         return SuperWeaponClick::Refused;
     }

@@ -8253,6 +8253,18 @@ impl RuleSet {
         self.reads_ares_way
     }
 
+    /// Whether the superweapon code takes its Ares arms in this game. They
+    /// read data only Rules read the Ares way hold: the SWTypeExt metadata,
+    /// the handler kinds, and a handler type's absent PreDependent. So they
+    /// follow how the Rules were read, not [`Self::ares`] alone. A game Ares
+    /// turned on in by its keys, read the stock way, keeps the stock
+    /// superweapons until loading reads its Rules the Ares way; a build
+    /// with the `ares` feature reads every game the Ares way and keeps the
+    /// Ares superweapons in every game, as before the switch.
+    pub fn ares_super_weapons(&self) -> bool {
+        self.reads_ares_way
+    }
+
     /// Resolve one retained palette request. Ares715857->715876 removes
     /// only the original successful-group limit: a supplied request resolves
     /// its own file; a failed file never inherits another type's group.

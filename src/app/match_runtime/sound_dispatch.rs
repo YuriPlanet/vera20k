@@ -837,14 +837,11 @@ pub(super) fn dispatch_sim_sound_events(
             }
             #[cfg(not(feature = "ares"))]
             SimSoundEvent::SuperWeaponInsufficientFunds { .. } => continue,
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponActivated { .. }
             | SimSoundEvent::AresLightningStormApproaching { .. }
             | SimSoundEvent::AresSuperWeaponAborted { .. } => continue,
             // 100731FD..10073236: IsAlliedWith(PlayerPtr) on the owner.
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresAlliedRadarEvent { owner, radar } => {
                 let local = local_owner_name.and_then(|name| {
                     sim.houses()
@@ -863,7 +860,6 @@ pub(super) fn dispatch_sim_sound_events(
             }
             // Common Launch10032FC3: VoxClass::PlayIndex of the data type's
             // EVA_Activated, on every client behind the launch-mute byte.
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponActivatedEva { sw_type } => {
                 let Some(event) = rules
                     .super_weapon(sim.interner().resolve(sw_type))
@@ -881,7 +877,6 @@ pub(super) fn dispatch_sim_sound_events(
             }
             // SuperClass_Update_DrainMoney100358A0 plays the cue on every
             // client while the House is ControlledByHuman (the sim's gate).
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponDrainRefused { sw_type, .. } => {
                 let Some(event) = sim
                     .interner()
@@ -1085,7 +1080,6 @@ pub(super) fn dispatch_sim_sound_events(
             // its AddMessage plays the only sound.
             SimSoundEvent::LightningStormRefused { .. }
             | SimSoundEvent::PsychicDominatorRefused { .. } => continue,
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponFinished { owner, sw_type, .. } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -1569,7 +1563,6 @@ pub(super) fn hud_messages(
                 owner_is_local(interner, owner, local_owner_name)
                     .then_some(HudMessage::SuperWeapon("Msg:DominatorActive"))
             }
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused { owner, sw_type } => {
                 // Ares10038ECE compares the event House with PlayerPtr.
                 owner_is_local(interner, owner, local_owner_name)
@@ -3247,19 +3240,16 @@ mod tests {
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let other = sim.intern("Other");
-        #[cfg(feature = "ares")]
         let sw_type = sim.intern("Strike");
         let events = [
             SimSoundEvent::LightningStormRefused { owner: local },
             SimSoundEvent::PsychicDominatorRefused { owner: other },
             SimSoundEvent::PsychicDominatorRefused { owner: local },
             SimSoundEvent::LightningStormRefused { owner: other },
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused {
                 owner: local,
                 sw_type,
             },
-            #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused {
                 owner: other,
                 sw_type,
@@ -3270,7 +3260,6 @@ mod tests {
             [
                 HudMessage::SuperWeapon("Msg:LightningStormActive"),
                 HudMessage::SuperWeapon("Msg:DominatorActive"),
-                #[cfg(feature = "ares")]
                 HudMessage::AresSuperWeaponRefused(sw_type),
             ]
         );
