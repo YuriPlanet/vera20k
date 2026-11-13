@@ -172,6 +172,11 @@ pub(crate) fn shp_visitor<'a>(
         .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     // A building type's bounds, asked by name once per draw: every building
     // on the map reads them for its cull.
+    // A house's colour, asked by name once per draw and not per object.
+    let mut owner_colours: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        HouseColorIndex,
+    > = Default::default();
     let mut type_bounds_seen: crate::util::lookup_hash::LookupMap<
         crate::sim::intern::InternedId,
         Option<[i32; 4]>,
@@ -284,11 +289,16 @@ pub(crate) fn shp_visitor<'a>(
             return;
         }
         let pos = &entity.position;
-        let hc: HouseColorIndex = input
-            .house_colors
-            .get(remap_owner)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
+        let remap_owner_id = active_disguise
+            .and_then(|state| state.house())
+            .unwrap_or(entity.owner());
+        let hc: HouseColorIndex = *owner_colours.entry(remap_owner_id).or_insert_with(|| {
+            input
+                .house_colors
+                .get(remap_owner)
+                .copied()
+                .unwrap_or(crate::rules::house_colors::NO_REMAP)
+        });
         let Some(draw_decision) = tactical_entity_admission(
             super::helpers::TacticalEntityPurpose::Drawing,
             entity,
@@ -580,11 +590,15 @@ pub(crate) fn shp_visitor<'a>(
             physical_cell
         };
         let tint = shp_body_tint(input.lighting, light_cell, entity.category(), extra_light);
-        let selected_palette_light = crate::app::presentation::lighting::body_palette_light(
-            input.lighting,
-            light_cell,
-            extra_light,
-        );
+        // Asked only where it is used: a building's body takes its own
+        // light below, so only a voxel turret reads this one.
+        let selected_palette_light = || {
+            crate::app::presentation::lighting::body_palette_light(
+                input.lighting,
+                light_cell,
+                extra_light,
+            )
+        };
         let palette_light = if entity.category() == EntityCategory::Structure {
             let [x, y] = entity.place.center_xy;
             let coords_cell = (
@@ -599,7 +613,7 @@ pub(crate) fn shp_visitor<'a>(
                 gate_open_frame.is_some(),
             )
         } else {
-            selected_palette_light
+            selected_palette_light()
         };
         // The shared DrawSHP curtain intensity and the class caller's colour
         // word have separate owners. Infantry tests the Location cell;
@@ -883,7 +897,7 @@ pub(crate) fn shp_visitor<'a>(
                     crate::app::presentation::lighting::techno_effect_light(
                         entity,
                         tint,
-                        selected_palette_light,
+                        selected_palette_light(),
                         sim,
                         rules,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
