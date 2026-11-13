@@ -15,10 +15,12 @@
 //! RenderCellPixel pass; this owner recomputes every dot on each minimap
 //! update instead, so its callers' requests are subsumed.
 //!
-//! RESIDUAL: the tracker syncs once per drawn picture, not once per Logic
-//! frame (`TechnoClass+0x4A0`), so when several frames pass between pictures,
-//! objects sharing one exact pixel can take another order there: only which
-//! of them colours that pixel or answers a click on it differs.
+//! Sim-scale deviation, the maintainer's choice: the tracker syncs once per
+//! drawn picture, not once per Logic frame (`TechnoClass+0x4A0`,
+//! `0x0070D990`), so that no per-tick pass runs over every unit. When several
+//! frames pass between pictures, objects sharing one exact pixel can take
+//! another order there: only which of them colours that pixel or answers a
+//! click on it differs.
 
 use crate::map::houses::HouseColorMap;
 use crate::render::snapshot::SnapshotObject;
@@ -128,11 +130,15 @@ pub(super) fn radar_entity_owner_color(
 /// request at each period boundary (`0x0070DBCC..0x0070DC37`) is subsumed:
 /// every dot is recomputed on each minimap update.
 ///
-/// RESIDUAL: `FlashFrameTime=0` divides by zero natively; here it never
-/// flashes. A re-hit while the dot is inverted restarts the flash; natively
-/// that restart's first redraw request can miss its boundary (`0x0070DC37`),
-/// leaving the dot inverted about six frames longer with retail 49/7, while
-/// here the new phase shows at once.
+/// Deliberate differences:
+/// - `FlashFrameTime=0` divides by zero natively (`0x0070DC29`); here it
+///   never flashes, as outside data never stops the game.
+/// - The maintainer's choice, with the per-update recompute above: a re-hit
+///   while the dot is inverted restarts the flash, and natively the request
+///   at the restart's first boundary (`r % FlashFrameTime == 0`,
+///   `0x0070DC29..0x0070DC37`) is missed when the hit lands after the
+///   victim's own update that frame, leaving the dot inverted about six
+///   frames longer with retail 49/7; here the new phase shows at once.
 pub(super) fn radar_combat_flash_inverts(
     entity: &impl crate::render::snapshot::SnapshotObject,
     current_player: Option<InternedId>,
