@@ -954,6 +954,26 @@ pub(super) fn count_industrial_plants(rules: &RuleSet, obs: &Observation<'_>) ->
     count_building_type(rules, obs, |ty| ty.factory_plant)
 }
 
+/// The `Cloning=yes` structure: the cloning vats, `[NACLON]` in retail.
+///
+/// The same flag `production_queue` reads when it decides a cloning house
+/// produces two infantrymen per click, so the plan and the production line name
+/// the same building — the wishlist's "克隆缸" with the key the rules actually
+/// carry (`Cloning=yes`), not a name list.
+pub(super) fn cloning_vats_building<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    class_types(rules, obs, ObjectCategory::Building)
+        .filter(|(ty, _)| ty.cloning)
+        .min_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+}
+
+/// How many `Cloning=` structures the house has.
+pub(super) fn count_cloning_vats(rules: &RuleSet, obs: &Observation<'_>) -> usize {
+    count_building_type(rules, obs, |ty| ty.cloning)
+}
+
 /// The `SpySat=yes` structure: the allied spy satellite uplink, `[GASPYSAT]`.
 ///
 /// The native computer does not build it — `[AI] AIBuildThis=no` in the retail
@@ -1258,6 +1278,49 @@ mod tests {
         assert!(
             industrial_plant_building(&rules, &obs).is_none(),
             "the Allied house cannot build the Soviet plant"
+        );
+    }
+
+    /// Each advanced structure is selected by the rules' own key, not by name,
+    /// and only for a house whose tree can reach it.
+    #[test]
+    fn the_advanced_structures_are_chosen_by_their_own_keys() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let soviet = sim.interner.intern("Russians");
+        // Spread out: each foundation has to fit, and a yard's is 3x3.
+        for (name, cell) in [
+            ("NACNST", (16u16, 16u16)),
+            ("NAREFN", (24, 16)),
+            ("NATECH", (16, 24)),
+        ] {
+            sim.spawn_object(name, "Russians", cell.0, cell.1, 255, &rules)
+                .unwrap_or_else(|| panic!("place {name}"));
+        }
+        let obs = Observation::new(&sim, soviet);
+        let (ty, _) = industrial_plant_building(&rules, &obs).expect("the plant is buildable");
+        assert_eq!(ty.id.as_str(), "NAINDP", "`FactoryPlant=yes` names it");
+        assert!(ty.factory_plant, "and the flag is what selected it");
+        let (ty, _) = cloning_vats_building(&rules, &obs).expect("the vats are buildable");
+        assert_eq!(ty.id.as_str(), "NACLON", "`Cloning=yes` names it");
+        assert!(ty.cloning, "and the flag is what selected it");
+        // The uplink's `Owner=` list names every house in the retail rules, so
+        // the Soviet house may build it too: the flag, not the faction, decides.
+        let (ty, _) = spy_satellite_building(&rules, &obs).expect("the uplink is buildable");
+        assert_eq!(ty.id.as_str(), "GASPYSAT", "`SpySat=yes` names it");
+        assert!(ty.spy_sat);
+
+        // An American house has neither tree and is offered neither.
+        let american = sim.interner.intern("Americans");
+        let obs = Observation::new(&sim, american);
+        assert!(
+            industrial_plant_building(&rules, &obs).is_none(),
+            "the Allied house cannot build the Soviet plant"
+        );
+        assert!(
+            cloning_vats_building(&rules, &obs).is_none(),
+            "and it cannot build the Yuri vats"
         );
     }
 

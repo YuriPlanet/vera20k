@@ -190,6 +190,12 @@ pub(super) enum Item {
     /// revealed map is worth more to a player than to the AI that already has
     /// the map. So this step exists where the native AI's does not.
     SpySatellite,
+    /// The `Cloning=yes` structure (`[NACLON]`): the cloning vats, which put a
+    /// second copy of every infantryman the house trains into the field. Read
+    /// off the rules' own flag, the same one `production_queue` reads to decide
+    /// that a cloning house produces two soldiers per click, so the plan and the
+    /// production line cannot disagree about which building does it.
+    CloningVats,
     /// The `UnitRepair=` shed (`[GADEPT] UnitRepair=yes`): where a hurt vehicle
     /// stops being a loss. Without one the retreat has nowhere to send a
     /// damaged unit, and the army shrinks by every fight it survives.
@@ -338,6 +344,15 @@ pub(super) const STEPS: &[Step] = &[
     // lab, and behind a surplus because 1500 is an army's worth.
     Step {
         item: Item::SpySatellite,
+        want: 1,
+        gate: Gate::Surplus,
+    },
+    // The cloning vats: every infantry the house trains arrives twice, so the
+    // step pays for itself against a barracks that is already running. Behind
+    // the surplus and after the lab, because `Prerequisite=YATECH,YACNST` puts
+    // it behind the whole tree and 2500 is an army's worth.
+    Step {
+        item: Item::CloningVats,
         want: 1,
         gate: Gate::Surplus,
     },
@@ -577,6 +592,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         Item::Purifier => build::count_ore_purifiers(rules, obs),
         Item::IndustrialPlant => build::count_industrial_plants(rules, obs),
         Item::SpySatellite => build::count_spy_satellites(rules, obs),
+        Item::CloningVats => build::count_cloning_vats(rules, obs),
         Item::Barracks => build::count_in(obs, rules, census, &rules.build_barracks_types),
         Item::Weapons => build::count_in(obs, rules, census, &rules.build_weapons_types),
         Item::Defense => build::defenses(rules, obs, census),
@@ -609,6 +625,7 @@ fn pick<'r>(
         Item::Purifier => build::ore_purifier_building(rules, obs),
         Item::IndustrialPlant => build::industrial_plant_building(rules, obs),
         Item::SpySatellite => build::spy_satellite_building(rules, obs),
+        Item::CloningVats => build::cloning_vats_building(rules, obs),
         Item::Barracks => build::first_buildable(rules, obs, &rules.build_barracks_types),
         Item::Weapons => build::first_buildable(rules, obs, &rules.build_weapons_types),
         Item::Defense => build::defense_building(rules, obs, census),
