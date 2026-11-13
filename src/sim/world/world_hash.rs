@@ -2174,7 +2174,6 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     let foundation = entity.type_facts.foundation();
     match foundation {
         crate::rules::foundation::Foundation::Stock(_) => foundation.name().hash(hasher),
-        #[cfg(feature = "ares")]
         _ => foundation.hash(hasher),
     }
     entity.type_facts.building_hidden_occupancy().hash(hasher);

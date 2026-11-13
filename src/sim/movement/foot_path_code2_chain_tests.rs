@@ -1,6 +1,6 @@
 //! Rust regression tests for the urgency-0 code-2 chain of
 //! `AStar_compute_edge_cost @ 0x00429830` over live cell lists
-//! ([`Simulation::astar_code2_chain_jams`]). Expected behaviour comes from
+//! ([`Simulation::astar_code2_chain`]). Expected behaviour comes from
 //! instruction reading of `0x00429886..0x00429984`, except where a test
 //! replays the original executable's Hills controls.
 use super::*;
@@ -64,8 +64,9 @@ fn moving(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16), facing: u16) 
 }
 
 fn jams(sim: &Simulation, cell: (u16, u16)) -> bool {
-    sim.astar_code2_chain_jams(cell, MovementLayer::Ground, None)
+    sim.astar_code2_chain(cell, MovementLayer::Ground, None)
         .expect("the arena has map cells")
+        .jams
 }
 
 fn set_head(sim: &mut Simulation, id: u64, head: Option<u8>) {
@@ -94,6 +95,26 @@ fn a_building_jams_and_an_empty_cell_clears() {
 
     assert!(jams(&sim, (11, 10)));
     assert!(!jams(&sim, (12, 10)));
+}
+
+/// A Foot heading off the map steps onto the shared Dummy, which lists
+/// nothing, so the chain clears; the lookup stamps the Dummy, so no other
+/// search may take that answer. Heading along the edge, it may.
+#[test]
+fn a_chain_off_the_map_is_not_shared() {
+    let rules = rules();
+    let mut sim = arena(&rules);
+    let tank = stopped(&mut sim, &rules, (31, 10), Some(EAST));
+    let walk = |sim: &Simulation| {
+        let chain = sim
+            .astar_code2_chain((31, 10), MovementLayer::Ground, None)
+            .expect("the arena has map cells");
+        (chain.jams, chain.shared)
+    };
+
+    assert_eq!(walk(&sim), (false, false), "east of (31,10) is off the map");
+    set_head(&mut sim, tank, Some(NORTH));
+    assert_eq!(walk(&sim), (false, true));
 }
 
 /// A stopped Foot heads for its path's head word (`0x004298B3`), whatever
@@ -292,7 +313,8 @@ fn the_native_hills_controls_price_as_the_live_chain() {
             .set_speed_fraction(speed);
         let urgency = control["urgency"].as_u64().unwrap() as u8;
         let multiplier = code2_multiplier(urgency, || {
-            sim.astar_code2_chain_jams((10, 10), MovementLayer::Ground, None)
+            sim.astar_code2_chain((10, 10), MovementLayer::Ground, None)
+                .map(|chain| chain.jams)
         })
         .unwrap();
         assert_eq!(

@@ -14,7 +14,6 @@
 //! `Some(None)` = `none`/`<none>` (explicitly null), `Some(Some(id))` =
 //! resolved registered type. Fixed strings hold `None` for an empty array.
 
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct AresSideExtension {
@@ -87,7 +86,6 @@ pub struct AresSideExtension {
     pub dialog_background_palette: Option<String>,
 }
 
-#[cfg(feature = "ares")]
 impl AresSideExtension {
     /// The seven score-screen names, as `Game_LoadCampaignScoreAssets`
     /// (`0x1002F3A0`, patch site `0x72D300`), `Game_LoadMultiplayerScoreAssets`
@@ -140,7 +138,6 @@ impl AresSideExtension {
     }
 }
 
-#[cfg(feature = "ares")]
 impl Default for AresSideExtension {
     fn default() -> Self {
         Self {

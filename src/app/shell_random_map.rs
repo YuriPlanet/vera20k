@@ -114,6 +114,8 @@ impl RandomMapPreviewRules {
         theater_ext: &str,
     ) -> Option<Self> {
         let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(processed).ok()?;
+        // ARTMD is read the way the game's Rules were (`ares_switch::ares_way`).
+        let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
             owner.fixed_art(),
         ));

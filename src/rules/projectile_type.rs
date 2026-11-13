@@ -154,8 +154,7 @@ pub struct ProjectileType {
     #[cfg(feature = "phobos")]
     pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType,
     /// Ares BulletTypeExt keys (`rules::ares_bullet_type`, read by
-    /// `100193C0`).
-    #[cfg(feature = "ares")]
+    /// `100193C0`). A stock-way read keeps the constructor defaults.
     pub(crate) bullet_type_ext: crate::rules::ares_bullet_type::BulletTypeExtRules,
     /// Current native Image25 text; SHP admission is separately retained below.
     pub image: Option<String>,
@@ -360,19 +359,16 @@ impl ProjectileType {
     /// parent's outer cluster loop, exactly as `BulletClass::Explodes`'s
     /// airburst checks do with `Airburst || Splits`. Without Phobos, Ares'
     /// `Splits=` does the same (`HasSplitBehavior`, BulletClass_Fire_SplitsA/B
-    /// `1001A7E0`/`1001A810`, hooks `0x468EB9`/`0x468FFA`). False in stock.
+    /// `1001A7E0`/`1001A810`, hooks `0x468EB9`/`0x468FFA`). False in stock:
+    /// a stock-way read leaves the Ares key unread.
     pub const fn splits(&self) -> bool {
         #[cfg(feature = "phobos")]
         {
             self.phobos_airburst.splits
         }
-        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        #[cfg(not(feature = "phobos"))]
         {
             self.bullet_type_ext.splits
-        }
-        #[cfg(not(any(feature = "phobos", feature = "ares")))]
-        {
-            false
         }
     }
 
@@ -388,8 +384,9 @@ impl ProjectileType {
         None
     }
 
-    /// `Airburst=` or, in a Phobos or Ares build, `Splits=`: the BulletClass
-    /// impact and detonation arms the `BulletClass::Explodes` hooks select.
+    /// `Airburst=` or, in a Phobos build or a game read the Ares way,
+    /// `Splits=`: the BulletClass impact and detonation arms the
+    /// `BulletClass::Explodes` hooks select.
     pub const fn airburst_arm(&self) -> bool {
         self.airburst || self.splits()
     }
@@ -477,10 +474,11 @@ impl ProjectileType {
             phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType::from_section(
                 section,
             ),
-            #[cfg(feature = "ares")]
-            bullet_type_ext: crate::rules::ares_bullet_type::BulletTypeExtRules::from_section(
-                section,
-            ),
+            bullet_type_ext: if crate::rules::ares_switch::ares_way() {
+                crate::rules::ares_bullet_type::BulletTypeExtRules::from_section(section)
+            } else {
+                Default::default()
+            },
             image: None,
             image_loads: Vec::new(),
             voxel_image_load: None,

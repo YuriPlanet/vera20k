@@ -1,7 +1,6 @@
 //! Retained WarheadExt configuration shared by the Ares EMP and AttachEffect
 //! receivers. Installed 10051890 owns defaults; 10051B70 owns House admission.
 //! The retained processing registry reads it; RuleSet projects an immutable view.
-#[cfg(any(feature = "ares", feature = "phobos"))]
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
@@ -13,16 +12,12 @@ pub(crate) struct AresWarheadRules {
     affects_enemies: bool,
     affects_owner: Option<bool>,
     attach_effect: AttachEffectRules,
-    #[cfg(feature = "ares")]
     #[serde(default)]
     kill_driver: KillDriverRules,
-    #[cfg(feature = "ares")]
     #[serde(default)]
     effects_require_damage: bool,
-    #[cfg(feature = "ares")]
     #[serde(default = "default_effects_require_verses")]
     effects_require_verses: bool,
-    #[cfg(feature = "ares")]
     #[serde(default)]
     combat: WarheadCombatRules,
 }
@@ -35,13 +30,9 @@ impl Default for AresWarheadRules {
             affects_enemies: true,
             affects_owner: None,
             attach_effect: Default::default(),
-            #[cfg(feature = "ares")]
             kill_driver: Default::default(),
-            #[cfg(feature = "ares")]
             effects_require_damage: false,
-            #[cfg(feature = "ares")]
             effects_require_verses: true,
-            #[cfg(feature = "ares")]
             combat: Default::default(),
         }
     }
@@ -82,29 +73,23 @@ impl AresWarheadRules {
     pub(crate) fn affects_owner(&self) -> Option<bool> {
         self.affects_owner
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn kill_driver(&self) -> &KillDriverRules {
         &self.kill_driver
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn effects_require_damage(&self) -> bool {
         self.effects_require_damage
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn effects_require_verses(&self) -> bool {
         self.effects_require_verses
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn combat(&self) -> &WarheadCombatRules {
         &self.combat
     }
     /// The two NullableIdx<Voc> overrides bind against the fixed sound
     /// catalog after the type passes, like every other Voc reference.
-    #[cfg(feature = "ares")]
     pub(crate) fn combat_mut(&mut self) -> &mut WarheadCombatRules {
         &mut self.combat
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
@@ -129,7 +114,6 @@ impl AresWarheadRules {
     }
 }
 
-#[cfg(feature = "ares")]
 fn default_effects_require_verses() -> bool {
     true
 }
@@ -139,7 +123,6 @@ fn default_effects_require_verses() -> bool {
 /// matches the same eight names. The selector's random permission is a
 /// consumer input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) enum HouseSelector {
     Default,
     Invoker,
@@ -151,7 +134,6 @@ pub(crate) enum HouseSelector {
     Random,
 }
 
-#[cfg(any(feature = "ares", feature = "phobos"))]
 impl HouseSelector {
     pub(crate) fn read(self, section: &IniSection, key: &str) -> Self {
         let _ares = crate::rules::ares_switch::ares_reads();
@@ -177,7 +159,6 @@ impl HouseSelector {
 /// WarheadExt+5D..74, constructor1005194B/1005194E/10051A70/10051A77.
 /// ReadINI1005207E..100520D8 uses the exact full keys, without clamps.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg(feature = "ares")]
 pub(crate) struct KillDriverRules {
     enabled: bool,
     kill_below_percent: NativeF64Bits,
@@ -186,7 +167,6 @@ pub(crate) struct KillDriverRules {
     remove_veterancy: bool,
 }
 
-#[cfg(feature = "ares")]
 impl Default for KillDriverRules {
     fn default() -> Self {
         Self {
@@ -199,9 +179,7 @@ impl Default for KillDriverRules {
     }
 }
 
-#[cfg(feature = "ares")]
 impl KillDriverRules {
-    #[cfg(feature = "ares")]
     fn read_pass(&mut self, section: &IniSection) {
         let _ares = crate::rules::ares_switch::ares_reads();
         self.enabled = section.read_ares_bool("KillDriver", self.enabled);
@@ -232,7 +210,6 @@ impl KillDriverRules {
 /// The RulesExt keys the warhead hooks read: LoadBeforeTypeData 1002AB60
 /// reads both with the Valueable<bool> reader on every Rules pass.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg(feature = "ares")]
 pub(crate) struct WarheadGlobalRules {
     /// RulesExt+0x111 `[General] DamageAirConsiderBridges`, constructor false.
     damage_air_consider_bridges: bool,
@@ -240,7 +217,6 @@ pub(crate) struct WarheadGlobalRules {
     iron_curtain_flash: bool,
 }
 
-#[cfg(feature = "ares")]
 impl Default for WarheadGlobalRules {
     fn default() -> Self {
         Self {
@@ -250,7 +226,6 @@ impl Default for WarheadGlobalRules {
     }
 }
 
-#[cfg(feature = "ares")]
 impl WarheadGlobalRules {
     pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         let _ares = crate::rules::ares_switch::ares_reads();
@@ -273,7 +248,6 @@ impl WarheadGlobalRules {
 
 /// Victim kinds of WarheadTypeExt::GetRelativeDamage (installed 10051C50),
 /// in RelativeDamage.* field order (+E4..+F4).
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RelativeDamageKind {
     Buildings,
@@ -290,7 +264,6 @@ pub(crate) enum RelativeDamageKind {
 /// observable; `IonCannon` and the other effect keys this struct lacks are
 /// not read.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg(feature = "ares")]
 pub(crate) struct WarheadCombatRules {
     /// +0x08 `MindControl.Permanent` (detail::read<bool>).
     #[serde(default)]
@@ -366,7 +339,6 @@ pub(crate) struct WarheadCombatRules {
     pre_impact_anim_moves: bool,
 }
 
-#[cfg(feature = "ares")]
 impl Default for WarheadCombatRules {
     fn default() -> Self {
         Self {
@@ -407,12 +379,10 @@ impl Default for WarheadCombatRules {
     }
 }
 
-#[cfg(feature = "ares")]
 fn default_iron_curtain_cap() -> i32 {
     -1
 }
 
-#[cfg(feature = "ares")]
 impl WarheadCombatRules {
     /// The ReadINI 10051D80 reads of this group. `temporal_warp_away` is the
     /// pass's resolved `Temporal.WarpAway` (Nullable<Anim> 1002D910: unknown
@@ -672,7 +642,6 @@ impl WarheadCombatRules {
 /// `Ripple.Radius` warhead raises (applyRipples 10051AE0) and what its first
 /// frame builds (IonBlastClass_Update_Beam 10053F10).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg(feature = "ares")]
 pub(crate) struct IonCannonRules {
     /// +0x104 Valueable<bool> `IonCannon`, constructor false.
     enabled: bool,
@@ -691,7 +660,6 @@ pub(crate) struct IonCannonRules {
     damage: Option<i32>,
 }
 
-#[cfg(feature = "ares")]
 impl Default for IonCannonRules {
     fn default() -> Self {
         Self {
@@ -706,7 +674,6 @@ impl Default for IonCannonRules {
     }
 }
 
-#[cfg(feature = "ares")]
 impl IonCannonRules {
     /// The ReadINI 10051D80 reads, given the pass's resolved references
     /// (`None` where the read failed and the field retains).
@@ -769,7 +736,6 @@ impl IonCannonRules {
     }
 }
 
-#[cfg(feature = "ares")]
 fn nullable_name<'a>(value: &'a Option<Option<String>>, rules_default: &'a str) -> Option<&'a str> {
     match value {
         Some(name) => name.as_deref(),
@@ -780,7 +746,6 @@ fn nullable_name<'a>(value: &'a Option<Option<String>>, rules_default: &'a str) 
 /// Ares Promotable<int>::Read (TemplateDef.h, noinline): the format with ""
 /// (a trailing dot stripped) sets all three ranks when it parses, then the
 /// Rookie, Veteran and Elite keys each override one; failures retain.
-#[cfg(feature = "ares")]
 fn read_promotable_int(
     section: &IniSection,
     [common, rookie]: [&str; 2],
@@ -886,7 +851,6 @@ impl AttachEffectRules {
     pub(crate) fn visual_combat_path(&self) -> bool {
         !self.temporal_hides_anim
     }
-    #[cfg(feature = "ares")]
     pub(crate) fn read_pass(&mut self, section: &IniSection, animation: Option<Option<String>>) {
         let _ares = crate::rules::ares_switch::ares_reads();
         // Exact 10058A59..10058B3A read order. Missing keys retain the live
@@ -1072,8 +1036,8 @@ mod tests {
     /// Nullable retention, the TechnoType list, the Voc overrides and the
     /// two RulesExt keys of LoadBeforeTypeData 1002AB60.
     #[test]
-    #[cfg(feature = "ares")]
     fn combat_keys_use_the_ares_readers_and_constructor_defaults() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::object_type::ObjectCategory;
         let root = IniFile::from_str(
             "[Warheads]\n0=CULL\n1=PLAIN\n[InfantryTypes]\n0=GI\n[VehicleTypes]\n0=MTNK\n\
@@ -1158,17 +1122,18 @@ mod tests {
     /// `animation type [X] has no bound SHP frame count`, so the kill plays no
     /// death animation at all.
     ///
-    /// The assertion reads `ares_combat()`, which only exists in Ares builds.
-    #[cfg(feature = "ares")]
+    /// The assertion reads `ares_combat()`, which is `Some` only for a warhead
+    /// read the Ares way.
     #[test]
     fn inf_death_anim_joins_the_anim_class_construction_roots() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let root = IniFile::from_str(
             "[Warheads]\n0=DEATH_WH\n\
              [Animations]\n0=MELTDIEE\n\
              [DEATH_WH]\nCellSpread=1\nInfDeathAnim=MELTDIEE\n",
         );
-        let rules = RuleSet::from_processed_rules(&RulesLayerStack::new(root).process().unwrap())
-            .unwrap();
+        let rules =
+            RuleSet::from_processed_rules(&RulesLayerStack::new(root).process().unwrap()).unwrap();
         assert_eq!(
             rules
                 .warhead("DEATH_WH")

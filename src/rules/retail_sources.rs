@@ -226,7 +226,7 @@ impl RetailRulesSources {
             langrule_selection_failure,
             artmd,
             personal_rules: PersonalRules::default(),
-            ships_ares: assets.ships_ares(),
+            ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
         })
     }
 
@@ -264,9 +264,10 @@ impl RetailRulesSources {
                 self.artmd.source.logical_name,
             ],
             self.personal_rules,
+            self.ships_ares,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
-        Ok(owner.with_ares_mix(self.ships_ares))
+        Ok(owner)
     }
 
     pub fn into_startup(

@@ -112,6 +112,7 @@ mod tests {
 
     #[test]
     fn driver_protection_and_warhead_inputs_keep_native_defaults_and_invalid_layers() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ares_warhead::{HouseSelector, KillDriverRules};
         use crate::util::native_x87::NativeF64Bits;
         let root = "[VehicleTypes]\n0=HOST\n[Warheads]\n0=DRIVER_WH\n1=DEFAULT_WH\n\
@@ -185,6 +186,7 @@ mod tests {
 
     #[test]
     fn ares_vehicle_driver_rules_keep_native_defaults_and_reached_layers() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut layers = RulesLayerStack::new(IniFile::from_str(
             "[Sides]\nGDI=Neutral\nNod=Child\n[GDI]\nCrew=OP\nTechnician=none\n\
              [Countries]\n0=Neutral\n1=Child\n\

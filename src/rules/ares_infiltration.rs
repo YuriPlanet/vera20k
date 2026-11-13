@@ -182,6 +182,7 @@ mod tests {
     /// civilian occupation (`IsSabotagable @ 1000D790`).
     #[test]
     fn spy_effect_keys_read_as_the_dll_reads_them() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[SuperWeaponTypes]\n0=SW1\n[SW1]\nType=MultiMissile\n\
              [BuildingTypes]\n0=BANK\n1=HUT\n2=BARREL\n3=SAFE\n\

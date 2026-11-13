@@ -235,12 +235,15 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             roots.insert(name.to_ascii_uppercase());
         }
     };
+    // The Ares roots below join only for Rules read the Ares way.
+    let ares_way = crate::rules::ares_switch::ares_way();
     // Ares common Launch10033068..100330AA constructs SW.Animation through
     // the same AnimClass owner as other effects, even when it is hidden.
-    #[cfg(feature = "ares")]
-    for sw in rules.super_weapons.values() {
-        if let Some(Some(animation)) = &sw.presentation.animation {
-            insert(animation);
+    if ares_way {
+        for sw in rules.super_weapons.values() {
+            if let Some(Some(animation)) = &sw.presentation.animation {
+                insert(animation);
+            }
         }
     }
     for warhead in rules.warheads_iter() {
@@ -250,17 +253,16 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         // Installed Ares EMP10062610/10062FD0 constructs the retained
         // Warhead sparkle as AnimClass421EA0. Existing-pointer lookup alone
         // does not bind its physical bounds for that constructor.
-        #[cfg(feature = "ares")]
-        if let Some(name) = warhead.ares_rules().and_then(|emp| emp.sparkles()) {
+        if ares_way && let Some(name) = warhead.ares_rules().and_then(|emp| emp.sparkles()) {
             insert(name);
         }
         // AttachedEffect 100586E0 constructs the registered AnimClass with
         // flags 0x600 and then attaches it to the victim. It needs physical
         // bounds through this same loader closure before construction.
-        #[cfg(feature = "ares")]
-        if let Some(name) = warhead
-            .ares_rules()
-            .and_then(|wh| wh.attach_effect().animation())
+        if ares_way
+            && let Some(name) = warhead
+                .ares_rules()
+                .and_then(|wh| wh.attach_effect().animation())
         {
             insert(name);
         }
@@ -272,10 +274,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         // and without this root the constructor refuses with
         // `animation type [X] has no bound SHP frame count` and the kill plays
         // no death animation at all.
-        #[cfg(feature = "ares")]
-        if let Some(name) = warhead
-            .ares_combat()
-            .and_then(|combat| combat.inf_death_anim())
+        if ares_way
+            && let Some(name) = warhead
+                .ares_combat()
+                .and_then(|combat| combat.inf_death_anim())
         {
             insert(name);
         }
@@ -283,8 +285,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // First activation10062625 may fall back through Type/General, while
     // refresh uses only the explicit Warhead pointer. Bind every configured
     // producer through this same closure, for graphical and headless loads.
-    #[cfg(feature = "ares")]
-    {
+    if ares_way {
         for object in rules.all_objects() {
             if let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles()) {
                 insert(name);
@@ -412,9 +413,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     }
     // Ares `[Side] Parachute.Anim=`: an attached canopy type needs the same
     // physical animation bounds before the simulator creates it.
-    #[cfg(feature = "ares")]
-    for name in rules.side_parachute_animations() {
-        insert(name);
+    if ares_way {
+        for name in rules.side_parachute_animations() {
+            insert(name);
+        }
     }
     // Techno70F1D0 attaches [General] Behind= to an obscured object. Its
     // AnimClass must have physical frame bounds before the AI can create it.
