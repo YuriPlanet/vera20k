@@ -14,6 +14,11 @@
 //! `RadarClass::MarkPixelDirty @ 0x006562D0` queues one pixel for Update's
 //! RenderCellPixel pass; this owner recomputes every dot on each minimap
 //! update instead, so its callers' requests are subsumed.
+//!
+//! RESIDUAL: the tracker syncs once per drawn picture, not once per Logic
+//! frame (`TechnoClass+0x4A0`), so when several frames pass between pictures,
+//! objects sharing one exact pixel can take another order there: only which
+//! of them colours that pixel or answers a click on it differs.
 
 use crate::map::houses::HouseColorMap;
 use crate::render::snapshot::SnapshotObject;
@@ -124,7 +129,10 @@ pub(super) fn radar_entity_owner_color(
 /// every dot is recomputed on each minimap update.
 ///
 /// RESIDUAL: `FlashFrameTime=0` divides by zero natively; here it never
-/// flashes.
+/// flashes. A re-hit while the dot is inverted restarts the flash; natively
+/// that restart's first redraw request can miss its boundary (`0x0070DC37`),
+/// leaving the dot inverted about six frames longer with retail 49/7, while
+/// here the new phase shows at once.
 pub(super) fn radar_combat_flash_inverts(
     entity: &impl crate::render::snapshot::SnapshotObject,
     current_player: Option<InternedId>,
