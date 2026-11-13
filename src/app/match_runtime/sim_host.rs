@@ -108,6 +108,9 @@ pub(crate) struct SimHost {
     /// world on its first read after a write, and at [`Self::lend`] for the
     /// world the lent tick starts from. Every write route empties it.
     frame: std::cell::OnceCell<Arc<PresentationFrame>>,
+    /// The last frame's record storage, which the next capture fills in
+    /// place instead of allocating its own.
+    spare_records: std::cell::Cell<Vec<crate::app::presentation::frame::ObjectRecord>>,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -312,7 +315,11 @@ impl SimHost {
     /// world is kept for the next copy to bring up to date
     /// (`Simulation::presentation_copy`).
     fn forget_frame(&mut self) {
-        self.frame = std::cell::OnceCell::new();
+        if let Some(frame) = self.frame.take()
+            && let Ok(frame) = Arc::try_unwrap(frame)
+        {
+            self.spare_records.set(frame.into_records());
+        }
         if let Some(copy) = self.presentation.take()
             && let Ok(copy) = Arc::try_unwrap(copy)
         {
@@ -358,7 +365,10 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Arc::new(PresentationFrame::capture(runtime));
+            let frame = Arc::new(PresentationFrame::capture_into(
+                runtime,
+                self.spare_records.take(),
+            ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
@@ -408,6 +418,7 @@ impl SimHost {
         self.runtime = runtime;
         self.forget_frame();
         self.spare = None;
+        self.spare_records.take();
     }
 
     /// Remove and return the installed runtime.
@@ -418,6 +429,7 @@ impl SimHost {
         self.lend_cost = None;
         self.forget_frame();
         self.spare = None;
+        self.spare_records.take();
         self.runtime.take()
     }
 }

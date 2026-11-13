@@ -72,17 +72,36 @@ pub(crate) struct ActorMotionObservation {
     pub drive_head: Option<crate::sim::components::DriveCoord>,
     pub mission: (i32, i32),
 }
+/// A Drive's track destination and head; none for another locomotor.
+pub(crate) fn drive_track(
+    locomotor: &crate::sim::movement::locomotor::LocomotorState,
+) -> [Option<crate::sim::components::DriveCoord>; 2] {
+    use crate::sim::movement::track_process::TrackFamily;
+    if locomotor.active_kind() != crate::rules::locomotor_type::LocomotorKind::Drive {
+        return [None, None];
+    }
+    [
+        locomotor.track_destination(TrackFamily::Drive),
+        locomotor.track_head(TrackFamily::Drive),
+    ]
+}
+
 impl ActorMotionObservation {
     pub(crate) fn read(
         sim: &crate::sim::world::Simulation,
         entity: &crate::sim::game_entity::GameEntity,
     ) -> Self {
+        let locomotor = entity.locomotor.as_ref();
         Self::of_parts(
             sim.interner().resolve(entity.type_ref()),
-            entity.locomotor.as_ref(),
+            locomotor.map(|loco| loco.active_kind()),
+            locomotor.map_or([None, None], drive_track),
             entity.foot_speed.native_applied_fraction().bits(),
             crate::sim::movement::motion_query::is_moving(entity),
-            &entity.mission,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
         )
     }
 
@@ -91,35 +110,39 @@ impl ActorMotionObservation {
         sim: &crate::sim::world::Simulation,
         entity: &crate::app::presentation::frame::ObjectRecord,
     ) -> Self {
+        let locomotor = entity.locomotor.as_ref();
         Self::of_parts(
             sim.interner().resolve(entity.type_ref()),
-            entity.locomotor.as_ref(),
+            locomotor.map(|loco| loco.active_kind()),
+            locomotor.map_or([None, None], |loco| loco.drive_track()),
             entity.applied_fraction.bits(),
             entity.place.moving,
-            &entity.mission,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
         )
     }
 
+    /// `drive_track` is a Drive's track destination and head.
     fn of_parts(
         actor_type: &str,
-        locomotor: Option<&crate::sim::movement::locomotor::LocomotorState>,
+        locomotor: Option<crate::rules::locomotor_type::LocomotorKind>,
+        drive_track: [Option<crate::sim::components::DriveCoord>; 2],
         bits: u64,
         moving: Option<bool>,
-        mission: &crate::sim::mission::MissionCom,
+        mission: (i32, i32),
     ) -> Self {
-        use crate::sim::movement::track_process::TrackFamily;
-        let drive = locomotor.filter(|loco| {
-            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
-        });
+        let [drive_destination, drive_head] = drive_track;
         Self {
             actor_type: actor_type.to_owned(),
-            locomotor: locomotor.map(|loco| format!("{:?}", loco.active_kind())),
+            locomotor: locomotor.map(|kind| format!("{kind:?}")),
             applied_fraction: f64::from_bits(bits),
             applied_fraction_bits: bits,
             moving,
-            drive_destination: drive.and_then(|loco| loco.track_destination(TrackFamily::Drive)),
-            drive_head: drive.and_then(|loco| loco.track_head(TrackFamily::Drive)),
-            mission: (mission.current().raw(), mission.queued().raw()),
+            drive_destination,
+            drive_head,
+            mission,
         }
     }
 }

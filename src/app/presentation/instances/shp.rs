@@ -1303,10 +1303,11 @@ fn factory_unload_art<'a>(
     if entity.mission.effective().known() != Some(crate::sim::mission::MissionType::Unload) {
         return None;
     }
+    // `contact0` is radio slot 0's object.
     let roof = entity
-        .radio_contacts
-        .slot(0)
-        .and(entity.place.contact0.as_ref())
+        .place
+        .contact0
+        .as_ref()
         .and_then(|product| sim.interner().object_type(product.type_ref, rules))
         .is_some_and(|object| object.jumpjet || object.balloon_hover);
     let door = &art.factory_door;
@@ -2079,11 +2080,11 @@ pub(crate) fn resolve_object_shp_frame(
     state: &AppState,
     type_id: &str,
     entity: &crate::app::presentation::frame::ObjectRecord,
-    binary_frame: u32,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<u16> {
-    let facing =
-        crate::app::presentation::render_pose::record_body_draw_facing(entity, binary_frame);
+    // The pose's body is `render_pose::body_draw_facing` at the frame's
+    // committed binary frame.
+    let facing = entity.pose.body;
     resolve_object_shp_frame_with_facing(
         state.match_state.sim_runtime.presentation(),
         state.rules(),

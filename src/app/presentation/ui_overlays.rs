@@ -113,9 +113,11 @@ impl HudBomb {
 }
 
 impl HudFacts {
+    /// `location` is `ground_pose::object_location` on the live map.
     pub(crate) fn capture(
         entity: &crate::sim::game_entity::GameEntity,
         at: &crate::app::presentation::frame::Capture<'_>,
+        location: DriveCoord,
     ) -> Self {
         let sim = at.sim;
         let rules = at.rules();
@@ -189,7 +191,7 @@ impl HudFacts {
         };
         Self {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
-            location: crate::sim::movement::ground_pose::object_location(entity, terrain),
+            location,
             structure,
             more: (!more.is_empty()).then(|| Box::new(more)),
         }
@@ -1504,7 +1506,7 @@ fn phobos_insignia_draw<'a>(
         .then(|| {
             let cargo = entity.passenger_role.cargo();
             let index = if object.phobos_passengers_by_size {
-                cargo.map_or(0, crate::sim::passenger::PassengerCargo::total_size)
+                cargo.map_or(0, crate::app::presentation::frame::Cargo::total_size)
             } else {
                 cargo.map_or(0, |cargo| cargo.count() as i32)
             };

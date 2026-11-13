@@ -16,6 +16,16 @@ pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) 
     items.par_iter().map(&work).collect()
 }
 
+/// [`map`] into `out`, whose storage it reuses: `out` ends holding the
+/// results in item order.
+pub(crate) fn map_into<T: Sync, R: Send>(
+    items: &[T],
+    out: &mut Vec<R>,
+    work: impl Fn(&T) -> R + Sync,
+) {
+    items.par_iter().map(&work).collect_into_vec(out);
+}
+
 /// [`map`] that starts the items in slice order, each on the next free
 /// worker, with the results in item order. Starting the costliest items
 /// first keeps the slowest from running alone at the end. `work` also gets

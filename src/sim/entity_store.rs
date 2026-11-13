@@ -865,6 +865,13 @@ impl EntityStore {
         })
     }
 
+    /// `work`'s answer for every stored object, in slot order, into `out`,
+    /// whose storage it reuses.
+    pub fn par_map_into<R: Send>(&self, out: &mut Vec<R>, work: impl Fn(&GameEntity) -> R + Sync) {
+        let stored: Vec<&GameEntity> = self.entities.iter().filter_map(Option::as_deref).collect();
+        crate::sim::parallel::map_into(&stored, out, |entity| work(entity));
+    }
+
     /// Action14's full Techno array, independent of Logic and Display order.
     /// Read length/slot afresh after callbacks; append/removal is visible.
     pub(crate) fn techno_registry_at(&self, index: usize) -> Option<u64> {

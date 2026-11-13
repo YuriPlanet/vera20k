@@ -357,7 +357,7 @@ fn compose_tactical_screen_entity_encounter_order(
                     return false;
                 }
                 // `entity_pick::PresentedWorld::screen_position`.
-                let (x, y) = entity.place.screen_position;
+                let [x, y] = entity.pose.screen;
                 let y = y - f32::from(entity.ion_blast_lift_pixels());
                 x >= min_x && x <= max_x && y >= min_y && y <= max_y
             })
