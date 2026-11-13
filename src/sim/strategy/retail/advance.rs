@@ -130,6 +130,63 @@ const PUSH_LOCK_FRAMES: u64 = 1_800;
 /// it instead of waiting for a comparison it can only lose by arithmetic.
 const MOP_UP_OBJECTS: usize = 8;
 
+/// Whether the fist is too small for what it can see, in a multi-house match.
+///
+/// Only 1vN asks this. In a duel the enemy's visible mass is the whole enemy, and
+/// the gates above already answer it; with several houses, each of them is only
+/// part of what will arrive, and the absolute `ARMY_TO_ATTACK` floor was written
+/// for one opponent.
+///
+/// The comparison is the fist against the enemy's visible mobile mass — the same
+/// `threat` vector the composition reads, summed — and the bar is two thirds: a
+/// push that is not at least that goes out as a raid, not as the army. Below
+/// [`MOP_UP_OBJECTS`] the caller is mopping up and this does not apply.
+fn outnumbered(census: &Census, fighters: usize) -> bool {
+    if census.enemy_houses <= 1 {
+        return false;
+    }
+    let theirs: usize = census.threat.iter().map(|count| *count as usize).sum();
+    theirs > 0 && fighters * 3 < theirs * 2
+}
+
+/// The 1vN bar is about what is visible, not about a fixed count.
+#[test]
+fn a_small_fist_does_not_push_into_several_houses() {
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        .expect("the repository's own rules");
+    let mut sim = crate::sim::world::Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    let mut census = Census::default();
+    census.refresh(
+        &crate::rules::unit_role::RoleTable::build(&rules),
+        &rules,
+        &Observation::new(&sim, owner),
+    );
+
+    // A duel: the gate has nothing to say, whatever the arithmetic.
+    census.enemy_houses = 1;
+    census.threat = [10, 10, 0, 0, 0, 0, 0];
+    assert!(!outnumbered(&census, 12), "a duel is not 1vN");
+
+    // Three houses and forty enemy bodies: twelve is a raid, not an army.
+    census.enemy_houses = 3;
+    assert!(
+        outnumbered(&census, 12),
+        "twelve against forty is walking into several houses' guns"
+    );
+    // The same houses and thirty of ours: the bar is two thirds, and that
+    // clears it.
+    assert!(!outnumbered(&census, 30), "thirty against forty is a push");
+    // And with nothing visible the comparison is undefined, not a refusal.
+    census.threat = [0; 7];
+    assert!(
+        !outnumbered(&census, 4),
+        "no visible enemy is not outnumbering"
+    );
+}
+
 /// Send the army at the enemy's base when it is large enough. `false` when
 /// the house is not pushing this frame, so the caller keeps its own posture.
 pub(super) fn advance(
@@ -191,6 +248,14 @@ pub(super) fn advance(
         // "an enemy inside the ring" is true for most of the match, and an army
         // that reads it as "never leave" guards its yard for forty minutes.
         "threat"
+    } else if outnumbered(&brain.census, fighters.len()) {
+        // 1vN. The absolute floor is an opening number, and a fist that clears it
+        // is still walking into several houses' worth of guns: measured in a
+        // 1v7, the push traded its army for a fraction of theirs and then had
+        // nothing to hold the base with. The bar rises with what is actually
+        // visible, so a bigger enemy needs a bigger fist, and mopping up (few
+        // objects left) is the branch that bypasses it.
+        "outnumbered"
     } else {
         "push"
     };

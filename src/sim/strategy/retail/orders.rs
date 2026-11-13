@@ -1491,7 +1491,16 @@ pub(super) fn crates(
     // A crate is a bonus and not a job, and the unit that takes it is one
     // with nothing else to do: not a unit the push owns, not a unit that is
     // already walking somewhere, not a unit that is fighting.
-    let idle: Vec<(u64, (u16, u16), MovementZone, bool, i32)> = brain
+    // The detail: fast bodies whose job this is. A crate is a bonus, and the unit
+    // that takes it should be one the house can spare for thirty seconds, not
+    // whichever fighter happens to be standing nearest — a Grizzly pulled off the
+    // line for a box is a tank the push does not have.
+    //
+    // The wishlist's "捡箱子单独拉出一个线程": the detail is a standing
+    // assignment of the quickest idle-capable types, and only its members collect.
+    // Speed is the rules' own `Speed=`, so a mod's fast unit joins it and a slow
+    // one does not, with no type named here.
+    let mut detail: Vec<(u64, (u16, u16), MovementZone, i32)> = brain
         .census
         .units
         .iter()
@@ -1501,27 +1510,22 @@ pub(super) fn crates(
                 && unit.orderable
                 && !unit.in_service()
                 && !holds_or_fights(unit.mission)
-                // And not a unit the push owns: the crate's walk is the
-                // weakest order in the ladder, so a unit that is already
-                // walking at something is given that instead, and the crate
-                // is never reached. A unit that is fighting is not a unit
-                // that collects a box on the way past.
-                && !brain.tracked.stands(
-                    tick,
-                    unit.entity_id,
-                    &[
-                        TrackedKind::Attack,
-                        TrackedKind::AttackMove,
-                        TrackedKind::Engage,
-                    ],
-                )
         })
         .filter_map(|unit| {
             let ty = obs.object_type(rules, unit.type_id);
             let zone = ty.map_or(MovementZone::Infantry, |ty| ty.movement_zone);
             let speed = ty.map_or(0, |ty| i32::from(ty.speed));
-            Some((unit.entity_id, unit.cell, zone, unit.traits.scout, speed))
+            Some((unit.entity_id, unit.cell, zone, speed))
         })
+        .filter(|(_, _, _, speed)| *speed >= CRATE_RUNNER_SPEED)
+        .collect();
+    // Quickest first, so the detail is the same units every frame rather than
+    // whichever the store yields first.
+    detail.sort_by_key(|(id, _, _, speed)| (-*speed, *id));
+    let idle: Vec<(u64, (u16, u16), MovementZone, bool, i32)> = detail
+        .into_iter()
+        .take(CRATE_RUNNERS)
+        .map(|(id, cell, zone, speed)| (id, cell, zone, false, speed))
         .collect();
     if idle.is_empty() {
         return;
@@ -1594,6 +1598,15 @@ pub(super) fn crates(
         }
     }
 }
+
+/// How fast a unit has to be before it belongs to the crate detail, in the
+/// rules' `Speed=`. Below this a unit is a fighter first and a courier never:
+/// the walk is the whole cost of a crate, and a slow body on it is a body off
+/// the line for nothing.
+const CRATE_RUNNER_SPEED: i32 = 6;
+
+/// How many units the crate detail holds at once.
+const CRATE_RUNNERS: usize = 4;
 
 /// The health a building is worth the wrench at, in permille of its full
 /// strength.
