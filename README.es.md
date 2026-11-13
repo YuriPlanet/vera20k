@@ -43,17 +43,6 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 
 ## Contribuir
 
-Toda ayuda es bienvenida, y estas áreas son las que más la necesitan. Cada una enlaza a su
-página en la hoja de ruta, con el trabajo en curso y el siguiente paso:
-
-- **[Jugabilidad y combate](https://github.com/YuriPlanet/vera20k/issues/3830):** comportamiento de las unidades, daño y fiabilidad de las escaramuzas.
-- **[Rendimiento](https://github.com/YuriPlanet/vera20k/issues/3831):** fotogramas por segundo y respuesta en batallas grandes y en equipos antiguos.
-- **[Multijugador](https://github.com/YuriPlanet/vera20k/issues/3832):** unirse a partidas en línea, empezarlas y mantenerlas en marcha, y la fiabilidad del juego cooperativo.
-- **[Interfaz y audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menús, textos, [traducciones](src/i18n/README.md) y sonido.
-- **[Campañas](https://github.com/YuriPlanet/vera20k/issues/3834):** las misiones se pueden iniciar, pero jugarlas hasta el final aún requiere trabajo: objetivos, disparadores, transiciones con scripts, guardado y carga, y el paso a la siguiente misión.
-- **[Compatibilidad con mods](https://github.com/YuriPlanet/vera20k/issues/3835):** funciones de Ares y Phobos, sin cambiar los valores predeterminados del juego original.
-- **[Pruebas](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** jugar VERA20K junto al original e informar de lo que se juega de forma distinta.
-
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
 cambios que hagan avanzar VERA20K.
 
