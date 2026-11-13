@@ -932,12 +932,7 @@ pub(super) fn ore_purifier_building<'r>(
 
 /// How many of the house's buildings carry `OrePurifier=`.
 pub(super) fn count_ore_purifiers(rules: &RuleSet, obs: &Observation<'_>) -> usize {
-    obs.own_entities()
-        .filter(|entity| {
-            obs.object_type(rules, entity.type_id)
-                .is_some_and(|ty| ty.ore_purifier)
-        })
-        .count()
+    count_building_type(rules, obs, |ty| ty.ore_purifier)
 }
 
 /// The `FactoryPlant=` structure: the industrial plant, `[NAINDP]` in retail.
@@ -956,12 +951,56 @@ pub(super) fn industrial_plant_building<'r>(
 
 /// How many `FactoryPlant=` buildings the house has.
 pub(super) fn count_industrial_plants(rules: &RuleSet, obs: &Observation<'_>) -> usize {
-    obs.own_entities()
+    count_building_type(rules, obs, |ty| ty.factory_plant)
+}
+
+/// The `SpySat=yes` structure: the allied spy satellite uplink, `[GASPYSAT]`.
+///
+/// The native computer does not build it — `[AI] AIBuildThis=no` in the retail
+/// rules — but auto play is the player's own hand, and the whole map on the
+/// radar is worth more to a player than to a computer that already has the map.
+/// Read off the flag, so a mod's uplink is the same query.
+pub(super) fn spy_satellite_building<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    class_types(rules, obs, ObjectCategory::Building)
+        .filter(|(ty, _)| ty.spy_sat)
+        .min_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+}
+
+/// How many `SpySat=` structures the house has.
+pub(super) fn count_spy_satellites(rules: &RuleSet, obs: &Observation<'_>) -> usize {
+    count_building_type(rules, obs, |ty| ty.spy_sat)
+}
+
+/// How many of the house's buildings answer `is`, standing or still on the yard.
+///
+/// A structure the house has paid for and not put down is a structure it has:
+/// counting only what stands is how the sweep bought eleven thousand spy
+/// satellites in one match — each one finished, went into the yard, stopped
+/// counting, and the next frame asked for another. The native count is the same
+/// pair (`HouseTracking::owned_count` plus `FactoryRegistry::count_total`).
+pub(super) fn count_building_type(
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    is: impl Fn(&ObjectType) -> bool,
+) -> usize {
+    let standing = obs
+        .own_entities()
         .filter(|entity| {
             obs.object_type(rules, entity.type_id)
-                .is_some_and(|ty| ty.factory_plant)
+                .is_some_and(|ty| is(&ty))
         })
-        .count()
+        .count();
+    let waiting: usize = obs
+        .ready_buildings()
+        .filter(|ready| {
+            obs.object_type(rules, ready.type_id)
+                .is_some_and(|ty| is(&ty))
+        })
+        .count();
+    standing + waiting
 }
 
 /// The lab, preferring the one that authorises a power the house can use.

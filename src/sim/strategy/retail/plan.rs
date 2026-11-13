@@ -184,6 +184,12 @@ pub(super) enum Item {
     /// name: the industrial plant is a Soviet structure in retail and a mod may
     // put the key on something else.
     IndustrialPlant,
+    /// The `SpySat=yes` structure (`[GASPYSAT]`): the whole map's radar, which
+    /// the player can see. `[AI] AIBuildThis=no` says the *computer* does not
+    /// build it — but auto play is a hand on the player's own base, and a
+    /// revealed map is worth more to a player than to the AI that already has
+    /// the map. So this step exists where the native AI's does not.
+    SpySatellite,
     /// The `UnitRepair=` shed (`[GADEPT] UnitRepair=yes`): where a hurt vehicle
     /// stops being a loss. Without one the retreat has nowhere to send a
     /// damaged unit, and the army shrinks by every fight it survives.
@@ -324,6 +330,14 @@ pub(super) const STEPS: &[Step] = &[
     // can spend it on something cheaper.
     Step {
         item: Item::IndustrialPlant,
+        want: 1,
+        gate: Gate::Surplus,
+    },
+    // The spy satellite, which the native computer does not build and a player
+    // would: the whole map on the radar. After the tree, because it needs the
+    // lab, and behind a surplus because 1500 is an army's worth.
+    Step {
+        item: Item::SpySatellite,
         want: 1,
         gate: Gate::Surplus,
     },
@@ -562,6 +576,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         Item::Refinery => census.refineries,
         Item::Purifier => build::count_ore_purifiers(rules, obs),
         Item::IndustrialPlant => build::count_industrial_plants(rules, obs),
+        Item::SpySatellite => build::count_spy_satellites(rules, obs),
         Item::Barracks => build::count_in(obs, rules, census, &rules.build_barracks_types),
         Item::Weapons => build::count_in(obs, rules, census, &rules.build_weapons_types),
         Item::Defense => build::defenses(rules, obs, census),
@@ -593,6 +608,7 @@ fn pick<'r>(
         Item::Refinery => build::first_buildable(rules, obs, &rules.build_refinery_types),
         Item::Purifier => build::ore_purifier_building(rules, obs),
         Item::IndustrialPlant => build::industrial_plant_building(rules, obs),
+        Item::SpySatellite => build::spy_satellite_building(rules, obs),
         Item::Barracks => build::first_buildable(rules, obs, &rules.build_barracks_types),
         Item::Weapons => build::first_buildable(rules, obs, &rules.build_weapons_types),
         Item::Defense => build::defense_building(rules, obs, census),
