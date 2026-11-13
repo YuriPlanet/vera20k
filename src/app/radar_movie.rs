@@ -8,7 +8,7 @@
 //! Queued pause transitions: original657BFA/657C7D controls in
 //! tools/scenario_pause.json.
 //! GPU/rodio, failed media decode and missing device are Rust substitutes;
-//! full native copy/final-paint and saved raw Radar fields remain unproven.
+//! the full native copy/final-paint remains unproven.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -617,11 +617,14 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
 }
 
 /// A loaded world retains Scenario62C but not the physical video FIFO. This
-/// Rust recovery policy releases only its recorded credit through684180.
-/// Native keeps the radar's `MoviePausedGame` with the rest of its body, and
-/// `RadarClass::Init @ 0x00655B20` ends the clip without the movie-done
+/// releases only the FIFO's recorded credit through684180.
+/// Deliberate difference, the maintainer's choice: native keeps the radar's
+/// `MoviePausedGame` with the rest of its body, and
+/// `RadarClass::Init @ 0x00655B20` ends a playing clip without the movie-done
 /// arm's `ScenarioPause__ExitOneLevel` (`0x00657CC8`), so a game saved under
-/// a pausing clip would stay paused until another clip ends.
+/// a pausing clip (action 117) loads paused and nothing in the match lifts
+/// it. A stage still waiting for its clip ends through that arm a few passes
+/// after the load, which lifts it in native too; VERA lifts it at the load.
 pub(crate) fn release_saved_scenario_hold(
     sim: &mut crate::sim::world::Simulation,
     held: bool,
