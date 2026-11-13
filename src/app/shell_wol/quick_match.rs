@@ -370,12 +370,15 @@ pub(super) fn run(state: &mut AppState) {
     lobby::open_quick_match_runner(state);
 }
 
+/// The refusal that names the changed game files (`{files}`).
+const CHANGED_FILES: &str = "VERA:QuickMatchChangedFiles";
+
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
-/// original game. A mod fails the pre-match check, and personal rules or an
-/// Options switch fail the join's rules hash (`0x0079BA60`, silently in
-/// Quick Match), against any opponent without the same; the box says what
-/// to turn off, and the runner ends before it queues. Only VERARULES.INI
-/// needs a restart; the Options box applies at once.
+/// original game. A mod fails the pre-match check; other INI roots, changed
+/// game files, personal rules or an Options switch fail the join's rules
+/// hash (`0x0079BA60`, silently in Quick Match), against any opponent
+/// without the same. The box says what to turn off, and the runner ends
+/// before it queues. Only the Options box applies without a restart.
 fn original_game_refusal(
     mod_in_use: bool,
     assets: &crate::app::process_assets::ProcessAssets,
@@ -383,6 +386,10 @@ fn original_game_refusal(
     let rules = assets.personal_rules();
     if mod_in_use {
         Some("VERA:QuickMatchNoMod")
+    } else if !assets.stock_ini_roots() {
+        Some("VERA:QuickMatchIniProfile")
+    } else if !assets.changed_game_files().is_empty() {
+        Some(CHANGED_FILES)
     } else if !rules.in_effect() {
         None
     } else if rules.is_empty() {
@@ -404,6 +411,10 @@ pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
         original_game_refusal(state.frontend.mods.active.is_some(), &state.process_assets)
     {
         lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
+        if key == CHANGED_FILES {
+            let files = state.process_assets.changed_game_files().join(", ");
+            lobby::replace_box_body(state, &crate::i18n::tr_fill(key, &[("files", &files)]));
+        }
         return;
     }
     let prefix = if quick_coop(state) {
@@ -1746,7 +1757,7 @@ mod tests {
     }
 
     #[test]
-    fn personal_rules_end_quick_match_before_it_queues() {
+    fn changes_to_the_original_end_quick_match_before_it_queues() {
         use crate::app::process_assets::ProcessAssets;
         use crate::assets::asset_manager::MediaArchiveMode;
         use crate::rules::personal_rules::PersonalRules;
@@ -1771,6 +1782,17 @@ mod tests {
             original_game_refusal(false, &changes),
             Some("VERA:QuickMatchPersonalRulesAndDeformation")
         );
+        // A loose rulesmd.ini the retail archives don't hold, found at startup.
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("qm-files");
+        std::fs::write(dir.path().join("rulesmd.ini"), b"[General]\n").unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
+        assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
         assert_eq!(
             original_game_refusal(true, &changes),
             Some("VERA:QuickMatchNoMod")

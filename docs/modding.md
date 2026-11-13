@@ -247,7 +247,9 @@ online room.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
 game. With a mod in use it tells you to pick **No mod** in the Mods menu first, and with
-changes in `VERARULES.INI` or **Terrain Deformation** on, to turn those off.
+changes in `VERARULES.INI` or **Terrain Deformation** on, to turn those off. It also names
+any files in the game folder that change the original rules, such as a loose `rulesmd.ini`
+or an `expandmd99.mix` an old mod left there.
 
 ## Sharing your mod
 

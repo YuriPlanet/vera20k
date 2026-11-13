@@ -42,13 +42,16 @@ refused as on any rules difference. The files are read once, starting when the p
 opens Network or Internet. Nothing more is exchanged, and without a mod the digest is the
 same bytes as before. A game from before this is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
-on that build. Quick Match plays the original game: a client with a mod in use ends its
-search with a message that says to pick No mod, and one with personal rules or Terrain
-Deformation in effect with a message that says to turn them off. The matchbot pairs
-without the rules hash, so other differences (changed INI files in the game folder, other
-INI roots) still meet at the guest's admission: after `WOL:MatchErrorJoiningGame` its
+on that build. Quick Match plays the original game, and the matchbot pairs without the
+rules hash, so a client ends its search before it queues with a message saying what to
+turn off: a mod in use; `[ini]` roots in config.toml other than YR's; game-folder files
+that change a compared INI (Rules, Art, AI, the mode INIs, CoopCampMD, LANGRULE) from the
+retail copy, which is `expandmd01.mix`'s, else the one in `ra2md.mix`'s `localmd.mix`
+(`retail_sources::files_changing_shipped_inis`, found at startup and named in the
+message and the log); or personal rules and Terrain Deformation. A difference none of
+these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
 status page says the games differ (`VERA:MatchStartMismatch`), the log records both
-hashes, and the search goes on after the stage timeout. The host only times out. This
+hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
