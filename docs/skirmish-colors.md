@@ -114,15 +114,22 @@ list has enough, and anyone can change theirs afterwards.
   (`available_color_choices`).
 - `app/frontend/skirmish_shell_render/controls.rs`: the swatches (`house_color_tint`).
 - `app/shell_network_setup/teams.rs`: Team Colors in game rooms (`colors_by_team`).
+- `app/frontend/cncnet_spawn.rs`: the colours a `spawn.ini` may name (`color`), and
+  `app/spawn_probe.rs` the list `--probe` reports (`color_names`).
 
 ## Residuals
 
 - The new colours have no name in the status line under the lobby; the eight keep
   gamemd's (`STT:PlayerColor*`).
 - Quick Match plays in the original eight. A saved new colour goes as Random there.
-- A match started from a `spawn.ini` still takes colours 0 to 7 only. A `phobos`
-  build's `spawn.ini` takes any number, and there 9 to 30 now mean this list unless
-  `SkirmishUnlimitedColors` is on; before, they were raw colour-scheme indexes.
+- A match started from a `spawn.ini` takes colours 0 to 7 and 9 to 30, as a room
+  does; 8 is the observer's and is refused. `--probe` lists the extra colours the
+  rules hold. A `phobos` build's `spawn.ini` takes any number, and there 9 to 30 mean
+  this list unless `SkirmishUnlimitedColors` is on. A launcher should send 9 to 30
+  only to this version or later: an older game refuses the `spawn.ini`.
+- A `spawn.ini` colour from 9 to 30 that the rules' list does not hold (a mod's own
+  shorter `[SkirmishColors]`) is not refused: it goes through gamemd's conversion and
+  can look like one of the eight another player has. Retail rules list all 22.
 - The loading screen picks each player's colour with the rules loaded before the map.
   A map or mode INI that adds its own `[Colors]` entries can make a new colour show as
   another one there; in the match it is right.

@@ -77,9 +77,9 @@ byte for that reason.
   the untouched launcher path would leave the observer on the default scheme.
 - An index past the end of `[Colors]` falls back to the default scheme ramp
   instead of reading past the list as the native array would.
-- A stock (non-`phobos`) build keeps the spawn.ini colour cap at YR's eight
-  priorities, so it rejects a spawner index of 8 or more rather than resolving
-  it through the vanilla table.
+- A stock (non-`phobos`) build takes YR's eight priorities and VERA's extra
+  lobby colours 9 to 30 from spawn.ini ([skirmish colours](skirmish-colors.md)),
+  and rejects 8, the observer's, and anything past 30.
 - VERA reads the key from each scenario's layered rules; Phobos reads it once
   from RULESMD.INI at startup (`0x0052D21F`), so only in VERA can a mode or map
   INI change it.
