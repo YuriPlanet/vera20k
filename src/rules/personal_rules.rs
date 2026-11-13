@@ -45,8 +45,18 @@ impl PersonalRules {
         self.terrain_deformation = on;
     }
 
+    pub fn terrain_deformation(&self) -> bool {
+        self.terrain_deformation
+    }
+
     pub fn is_empty(&self) -> bool {
         self.patch.is_empty()
+    }
+
+    /// The file or an Options switch changes the game: what
+    /// [`Self::compatibility_crc`] adds to the network rules hash.
+    pub fn in_effect(&self) -> bool {
+        !self.is_empty() || self.terrain_deformation
     }
 
     pub(crate) fn apply_root(&self, root: &mut IniFile) {
@@ -104,7 +114,7 @@ impl PersonalRules {
     /// switches as well as values. A comment-only file with the switches off
     /// has no effect, including on the compatibility hash.
     pub fn compatibility_crc(&self) -> Option<u32> {
-        if self.is_empty() && !self.terrain_deformation {
+        if !self.in_effect() {
             return None;
         }
         let policy = if self.override_map_rules { "yes" } else { "no" };

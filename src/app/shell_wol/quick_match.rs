@@ -370,22 +370,40 @@ pub(super) fn run(state: &mut AppState) {
     lobby::open_quick_match_runner(state);
 }
 
+/// VERA: Quick Match pairs players who agreed on nothing, so it plays the
+/// original game. A mod fails the pre-match check, and personal rules or an
+/// Options switch fail the join's rules hash (`0x0079BA60`, silently in
+/// Quick Match), against any opponent without the same; the box says what
+/// to turn off, and the runner ends before it queues. Only VERARULES.INI
+/// needs a restart; the Options box applies at once.
+fn original_game_refusal(
+    mod_in_use: bool,
+    assets: &crate::app::process_assets::ProcessAssets,
+) -> Option<&'static str> {
+    let rules = assets.personal_rules();
+    if mod_in_use {
+        Some("VERA:QuickMatchNoMod")
+    } else if !rules.in_effect() {
+        None
+    } else if rules.is_empty() {
+        Some("VERA:QuickMatchTerrainDeformation")
+    } else if rules.terrain_deformation() {
+        Some("VERA:QuickMatchPersonalRulesAndDeformation")
+    } else {
+        Some("VERA:QuickMatchPersonalRules")
+    }
+}
+
 /// The lobby list arrived (`0x0079FD37..0x0079FE44`): the first lobby whose
 /// name starts with the prefix (`_strnicmp`) is the runner's; with no lobby
 /// at all `WOL:NoMatchingAgentFound`, with none of the prefix
 /// `WOL:MatchingServerUnavailable`. Both boxes end the runner with 0; only
 /// the first clears the away text (`0x0079FD66`).
 pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
-    // VERA: Quick Match pairs players who agreed on nothing, so it plays the
-    // original game. With a mod in use the pre-match check would refuse any
-    // opponent without the same mod; say so here, and what to do, and end
-    // the runner.
-    if state.frontend.mods.active.is_some() {
-        lobby::quick_match_box(
-            state,
-            "VERA:QuickMatchNoMod",
-            lobby::QuickMatchBoxThen::Return,
-        );
+    if let Some(key) =
+        original_game_refusal(state.frontend.mods.active.is_some(), &state.process_assets)
+    {
+        lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
         return;
     }
     let prefix = if quick_coop(state) {
@@ -1705,6 +1723,38 @@ mod tests {
         assert_eq!(
             (globals.stage, globals.timeout),
             (stage::IN_LOBBY, Some(20))
+        );
+    }
+
+    #[test]
+    fn personal_rules_end_quick_match_before_it_queues() {
+        use crate::app::process_assets::ProcessAssets;
+        use crate::assets::asset_manager::MediaArchiveMode;
+        use crate::rules::personal_rules::PersonalRules;
+        let assets = |file: &str| {
+            ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_personal_rules(PersonalRules::from_bytes(file.as_bytes()).unwrap())
+        };
+        let mut comments = assets("; [NUKE]\n; DeformDepth=10\n");
+        assert_eq!(original_game_refusal(false, &comments), None);
+        comments.set_terrain_deformation(true);
+        assert_eq!(
+            original_game_refusal(false, &comments),
+            Some("VERA:QuickMatchTerrainDeformation")
+        );
+        let mut changes = assets("[NUKE]\nDeformDepth=10\n");
+        assert_eq!(
+            original_game_refusal(false, &changes),
+            Some("VERA:QuickMatchPersonalRules")
+        );
+        changes.set_terrain_deformation(true);
+        assert_eq!(
+            original_game_refusal(false, &changes),
+            Some("VERA:QuickMatchPersonalRulesAndDeformation")
+        );
+        assert_eq!(
+            original_game_refusal(true, &changes),
+            Some("VERA:QuickMatchNoMod")
         );
     }
 

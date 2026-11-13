@@ -246,8 +246,8 @@ Players who don't have your map are asked whether to download it when they join 
 online room.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
-game. With a mod in use it tells you to pick **No mod** in the Mods menu first. Put `;`
-in front of your changes in `VERARULES.INI` too.
+game. With a mod in use it tells you to pick **No mod** in the Mods menu first, and with
+changes in `VERARULES.INI` or **Terrain Deformation** on, to turn those off.
 
 ## Sharing your mod
 

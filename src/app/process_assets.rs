@@ -47,7 +47,9 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
-    /// Personal rules are frozen at startup, like the selected game sources.
+    /// Personal rules are read once at startup, like the selected game
+    /// sources; only the Options switches change them later
+    /// ([`Self::set_terrain_deformation`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
@@ -187,6 +189,12 @@ impl ProcessAssets {
         if let Some(rules) = self.native_rules.as_mut() {
             rules.set_terrain_deformation(on);
         }
+    }
+
+    /// VERARULES.INI and the Options switches, as the network rules hash
+    /// ([`Self::native_ini_hashes`]) compares them.
+    pub(crate) fn personal_rules(&self) -> &crate::rules::personal_rules::PersonalRules {
+        &self.personal_rules
     }
 
     /// Recovery uses the process's already resolved choice, never a new Auto

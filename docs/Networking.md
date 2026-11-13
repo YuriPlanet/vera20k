@@ -43,7 +43,10 @@ opens Network or Internet. Nothing more is exchanged, and without a mod the dige
 same bytes as before. A game from before this is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
 on that build. Quick Match plays the original game: a client with a mod in use ends its
-search with a message that says to pick No mod.
+search with a message that says to pick No mod, and one with personal rules or Terrain
+Deformation in effect with a message that says to turn them off. Without that, the
+matchbot pairs players whose rules hashes differ, and the guest's join fails with only
+`WOL:MatchErrorJoiningGame`. This adds nothing to what game, lobby and relay exchange.
 
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
 `ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
