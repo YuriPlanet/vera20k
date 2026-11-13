@@ -605,7 +605,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         // `VocClass::PlayAt` on each visit (the sim's `AnimationStarted`);
         // 750D40 never runs on them.
         if let Some(object) = crate::sim::world::object_sound_object(owner) {
-            if !frame.scene.ui.sound_object_stands(object) {
+            if !frame.sound_object_stands(object) {
                 sfx.stop_animation_sound(owner);
             }
             continue;

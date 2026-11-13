@@ -4885,15 +4885,24 @@ impl Simulation {
             std::mem::take(&mut self.frame_step_trace),
             std::mem::take(&mut self.house_ai_activation_order_test_trace),
         );
-        // What it syncs.
+        // What it syncs. The previous copy's other parts are freed on the
+        // pool, and the syncs run there beside the clone of the rest.
         let mut synced = SyncedWorld::take(self);
-        let mut copy = self.clone();
-        let mut theirs =
-            reuse.map_or_else(SyncedWorld::default, |mut old| SyncedWorld::take(&mut old));
-        synced.sync_into(&mut theirs);
+        let mut theirs = reuse.map_or_else(SyncedWorld::default, |mut old| {
+            let theirs = SyncedWorld::take(&mut old);
+            crate::sim::parallel::drop_on_pool(old);
+            theirs
+        });
+        let mut rest = None;
+        let this = &*self;
+        crate::sim::parallel::alongside(
+            || synced.sync_into(&mut theirs),
+            || rest = Some((this.clone(), fog.presentation_copy(viewer))),
+        );
+        let (mut copy, fog_copy) = rest.expect("cloned beside the syncs");
         synced.put(self);
         theirs.put(&mut copy);
-        copy.fog = fog.presentation_copy(viewer);
+        copy.fog = fog_copy;
         copy.house_alliances = self.house_alliances.detached();
         copy.main_rng = self.main_rng.detached_copy();
         copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
@@ -8540,24 +8549,45 @@ impl SyncedWorld {
                 None => *copy = None,
             }
         }
-        sync_option(
-            &mut self.terrain,
-            &mut mirror.terrain,
-            ResolvedTerrainGrid::sync_into,
+        // The parts share nothing, so they sync side by side.
+        let Self {
+            terrain,
+            overlays,
+            smudges,
+            terrain_objects,
+            interner,
+            occupancy,
+            raw_cell_occupation,
+            hidden_occupation,
+            air_slots,
+        } = self;
+        use crate::sim::parallel::alongside;
+        alongside(
+            || sync_option(terrain, &mut mirror.terrain, ResolvedTerrainGrid::sync_into),
+            || {
+                alongside(
+                    || occupancy.sync_into(&mut mirror.occupancy),
+                    || {
+                        alongside(
+                            || {
+                                raw_cell_occupation.sync_into(&mut mirror.raw_cell_occupation);
+                                hidden_occupation.sync_into(&mut mirror.hidden_occupation);
+                                air_slots.sync_into(&mut mirror.air_slots);
+                            },
+                            || {
+                                sync_option(overlays, &mut mirror.overlays, |own, copy| {
+                                    own.sync_into(copy)
+                                });
+                                sync_option(smudges, &mut mirror.smudges, |own, copy| {
+                                    own.sync_into(copy)
+                                });
+                                terrain_objects.sync_into(&mut mirror.terrain_objects);
+                                interner.sync_into(&mut mirror.interner);
+                            },
+                        )
+                    },
+                )
+            },
         );
-        sync_option(&mut self.overlays, &mut mirror.overlays, |own, copy| {
-            own.sync_into(copy)
-        });
-        sync_option(&mut self.smudges, &mut mirror.smudges, |own, copy| {
-            own.sync_into(copy)
-        });
-        self.terrain_objects.sync_into(&mut mirror.terrain_objects);
-        self.interner.sync_into(&mut mirror.interner);
-        self.occupancy.sync_into(&mut mirror.occupancy);
-        self.raw_cell_occupation
-            .sync_into(&mut mirror.raw_cell_occupation);
-        self.hidden_occupation
-            .sync_into(&mut mirror.hidden_occupation);
-        self.air_slots.sync_into(&mut mirror.air_slots);
     }
 }

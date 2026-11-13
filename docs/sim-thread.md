@@ -168,10 +168,21 @@ beside a lent tick (`sim_host::home_answer`), one tick late at most.
 Still shared, read-only: `SimResources` (the rules, the terrain template, the
 overlay registry), which nothing writes once a match is loaded.
 
-Measured (release test build, sim-bench's 20,000-unit march on a loaded
-12-core machine whose tick ran 3.7–5.8x slower than quiet): capturing the
-frame 19–30 ms, bringing the world copy up to date 7–9 ms, the first whole
-copy 46 ms. Not yet within the 2 ms goal at 20,000 objects; see Status.
+What the snapshot costs the main thread:
+
+- The records are captured on the worker pool while the scene frame is
+  captured on the calling thread. A record asks only what a drawer of that
+  object reads: an action line only for a selected or psychically detected
+  object, the airstrike tint only for a Structure, a Carryall's cargo only
+  for an Aircraft, the mind-control count only for a capture manager.
+- A frame that is replaced is freed on the pool
+  (`sim::parallel::drop_on_pool`), as is the old world copy's unsynced part.
+- The world copy's syncs run on the pool beside the clone of its other parts
+  and the local player's fog.
+- The first world copy is a whole one; desktop takes it when a scenario is
+  installed (`SimHost::install`), so the first lent tick only syncs it.
+
+Current cost: see Status.
 
 ### Phase 3: lending the runtime
 
@@ -374,28 +385,21 @@ separate Main RNG cells.
 
 Not done:
 
-- **Snapshot cost.** The goal was 2 ms per tick at 20,000 objects. Measured
-  in a release test build on the sim-bench march (12 cores, a loaded
-  machine): frame capture 14.9 ms mean (records 11.2 ms in parallel from
-  46 ms of thread time: placement 13.4, component copies 8.8, pose and
-  entity answers 8.0, local player's view 6.8, radar 6.3, status 1.8,
-  tether 1.0; the scene frame 3.7 ms serial), world copy sync 6.3 ms, frame
-  drop 1.8 ms, first whole copy 40 ms. A record is 1,200 bytes, about 24 MB
-  at 20,000 objects. Next: compute placement and radar values only for
-  drawn objects (as the Foot depth already is), slim the records (the
-  locomotor is cloned whole), parallelize the scene frame, and build the
-  first world copy while a match loads. The estimated floor at 20,000
-  objects is 1.5–2.5 ms.
-- **Tests.** The client lib suite passes but for 195 cases that need retail
-  assets this machine lacks (`Hills.mmx`, `MOVIES01.MIX`, language files)
-  and 7 others: the per-client-read pin (fails on main too), a retail cameo
-  label check, and five fixtures not yet adapted to the frame
-  (`draw_state` fading building: its sensed-observer row needs a frame
-  captured for a sensing player; `tooltips` IFV passenger; radar `minimap`
-  Mirage and two `visibility` cases whose fixtures have no terrain).
-- The core lib suite passes but for 495 cases that need retail assets this
-  machine lacks.
-- **Phase 4** (the simulation thread ticking on its own) is the next phase.
+- **Snapshot cost.** The goal is 2 ms per tick at 20,000 objects. Measured
+  in a release build on sim-bench's 20,000-unit, 30-house march, on a
+  12-core machine other builds kept at a load of 30–50, the main thread's
+  part per lent tick: capturing the frame 5.0 ms (records and scene frame
+  side by side), syncing the world copy 3.8 ms, freeing the old frame 0 ms
+  (3.2 ms of pool work). Before these changes: 10.7 + 3.1 ms capture,
+  6.8 ms copy, 3.4 ms freeing. A record is 1,200 bytes. The records are
+  bound by reading 20,000 objects scattered in memory: each touches several
+  cache lines of its `GameEntity`. Left: answer placement, lighting and the
+  status strip only for objects near the screen (radar facts stay for
+  every object); slim the records (a Drive or Walk locomotor's payload is a
+  heap allocation per record); copy the fog plane into the previous copy's
+  buffers.
+- **The simulation thread ticking on its own**, several ticks per hand-off
+  (Phase 4's first residual), is the next phase.
 
 ## Validation
 

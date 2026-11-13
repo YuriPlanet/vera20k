@@ -343,8 +343,20 @@ impl Place {
     fn of(entity: &GameEntity, pose: &RenderPose, at: &Capture<'_>) -> Self {
         let sim = at.sim;
         let display_frame = at.binary_frame.wrapping_sub(1);
+        let psychically_detected = at.psychic.as_ref().is_some_and(|(viewer, sites)| {
+            sim.techno_intent_psychically_detected(
+                entity.stable_id(),
+                *viewer,
+                sites,
+                at.cells.as_ref(),
+            )
+        });
+        // Only a selected object's line and a psychically detected one's are
+        // drawn (`target_lines`).
+        let draws_action_line = psychically_detected
+            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure);
         Self {
-            screen_position: crate::render::locomotor_visual::screen_position(entity),
+            screen_position: (pose.screen[0], pose.screen[1]),
             world_z_leptons: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity,
                 sim.resolved_terrain(),
@@ -386,24 +398,23 @@ impl Place {
                 at.cells.as_ref(),
             ),
             airstrike_designation: AirstrikeDesignation::of(entity, at),
-            action_line: crate::app::presentation::target_lines::action_line_endpoints(
-                entity,
-                sim,
-                Some(at.rules()),
-                at.cells.as_ref(),
-            ),
+            action_line: draws_action_line
+                .then(|| {
+                    crate::app::presentation::target_lines::action_line_endpoints(
+                        entity,
+                        sim,
+                        Some(at.rules()),
+                        at.cells.as_ref(),
+                    )
+                })
+                .flatten(),
             rally_line: at.cells.as_ref().and_then(|cells| {
                 crate::app::presentation::target_lines::rally_line_coords(entity, sim, cells)
             }),
-            psychically_detected: at.psychic.as_ref().is_some_and(|(viewer, sites)| {
-                sim.techno_intent_psychically_detected(
-                    entity.stable_id(),
-                    *viewer,
-                    sites,
-                    at.cells.as_ref(),
-                )
-            }),
-            airstrike_tint_active: sim.airstrike_tint_active(entity.stable_id()),
+            psychically_detected,
+            // Only a Structure's is ever active.
+            airstrike_tint_active: entity.category() == EntityCategory::Structure
+                && sim.airstrike_tint_active(entity.stable_id()),
             #[cfg(feature = "ares")]
             ares_operated: sim.ares_is_operated(entity.stable_id(), at.rules()),
             #[cfg(feature = "phobos")]
@@ -482,7 +493,12 @@ impl Seen {
             )
         };
         let object = at.object_type(entity);
-        let controlled_count = sim.capture_effective_count(entity.stable_id(), rules);
+        // Only a controller with a capture manager has a count.
+        let controlled_count = entity
+            .capture_manager
+            .is_some()
+            .then(|| sim.capture_effective_count(entity.stable_id(), rules))
+            .flatten();
         Self {
             observer,
             visual_character,
@@ -574,7 +590,10 @@ impl ObjectRecord {
             selection: entity.selection.clone(),
             discovery: entity.discovery.clone(),
             applied_fraction: entity.foot_speed.native_applied_fraction(),
-            drawn_cargo: at.sim.carryall_drawn_cargo(entity.stable_id(), at.rules()),
+            // Only an Aircraft can be a Carryall.
+            drawn_cargo: (entity.category() == EntityCategory::Aircraft)
+                .then(|| at.sim.carryall_drawn_cargo(entity.stable_id(), at.rules()))
+                .flatten(),
             answers,
             place,
             seen,
@@ -972,14 +991,26 @@ impl PresentationFrame {
                 (!sites.is_empty()).then_some((viewer, sites))
             }),
         };
-        let objects: Vec<ObjectRecord> = sim
-            .entities()
-            .par_filter_map(|_, entity| Some(ObjectRecord::capture(entity, &at)));
+        // The scene frame reads no record, so it is captured beside them.
+        let mut objects = Vec::new();
+        let mut scene = None;
+        crate::sim::parallel::alongside(
+            || {
+                objects = sim
+                    .entities()
+                    .par_map(|_, entity| ObjectRecord::capture(entity, &at));
+            },
+            || {
+                scene = Some(crate::app::presentation::frame_scene::SceneFrame::capture(
+                    &at,
+                ))
+            },
+        );
+        let scene = scene.expect("captured beside the records");
         let anim_coords = sim
             .anims()
             .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
             .collect();
-        let scene = crate::app::presentation::frame_scene::SceneFrame::capture(&at);
         let psychic_detection = at.psychic.is_some();
         Self {
             binary_frame: at.binary_frame,
@@ -1005,6 +1036,16 @@ impl PresentationFrame {
     /// `Simulation::anim_absolute_coord` of anim `id`.
     pub(crate) fn anim_coord(&self, id: u64) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         self.anim_coords.get(&id).copied()
+    }
+
+    /// Whether `object` stands for its own sound handles
+    /// (`Simulation::object_sound_owner_alive`): an object while it is out of
+    /// limbo, else a live terrain object.
+    pub(crate) fn sound_object_stands(&self, object: u64) -> bool {
+        self.object(object).map_or_else(
+            || self.scene.ui.terrain_object_stands(object),
+            |record| !record.in_limbo(),
+        )
     }
 
     pub(crate) fn contains(&self, id: u64) -> bool {

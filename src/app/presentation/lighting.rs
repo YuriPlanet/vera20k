@@ -62,15 +62,18 @@ pub(crate) fn body_extra_light(
                 crate::util::lepton::lepton_to_cell_packed(x),
                 crate::util::lepton::lepton_to_cell_packed(y),
             );
-            let height = air_movement::queried_flight_height(entity, Some(cells));
             let current = cells.lookup_world(x, y);
             let flags = cells.flags(current);
-            let above_deck = if entity.on_bridge() {
-                height >= 0
-            } else {
-                height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+            // Only a structural bridge cell reads the height.
+            let above_deck = || {
+                let height = air_movement::queried_flight_height(entity, Some(cells));
+                if entity.on_bridge() {
+                    height >= 0
+                } else {
+                    height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+                }
             };
-            if above_deck && flags & BRIDGE_FLAG_STRUCTURAL != 0 {
+            if flags & BRIDGE_FLAG_STRUCTURAL != 0 && above_deck() {
                 // Cell481810 chooses just one neighbor: direction0 when
                 // bit800 is set, otherwise6. Failure never tries the other.
                 let direction = if flags & BRIDGE_FLAG_DIRECTION_ZERO != 0 {
