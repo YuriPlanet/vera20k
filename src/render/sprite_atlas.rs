@@ -1762,10 +1762,9 @@ fn insert_object_keys(
                     }
                 }
             }
-            // A `Turret=yes` SHP Unit carries its turret in the same SHP: the
-            // thirty-two facing frames after its declared body blocks. The
-            // draw picks one from the turret heading, so all of them stay
-            // resident even though only one shows per frame.
+            // A `Turret=yes` SHP Unit draws its turret from the same SHP:
+            // thirty-two frames from `WalkFrames * 8`. The draw picks one from
+            // the turret heading, so all of them stay resident.
             if let Some(turret) = seq_set.and_then(|set| set.shp_vehicle_turret()) {
                 for slot in 0..turret.facings {
                     insert(turret.start_frame.saturating_add(slot));

@@ -14,7 +14,8 @@
 //! - Does NOT depend on sim/ game logic, render/, or any game module.
 
 use crate::rules::animation_sequence::{
-    FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet, ShpVehicleTurret,
+    FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet,
+    ShpVehicleTurret,
 };
 use crate::rules::art_data::ArtEntry;
 use crate::rules::ini_parser::IniSection;
@@ -305,17 +306,13 @@ pub(crate) fn build_shp_vehicle_sequences(
         );
     }
 
-    // A `Turret=yes` SHP body appends its thirty-two turret facing frames to
-    // the blocks the ART keys declare, so the block starts where the walk,
-    // standing and firing blocks end. `CYCL` (Voxel=no, Turret=yes,
-    // WalkFrames=22, Facings=8, no stand/fire frames) starts its turret at
-    // frame 176; its SHP carries exactly those frames before the shadow half.
+    // A `Turret=yes` SHP Unit draws its turret from the body SHP at
+    // `WalkFrames * 8` (UnitClass SHP draw `0x0073CCF7..0x0073CD03`: the
+    // signed `WalkFrames` byte at UnitType `+0xE5C` times a literal 8, plus
+    // the heading frame). `Facings`, `StartWalkFrame` and the standing and
+    // firing blocks do not move it. `CYCL` (WalkFrames=22) starts at 176.
     if has_turret {
-        let declared_blocks = u32::from(walk_frames)
-            .wrapping_add(u32::from(standing_frames))
-            .wrapping_add(u32::from(firing_frames))
-            .wrapping_mul(u32::from(facings));
-        let start = u32::from(start_walk_frame).wrapping_add(declared_blocks);
+        let start = u32::from(walk_frames).wrapping_mul(8);
         if let Ok(start_frame) = u16::try_from(start) {
             set.set_shp_vehicle_turret(ShpVehicleTurret {
                 start_frame,
@@ -478,9 +475,8 @@ mod tests {
             })
         );
 
-        // A `Turret=no` body never reads a turret block, and neither does a
-        // three-block layout without one: its declared blocks still decide
-        // where the turret would start.
+        // A `Turret=no` body has no turret block. A standing block does not
+        // move the ring: 0x0073CD03 adds only `WalkFrames * 8`.
         assert_eq!(build_test(&walker).shp_vehicle_turret(), None);
         let mut with_standing = make_art_entry(Some(22), None);
         with_standing.standing_frames = Some(4);
@@ -488,8 +484,8 @@ mod tests {
             build_test_with_turret(&with_standing, true)
                 .shp_vehicle_turret()
                 .map(|turret| turret.start_frame),
-            Some(208),
-            "22 walk + 4 standing frames over eight facings precede the turret"
+            Some(176),
+            "the ring starts at WalkFrames * 8 whatever else the layout holds"
         );
     }
 

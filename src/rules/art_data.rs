@@ -1138,8 +1138,8 @@ fn read_random_rate(section: &IniSection) -> Option<(u16, u16)> {
 /// Default native frame delay when art.ini section has no `Rate=` key.
 pub const DEFAULT_ART_RATE_LOGIC_FRAMES: u16 = 1;
 
-/// A `Turret=yes` SHP Unit appends thirty-two turret facings to its body SHP,
-/// so its frame index is the turret heading's top five bits (`facing >> 3`).
+/// A `Turret=yes` SHP Unit's turret frames in its body SHP: one per 32-step
+/// turret heading (`and eax, 0x1f` at `0x0073CCED`/`0x0073CCFE`).
 pub const SHP_TURRET_FACING_FRAMES: u16 = 32;
 
 /// Default ms-per-frame when art.ini section has no `Rate=` key.
