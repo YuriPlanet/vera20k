@@ -287,6 +287,35 @@ pub(super) fn captures(
         let Some(target) = chosen else {
             continue;
         };
+        // The walk is re-decided as it goes, not committed for the whole term.
+        //
+        // `TrackedKind::Capture`'s window is 300 frames — the length of a walk
+        // across the map. An engineer that stepped out towards a clear derrick
+        // and then met a tank halfway was locked in for five seconds with
+        // nothing re-reading the ground: the wishlist's "工程师开始绕远路，最后
+        // 还是送死，完全不会识别威胁单位". The window is right for "do not ask
+        // again", and wrong for "do not look again", so the distance test runs
+        // here every frame the walk is live.
+        //
+        // The route test, which walks a line, runs only every
+        // [`CAPTURE_RECHECK_FRAMES`]. Gating the whole check on that modulus was
+        // measured and fired zero times in four matches: it is one frame in
+        // thirty, so the gate was reading the clock rather than the ground.
+        if brain.tracked.is_claimed(tick, unit.entity_id) {
+            let close = guards.iter().any(|cell| {
+                squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
+            });
+            let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
+                && path_crosses(&guards, unit.cell, target.cell, PATH_CLEAR_CELLS);
+            if close || crossed {
+                brain.tracked.void(unit.entity_id, TrackedKind::Capture);
+                log::debug!(
+                    "auto play: engineer {} drops the walk, the ground turned bad",
+                    unit.entity_id
+                );
+                continue;
+            }
+        }
         // L4: it has been told to take this building, and the walk is not
         // over, so it is not told again.
         if !brain.tracked.admits(
@@ -329,6 +358,145 @@ pub(super) fn captures(
         issued += 1;
     }
 }
+
+/// Spend a unit whose weapon spends it on something worth more than it costs.
+///
+/// The wishlist's "恐怖分子，自爆卡车，疯狂伊万，辐射工兵…有特殊攻击能力且存在
+/// 误伤". A `Suicide=yes` primary is not a rifle with a shorter range: firing it
+/// removes the unit, so the ordinary rules are all wrong for it — it does not
+/// advance with the fist, it does not trade at a third of a health bar, and it
+/// does not kite out of a shell, because there is nothing left to save.
+///
+/// Two things make the errand worth running at all:
+///
+/// * **Worth.** The blast has to be aimed at something dearer than the body.
+///   Measured against `points`, the same currency the census weighs both sides
+///   in, so a bomb truck sent at a construction yard is a trade and one sent at
+///   a wall is not.
+/// * **Splash.** `DemobombWH CellSpread=8` does not read the owner list. A
+///   target with the house's own units inside the blast radius is not a target:
+///   the wishlist's "误伤", and the reason the second half of this step looks at
+///   where the blast would land rather than only at what it would hit.
+pub(super) fn suicide_errand(
+    brain: &mut RetailBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    out: &mut Outbox,
+) {
+    let tick = obs.tick();
+    if !brain
+        .census
+        .units
+        .iter()
+        .any(|unit| unit.traits.suicide && unit.orderable && !unit.hand)
+    {
+        return;
+    }
+    // What the house would rather not catch in its own blast.
+    let own: Vec<(u16, u16)> = brain
+        .census
+        .units
+        .iter()
+        .filter(|unit| !unit.traits.suicide)
+        .map(|unit| unit.cell)
+        .collect();
+    // The enemy's structures, which is what a one-shot body is worth spending on.
+    let targets: Vec<EnemyEntity> = obs
+        .enemy_entities()
+        .filter(|enemy| {
+            obs.object_type(rules, enemy.type_id)
+                .is_some_and(|ty| ty.category == ObjectCategory::Building)
+        })
+        .collect();
+    if targets.is_empty() {
+        return;
+    }
+    let mut issued = 0;
+    for unit in &brain.census.units {
+        if issued >= FORCE_ORDERS_PER_FRAME {
+            break;
+        }
+        if !unit.traits.suicide || !unit.orderable || unit.hand {
+            continue;
+        }
+        if ordered_this_frame(out, unit.entity_id) {
+            continue;
+        }
+        let Some(ty) = obs.object_type(rules, unit.type_id) else {
+            continue;
+        };
+        // What it costs, in the census's own currency.
+        let cost = super::census::fight_points(ty, 1000);
+        let reach = super::advance::weapon_range_cells(rules, ty, false).max(1);
+        let chosen = targets
+            .iter()
+            .filter_map(|target| {
+                let value = obs
+                    .object_type(rules, target.type_id)
+                    .map_or(0, |target_ty| super::census::fight_points(target_ty, 1000));
+                // Only a trade: the blast has to be worth more than the body.
+                // Equal is not a trade — the house pays the walk as well.
+                if value <= cost {
+                    return None;
+                }
+                // Nothing of the house's inside the blast. `SPLASH_CELLS` is a
+                // stand-in for the warhead's `CellSpread=`, taken from the
+                // dearest of them: a bomb truck's is 8 and the desolator's
+                // eruption is 10, so the check is the pessimistic one.
+                let nearby = own.iter().any(|cell| {
+                    squared_distance(*cell, target.cell) <= SPLASH_CELLS * SPLASH_CELLS
+                });
+                if nearby {
+                    return None;
+                }
+                Some((
+                    std::cmp::Reverse(value),
+                    squared_distance(unit.cell, target.cell),
+                    target.entity_id,
+                    target.cell,
+                ))
+            })
+            .min_by_key(|(value, walk, id, _)| (*value, *walk, *id))
+            .map(|(_, _, id, cell)| (id, cell));
+        let Some((target, target_cell)) = chosen else {
+            continue;
+        };
+        if !brain.tracked.admits(
+            tick,
+            unit.entity_id,
+            TrackedKind::Attack,
+            Some(target),
+            None,
+        ) {
+            continue;
+        }
+        brain.tracked.record(
+            tick,
+            unit.entity_id,
+            TrackedKind::Attack,
+            Some(target),
+            None,
+        );
+        // Out of reach it walks; in reach the world fires the bomb on the next
+        // frame the gun is ready, and the unit is consumed by its own attack.
+        let goal = if super::advance::cell_distance(unit.cell, target_cell) <= reach {
+            Goal::Attack { target }
+        } else {
+            Goal::AttackMove { cell: target_cell }
+        };
+        issue(brain, out, rules, obs, unit.entity_id, goal);
+        issued += 1;
+    }
+}
+
+/// How near the house's own units have to stand to a blast for it not to be
+/// worth firing, in cells.
+///
+/// The retail warheads that reach past their target are `TerrorBombWH 2`,
+/// `DemobombWH 8` and `RadEruptionWarhead 10`; the widest of them is the one
+/// that has to be safe, because the unit that carries it cannot know which it
+/// will fire.
+const SPLASH_CELLS: i32 = 10;
 
 /// Send an engineer into a `BridgeRepairHut=` whose span is down.
 ///
@@ -559,6 +727,16 @@ fn within(cells: impl Iterator<Item = (u16, u16)>, cell: (u16, u16), reach: i32)
         .into_iter()
         .any(|other| squared_distance(cell, other) <= reach * reach)
 }
+
+/// How many frames an engineer's walk goes before the ground under it is read
+/// again, in frames: one second.
+///
+/// The `Capture` intent's own term is the whole walk (300 frames), which is the
+/// right window for "do not issue the same order again" and the wrong one for
+/// "do not look again". A tank that arrived halfway through a five-second walk
+/// had nothing to interrupt it. One second is short enough to turn around and
+/// long enough not to re-plan every frame.
+const CAPTURE_RECHECK_FRAMES: u64 = 30;
 
 /// How near an enemy unit has to stand to a capture target for the walk to look
 /// like a gift rather than a job, in cells: the range of the weapons that shoot
@@ -2359,6 +2537,59 @@ mod tests {
         );
         let gi = rules.object("E1").expect("a GI");
         assert!(is_combat_unit(&rules, gi), "a soldier is");
+    }
+
+    /// An engineer's walk is re-read as it goes. The `Capture` window is the
+    /// whole walk, so an engineer that set out over clear ground and met a tank
+    /// halfway was committed for five seconds with nothing looking again — the
+    /// wishlist's "工程师…最后还是送死，完全不会识别威胁单位".
+    #[test]
+    fn an_engineer_drops_the_walk_when_the_ground_turns_bad() {
+        let Some((mut sim, rules)) = snapshot(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        // A house to own the derrick. `CAOILD` is a `Capturable=` neutral
+        // building, and the world refuses to spawn onto a house the array does
+        // not hold, so the fixture registers one with the `MultiplayPassive=`
+        // flag the map's own neutrals carry.
+        let neutral = sim.interner.intern("Neutral");
+        let mut house = crate::sim::house_state::HouseState::new(neutral, 0, None, false, 0, 10);
+        house.set_multiplay_passive_for_test(true);
+        sim.houses.register(house);
+        let engineer = sim
+            .spawn_object("ENGINEER", "Americans", 20, 20, 255, &rules)
+            .expect("an engineer");
+        let derrick = sim
+            .spawn_object("CAOILD", "Neutral", 30, 20, 255, &rules)
+            .expect("a derrick to take");
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let mut out = Outbox::default();
+        captures(&mut brain, &rules, &Observation::new(&sim, owner), &mut out);
+        assert!(
+            brain.tracked.is_claimed(0, engineer),
+            "the walk starts on clear ground"
+        );
+
+        // A tank arrives between the engineer and the derrick.
+        sim.spawn_object("HTNK", "Russians", 25, 20, 255, &rules)
+            .expect("a hostile on the walk");
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let mut out = Outbox::default();
+        captures(&mut brain, &rules, &Observation::new(&sim, owner), &mut out);
+        assert!(
+            !brain.tracked.is_claimed(0, engineer),
+            "and is dropped when one stands on it, rather than walked into: {derrick}"
+        );
     }
 
     /// The boarding half of Transport, end to end: an empty carrier with an

@@ -238,6 +238,14 @@ pub(super) fn advance(
     // sends them, and the retreat line walks them out well before the ordinary
     // one when they are caught.
     fighters.retain(|unit| !unit.traits.irreplaceable);
+    // A unit whose weapon spends it does not march with the fist either, and for
+    // the same reason: the push trades units for ground, and a bomb truck that
+    // trades itself for a wall has spent 1500 credits on a wall. `[TERROR]`,
+    // `[DTRUCK]`, `[IVAN]` — `Suicide=yes` on the primary.
+    //
+    // They keep their own decision (`suicide_errand`), which sends them at what
+    // is worth more than they cost and nowhere else.
+    fighters.retain(|unit| !unit.traits.suicide);
     // Which gate holds the army home, for the census line: seven gates that
     // all answer "not this frame" are indistinguishable in a log that only
     // counts what the house has.

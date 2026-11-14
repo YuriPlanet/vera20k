@@ -42,10 +42,20 @@ impl<'a> Army<'a> {
     /// sub-unit or a unit the census cannot order still guards the base, and
     /// narrowing this set took the guards off it (measured: won at 23086
     /// became a timeout at 30000 when `forces` read the fist's members).
+    ///
+    /// Aircraft are not in it. A guard is a cell to stand on, and the
+    /// `AirportBound=` aircraft has no cell to stand on: its `Guard` replaces
+    /// the rearm-and-return mission the airfield owns, so the plane takes off
+    /// with the racks it had, flies at the ground, turns around, and does it
+    /// again — the wishlist's "飞机没有装完子弹就再次发动攻击", and the reason a
+    /// house with a full airfield still lost its aircraft. What an aircraft may
+    /// be given is [`super::advance`]'s `Attack`, which sends it out and lets
+    /// the rearm win when it comes back.
     pub(super) fn guards(census: &'a Census) -> Vec<&'a Unit> {
         census
             .combat_units()
             .filter(|unit| !unit.hand && !unit.in_service())
+            .filter(|unit| !unit.traits.aircraft)
             .collect()
     }
 

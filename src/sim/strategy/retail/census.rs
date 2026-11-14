@@ -258,6 +258,40 @@ pub(super) struct Traits {
     /// vehicle back together. What a hurt vehicle walks to instead of walking
     /// home.
     pub(super) repairs_units: bool,
+    /// `Aircraft`: the one category with no ground cell of its own.
+    ///
+    /// A guard order is a cell to stand on, and an aircraft has none: the
+    /// `AirportBound=` plane's `Guard` replaces the airfield's rearm-and-return
+    /// mission, so it flies out on the racks it had. Layers that stand a unit
+    /// somewhere ask this instead of the category, so the rule is written once.
+    pub(super) aircraft: bool,
+    /// Its weapon spends the unit: `Suicide=yes` on the primary
+    /// (`[TERROR] TerrorBomb`, `[DTRUCK] Demobomb`).
+    ///
+    /// The wishlist's "恐怖分子，自爆卡车…有特殊攻击能力且存在误伤". A suicide
+    /// weapon is not a rifle with a shorter range: firing it removes the unit,
+    /// so the ordinary rules — advance with the fist, trade at a third of a
+    /// health bar, kite out of a shell — are all wrong for it. It is a
+    /// one-shot, and the only decision that fits is "spend it on something
+    /// worth more than it costs".
+    pub(super) suicide: bool,
+    /// Firing it hurts the ground around the target too: a warhead with
+    /// `CellSpread=` above 1 (`DemobombWH 8`, `RadEruptionWarhead 10`,
+    /// `TerrorBombWH 2`), or a `AreaFire=` weapon.
+    ///
+    /// This is what "误伤" is made of. The layer that picks a target for one of
+    /// these has to know that a hostile standing among the house's own units is
+    /// not a target at all: the blast does not read the owner list.
+    pub(super) splash: bool,
+    /// Firing it does not damage but transforms: `Temporal=yes`
+    /// (`ChronoBeam`, the chrono legionnaire's rifle), or a warhead that
+    /// mind-controls.
+    ///
+    /// The wishlist's "超时空军团兵…存在误伤或者中断后攻击失效": a temporal
+    /// attack is a channel, not a shot, and a `Move` that interrupts it leaves
+    /// the victim whole and the unit's gun on cooldown. A layer that would walk
+    /// this unit must not.
+    pub(super) channels: bool,
 }
 
 /// Seats at which a type is a transport rather than a fighting unit, in the
@@ -269,6 +303,20 @@ pub(super) struct Traits {
 /// somewhere. The bar is [`crate::rules::unit_role::TRANSPORT_SEATS`], the
 /// owner's reading, not a second copy of it.
 const TRANSPORT_SEATS: i32 = crate::rules::unit_role::TRANSPORT_SEATS;
+
+/// What a type's weapons do beyond "damage the thing you aimed at", collected
+/// in one pass over the slots.
+///
+/// Every field is read off the weapon or its warhead rather than off a name, so
+/// a mod's bomb truck is covered by the same reading. The split from [`Traits`]
+/// exists only because the keys live on two other objects.
+#[derive(Debug, Default, Clone, Copy)]
+struct WeaponTraits {
+    suicide: bool,
+    splash: bool,
+    area_fire: bool,
+    channels: bool,
+}
 
 impl Traits {
     /// What a type can do, read from the keys the type itself declares.
@@ -286,6 +334,27 @@ impl Traits {
     /// belongs here first, and the decisions read it from here.
     pub(super) fn of(rules: &RuleSet, ty: &ObjectType) -> Self {
         let armed = (0..8).any(|slot| ty.weapon_at(slot).is_some());
+        // The weapons this type fires, in every slot: a suicide truck's bomb is
+        // its `Primary=`, and a deployed desolator's eruption is its
+        // `Secondary=`, so reading slot 0 alone would miss half of them.
+        let mut weapon_traits = WeaponTraits::default();
+        for slot in 0..8 {
+            let Some(weapon) = ty.weapon_at(slot).and_then(|name| rules.weapon(&name)) else {
+                continue;
+            };
+            weapon_traits.suicide |= weapon.suicide;
+            weapon_traits.area_fire |= weapon.area_fire;
+            if let Some(warhead) = weapon
+                .warhead
+                .as_deref()
+                .and_then(|name| rules.warhead(name))
+            {
+                // Above 1 is a blast that reaches a neighbouring cell; exactly 1
+                // is the target's own cell, which is every weapon.
+                weapon_traits.splash |= warhead.cell_spread_f64 > 1.0;
+                weapon_traits.channels |= warhead.temporal || warhead.mind_control;
+            }
+        }
         let captures = ty.engineer || ty.infiltrate;
         let carries = ty.passengers >= TRANSPORT_SEATS;
         // `DeployFireWeapon=` names the slot, defaulting to the secondary: the
@@ -325,6 +394,10 @@ impl Traits {
             spawned: ty.spawned,
             irreplaceable: ty.build_limit == 1,
             repairs_units: ty.unit_repair,
+            aircraft: ty.category == ObjectCategory::Aircraft,
+            suicide: weapon_traits.suicide,
+            splash: weapon_traits.splash || weapon_traits.area_fire,
+            channels: weapon_traits.channels,
         }
     }
 }
@@ -1135,6 +1208,62 @@ mod tests {
         let census = ledger(&rules, &sim, owner);
         assert!(census.threat.iter().all(|count| *count == 0));
         assert!(census.shortfall().is_none());
+    }
+
+    /// An aircraft carries the tag no ground layer can use: it has no cell to
+    /// stand on. The guard step stands units on a cell, so the tag has to be
+    /// readable or that step hands a plane a `Guard`, which replaces the
+    /// airfield's rearm-and-return and sends it out on the racks it had.
+    #[test]
+    fn an_aircraft_is_marked_as_having_no_ground_post() {
+        let Some((_, rules)) = arena(0xA17) else {
+            return;
+        };
+        for name in ["ORCA", "BEAG", "AMRADR"] {
+            let ty = rules.object(name).unwrap_or_else(|| panic!("{name}"));
+            assert_eq!(
+                Traits::of(&rules, ty).aircraft,
+                ty.category == ObjectCategory::Aircraft,
+                "{name}: the tag follows the category"
+            );
+        }
+        // And something that walks is not tagged, so the layer that skips
+        // aircraft does not skip half the army with it.
+        let tank = rules.object("MTNK").expect("the Allied tank");
+        assert!(!Traits::of(&rules, tank).aircraft);
+    }
+
+    /// The three weapon behaviours the wishlist names, read off the retail
+    /// keys rather than off the types' names.
+    #[test]
+    fn a_weapon_that_spends_its_unit_or_its_neighbours_is_marked() {
+        let Some((_, rules)) = arena(0xA17) else {
+            return;
+        };
+        let of = |name: &str| {
+            let ty = rules.object(name).unwrap_or_else(|| panic!("{name}"));
+            Traits::of(&rules, ty)
+        };
+
+        // `Suicide=yes` on the primary: firing costs the unit.
+        assert!(of("TERROR").suicide, "[TERROR] TerrorBomb is Suicide=yes");
+        assert!(of("DTRUCK").suicide, "[DTRUCK] Demobomb is Suicide=yes");
+        assert!(!of("E1").suicide, "a rifleman's M60 does not spend him");
+
+        // `CellSpread=` above 1 reaches the neighbouring cells.
+        assert!(of("DTRUCK").splash, "DemobombWH CellSpread=8");
+        assert!(
+            of("DESO").splash,
+            "RadEruptionWarhead CellSpread=10 on the secondary"
+        );
+        assert!(!of("E1").splash, "a rifle hits one cell");
+
+        // `Temporal=yes` is a channel, not a shot.
+        assert!(
+            of("CLEG").channels,
+            "[CLEG] NeutronRifle carries ChronoBeam, which is Temporal=yes"
+        );
+        assert!(!of("E1").channels, "a rifle does not transform its target");
     }
 
     /// A spawned type is not the house's to command. `[PDPLANE]` is the

@@ -747,6 +747,11 @@ impl Brain for RetailBrain {
         // one order a frame, so whoever asks first keeps it.
         orders::bridges(self, rules, obs, out);
         orders::captures(self, rules, obs, out);
+        // A unit whose weapon spends it is not a rifleman with a shorter range:
+        // it gets one errand, at something worth more than it costs, and
+        // nothing else in this list may re-task it. Asked before the garrison
+        // so a bomb truck is not parked in a building it would have to leave.
+        orders::suicide_errand(self, rules, obs, out);
         orders::garrison(self, rules, obs, out);
         // A shell already in the air outranks every other unit decision: it is
         // the only one whose whole window is a handful of frames, and a unit
