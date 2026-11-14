@@ -275,6 +275,17 @@ impl TunnelRuntime {
             ..Self::constructed(0)
         }
     }
+
+    /// A phase with a running dig timer, for the presentation tests in
+    /// `vera20k`, which cannot reach this crate's `pub(crate)` writers.
+    /// `progress(frame)` is `(frames - (frame - start)) / frames`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test_dig(state: TunnelState, start_frame: u32, frames: i32) -> Self {
+        let mut runtime = Self::constructed(start_frame);
+        runtime.set_state(state);
+        runtime.start_dig_timer(start_frame, frames);
+        runtime
+    }
 }
 
 /// `64.0 / ROT / TunnelSpeed`, cut by ftol: ProcessPreDigIn's dig-in frames
