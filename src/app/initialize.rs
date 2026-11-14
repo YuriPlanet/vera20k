@@ -1153,6 +1153,12 @@ impl App {
                     banner_art: None,
                     #[cfg(feature = "phobos")]
                     banners: Vec::new(),
+                    #[cfg(feature = "phobos")]
+                    tool_tip_blur: phobos_client.tool_tip_blur,
+                    #[cfg(feature = "phobos")]
+                    tooltip_blur_rects: Vec::new(),
+                    #[cfg(feature = "phobos")]
+                    tooltip_blur_size: 0.0,
                     software_cursor: startup_software_cursor,
                 },
                 match_audio: Default::default(),
@@ -1318,6 +1324,8 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
+                #[cfg(feature = "phobos")]
+                tooltip_blur: None,
             },
             process_assets,
             audio: startup_audio_runtime,

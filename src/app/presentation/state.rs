@@ -62,6 +62,18 @@ pub(crate) struct MatchPresentationState {
     /// banner module reconciles and ticks it per drawn frame.
     #[cfg(feature = "phobos")]
     pub(crate) banners: Vec<crate::app::presentation::banners::BannerDisplay>,
+    /// Phobos `[Phobos] ToolTipBlur=` (source default `no`,
+    /// `Phobos.INI.cpp:92`): the tooltip blur's gate; the size comes from the
+    /// side/rules `ToolTip.Background.BlurSize`.
+    #[cfg(feature = "phobos")]
+    pub(crate) tool_tip_blur: bool,
+    /// Phobos `ToolTipBlur`'s rects (`[x, y, w, h]`, composition pixels) and
+    /// the resolved `ToolTip.Background.BlurSize`, recomputed with the
+    /// tooltip instances each frame; empty keeps native's no-op.
+    #[cfg(feature = "phobos")]
+    pub(crate) tooltip_blur_rects: Vec<[f32; 4]>,
+    #[cfg(feature = "phobos")]
+    pub(crate) tooltip_blur_size: f32,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
     /// Overlay entries from map for per-frame instance generation.
