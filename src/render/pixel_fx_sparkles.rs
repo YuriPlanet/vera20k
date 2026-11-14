@@ -13,7 +13,7 @@
 //! - Part of render/ — reads sim/ state through immutable references only.
 //!   No writes to sim. No coupling to GPU types beyond SpriteInstance.
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::map::terrain::iso_to_screen;
 use crate::render::batch::SpriteInstance;
 use crate::sim::intern::InternedId;
@@ -180,40 +180,43 @@ fn peak_with_noise(s: u64, params: &SparkleParams) -> [u8; 3] {
     ]
 }
 
-/// Compute the cell bounds (inclusive) of the visible viewport.
+/// The cells `DrawPixelFXSparkles @ 0x006D7840` visits, in its order, for a
+/// view whose top-left world pixel is `camera` and whose size is `view`
+/// world pixels, on a map of `Size=` width and height `map_size`.
 ///
-/// Camera is in world pixels (top-left corner of viewport). vsw and vsh are
-/// the effective viewport width and height in world pixels (already
-/// zoom-corrected by the caller). Returns (rx_min, ry_min, rx_max, ry_max),
-/// clamped to map bounds [0, map_w) and [0, map_h).
-///
-/// Iso cells are 60 wide × 30 tall (CELL_WIDTH × CELL_HEIGHT in render). We
-/// add a 2-cell margin on every side so partially-visible cells at the edges
-/// are included. (L27 — sparkles should appear at viewport edges.)
-#[inline]
-fn viewport_cell_bounds(
-    camera_x: f32,
-    camera_y: f32,
-    vsw: f32,
-    vsh: f32,
-    map_w: u16,
-    map_h: u16,
-) -> (u16, u16, u16, u16) {
-    const MARGIN_CELLS: i32 = 2;
-
-    // World-pixel viewport rect → approximate cell range. Iso conversion is
-    // approximate (we over-include because of the diamond shape) but cheap
-    // and correct: the gate inside compute_sparkle_for_cell handles cells
-    // outside the actual viewport via the screen position check.
-    let rx_min =
-        (((camera_x / TILE_WIDTH).floor() as i32) - MARGIN_CELLS).clamp(0, map_w as i32 - 1) as u16;
-    let rx_max = ((((camera_x + vsw) / TILE_WIDTH).ceil() as i32) + MARGIN_CELLS)
-        .clamp(0, map_w as i32 - 1) as u16;
-    let ry_min = (((camera_y / TILE_HEIGHT).floor() as i32) - MARGIN_CELLS)
-        .clamp(0, map_h as i32 - 1) as u16;
-    let ry_max = ((((camera_y + vsh) / TILE_HEIGHT).ceil() as i32) + MARGIN_CELLS)
-        .clamp(0, map_h as i32 - 1) as u16;
-    (rx_min, ry_min, rx_max, ry_max)
+/// gamemd is handed the tactical rectangle (`0x006D491F..0x006D4924`), so it
+/// starts from the view origin's cell on the Z=0 plane (the pixel-to-coordinate
+/// transform `0x006D78CC..0x006D7962`,
+/// [`crate::map::terrain::screen_to_plane_leptons`]),
+/// two cells back along X. It walks `height / 15 + 17` rows of
+/// `width / 60 + 4` cells (`0x006D7983..0x006D79C5`): row `r` starts `r / 2`
+/// cells along X and `(r + 1) / 2` along Y from there (`0x006D79CF..
+/// 0x006D7A05`), and each step to the right is one cell along X and one back
+/// along Y (`0x006D7BB8..0x006D7BC1`). The extra rows reach raised cells
+/// drawn up into the view. Cells off the map's `Size=` diamond are passed by
+/// (`MapClass::In_Bounds @ 0x00568300`, `0x006D7A28`). The cell words wrap as
+/// gamemd's 16-bit ones do.
+fn sparkle_cells(
+    camera: [f32; 2],
+    view: [f32; 2],
+    map_size: (i32, i32),
+) -> impl Iterator<Item = (u16, u16)> {
+    let origin = crate::map::terrain::screen_to_plane_leptons(camera[0], camera[1]);
+    let start = ((origin.x / 256) as i16).wrapping_sub(2);
+    let start_y = (origin.y / 256) as i16;
+    let rows = view[1] as i32 / 15 + 17;
+    let columns = view[0] as i32 / 60 + 4;
+    (0..rows.max(0)).flat_map(move |row| {
+        let x = start.wrapping_add((row / 2) as i16);
+        let y = start_y.wrapping_add(((row + 1) / 2) as i16);
+        (0..columns.max(0)).filter_map(move |column| {
+            let cell = (x.wrapping_add(column as i16), y.wrapping_sub(column as i16));
+            if !crate::map::playfield::size_diamond_contains(map_size.0, map_size.1, cell) {
+                return None;
+            }
+            Some((u16::try_from(cell.0).ok()?, u16::try_from(cell.1).ok()?))
+        })
+    })
 }
 
 /// All read-only state the sparkle pass needs. Borrowed for the duration of
@@ -226,8 +229,8 @@ pub struct SparkleInput<'a> {
     /// From the live `[Options] DetailLevel != 0` projection. If false, build
     /// returns an empty Vec. (L22)
     pub enable_extra_animations: bool,
-    /// Local player's interned house ID for the sight check (L19). None when
-    /// no map is loaded or no owner can be resolved — gate then fails.
+    /// Local player's interned house ID, whose map the gate reads (L19). None
+    /// when no map is loaded or no owner can be resolved — gate then fails.
     pub local_owner_id: Option<InternedId>,
     /// True when sandbox-mode visibility bypass is active; sight gate (L19/L21)
     /// becomes a no-op when set. Mirrors the existing terrain-pass pattern.
@@ -241,8 +244,8 @@ pub struct SparkleInput<'a> {
     pub camera_y: f32,
     pub viewport_w: f32,
     pub viewport_h: f32,
-    pub map_w: u16,
-    pub map_h: u16,
+    /// The map's `Size=` width and height (`MapClass+0xF4`, `+0xF8`).
+    pub map_size: (i32, i32),
     /// White-texel UV coords; for `SelectionOverlay::white_texture()` which
     /// is a 1×1 texture, this is the full (0,0) → (1,1) rect.
     pub white_uv_origin: [f32; 2],
@@ -256,7 +259,12 @@ pub struct SparkleInput<'a> {
 ///   - "viewport clip" — handled by depth/scissor, not a per-cell check.
 ///
 /// Returns (is_ore, params) when the cell qualifies; None otherwise.
-fn gate_cell(rx: u16, ry: u16, input: &SparkleInput<'_>) -> Option<(bool, &'static SparkleParams)> {
+fn gate_cell(
+    rx: u16,
+    ry: u16,
+    input: &SparkleInput<'_>,
+    cells: &NativeCellQuery<'_>,
+) -> Option<(bool, &'static SparkleParams)> {
     let cell = input.resolved_terrain.cell(rx, ry)?;
     let has_ore = ore_value_nonzero(rx, ry, input);
     // L17: `CMP dword ptr [ESI + 0xEC], 0x2` @ 0x006D7A6C, the cell's
@@ -272,9 +280,15 @@ fn gate_cell(rx: u16, ry: u16, input: &SparkleInput<'_>) -> Option<(bool, &'stat
         return None; // L18
     }
 
+    // L19 / L21: the local player's map, not its sight. gamemd asks for the
+    // ground-open bit (`Cell+0x12C & 0x10`, `0x006D7A4F`) and that the cell is
+    // not shrouded (`CellClass::IsShrouded @ 0x00487950`, `0x006D7A5F`), so
+    // open water out of every unit's sight still sparkles.
     if !input.sandbox_full_visibility {
-        let owner_id = input.local_owner_id?; // L19 / L21
-        if !input.fog.is_cell_visible(owner_id, rx, ry) {
+        let owner_id = input.local_owner_id?;
+        if !input.fog.is_ground_open(owner_id, rx, ry)
+            || crate::sim::vision::cell_is_shrouded(input.fog, cells, owner_id, (rx, ry))
+        {
             return None;
         }
     }
@@ -309,8 +323,9 @@ fn compute_sparkle_for_cell(
     ry: u16,
     clock_ms: u64,
     input: &SparkleInput<'_>,
+    cells: &NativeCellQuery<'_>,
 ) -> Option<SpriteInstance> {
-    let (_is_ore, params) = gate_cell(rx, ry, input)?;
+    let (_is_ore, params) = gate_cell(rx, ry, input, cells)?;
     let bucket_ms = if _is_ore {
         ORE_CYCLE_BUCKET_MS
     } else {
@@ -377,36 +392,96 @@ fn compute_sparkle_for_cell(
 /// Returns an empty Vec if `enable_extra_animations` is off — checked up-front
 /// so the viewport iteration is skipped entirely (zero work). (L22)
 ///
-/// Cell iteration uses the module's own viewport-cell bounds computation; we
-/// don't reuse the terrain pass's iteration to keep the sparkle module
-/// self-contained (see design doc §Architectural Decisions).
+/// The cells come from gamemd's own walk, [`sparkle_cells`].
 pub fn build_sparkle_instances(input: &SparkleInput<'_>) -> Vec<SpriteInstance> {
     if !input.enable_extra_animations {
         return Vec::new();
     }
     let clock_ms = input.clock_ms;
-    let (rx_min, ry_min, rx_max, ry_max) = viewport_cell_bounds(
-        input.camera_x,
-        input.camera_y,
-        input.viewport_w,
-        input.viewport_h,
-        input.map_w,
-        input.map_h,
-    );
-    let mut out: Vec<SpriteInstance> = Vec::with_capacity(256);
-    for ry in ry_min..=ry_max {
-        for rx in rx_min..=rx_max {
-            if let Some(inst) = compute_sparkle_for_cell(rx, ry, clock_ms, input) {
-                out.push(inst);
-            }
-        }
-    }
-    out
+    // The draw's own query: a miss stamps its dummy, not the simulation's.
+    let cells = NativeCellQuery::isolated(input.resolved_terrain);
+    sparkle_cells(
+        [input.camera_x, input.camera_y],
+        [input.viewport_w, input.viewport_h],
+        input.map_size,
+    )
+    .filter_map(|(rx, ry)| compute_sparkle_for_cell(rx, ry, clock_ms, input, &cells))
+    .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_walk_reaches_every_cell_centred_in_a_view_away_from_the_map_corner() {
+        // A 200 x 200 map seen from world pixel (3000, 3300), 800 x 600 pixels:
+        // the view's cells, all on the map, lie around rx 160..190, ry 45..80.
+        let (camera, view, size) = ([3000.0, 3300.0], [800.0, 600.0], (200, 200));
+        let walked: std::collections::BTreeSet<_> = sparkle_cells(camera, view, size).collect();
+        let mut in_view = 0;
+        for rx in 0..=400_u16 {
+            for ry in 0..=400_u16 {
+                let (x, y) = iso_to_screen(rx, ry, 0);
+                let (x, y) = (x + TILE_WIDTH / 2.0, y + TILE_HEIGHT / 2.0);
+                if (camera[0]..camera[0] + view[0]).contains(&x)
+                    && (camera[1]..camera[1] + view[1]).contains(&y)
+                {
+                    in_view += 1;
+                    assert!(walked.contains(&(rx, ry)), "({rx}, {ry}) is in view");
+                }
+            }
+        }
+        assert!(in_view > 200, "{in_view} cells in view");
+    }
+
+    #[test]
+    fn open_water_out_of_every_units_sight_still_sparkles() {
+        // One water cell, (20, 12), drawn centred on world pixel (240, 510), on
+        // a map its viewer has explored but sees none of.
+        const SIDE: u16 = 32;
+        let cells = (0..SIDE)
+            .flat_map(|ry| {
+                (0..SIDE).map(move |rx| {
+                    let mut cell = crate::map::resolved_terrain::test_smudge_cell(rx, ry);
+                    if (rx, ry) == (20, 12) {
+                        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+                    }
+                    cell
+                })
+            })
+            .collect();
+        let terrain = ResolvedTerrainGrid::from_cells(SIDE, SIDE, cells);
+        let owner = InternedId::from_index(1);
+        let mut fog = FogState::new(SIDE, SIDE);
+        fog.reveal_all_for_owner(owner);
+        assert!(!fog.is_cell_visible(owner, 20, 12));
+        let input = SparkleInput {
+            clock_ms: 0,
+            enable_extra_animations: true,
+            local_owner_id: Some(owner),
+            sandbox_full_visibility: false,
+            resolved_terrain: &terrain,
+            overlays: &OverlayGrid::new(SIDE, SIDE),
+            overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+            occupancy: &OccupancyGrid::default(),
+            fog: &fog,
+            camera_x: 0.0,
+            camera_y: 300.0,
+            viewport_w: 800.0,
+            viewport_h: 600.0,
+            map_size: (16, 16),
+            white_uv_origin: [0.0; 2],
+            white_uv_size: [1.0; 2],
+        };
+        let sparkles = build_sparkle_instances(&input);
+        assert_eq!(sparkles.len(), 1);
+        let [x, y] = sparkles[0].position;
+        assert!(
+            (x - 240.0).abs() <= 32.0 && (y - 510.0).abs() <= 16.0,
+            "({x}, {y})"
+        );
+    }
 
     #[test]
     fn lerp_at_phase_0_is_base() {
