@@ -372,10 +372,25 @@ impl Tracker {
 
     /// Drop the units the house no longer has, so the table stays the size of
     /// the army and a recycled id cannot inherit another unit's intent.
-    pub(super) fn retain(&mut self, live: &std::collections::BTreeSet<u64>) {
+    ///
+    /// Returns what each dropped unit was last told to do. A unit vanishing from
+    /// the house is a death (a sale or a capture goes through the owner and is
+    // not in this table as an intent), and the last intent is the only honest
+    /// answer to "what was it doing when it died" — the wishlist's "送死".
+    pub(super) fn retain(
+        &mut self,
+        live: &std::collections::BTreeSet<u64>,
+    ) -> Vec<(u64, Option<TrackedKind>)> {
+        let dropped: Vec<(u64, Option<TrackedKind>)> = self
+            .intents
+            .keys()
+            .filter(|id| !live.contains(id))
+            .map(|id| (*id, self.intents.get(id).map(|tracked| tracked.kind)))
+            .collect();
         self.intents.retain(|id, _| live.contains(id));
         self.held.retain(|id, _| live.contains(id));
         self.refused.retain(|(id, _), _| live.contains(id));
+        dropped
     }
 
     /// Whether `unit` is still holding an intent of one of `kinds`.

@@ -1102,7 +1102,15 @@ pub(super) fn deploy(brain: &mut RetailBrain, obs: &Observation<'_>, out: &mut O
         .iter()
         .map(|unit| unit.entity_id)
         .collect();
-    brain.tracked.retain(&live);
+    // What each lost unit was last told to do. A unit the house no longer has is
+    // a death, and this is the only honest "what was it doing when it died" —
+    // the wishlist's "送死", counted by the order it was carrying rather than
+    // reconstructed from a per-type diff.
+    let lost = brain.tracked.retain(&live);
+    for (id, kind) in &lost {
+        let what = kind.map_or("none".to_owned(), |kind| format!("{kind:?}"));
+        log::info!("auto play: lost {id} while carrying {what}");
+    }
     // Collected before anything is written: the toggle has to be recorded
     // against the soldier, and the ledger is borrowed while it is read.
     let wanted: Vec<(u64, i32)> = brain
