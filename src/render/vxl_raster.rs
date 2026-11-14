@@ -235,6 +235,12 @@ fn voxel_jumpjet_tilt_locomotor_matrix(step: u8, angles: [f32; 2], half_sizes: [
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GroundPose {
     pub angles: [f32; 2],
+    /// A Tunnel's dig tilt in radians, replacing `angles` for the body matrix:
+    /// `TunnelLocomotionClass::Draw_Matrix @ 0x00729B40` rotates the facing
+    /// matrix by Y alone, with none of the Drive/Ship support offsets. The
+    /// body therefore pivots at its own origin and sinks, which is why the
+    /// tunnel arm cannot share [`crate::map::voxel_pose::ground_locomotor_matrix`].
+    pub tunnel_tilt: Option<f32>,
     pub body_facing: u8,
     pub slope_blend: Option<VxlSlopeBlend>,
     pub turret_offset: i32,
@@ -250,13 +256,19 @@ pub(crate) fn ground_unit_pose_matrices(
     turret_facing: u8,
     barrel_pitch: i8,
 ) -> [Mat4; 3] {
-    let body = ground_locomotor_matrix(
-        slope_type,
-        pose.slope_blend,
-        voxel_facing_step(pose.body_facing),
-        pose.angles,
-        half_sizes,
-    );
+    let body = match pose.tunnel_tilt {
+        Some(angle) => crate::map::voxel_pose::tunnel_locomotor_matrix(
+            voxel_facing_step(pose.body_facing),
+            angle,
+        ),
+        None => ground_locomotor_matrix(
+            slope_type,
+            pose.slope_blend,
+            voxel_facing_step(pose.body_facing),
+            pose.angles,
+            half_sizes,
+        ),
+    };
     let translated = affine::translate_axis(body, 0, turret_offset_units(pose.turret_offset));
     let relative = i32::from(voxel_facing_step(turret_facing))
         - i32::from(voxel_facing_step(pose.body_facing));
@@ -2252,6 +2264,63 @@ mod tests {
             }
         }
         assert_eq!(crashing, 24);
+    }
+
+    /// `TunnelLocomotionClass::Draw_Matrix @ 0x00729B40` rotates the facing
+    /// matrix by Y alone (`0x00729E02..0x00729E16`). The Drive/Ship arm would
+    /// also add [`crate::map::voxel_pose::voxel_tilt_frame`]'s support offsets,
+    /// which shift and lift a body by half its extent so a slope tilt keeps it
+    /// on the surface. A digging tunnel has to sink instead, so its body matrix
+    /// stays a pure rotation; the tilted hull is the same facing around the
+    /// model's own origin.
+    #[test]
+    fn a_tunnel_dig_pose_rotates_without_the_drive_support_offsets() {
+        use std::f32::consts::FRAC_PI_2;
+        let half_sizes = [30.0, 20.0];
+        let tunnel = GroundPose {
+            angles: [0., 0.],
+            tunnel_tilt: Some(FRAC_PI_2),
+            body_facing: 0,
+            slope_blend: None,
+            turret_offset: 0,
+        };
+        let body = ground_unit_pose_matrices(0, tunnel, half_sizes, 0, 0)[0];
+        assert_eq!(
+            body.w_axis.truncate(),
+            glam::Vec3::ZERO,
+            "a vertical dig tilt keeps the body's origin on the ground"
+        );
+        let drive = GroundPose {
+            tunnel_tilt: None,
+            angles: [0., FRAC_PI_2],
+            ..tunnel
+        };
+        let lifted = ground_unit_pose_matrices(0, drive, half_sizes, 0, 0)[0];
+        assert!(
+            lifted.w_axis.truncate().length() > 1.0,
+            "the Drive arm lifts and shifts the same tilt: {:?}",
+            lifted.w_axis
+        );
+        let level = ground_unit_pose_matrices(
+            0,
+            GroundPose {
+                tunnel_tilt: Some(0.0),
+                ..tunnel
+            },
+            half_sizes,
+            0,
+            0,
+        )[0];
+        let plain = affine::matrix_product(voxel_camera_view(), voxel_body_facing(0))
+            .expect("finite level body");
+        for col in 0..4 {
+            for row in 0..3 {
+                assert!(
+                    (level.col(col)[row] - plain.col(col)[row]).abs() < 1e-6,
+                    "a level tunnel draws the plain facing: [{row}][{col}]"
+                );
+            }
+        }
     }
 }
 

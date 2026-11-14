@@ -169,6 +169,20 @@ pub fn ground_locomotor_matrix(
     product(product(product(lift, slope), facing), frame)
 }
 
+/// `TunnelLocomotionClass::Draw_Matrix @ 0x00729B40`'s dig arm: the facing
+/// matrix of `LocomotionClass::Draw_Matrix @ 0x0055A730` (`0x00729DC2`),
+/// then a bare `Matrix_rotate_y_axis @ 0x005AF080` by the dig angle
+/// (`0x00729E02..0x00729E16`). That arm never reads the cell slope and never
+/// applies the Drive/Ship support offsets [`voxel_tilt_frame`] adds: the body
+/// pivots about its own origin so it sinks into the ground, rather than being
+/// lifted onto it. Angles come from the same per-State table
+/// [`crate::sim::movement::tunnel_movement::TunnelRuntime::draw_tilt`] keeps
+/// (State 3 is `+pi/2` at `0x00729C70`, State 5 `-pi/2` at `0x00729C85`).
+pub fn tunnel_locomotor_matrix(facing_step: u8, angle: f32) -> Mat4 {
+    let (sin, cos) = voxel_table_rotation(angle);
+    affine::rotate_y(voxel_body_facing(facing_step), sin, cos)
+}
+
 /// Original `7559B0` table selection, shared with particle/projectile collision.
 /// Native initialization/executable controls: tools/native_slope.py.
 pub fn compute_slope_rotation(slope_type: u8) -> Mat4 {

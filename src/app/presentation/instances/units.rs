@@ -1474,20 +1474,22 @@ fn ground_pose_with_angles(
     // `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) tilts the body about
     // Y by the dig timer's progress: DiggingIn forward to +pi/2, DugIn held
     // there, PreDigOut at -pi/2 and DiggingOut/DugOut back toward level (see
-    // `TunnelRuntime::draw_tilt`). That is the pose's `angles[1]`, the axis
-    // `voxel_tilt_frame` rotates with `rotate_y`; `angles[0]` stays zero
-    // because the tunnel arm has no roll, and the ground rocking state this
-    // record carries belongs to a Drive body. Idle answers `None`, which draws
-    // the settled atlas shape.
-    let angles = if kind == LocomotorKind::Tunnel {
-        [0.0, locomotor.tunnel_runtime()?.draw_tilt(binary_frame)?]
+    // `TunnelRuntime::draw_tilt`). That arm rotates the facing matrix by Y
+    // alone (`0x00729E02..0x00729E16`): it reads no cell slope, has no roll
+    // and, unlike Drive/Ship, adds no support offsets, so the body pivots at
+    // its own origin and sinks instead of staying on top of the ground. Idle
+    // answers `None`, which draws the settled atlas shape.
+    let (angles, tunnel_tilt) = if kind == LocomotorKind::Tunnel {
+        ([0.0, 0.0], Some(locomotor.tunnel_runtime()?.draw_tilt(binary_frame)?))
     } else {
-        angles
+        (angles, None)
     };
-    (matches!(slope, UnitRenderSlopeState::Transition { .. })
+    (tunnel_tilt.is_some()
+        || matches!(slope, UnitRenderSlopeState::Transition { .. })
         || crate::map::voxel_pose::voxel_tilt_applies(angles))
     .then_some(crate::render::vxl_raster::GroundPose {
         angles,
+        tunnel_tilt,
         body_facing: crate::render::vxl_raster::voxel_facing_step_u16(
             entity.body_facing_current(binary_frame),
         ) * 8,
@@ -3428,8 +3430,9 @@ mod tests {
     }
 
     /// `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) tilts the body about
-    /// Y by the dig timer's progress instead of reading a cell slope, so the
-    /// three states that dig produce a pose (`angles[1]`) and Idle does not.
+    /// Y by the dig timer's progress instead of reading a cell slope or adding
+    /// the Drive/Ship support offsets, so the digging states produce a pose
+    /// whose `tunnel_tilt` carries that angle and Idle does not.
     #[test]
     fn a_digging_tunnel_body_tilts_the_pose_by_its_dig_progress() {
         use crate::sim::movement::tunnel_movement::{TunnelRuntime, TunnelState};
@@ -3448,11 +3451,11 @@ mod tests {
         // Halfway through the ten-frame dig-in: progress x pi/2.
         let pose = ground_pose(&record, UnitRenderSlopeState::Stable(0), 5)
             .expect("a digging tunnel draws the pose page");
-        assert!((pose.angles[0]).abs() < f32::EPSILON);
+        assert_eq!(pose.angles, [0.0, 0.0], "the tunnel arm has no roll or slope");
+        let tilt = pose.tunnel_tilt.expect("DiggingIn tilts by Y");
         assert!(
-            (pose.angles[1] - FRAC_PI_4).abs() < 1e-6,
-            "DiggingIn at half progress tips {:.6} rad",
-            pose.angles[1]
+            (tilt - FRAC_PI_4).abs() < 1e-6,
+            "DiggingIn at half progress tips {tilt:.6} rad"
         );
         assert!(pose.slope_blend.is_none(), "the tunnel arm takes no slope");
 
@@ -3472,7 +3475,7 @@ mod tests {
             5,
         )
         .unwrap();
-        assert!((pose.angles[1] - FRAC_PI_2).abs() < 1e-6);
+        assert!((pose.tunnel_tilt.unwrap() - FRAC_PI_2).abs() < 1e-6);
 
         entity
             .locomotor
@@ -3489,10 +3492,10 @@ mod tests {
             5,
         )
         .unwrap();
+        let tilt = pose.tunnel_tilt.unwrap();
         assert!(
-            (pose.angles[1] + FRAC_PI_4).abs() < 1e-6,
-            "DiggingOut mirrors the dig-in tilt: {:.6}",
-            pose.angles[1]
+            (tilt + FRAC_PI_4).abs() < 1e-6,
+            "DiggingOut mirrors the dig-in tilt: {tilt:.6}"
         );
 
         // Idle has no tilt at all: the settled atlas shape draws it.
