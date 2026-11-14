@@ -1357,6 +1357,9 @@ fn sidebar_cameo_press(
         Some(sidebar_eva::CameoOrder::Abandon { .. }) => {
             repeat.stop(type_id);
         }
+        _ if click.then_abandon.is_some() => {
+            repeat.stop(type_id);
+        }
         _ => {}
     }
     if click.clear_building_placement {
@@ -1475,7 +1478,17 @@ fn sidebar_cameo_press(
                 None => queue_build_by_type(state, type_id, repeat),
             }
         }
-        Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, type_id),
+        Some(sidebar_eva::CameoOrder::Suspend) => {
+            suspend_build(state, type_id);
+            // Select6AB1D4 plays GUIBuildSound again before this ABANDON.
+            if let Some(all) = click.then_abandon {
+                let sound = state
+                    .rules()
+                    .and_then(|rules| rules.general.gui_build_sound.clone());
+                crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+                cancel_build_by_type(state, type_id, all);
+            }
+        }
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
             cancel_build_by_type(state, type_id, all);
         }
