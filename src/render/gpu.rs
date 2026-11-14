@@ -164,11 +164,13 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 
 /// The window's surface and the picture taken from it ahead of the next draw.
 struct WindowSurface {
-    surface: Option<wgpu::Surface<'static>>,
     /// Taken by the hand-off thread once it presented the last picture
     /// ([`GpuContext::hand_off_frame`]). Dropped before every configure, as
-    /// wgpu asks of an acquired texture.
+    /// wgpu asks of an acquired texture. Declared first, so it also drops
+    /// before its surface: wgpu discards it through the surface, and panics
+    /// when the surface is gone.
     next: Option<wgpu::SurfaceTexture>,
+    surface: Option<wgpu::Surface<'static>>,
 }
 
 impl WindowSurface {
@@ -189,7 +191,12 @@ struct SharedSurface {
     taking: AtomicBool,
     /// Signalled, under `slot`, when `taking` ends.
     taken: Condvar,
+    /// Whether `slot` holds a surface, read without the lock a tail may
+    /// hold while it waits for the screen.
+    #[cfg(target_os = "android")]
+    has_surface: AtomicBool,
     /// Wakes the event loop when `taking` ends.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
@@ -197,11 +204,14 @@ impl SharedSurface {
     fn new(surface: wgpu::Surface<'static>) -> Self {
         Self {
             slot: Mutex::new(WindowSurface {
-                surface: Some(surface),
                 next: None,
+                surface: Some(surface),
             }),
             taking: AtomicBool::new(false),
             taken: Condvar::new(),
+            #[cfg(target_os = "android")]
+            has_surface: AtomicBool::new(true),
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
             wake: Mutex::new(None),
         }
     }
@@ -633,6 +643,7 @@ impl GpuContext {
     }
 
     /// Have the hand-off thread call `wake` when it has the next picture.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn set_present_wake(&self, wake: Arc<dyn Fn() + Send + Sync>) {
         *self
             .surface
@@ -642,6 +653,7 @@ impl GpuContext {
     }
 
     /// Whether a present wake is set.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub(crate) fn has_present_wake(&self) -> bool {
         self.surface
             .wake
@@ -664,7 +676,7 @@ impl GpuContext {
     /// Whether the window currently owns a render surface.
     #[cfg(target_os = "android")]
     pub(crate) fn has_surface(&self) -> bool {
-        self.surface.lock().surface.is_some()
+        self.surface.has_surface.load(Ordering::Acquire)
     }
 
     /// Release Android's native surface before the suspended callback returns.
@@ -677,6 +689,7 @@ impl GpuContext {
         let mut slot = self.surface.lock();
         slot.next = None;
         drop(slot.surface.take());
+        self.surface.has_surface.store(false, Ordering::Release);
     }
 
     /// Rebuild the swapchain against the window's current native surface.
@@ -702,6 +715,7 @@ impl GpuContext {
         slot.surface = Some(surface);
         slot.configure(&self.device, &self.config);
         drop(slot);
+        self.surface.has_surface.store(true, Ordering::Release);
         log::info!(
             "Surface restored at {}x{}",
             self.config.width,

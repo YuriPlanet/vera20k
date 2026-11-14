@@ -2270,11 +2270,12 @@ impl ApplicationHandler for App {
                 }
             } else if state.renderer.gpu.screen_busy() {
                 // The game never waits for the screen: while the hand-off
-                // thread waits for the next picture, the match is serviced as
-                // the hidden loop does, and its wake brings the draw. Frames
-                // completed mean more may be due (GameSpeed 0 always is), so
-                // go again at once; otherwise the service wake is a fallback.
-                let pass = Self::service_match_runtime(state, event_loop, true, true, false);
+                // thread waits for the next picture, the match is serviced,
+                // one frame a turn so the draw is never more than a frame
+                // late, and the thread's wake brings the draw. A completed
+                // frame means more may be due (GameSpeed 0 always is), so go
+                // again at once; otherwise the service wake is a fallback.
+                let pass = Self::service_match_runtime(state, event_loop, true, false, false);
                 if pass.quit_requested {
                     return;
                 }

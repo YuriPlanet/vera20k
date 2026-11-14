@@ -243,7 +243,10 @@ Only one tick can run beside a draw, and each lent tick costs a published
 frame, so only the last frame of a service is lent. `service_match_runtime`
 runs every frame that is due within its catch-up budget (eight passes,
 eight milliseconds): at GameSpeed 0, which never waits, that is up to eight
-frames a picture. A frame that another pass will follow
+frames a draw. While the hand-off thread waits for the screen's next picture
+(`GpuContext::screen_busy`, VSync on), `about_to_wait` services one frame a
+turn until the picture is there, so the tick rate does not follow the
+refresh rate. A frame that another pass will follow
 (`LocalFramePacer::another_pass_follows`: another frame is due, and the
 budget is still open after this one's expected tick time) ticks inline, as
 it did before the thread, and publishes nothing, unless lending it is
@@ -327,7 +330,8 @@ Residuals:
   held, the arrow keys queue no scroll, since a held key release has not
   reached them yet.
 - At GameSpeed 0 the tick rate is bounded by the catch-up budget, eight
-  frames or eight milliseconds a picture, as before the thread. Running
+  frames or eight milliseconds a draw, plus the frames serviced while the
+  screen's next picture is on its way. Running
   those frames back to back on the simulation thread needs each frame's
   client inputs and its tail to leave the main thread's pass.
 - At 20,000 units and 30 houses (`sim-bench --scenario march
