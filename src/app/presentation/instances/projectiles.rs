@@ -2,7 +2,7 @@
 //! Coordinates, lifetime and Display order stay with the simulation; this
 //! read-only adapter resolves the current bridge surface and emits draw pieces.
 
-use super::helpers::projection_admitted;
+use super::helpers::{TacticalAdmission, projection_admitted};
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
@@ -76,12 +76,7 @@ pub(crate) fn projectile_visitor<'a>(
     let sim = &rt.simulation;
     let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
-    let input = &state.match_state.input;
-    // Draw admission measures from the camera, the frame's corner, so it
-    // takes the centring size: the battlefield and its offset on both sides.
-    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
-    let width = width as f32 / input.zoom_level;
-    let height = height as f32 / input.zoom_level;
+    let admission = TacticalAdmission::of_state(state);
     let axis = super::helpers::depth_axis(state);
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
     // retained +114 House's scheme, else the local player's.
@@ -115,11 +110,7 @@ pub(crate) fn projectile_visitor<'a>(
         // The screen test reads only the position and everything up to it
         // below only reads, so a bullet off the view stops here, before its
         // type and its firer's colour are looked up by name.
-        if !projectile_in_view(
-            projectile,
-            [input.camera_x, input.camera_y],
-            [width, height],
-        ) {
+        if !projectile_in_view(projectile, admission) {
             return;
         }
         let Some((kind, type_id)) = projectile.payload().projectile_type().and_then(|id| {
@@ -163,8 +154,7 @@ pub(crate) fn projectile_visitor<'a>(
             scheme_rgb,
             atlas,
             terrain,
-            [input.camera_x, input.camera_y],
-            [width, height],
+            admission,
             axis,
             order,
             // Bullet46B0C0 draws uncached in the style 0xB43180 holds.
@@ -201,6 +191,7 @@ pub(crate) fn projectile_visitor<'a>(
 
 /// Shared production adapter used by full SHP/atlas/GPU native comparisons.
 /// Retained Display membership is admission; storage alone never draws a Bullet.
+/// The battlefield is at `camera`, `viewport` across.
 #[cfg(test)]
 pub(crate) fn projectile_draw_instance(
     projectile: &Projectile,
@@ -224,8 +215,10 @@ pub(crate) fn projectile_draw_instance(
         [1000; 3],
         atlas,
         terrain,
-        camera,
-        viewport,
+        TacticalAdmission {
+            corner: camera,
+            size: viewport,
+        },
         axis,
         order,
         render_voxel,
@@ -234,10 +227,10 @@ pub(crate) fn projectile_draw_instance(
 
 /// Whether `projectile`'s point passes the padded projection admission that
 /// precedes its draw.
-fn projectile_in_view(projectile: &Projectile, camera: [f32; 2], viewport: [f32; 2]) -> bool {
+fn projectile_in_view(projectile: &Projectile, admission: TacticalAdmission) -> bool {
     let position = projectile.position();
     let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
-    projection_admitted([x, y], camera, viewport)
+    projection_admitted([x, y], admission)
 }
 
 pub(crate) fn projectile_draw_instance_for_frame(
@@ -249,8 +242,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
     scheme_rgb: [i32; 3],
     atlas: Option<&SpriteAtlas>,
     terrain: &ResolvedTerrainGrid,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: TacticalAdmission,
     axis: DepthAxis,
     order: &NativeDisplayOrder,
     render_voxel: impl FnOnce(&str, glam::Mat4) -> Option<crate::render::unit_atlas::UnitSpriteEntry>,
@@ -266,7 +258,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
     if kind.inviso || projectile.awaiting_anim() {
         return None;
     }
-    if !projectile_in_view(projectile, camera, viewport) {
+    if !projectile_in_view(projectile, admission) {
         return None;
     }
     let position = projectile.position();

@@ -23,8 +23,8 @@ use crate::rules::overlay_types::OverlayTypeFlags;
 use crate::rules::overlay_types::is_bridge_overlay_index;
 
 use super::helpers::{
-    ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth_params, in_view,
-    projection_admitted,
+    ANIM_DRAW_DEPTH_BIAS_PX, TacticalAdmission, apply_shape_z_adjust, compute_sprite_depth_params,
+    in_view, projection_admitted,
 };
 
 /// Map terrain entries remain the render metadata source, but once rules-backed
@@ -261,21 +261,10 @@ pub(crate) struct DisplayEffectInputs<'a> {
 }
 
 impl DisplayEffectInputs<'_> {
-    /// Tactical6D2140's view, in world pixels, for draw admission measured
-    /// from the camera, the frame's corner: the battlefield and its offset on
-    /// both sides (`camera::tactical_centring_size`). Every Display member
-    /// is admitted in it, as gamemd admits them all in one rect (0xB0CE28).
-    ///
-    /// Residual: gamemd measures from the battlefield's own corner, so with
-    /// a sidebar on the left or a bar on top this view also admits members
-    /// up to that inset past the left and top edges. They are drawn under
-    /// the battlefield's scissor, so nothing shows; only the frame-rate
-    /// latch (`0x55AF60`) is asked for those extra Anims and particles.
-    pub(crate) fn projection_viewport(&self) -> [f32; 2] {
-        [
-            (self.tactical[2] + 2 * self.tactical[0]) as f32 / self.zoom,
-            (self.tactical[3] + 2 * self.tactical[1]) as f32 / self.zoom,
-        ]
+    /// The battlefield every Display member is admitted in, as gamemd
+    /// admits them all in one rect (Tactical6D2140, 0xB0CE28).
+    pub(crate) fn tactical_admission(&self) -> TacticalAdmission {
+        TacticalAdmission::of(self.camera, self.tactical, self.zoom)
     }
 }
 
@@ -330,11 +319,9 @@ fn anim_draw_point(
     frame: &crate::app::presentation::frame::PresentationFrame,
     anim: &crate::sim::anim_class::AnimObject,
     id: u64,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    view: TacticalAdmission,
 ) -> Option<AnimDrawPoint> {
-    anim_screen_point(frame, anim, id)
-        .filter(|point| projection_admitted(point.center, camera, viewport))
+    anim_screen_point(frame, anim, id).filter(|point| projection_admitted(point.center, view))
 }
 
 /// Building slot Anim `id`, when its Display encounter can reach its
@@ -345,12 +332,10 @@ pub(super) fn admitted_slot_anim<'a>(
     sim: &'a crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
     id: u64,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    view: TacticalAdmission,
 ) -> Option<&'a crate::sim::anim_class::AnimObject> {
-    sim.anim(id).filter(|anim| {
-        anim.is_building_anim() && anim_draw_point(frame, anim, id, camera, viewport).is_some()
-    })
+    sim.anim(id)
+        .filter(|anim| anim.is_building_anim() && anim_draw_point(frame, anim, id, view).is_some())
 }
 
 /// Plan a spotlight, particle system or particle at its Display encounter;
@@ -411,14 +396,7 @@ fn passed_by_effect_plans_nothing(
     let id = member.id;
     if let EffectKind::Anim(_) = member.kind {
         return input.sim.anim(id).is_none_or(|anim| {
-            anim_draw_point(
-                input.frame,
-                anim,
-                id,
-                input.camera,
-                input.projection_viewport(),
-            )
-            .is_none()
+            anim_draw_point(input.frame, anim, id, input.tactical_admission()).is_none()
         });
     }
     let mut scratch = Vec::new();
@@ -452,7 +430,7 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[0] as f32 / z2,
         input.render_size[1] as f32 / z2,
     );
-    let projection_viewport = input.projection_viewport();
+    let admission = input.tactical_admission();
     // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type; Ares
     // `[Side] Parachute.Anim=` adds its own attached type.
     let mut parachute_names = vec![
@@ -494,7 +472,7 @@ pub(crate) fn build_display_effect_instances(
         // store is asked.
         let admitted = member
             .point()
-            .is_some_and(|point| projection_admitted(point, input.camera, projection_viewport));
+            .is_some_and(|point| projection_admitted(point, admission));
         if !admitted {
             debug_assert!(
                 passed_by_effect_plans_nothing(input, member, &context, ground_order),

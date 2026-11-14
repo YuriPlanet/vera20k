@@ -22,7 +22,7 @@
 
 use glam::IVec3;
 
-use super::helpers::projection_admitted;
+use super::helpers::{TacticalAdmission, projection_admitted};
 use crate::app::AppState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
@@ -126,8 +126,7 @@ fn piece_palette(
 /// What every piece of one frame shares.
 struct DebrisView<'a> {
     terrain: &'a ResolvedTerrainGrid,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: TacticalAdmission,
     axis: DepthAxis,
 }
 
@@ -138,7 +137,7 @@ impl DebrisView<'_> {
     fn admits(&self, piece: &VoxelAnimObject) -> bool {
         let location = piece.world_coord();
         let (x, y) = absolute_leptons_to_screen(location.x, location.y, location.z);
-        projection_admitted([x, y], self.camera, self.viewport)
+        projection_admitted([x, y], self.admission)
     }
 }
 
@@ -160,17 +159,9 @@ pub(crate) fn voxel_anim_visitor<'a>(
         return None;
     }
     let rules = &rt.resources.rules;
-    let input = &state.match_state.input;
-    // Draw admission measures from the camera, the frame's corner, so it
-    // takes the centring size: the battlefield and its offset on both sides.
-    let (width, height) = crate::app::input::camera::tactical_centring_size(state);
     let view = DebrisView {
         terrain,
-        camera: [input.camera_x, input.camera_y],
-        viewport: [
-            width as f32 / input.zoom_level,
-            height as f32 / input.zoom_level,
-        ],
+        admission: TacticalAdmission::of_state(state),
         axis: super::helpers::depth_axis(state),
     };
     let presentation = &state.match_state.match_presentation;

@@ -21,7 +21,7 @@ use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::particle_type::ParticleBehavesLike;
 use crate::util::lepton::absolute_leptons_to_screen;
 
-use super::helpers::{compute_sprite_depth_params_lifted, projection_admitted};
+use super::helpers::{TacticalAdmission, compute_sprite_depth_params_lifted, projection_admitted};
 use super::overlays::DisplayEffectInputs;
 
 /// Read-only projection of the actual piece submitted by this builder. It is
@@ -67,28 +67,27 @@ fn particle_draw_flags(detail_level: u32, translucency: u8) -> u32 {
 /// Frame-local geometry shared by concrete Particle and System body builders.
 /// No retained simulation state or alternate projection authority lives here.
 pub(super) struct ParticleDrawContext {
-    camera: [f32; 2],
+    admission: TacticalAdmission,
     /// The surface-line owners' camera, the battlefield corner's.
     line_camera: [i32; 2],
-    viewport: [f32; 2],
     axis: crate::render::batch::DepthAxis,
     point_viewport: crate::render::tactical_compat::TacticalPointViewport,
 }
 
 impl ParticleDrawContext {
-    /// The context of `input`'s draw. Its builders admit in the view every
-    /// Display member is admitted in ([`DisplayEffectInputs::projection_viewport`]).
+    /// The context of `input`'s draw. Its builders admit in the battlefield
+    /// every Display member is admitted in
+    /// ([`DisplayEffectInputs::tactical_admission`]).
     pub(super) fn new(input: &DisplayEffectInputs<'_>) -> Self {
         let (camera, zoom, axis) = (input.camera, input.zoom, input.axis);
         let tactical = input.tactical;
         let [x, y, width, height] = tactical;
         let logical = |value: u32| (value as f32 / zoom) as i32;
         Self {
-            camera,
+            admission: input.tactical_admission(),
             line_camera: crate::app::presentation::render::surface_line_camera(
                 camera, tactical, zoom,
             ),
-            viewport: input.projection_viewport(),
             axis,
             point_viewport: crate::render::tactical_compat::TacticalPointViewport {
                 clip: crate::render::tactical_compat::TacticalRect {
@@ -124,9 +123,7 @@ pub(super) fn build_particle_system_instance(
     };
     let coord = system.coords();
     let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-    if system.in_limbo()
-        || !projection_admitted([point.0, point.1], context.camera, context.viewport)
-    {
+    if system.in_limbo() || !projection_admitted([point.0, point.1], context.admission) {
         return;
     }
     let kind = input.rules.particle_system_type(system.type_id());
@@ -159,7 +156,7 @@ pub(super) fn build_spotlight_instance(
     };
     let p = light.coord;
     let point = absolute_leptons_to_screen(p[0], p[1], p[2]);
-    if !projection_admitted([point.0, point.1], context.camera, context.viewport) {
+    if !projection_admitted([point.0, point.1], context.admission) {
         return;
     }
     let glow = crate::app::presentation::combat_lights::CombatLight {
@@ -215,12 +212,10 @@ pub(super) fn build_particle_instance(
     };
     let rules = input.rules;
     let detail_level = input.detail_level;
-    let camera = context.camera;
-    let viewport = context.viewport;
     let axis = context.axis;
     let coord = particle.coords();
     let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-    if !projection_admitted([point.0, point.1], camera, viewport) {
+    if !projection_admitted([point.0, point.1], context.admission) {
         return;
     }
     let kind = rules.particle_type(particle.type_id());
@@ -509,7 +504,7 @@ pub(super) fn build_ares_particle_draws(
             };
             let coord = smoke.location();
             let point = absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-            if !projection_admitted([point.0, point.1], context.camera, context.viewport) {
+            if !projection_admitted([point.0, point.1], context.admission) {
                 continue;
             }
             // 100266CE..100266F7: 25, 50 and (unsigned) 75 or more select
@@ -564,9 +559,9 @@ mod tests {
     }
 
     /// Tactical6D2140 admits every Display member in one rect, so a
-    /// spotlight is admitted in the Anims' view (`projection_viewport`): out
-    /// to 360 px past the right edge of a battlefield set in 100 px, whose
-    /// view is then 1000 px wide, not 800.
+    /// spotlight is admitted in the Anims' view (`tactical_admission`): out
+    /// to 360 px past either edge of an 800 px battlefield set in 100 px,
+    /// measured from the battlefield's corner, not the frame's.
     #[test]
     fn a_spotlight_is_admitted_in_the_view_anims_are() {
         use crate::app::presentation::instances::{
@@ -591,7 +586,8 @@ mod tests {
         };
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord[0], coord[1], coord[2]);
         let order = NativeDisplayOrder::from_display(sim.display_layers());
-        let drawn = |past_edge: f32| {
+        // `across` is the spotlight's offset from the battlefield's corner.
+        let drawn = |across: f32| {
             let mut frame =
                 crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
             frame.scene.spotlights.insert(id, light);
@@ -606,7 +602,7 @@ mod tests {
                     sim: &sim,
                     frame: &frame,
                     rules,
-                    camera: [x - 1000.0 - past_edge, y - 300.0],
+                    camera: [x - across - 100.0, y - 300.0],
                     render_size: [1000, 600],
                     tactical: [100, 0, 800, 600],
                     zoom: 1.0,
@@ -628,7 +624,9 @@ mod tests {
             );
             planned.len()
         };
-        assert_eq!(drawn(360.0), 1);
-        assert_eq!(drawn(361.0), 0);
+        assert_eq!(drawn(800.0 + 360.0), 1);
+        assert_eq!(drawn(800.0 + 361.0), 0);
+        assert_eq!(drawn(-360.0), 1);
+        assert_eq!(drawn(-361.0), 0);
     }
 }

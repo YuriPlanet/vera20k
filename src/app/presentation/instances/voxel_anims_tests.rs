@@ -89,8 +89,10 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     let [x, y] = screen(first.x, first.y, first.z);
     let view = DebrisView {
         terrain: sim.resolved_terrain().unwrap(),
-        camera: [x - 400.0, y - 300.0],
-        viewport: [800.0, 600.0],
+        admission: TacticalAdmission {
+            corner: [x - 400.0, y - 300.0],
+            size: [800.0, 600.0],
+        },
         axis: DepthAxis::NONE,
     };
     let tire =
@@ -295,8 +297,10 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
     let [x, y] = screen(location.x, location.y, location.z);
     let view = DebrisView {
         terrain: sim.resolved_terrain().unwrap(),
-        camera: [x - 400., y - 300.],
-        viewport: [800., 600.],
+        admission: TacticalAdmission {
+            corner: [x - 400., y - 300.],
+            size: [800., 600.],
+        },
         axis: DepthAxis::NONE,
     };
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();

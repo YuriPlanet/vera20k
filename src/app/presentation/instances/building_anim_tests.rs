@@ -167,9 +167,12 @@ fn emit_admitted(
     // Every slot, or those a Display walk with this camera and viewport admits.
     let slot_anims = match admission {
         None => super::every_slot_anim(sim, building),
-        Some((camera, viewport)) => {
-            super::admitted_slot_anims(sim, &frame, building, camera, viewport)
-        }
+        Some((corner, size)) => super::admitted_slot_anims(
+            sim,
+            &frame,
+            building,
+            crate::app::presentation::instances::TacticalAdmission { corner, size },
+        ),
     };
     let grid = crate::map::lighting::CellLightGrid::new();
     emit_building_anims(

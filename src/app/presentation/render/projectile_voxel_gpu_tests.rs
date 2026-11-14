@@ -463,8 +463,10 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                 [1000; 3],
                 None,
                 sim.resolved_terrain().unwrap(),
-                cam,
-                size.map(|n| n as f32),
+                crate::app::presentation::instances::TacticalAdmission {
+                    corner: cam,
+                    size: size.map(|n| n as f32),
+                },
                 DepthAxis::NONE,
                 &order,
                 |image, matrix| {
