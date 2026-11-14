@@ -1952,6 +1952,9 @@ impl ApplicationHandler for App {
                         event_loop.set_control_flow(ControlFlow::Poll);
                         state.platform.window.request_redraw();
                     }
+                    Ok(FrameRenderOutcome::ScreenBusy) => {
+                        state.platform.redraw_gate.hold_busy_draw();
+                    }
                     Ok(_) => {}
                     Err(err) => {
                         log::error!("Render: {:#}", err);
