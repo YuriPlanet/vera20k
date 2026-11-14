@@ -226,7 +226,9 @@ impl crate::sim::world::Simulation {
     /// miss that class's head claim before its ordinary Foot Mark(DOWN).
     /// Hover5171C0 delegates to the shared Head_To getter514D10, which
     /// substitutes Location for a null head and has no power/limbo gate.
-    pub(crate) fn locomotor_mark_all_occupation_bits(&mut self, id: u64, put: bool) {
+    /// `ares` is the game's `RuleSet::ares_form`, for the Unit's raw mark
+    /// (`Self::track_raw_mark_at`).
+    pub(crate) fn locomotor_mark_all_occupation_bits(&mut self, id: u64, put: bool, ares: bool) {
         let kind = self
             .substrate
             .entities
@@ -241,6 +243,7 @@ impl crate::sim::world::Simulation {
                     id,
                     super::track_process::TrackFamily::Drive,
                     put,
+                    ares,
                 );
             }
             Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
@@ -251,6 +254,7 @@ impl crate::sim::world::Simulation {
                     id,
                     super::track_process::TrackFamily::Ship,
                     put,
+                    ares,
                 );
             }
             Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
@@ -260,6 +264,7 @@ impl crate::sim::world::Simulation {
                     &self.resolved_terrain,
                     id,
                     put,
+                    ares,
                 );
             }
             Some(
@@ -273,8 +278,9 @@ impl crate::sim::world::Simulation {
                     &self.path_grid,
                     &self.resolved_terrain,
                     id,
+                    ares,
                 );
-                self.release_jumpjet_occupation_before_foot_limbo(id);
+                self.release_jumpjet_occupation_before_foot_limbo(id, ares);
             }
             Some(kind) => {
                 log::debug!("unported {kind:?} Mark_All_Occupation_Bits(1) for {id}");

@@ -397,6 +397,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             id,
+            rules.ares_form(),
         );
         if self
             .substrate

@@ -88,8 +88,7 @@ pub(super) struct FireHit {
     pub warhead: InternedId,
     /// Ares 3.0 ParticleClass_Update_Fire (1005CFA0, hook 0x62CDE8): the
     /// system's Techno owner (`+0xE0`) is the attacker and its house the
-    /// source.
-    #[cfg(feature = "ares")]
+    /// source. Read only when Ares plays.
     pub attacker: Option<u64>,
 }
 
@@ -160,18 +159,18 @@ impl FireWorld for LiveFire<'_> {
             ignore_defenses: false,
             arg6: false,
         };
-        #[cfg(feature = "ares")]
-        let (attacker, house) = hit
-            .attacker
-            .and_then(|id| {
-                sim.substrate
-                    .entities
-                    .get(id)
-                    .map(|techno| (id, techno.owner()))
-            })
-            .map_or((RAD_NO_ATTACKER, None), |(id, house)| (id, Some(house)));
-        #[cfg(not(feature = "ares"))]
-        let (attacker, house) = (RAD_NO_ATTACKER, None);
+        let (attacker, house) = if rules.ares_form() {
+            hit.attacker
+                .and_then(|id| {
+                    sim.substrate
+                        .entities
+                        .get(id)
+                        .map(|techno| (id, techno.owner()))
+                })
+                .map_or((RAD_NO_ATTACKER, None), |(id, house)| (id, Some(house)))
+        } else {
+            (RAD_NO_ATTACKER, None)
+        };
         match hit.receiver {
             CellObjectMember::Entity(id) => {
                 sim.commit_direct_damage_receiver(
@@ -566,7 +565,6 @@ fn damage_cell(
                     damage: pt.damage,
                     distance: distance / 10,
                     warhead,
-                    #[cfg(feature = "ares")]
                     attacker: owner,
                 },
             );

@@ -159,7 +159,7 @@ mod tests {
                 .spawn_object("TANK", "Americans", 4, 4, 64, &rules)
                 .unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            represented_assign_target(entity, Some(TargetKind::Cell(5, 4)));
+            represented_assign_target(entity, Some(TargetKind::Cell(5, 4)), rules.ares_form());
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(true);
@@ -187,12 +187,13 @@ mod tests {
             assert!(entity.attack_target.target().is_none(), "{command:?}");
             assert!(!entity.passive_scan.acquired(), "{command:?}");
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
-            // keeps the index through the NULL assignment.
-            let reset = if cfg!(feature = "ares") { 1 } else { 0 };
+            // keeps the index through the NULL assignment
+            // (`mission::concrete_effects::represented_assign_target_admitted`).
+            let reset = if rules.ares_form() { 1 } else { 0 };
             assert_eq!(entity.weapon_burst.index(), reset, "{command:?}");
             // A later non-null assignment preserves the reset value, so FLH
             // and GetROF start the new burst at its first shot.
-            represented_assign_target(entity, Some(TargetKind::Cell(6, 4)));
+            represented_assign_target(entity, Some(TargetKind::Cell(6, 4)), rules.ares_form());
             assert_eq!(entity.weapon_burst.index(), reset, "{command:?}");
         }
     }
@@ -252,7 +253,11 @@ mod tests {
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 actor.health.set_for_test(actor.health.current() / 2); // Repair admission requires damage.
                 if had_target {
-                    represented_assign_target(actor, Some(TargetKind::Cell(6, 4)));
+                    represented_assign_target(
+                        actor,
+                        Some(TargetKind::Cell(6, 4)),
+                        rules.ares_form(),
+                    );
                 }
                 actor
                     .passive_scan
@@ -297,10 +302,10 @@ mod tests {
                 assert!(actor.attack_target.target().is_none(), "{command:?}");
                 assert!(!actor.passive_scan.acquired(), "{command:?}");
                 // Ares 0x6FCF53 (1005D320) never resets the index.
-                let kept = i32::from(!had_target || cfg!(feature = "ares"));
+                let kept = i32::from(!had_target || rules.ares_form());
                 assert_eq!(actor.weapon_burst.index(), kept, "{command:?}");
                 // The next non-null assignment must retain the observed index.
-                represented_assign_target(actor, Some(TargetKind::Cell(7, 4)));
+                represented_assign_target(actor, Some(TargetKind::Cell(7, 4)), rules.ares_form());
                 assert_eq!(actor.weapon_burst.index(), kept, "{command:?}");
             }
         }
@@ -319,16 +324,18 @@ mod tests {
             2 => Some(TargetKind::Cell(6, 4)),
             other => panic!("unexpected native target {other}"),
         };
-        for row in rows {
+        // The setter takes the game's answer; this bare entity has no Rules,
+        // so each native row runs both ways.
+        for (row, ares) in rows.iter().flat_map(|row| [(row, false), (row, true)]) {
             let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
-            represented_assign_target(&mut entity, target(&row["previous"]));
+            represented_assign_target(&mut entity, target(&row["previous"]), ares);
             entity.weapon_burst.index = row["index"].as_i64().unwrap() as i32;
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(row["passive"].as_u64().unwrap() != 0);
-            represented_assign_target(&mut entity, target(&row["requested"]));
+            represented_assign_target(&mut entity, target(&row["requested"]), ares);
             // Ares 0x6FCF53 (1005D320) keeps the index on every assignment.
-            let next_index = if cfg!(feature = "ares") {
+            let next_index = if ares {
                 &row["index"]
             } else {
                 &row["next_index"]
@@ -336,7 +343,7 @@ mod tests {
             assert_eq!(
                 entity.weapon_burst.index(),
                 next_index.as_i64().unwrap() as i32,
-                "{row}"
+                "{row} ares={ares}"
             );
             assert_eq!(
                 entity.passive_scan.acquired(),

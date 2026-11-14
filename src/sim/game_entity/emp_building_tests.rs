@@ -98,8 +98,6 @@ fn ares_emp_spares_a_tank_in_a_tank_bunker() {
 /// again at expiry, which lifts the system hold. The computer's yard keeps
 /// the player's sidebar pass out of the queue, and the pulse, unlike a
 /// shell, does not mark it hit by an enemy for the computer's sale.
-// Runs again once the powered-unit code's Deactivate moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_on_a_construction_yard_holds_its_production_until_expiry() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

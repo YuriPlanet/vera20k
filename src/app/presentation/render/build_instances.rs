@@ -658,6 +658,9 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     let Some(overlays) = sim.overlay_grid() else {
         return Vec::new();
     };
+    let Some(map_size) = sim.map_size_diamond() else {
+        return Vec::new();
+    };
 
     // gamemd-derived: the `DAT_00A8EB78 != 0` PixelFX gate is the process
     // `[Options] DetailLevel` field (`OptionsClass + 0x18`). The in-game state
@@ -691,8 +694,7 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
         camera_y: state.match_state.input.camera_y,
         viewport_w: sw,
         viewport_h: sh,
-        map_w: resolved.width(),
-        map_h: resolved.height(),
+        map_size,
         white_uv_origin: [0.0, 0.0],
         white_uv_size: [1.0, 1.0],
     };

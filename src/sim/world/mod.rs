@@ -584,6 +584,18 @@ pub struct AresTechCaptureLines {
     pub message_capture: Option<InternedId>,
 }
 
+/// What Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+/// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760) add to
+/// [`SimSoundEvent::UnitLost`]. A game without Ares carries none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AresUnitLostLine {
+    /// The victim type's `EVA.Lost`, spoken whether or not the event's
+    /// `radar` is admitted.
+    pub eva: InternedId,
+    /// A Foot creates the radar event; a building creates none.
+    pub radar_event: bool,
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
@@ -861,15 +873,9 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: RadarEventRequest,
         type_id: InternedId,
-        /// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
-        /// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): the
-        /// victim type's `EVA.Lost`, spoken whether or not `radar` is
-        /// admitted.
-        #[cfg(feature = "ares")]
-        eva: InternedId,
-        /// Ares: a Foot creates the radar event; a building creates none.
-        #[cfg(feature = "ares")]
-        radar_event: bool,
+        /// The Ares announcement, when Ares plays: the app then speaks its
+        /// line instead, whatever `radar` answers. `None` is the stock event.
+        ares: Option<AresUnitLostLine>,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -3455,16 +3461,17 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
-            #[cfg(feature = "ares")]
-            let eva = self.interner.intern(&event.eva);
+            // Only the Ares event interns its line. A game without Ares must
+            // not intern one here: a new ID changes later hashes.
+            let ares = event.ares.as_ref().map(|ares| AresUnitLostLine {
+                eva: self.interner.intern(&ares.eva),
+                radar_event: ares.radar_event,
+            });
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
                 type_id: event.type_id,
-                #[cfg(feature = "ares")]
-                eva,
-                #[cfg(feature = "ares")]
-                radar_event: event.radar_event,
+                ares,
             });
         }
     }
@@ -3694,6 +3701,13 @@ impl Simulation {
 
     pub fn houses(&self) -> &crate::sim::houses::Houses {
         &self.houses
+    }
+
+    /// Trigger-runtime read access for external observers. Every mutation
+    /// stays with the trigger owners; see [`TriggerRuntime`]'s view
+    /// accessors.
+    pub fn trigger_runtime(&self) -> &TriggerRuntime {
+        &self.trigger_runtime
     }
 
     pub fn zone_grid(&self) -> Option<&ZoneGrid> {
@@ -6937,7 +6951,7 @@ impl Simulation {
         }
         //Techno701701..719 removes from the old owner using the retained
         //Cell. The same Cell survives the owner write for701774..780.
-        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id);
+        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id, rules);
         // Techno70172F: `ReReveal(0, 0, 0, 0)` before the owner store takes
         // the sight off every map the old owner's reveal wrote. A building
         // released it at 448BD9 and an object in limbo at its Limbo, so for

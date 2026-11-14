@@ -1812,9 +1812,9 @@ fn foot_body_counter_matches_original_concrete_classes() {
 /// Ares 3.0 FootClass_Update_AnimRate (100493D0, hook 0x4DA8B2): an airborne
 /// Foot with an `AirRate` steps only on the frames it divides, whatever its
 /// IdleRate; on the ground the stock cadence decides again.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_air_rate_alone_steps_an_airborne_foot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let cadence = FootBodyCadence {
         walk_rate: 1,
         idle_rate: 1,

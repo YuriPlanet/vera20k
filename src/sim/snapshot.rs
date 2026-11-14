@@ -345,7 +345,6 @@ pub enum SnapshotError {
 pub enum SnapshotRestoreError {
     #[error(transparent)]
     Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
-    #[cfg(feature = "ares")]
     #[error("object {object_id} has invalid attached stats: {reason}")]
     InvalidAttachedStatsState {
         object_id: u64,
@@ -426,7 +425,6 @@ pub enum SnapshotRestoreError {
     InvalidFrameContinuation { reason: &'static str },
     #[error("invalid saved multiplayer session: {reason}")]
     InvalidMultiplayerSession { reason: &'static str },
-    #[cfg(feature = "ares")]
     #[error("invalid saved factory-source Country reference: {reason}")]
     InvalidFactoryCountry { reason: &'static str },
     #[error("entity {object_id} is a live infantryman with the dying mark")]
@@ -2189,7 +2187,11 @@ impl Simulation {
                 }
             })?;
             if !terrain.in_logic_vector()
-                && terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+                && terrain.joins_logic_on_unlimbo(
+                    terrain_type,
+                    self.session.game_mode(),
+                    rules.ares_form(),
+                )
             {
                 return Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
                     registry: "TerrainObjectStore",
@@ -2197,17 +2199,18 @@ impl Simulation {
                 });
             }
         }
-        #[cfg(feature = "ares")]
-        self.validate_attached_stats_after_restore(rules)
-            .map_err(
-                |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
-                    object_id,
-                    reason,
-                },
-            )?;
-        #[cfg(feature = "ares")]
-        self.validate_factory_country_references(rules)
-            .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
+        let ares = rules.ares_form();
+        if ares {
+            self.validate_attached_stats_after_restore(rules)
+                .map_err(
+                    |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
+                        object_id,
+                        reason,
+                    },
+                )?;
+            self.validate_factory_country_references(rules)
+                .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
+        }
         self.validate_disk_lasers_after_restore(rules)
             .map_err(
                 |(object_id, reason)| SnapshotRestoreError::InvalidDiskLaserState {
@@ -2365,8 +2368,9 @@ impl Simulation {
 
         // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
         // Impassable class is a Recalc product the template lacks.
-        #[cfg(feature = "ares")]
-        self.ares_firestorm_restore_zone_classes(rules);
+        if ares {
+            self.ares_firestorm_restore_zone_classes(rules);
+        }
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }
@@ -2381,7 +2385,7 @@ impl Simulation {
         // CellTag identities are meaningful only after the canonical Cell
         // allocation is restored. Keep their final owner validation in this
         // shared admission seam, before an app can publish the candidate.
-        self.validate_restored_trigger_runtime()
+        self.validate_restored_trigger_runtime(rules.ares_form())
             .map_err(|reason| SnapshotRestoreError::InvalidTriggerRuntime { reason })?;
         Ok(SnapshotMapRestoreOutput {
             occupied_overlays,
@@ -6706,6 +6710,7 @@ mod tests {
             &"4x3".into(),
             profile,
             Some((32, 32)),
+            false,
         );
         assert_ne!(sim.state_hash(), expected_hash);
         sim.substrate.hidden_occupation.enter_building(
@@ -6713,6 +6718,7 @@ mod tests {
             &"4x3".into(),
             profile,
             Some((32, 32)),
+            false,
         );
         let mut stored = profile;
         stored.occupy_height = 4;

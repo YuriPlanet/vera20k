@@ -106,6 +106,42 @@ impl Simulation {
             .iter()
             .map(|shape| (shape.origin, shape.image.as_str()))
     }
+
+    /// Ares 3.0 `AlphaShapeExt::UpdateAlphaShape` (`Ares.dll 10009F40`,
+    /// `Ext/Techno/Hooks.Alpha.cpp`), called from the head of
+    /// `ObjectClass::AI @ 0x005F3E70` (hook `ObjectClass_Update_AlphaLight`;
+    /// the stock body runs after it): each glow is placed again from its
+    /// object's current GetCoords, so it follows its object. Stock keeps the
+    /// Unlimbo placement, so without Ares a Super Thor's `AlphaImage=ODINSH`
+    /// ring stays over the factory that built it. The offset is the Unlimbo
+    /// ctor's (`0x005F5045..0x005F5100`): the absolute tactical projection of
+    /// GetCoords, less half the SHP canvas. The frame runs it only in a game
+    /// Ares plays in ([`RuleSet::ares`]).
+    ///
+    /// RESIDUAL: Ares makes a new shape on odd frames only and centres it with
+    /// `-(size + 1) / 2`; this moves the existing one every frame, at most a
+    /// frame's movement and one pixel apart. Ares also deletes a glow while its
+    /// techno is deactivated, cloaked, lower than -10 or disguised as terrain,
+    /// or is a building out of power outside construction, and makes it again
+    /// once none of those holds. Here only a glow Unlimbo made moves: a
+    /// deactivated or unpowered object keeps its glow, and one a cloak took
+    /// away stays gone. It affects mods that give such objects an AlphaImage;
+    /// nothing in gameplay reads a glow.
+    pub(super) fn update_alpha_shape_screens(&mut self, rules: &RuleSet) {
+        for shape in &mut self.alpha_shapes.shapes {
+            let Some(entity) = self.substrate.entities.get(shape.object) else {
+                continue;
+            };
+            let Some(image) = rules.alpha_image(&shape.image) else {
+                continue;
+            };
+            let coord = ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref());
+            let (x, y) =
+                crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+            let [width, height] = image.canvas();
+            shape.origin = [x as i32 - width / 2, y as i32 - height / 2];
+        }
+    }
 }
 
 #[cfg(test)]

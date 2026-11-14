@@ -27,8 +27,7 @@ impl Simulation {
     pub(crate) fn set_building_stuff_enabled(&mut self, id: u64, enabled: bool, rules: &RuleSet) {
         // Ares BuildingClass_DisableThings10016D00 (hook4524A3) updates a
         // sensor array at DisableStuff452480's head.
-        #[cfg(feature = "ares")]
-        if !enabled {
+        if rules.ares_form() && !enabled {
             self.update_ares_sensor_array(id, rules, None);
         }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -356,7 +355,7 @@ mod tests {
         // NeedsEngineer type as Powered, so its replacement starts paused.
         assert_eq!(
             sim.anim(replaced).unwrap().runtime().paused,
-            cfg!(feature = "ares"),
+            rules.ares_form(),
             "replacement does not copy pause; TypePowered is false"
         );
         assert!(!sim.entities().get(id).unwrap().building_art.stuff_enabled);

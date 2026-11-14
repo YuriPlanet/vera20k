@@ -832,6 +832,7 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
             &mut sim.houses,
             &mut sim.power_states,
             attacker,
+            rules.ares_form(),
         );
         assert!(sim.entities().get(backup).unwrap().building_online());
         let held = sim

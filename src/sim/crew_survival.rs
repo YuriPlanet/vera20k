@@ -286,15 +286,14 @@ impl Simulation {
     ) -> Option<String> {
         let entity = substrate.entities.get(building_id)?;
         let object = interner.object_type(entity.type_ref(), rules)?;
-        #[cfg(not(feature = "ares"))]
-        if !object.crewed {
+        let ares = rules.ares_form();
+        if !ares && !object.crewed {
             return None;
         }
         let captured = entity.building.has_been_captured.is_set();
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
         let house = houses.get(&entity.owner())?;
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             // Installed Building GetCrew1004C650 replaces44EB10. Its optional
             // Engineer chance is tested before Techno's Crewed gate; unlike
             // retail it draws only with a positive admitted chance.
@@ -320,9 +319,7 @@ impl Simulation {
                 interner,
                 &substrate.entities,
             )
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             let armed = crate::sim::combat::combat_weapon::is_armed(
                 entity,
                 object,
@@ -426,12 +423,13 @@ impl Simulation {
         // Ares 3.0 10017350 (hook 0x442DF2), ahead of Phase A: the last
         // entrance of a tunnel kills its owner's network, credited to the C4
         // planter (`sim::ares_tunnel`).
-        #[cfg(feature = "ares")]
-        self.ares_kill_tunnel_feet_if_last(
-            building_id,
-            c4_source,
-            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
-        );
+        if rules.ares_form() {
+            self.ares_kill_tunnel_feet_if_last(
+                building_id,
+                c4_source,
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+            );
+        }
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
         // the foundation cursor that Phase B then continues from.
         let cursor = self.eject_absorbed_passengers(
@@ -554,7 +552,10 @@ impl Simulation {
                 );
                 if let Some(survivor) = sim.substrate.entities.get_mut(id) {
                     crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                        survivor, target, stored,
+                        survivor,
+                        target,
+                        stored,
+                        rules.ares_form(),
                     );
                 }
             }
@@ -1309,6 +1310,7 @@ impl Simulation {
             return false;
         };
         let is_engineer = |crew: &str| rules.object(crew).is_some_and(|object| object.engineer);
+        let ares = rules.ares_form();
         let mut engineer_picked = false;
         let mut spawned = false;
         for _ in 0..count {
@@ -1325,48 +1327,49 @@ impl Simulation {
             // Ares 3.0 BuildingClass_Mi_Selling_EngineerFreeze (1005C550,
             // hook 0x44A5F0): once an Engineer is out, at most nine more
             // picks; a tenth Engineer, or no type, leaves this survivor out.
-            #[cfg(feature = "ares")]
-            let crew = if engineer_picked && is_engineer(&crew) {
-                let mut repick = None;
-                for _ in 0..9 {
-                    let Some(next) = Self::building_crew_type(
+            let crew = if ares {
+                if engineer_picked && is_engineer(&crew) {
+                    let mut repick = None;
+                    for _ in 0..9 {
+                        let Some(next) = Self::building_crew_type(
+                            &self.interner,
+                            &mut self.scenario_rng,
+                            &self.substrate,
+                            &self.houses,
+                            rules,
+                            building_id,
+                        ) else {
+                            break;
+                        };
+                        if !is_engineer(&next) {
+                            repick = Some(next);
+                            break;
+                        }
+                    }
+                    let Some(crew) = repick else {
+                        continue;
+                    };
+                    crew
+                } else {
+                    crew
+                }
+            } else {
+                let mut crew = crew;
+                while engineer_picked && is_engineer(&crew) {
+                    match Self::building_crew_type(
                         &self.interner,
                         &mut self.scenario_rng,
                         &self.substrate,
                         &self.houses,
                         rules,
                         building_id,
-                    ) else {
-                        break;
-                    };
-                    if !is_engineer(&next) {
-                        repick = Some(next);
-                        break;
+                    ) {
+                        Some(next) => crew = next,
+                        None => break,
                     }
                 }
-                let Some(crew) = repick else {
-                    continue;
-                };
-                crew
-            } else {
                 crew
             };
-            #[cfg(not(feature = "ares"))]
-            let mut crew = crew;
-            #[cfg(not(feature = "ares"))]
-            while engineer_picked && is_engineer(&crew) {
-                match Self::building_crew_type(
-                    &self.interner,
-                    &mut self.scenario_rng,
-                    &self.substrate,
-                    &self.houses,
-                    rules,
-                    building_id,
-                ) {
-                    Some(next) => crew = next,
-                    None => break,
-                }
-            }
             if is_engineer(&crew) {
                 engineer_picked = true;
             }

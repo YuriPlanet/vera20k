@@ -516,7 +516,8 @@ impl RuntimeDefinitions {
         }
         definitions
     }
-    fn classification(&self, tag_type: usize) -> u8 {
+    /// `ares` is the game's `RuleSet::ares_form`.
+    fn classification(&self, tag_type: usize, ares: bool) -> u8 {
         // TagType6E61F0 -> TriggerType7271E0; enabled and difficulty bytes do
         // not gate registration. Invalid cyclic definitions are rejected by
         // the bounded Rust traversal rather than reproducing native hangs.
@@ -529,10 +530,10 @@ impl RuntimeDefinitions {
             }
             let typ = &self.trigger_types[index];
             for event in &typ.events {
-                flags |= event_classification(event.kind);
+                flags |= event_flags(event.kind, ares);
             }
             for action in &typ.actions {
-                flags |= action_classification(action.entry.kind);
+                flags |= action_flags(action.entry.kind, ares);
             }
             next = typ.linked;
         }
@@ -576,21 +577,42 @@ impl RuntimeDefinitions {
     }
 }
 
-// Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
-// These are classification only, never substitutes for event predicates.
-fn event_classification(kind: i32) -> u8 {
+/// An event's Tag flags in this game: the stock table
+/// ([`event_classification`]), behind Ares' own answer when Ares plays
+/// (`RuleSet::ares_form`).
+fn event_flags(kind: i32, ares: bool) -> u8 {
     // Ares 3.0 TEventExt::GetFlags 1004F6A0 (hook 0x71F683) answers its own
     // events before the stock table: the object events 62..74, 79, 80, 83
     // and 84 are attached-object (2); the superweapon, reverse-engineered
     // type, owned type, destroyed-by-House and KeepAlive events are House
     // Tags (8); 86 is a Logic Tag (16). Other kinds keep the stock flags.
-    #[cfg(feature = "ares")]
-    match kind {
-        62..=74 | 79 | 80 | 83 | 84 => return 2,
-        75..=78 | 81 | 82 | 85 | 87 | 88 => return 8,
-        86 => return 16,
-        _ => {}
+    if ares {
+        match kind {
+            62..=74 | 79 | 80 | 83 | 84 => return 2,
+            75..=78 | 81 | 82 | 85 | 87 | 88 => return 8,
+            86 => return 16,
+            _ => {}
+        }
     }
+    event_classification(kind)
+}
+
+/// An action's Tag flags in this game: the stock table
+/// ([`action_classification`]), behind Ares' own answer when Ares plays
+/// (`RuleSet::ares_form`).
+fn action_flags(kind: i32, ares: bool) -> u8 {
+    // Ares 3.0 TActionExt::GetFlags 10039930 (hook 0x6E3EE0): kill drivers
+    // (147) and set group (149) act on attached objects; AuxPower (146) and
+    // the EVA voice (148) answer 0, as the stock table does above 111.
+    if ares && matches!(kind, 147 | 149) {
+        return 2;
+    }
+    action_classification(kind)
+}
+
+// Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
+// These are classification only, never substitutes for event predicates.
+fn event_classification(kind: i32) -> u8 {
     let mut flags = 0;
     if matches!(kind, 0 | 1 | 4 | 8 | 24 | 25 | 26 | 31 | 53 | 54 | 59) {
         flags |= 1;
@@ -639,13 +661,6 @@ fn event_classification(kind: i32) -> u8 {
     flags
 }
 fn action_classification(kind: i32) -> u8 {
-    // Ares 3.0 TActionExt::GetFlags 10039930 (hook 0x6E3EE0): kill drivers
-    // (147) and set group (149) act on attached objects; AuxPower (146) and
-    // the EVA voice (148) answer 0, as the stock table does above 111.
-    #[cfg(feature = "ares")]
-    if matches!(kind, 147 | 149) {
-        return 2;
-    }
     if matches!(kind, 14 | 32 | 60 | 61 | 62 | 91 | 111) {
         2
     } else {
@@ -1217,7 +1232,9 @@ impl Simulation {
     /// publishes a candidate. No map re-read or live constructor runs on load.
     /// Destruction may leave orphan Triggers until their shared725C70 tickets
     /// are consumed, so that native intermediate state remains admissible.
-    pub(crate) fn validate_restored_trigger_runtime(&self) -> Result<(), String> {
+    /// `ares` is the loading game's `RuleSet::ares_form`, which decides the
+    /// Tag flags a registration is checked against.
+    pub(crate) fn validate_restored_trigger_runtime(&self, ares: bool) -> Result<(), String> {
         let runtime = &self.trigger_runtime;
         let definitions = &runtime.definitions;
         if definitions.team_tags.len() != definitions.team_types.len()
@@ -1355,7 +1372,9 @@ impl Simulation {
                 let Some(tag) = runtime.tag(index) else {
                     return Err(format!("{name} references unresolved Tag {index}"));
                 };
-                if !seen.insert(index) || definitions.classification(tag.type_index) & flag == 0 {
+                if !seen.insert(index)
+                    || definitions.classification(tag.type_index, ares) & flag == 0
+                {
                     return Err(format!(
                         "{name} has an invalid registration for Tag {index}"
                     ));
@@ -1374,7 +1393,8 @@ impl Simulation {
                 let Some(tag) = runtime.tag(index) else {
                     return Err(format!("House references unresolved Tag {index}"));
                 };
-                if !seen.insert(index) || definitions.classification(tag.type_index) & 8 == 0 {
+                if !seen.insert(index) || definitions.classification(tag.type_index, ares) & 8 == 0
+                {
                     return Err(format!("House has an invalid registration for Tag {index}"));
                 }
             }
@@ -1678,8 +1698,12 @@ impl Simulation {
         if self.trigger_runtime.classified {
             return;
         }
+        let ares = rules.ares_form();
         for type_index in 0..self.trigger_runtime.definitions.tag_types.len() {
-            let flags = self.trigger_runtime.definitions.classification(type_index);
+            let flags = self
+                .trigger_runtime
+                .definitions
+                .classification(type_index, ares);
             if flags & 4 != 0 {
                 let tag = self.shared_trigger_tag(type_index);
                 self.trigger_runtime.map_tags.push(tag);
@@ -1838,7 +1862,10 @@ impl Simulation {
         self.trigger_runtime.detach_live_tag(index);
         // Active-start destructor6E4F60 searches AFTER detach:
         // Find=-1 therefore still decrements the signed cursor.
-        let flags = self.trigger_runtime.definitions.classification(typ);
+        let flags = self
+            .trigger_runtime
+            .definitions
+            .classification(typ, rules.ares_form());
         self.trigger_runtime
             .adjust_tag_destructor_cursors(flags, game_state, started);
         if (game_state as u8) != 0
@@ -1879,14 +1906,11 @@ impl Simulation {
         value: i32,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<crate::sim::intern::InternedId> {
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             (value != 0x2325)
                 .then(|| self.house_by_trigger_selector(value, rules))
                 .flatten()
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             u16::try_from(value).ok().and_then(|country| {
                 self.house_by_country_index(crate::rules::ruleset::CountryIdx(country), rules)
             })
@@ -1902,16 +1926,9 @@ impl Simulation {
         value: i32,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
-        #[cfg(feature = "ares")]
-        {
-            crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS.contains(&value)
-                && self.house_by_trigger_selector(value, rules).is_none()
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = (value, rules);
-            false
-        }
+        rules.ares_form()
+            && crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS.contains(&value)
+            && self.house_by_trigger_selector(value, rules).is_none()
     }
 
     /// Selected HasOccurred71E940 predicates. Numeric/timer controls execute
@@ -1931,8 +1948,10 @@ impl Simulation {
             .clone();
         // Ares 3.0 TEventExt::HasOccured (1004F7A0, hook 0x71E949) answers
         // its own kinds before the stock switch.
-        #[cfg(feature = "ares")]
-        if let Some(occurred) = self.ares_has_occurred(&condition, input, incoming_house, rules) {
+        let ares = rules.ares_form();
+        if ares
+            && let Some(occurred) = self.ares_has_occurred(&condition, input, incoming_house, rules)
+        {
             return occurred;
         }
         match condition.kind {
@@ -1940,8 +1959,8 @@ impl Simulation {
             // 0x0071E950/0x0071EC83 bypass the raised-kind/editor gates for
             // negative or >=62 kinds; 0x0071F084 reaches AL1 at0x0071F1B4.
             // No persistence or retained-House write. Keep Ares' replacement
-            // dispatcher and the known0..61 predicates separate; in an Ares
-            // build only kinds outside 0..=88 get here.
+            // dispatcher and the known0..61 predicates separate; when Ares
+            // plays only kinds outside 0..=88 get here.
             kind if !(0..=61).contains(&kind) => true,
             53 => {
                 // HasOccurred71ECF5..71ED56, original gamemd: raised53
@@ -2287,9 +2306,9 @@ impl Simulation {
                 // Ares TEventClass_HasOccured_PlayerAtX3 (10050480, hook
                 // 0x71EE79) first turns a Player@X value into that House's
                 // index, -1 for an empty slot.
-                #[cfg(feature = "ares")]
-                let expected = if crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS
-                    .contains(&condition.value)
+                let expected = if ares
+                    && crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS
+                        .contains(&condition.value)
                 {
                     self.house_by_trigger_selector(condition.value, rules)
                         .and_then(|house| self.base_reservation_house_index(house))
@@ -2297,8 +2316,6 @@ impl Simulation {
                 } else {
                     condition.value
                 };
-                #[cfg(not(feature = "ares"))]
-                let expected = condition.value;
                 input
                     .source
                     .and_then(|source| self.substrate.entities.get(source))
@@ -3948,15 +3965,17 @@ impl Simulation {
     ) -> bool {
         // Ares 3.0 TActionExt::Execute (100396C0, hook 0x6DD8D7) answers its
         // own kinds before the stock switch.
-        #[cfg(feature = "ares")]
-        if let Some(handled) = self.ares_execute_action(
-            action,
-            context,
-            effects,
-            rules,
-            overlay_registry,
-            frame_effects,
-        ) {
+        let ares = rules.ares_form();
+        if ares
+            && let Some(handled) = self.ares_execute_action(
+                action,
+                context,
+                effects,
+                rules,
+                overlay_registry,
+                frame_effects,
+            )
+        {
             return handled;
         }
         let reference = action.reference;
@@ -4396,7 +4415,6 @@ impl Simulation {
                 // particular, Building442230 preserves Immune repair huts.
                 // Retain that immunity; skip only this call's nonprogressing
                 // receivers. Ordinary damage/cleanup order remains unchanged.
-                #[cfg_attr(feature = "ares", allow(unused_mut))]
                 let mut refused: BTreeSet<u64> = BTreeSet::new();
                 loop {
                     let mut visited_match = false;
@@ -4442,15 +4460,14 @@ impl Simulation {
                         // hook 0x6E20D8): a receiver that survives (below
                         // NowDead) is passed over; it neither counts nor
                         // restarts the scan, so no refusal set is needed.
-                        #[cfg(feature = "ares")]
-                        if self.substrate.entities.get(id).is_some_and(|entity| {
-                            entity.health.current() > 0 && entity.lifecycle.object_alive()
-                        }) {
-                            ordinal += 1;
-                            continue;
-                        }
-                        #[cfg(not(feature = "ares"))]
-                        if self
+                        if ares {
+                            if self.substrate.entities.get(id).is_some_and(|entity| {
+                                entity.health.current() > 0 && entity.lifecycle.object_alive()
+                            }) {
+                                ordinal += 1;
+                                continue;
+                            }
+                        } else if self
                             .substrate
                             .entities
                             .get(id)
@@ -5904,10 +5921,174 @@ fn count_techtype(sim: &Simulation, object: &crate::rules::object_type::ObjectTy
         .count()
 }
 
+// Observer read surface over the definitions and live instances above. The
+// views are read-only: every mutation keeps its existing owner, and no view
+// reconstructs a reference from a raw authored token — resolved identities
+// come straight from this runtime's own definition registries.
+
+/// One trigger event's observer view: the condition kind and its
+/// materialized value. The predicate's typed name/team fields stay with the
+/// evaluation owner; a wave-timing observer needs kind and value only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerEventView {
+    pub kind: i32,
+    pub value: i32,
+}
+
+/// One trigger action's observer view. `team_type` is the TeamType id the
+/// action's definition reference resolved to (the reinforcement and
+/// create-team actions 4/7/80/107 carry one); `waypoint` is the action's
+/// materialized `TAction+44` destination.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerActionView {
+    pub kind: i32,
+    pub team_type: Option<String>,
+    pub value: Option<i32>,
+    pub waypoint: Option<u32>,
+    /// The trigger an action 53 (enable trigger) names, when the loaded
+    /// entry resolved one — the indirect outcome hop a defense persona's
+    /// protected-target walk follows (a solo defense map's statue carries
+    /// destroyed -> enable the trigger whose action announces the loss).
+    pub enable_trigger: Option<String>,
+}
+
+/// One trigger's definition chain: the head trigger's events and actions,
+/// followed by every linked trigger's, walked exactly like the definition
+/// getters (`TagType6E61F0` -> `TriggerType7271E0`, the `has_event`/
+/// `has_action` link traversal) with a cycle guard.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TriggerDefinitionView {
+    pub events: Vec<TriggerEventView>,
+    pub actions: Vec<TriggerActionView>,
+}
+
+/// One armed (registered, live) trigger instance's observer view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArmedTriggerView {
+    /// The chain head's TriggerType id (exact case).
+    pub trigger_id: String,
+    pub enabled: bool,
+    /// The per-event completion bits the poll consumes.
+    pub completed_event_bits: u32,
+    /// The live timer's remaining frames when the chain head's own events
+    /// carry an elapsed-time event (13/51): the timer owner starts it at the
+    /// instance's construction (event 13: `value * 15` logic frames; 51:
+    /// `(value / 2 + RandomRanged(0, value)) * 15`) and re-arms it on every
+    /// repeat fire. `None` when the head carries none — the read
+    /// never invents a deadline. Event 47 (elapsed scenario time) has no
+    /// timer; an observer computes its deadline from the event view's value.
+    pub timer_remaining_frames: Option<i32>,
+    /// The head chain's events and actions.
+    pub definition: TriggerDefinitionView,
+}
+
+impl TriggerRuntime {
+    /// Walk `head`'s definition chain (linked triggers included) into an
+    /// observer view.
+    fn definition_view(&self, head: Option<usize>) -> TriggerDefinitionView {
+        let mut view = TriggerDefinitionView::default();
+        let mut next = head;
+        let mut visited = BTreeSet::new();
+        while let Some(index) = next {
+            if !visited.insert(index) {
+                break;
+            }
+            let typ = &self.definitions.trigger_types[index];
+            view.events
+                .extend(typ.events.iter().map(|event| TriggerEventView {
+                    kind: event.kind,
+                    value: event.value,
+                }));
+            view.actions
+                .extend(typ.actions.iter().map(|action| TriggerActionView {
+                    kind: action.entry.kind,
+                    team_type: match action.reference {
+                        Some(DefinitionReference::Team(team)) => {
+                            Some(self.definitions.team_types[team].clone())
+                        }
+                        _ => None,
+                    },
+                    value: action.value,
+                    waypoint: action.entry.waypoint_index,
+                    enable_trigger: match action.reference {
+                        Some(DefinitionReference::Trigger(trigger)) => {
+                            Some(self.definitions.trigger_types[trigger].id.clone())
+                        }
+                        _ => None,
+                    },
+                }));
+            next = typ.linked;
+        }
+        view
+    }
+
+    /// Every registered live trigger instance, in registry order, read at
+    /// `current_frame`.
+    pub fn armed_trigger_views(&self, current_frame: i32) -> Vec<ArmedTriggerView> {
+        self.trigger_order
+            .iter()
+            .filter_map(|&index| {
+                let live = self.trigger(index)?;
+                let typ = &self.definitions.trigger_types[live.type_index];
+                let has_timer_event = typ.events.iter().any(|event| matches!(event.kind, 13 | 51));
+                Some(ArmedTriggerView {
+                    trigger_id: typ.id.clone(),
+                    enabled: live.enabled,
+                    completed_event_bits: live.completed,
+                    timer_remaining_frames: has_timer_event
+                        .then(|| live.timer.remaining(current_frame)),
+                    definition: self.definition_view(Some(live.type_index)),
+                })
+            })
+            .collect()
+    }
+
+    /// One trigger definition's observer view, found by its authored id —
+    /// registered or not: a lose trigger may carry no tag anywhere, so no
+    /// live instance ever exists for it, while an enable-trigger hop (the
+    /// defense persona's protected-target walk) still reads its outcome.
+    pub fn trigger_definition_view(&self, trigger_id: &str) -> Option<TriggerDefinitionView> {
+        let index = self
+            .definitions
+            .trigger_types
+            .iter()
+            .position(|typ| typ.id == trigger_id)?;
+        Some(self.definition_view(Some(index)))
+    }
+
+    /// The definition chains attached to `object` (the retained Object
+    /// attachment funnel's registrations), each walked through its linked
+    /// triggers. An object with no attached Tag yields an empty vec.
+    pub fn object_tag_definition_views(&self, object: u64) -> Vec<TriggerDefinitionView> {
+        match self.attachments.get(&TagAttachment::Object(object)) {
+            Some(&tag) => self
+                .tag(tag)
+                .map(|live| {
+                    vec![self.definition_view(self.definitions.tag_types[live.type_index].trigger)]
+                })
+                .unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
+
+    /// A global trigger variable's current value. Out-of-range indices read
+    /// clear, never panic.
+    pub fn global_variable_is_set(&self, index: u32) -> bool {
+        self.globals_set.contains(&index)
+    }
+
+    /// A local trigger variable's current value. Out-of-range indices read
+    /// clear, never panic.
+    pub fn local_variable_is_set(&self, index: u32) -> bool {
+        self.locals_set.contains(&index)
+    }
+}
+
+
 #[path = "trigger_runtime_ares.rs"]
 mod ares;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "trigger_runtime_ares_tests.rs"]
 mod ares_tests;
 

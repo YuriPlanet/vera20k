@@ -50,17 +50,20 @@ pub(crate) enum WallConnectionStep {
 /// resolve in this prefix. The distinct Building/Gate continuations stay
 /// explicit rather than pretending this is a whole-function port.
 ///
-/// `overlays` is the OverlayType array the Ares build tests instead of the
-/// three literals; `None` (a caller or fixture without one) keeps them.
+/// `overlays` is the OverlayType array a game read the Ares way (`ares`, the
+/// caller's `rules.ares_form()`) tests instead of the three literals; `None`
+/// (a caller or fixture without one) keeps them. Only the `requested == -1`
+/// query reads either.
 pub(crate) fn wall_connection_step(
     stored: i32,
     requested: i32,
     overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ares: bool,
 ) -> WallConnectionStep {
     if stored != -1 && stored == requested {
         WallConnectionStep::Return(true)
     } else if requested == -1 {
-        WallConnectionStep::Return(any_wall_overlay(stored, overlays))
+        WallConnectionStep::Return(any_wall_overlay(stored, overlays, ares))
     } else {
         match requested {
             0 | 2 => WallConnectionStep::GdiBuildings,
@@ -75,20 +78,18 @@ pub(crate) fn wall_connection_step(
 fn any_wall_overlay(
     stored: i32,
     overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ares: bool,
 ) -> bool {
     // Ares 3.0 CellClass_AttachesToNeighbourOverlay 10015740 (hook
     // 0x480534): a nonnegative index whose OverlayType is `Wall=yes`
     // (0x480549), so sandbags, fences and the Kremlin wall count too;
     // anything else continues at 0x480552, which answers false for -1.
-    #[cfg(feature = "ares")]
-    if let Some(overlays) = overlays {
+    if ares && let Some(overlays) = overlays {
         return u8::try_from(stored)
             .ok()
             .and_then(|id| overlays.flags(id))
             .is_some_and(|flags| flags.wall);
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = overlays;
     matches!(stored, 2 | 26 | 243)
 }
 
@@ -509,7 +510,7 @@ mod tests {
                 let stored = i32::try_from(row["stored"].as_i64().unwrap()).unwrap();
                 let requested = i32::try_from(row["requested"].as_i64().unwrap()).unwrap();
                 assert_eq!(
-                    wall_connection_step(stored, requested, None),
+                    wall_connection_step(stored, requested, None, false),
                     WallConnectionStep::Return(row["returned_low_byte"].as_u64().unwrap() != 0),
                     "original480510 query {row}"
                 );
@@ -520,7 +521,6 @@ mod tests {
 
     /// Ares 10015740 (hook 0x480534): the any-wall query answers the
     /// OverlayType's `Wall=` for any index, not the three stock literals.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_any_wall_query_reads_the_overlay_wall_flag() {
         let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
@@ -530,7 +530,7 @@ mod tests {
             ),
             None,
         );
-        let any_wall = |stored| wall_connection_step(stored, -1, Some(&overlays));
+        let any_wall = |stored| wall_connection_step(stored, -1, Some(&overlays), true);
         assert_eq!(any_wall(0), WallConnectionStep::Return(true));
         assert_eq!(any_wall(1), WallConnectionStep::Return(false));
         // GAWALL's index without `Wall=yes` is no wall here.
@@ -538,7 +538,7 @@ mod tests {
         assert_eq!(any_wall(-1), WallConnectionStep::Return(false));
         // A requested type still takes the stock arms.
         assert_eq!(
-            wall_connection_step(0, 2, Some(&overlays)),
+            wall_connection_step(0, 2, Some(&overlays), true),
             WallConnectionStep::GdiBuildings
         );
     }

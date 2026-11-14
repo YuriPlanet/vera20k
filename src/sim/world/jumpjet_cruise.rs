@@ -192,6 +192,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 z: location[2],
             },
             false,
+            self.rules.ares_form(),
         );
         self.sim
             .substrate
@@ -486,6 +487,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 z: destination[2],
             },
             true,
+            self.rules.ares_form(),
         );
     }
     fn deploy_latched(&self) -> bool {

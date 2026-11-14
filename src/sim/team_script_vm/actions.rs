@@ -215,7 +215,8 @@ impl Simulation {
     /// and the member carries passengers; a script run past its end
     /// destroys the team; the mission target and move target are cleared.
     /// Otherwise the move target falls back to the mission target. Stock
-    /// actions outside `0..=0x40` do nothing; an Ares build also admits68.
+    /// actions outside `0..=0x40` do nothing; a game Ares plays in also
+    /// admits68.
     pub(super) fn team_step_script(
         &mut self,
         team_id: u64,
@@ -305,6 +306,8 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
+        // The Ares action bodies below follow how the Rules were read.
+        let ares = rules.ares_form();
         match action.action_id {
             48 => self.team_action_scout_houses(team_id, rules, registry, frame_effects),
             0 => self.team_action_attack_quarry(
@@ -590,8 +593,7 @@ impl Simulation {
                         .and_then(|team| team.next_member_after(current));
                     // Installed Ares dispatcher1003A110 sets Ext+B0 for67,
                     // clears it for64, then calls the same Foot vt+34C.
-                    #[cfg(feature = "ares")]
-                    if let Some(foot) = self.substrate.entities.get_mut(current) {
+                    if ares && let Some(foot) = self.substrate.entities.get_mut(current) {
                         foot.ares
                             .vehicle_driver
                             .set_vehicle_seek(action.action_id != 64);
@@ -1007,8 +1009,8 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            #[cfg(feature = "ares")]
-            68 => {
+            // A game not read the Ares way takes the refusal arm below.
+            68 if ares => {
                 // Installed TeamClass_Update hook6E9443 ->1003A310 ->
                 // dispatch10039C30/action6810039D7C: linked members use
                 // their own current Type's Convert.Script pointer. The
@@ -1913,15 +1915,13 @@ impl Simulation {
                 let [x, y, _] = self.house_base_coordinate(enemy, cells.as_ref());
                 [x, y]
             });
-            #[cfg(feature = "ares")]
-            let distance = argument.wrapping_add(
-                rules
-                    .ares_general()
-                    .ai_friendly_distance(rules.general.ai_safe_distance),
-            );
-            #[cfg(not(feature = "ares"))]
-            let distance = {
-                let _ = argument;
+            let distance = if rules.ares_form() {
+                argument.wrapping_add(
+                    rules
+                        .ares_general()
+                        .ai_friendly_distance(rules.general.ai_safe_distance),
+                )
+            } else {
                 rules.general.ai_safe_distance
             };
             let seed = regroup_seed_cell(own, enemy, distance, || {
@@ -1970,11 +1970,9 @@ impl Simulation {
                 return None;
             }
             let own = self.house_base_coordinate(owner, cells.as_ref());
-            #[cfg(feature = "ares")]
-            let distance = argument.wrapping_add(rules.general.ai_safe_distance);
-            #[cfg(not(feature = "ares"))]
-            let distance = {
-                let _ = argument;
+            let distance = if rules.ares_form() {
+                argument.wrapping_add(rules.general.ai_safe_distance)
+            } else {
                 rules.general.ai_safe_distance
             };
             let seed = gather_seed_cell(

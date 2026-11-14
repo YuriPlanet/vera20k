@@ -4,23 +4,43 @@
   <strong>Svenska</strong> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för macOS (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliotekstester för macOS" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Linux (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliotekstester för Linux" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Windows (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliotekstester för Windows" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Senaste körningen av WebAssembly-bygget (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-bygge" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Gå med i Discord-servern" height="23" align="middle"></a>
   <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-grupp" height="23" align="middle">
 </p>
 
 # VERA20K
 
-VERA20K är en communitydriven nyimplementation av originalmotorn, `gamemd.exe`. Ta med din egen kopia av
-Red Alert 2: Yuri's Revenge för att utveckla eller spela.
+VERA20K är en ny motor för Red Alert 2: Yuri's Revenge. Den spelar som originalet, med samma
+enheter, kartor och utseende, och körs på Windows, macOS och Linux. Den är byggd för större
+strider, med upp till 30 spelare och 20 000 enheter på en karta.
 
 VERA20K görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: inställningar för skirmish och bild från spelet" width="100%">
+
+## Ladda ner och spela
+
+1. Installera Red Alert 2: Yuri's Revenge från Steam eller EA-appen.
+2. Ladda ner VERA20K för ditt system med knapparna nedan.
+3. Öppna filen du laddade ner. Den hittar ditt spel och installerar VERA20K i en egen mapp.
+
+<p dir="ltr">
+  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Ladda ner för Windows" height="28"></a>
+  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Ladda ner för macOS (Apple Silicon)" height="28"></a>
+  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Ladda ner för macOS (Intel)" height="28"></a>
+  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Ladda ner för Linux" height="28"></a>
+</p>
+
+Fastnat? Läs [hjälpsidan](https://vera20k.org/sv/help).
+
+Projektet är under aktiv utveckling: skirmish går att spela på Windows, macOS och Linux, kampanjer
+fungerar delvis och flerspelarläget online (experimentellt) är nu tillgängligt. Tidigare versioner
+och vad som ändrades i varje finns på
+[releasesidan](https://github.com/YuriPlanet/vera20k/releases).
+
+För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
+[installationen av offlineklienten](integrations/cncnet/README.md).
 
 ## Projektets mål
 
@@ -30,15 +50,6 @@ ska gå.
 4. Integrerad flerspelarklient
 
 Se [färdplanen](https://github.com/orgs/YuriPlanet/projects/1) för aktuella prioriteringar och framtida planer.
-
-## Ladda ner och spela
-
-Ladda ner installationsprogrammet för Windows, macOS eller Linux från
-[releasesidan](https://github.com/YuriPlanet/vera20k/releases). Det hittar ditt Yuri's Revenge och
-installerar VERA20K i en ny mapp.
-
-För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
-[installationen av offlineklienten](integrations/cncnet/README.md).
 
 ## Bidra
 
@@ -66,6 +77,13 @@ Pilarna visar dataflödet:
 ![Applikationen skickar kommandon till simuleringen, som returnerar världstillståndet; applikationen skickar renderingsdata till renderingen.](docs/images/architecture.sv.png)
 
 ## Bygg och kör
+
+<p dir="ltr">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för macOS (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliotekstester för macOS" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Linux (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliotekstester för Linux" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Windows (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliotekstester för Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Senaste körningen av WebAssembly-bygget (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-bygge" height="23" align="middle"></a>
+</p>
 
 Du behöver:
 

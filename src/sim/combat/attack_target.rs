@@ -332,10 +332,13 @@ pub fn install_entity_attack_target_for_test(
         None => return false,
     };
 
+    // No RuleSet reaches this fixture adapter: it takes the answer of the
+    // empty rules a fixture without rules runs on.
     crate::sim::mission::concrete_effects::represented_assign_target_admitted(
         attacker,
         Some(TargetKind::Entity(target_id)),
         Some(TargetKind::Entity(target_id)),
+        RuleSet::empty_for_test().ares_form(),
     );
 
     true
@@ -383,6 +386,8 @@ pub fn install_cell_attack_target_for_test(
     crate::sim::mission::concrete_effects::represented_assign_target(
         attacker,
         Some(TargetKind::Cell(target_rx, target_ry)),
+        // An armed attacker was read from these rules above.
+        rules.is_some_and(RuleSet::ares_form),
     );
     true
 }

@@ -64,7 +64,7 @@ pub(crate) enum LanServiceRequest {
     Refresh,
     SelectGame { game_id: Option<u64>, changed: bool },
     NameChanged(String),
-    Chat { text: Vec<u16>, color: u32 },
+    Chat { text: Vec<u16> },
     Join { game_id: u64, observe: bool },
     CancelJoin { game_id: u64 },
 }
@@ -592,7 +592,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 state,
                 LanChatLine {
                     text: display,
-                    //5DDEB9..5DDECA: echo uses7EEF44, outgoing uses7EEF2C.
+                    // `0x005DDEB9..0x005DDECA`: the echo uses `[0x7EEF44]`;
+                    // the packet's `[0x7EEF2C]` is `lan_service::chat_packet`'s.
                     color: 0x0040_FFFF,
                 },
             );
@@ -602,10 +603,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .as_mut()
                 .unwrap()
                 .requests
-                .push(LanServiceRequest::Chat {
-                    text: message,
-                    color: 0x0000_F0F0,
-                });
+                .push(LanServiceRequest::Chat { text: message });
         }
         LanLobbyAction::SelectGame { game_id, changed } => {
             let runtime = state.frontend.lan.as_mut().unwrap();

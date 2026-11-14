@@ -226,12 +226,13 @@ pub fn values_for_display(
             if entity.category() != crate::map::entities::EntityCategory::Structure {
                 return None;
             }
-            // `SuperWeapons=` is the Ares list; a Phobos-only build has the
-            // two stock slots and no additional entries.
-            #[cfg(feature = "ares")]
-            let additional = object.additional_super_weapons();
-            #[cfg(not(feature = "ares"))]
-            let additional: &[String] = &[];
+            // `SuperWeapons=` is the Ares list; a game Ares does not play
+            // has the two stock slots and no additional entries.
+            let additional: &[String] = if rules.ares_form() {
+                object.additional_super_weapons()
+            } else {
+                &[]
+            };
             // `getSuperTimer`: an index within `GetSuperWeaponCount()` (the two
             // stock slots plus the list) selects that slot, even an empty one;
             // zero or an index past the end falls back to the first set slot.

@@ -75,6 +75,7 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                         cell.overlay_identity_state().0,
                         -1,
                         Some(self.rules.overlay_registry()),
+                        self.rules.ares_form(),
                     ),
                     crate::sim::cell_kernel::WallConnectionStep::Return(true)
                 );
@@ -107,6 +108,7 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                         grid.cell(cell.rx, cell.ry).overlay_id.map_or(-1, i32::from),
                         -1,
                         Some(self.rules.overlay_registry()),
+                        self.rules.ares_form(),
                     ),
                     crate::sim::cell_kernel::WallConnectionStep::Return(true)
                 )

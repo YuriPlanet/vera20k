@@ -769,6 +769,7 @@ fn apply_one_marks_handoff_and_full_head_without_foot_enable() {
             1,
             family,
             true,
+            crate::rules::ruleset::RuleSet::empty_for_test().ares_form(),
         );
         // Drive/Ship Apply1 invokes raw marks directly regardless of +6B6.
         assert_eq!(
@@ -867,6 +868,7 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
             1,
             family,
             true,
+            crate::rules::ruleset::RuleSet::empty_for_test().ares_form(),
         );
         let entity = sim.substrate.entities.get(1).unwrap();
         let (handoff, head) = super::super::at_coord::AtCoordQuery::from_state(
@@ -948,6 +950,7 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
             1,
             family,
             true,
+            crate::rules::ruleset::RuleSet::empty_for_test().ares_form(),
         );
         sim.techno_limbo(1);
         assert!(sim.substrate.entities.get(1).unwrap().lifecycle.in_limbo());
@@ -966,6 +969,7 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
             1,
             supplied,
             true,
+            crate::rules::ruleset::RuleSet::empty_for_test().ares_form(),
         );
         sim.apply_lifecycle_request(
             LifecycleRequest::Uninit {
@@ -1851,18 +1855,14 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
             entity
                 .navigation
                 .set_nav_com_for_test(has_destination.then(|| NavTargetRef::cell(12, 10)));
-            sim.unit_enter_idle_mode(
-                1,
-                crate::rules::ruleset::RuleSet::empty_for_test(),
-                false,
-                crate::sim::world::FrameEffects::default(),
-            );
+            let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+            sim.unit_enter_idle_mode(1, rules, false, crate::sim::world::FrameEffects::default());
             let entity = sim.substrate.entities.get(1).unwrap();
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index through the NULL target.
             assert_eq!(
                 entity.weapon_burst.index(),
-                i32::from(has_destination || cfg!(feature = "ares"))
+                i32::from(has_destination || rules.ares_form())
             );
             assert_eq!(entity.passive_scan.acquired(), has_destination);
             assert_eq!(
@@ -3591,9 +3591,11 @@ fn a_unit_marked_at_deck_height_off_a_bridge_leaves_its_cell_passable() {
         .expect("MTNK spawns");
     order(&mut sim, second, cell);
     step(&mut sim, 200);
+    // Only Ares' raw mark records the plane (AltOccupation,
+    // `Simulation::track_raw_mark_at`).
     assert_eq!(
         at(&sim, second) == cell,
-        cfg!(feature = "ares"),
+        rules.ares_form(),
         "the second Grizzly reaches the Cell; its ground bits {:#x}",
         ground(&sim)
     );

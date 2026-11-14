@@ -1001,7 +1001,6 @@ pub struct ProjectilePayload {
     /// every other bullet, whose Range starts at INT_MAX
     /// (BulletClass_Initialize_Ranged 1001A920, hook 0x4664FB) and never runs
     /// out. Not part of the world hash.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_range: Option<i32>,
 }
@@ -1033,7 +1032,6 @@ impl ProjectilePayload {
             firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
             #[cfg(feature = "phobos")]
             source_house: None,
-            #[cfg(feature = "ares")]
             ares_range: None,
         }
     }
@@ -1051,7 +1049,6 @@ impl ProjectilePayload {
     }
 
     /// The FireAt bullet's Ares Range ([`Self::ares_range`]).
-    #[cfg(feature = "ares")]
     pub(crate) fn with_ares_range(self, ares_range: Option<i32>) -> Self {
         Self { ares_range, ..self }
     }
@@ -2615,8 +2612,8 @@ impl ProjectileStore {
         let selected_candidate = snap_impact.unwrap_or(candidate);
         // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), before
         // that commit: a `Ranged=` bullet spends `F2I(DistanceFrom)` from its
-        // Location to the new one, and impacts once none is left.
-        #[cfg(feature = "ares")]
+        // Location to the new one, and impacts once none is left. Only a
+        // game read the Ares way gives a bullet a Range, so no other asks.
         if let Some(range) = projectile.payload.ares_range.as_mut() {
             let square = |a: i32, b: i32| {
                 let delta = f64::from(a.wrapping_sub(b));
@@ -2636,8 +2633,8 @@ impl ProjectileStore {
         projectile.position = selected_candidate;
         // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), after
         // the replicated SetLocation: a bullet the world burns in a firestorm
-        // wall's cell is UnInit'ed there, before any impact (0x467FBA).
-        #[cfg(feature = "ares")]
+        // wall's cell is UnInit'ed there, before any impact (0x467FBA). Only
+        // Ares code raises a firestorm, so the world answers no without one.
         if collides_at(
             projectile,
             selected_candidate,
@@ -3190,6 +3187,18 @@ pub fn projectile_shp_frame(
     projectile_type: &crate::rules::projectile_type::ProjectileType,
     frame: u32,
 ) -> u16 {
+    // Still on the feature: the draw that asks holds no Rules, the owner
+    // passes it `RuleSet::ares_form`.
+    projectile_shp_frame_by_form(projectile, projectile_type, frame, cfg!(feature = "ares"))
+}
+
+/// [`projectile_shp_frame`] for a game read the Ares way (`ares`) or not.
+fn projectile_shp_frame_by_form(
+    projectile: &Projectile,
+    projectile_type: &crate::rules::projectile_type::ProjectileType,
+    frame: u32,
+    ares: bool,
+) -> u16 {
     let velocity = projectile.velocity;
     if projectile.visual.anim_low != 0 || projectile.visual.anim_high != 0 {
         return u16::from(projectile.visual.runtime_frame);
@@ -3200,25 +3209,16 @@ pub fn projectile_shp_frame(
         return 0;
     }
     use crate::util::direction_tables::DRAGON_FRAME_TABLE;
-    #[cfg(not(feature = "ares"))]
     use crate::util::direction_tables::{facing16_from_angle, step32_from_facing16};
     use crate::util::native_x87::X87Chop53 as X;
     use native_math::{atan, d};
     // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`.
     let angle = atan(X::neg(d(velocity.y)), d(velocity.x));
-    // The DirStruct word conversion (FSUB pi/2, FMUL, ftol); 46805D: its
-    // 32-step bucket indexes the 0x007F4890 table.
-    #[cfg(not(feature = "ares"))]
-    let facing = {
-        let _ = frame;
-        DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(facing16_from_angle(angle)))]
-    };
-    // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces the
-    // body with its own word, 0x3FFF less the truncated angle times 65535/2pi
-    // (1001A894..1001A8BB, constant 10097DB8), whose bucket can differ at the
-    // edges; then AnimLength gives each facing its frames.
-    #[cfg(feature = "ares")]
-    let facing = {
+    let facing = if ares {
+        // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces
+        // the body with its own word, 0x3FFF less the truncated angle times
+        // 65535/2pi (1001A894..1001A8BB, constant 10097DB8), whose bucket can
+        // differ at the edges; then AnimLength gives each facing its frames.
         const ARES_FACING_SCALE: crate::util::native_x87::NativeF64Bits =
             crate::util::native_x87::NativeF64Bits::from_bits(0x40c4_5f1c_0e99_5ab9);
         let scaled = X::mul(
@@ -3232,6 +3232,10 @@ pub fn projectile_shp_frame(
             frame as i32,
             projectile_type.anim_rate,
         )
+    } else {
+        // The DirStruct word conversion (FSUB pi/2, FMUL, ftol); 46805D: its
+        // 32-step bucket indexes the 0x007F4890 table.
+        DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(facing16_from_angle(angle)))]
     };
     facing as u16
 }
@@ -3546,7 +3550,6 @@ mod tests {
     /// Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94): a FireAt
     /// bullet of a `Ranged=` type spends its ProjectileRange along its
     /// flight and impacts once none is left, short of its target.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_a_ranged_bullet_impacts_when_its_projectile_range_runs_out() {
         let mut store = ProjectileStore::new();
@@ -3805,9 +3808,9 @@ mod tests {
     /// Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000): with
     /// `AnimLength=3` facing 20 owns frames 60..62, stepped every `AnimRate`
     /// frames of the frame counter.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_anim_length_steps_each_facing_through_its_frames() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut store = ProjectileStore::new();
         let id = store.spawn(1, spawn(ProjectileTarget::Cell { rx: 0, ry: 0 }));
         let ini = crate::rules::ini_parser::IniFile::from_str(
@@ -3818,7 +3821,8 @@ mod tests {
             ini.section("P").unwrap(),
             ini.section("P"),
         );
-        let frame = |counter| projectile_shp_frame(store.get(id).unwrap(), &kind, counter);
+        let frame =
+            |counter| projectile_shp_frame_by_form(store.get(id).unwrap(), &kind, counter, true);
         assert_eq!([frame(0), frame(3), frame(5), frame(6)], [60, 61, 62, 60]);
     }
 

@@ -359,13 +359,13 @@ impl Simulation {
         if !self.track_survives(id) {
             return;
         }
+        let ares = rules.ares_form();
         // 0x0073A31F..0x0073A5EA, before the Ready/Commence below: a tethered
         // unit on Enter arriving north-adjacent to its dock sends DOCK_NOW.
         if reason == PerCellReason::Arrival {
             // Ares 3.0 1004C530 (hook 0x739F21): a small visceroid arriving
             // on the one it seeks merges into it and ends here.
-            #[cfg(feature = "ares")]
-            if self.ares_visceroid_merge(id, rules, registry, effects) {
+            if ares && self.ares_visceroid_merge(id, rules, registry, effects) {
                 return;
             }
             // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
@@ -497,8 +497,9 @@ impl Simulation {
             if !kills.contains(&victim) {
                 continue;
             }
-            #[cfg(feature = "ares")]
-            self.ares_crush_damage(id, victim, rules, registry, effects);
+            if ares {
+                self.ares_crush_damage(id, victim, rules, registry, effects);
+            }
             if let Some(entity) = self.substrate.entities.get(victim) {
                 super::bump_crush::emit_crush_kill_sounds_at(
                     entity,
@@ -561,7 +562,6 @@ impl Simulation {
     /// `CrushDamage.Warhead`, else `[CombatDamage] C4Warhead`, as
     /// `ReceiveDamage(&damage, 0, warhead, null, false, false, null)`. A zero
     /// damage or a null warhead deals none.
-    #[cfg(feature = "ares")]
     fn ares_crush_damage(
         &mut self,
         crusher: u64,
@@ -1024,8 +1024,7 @@ impl Simulation {
             let at = position_world_coord(&entity.position);
             ((at.x / 256) as i16 as u16, (at.y / 256) as i16 as u16)
         });
-        #[cfg(feature = "ares")]
-        if reason == PerCellReason::Arrival {
+        if rules.ares_form() && reason == PerCellReason::Arrival {
             //519675 ->10049820: Capture only; exact NavCom equality with
             //the first Unit, then Aircraft, then vehicle-like Building.
             let capture_target = self.substrate.entities.get(id).and_then(|actor| {
@@ -1366,8 +1365,9 @@ impl Simulation {
             // him into its owner's network (`sim::ares_tunnel`) instead,
             // through CAN_LOAD; a refusal takes the transport arm's refusal
             // (`0x0051A488`).
-            #[cfg(feature = "ares")]
-            if let Some(tunnel) = self.ares_tunnel_type(candidate, rules) {
+            if rules.ares_form()
+                && let Some(tunnel) = self.ares_tunnel_type(candidate, rules)
+            {
                 let house = self
                     .substrate
                     .entities
@@ -1482,8 +1482,8 @@ impl Simulation {
         // on Enter with a `Tunnel=` building as its NavCom, the unit asks it
         // CAN_LOAD and enters its own House's network (`sim::ares_tunnel`);
         // a refusal takes the refusal below (`0x0073A796`).
-        #[cfg(feature = "ares")]
-        if let Some(tunnel) = self.ares_tunnel_type(building, rules)
+        if rules.ares_form()
+            && let Some(tunnel) = self.ares_tunnel_type(building, rules)
             && unit.mission.effective() == MissionId::from_known(MissionType::Enter)
             && nav_com_is(unit, building)
         {
@@ -1810,8 +1810,8 @@ impl Simulation {
         }
         // Ares 3.0 10049280 (hook 0x4D85E4): tiberium damage first; a Foot it
         // kills leaves the whole call (0x4D8F29), Techno tail included.
-        #[cfg(feature = "ares")]
-        if self.ares_foot_tiberium_damage(id, rules, registry, effects) {
+        let ares = rules.ares_form();
+        if ares && self.ares_foot_tiberium_damage(id, rules, registry, effects) {
             return;
         }
         self.refresh_unit_sensor_at_per_cell(id, rules, registry);
@@ -1881,8 +1881,9 @@ impl Simulation {
         {
             // Ares 3.0 FootClass_UpdatePosition_HunterSeeker (1004E050, hook
             // 0x4D8D95): a hunter leaving the map hits its Target first.
-            #[cfg(feature = "ares")]
-            self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
+            if ares {
+                self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
+            }
             self.uninit_with_context(
                 id,
                 UninitContext::new(rules, registry).with_effects(effects),
@@ -1899,6 +1900,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             id,
+            rules.ares_form(),
         );
         let cell = self
             .substrate

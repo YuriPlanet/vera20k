@@ -328,6 +328,11 @@ modern online ordering above is an intentional adaptation.
   [extra lobby colours](skirmish-colors.md). The LAN fields and the online slot
   already carried that range, so no packet changed, and a room keeps each colour to
   one player while it lists at least as many colours as it has players.
+- LAN chat in the lobby and setup rooms carries gamemd's fixed chat colour,
+  `0x0000F0F0` (`5DE360`), not the player's colour number; match chat carries the
+  number, and co-op's score screen the fixed colour. Different builds meet only in
+  the lobby, where older ones already sent the fixed colour; they show others'
+  lines as `name: text` and their own lobby lines twice. The packet is unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.

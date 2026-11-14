@@ -330,6 +330,7 @@ pub(super) fn commit_receiver_health(
                 source_owner,
                 delta,
                 world.session.game_mode_nonzero(),
+                rules.ares_form(),
                 rules.general.ai_nearest_enemy,
             );
         }
