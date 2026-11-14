@@ -1104,6 +1104,16 @@ impl App {
                     #[cfg(feature = "phobos")]
                     message_apply_hover_state: phobos_client.message_apply_hover_state,
                     #[cfg(feature = "phobos")]
+                    hud_boards: crate::app::presentation::hud_boards::HudBoardsUi {
+                        message_display_in_center: phobos_client.message_display_in_center,
+                        message_board_opacity: phobos_client
+                            .message_display_in_center_board_opacity,
+                        message_labels: phobos_client.message_display_in_center_labels_count,
+                        message_records: phobos_client.message_display_in_center_records_count,
+                        show_game_time: phobos_client.show_game_time,
+                        game_time_board_opacity: phobos_client.show_game_time_board_opacity,
+                    },
+                    #[cfg(feature = "phobos")]
                     show_power_plant_enhancer_range: phobos_client
                         .show_power_plant_enhancer_range,
                     #[cfg(feature = "phobos")]

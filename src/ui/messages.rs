@@ -187,6 +187,9 @@ pub struct MessageList {
     x: i32,
     y: i32,
     max_visible: usize,
+    /// Phobos `MessageDisplayInCenter.RecordsCount` clamped to `maxLines`
+    /// (`Misc/MessageColumn.cpp:462`); retail leaves it at `MESSAGE_SLOTS`.
+    record_cap: usize,
     max_width_px: i32,
     /// The pixels the anchor takes off the tactical width: Init's 14 until
     /// SetWidth leaves 8.
@@ -204,6 +207,7 @@ impl MessageList {
             x,
             y,
             max_visible: max_visible.min(MESSAGE_SLOTS),
+            record_cap: MESSAGE_SLOTS,
             max_width_px,
             width_inset: MESSAGE_INIT_WIDTH_INSET,
             messages: Vec::with_capacity(MESSAGE_SLOTS),
@@ -217,6 +221,17 @@ impl MessageList {
     /// rows at most. [`Self::set_view`] anchors it to the tactical view.
     pub fn scenario() -> Self {
         Self::new(MESSAGE_X_INSET, 0, MESSAGE_MAX_VISIBLE_RETAIL, 0)
+    }
+
+    /// `MessageColumnClass::Initialize(maxCount, maxRecord, ...)`
+    /// (`Misc/MessageColumn.cpp:462-465`): apply the already-clamped label and
+    /// record caps. An open edit owns a temporary `max_visible - 1`, so only
+    /// the record cap changes while one is open.
+    pub fn configure_column(&mut self, labels: usize, records: usize) {
+        if self.edit.is_none() {
+            self.max_visible = labels.min(MESSAGE_SLOTS);
+        }
+        self.record_cap = records.min(MESSAGE_SLOTS);
     }
 
     /// Anchor to the tactical viewport: x = tactical_x + 3, y = tactical_y,
@@ -428,7 +443,8 @@ impl MessageList {
             self.messages.remove(0);
         }
         // Slot-pool guard (unreachable with retail max_visible ≤ 14).
-        if self.messages.len() >= MESSAGE_SLOTS {
+        // Phobos' `RecordsCount` narrows this cap when the centre column is on.
+        if self.messages.len() >= self.record_cap {
             return;
         }
         // Steps 6-12 — tail insert + restack.
@@ -603,6 +619,34 @@ mod tests {
             timeout_ms,
             silent,
         }
+    }
+
+    /// `Misc/MessageColumn.cpp:462-465`: `Initialize(maxCount, maxRecord, ...)`
+    /// narrows both caps; an open edit keeps its own temporary label count.
+    #[test]
+    fn the_column_record_cap_bounds_the_pool_and_preserves_an_open_edit() {
+        let mut l = list(6, 600);
+        // Labels above the record cap so `RecordsCount`'s slot guard is the
+        // binding limit rather than the label-driven eviction.
+        l.configure_column(10, 4);
+        for i in 0..8 {
+            let text = format!("m{i}");
+            l.add_message(&post(None, &text, None, true), 0, &|s| {
+                s.chars().count() as i32 * 10
+            });
+        }
+        assert_eq!(l.messages().len(), 4, "RecordsCount caps the pool");
+        assert_eq!(l.messages()[0].text, "m0", "the full pool keeps its rows");
+
+        let mut editing = list(6, 600);
+        assert!(editing.add_edit(">", WHITE, false));
+        let before = editing.max_visible;
+        editing.configure_column(3, 4);
+        assert_eq!(editing.max_visible, before, "the edit keeps its own cap");
+        assert!(
+            editing.editing(),
+            "configure_column must not close the edit"
+        );
     }
 
     #[test]

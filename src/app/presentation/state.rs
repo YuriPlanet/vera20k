@@ -270,6 +270,10 @@ pub(crate) struct MatchPresentationState {
     /// Epoch for the tooltip/message wall-clock (`now_ms` = elapsed since
     /// app construction).
     pub(crate) tooltip_epoch: Instant,
+    /// The six section-B Phobos HUD board keys (`Phobos.INI.cpp:99-101,117`,
+    /// `Ext/Side/Body.cpp:41`); the match's copy of the client profile.
+    #[cfg(feature = "phobos")]
+    pub(crate) hud_boards: super::hud_boards::HudBoardsUi,
     /// In-game chat/system message surface (study §3.1) — re-anchored to the
     /// tactical viewport per frame by `input::messages`.
     pub(crate) message_list: crate::ui::messages::MessageList,
