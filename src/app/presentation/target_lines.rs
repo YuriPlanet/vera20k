@@ -174,7 +174,7 @@ pub(crate) fn build_target_line_strokes(
     if planning_active {
         let mut strokes = Vec::new();
         if psychic.is_some() {
-            for entity in frame.objects() {
+            for entity in frame.line_sources() {
                 psychic_line_for(entity, &mut strokes);
             }
         }
@@ -209,9 +209,10 @@ pub(crate) fn build_target_line_strokes(
     // EntityStore's monotonic stable IDs retain that represented order.
     //6D4750/6D478E ->6D47BF/6D47F6 ->6D47FB within EACH Techno visit.
     //Resolving all action lines before relationships would reverse
-    //cross-object overlaps.
+    //cross-object overlaps. Only the frame's line sources draw anything in
+    //this walk, so the others are passed by unread.
     let mut strokes = Vec::new();
-    for entity in frame.objects() {
+    for entity in frame.line_sources() {
         if let Some(words) = words
             && let Some(line) = line_for(entity)
         {
@@ -742,6 +743,9 @@ mod tests {
         }
     }
 
+    /// The relationship interleave visits the frame's line sources
+    /// ([`crate::app::presentation::frame::PresentationFrame::line_sources`])
+    /// with action lines off, and none while planning.
     #[test]
     fn relationship_interleave_visits_technos_when_action_lines_are_disabled_but_not_planning() {
         let sim = sim_with_selected_unit_that_has_attack_and_move();
@@ -771,13 +775,11 @@ mod tests {
             )
             .is_empty()
         );
-        assert_eq!(
-            visits,
-            sim.entities()
-                .iter_sorted()
-                .map(|(id, _)| id)
-                .collect::<Vec<_>>()
-        );
+        // The selected unit is a line source; its idle target draws no line,
+        // so the walk passes it by.
+        let sources: Vec<u64> = frame.line_sources().map(|r| r.stable_id()).collect();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(visits, sources);
         visits.clear();
         let mut callback = |id, _: &mut Vec<SurfaceStroke>| visits.push(id);
         assert!(

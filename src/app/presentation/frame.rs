@@ -1155,6 +1155,9 @@ pub(crate) struct PresentationFrame {
     /// The slots of the building records, ascending: what the building
     /// passes walk without reading every other record ([`Self::structures`]).
     structures: Vec<usize>,
+    /// The slots of the records that can draw a tactical line, ascending
+    /// ([`ObjectRecord::may_draw_a_line`], [`Self::line_sources`]).
+    line_sources: Vec<usize>,
     /// The Display members of the world this frame was captured from, filed
     /// by the first draw that asks ([`Self::display_members`]).
     display_members:
@@ -1223,6 +1226,7 @@ impl PresentationFrame {
         let mut ids = Vec::with_capacity(objects.len());
         let mut spans = Vec::with_capacity(objects.len());
         let mut structures = Vec::new();
+        let mut line_sources = Vec::new();
         for (slot, object) in objects.iter().enumerate() {
             ids.push(object.id);
             spans.push(crate::app::presentation::display_members::ScreenSpan::of(
@@ -1231,12 +1235,16 @@ impl PresentationFrame {
             if object.category() == EntityCategory::Structure {
                 structures.push(slot);
             }
+            if object.may_draw_a_line() {
+                line_sources.push(slot);
+            }
         }
         Self {
             objects,
             ids,
             spans,
             structures,
+            line_sources,
             display_members: Default::default(),
             display_order: Default::default(),
             anim_coords,
@@ -1318,6 +1326,29 @@ impl PresentationFrame {
     /// whose category is Structure, found without reading the others.
     pub(crate) fn structures(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
         self.structures.iter().map(|&slot| &self.objects[slot])
+    }
+
+    /// The records that can draw a tactical line, in stable-id order: the
+    /// [`Self::objects`] the line passes visit, without reading the others.
+    pub(crate) fn line_sources(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
+        self.line_sources.iter().map(|&slot| &self.objects[slot])
+    }
+}
+
+impl ObjectRecord {
+    /// Whether Tactical's Techno walk (`TacticalClass_Draw`, `0x006D4750..`)
+    /// can draw a line for it: a selected object's action line (vt+0x438),
+    /// the mind-control links of its own CaptureManager or its controller's
+    /// (`CaptureManagerClass::DrawLinks`), its airstrike designation, or its
+    /// psychic detection line (`FootClass::DrawPsychicDetectionLine`). An
+    /// object with none of these draws nothing there; each line's own tests
+    /// still decide for the others.
+    fn may_draw_a_line(&self) -> bool {
+        self.selection.is_selected()
+            || self.capture_manager.is_some()
+            || self.hud.controller().is_some()
+            || self.place.airstrike_designation.is_some()
+            || self.place.psychically_detected
     }
 }
 
