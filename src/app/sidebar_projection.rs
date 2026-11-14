@@ -1147,6 +1147,9 @@ impl SidebarProjectionState {
 
     /// StripAI6A8F7C advances presentation once per native frame, independently
     /// of Draw. A linked stopped/cash-stalled Factory suppresses prediction.
+    /// Residual: VERA steps it on every sidebar refresh, not once per Sidebar
+    /// Action visit. A predicted clock runs only until its PRODUCE executes,
+    /// one input delay, so the different step count is not visible.
     pub(crate) fn advance_cameo_requests(
         &mut self,
         sim: &crate::sim::world::Simulation,

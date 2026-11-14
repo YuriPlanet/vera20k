@@ -450,8 +450,10 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// Whether a Building or Defense cameo may draw a queue count at all.
 ///
 /// gamemd's badge path resolves the requested type's House Factory with a
-/// hard-coded `BuildCat` (`StripClass::Draw`, `0x006A9C48..0x006A9CC3`), so a
-/// structure entry never finds its own Factory and never counts. Phobos'
+/// hard-coded `BuildCat` 0 (`StripClass::Draw`, push at `0x006A9C52`, then
+/// Fetch_Factory `0x00500510`): every structure gets the Buildings Factory. A
+/// Building entry finds its own, which holds one build at a time, so its count
+/// is at most the held copy; a Defense entry never counts. Phobos'
 /// `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`
 /// (`src/Ext/Building/Hooks.cpp`) replaces that `BuildCat` with the building
 /// type's own, unconditionally — it is not gated on
@@ -917,6 +919,8 @@ pub(crate) fn build_sidebar_text_instances(
                 .flatten();
             let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
             let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
+            // Residual: native truncates this halving; the float half
+            // places odd widths up to 1 px apart, which a player cannot see.
             let text_x = if shifts_left {
                 slot.x + READY_PAD_X
             } else {

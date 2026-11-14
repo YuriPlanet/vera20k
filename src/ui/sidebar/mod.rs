@@ -360,7 +360,8 @@ pub(crate) fn compute_layout_with_spec(
     // the next strip's buttons, and the Vehicle strip runs past the array's
     // end at B0B300 (a static coordinate, then the R-DN ShapeButton at B0B328).
     // Activate 6A8330 then adds that vtable-less memory as gadgets. Native has
-    // no defined result here, so VERA keeps a working uncapped grid.
+    // no defined result here, so VERA keeps a working uncapped grid; the
+    // maintainer chose to keep it (2026-11-15).
     // GetVisibleSlotCount 6AC430 and StripClass Activate 6A8330 count 2 * rows
     // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set,
     // plus 7, which the table carries as one height.

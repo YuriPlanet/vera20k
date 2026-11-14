@@ -236,6 +236,11 @@ impl SidebarGadgetState {
         enabled
     }
 
+    /// Residual: a load keeps the running pulses, where SidebarClass Init
+    /// 6A5310 stops them and the next StripAI restarts them on a ten-frame
+    /// boundary; the blink phase can differ by up to ten frames once, which
+    /// a player cannot see.
+    ///
     /// This pass's Sidebar Action `visits` (6A77CD/6A7A8C): each polls the
     /// tabs in StripAI, then runs FlashAI 69E010, whose countdown moves once
     /// per call. The earlier visits only tick existing pulses; the last one
