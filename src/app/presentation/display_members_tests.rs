@@ -73,12 +73,14 @@ fn each_display_member_is_filed_under_its_store_and_terrain_is_left_out() {
             },
         }]
     );
-    assert_eq!(
-        members.effects(),
-        [EffectMember {
-            id: anim,
-            kind: EffectKind::Anim,
-        }]
+    // The Anim is filed with the point it draws at.
+    assert!(
+        matches!(
+            members.effects(),
+            [EffectMember { id, kind: EffectKind::Anim(Some(_)) }] if *id == anim
+        ),
+        "{:?}",
+        members.effects()
     );
     assert!(std::ptr::eq(members, frame.display_members(&sim)));
 }

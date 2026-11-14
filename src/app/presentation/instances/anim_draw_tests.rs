@@ -396,6 +396,23 @@ fn free_anim_draw_with(
     empty_body: bool,
     ground_level: Option<u8>,
 ) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
+    let planned = free_anim_draw_in(extra_keys, level, empty_body, ground_level, |_| {
+        ([-1000.0; 2], [0, 0, 2000, 2000])
+    });
+    assert_eq!(planned.len(), 1);
+    planned
+}
+
+/// [`free_anim_draw_with`] seen through the camera and tactical rect `view`
+/// gives for the point the frame files the Anim at.
+fn free_anim_draw_in(
+    extra_keys: &str,
+    level: u8,
+    empty_body: bool,
+    ground_level: Option<u8>,
+    view: impl FnOnce([f32; 2]) -> ([f32; 2], [u32; 4]),
+) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
+    use crate::app::presentation::display_members::{EffectKind, EffectMember};
     use crate::app::presentation::instances::{
         DisplayEffectInputs, build_display_effect_instances,
     };
@@ -448,15 +465,25 @@ fn free_anim_draw_with(
     let house_colors = Default::default();
     let hidden = Default::default();
     let before = sim.state_hash();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
+    let (camera, tactical) = match frame.display_members(&sim).effects() {
+        [
+            EffectMember {
+                kind: EffectKind::Anim(Some(draw)),
+                ..
+            },
+        ] => view(draw.center),
+        other => panic!("{other:?}"),
+    };
     let mut planned = Vec::new();
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim: &sim,
-            frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
+            frame: &frame,
             rules: &rules,
-            camera: [-1000.0; 2],
+            camera,
             render_size: [2000; 2],
-            tactical: [0, 0, 2000, 2000],
+            tactical,
             zoom: 1.0,
             axis: DepthAxis::NONE,
             atlas: Some(&atlas),
@@ -479,9 +506,25 @@ fn free_anim_draw_with(
         before,
         "draw construction cannot mutate simulation"
     );
-    assert_eq!(planned.len(), 1);
-    assert_eq!(planned[0].parent.id, id);
+    assert!(planned.iter().all(|planned| planned.parent.id == id));
     planned
+}
+
+/// Object5F4B10 admits an Anim out to Tactical6D2140's 360 px past the
+/// view's right edge, inclusive, and the effects loop passes it by on that
+/// same test. An Anim's view is the battlefield and its offset on both sides
+/// (`projection_viewport`), wider than the particles' when the tactical
+/// rect is offset: 1000 px here, against 800.
+#[test]
+fn a_free_anim_is_passed_by_only_past_its_own_views_margin() {
+    let drawn = |past_edge: f32| {
+        free_anim_draw_in("", 0, false, None, |[x, y]| {
+            ([x - 1000.0 - past_edge, y - 300.0], [100, 0, 800, 600])
+        })
+        .len()
+    };
+    assert_eq!(drawn(360.0), 1);
+    assert_eq!(drawn(361.0), 0);
 }
 
 #[test]

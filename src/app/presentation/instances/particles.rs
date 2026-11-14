@@ -76,6 +76,12 @@ pub(super) struct ParticleDrawContext {
 }
 
 impl ParticleDrawContext {
+    /// Whether a Particle, System or spotlight at world screen `point` passes
+    /// its builder's projection admission.
+    pub(super) fn admits(&self, point: [f32; 2]) -> bool {
+        projection_admitted(point, self.camera, self.viewport)
+    }
+
     pub(super) fn new(
         camera: [f32; 2],
         zoom: f32,
