@@ -1074,12 +1074,14 @@ impl Simulation {
         }
     }
 
-    /// Native TeamAssign731060 and TeamRecall7311C0 eligibility. The assignment
-    /// path reads House+0x1ED (`PlayerControl`) directly in mode zero, while a
-    /// nonzero mode calls House::IsHumanPlayer50B6F0 (current-house identity).
-    /// Keep this distinct from `house_is_human_player`: its mode-zero branch
-    /// also admits the separate `IsHuman` flag.
-    pub fn house_is_control_group_eligible(&self, owner: InternedId) -> bool {
+    /// The owner arm the selection keys share: TeamAssign731060 and
+    /// TeamRecall7311C0, TypeSelect's `0x00732580`/`0x00732770`,
+    /// `Tactical::Unselect_If_Not_Owned @ 0x006DA770`, and the P, Health and
+    /// Veterancy keys. Mode zero reads House+0x1ED (`PlayerControl`) directly,
+    /// while a nonzero mode calls House::IsHumanPlayer50B6F0 (current-house
+    /// identity). Keep this distinct from `house_is_human_player`: its
+    /// mode-zero branch also admits the separate `IsHuman` flag.
+    pub fn house_controls_selection(&self, owner: InternedId) -> bool {
         if self.session.game_mode_nonzero() {
             self.house_is_human_player(owner)
         } else {
@@ -1100,7 +1102,7 @@ impl Simulation {
         group: i32,
         selected: &std::collections::HashSet<u64>,
     ) -> i32 {
-        if !(0..10).contains(&group) || !self.house_is_control_group_eligible(entity.owner()) {
+        if !(0..10).contains(&group) || !self.house_controls_selection(entity.owner()) {
             current
         } else if selected.contains(&entity.stable_id()) {
             group
