@@ -319,8 +319,12 @@ fn find_folder(mods_dir: &Path, name: &str) -> Option<(String, PathBuf)> {
     Some((folder, dir))
 }
 
-/// The browser build has no folder a player can put files in.
-const SUPPORTED: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
+/// Whether the player has a Mods folder of their own. The browser build has
+/// none: its page imports the mod a launch plays (web.rs `import_mod_file`)
+/// into the in-memory Mods folder (`PathsConfig::mods_dir`), so there is no
+/// README to write, and a start that dies ends the page, so no start record
+/// is kept either.
+const HAS_FOLDER: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 
 /// The mod that `wanted` names in `Mods`, or why it cannot be used, said in
 /// the player's language. Reads the folder and its `mod.ini`; writes nothing.
@@ -369,7 +373,7 @@ fn wanted<'a>(
 /// probe (`spawn_probe`), which reports what a launch reads without being
 /// one, so it leaves `mod-start.txt` alone.
 pub(crate) fn launch_dir(paths: &PathsConfig, switch: Option<&ModSwitch>) -> Option<PathBuf> {
-    let wanted = wanted(paths, switch, true).filter(|_| SUPPORTED)?;
+    let wanted = wanted(paths, switch, true)?;
     resolve(paths, wanted).ok().map(|active| active.dir)
 }
 
@@ -622,14 +626,23 @@ fn name_key(name: &str) -> String {
 
 /// SHA-256 of a file, read a piece at a time: a mod's archives can be large.
 fn file_digest(path: &Path) -> std::io::Result<[u8; 32]> {
-    use std::io::Read;
-    let mut file = std::fs::File::open(path)?;
     let mut digest = crate::util::sha256::Sha256::new();
-    let mut piece = vec![0; 1 << 16];
-    loop {
-        match file.read(&mut piece)? {
-            0 => return Ok(digest.finalize()),
-            read => digest.update(&piece[..read]),
+    // The browser holds a mod's files in memory: hashed where they lie.
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        digest.update(&file_system::read_shared(path)?);
+        Ok(digest.finalize())
+    }
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path)?;
+        let mut piece = vec![0; 1 << 16];
+        loop {
+            match file.read(&mut piece)? {
+                0 => return Ok(digest.finalize()),
+                read => digest.update(&piece[..read]),
+            }
         }
     }
 }
@@ -705,10 +718,7 @@ pub(crate) fn begin(paths: &PathsConfig, switch: Option<&ModSwitch>, hidden: boo
         kept: paths.mod_name().map(str::to_owned),
         ..Mods::default()
     };
-    if !SUPPORTED {
-        return mods;
-    }
-    if !hidden {
+    if !hidden && HAS_FOLDER {
         prepare_folder(&paths.mods_dir());
     }
     let Some(wanted) = wanted(paths, switch, !hidden) else {
@@ -721,7 +731,7 @@ pub(crate) fn begin(paths: &PathsConfig, switch: Option<&ModSwitch>, hidden: boo
             return mods;
         }
     };
-    if !hidden {
+    if !hidden && HAS_FOLDER {
         let record = paths.settings_dir().join(START_RECORD);
         match claim(&record, &active.folder) {
             Ok(Claim::Held(held)) => mods.record = Some(held),

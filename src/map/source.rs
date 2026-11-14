@@ -171,18 +171,22 @@ pub fn downloaded_maps_dir() -> Option<&'static Path> {
     DOWNLOADED_MAPS_DIR.get().map(PathBuf::as_path)
 }
 
-static MOD_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+static MOD_DIR: std::sync::RwLock<Option<&'static Path>> = std::sync::RwLock::new(None);
 
-/// VERA: the mod folder in use (`app::mods`), set once at start. Its maps
+/// VERA: the mod folder in use (`app::mods`), set at each start. Its maps
 /// read as if they had been copied on top of the game folder: a lookup finds
 /// a mod's file first, and Choose Map's scan lists it in place of a
-/// game-folder file of the same name.
-pub fn set_mod_dir(dir: PathBuf) {
-    let _ = MOD_DIR.set(dir);
+/// game-folder file of the same name. A desktop run starts once; the browser
+/// build starts again in one page, perhaps with another mod or none, so each
+/// start sets it anew. The path is leaked to hand out `&'static`: a few bytes
+/// a start.
+pub fn set_mod_dir(dir: Option<PathBuf>) {
+    let dir = dir.map(|dir| &*Box::leak(dir.into_boxed_path()));
+    *MOD_DIR.write().unwrap_or_else(std::sync::PoisonError::into_inner) = dir;
 }
 
 pub fn mod_dir() -> Option<&'static Path> {
-    MOD_DIR.get().map(PathBuf::as_path)
+    *MOD_DIR.read().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The folders a listing of the game folder reads, for

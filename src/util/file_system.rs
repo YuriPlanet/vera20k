@@ -111,6 +111,31 @@ mod memory {
             },
         );
     }
+    /// Import bytes already in shared storage, as a file assembled in parts
+    /// is: the engine keeps this allocation and copies nothing.
+    pub fn import_shared(path: impl AsRef<Path>, bytes: Arc<[u8]>) {
+        files().lock().unwrap().insert(
+            key(path.as_ref()),
+            Entry {
+                bytes,
+                modified_ms: 0,
+            },
+        );
+    }
+    /// Drop every imported file and folder below `path`, as a page does with a
+    /// mod it no longer plays. Like an import, nothing reaches persistence.
+    /// Returns how many files went.
+    pub fn forget_tree(path: impl AsRef<Path>) -> usize {
+        let path = key(path.as_ref());
+        let mut files = files().lock().unwrap();
+        let before = files.len();
+        files.retain(|file, _| !file.starts_with(&path));
+        directories()
+            .lock()
+            .unwrap()
+            .retain(|dir| !dir.starts_with(&path) || dir == Path::new("/"));
+        before - files.len()
+    }
     pub fn read_shared(path: impl AsRef<Path>) -> io::Result<Arc<[u8]>> {
         files()
             .lock()
@@ -314,6 +339,21 @@ mod tests {
             );
             assert!(memory::canonicalize(format!("{root}/missing.map")).is_err());
         }
+    }
+
+    #[test]
+    fn a_tree_of_imports_goes_whole_and_shared_imports_keep_their_bytes() {
+        let root = "/web-fs-forget-test";
+        let shared: std::sync::Arc<[u8]> = vec![9, 8, 7].into();
+        memory::import_shared(format!("{root}/a/RULESMD.INI"), shared.clone());
+        memory::import_file(format!("{root}/a/art/x.shp"), vec![1]);
+        memory::import_file(format!("{root}/b/keep.ini"), vec![2]);
+        let read = memory::read_shared(format!("{root}/a/RULESMD.INI")).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&read, &shared));
+        assert_eq!(memory::forget_tree(format!("{root}/a")), 2);
+        assert!(!memory::exists(format!("{root}/a")));
+        assert!(memory::is_file(format!("{root}/b/keep.ini")));
+        assert_eq!(memory::forget_tree(format!("{root}/a")), 0);
     }
 
     #[test]
