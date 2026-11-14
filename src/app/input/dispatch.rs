@@ -331,10 +331,11 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                         .sidebar_gadget_state
                         .sell_mode_on
                     // The held-drag 4AC380 never starts a band in beacon
-                    // mode (4AC3A3). RESIDUAL: past 4 px it still raises the
-                    // band flag (0x004AC496..0x004AC4B7), so the release takes
-                    // the band path over the last band's rectangle and places
-                    // no beacon when that stale rectangle catches an object.
+                    // mode (4AC3A3). RESIDUAL (kept by the maintainer): past
+                    // 4 px it raises the band flag (0x004AC496..0x004AC4B7), so
+                    // the release takes the band path over the last band's
+                    // rectangle and places no beacon when that stale rectangle
+                    // catches an object.
                     || crate::app::input::beacon::mode_active(state)
                     // VERA ferry: the armed click names the drop spot.
                     || state.match_state.input.ferry.armed()

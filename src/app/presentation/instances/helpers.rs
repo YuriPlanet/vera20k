@@ -316,9 +316,10 @@ fn compose_tactical_screen_entity_encounter_order(
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
-    // RESIDUAL, kept for big battles: AddSelectable (0x006D9EF0) refuses
-    // entries past 500, so with more objects in view the band box and the T
-    // key's screen pass reach only the first 500 drawn. VERA registers all.
+    // RESIDUAL (kept by the maintainer, for big battles): AddSelectable
+    // (0x006D9EF0) refuses entries past 500, so with more objects in view the
+    // band box and the T key's screen pass reach only the first 500 drawn.
+    // VERA registers all.
     let mut candidates = display_objects(sim, |id| frame.contains(id));
     // Band-box preflight has a separate native bulk Building registration
     // path. Ordinary picking/rendering never scans the unregistered store.
