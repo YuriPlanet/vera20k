@@ -5972,8 +5972,9 @@ pub struct ArmedTriggerView {
     pub completed_event_bits: u32,
     /// The live timer's remaining frames when the chain head's own events
     /// carry an elapsed-time event (13/51): the timer owner starts it at the
-    /// instance's construction (`value * 15` logic frames) and re-arms it
-    /// on every repeat fire. `None` when the head carries none — the read
+    /// instance's construction (event 13: `value * 15` logic frames; 51:
+    /// `(value / 2 + RandomRanged(0, value)) * 15`) and re-arms it on every
+    /// repeat fire. `None` when the head carries none — the read
     /// never invents a deadline. Event 47 (elapsed scenario time) has no
     /// timer; an observer computes its deadline from the event view's value.
     pub timer_remaining_frames: Option<i32>,

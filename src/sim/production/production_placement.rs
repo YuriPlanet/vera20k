@@ -871,7 +871,10 @@ pub fn is_within_build_area(
     false
 }
 
-/// ([`is_within_build_area`]), not a hand-picked spacing.
+/// How far, in cells from its origin cell, a provider can sit and still admit
+/// a placed `obj`: `Adjacent=` + 1 past its foundation's longer side. That is
+/// the ring [`is_within_build_area`] tests, so an external builder walks the
+/// engine's own admission ring, not a hand-picked spacing.
 pub fn build_area_reach_cells(obj: &ObjectType) -> i32 {
     let (width, height) = obj.foundation.dimensions();
     let span = i32::from(width.max(height)).saturating_sub(1);
