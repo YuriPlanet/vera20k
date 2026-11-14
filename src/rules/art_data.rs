@@ -2158,11 +2158,12 @@ impl ArtRegistry {
     /// The savegame reload (`0x007162F0`, `Cameo` reads `0x00716C9C` and
     /// `0x00716CD4`) retries the type-ID section when the image section
     /// has no `Cameo=`; that fallback is kept as the second lookup. Neither
-    /// path substitutes `AltCameo=` (a separate field, `+0x710`); a missing
-    /// cameo falls back to the resolved image id so the loader's `XXICON`
-    /// style guesses run. Read in the Steam `gamemd.exe`; the `0x00716C9C`
-    /// site matches the citation above.
-    pub fn resolve_declared_cameo_id(&self, type_id: &str, rules_image: &str) -> String {
+    /// path substitutes `AltCameo=` (a separate field, `+0x710`). A type that
+    /// declares no `Cameo=` has none (`None`): the first read's default is
+    /// empty (`0x0071599A`) and an empty name skips the file load
+    /// (`0x007159CD`) for the stock `XXICON.SHP` (`0x00715A4F`); the reload's
+    /// default is `XXICON` itself (`0x00716C86`).
+    pub fn resolve_declared_cameo_id(&self, type_id: &str, rules_image: &str) -> Option<String> {
         let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
         let type_upper: String = type_id.to_uppercase();
 
@@ -2171,11 +2172,11 @@ impl ArtRegistry {
                 .get(key)
                 .and_then(|entry| normalize_id(entry.cameo.as_deref().unwrap_or_default()))
             {
-                return cameo;
+                return Some(cameo);
             }
         }
 
-        resolved.image_id
+        None
     }
 
     /// A type's `AltCameo=` image (`+0x710`), if declared. Both of gamemd's

@@ -269,20 +269,33 @@ fn declared_cameo_comes_from_the_rules_image_section_before_the_type_section() {
     );
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
 
-    assert_eq!(reg.resolve_declared_cameo_id("MTNK", "GTNK"), "GTNKICON");
-    assert_eq!(reg.resolve_declared_cameo_id("MTNK", "MTNK"), "MTNKICON");
+    assert_eq!(
+        reg.resolve_declared_cameo_id("MTNK", "GTNK").as_deref(),
+        Some("GTNKICON")
+    );
+    assert_eq!(
+        reg.resolve_declared_cameo_id("MTNK", "MTNK").as_deref(),
+        Some("MTNKICON")
+    );
     // The art section's own `Image=` redirect never selects the cameo section.
-    assert_eq!(reg.resolve_declared_cameo_id("BFRT", "BFRT"), "BFRTICON");
-    assert_eq!(reg.resolve_declared_cameo_id("E1", "E1"), "E1CAMEO");
+    assert_eq!(
+        reg.resolve_declared_cameo_id("BFRT", "BFRT").as_deref(),
+        Some("BFRTICON")
+    );
+    assert_eq!(
+        reg.resolve_declared_cameo_id("E1", "E1").as_deref(),
+        Some("E1CAMEO")
+    );
     // Savegame-reload fallback: the image section has no `Cameo=`, so the
     // type-ID section is consulted.
-    assert_eq!(reg.resolve_declared_cameo_id("E1", "NOCAMEO"), "E1CAMEO");
-    // `AltCameo=` is a separate field, never a substitute for `Cameo=`.
     assert_eq!(
-        reg.resolve_declared_cameo_id("NOCAMEO", "NOCAMEO"),
-        "NOCAMEO"
+        reg.resolve_declared_cameo_id("E1", "NOCAMEO").as_deref(),
+        Some("E1CAMEO")
     );
-    assert_eq!(reg.resolve_declared_cameo_id("UNKNOWN", "FOO"), "FOO");
+    // `AltCameo=` is a separate field, never a substitute for `Cameo=`, and
+    // the image id is not one either: gamemd loads the stock `XXICON.SHP`.
+    assert_eq!(reg.resolve_declared_cameo_id("NOCAMEO", "NOCAMEO"), None);
+    assert_eq!(reg.resolve_declared_cameo_id("UNKNOWN", "FOO"), None);
 }
 
 #[test]
@@ -316,7 +329,10 @@ fn retail_sidebar_cameos_follow_the_rules_image_section() {
             .object(type_id)
             .map(|object| object.image.clone())
             .unwrap_or_else(|| type_id.to_string());
-        rules.art().resolve_declared_cameo_id(type_id, &rules_image)
+        rules
+            .art()
+            .resolve_declared_cameo_id(type_id, &rules_image)
+            .unwrap_or_default()
     };
     assert_eq!(cameo("MTNK"), "GTNKICON");
     assert_eq!(cameo("HTNK"), "HTNKICON");
