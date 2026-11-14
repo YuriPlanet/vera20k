@@ -1145,6 +1145,59 @@ fn sync_view(state: &mut AppState) {
     state.match_state.match_presentation.message_list.set_view(x, y, width);
 }
 
+/// Android: the one-shot "touch here to chat" line, five seconds into the first
+/// network match a profile plays (`persistence::chat_hint`).
+#[cfg(target_os = "android")]
+fn maybe_post_chat_hint(state: &mut AppState) {
+    use crate::util::time::Duration;
+    if !state.match_state.session_mode().is_network() {
+        return;
+    }
+    let now = crate::util::time::Instant::now();
+    let Some(due) = state.match_state.input.chat_hint_due else {
+        state.match_state.input.chat_hint_due = Some(now + Duration::from_secs(5));
+        return;
+    };
+    if now < due {
+        return;
+    }
+    // One attempt per match: `chat_hint::consume` writes the flag when the line
+    // is posted, and a spent flag keeps later matches silent.
+    state.match_state.input.chat_hint_due = Some(now + Duration::from_secs(3600));
+    let Some(config) = state.platform.game_config.as_ref() else {
+        return;
+    };
+    let settings = config.paths.settings_dir().to_path_buf();
+    if crate::app::persistence::chat_hint::consume(&settings) {
+        post_chat_hint(state);
+    }
+}
+
+/// Android: the hint line itself, in neutral white so it never reads as a
+/// player's chat message, expiring after ten seconds.
+#[cfg(target_os = "android")]
+fn post_chat_hint(state: &mut AppState) {
+    sync_view(state);
+    let text = crate::i18n::tr("VERA:TouchToChat");
+    let now = message_now_ms(state);
+    let font = &state.renderer.bit_font;
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .add_message(
+            &crate::ui::messages::MessagePost {
+                prefix: None,
+                text: &text,
+                rgb: [1.0, 1.0, 1.0],
+                timeout_ms: Some(10_000),
+                silent: true,
+            },
+            now,
+            &|s| font.text_width(s) as i32,
+        );
+}
+
 /// Prepare one successful offline TextLabel paint, using raw wall time for
 /// typing and the existing sound owner for every MessageCharTyped request.
 /// Expiry uses the same wall clock, but is polled only by admitted Main_Tick passes.
@@ -1154,6 +1207,8 @@ pub(crate) fn build_message_instances(
     if state.frontend.screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
+    #[cfg(target_os = "android")]
+    maybe_post_chat_hint(state);
     let wall_ms = crate::app::input::tooltips::now_ms(state) as u32;
     let requests = state
         .match_state

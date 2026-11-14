@@ -6,6 +6,7 @@
 //! F12 owner tree: options persistence lives here beside the save repository.
 
 pub(crate) mod account;
+pub(crate) mod chat_hint;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;
