@@ -229,28 +229,85 @@ pub(crate) fn hover_object_at_point(
     local_owner: &str,
     ignore_visibility: bool,
 ) -> Option<HoverObject> {
-    let sim = source.simulation();
-    let fog = (!ignore_visibility).then_some(sim.fog());
-    let stable_id = match pick_object_at_point(
+    hover_object_in_frame(
         source,
-        sim.display_layers().ordered_ids(),
-        fog,
-        sim.interner().get(local_owner),
+        None,
         world_x,
         world_y,
-        sim.resolved_terrain(),
-    )? {
+        local_owner,
+        ignore_visibility,
+    )
+}
+
+/// [`hover_object_at_point`], scoring only the objects whose span in `frame`
+/// lies near the point ([`may_pick`]), without reading the others. `frame`
+/// is captured from `source`'s world; the pick finds the same object.
+fn hover_object_in_frame(
+    source: impl PickWorld,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
+    world_x: f32,
+    world_y: f32,
+    local_owner: &str,
+    ignore_visibility: bool,
+) -> Option<HoverObject> {
+    use crate::app::presentation::display_members::ObjectKind;
+    let sim = source.simulation();
+    let fog = (!ignore_visibility).then_some(sim.fog());
+    let pick = |order: &mut dyn Iterator<Item = &u64>| {
+        pick_object_at_point(
+            source,
+            order,
+            fog,
+            sim.interner().get(local_owner),
+            world_x,
+            world_y,
+            sim.resolved_terrain(),
+        )
+    };
+    let picked = match frame {
+        Some(frame) => {
+            let picked = pick(
+                &mut frame
+                    .display_members(sim)
+                    .objects()
+                    .iter()
+                    .filter(|member| match member.kind {
+                        ObjectKind::Record { span, .. } => may_pick(span, world_x, world_y),
+                        ObjectKind::Bullet | ObjectKind::Debris => false,
+                    })
+                    .map(|member| &member.id),
+            );
+            debug_assert_eq!(
+                picked,
+                pick(&mut sim.display_layers().ordered_ids()),
+                "the pick's pre-filter passed by the object at {world_x}, {world_y}"
+            );
+            picked
+        }
+        None => pick(&mut sim.display_layers().ordered_ids()),
+    };
+    let stable_id = match picked? {
         CellObjectMember::Entity(id) => id,
         CellObjectMember::Terrain(id) => return Some(HoverObject::Terrain(id)),
     };
     hover_object_by_id(sim, stable_id, local_owner)
 }
 
+/// Whether an object whose span is `span` can win the pick at `x`, `y`: its
+/// pick point lies in the span, and `dx² + 0.5·dy² < 200`
+/// ([`PICK_DISTANCE_THRESHOLD`]) needs `|dx|` under 14.2 and `|dy|` under 20.
+fn may_pick(span: crate::app::presentation::display_members::ScreenSpan, x: f32, y: f32) -> bool {
+    (span.x - x).abs() < 15.0 && y > span.top - 21.0 && y < span.bottom + 21.0
+}
+
 /// [`hover_object_at_point`] at the cursor for the local player: the one
 /// TacticalPick of a frame, whose target both the cursor's action and the
-/// hover health bar read.
+/// hover health bar read. With the world home the frame is the home
+/// world's, so the pick asks only the objects near the cursor.
 pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverObject> {
-    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+    let host = &state.match_state.sim_runtime;
+    let sim = &host.runtime()?.simulation;
+    let frame = (!host.is_lent()).then(|| host.frame()).flatten();
     let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
     let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
         state,
@@ -259,6 +316,7 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
     );
     tactical_hover_object_at_point(
         presented(state, sim),
+        frame,
         world_x,
         world_y,
         &owner,
@@ -276,6 +334,7 @@ pub(crate) fn cursor_hover_object(state: &crate::app::AppState) -> Option<HoverO
 /// its object's next AI visit; lock/pause transition timing remains a residual.
 fn tactical_hover_object_at_point(
     source: impl PickWorld,
+    frame: Option<&crate::app::presentation::frame::PresentationFrame>,
     world_x: f32,
     world_y: f32,
     local_owner: &str,
@@ -285,7 +344,14 @@ fn tactical_hover_object_at_point(
     if input_locked {
         return None;
     }
-    hover_object_at_point(source, world_x, world_y, local_owner, ignore_visibility)
+    hover_object_in_frame(
+        source,
+        frame,
+        world_x,
+        world_y,
+        local_owner,
+        ignore_visibility,
+    )
 }
 
 /// Classify an identity already picked by a retained input source (radar or
@@ -1560,7 +1626,15 @@ mod tests {
         };
         let pick = |sim: &Simulation, id| {
             let (x, y) = point(sim, id);
-            tactical_hover_object_at_point(sim, x, y, "Player", true, sim.session().input_locked())
+            tactical_hover_object_at_point(
+                sim,
+                Some(&frame(sim)),
+                x,
+                y,
+                "Player",
+                true,
+                sim.session().input_locked(),
+            )
         };
         assert_eq!(health_hover_target(pick(&sim, first)), Some(first));
         sim.session_mut_for_test().set_input_locked_for_test(true);
@@ -2103,6 +2177,42 @@ mod tests {
             );
             assert_eq!(tap.outcome, crate::app::types::TypeSelectOutcome::Empty);
             assert!(tap.across_map, "selection {selection:?}");
+        }
+    }
+
+    /// Asked with its frame, the pick scores only the objects near the
+    /// point: one just inside the ellipse across or up and down is still
+    /// picked, and one just outside it is not, as without the frame.
+    #[test]
+    fn the_frame_pick_keeps_an_object_just_inside_the_ellipse() {
+        use crate::app::presentation::frame::PresentationFrame;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let viewer = sim.intern("viewer");
+        let typ = sim.intern("HTNK");
+        let unit = item83_entity(1, 10, 10, viewer, typ, EntityCategory::Unit, false);
+        let (x, y) = crate::render::locomotor_visual::screen_position(&unit);
+        sim.entities_mut_for_test().insert(unit);
+        sim.resubmit_entity_display_for_test(1);
+        let frame = PresentationFrame::of_test(&sim, RuleSet::empty_for_test());
+        let picked = |frame, dx: f32, dy: f32| {
+            hover_object_in_frame(&sim, frame, x + dx, y + dy, "viewer", true)
+                .and_then(HoverObject::techno)
+                .map(|hover| hover.stable_id)
+        };
+        // 14.1² is 198.8 and 0.5·19.9² is 198.0, under 200; 14.2² is 201.6
+        // and 0.5·20² is 200.
+        for (dx, dy, found) in [
+            (14.1, 0., Some(1)),
+            (-14.1, 0., Some(1)),
+            (0., 19.9, Some(1)),
+            (0., -19.9, Some(1)),
+            (14.2, 0., None),
+            (0., -20., None),
+        ] {
+            assert_eq!(picked(Some(&frame), dx, dy), found, "{dx}, {dy}");
+            assert_eq!(picked(None, dx, dy), found, "{dx}, {dy}");
         }
     }
 
