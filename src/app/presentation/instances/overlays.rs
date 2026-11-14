@@ -273,25 +273,24 @@ impl DisplayEffectInputs<'_> {
 }
 
 /// Where an Anim's DrawIt draws: its admission point, cell, lift and drawn
-/// coordinate.
-struct AnimDrawPoint {
-    center: [f32; 2],
+/// coordinate. The point is in world screen pixels, before the camera.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct AnimDrawPoint {
+    pub(crate) center: [f32; 2],
     cell: (u16, u16),
     lift_px: i32,
     drawn_coord: [i32; 3],
 }
 
-/// The point Anim `id`'s Display encounter admits and draws it at, or `None`
-/// when that encounter stops before the mutative DrawIt55AF60 query:
-/// AnimDrawIfVisible422C70 rejects delay+184 before Object5F4B10's
-/// Tactical6D2140 projection gate. Whole-slot controls:
-/// spatial_oracle/building_anim_detail.json.
-fn anim_draw_point(
+/// Where Anim `id`'s Display encounter draws it, before the view test, or
+/// `None` when that encounter stops first: AnimDrawIfVisible422C70 rejects
+/// delay+184 before Object5F4B10's Tactical6D2140 projection gate. A frame
+/// keeps it for each of its Anims
+/// ([`crate::app::presentation::display_members::EffectKind::Anim`]).
+pub(crate) fn anim_screen_point(
     frame: &crate::app::presentation::frame::PresentationFrame,
     anim: &crate::sim::anim_class::AnimObject,
     id: u64,
-    camera: [f32; 2],
-    viewport: [f32; 2],
 ) -> Option<AnimDrawPoint> {
     if anim.runtime().delay_remaining != 0 {
         return None;
@@ -308,29 +307,116 @@ fn anim_draw_point(
         center_y -= correction as f32;
         lift_px += correction;
     }
-    let drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
-    projection_admitted([center_x, center_y], camera, viewport).then_some(AnimDrawPoint {
+    Some(AnimDrawPoint {
         center: [center_x, center_y],
         cell: (rx, ry),
         lift_px,
-        drawn_coord,
+        drawn_coord: [anim_coord.x, anim_coord.y, anim_coord.z],
     })
 }
 
-/// Whether building slot Anim `id`'s Display encounter can reach its
+/// The point Anim `id`'s Display encounter admits and draws it at, or `None`
+/// when that encounter stops before the mutative DrawIt55AF60 query: the
+/// [`anim_screen_point`] Tactical6D2140 admits. Whole-slot controls:
+/// spatial_oracle/building_anim_detail.json.
+fn anim_draw_point(
+    frame: &crate::app::presentation::frame::PresentationFrame,
+    anim: &crate::sim::anim_class::AnimObject,
+    id: u64,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> Option<AnimDrawPoint> {
+    anim_screen_point(frame, anim, id)
+        .filter(|point| projection_admitted(point.center, camera, viewport))
+}
+
+/// Building slot Anim `id`, when its Display encounter can reach its
 /// prepared parent: [`anim_draw_point`] admits it. Slot preparation skips
 /// every slot this rejects, so it only drops parents the traversal would
 /// never consume.
-pub(super) fn slot_anim_admissible(
-    sim: &crate::sim::world::Simulation,
+pub(super) fn admitted_slot_anim<'a>(
+    sim: &'a crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
     id: u64,
     camera: [f32; 2],
     viewport: [f32; 2],
-) -> bool {
-    sim.anim(id).is_some_and(|anim| {
+) -> Option<&'a crate::sim::anim_class::AnimObject> {
+    sim.anim(id).filter(|anim| {
         anim.is_building_anim() && anim_draw_point(frame, anim, id, camera, viewport).is_some()
     })
+}
+
+/// Plan a spotlight, particle system or particle at its Display encounter;
+/// the loop plans an Anim itself.
+fn plan_effect_body(
+    input: &DisplayEffectInputs<'_>,
+    member: &crate::app::presentation::display_members::EffectMember,
+    context: &super::particles::ParticleDrawContext,
+    objects: &mut Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance>,
+    order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
+    observations: &mut Option<Vec<super::particles::ParticleDrawObservation>>,
+) {
+    use crate::app::presentation::display_members::EffectKind;
+    let (sim, id) = (input.sim, member.id);
+    match member.kind {
+        EffectKind::Anim(_) => {}
+        EffectKind::Spotlight(_) => {
+            if let Some(&light) = input.frame.scene.spotlights.get(&id) {
+                super::particles::build_spotlight_instance(
+                    input, id, light, context, objects, order,
+                );
+            }
+        }
+        EffectKind::ParticleSystem(_) => {
+            if let Some(system) = sim.particle_systems().get(id) {
+                super::particles::build_particle_system_instance(
+                    input, system, context, objects, order,
+                );
+            }
+        }
+        EffectKind::Particle(place, _) => {
+            if let Some((system, particle)) = sim.particle_systems().display_particle_at(id, place)
+            {
+                super::particles::build_particle_instance(
+                    input,
+                    system,
+                    particle,
+                    context,
+                    objects,
+                    order,
+                    observations,
+                );
+            }
+        }
+    }
+}
+
+/// Whether effect `member`, passed by off the view, would have planned
+/// nothing: an Anim's draw point is refused, and any other kind's builder
+/// plans nothing.
+fn passed_by_effect_plans_nothing(
+    input: &DisplayEffectInputs<'_>,
+    member: &crate::app::presentation::display_members::EffectMember,
+    context: &super::particles::ParticleDrawContext,
+    order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
+) -> bool {
+    use crate::app::presentation::display_members::EffectKind;
+    let id = member.id;
+    if let EffectKind::Anim(_) = member.kind {
+        return input.sim.anim(id).is_none_or(|anim| {
+            anim_draw_point(
+                input.frame,
+                anim,
+                id,
+                input.camera,
+                input.projection_viewport(),
+            )
+            .is_none()
+        });
+    }
+    let mut scratch = Vec::new();
+    plan_effect_body(input, member, context, &mut scratch, order, &mut None);
+    scratch.is_empty()
 }
 
 /// Traverse dynamic effect bodies in actual Display order. Anim and particle
@@ -387,75 +473,51 @@ pub(crate) fn build_display_effect_instances(
     // still supplies the order. Particles have their own AIR registrations,
     // including live bodies detached from a System.
     use crate::app::presentation::display_members::EffectKind;
+    // One read of each Anim type's art for the whole draw.
+    let mut anim_types: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        AnimTypeArt<'_>,
+    > = Default::default();
     for member in input.frame.display_members(sim).effects() {
         let stable_id = member.id;
-        let anim = match member.kind {
-            EffectKind::Anim => sim.anim(stable_id),
-            EffectKind::Spotlight => {
-                if let Some(&light) = input.frame.scene.spotlights.get(&stable_id) {
-                    super::particles::build_spotlight_instance(
-                        input,
-                        stable_id,
-                        light,
-                        &context,
-                        ground_objects,
-                        ground_order,
-                    );
-                }
-                None
-            }
-            EffectKind::ParticleSystem => {
-                if let Some(system) = sim.particle_systems().get(stable_id) {
-                    super::particles::build_particle_system_instance(
-                        input,
-                        system,
-                        &context,
-                        ground_objects,
-                        ground_order,
-                    );
-                }
-                None
-            }
-            EffectKind::Particle(place) => {
-                if let Some((system, particle)) =
-                    sim.particle_systems().display_particle_at(stable_id, place)
-                {
-                    super::particles::build_particle_instance(
-                        input,
-                        system,
-                        particle,
-                        &context,
-                        ground_objects,
-                        ground_order,
-                        &mut observations,
-                    );
-                }
-                None
-            }
-        };
-        let Some(anim) = anim else {
+        // Tactical_ObjectRenderingLoop6D8DB0 tests each member's place
+        // before its draw: AnimDrawIfVisible422C70 and Object5F4B10 return at
+        // Tactical6D2140's bounds, before DrawIt's mutative55AF60 query, and
+        // the particle builders test their point first too. So a member off
+        // the view is passed by on the point its frame keeps, before any
+        // store is asked. Each kind keeps the viewport it is tested in.
+        let admitted = member.point().is_some_and(|point| match member.kind {
+            EffectKind::Anim(_) => projection_admitted(point, input.camera, projection_viewport),
+            _ => context.admits(point),
+        });
+        if !admitted {
+            debug_assert!(
+                passed_by_effect_plans_nothing(input, member, &context, ground_order),
+                "effect {stable_id} was passed by but draws"
+            );
             continue;
-        };
-        let Some(atlas) = input.atlas else {
-            continue;
-        };
-        // The draw point first: it reads only the Anim and the frame, and
-        // every Anim off the view stops here, before its type is looked up
-        // by name. The tests up to the detail latch below only read, so
-        // their order changes nothing.
-        let Some(AnimDrawPoint {
+        }
+        let EffectKind::Anim(Some(AnimDrawPoint {
             center: [center_x, center_y],
             cell: (rx, ry),
             lift_px,
             drawn_coord,
-        }) = anim_draw_point(
-            input.frame,
-            anim,
-            stable_id,
-            input.camera,
-            projection_viewport,
-        )
+        })) = member.kind
         else {
+            plan_effect_body(
+                input,
+                member,
+                &context,
+                ground_objects,
+                ground_order,
+                &mut observations,
+            );
+            continue;
+        };
+        let Some(anim) = sim.anim(stable_id) else {
+            continue;
+        };
+        let Some(atlas) = input.atlas else {
             continue;
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its
@@ -465,7 +527,25 @@ pub(crate) fn build_display_effect_instances(
             .copied()
             .any(|ty| parachute_canopy_owner(anim, ty).is_some());
         let type_name: &str = sim.interner().resolve(anim.type_id());
-        let config = input.rules.art().anim_runtime_config(type_name);
+        let AnimTypeArt {
+            config,
+            frame_count,
+            behind,
+        } = *anim_types
+            .entry(anim.type_id())
+            .or_insert_with(|| AnimTypeArt {
+                config: input.rules.art().anim_runtime_config(type_name),
+                frame_count: presentation_anim_frame_count(
+                    &atlas.active_anim_frame_counts,
+                    type_name,
+                ),
+                behind: input
+                    .rules
+                    .general
+                    .behind
+                    .as_deref()
+                    .is_some_and(|behind| behind.eq_ignore_ascii_case(type_name)),
+            });
         if config
             .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
         {
@@ -486,16 +566,7 @@ pub(crate) fn build_display_effect_instances(
                     true => !input.frame.scene.psi_warnings_detected.contains(&stable_id),
                     // ... and the `[General] Behind=` anim's from the local
                     // Show Hidden option (`0x00423B62..0x00423B88`).
-                    false
-                        if input
-                            .rules
-                            .general
-                            .behind
-                            .as_deref()
-                            .is_some_and(|behind| behind.eq_ignore_ascii_case(type_name)) =>
-                    {
-                        !input.show_hidden
-                    }
+                    false if behind => !input.show_hidden,
                     // A Super's ChronoPlacement anim: the client's byte
                     // (`match_runtime::super_selection`).
                     false => {
@@ -575,10 +646,7 @@ pub(crate) fn build_display_effect_instances(
             config,
             anim.draw_flags(),
             anim.runtime().current_frame,
-            i32::from(
-                presentation_anim_frame_count(&atlas.active_anim_frame_counts, type_name)
-                    .unwrap_or(0),
-            ),
+            i32::from(frame_count.unwrap_or(0)),
             input.detail_level as i32,
             anim.draw_runtime(),
         ) else {
@@ -747,6 +815,15 @@ pub(super) fn anim_instance_flags(
         },
     );
     result.draw.then_some(result.flags)
+}
+
+/// One Anim type's art for a draw: its runtime config, its loaded frame
+/// count and whether it is the `[General] Behind=` type.
+#[derive(Clone, Copy)]
+struct AnimTypeArt<'a> {
+    config: Option<&'a AnimTypeRuntimeConfig>,
+    frame_count: Option<u16>,
+    behind: bool,
 }
 
 pub(super) fn presentation_anim_frame_count(

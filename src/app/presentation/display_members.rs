@@ -8,9 +8,11 @@
 //! of the whole map. The frame's world cannot change while the frame lives,
 //! so the frame files its members once
 //! ([`PresentationFrame::display_members`]) and every draw of it reads the
-//! same table.
+//! same table. Each effect keeps the point its draw is tested at, so a draw
+//! passes an effect off the view by before asking its store.
 
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
+use crate::app::presentation::instances::{AnimDrawPoint, anim_screen_point};
 use crate::map::entities::EntityCategory;
 use crate::sim::particles::DisplayParticlePlace;
 use crate::sim::world::Simulation;
@@ -74,18 +76,40 @@ pub(crate) enum ObjectKind {
 }
 
 /// A Display member the effects loop draws.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct EffectMember {
     pub id: u64,
     pub kind: EffectKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// An effect's kind and where its draw is tested against the view, in world
+/// screen pixels before the camera; `None` where it draws nothing this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum EffectKind {
-    Anim,
-    Spotlight,
-    ParticleSystem,
-    Particle(DisplayParticlePlace),
+    /// Where its DrawIt draws; `None` while it is delayed or has no
+    /// coordinate.
+    Anim(Option<AnimDrawPoint>),
+    Spotlight([f32; 2]),
+    /// `None` in limbo.
+    ParticleSystem(Option<[f32; 2]>),
+    Particle(DisplayParticlePlace, Option<[f32; 2]>),
+}
+
+impl EffectMember {
+    /// The point the effects loop tests against the view
+    /// (`instances::projection_admitted`) before it asks any store.
+    pub(crate) fn point(&self) -> Option<[f32; 2]> {
+        match self.kind {
+            EffectKind::Anim(draw) => draw.map(|draw| draw.center),
+            EffectKind::Spotlight(point) => Some(point),
+            EffectKind::ParticleSystem(point) | EffectKind::Particle(_, point) => point,
+        }
+    }
+}
+
+fn screen_point(x: i32, y: i32, z: i32) -> [f32; 2] {
+    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
+    [x, y]
 }
 
 /// One frame's Display members in Tactical's order, split by the loop that
@@ -114,8 +138,8 @@ impl DisplayMembers {
             let kind = if let Some((slot, span)) = frame.slot_and_span(id) {
                 objects.push(object(ObjectKind::Record { slot, span }));
                 continue;
-            } else if sim.anim(id).is_some() {
-                EffectKind::Anim
+            } else if let Some(anim) = sim.anim(id) {
+                EffectKind::Anim(anim_screen_point(frame, anim, id))
             } else if sim.terrain_objects().objects().contains_key(&id) {
                 continue;
             } else if sim.projectiles().get(id).is_some() {
@@ -124,12 +148,23 @@ impl DisplayMembers {
             } else if sim.voxel_anims().get(id).is_some() {
                 objects.push(object(ObjectKind::Debris));
                 continue;
-            } else if frame.scene.spotlights.contains_key(&id) {
-                EffectKind::Spotlight
-            } else if sim.particle_systems().get(id).is_some() {
-                EffectKind::ParticleSystem
+            } else if let Some(light) = frame.scene.spotlights.get(&id) {
+                let [x, y, z] = light.coord;
+                EffectKind::Spotlight(screen_point(x, y, z))
+            } else if let Some(system) = sim.particle_systems().get(id) {
+                let at = system.coords();
+                EffectKind::ParticleSystem(
+                    (!system.in_limbo()).then(|| screen_point(at.x, at.y, at.z)),
+                )
             } else if let Some(&place) = particles.get(&id) {
-                EffectKind::Particle(place)
+                let point =
+                    sim.particle_systems()
+                        .display_particle_at(id, place)
+                        .map(|(_, particle)| {
+                            let at = particle.coords();
+                            screen_point(at.x, at.y, at.z)
+                        });
+                EffectKind::Particle(place, point)
             } else {
                 continue;
             };
