@@ -996,11 +996,9 @@ pub(crate) fn self_heal_pip(
 // handle from `DAT_00AC147C` (PIPS.SHP) to `DAT_00AC1480` (PIPS2.SHP) at
 // 0x00709AEF for every non-building.
 //
-// * **Wrapped ammo pips**,70A421..4E6: PipWrap!=0 selects signed-division
-//   stacks and other frames. Stock ORCA retains PipWrap0 and uses the common
-//   strip below. The wrapped configuration is dormant in the stock Ammo types,
-//   not proven unreachable. Passenger fractional/mixed sizes and other
-//   transport lifecycle paths retain their explicit owner residuals.
+// Wrapped ammo pips (`0x70A421..4E6`) are drawn by the Ammo arm above.
+// Passenger fractional/mixed sizes and other transport lifecycle paths
+// retain their explicit owner residuals.
 //
 /// The repair wrench's WRENCH.SHP frame at `frame`
 /// (`TechnoClass::DrawExtras 0x006F52D8..0x006F532B`): a cycle of
@@ -2143,13 +2141,6 @@ pub(crate) fn scale_pip_draws(
         //PIPS2 frame13 arm. Iterate GetPipMax slots but draw only positive
         //fill; depleted Ammo emits no empty outline. Draw flags600/noA/Z
         //are owned by the existing per-parent scale replay.
-        //Nonzero PipWrap70A421..4E6 remains a separate dormant configuration.
-        // TODO(wrap): use `ammo_pip_wrap_start_frame()` as the wrap arm's
-        // PIPS2 start frame (`Ext/Techno/Hooks.Pips.cpp:249`) once the
-        // `PipWrap` drawing mechanism is ported.
-        if object.pip_wrap() != 0 {
-            return pips;
-        }
         let filled = entity
             .techno_pip_fill_level(object, rules, None)
             .clamp(0, object.pip_max(rules).max(0));
@@ -2179,8 +2170,7 @@ pub(crate) fn scale_pip_draws(
         // origin, so every pip translates by the same pair after its slot
         // step rather than once per slot.
         let [dx, dy] = object.ammo_pip_offset();
-        pips.extend((0..slots).map(|slot| {
-            let frame = if slot < fill_slots { full } else { empty };
+        let place = |slot: usize, frame: usize| {
             let mut draw = pip(slot, frame, row_y - 3);
             if let Some([step_x, step_y]) = sized_step {
                 draw.offset_pixels = [
@@ -2191,6 +2181,59 @@ pub(crate) fn scale_pip_draws(
             draw.offset_pixels[0] = draw.offset_pixels[0].wrapping_add(dx);
             draw.offset_pixels[1] = draw.offset_pixels[1].wrapping_add(dy);
             draw
+        };
+        // `0x70A421..4E6` is the Ammo wrap arm: `PipWrap` slots, each showing
+        // the wrap level counter above the start frame. A slot whose counter
+        // is still at or above the raw Ammo count steps the level down until
+        // it is below; a level below zero keeps the bare start frame.
+        // Vanilla enters on any nonzero `PipWrap` but leaves without drawing
+        // when it is negative (`0x70A374 jne`, `0x70A42C jle`); Phobos's
+        // replacement (`Ext/Techno/Hooks.Pips.cpp:245-279`) takes its
+        // unwrapped arm instead, and raises the start frame to its own key.
+        let wrap = object.pip_wrap();
+        #[cfg(feature = "phobos")]
+        let wrap_arm = wrap > 0;
+        #[cfg(not(feature = "phobos"))]
+        let wrap_arm = wrap != 0;
+        if wrap_arm {
+            let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+            let levels = object.pip_max(rules).wrapping_div(wrap).wrapping_sub(1);
+            #[cfg(feature = "phobos")]
+            let start = object.ammo_pip_wrap_start_frame();
+            #[cfg(not(feature = "phobos"))]
+            let start = 14;
+            let slots = usize::try_from(wrap).unwrap_or(0);
+            pips.extend((0..slots).map(|slot| {
+                let mut frame = start;
+                if levels >= 0 {
+                    let i = i32::try_from(slot).unwrap_or(i32::MAX);
+                    let mut counter = i.wrapping_add(wrap.wrapping_mul(levels));
+                    let mut frame_counter = levels;
+                    let mut calculate = true;
+                    while counter >= ammo {
+                        frame_counter -= 1;
+                        counter = counter.wrapping_sub(wrap);
+                        if frame_counter < 0 {
+                            calculate = false;
+                            break;
+                        }
+                    }
+                    if calculate {
+                        frame = frame_counter.wrapping_add(start).wrapping_add(1);
+                    }
+                }
+                // `Ext/Techno/Hooks.Pips.cpp:277-278` advances the origin
+                // before each wrapped draw, unlike the unwrapped arm's
+                // draw-then-advance: the first wrapped pip sits one step in.
+                // A negative authored start frame has no VERA `usize`
+                // counterpart; draw the first frame for that degenerate read.
+                place(slot + 1, usize::try_from(frame).unwrap_or(0))
+            }));
+            return pips;
+        }
+        pips.extend((0..slots).map(|slot| {
+            let frame = if slot < fill_slots { full } else { empty };
+            place(slot, frame)
         }));
         return pips;
     }

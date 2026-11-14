@@ -3000,8 +3000,7 @@ pub struct ObjectType {
     /// (`Ext/TechnoType/Body.h:239`, `Valueable<int>` seeded 14 at
     /// `Body.h:668`): the PIPS2 start frame of the wrapped Ammo strip's
     /// level counter (`Ext/TechnoType/Body.cpp:1004`, consumer
-    /// `Ext/Techno/Hooks.Pips.cpp:249`). VERA's PipWrap arm is dormant, so
-    /// this is stored and read but not yet consumed.
+    /// `Ext/Techno/Hooks.Pips.cpp:249`, read by `scale_pip_draws`).
     ammo_pip_wrap_start_frame: i32,
 
     /// Phobos `TechnoTypeExt::AmmoPipSize` (`Ext/TechnoType/Body.h:240`,

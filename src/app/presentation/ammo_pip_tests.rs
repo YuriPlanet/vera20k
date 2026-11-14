@@ -236,8 +236,7 @@ fn stock_harrier_ammo_pips_follow_real_strike_return_reload_and_selection() {
 /// appended to the `[RIPU]` section, so each key can be varied without a
 /// second fixture. Mirrors the ordinary construction path of the existing
 /// `EmptyAmmoPipFrame` test (a hand-built entity never reaches DrawPipScale).
-#[cfg(feature = "phobos")]
-fn ammo_pip_scene(extra: &str) -> (RuleSet, Simulation, u64) {
+fn ammo_pip_scene(max_ammo: i32, initial_ammo: i32, extra: &str) -> (RuleSet, Simulation, u64) {
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::ammo::TechnoAmmo;
@@ -245,8 +244,8 @@ fn ammo_pip_scene(extra: &str) -> (RuleSet, Simulation, u64) {
     let art_ini = IniFile::from_str("[RIPUART]\n");
     let text = format!(
         "[VehicleTypes]\n0=RIPU\n\
-         [RIPU]\nImage=RIPUART\nStrength=100\nSpeed=5\nAmmo=3\nInitialAmmo=2\n\
-         PipScale=Ammo\n{extra}"
+         [RIPU]\nImage=RIPUART\nStrength=100\nSpeed=5\nAmmo={max_ammo}\n\
+         InitialAmmo={initial_ammo}\nPipScale=Ammo\n{extra}"
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(&text),
@@ -266,7 +265,7 @@ fn ammo_pip_scene(extra: &str) -> (RuleSet, Simulation, u64) {
     sim.entities_mut_for_test()
         .get_mut(id)
         .unwrap()
-        .install_ammo_for_test(Some(TechnoAmmo::new(2)));
+        .install_ammo_for_test(Some(TechnoAmmo::new(initial_ammo)));
     assert!(sim.apply_command(
         "Americans",
         &Command::Select {
@@ -280,7 +279,6 @@ fn ammo_pip_scene(extra: &str) -> (RuleSet, Simulation, u64) {
 
 /// The full production draws, so an offset/size assertion sees the placement
 /// as well as the frame.
-#[cfg(feature = "phobos")]
 fn draws(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<super::ui_overlays::ScalePipDraw> {
     let before = sim.state_hash();
     let entity = sim.entities().get(id).expect("RIPU survives");
@@ -301,29 +299,29 @@ fn draws(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<super::ui_overlays::
 #[cfg(feature = "phobos")]
 #[test]
 fn an_authored_ammo_pip_frame_replaces_the_stock_thirteen() {
-    let (rules, sim, id) = ammo_pip_scene("AmmoPipFrame=5\n");
+    let (rules, sim, id) = ammo_pip_scene(3, 2, "AmmoPipFrame=5\n");
     assert_eq!(rules.object("RIPU").unwrap().ammo_pip_frame(), 5);
     let authored = draws(&sim, &rules, id);
     assert_eq!(authored.iter().map(|d| d.frame).collect::<Vec<_>>(), [5, 5]);
 
-    let (stock_rules, stock_sim, stock_id) = ammo_pip_scene("");
+    let (stock_rules, stock_sim, stock_id) = ammo_pip_scene(3, 2, "");
     assert_eq!(stock_rules.object("RIPU").unwrap().ammo_pip_frame(), 13);
     assert_eq!(frames(&stock_sim, &stock_rules, stock_id, None), [13, 13]);
 }
 
 /// Phobos `AmmoPipWrapStartFrame` (`Ext/TechnoType/Body.cpp:1004`,
 /// constructor 14 at `Body.h:668`, consumer
-/// `Ext/Techno/Hooks.Pips.cpp:249`). VERA's PipWrap arm is dormant, so this
+/// `Ext/Techno/Hooks.Pips.cpp:249`): the wrapped strip's start frame. This
 /// pins the production reader's authored value and constructor default.
 #[cfg(feature = "phobos")]
 #[test]
 fn the_ammo_pip_wrap_start_frame_reads_its_authoring_and_constructor() {
-    let (rules, _, _) = ammo_pip_scene("AmmoPipWrapStartFrame=21\n");
+    let (rules, _, _) = ammo_pip_scene(3, 2, "AmmoPipWrapStartFrame=21\n");
     assert_eq!(
         rules.object("RIPU").unwrap().ammo_pip_wrap_start_frame(),
         21
     );
-    let (stock, _, _) = ammo_pip_scene("");
+    let (stock, _, _) = ammo_pip_scene(3, 2, "");
     assert_eq!(
         stock.object("RIPU").unwrap().ammo_pip_wrap_start_frame(),
         14
@@ -337,7 +335,7 @@ fn the_ammo_pip_wrap_start_frame_reads_its_authoring_and_constructor() {
 #[cfg(feature = "phobos")]
 #[test]
 fn the_ammo_pip_size_changes_the_strip_step_only_when_authored() {
-    let (rules, sim, id) = ammo_pip_scene("AmmoPipSize=9,3\n");
+    let (rules, sim, id) = ammo_pip_scene(3, 2, "AmmoPipSize=9,3\n");
     assert_eq!(rules.object("RIPU").unwrap().ammo_pip_size(), Some([9, 3]));
     let authored = draws(&sim, &rules, id);
     assert_eq!(
@@ -345,7 +343,7 @@ fn the_ammo_pip_size_changes_the_strip_step_only_when_authored() {
         [[0, 7], [9, 10]]
     );
 
-    let (stock_rules, stock_sim, stock_id) = ammo_pip_scene("");
+    let (stock_rules, stock_sim, stock_id) = ammo_pip_scene(3, 2, "");
     assert_eq!(stock_rules.object("RIPU").unwrap().ammo_pip_size(), None);
     let stock = draws(&stock_sim, &stock_rules, stock_id);
     assert_eq!(
@@ -361,7 +359,7 @@ fn the_ammo_pip_size_changes_the_strip_step_only_when_authored() {
 #[cfg(feature = "phobos")]
 #[test]
 fn an_authored_ammo_pip_offset_translates_every_pip_in_the_strip() {
-    let (rules, sim, id) = ammo_pip_scene("AmmoPipOffset=6,-2\n");
+    let (rules, sim, id) = ammo_pip_scene(3, 2, "AmmoPipOffset=6,-2\n");
     assert_eq!(rules.object("RIPU").unwrap().ammo_pip_offset(), [6, -2]);
     let authored = draws(&sim, &rules, id);
     assert_eq!(
@@ -369,14 +367,15 @@ fn an_authored_ammo_pip_offset_translates_every_pip_in_the_strip() {
         [[6, 5], [10, 5]]
     );
 
-    let (both_rules, both_sim, both_id) = ammo_pip_scene("AmmoPipSize=9,3\nAmmoPipOffset=6,-2\n");
+    let (both_rules, both_sim, both_id) =
+        ammo_pip_scene(3, 2, "AmmoPipSize=9,3\nAmmoPipOffset=6,-2\n");
     let both = draws(&both_sim, &both_rules, both_id);
     assert_eq!(
         both.iter().map(|d| d.offset_pixels).collect::<Vec<_>>(),
         [[6, 5], [15, 8]]
     );
 
-    let (stock_rules, stock_sim, stock_id) = ammo_pip_scene("");
+    let (stock_rules, stock_sim, stock_id) = ammo_pip_scene(3, 2, "");
     assert_eq!(
         stock_rules.object("RIPU").unwrap().ammo_pip_offset(),
         [0, 0]
@@ -386,4 +385,114 @@ fn an_authored_ammo_pip_offset_translates_every_pip_in_the_strip() {
         stock.iter().map(|d| d.offset_pixels).collect::<Vec<_>>(),
         [[0, 7], [4, 7]]
     );
+}
+
+#[cfg(feature = "phobos")]
+fn set_ammo(sim: &mut Simulation, id: u64, ammo: i32) {
+    use crate::sim::ammo::TechnoAmmo;
+    sim.entities_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .install_ammo_for_test(Some(TechnoAmmo::new(ammo)));
+}
+
+/// Phobos `TechnoClass_DrawPips_Ammo`'s wrap arm (`0x70A421..4E6`,
+/// `Ext/Techno/Hooks.Pips.cpp:245-279`): `PipWrap` slots count the wrap
+/// levels above `AmmoPipWrapStartFrame`; a depleted slot keeps the bare start
+/// frame. The wrapped loop advances the origin before each draw, so the
+/// strip starts one step in, and `PipWrap=-1` takes Phobos's unwrapped arm.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_pip_wrap_arm_counts_the_wrap_levels() {
+    let (rules, mut sim, id) = ammo_pip_scene(
+        10,
+        10,
+        "PipWrap=5
+",
+    );
+    let ty = rules.object("RIPU").unwrap();
+    assert_eq!((ty.pip_wrap(), ty.pip_max(&rules)), (5, 10));
+    // levels = 10 / 5 - 1 = 1, start frame 14.
+    assert_eq!(frames(&sim, &rules, id, None), [16, 16, 16, 16, 16]);
+    let advances: Vec<i32> = draws(&sim, &rules, id)
+        .iter()
+        .map(|draw| draw.offset_pixels[0])
+        .collect();
+    assert_eq!(advances, [4, 8, 12, 16, 20], "the origin advances first");
+
+    set_ammo(&mut sim, id, 6);
+    assert_eq!(frames(&sim, &rules, id, None), [16, 15, 15, 15, 15]);
+
+    set_ammo(&mut sim, id, 1);
+    assert_eq!(frames(&sim, &rules, id, None), [15, 14, 14, 14, 14]);
+
+    set_ammo(&mut sim, id, 0);
+    assert_eq!(frames(&sim, &rules, id, None), [14, 14, 14, 14, 14]);
+
+    // The authored start frame moves every calculated level with it.
+    let (rules, sim, id) = ammo_pip_scene(
+        10,
+        10,
+        "PipWrap=5
+AmmoPipWrapStartFrame=20
+",
+    );
+    assert_eq!(frames(&sim, &rules, id, None), [22, 22, 22, 22, 22]);
+
+    // `AmmoPipSize`/`AmmoPipOffset` place the wrapped strip like the
+    // unwrapped one, after the same origin advance.
+    let (rules, sim, id) = ammo_pip_scene(
+        10,
+        10,
+        "PipWrap=5
+AmmoPipSize=9,3
+AmmoPipOffset=6,-2
+",
+    );
+    let placed: Vec<[i32; 2]> = draws(&sim, &rules, id)
+        .iter()
+        .map(|draw| draw.offset_pixels)
+        .collect();
+    assert_eq!(
+        placed,
+        [[15, 8], [24, 11], [33, 14], [42, 17], [51, 20]],
+        "slot+1 advance, then the authored size and offset"
+    );
+
+    // A negative PipWrap takes Phobos's unwrapped strip (fill frame 13).
+    let (rules, sim, id) = ammo_pip_scene(
+        10,
+        10,
+        "PipWrap=-1
+",
+    );
+    assert_eq!(frames(&sim, &rules, id, None), [13; 10]);
+}
+
+/// Vanilla enters the wrap arm on any nonzero `PipWrap` and draws nothing
+/// when it is negative (`0x70A374 jne`, `0x70A42C jle`); positive wraps use
+/// the same level counter with the stock start frame 14.
+#[cfg(not(feature = "phobos"))]
+#[test]
+fn a_negative_pip_wrap_draws_no_stock_strip() {
+    let (rules, sim, id) = ammo_pip_scene(
+        10,
+        10,
+        "PipWrap=-1
+",
+    );
+    assert!(frames(&sim, &rules, id, None).is_empty());
+
+    let (rules, sim, id) = ammo_pip_scene(
+        10,
+        10,
+        "PipWrap=5
+",
+    );
+    assert_eq!(frames(&sim, &rules, id, None), [16, 16, 16, 16, 16]);
+    let advances: Vec<i32> = draws(&sim, &rules, id)
+        .iter()
+        .map(|draw| draw.offset_pixels[0])
+        .collect();
+    assert_eq!(advances, [4, 8, 12, 16, 20]);
 }
