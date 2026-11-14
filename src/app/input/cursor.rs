@@ -1847,7 +1847,9 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::Minimap(id) => Some(id),
         CursorFeedbackKind::Enter | CursorFeedbackKind::Grind => Some(CursorId::Enter),
         CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
-        // `SetCursorFromAction @ 0x004AAE90`: action 0x11, row 0x36.
+        // RESIDUAL (dormant, retail rules set `Carryall=` only on HIND):
+        // `SetCursorFromAction @ 0x004AAE90` sends action 0x11 to row 0x3C
+        // (`0x004AB45A`, frame 384); VERA draws row 0x36 (frame 329).
         CursorFeedbackKind::Tote => Some(CursorId::Tote),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {

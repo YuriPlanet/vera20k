@@ -17,6 +17,8 @@ use crate::sim::production::{BuildingPlacementCell, BuildingPlacementPreview};
 use crate::sim::selection::SelectionState;
 
 /// Drag rectangle color — white.
+/// RESIDUAL: `Tactical::DrawBandBoxRect @ 0x006DA180` draws colour 15 of the
+/// PALETTE.PAL Convert (0x0087F6C4, `0x006DA1D2..0x006DA1F7`); VERA draws pure white.
 const DRAG_RECT_COLOR: [u8; 4] = [255, 255, 255, 255];
 /// Depth for the drag rectangle — always in front of everything.
 const DRAG_RECT_DEPTH: f32 = 0.001;

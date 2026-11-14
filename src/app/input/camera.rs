@@ -1146,6 +1146,11 @@ impl TacticalMouseState {
 /// One right-drag pan step, in world pixels, for `ScrollMethod = 0` (the stock
 /// value — the two cursor-warping methods have no in-game UI and ship disabled).
 ///
+/// RESIDUAL (dormant, RA2MD.INI `ScrollMethod=` is 0 unless edited by hand):
+/// `0x00693440` picks the method through `0x005FBF70`; methods 1 (`0x006936D3`) and
+/// 2 (`0x0069362C`, inverted) move 12/(rate+1) per pixel and warp the cursor back to
+/// the anchor. VERA reads and saves the key but always pans with method 0.
+///
 /// The displacement is measured from the **anchor**, not from the previous
 /// step, so the gesture behaves like a joystick: the further the cursor sits
 /// from the press point, the faster the map slides, every step the button is

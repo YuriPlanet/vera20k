@@ -840,6 +840,9 @@ pub fn is_within_build_area(
                 continue;
             }
         } else if provider_owner.eq_ignore_ascii_case(owner) {
+            // RESIDUAL (dormant, the retail EligibileForAllyBuilding= types keep
+            // BaseNormal=yes): native sends an own BaseNormal=no building on to the
+            // BuildOffAlly test (`0x004A8FE4` -> `0x004A8FFA`), where it can still count.
             if !existing.base_normal {
                 continue;
             }

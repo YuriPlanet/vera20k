@@ -4030,6 +4030,9 @@ fn load_map_first_step(
         if let Some([x, y, z]) = opening_view_coord {
             crate::util::lepton::absolute_leptons_to_screen(x, y, z)
         } else if let Some((rx, ry)) = opening_view_cell {
+            // RESIDUAL: native raises the HomeCell centre to its ground height
+            // (`0x00578080` at `0x00684D2F`), slope included; this takes the cell's
+            // base level, so on a ramp HomeCell the opening view sits a few pixels off.
             let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
             crate::app::input::camera::cell_centre_world_point(rx, ry, z)
         } else if let Some(start_wp) = waypoints::first_multiplayer_start(&map_data.waypoints) {

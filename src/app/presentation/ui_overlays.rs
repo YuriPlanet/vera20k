@@ -263,6 +263,10 @@ const UNIT_PIP_STEP_X: f32 = 2.0;
 /// the object is selected, or the object carries the cursor's hover flag and is
 /// *not* selected. The hover flag is set from the cursor's resolved action
 /// target, so a shrouded enemy — which is never an action target — is excluded.
+///
+/// RESIDUAL: the hover byte (Techno+0x431) is saved with the object, so after
+/// a load native shows the bar of the object hovered at save time until the
+/// next hover update; VERA keeps hover out of the save and starts with none.
 pub(crate) fn health_hover_target(hover: Option<HoverObject>) -> Option<u64> {
     let hover = hover?.techno()?;
     match hover.kind {
@@ -580,6 +584,9 @@ pub(crate) fn control_group_status_labels(
         if entity.sinking.is_active()
             || entity.passenger_role.is_inside_transport()
             || !entity_status_pips_drawable(sim, entity, hovered_entity_id, current_house_id, rules)
+            // RESIDUAL: VERA-only cell test; DrawPipScale draws the digit
+            // from +0x214 at 0x0070A6FD without one. It always passes for
+            // the player's own buildings.
             || (entity.category() == EntityCategory::Structure
                 && !status_entity_visible_plain(
                     current_house_id,
@@ -1891,6 +1898,9 @@ pub(crate) fn techno_extras_for_parent(
         let geometry = BuildingBarGeometry::new(rules, object);
         let (ax, ay) = geometry.edge;
         let num_pips = geometry.num_pips;
+        // RESIDUAL (dormant, no retail building): with no bar pips native
+        // 0x006F677D..0x006F682C still calls DrawPipScale (vt+0x450); VERA
+        // returns without the scale pips.
         if num_pips <= 0 {
             return strip;
         }
@@ -2338,6 +2348,10 @@ fn scale_pip_rows(
             return pips;
         };
         if total > slots {
+            // RESIDUAL (dormant, no retail type): an overfull row returns from
+            // DrawPipScale at 0x00709E48..0x00709E62, so the self-heal pip,
+            // DrawExtraInfo and group digit after 0x0070A4EC are skipped too;
+            // VERA drops only this row.
             pips.truncate(row_start);
             return pips;
         }
@@ -2383,6 +2397,9 @@ fn scale_pip_rows(
         //fill; depleted Ammo emits no empty outline. Draw flags600/noA/Z
         //are owned by the existing per-parent scale replay.
         //Nonzero PipWrap70A421..4E6 remains a separate dormant configuration.
+        // RESIDUAL (dormant, no retail building has PipScale=Ammo): 0x0070A3E3
+        // draws frame 13 from PIPS2 for buildings too; VERA's building row
+        // draws it from PIPS.
         if object.pip_wrap() != 0 {
             return pips;
         }

@@ -1402,6 +1402,9 @@ impl Simulation {
                         |viewer| entity.owner() == viewer,
                     );
                 if human {
+                    // RESIDUAL (dormant in stock play, which leaves FogOfWar off): `0x004ADFF0`
+                    // admits a human object by its discovered byte (Techno+0x41B); outside
+                    // network games the fog regrowth pass asks whether its sight is latched.
                     let discovered = only_viewer.map_or_else(
                         || entity.discovery.discovered_by_current_house(),
                         |viewer| {

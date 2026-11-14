@@ -5659,6 +5659,10 @@ impl Simulation {
                 };
                 return self.request_player_outcome(request, rules, frame_effects);
             }
+            // RESIDUAL (dormant, no retail map uses action 49 or 50): action 49, Zoom In (`0x006DEEB8`),
+            // sets Tactical's zoom factor from Rules, locks input (0x00A8ED9C), hides the cursor,
+            // cancels the drag (0x006938C0) and sleeps 1000 ms; action 50, Zoom Out (`0x006DEF35`),
+            // puts the factor back to 1.0 and restores the lock and cursor. VERA has no handler.
             _ => return false,
         }
         true

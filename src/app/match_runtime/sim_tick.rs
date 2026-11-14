@@ -3211,6 +3211,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
     {
         // Product-only pointer expiry retains the current type/foundation;
         // it is neither an abandon nor a permission to emit another PLACE.
+        // RESIDUAL: `0x004A91B0` reads only the foundation (+0x117C), not the
+        // product (+0x11A4), so natively the grid keeps following the cursor
+        // after the product expires; here it stays where it was.
         return;
     }
     // The owner's buildings bound the build area (`is_within_build_area`),

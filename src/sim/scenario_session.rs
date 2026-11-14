@@ -1685,6 +1685,9 @@ impl ScenarioSession {
             .expect("the admitted menu row has a complementary computer row");
         // External launch input enters before House/terrain constructors. The
         // existing session remains the sole live owner of per-match options.
+        // RESIDUAL: gamemd's BuildOffAlly (0x00A8B264) is a process global that only
+        // option setup writes (e.g. `0x0052D20D`, the skirmish dialog's `0x006AD803`),
+        // so a campaign inherits the last game's value; VERA keeps this session's.
         if let Some(options) = game_options {
             self.game_options = options.clone();
         } else {
