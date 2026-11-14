@@ -41,9 +41,10 @@
 //!     `world::sinking` retains Health 1/Alive/+3CD through its second Stun,
 //!     then the receiver unmarks the cell. Unit AI lowers the retained hull
 //!     and finally calls RecordKill/UnInit; cell removal is immediate in both.
-//!   - `DeathFrames=` (`+0xE20` > 0) defers the explosion to `UnitClass::AI`
-//!     (`0x00736381`) when the death frames end. No stock type sets it and
-//!     VERA does not parse it.
+//!   - Art `DeathFrames=` (`+0xE20` > 0) skips them all (`0x00737DDD`): the
+//!     receiver UnInits the unit, or a `Crashable=` one crashes and
+//!     `UnitClass::AI` calls `Death_Explosion` when its death count ends
+//!     (`0x00736381`, `world::death_frames`). No stock type sets it.
 //! - A `Crashable=` (`+0xD95`) unit's crash impact calls `Death_Explosion`
 //!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
 //!   receiver transaction: [`Simulation::unit_death_explosion`] builds
@@ -51,8 +52,6 @@
 //! - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` = `0x00746D60`)
 //!   calls it too, from `Simulation::per_cell_process`: the Battle Fortress,
 //!   stock's only `OmniCrusher=`, crushing a vehicle.
-//! - The `DeathFrames=` completion (`0x00736381`), dead on stock, is not
-//!   wired.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
 //!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
 //!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
@@ -466,8 +465,6 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = (registry, effects);
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -505,8 +502,9 @@ impl Simulation {
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
         // `RET`): no effect. Ares 3.0 1004BD90 (hook 0x738749) puts the
         // TiberiumExplosive blast there (`sim::ares_tiberium`).
-        #[cfg(feature = "ares")]
-        self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+        if rules.ares() {
+            self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
+        }
         if !object.destroy_anims.is_empty() {
             let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
@@ -568,14 +566,16 @@ impl Simulation {
         self.clear_building_damage_fire_slots(building_id, rules);
         // Ares 3.0 10015A90 (hook 0x0044161C): the destroyed building shows
         // its production to nobody (`sim::spy_infiltration`).
-        #[cfg(feature = "ares")]
-        if let Some(building) = self.substrate.entities.get_mut(building_id) {
+        if rules.ares()
+            && let Some(building) = self.substrate.entities.get_mut(building_id)
+        {
             building.ares.display_production_to.clear();
         }
         // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
         // sensor array ahead of the gap and RevealToAll steps.
-        #[cfg(feature = "ares")]
-        self.ares_sensor_array_dispatch(building_id, false, rules, None);
+        if rules.ares() {
+            self.ares_sensor_array_dispatch(building_id, false, rules, None);
+        }
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };
@@ -704,9 +704,10 @@ impl Simulation {
         // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
         // the building and House, spilling with TiberiumSpill
         // (`sim::ares_tiberium_storage`). The stock spill has no store to
-        // read in default builds.
-        #[cfg(feature = "ares")]
-        self.ares_destroy_refinery_storage(building_id, rules, effects);
+        // read without Ares.
+        if rules.ares() {
+            self.ares_destroy_refinery_storage(building_id, rules, effects);
+        }
 
         // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
         // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a

@@ -25,6 +25,10 @@ use crate::sim::world::ObjectSubstrate;
 /// -1), a set SuppressUnitLost (TechnoExt `+0x9F`, the callers'
 /// `UnitLost.Suppress` test) silences it, and the line plays whether or not
 /// the radar event is admitted.
+///
+/// `ares` is the game's `RuleSet::ares_form()`: the Ares body, whose event
+/// carries the line and the radar flag ([`AresUnitLost`]), runs when it is
+/// set, and the stock body otherwise.
 pub(crate) fn death_announcement_event(
     obj: &crate::rules::object_type::ObjectType,
     type_id: InternedId,
@@ -32,12 +36,12 @@ pub(crate) fn death_announcement_event(
     rx: u16,
     ry: u16,
     owner: InternedId,
+    ares: bool,
 ) -> Option<UnitLostEvent> {
     if category == EntityCategory::Structure || obj.spawned {
         return None;
     }
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         if obj.dont_score || obj.insignificant {
             return None;
         }
@@ -45,21 +49,22 @@ pub(crate) fn death_announcement_event(
             rx,
             ry,
             owner,
-            eva: obj
-                .unit_lost_eva()
-                .unwrap_or(Some("EVA_UnitLost"))?
-                .to_owned(),
             type_id,
-            radar_event: true,
+            ares: Some(AresUnitLost {
+                eva: obj
+                    .unit_lost_eva()
+                    .unwrap_or(Some("EVA_UnitLost"))?
+                    .to_owned(),
+                radar_event: true,
+            }),
         })
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         Some(UnitLostEvent {
             rx,
             ry,
             owner,
             type_id,
+            ares: None,
         })
     }
 }
@@ -69,7 +74,6 @@ pub(crate) fn death_announcement_event(
 /// type is `DontScore=` or `Insignificant=`, a building with an `EVA.Lost`
 /// (buildings default to none) speaks it, without a radar event. The callers
 /// apply SuppressUnitLost; the world applies the human-owner gate.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_building_lost_event(
     obj: &crate::rules::object_type::ObjectType,
     type_id: InternedId,
@@ -85,8 +89,10 @@ pub(crate) fn ares_building_lost_event(
         ry,
         owner,
         type_id,
-        eva: obj.unit_lost_eva().flatten()?.to_owned(),
-        radar_event: false,
+        ares: Some(AresUnitLost {
+            eva: obj.unit_lost_eva().flatten()?.to_owned(),
+            radar_event: false,
+        }),
     })
 }
 
@@ -94,11 +100,12 @@ impl crate::sim::world::Simulation {
     /// `BuildingClass::Death_Announcement @ 0x0044D760` (vt+0x3B8) of
     /// building `id`, from the Temporal erase (`0x0071AA3A`) and, under Ares,
     /// from ReceiveDamage after DestructionEffects (10014520, hook
-    /// 0x44266B). Ares' head (10013F10) first speaks the type's `EVA.Lost`
-    /// ([`ares_building_lost_event`]) unless SuppressUnitLost is set. Then,
-    /// with a Killer, a current player's building (`0x0050B6F0`) pushes the
-    /// Cell of its +4C coordinate (`0x00447E90`, no requester) onto the
-    /// Spacebar ring (`0x00660B80`); no EVA, no radar event.
+    /// 0x44266B). When Ares plays (`RuleSet::ares_form`), its head (10013F10)
+    /// first speaks the type's `EVA.Lost` ([`ares_building_lost_event`])
+    /// unless SuppressUnitLost is set. Then, with a Killer, a current
+    /// player's building (`0x0050B6F0`) pushes the Cell of its +4C coordinate
+    /// (`0x00447E90`, no requester) onto the Spacebar ring (`0x00660B80`); no
+    /// EVA, no radar event.
     pub(crate) fn building_death_announcement(
         &mut self,
         id: u64,
@@ -106,8 +113,8 @@ impl crate::sim::world::Simulation {
         unit_lost_suppressed: bool,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
-        #[cfg(feature = "ares")]
-        if !unit_lost_suppressed
+        if rules.ares_form()
+            && !unit_lost_suppressed
             && let Some(entity) = self.substrate.entities.get(id)
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = ares_building_lost_event(
@@ -120,8 +127,6 @@ impl crate::sim::world::Simulation {
         {
             self.dispatch_unit_lost_events(&[event]);
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = unit_lost_suppressed;
         if !has_killer {
             return;
         }
@@ -447,12 +452,13 @@ pub(super) enum ConcreteDeathSmudgePlan {
 /// type is silent, a Foot speaks its `EVA.Lost` (Initialize's `EVA_UnitLost`,
 /// or none) with a radar event, and a building only an `EVA.Lost` it sets,
 /// without one.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[test]
 fn ares_unit_lost_lines_follow_eva_lost_and_the_score_gate() {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::rules::sound_ini::EvaRegistry;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n1=E2\n2=E3\n[BuildingTypes]\n0=POWR\n1=PILL\n\
          [E1]\nStrength=1\n[E2]\nStrength=1\nDontScore=yes\n[E3]\nStrength=1\nEVA.Lost=none\n\
@@ -467,17 +473,28 @@ fn ares_unit_lost_lines_follow_eva_lost_and_the_score_gate() {
     let owner = InternedId::from_index(1);
     let type_id = InternedId::from_index(2);
     let object = |name: &str| rules.object(name).unwrap();
+    // The Ares part every event of an Ares game carries.
+    let line = |event: UnitLostEvent| {
+        let ares = event.ares.expect("an Ares event carries its line");
+        (ares.eva, ares.radar_event)
+    };
     let foot = |name: &str| {
-        death_announcement_event(object(name), type_id, EntityCategory::Infantry, 3, 4, owner)
-            .map(|event| (event.eva, event.radar_event))
+        death_announcement_event(
+            object(name),
+            type_id,
+            EntityCategory::Infantry,
+            3,
+            4,
+            owner,
+            rules.ares_form(),
+        )
+        .map(line)
     };
     assert_eq!(foot("E1"), Some(("EVA_UnitLost".to_owned(), true)));
     assert_eq!(foot("E2"), None);
     assert_eq!(foot("E3"), None);
-    let building = |name: &str| {
-        ares_building_lost_event(object(name), type_id, 3, 4, owner)
-            .map(|event| (event.eva, event.radar_event))
-    };
+    let building =
+        |name: &str| ares_building_lost_event(object(name), type_id, 3, 4, owner).map(line);
     assert_eq!(building("POWR"), None);
     assert_eq!(
         building("PILL"),

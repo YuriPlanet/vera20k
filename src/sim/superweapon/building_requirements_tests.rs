@@ -94,6 +94,7 @@ fn ready(sim: &mut Simulation, name: &str) -> InternedId {
 
 #[test]
 fn auxiliary_is_any_of_negative_is_any_veto_and_native_aux_remains_required() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("[BlackWidowSpecial]\nAuxBuilding=NATIVEAUX\n");
     for auxiliary in ["GASCEA", "GASCPF"] {
         let mut sim = world(&rules);
@@ -129,6 +130,7 @@ fn auxiliary_is_any_of_negative_is_any_veto_and_native_aux_remains_required() {
 
 #[test]
 fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     spawn(&mut sim, &rules, "GACLAB", OWNER, 4);
@@ -168,6 +170,7 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
 
 #[test]
 fn capture_moves_last_negative_and_grants_between_both_houses() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     for (owner, offset) in [(OWNER, 0), (OTHER, 10)] {
@@ -197,6 +200,7 @@ fn capture_moves_last_negative_and_grants_between_both_houses() {
 
 #[test]
 fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     spawn(&mut sim, &rules, "GACLAB", OWNER, 4);
@@ -217,6 +221,7 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
 
 #[test]
 fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     let owner = sim.interner.get(OWNER).unwrap();
@@ -251,6 +256,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
 
 #[test]
 fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     let owner = sim.interner.get(OWNER).unwrap();
@@ -274,6 +280,7 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
 
 #[test]
 fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     spawn(&mut sim, &rules, "GACLAB", OWNER, 4);
@@ -312,6 +319,7 @@ fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() 
 
 #[test]
 fn ordered_building_lists_find_existing_types_without_allocation() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = IniFile::empty();
     let source = |lists: &str| {
         IniFile::from_str(&format!(
@@ -393,6 +401,7 @@ fn ordered_building_lists_find_existing_types_without_allocation() {
 
 #[test]
 fn absent_tags_preserve_stock_and_resolved_extension_lists_participate_in_hash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut rules = rules_with("");
     let original = rules.simulation_config_hash();
     rules
@@ -441,6 +450,7 @@ fn absent_tags_preserve_stock_and_resolved_extension_lists_participate_in_hash()
 
 #[test]
 fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with(
         "[BlackWidowSpecial]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n[Payload]\nCellSpread=0.5\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     );

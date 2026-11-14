@@ -121,8 +121,6 @@ fn firepower_crate(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> bool {
     .is_empty()
 }
 
-// Runs again once the crates' stat recompute moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -241,8 +239,6 @@ fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
     }
 }
 
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -338,10 +334,7 @@ fn attached_firepower_parent_hit_scan_hp_and_restore_share_effective_owner() {
         sim.update_ares_attach_effects(firer, &rules);
     }
     assert_eq!(
-        sim.entities()
-            .get(firer)
-            .unwrap()
-            .firepower_multiplier(),
+        sim.entities().get(firer).unwrap().firepower_multiplier(),
         sim.entities()
             .get(firer)
             .unwrap()

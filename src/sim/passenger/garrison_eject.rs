@@ -381,6 +381,7 @@ pub(crate) fn kill_building_occupants(
     assaulter: Option<u64>,
     context: UninitContext<'_>,
 ) {
+    let ares = context.rules().ares_form();
     let Some(building) = sim.substrate.entities.get_mut(building_id) else {
         return;
     };
@@ -404,33 +405,34 @@ pub(crate) fn kill_building_occupants(
                     context.rules(),
                 );
             }
-            // Ares 3.0 100136C0 (hook 0x4586CA): evalRaidStatus; the vector
-            // still holds every occupant here, so it returns nothing yet.
-            #[cfg(feature = "ares")]
-            sim.ares_eval_raid_status(
-                building_id,
-                context.rules(),
-                context.registry(),
-                context.effects(),
-            );
-            // Ares 3.0 1005C510 (hook 0x4586D6) books the occupant as killed
-            // by the assaulter, as it is UnInit next.
-            #[cfg(feature = "ares")]
-            sim.record_the_kill(
-                id,
-                crate::sim::combat::KillSource::Techno(Some(assaulter)),
-                crate::sim::combat::KillCallback::Terminal,
-                context,
-            );
-            // The assaulter lives on: a callback that leaves its victim
-            // alive.
-            #[cfg(not(feature = "ares"))]
-            sim.record_the_kill(
-                assaulter,
-                crate::sim::combat::KillSource::Techno(Some(id)),
-                crate::sim::combat::KillCallback::OwnerChange,
-                context,
-            );
+            if ares {
+                // Ares 3.0 100136C0 (hook 0x4586CA): evalRaidStatus; the
+                // vector still holds every occupant here, so it returns
+                // nothing yet.
+                sim.ares_eval_raid_status(
+                    building_id,
+                    context.rules(),
+                    context.registry(),
+                    context.effects(),
+                );
+                // Ares 3.0 1005C510 (hook 0x4586D6) books the occupant as
+                // killed by the assaulter, as it is UnInit next.
+                sim.record_the_kill(
+                    id,
+                    crate::sim::combat::KillSource::Techno(Some(assaulter)),
+                    crate::sim::combat::KillCallback::Terminal,
+                    context,
+                );
+            } else {
+                // The assaulter lives on: a callback that leaves its victim
+                // alive.
+                sim.record_the_kill(
+                    assaulter,
+                    crate::sim::combat::KillSource::Techno(Some(id)),
+                    crate::sim::combat::KillCallback::OwnerChange,
+                    context,
+                );
+            }
         }
         uninit_garrison_passenger_without_exit(sim, id, context);
     }
@@ -438,13 +440,14 @@ pub(crate) fn kill_building_occupants(
         building.passenger_role.occupants_mut().clear();
     }
     // Ares 3.0 100136C0 (hook 0x458729): an emptied raided building goes back.
-    #[cfg(feature = "ares")]
-    sim.ares_eval_raid_status(
-        building_id,
-        context.rules(),
-        context.registry(),
-        context.effects(),
-    );
+    if ares {
+        sim.ares_eval_raid_status(
+            building_id,
+            context.rules(),
+            context.registry(),
+            context.effects(),
+        );
+    }
     sim.refresh_spatial_threat(building_id, context.rules(), context.terrain());
 }
 
@@ -499,8 +502,9 @@ pub(crate) fn sell_building_occupants(
         building.passenger_role.occupants_mut().clear();
     }
     // Ares 3.0 100136C0 (hook 0x4581CD): an emptied raided building goes back.
-    #[cfg(feature = "ares")]
-    sim.ares_eval_raid_status(building_id, rules, registry, frame_effects);
+    if rules.ares_form() {
+        sim.ares_eval_raid_status(building_id, rules, registry, frame_effects);
+    }
 
     //SellBuilding4581D6 refreshes after its complete occupant ejection.
     sim.refresh_spatial_threat(building_id, rules, None);

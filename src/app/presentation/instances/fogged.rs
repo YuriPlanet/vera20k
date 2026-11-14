@@ -49,12 +49,80 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         building_zshape: presentation.building_zshape.is_some(),
         detail_level: presentation.in_game_options.detail_level as i32,
     };
-    let snapshots = fogged_draw_order(sim.fog().fogged_objects().values(), viewer);
+    // A saved picture far off the view puts no pixel on it: its cell passes
+    // it by before its pieces are built and uploaded. DrawAll4D1890's order
+    // among the rest stands.
+    let zoom = state.match_state.input.zoom_level;
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let viewport = [
+        state.render_width() as f32 / zoom,
+        state.render_height() as f32 / zoom,
+    ];
+    let window = frozen_building_window(sim.resolved_terrain(), camera, viewport);
+    let near_view = |draw: &FrozenBuilding| {
+        let near = frozen_building_in_window(draw, window);
+        debug_assert!(
+            near || frozen_building_pieces(&input, draw).iter().all(|piece| {
+                let [x, y] = piece.instance.position;
+                let [width, height] = piece.instance.size;
+                x >= camera[0] + viewport[0]
+                    || y >= camera[1] + viewport[1]
+                    || x + width <= camera[0]
+                    || y + height <= camera[1]
+            }),
+            "the frozen building window left out a picture in view"
+        );
+        near
+    };
+    let snapshots = fogged_draw_order(
+        sim.fog()
+            .fogged_objects()
+            .values()
+            .filter(|record| record.drawing.as_ref().is_none_or(&near_view)),
+        viewer,
+    );
     lower_fogged_object_pieces(
         snapshots
             .into_iter()
             .map(|(id, draw)| (id, frozen_building_pieces(&input, draw))),
     )
+}
+
+/// The cells whose saved building picture can reach `camera`/`viewport`: the
+/// view widened by [`super::shp::BUILDING_SLOT_WINDOW_SLACK`].
+fn frozen_building_window(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> crate::render::cell_window::CellWindow {
+    let slack = super::shp::BUILDING_SLOT_WINDOW_SLACK;
+    crate::render::cell_window::CellWindow::covering(
+        crate::render::cell_window::AnchorBounds {
+            left: camera[0] - slack,
+            top: camera[1] - slack,
+            right: camera[0] + viewport[0] + slack,
+            bottom: camera[1] + viewport[1] + slack,
+        },
+        terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
+    )
+}
+
+/// Whether `draw`'s cell lies in `window`; a location off the cell grid
+/// stays in, so only a known far cell is passed by.
+fn frozen_building_in_window(
+    draw: &FrozenBuilding,
+    window: crate::render::cell_window::CellWindow,
+) -> bool {
+    match (
+        u16::try_from(draw.location.x >> 8),
+        u16::try_from(draw.location.y >> 8),
+    ) {
+        (Ok(rx), Ok(ry)) => window.contains(rx, ry),
+        _ => true,
+    }
 }
 
 /// FoggedObjectClass::DrawAll @ 0x004D1890 gates each saved picture on its
@@ -471,5 +539,32 @@ fn piece(
         target: ObjectTexture::ShpPage(entry.page as usize),
         render_z,
         instance,
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+    use crate::sim::components::DriveCoord;
+
+    /// A saved picture is passed by only on a known cell far off the view:
+    /// one in the view stays, and so does a location off the cell grid.
+    #[test]
+    fn a_frozen_building_far_off_the_view_is_passed_by() {
+        let frozen = |rx, ry| FrozenBuilding {
+            owner: Default::default(),
+            location: DriveCoord::cell(rx, ry, 0),
+            level: 0,
+            visible: true,
+            records: Vec::new(),
+        };
+        let window = frozen_building_window(None, [0.0, 0.0], [600.0, 400.0]);
+        // Anchor (-30, 315): in the view.
+        assert!(frozen_building_in_window(&frozen(10, 10), window));
+        // Anchor x = -2,430: far left of the view and its slack.
+        assert!(!frozen_building_in_window(&frozen(10, 90), window));
+        let mut off_grid = frozen(10, 90);
+        off_grid.location.x = -300;
+        assert!(frozen_building_in_window(&off_grid, window));
     }
 }

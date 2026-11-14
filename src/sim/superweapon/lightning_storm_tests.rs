@@ -713,12 +713,12 @@ fn storm_process_matches_native_rows() {
     let rows = rows(&oracle, "storm_process");
     assert_eq!(rows.len(), 32);
     for row in rows {
+        let mut rules = fixture_rules();
         // Installed Ares's Process (hook 53A6CF, 10037330) strikes a
         // manifesting cloud from half its frames on, front to back: a row
         // with a cloud at exactly half or two striking clouds is the stock
         // body's only ([`ares_storm_lists_strike_from_half_front_to_back`]).
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             let anims = row["anims_before"].as_array().unwrap();
             let past_half: Vec<i32> = row["manifesting"]
                 .as_array()
@@ -738,7 +738,6 @@ fn storm_process_matches_native_rows() {
                 continue;
             }
         }
-        let mut rules = fixture_rules();
         let keys = &row["rules"];
         let general = &mut rules.general;
         general.lightning_damage = int(&keys["damage"]);
@@ -1106,8 +1105,9 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
     // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the area damage's
     // spread walk rolls RandomRanged(0, 99) for the ChainReaction ore the
     // crater left; with Power 0 a reaction deals nothing.
-    #[cfg(feature = "ares")]
-    let _ = expected.next_range_i32_inclusive(0, 99);
+    if rules.ares() {
+        let _ = expected.next_range_i32_inclusive(0, 99);
+    }
     assert_eq!(sim.scenario_rng.state(), expected.state());
 }
 
@@ -1442,7 +1442,7 @@ fn retail_storm_rules() {
     );
     // Retail registers no WCLBOLT2, which Ares's Find-only read (Buf_General
     // 1005BB00, hook 0x66D55E) therefore drops.
-    let bolts: &[&str] = if cfg!(feature = "ares") {
+    let bolts: &[&str] = if rules.ares() {
         &["WCLBOLT1", "WCLBOLT3"]
     } else {
         &["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"]
@@ -1483,16 +1483,18 @@ fn retail_storm_strikes_through_production_frames() {
 
     // Installed Ares's countdown (10037330) prints Message.Launch and its
     // Start (10036B00) Message.Activate instead of the stock lines.
-    #[cfg(not(feature = "ares"))]
-    let (warned, began): (fn(&SimSoundEvent) -> bool, fn(&SimSoundEvent) -> bool) = (
-        |event| matches!(event, SimSoundEvent::LightningStormApproaching),
-        began,
-    );
-    #[cfg(feature = "ares")]
-    let (warned, began): (fn(&SimSoundEvent) -> bool, fn(&SimSoundEvent) -> bool) = (
-        |event| matches!(event, SimSoundEvent::AresLightningStormApproaching { .. }),
-        |event| matches!(event, SimSoundEvent::AresSuperWeaponActivated { .. }),
-    );
+    let (warned, began): (fn(&SimSoundEvent) -> bool, fn(&SimSoundEvent) -> bool) = if rules.ares()
+    {
+        (
+            |event| matches!(event, SimSoundEvent::AresLightningStormApproaching { .. }),
+            |event| matches!(event, SimSoundEvent::AresSuperWeaponActivated { .. }),
+        )
+    } else {
+        (
+            |event| matches!(event, SimSoundEvent::LightningStormApproaching),
+            began,
+        )
+    };
     click(&mut sim, &rules, americans, STORM, target);
     assert!(!sim.super_weapons[&americans][&sw_type].is_ready);
     assert!(sim.sound_events.iter().any(launched));
@@ -1563,7 +1565,6 @@ fn retail_storm_strikes_through_production_frames() {
 /// [`fixture_rules_with`] holding an Ares `Storm` (`Type=LightningStorm`,
 /// `SW.Deferment=0`) with `keys`, a `ROD` lightning rod (Strength 400,
 /// `LightningRod.Modifier=0.5`) and the fixture anims registered.
-#[cfg(feature = "ares")]
 fn ares_storm_rules(keys: &str) -> RuleSet {
     let anims: String = FIXTURE_ANIMS
         .iter()
@@ -1580,14 +1581,12 @@ fn ares_storm_rules(keys: &str) -> RuleSet {
 }
 
 /// The fixture world with two Houses that are not allies, H0 the player.
-#[cfg(feature = "ares")]
 fn ares_storm_world(rules: &RuleSet) -> (Simulation, Vec<InternedId>) {
     let houses = [serde_json::json!([0, false]), serde_json::json!([0, false])];
     fixture_world(rules, 7, 1000, (60, 60), &[], &houses, Some(0))
 }
 
 /// Launches `H0`'s charged `Storm` at `cell` through the Fire_SW transaction.
-#[cfg(feature = "ares")]
 fn ares_fire_storm(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1611,9 +1610,9 @@ fn ares_fire_storm(
 /// name is skipped, `<default>` returns to the `[General]` list), the
 /// handler's Flags and messages, and BuildingTypeExt `LightningRod.Modifier`
 /// beside TechnoType `LightningRod=`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_storm_reads_its_handler_keys_over_layers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::superweapon_targeting::HouseMask;
     use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
@@ -1715,9 +1714,9 @@ fn ares_storm_reads_its_handler_keys_over_layers() {
 /// (10037330) gathers a cloud every `Lightning.HitDelay` frames; AbortFire
 /// (10072AB0) refuses a second launch; the storm's end clears
 /// CurrentLightningStorm and its light.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_storm_starts_with_its_type_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = ares_storm_rules(
         "Lightning.Duration=30\nLightning.RadarOutage=7\nLightning.RadarOutageAffects=all\n\
          Lightning.HitDelay=4\nLightning.ScatterDelay=0\nLight.Ambient=12\nLight.Red=7\n",
@@ -1801,9 +1800,9 @@ fn ares_storm_starts_with_its_type_keys() {
 /// explosion SelectAnim picks for the storm's warhead is
 /// `Lightning.BoltExplosion` (hook 48A59A, 100377E0), not
 /// `WeatherConBoltExplosion=`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_storm_strike_scales_a_lightning_rods_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = ares_storm_rules("SW.Damage=200\nLightning.BoltExplosion=WCCLOUD2\n");
     let (mut sim, houses) = ares_storm_world(&rules);
     let at = (30, 30);
@@ -1856,9 +1855,9 @@ fn ares_storm_strike_scales_a_lightning_rods_damage() {
 /// current Ares Super: two manifesting clouds at exactly half their frames
 /// both strike, the first listed first (the stock body waits a frame and
 /// strikes the last listed first).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_storm_lists_strike_from_half_front_to_back() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = fixture_rules();
     let houses = [serde_json::json!([0, false])];
     let (mut sim, ids) = fixture_world(&rules, 7, 1003, (60, 60), &[], &houses, Some(0));

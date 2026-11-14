@@ -183,8 +183,9 @@ fn target_kind(name: &str) -> FireTargetKind {
     }
 }
 
-/// The plain fields of one resolved row.
-fn facts(input: &Value) -> FireFacts {
+/// The plain fields of one resolved row, for a game where Ares plays or does
+/// not ([`FireFacts::ares`]).
+fn facts(input: &Value, ares: bool) -> FireFacts {
     let class = class(input["class"].as_str().unwrap());
     let frame = int(&input["frame"]);
     let f = &input["firer"];
@@ -209,7 +210,7 @@ fn facts(input: &Value) -> FireFacts {
         }
     });
     FireFacts {
-        ares: crate::rules::ARES_BUILD,
+        ares,
         class,
         frame,
         weapon_index: int(&input["weapon_index"]),
@@ -233,11 +234,8 @@ fn facts(input: &Value) -> FireFacts {
             on_bridge: flag(&f["on_bridge"]),
             z: int(&f["z"]),
             // The native rows run without Ares: no DisableWeaponTimer.
-            #[cfg(feature = "ares")]
             weapons_disabled: false,
-            #[cfg(feature = "ares")]
             transporter_gunner_open_topped: false,
-            #[cfg(feature = "ares")]
             transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),
             death_frame_counter: int(&f["death_frame_counter"]),
@@ -260,7 +258,6 @@ fn facts(input: &Value) -> FireFacts {
             },
             // The native rows run without Ares: no UnitClass_CanFire
             // (1004BC80) weapon test.
-            #[cfg(feature = "ares")]
             temporal_gunner_weapon: false,
             owner_is_human: flag(&f["owner_is_human"]),
             // Foot `0x004DE770` (SETNE); a Building's vt+0x380 is false.
@@ -292,7 +289,6 @@ fn facts(input: &Value) -> FireFacts {
             // The native corpus supplies the host flag and installed-turret
             // input separately; the production fact now carries the query result.
             building_has_turret: flag(&ft["turret"]) || flag(&f["turret_upgrade"]),
-            #[cfg(feature = "ares")]
             prism_breaks_support: false,
         },
         firer_type: FirerTypeFacts {
@@ -324,7 +320,6 @@ fn facts(input: &Value) -> FireFacts {
         target: TargetFacts {
             kind: target_kind(t["kind"].as_str().unwrap()),
             bomb: flag(&t["bomb"]),
-            #[cfg(feature = "ares")]
             bomb_fixed: false,
             in_limbo: flag(&t["in_limbo"]),
             on_bridge: flag(&t["on_bridge"]),
@@ -494,8 +489,8 @@ impl FireQuery for RowQuery<'_> {
 }
 
 /// One resolved row through the port: its code and query log.
-fn evaluate(input: &Value) -> (i32, Vec<&'static str>) {
-    let facts = facts(input);
+fn evaluate(input: &Value, ares: bool) -> (i32, Vec<&'static str>) {
+    let facts = facts(input, ares);
     let mut query = RowQuery {
         input,
         weapons: input["weapons"]
@@ -530,22 +525,14 @@ fn original_fire_error_rows() {
     let rows = corpus["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 1191);
     let mut failures = Vec::new();
+    // The rows are the original without Ares, so every row runs as a game
+    // where Ares does not play. Ares replaces U6 (UnitClass_CanFire_Heal
+    // 1004E540, hook 0x741113), U10 (UnitClass_CanFire 1004BC80, hook
+    // 0x741206) and I2 (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
+    // `ares_heal_and_temporal_fire_errors` runs those arms as an Ares game.
     for row in rows {
-        // Ares replaces U6 (UnitClass_CanFire_Heal 1004E540, hook 0x741113),
-        // U10 (UnitClass_CanFire 1004BC80, hook 0x741206) and I2
-        // (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
-        // `ares_heal_and_temporal_fire_errors` holds their Ares rows.
-        if cfg!(feature = "ares")
-            && row["input"]["name"].as_str().is_some_and(|name| {
-                ["U6.", "U10.", "I2."]
-                    .iter()
-                    .any(|arm| name.starts_with(arm))
-            })
-        {
-            continue;
-        }
         let input = resolve(&corpus["defaults"], &row["input"]);
-        let (code, calls) = evaluate(&input);
+        let (code, calls) = evaluate(&input, false);
         let native_calls: Vec<&str> = row["calls"]
             .as_array()
             .unwrap()
@@ -604,7 +591,7 @@ fn original_signed_ammo_check() {
         } else {
             int(&twin["code"])
         };
-        assert_eq!(evaluate(&input).0, expected, "{count}");
+        assert_eq!(evaluate(&input, false).0, expected, "{count}");
     }
 }
 
@@ -644,7 +631,6 @@ fn retail_fire_error_flags() {
 /// damaged Techno (1004E270, hook 0x51C913), and a moving Unit holding a
 /// TemporalClass fires unless its selected gunner weapon is Temporal
 /// (1004BC80, hook 0x741206).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_heal_and_temporal_fire_errors() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
@@ -660,7 +646,7 @@ fn ares_heal_and_temporal_fire_errors() {
             .unwrap_or_else(|| panic!("{name}"));
         resolve(&corpus["defaults"], &row["input"])
     };
-    let code = |name: &str| evaluate(&input(name)).0;
+    let code = |name: &str| evaluate(&input(name), true).0;
     // The wounded-infantry twin with a vehicle target.
     let mut wounded_vehicle = input("I2.twin.medic_vs_wounded_infantry");
     wounded_vehicle["target"]["kind"] = Value::from("unit");
@@ -669,7 +655,7 @@ fn ares_heal_and_temporal_fire_errors() {
     assert_ne!(code("U6.healer_vs_non_vehicle"), illegal);
     assert_eq!(code("U6.healer_vs_full_health_vehicle"), illegal);
     assert_eq!(code("U6.healer_vs_cell"), illegal);
-    assert_ne!(evaluate(&wounded_vehicle).0, illegal);
+    assert_ne!(evaluate(&wounded_vehicle, true).0, illegal);
     assert_eq!(
         code("I2.medic_vs_vehicle"),
         illegal,

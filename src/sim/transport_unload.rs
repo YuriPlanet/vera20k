@@ -527,8 +527,7 @@ fn eject_head_passenger(
             // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
             // Deactivated passenger's locomotor is powered off, and an
             // unpowered one only reaches its placement cell.
-            #[cfg(feature = "ares")]
-            let dest = {
+            let dest = if rules.ares_form() {
                 if sim
                     .substrate
                     .entities
@@ -554,6 +553,8 @@ fn eject_head_passenger(
                 } else {
                     dest
                 }
+            } else {
+                dest
             };
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,
@@ -1313,9 +1314,10 @@ pub(crate) fn mission_unload(
                     // Ares 3.0 AircraftClass_Mi_Unload_Blocked (10048B30,
                     // hook 0x415544) clears Transporter (`+0x11C`) too. Its
                     // refusal arm re-adds the passenger and enters idle mode,
-                    // as VERA's escape below does in every build.
-                    #[cfg(feature = "ares")]
-                    pax.passenger_role.clear_transporter();
+                    // as VERA's escape below does in every game.
+                    if rules.ares_form() {
+                        pax.passenger_role.clear_transporter();
+                    }
                 }
                 // `0x0041556A..0x00415587`: a passenger that kept a team joins
                 // the aircraft's (`TeamClass::Add_Member(passenger, 0)`).

@@ -782,6 +782,15 @@ pub struct SuperWeaponType {
 }
 
 impl SuperWeaponType {
+    /// Whether this type's `Action=` (`+0xBC`) is the ActionType named
+    /// `action`. An absent `Action=` keeps the constructor's action 0, `None`.
+    pub fn has_action(&self, action: &str) -> bool {
+        self.action
+            .as_deref()
+            .unwrap_or("None")
+            .eq_ignore_ascii_case(action)
+    }
+
     pub fn ares_messages(&self) -> &AresSuperWeaponMessages {
         &self.presentation.messages
     }
@@ -793,7 +802,6 @@ impl SuperWeaponType {
 
     /// Only implemented extension handlers own the Ares announcement path.
     /// Stock redirects keep their existing readers and dispatch boundaries.
-    #[cfg(feature = "ares")]
     pub fn ares_eva(&self) -> Option<&AresSuperWeaponEva> {
         self.kind
             .has_ares_handler()

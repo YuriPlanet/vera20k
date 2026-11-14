@@ -287,6 +287,7 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             false,
+            rules.ares_form(),
         ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
@@ -370,6 +371,7 @@ impl Simulation {
             &self.resolved_terrain,
             id,
             true,
+            rules.ares_form(),
         ) {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
@@ -400,8 +402,8 @@ impl Simulation {
     /// The raw (Cell, plane) pairs whose vehicle bit Mark(UP) clears for the
     /// Unit `id` ([`Self::foot_mark_remove`]), read without clearing them:
     /// once Mark(UP) admits it and [`Self::foot_pick_up`] finds its Cell,
-    /// [`Self::foot_mark_raw`] clears the plane its Location picks, and in
-    /// an Ares build the plane its last mark chose
+    /// [`Self::foot_mark_raw`] clears the plane its Location picks, and the
+    /// plane its last mark chose where Ares recorded one
     /// ([`Self::track_raw_mark_at`]).
     pub(crate) fn unit_mark_up_raw_cleared(&self, id: u64) -> Vec<((u16, u16), MovementLayer)> {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -421,9 +423,8 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             self.path_grid.as_deref(),
         );
-        #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
         let mut cleared = vec![(at, layer)];
-        #[cfg(feature = "ares")]
+        // Only Ares' raw mark records a plane; `None` leaves the stock list.
         if let Some(deck) = entity.ares_alt_occupation() {
             let last = if deck {
                 MovementLayer::Bridge
@@ -446,6 +447,7 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         put: bool,
+        ares: bool,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
@@ -454,7 +456,7 @@ impl Simulation {
             return false;
         }
         let coord = ground_pose::position_world_coord(&entity.position);
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put)
+        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, put, ares)
     }
 
     /// The object's own raw occupation receiver on `coord`, vt+0xF0 (PUT) or
@@ -463,6 +465,8 @@ impl Simulation {
     /// `0x005F60A0`/`0x005F6120` (0x40). Mark reaches it through
     /// [`Self::foot_mark_raw`]; a direct call (the Jumpjet grounded reset,
     /// `0x0054D42F`) has no Foot enable gate. Whether a receiver ran.
+    /// `ares` is the game's `RuleSet::ares_form`, for the Unit receiver
+    /// ([`Self::track_raw_mark_at`]).
     pub(crate) fn object_raw_receiver_at(
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
@@ -470,13 +474,22 @@ impl Simulation {
         id: u64,
         coord: DriveCoord,
         put: bool,
+        ares: bool,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
         };
         match entity.category() {
             EntityCategory::Unit => {
-                Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
+                Self::track_raw_mark_at(
+                    substrate,
+                    path_grid,
+                    resolved_terrain,
+                    id,
+                    coord,
+                    put,
+                    ares,
+                );
             }
             EntityCategory::Infantry => {
                 let owner = entity.owner();

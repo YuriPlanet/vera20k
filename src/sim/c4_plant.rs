@@ -203,7 +203,6 @@ impl C4Detonation {
     /// Ares `SpyEffect.SabotageDelay` (`BuildingExt::ExtData::InfiltratedBy
     /// @ 10012000`, hook `0x004571E0`): the latch (`+0x6DF`) is set and the
     /// fuse starts at `frame`; C4AppliedBy is left as it was.
-    #[cfg(feature = "ares")]
     pub(crate) fn arm_sabotage(&mut self, frame: i32, duration_frames: i32) {
         self.restart_fuse(frame, duration_frames);
     }
@@ -300,12 +299,14 @@ impl Simulation {
         };
         // Ares 3.0 InfantryClass_UpdatePosition_C4Ability 10025730 (hook
         // 0x0051A4D2) also admits a rank holding the C4 ability.
-        #[cfg(feature = "ares")]
+        let ares = rules.ares_form();
         let c4 = |object: &crate::rules::object_type::ObjectType| {
-            crate::sim::combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), object)
+            if ares {
+                crate::sim::combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), object)
+            } else {
+                object.c4
+            }
         };
-        #[cfg(not(feature = "ares"))]
-        let c4 = |object: &crate::rules::object_type::ObjectType| object.c4;
         if infantry.mission.effective().known() != Some(MissionType::Sabotage)
             || !self.object_type(infantry.type_ref(), rules).is_some_and(c4)
         {

@@ -204,10 +204,16 @@ fn center_member(id: u64, row: &Value) -> GameEntity {
     entity
 }
 
+/// Whether these kernels are compared in their Ares form: the thread's
+/// fixture mode, as a fixture's rules built here would answer.
+fn ares_plays() -> bool {
+    crate::rules::ares_switch::ares_way()
+}
+
 /// Ares AbstractClass_Distance2DSquared_1/2 (1005C1A0, hook 0x5F6515;
 /// 1005C240, hook 0x5F6560) clamp a squared distance these original rows wrap.
 fn ares_clamps(points: impl IntoIterator<Item = [i32; 2]>, to: [i32; 2]) -> bool {
-    cfg!(feature = "ares")
+    ares_plays()
         && points.into_iter().any(|point| {
             let dx = i64::from(point[0].wrapping_sub(to[0]));
             let dy = i64::from(point[1].wrapping_sub(to[1]));
@@ -236,7 +242,7 @@ fn calc_center_matches_the_original() {
             .collect();
         let focus = (!row["focus"].is_null()).then(|| xy(&row["focus"]));
         let cell_at = events(row, "cell_at");
-        match center_of(&samples, focus, crate::rules::ARES_BUILD) {
+        match center_of(&samples, focus, ares_plays()) {
             None => {
                 assert!(cell_at.is_empty(), "center row {number}: no mean");
                 assert!(row["center"].is_null() && row["closest"].is_null());
@@ -316,7 +322,7 @@ fn recruit_matches_the_original() {
                 asked.push(id);
                 flag(&row["candidates"][id as usize]["can_add"])
             },
-            crate::rules::ARES_BUILD,
+            ares_plays(),
         );
         assert_eq!(asked, can_adds, "recruit row {number}: Can_Add calls");
         assert_eq!(winner, added, "recruit row {number}: winner");

@@ -39,7 +39,7 @@ pub mod spawn;
 pub mod system_ai;
 pub mod wind;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_gas_tests;
 #[cfg(test)]
 mod fire_native_tests;

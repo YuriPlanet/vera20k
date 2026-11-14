@@ -65,6 +65,7 @@ simulation, session and network command owners.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
 - [Lobby player colours](skirmish-colors.md): the thirty colours a lobby lists, and `[SkirmishColors]` for a mod's own.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
+- [Computer players pick the nearest enemy](ai-nearest-enemy.md): the `[General] AINearestEnemy=` rules key that stops every computer player in a free-for-all from choosing the human as its enemy.
 - [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.

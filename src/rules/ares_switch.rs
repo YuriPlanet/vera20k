@@ -9,10 +9,10 @@
 //! reads in that section, or when the installed game or the mod ships
 //! `ares.mix` (Ares mounts it from `Load_Bootstrap_AresMIX`, hook
 //! `0x0053029E`). Retail data holds neither, so a retail game plays as
-//! gamemd. Every build carries the decision, but until the last Ares code
-//! leaves the `ares` build feature only a build with that feature or a test
-//! build lets it turn on ([`LIVE`]): the release build keeps Ares off, so a
-//! player never gets half of Ares.
+//! gamemd. Every build lets the switch turn on, the release build too. Until
+//! the last Ares code leaves the `ares` build feature, a build without that
+//! feature plays such a game with the Ares code already on this switch only:
+//! what the feature still holds (listed below) is missing there.
 //!
 //! Which keys count comes from the readers, not from a list. Every reader
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
@@ -23,8 +23,11 @@
 //! or `Verses`. Reads through Ares' parsers that are not Ares keys open
 //! [`not_ares_reads`]: an Ares reader that replaces a stock read or reads a
 //! key retail data already holds, and the Phobos readers, which parse with
-//! Ares' `Valueable<T>` readers, so a Phobos-only mod keeps Ares off. The
-//! store's own merges and walks are not reader lookups.
+//! Ares' `Valueable<T>` readers, so a Phobos-only mod keeps Ares off. That
+//! holds in a build with the `phobos` feature: without those readers the
+//! three keys both extensions read (`LaserThickness`, `Beam.IsHouseColor`,
+//! `Passengers.BySize`) count as Ares'. The store's own merges and walks are
+//! not reader lookups.
 //!
 //! One game, one answer. The processing passes keep their Ares-only keys
 //! with the processed rules ([`AresInputs`], saved with them); the RuleSet
@@ -58,20 +61,25 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Whether this build lets the switch turn on: a build with the `ares`
-/// feature, or a test build. Until every Ares reader and path has left that
-/// feature, a build without it (the release build) records nothing and keeps
-/// Ares off, so a player never gets half of Ares, while tests run the code
-/// already moved with the switch on in every build. The PR that deletes the
-/// feature deletes this constant.
-pub(crate) const LIVE: bool = cfg!(any(feature = "ares", test, feature = "test-support"));
-
-/// The Rules-reading mode a scope that asks for `on` gets: the Ares way only
-/// where the build lets Ares turn on ([`LIVE`]), and always in a build with
-/// the `ares` feature, which keeps reading every game as Ares.dll does, as it
-/// did before the switch. The PR that deletes the feature makes this `on`.
+/// The Rules-reading mode a scope that asks for `on` gets: `on`, and always
+/// the Ares way in a build with the `ares` feature, which keeps reading every
+/// game as Ares.dll does, as it did before the switch. The PR that deletes the
+/// feature makes this `on`.
 pub(crate) const fn reading_mode(on: bool) -> bool {
-    cfg!(feature = "ares") || (on && LIVE)
+    cfg!(feature = "ares") || on
+}
+
+/// Whether this build ever reads Rules the way a saved registry says its
+/// Rules were read. A build with the `ares` feature reads every game the Ares
+/// way ([`reading_mode`]). A build without it never mounts `ares.mix`
+/// (`AssetManager::mount_base_mix_files`), so outside a test fixture it reads
+/// only the stock way. The PR that moves the mount to the switch drops this.
+pub(crate) const fn build_reads(ares_way: bool) -> bool {
+    if cfg!(feature = "ares") {
+        ares_way
+    } else {
+        !ares_way || cfg!(any(test, feature = "test-support"))
+    }
 }
 
 /// Whether the Rules reads on this thread follow Ares.dll: its list
@@ -182,9 +190,6 @@ thread_local! {
 /// A reader found `key` in `section`. Called by the INI store's reader
 /// lookups only.
 pub(crate) fn note_found(section: &str, key: &str) {
-    if !LIVE {
-        return;
-    }
     RECORDER.with_borrow_mut(|recorder| {
         let ares = recorder.ares_depth > 0 && recorder.not_ares_depth == 0;
         if let Some(reads) = recorder.active.as_mut() {

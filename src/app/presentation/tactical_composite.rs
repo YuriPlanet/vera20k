@@ -7,7 +7,8 @@
 //! chrono screen holds (`0x0053BAE0`), `0x004F4480` skips the tactical draw.
 //! So the effects that step inside the composite (laser jitter, electric bolts,
 //! airstrike flare shades, line trails, radiation beams, the superweapon range
-//! pulse and Ares flying credits) and the lines that read `timeGetTime` while
+//! pulse, Ares flying credits and the radar housing, `RadarClass::Draw @
+//! 0x00653100` through GScreenClass vt+0x40) and the lines that read `timeGetTime` while
 //! drawing (mind-control links, psychic lines and rings, the airstrike wobble,
 //! planning dashes) move once per tick, however fast the display refreshes.
 //!

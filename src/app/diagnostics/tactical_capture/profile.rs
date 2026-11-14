@@ -824,12 +824,12 @@ mod tests {
                 ),
                 (632.0, 158.0, 227.0, 527.0, 6)
             );
-            // Soviet and Yuri take the NOD position table, so the aperture
-            // sits at the native NOD delta from the GDI one: +3, +1.
+            // The NOD position table moves the top buttons, not the radar
+            // aperture (MapAreaX 16 in both Init_For_House arms).
             let aperture = radar_minimap_rect_with_spec(800.0, spec);
             assert_eq!(
                 (aperture.x, aperture.y, aperture.w, aperture.h),
-                (651.0, 50.0, 140.0, 108.0)
+                (648.0, 49.0, 140.0, 108.0)
             );
             profile.capture.app_ui_scale = 0.5;
             assert!(

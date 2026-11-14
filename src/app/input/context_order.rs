@@ -447,14 +447,13 @@ pub(crate) fn attack_action(
     // (0x00700D10, 74041B..74042E) admits it, and is 0 otherwise. That test
     // refuses a Unit in a tube (Foot +0x684 >= 0) whose vt+0x4E4
     // (0x00736D50) answers yes, and a Unit whose vt+0x37C (0x00746C90)
-    // answers yes: one under EMP (+0x504 > 0) or one counting down art
-    // `DeathFrames=` (+0x6D8 != -1, set at 0x00737DBF only when UnitType
-    // +0xE20 > 0). Not ported. EMP is UNREACHABLE: EMPulseClass::Apply
-    // (0x004C5718) is reached only from the unreferenced constructor
-    // 0x004C52B0. Neither `DeathFrames=` nor `DeployToFire=` appears in
-    // retail ARTMD/RULESMD, and for a human's Unit CanDeployNow needs
-    // DeployToFire= (its TickTank branch is computer-only), so both other
-    // arms are DORMANT.
+    // answers yes (`GameEntity::is_under_emp`): one under EMP or one counting
+    // down art `DeathFrames=`. Not ported. Stock EMP is UNREACHABLE:
+    // EMPulseClass::Apply (0x004C5718) is reached only from the unreferenced
+    // constructor 0x004C52B0. A death-counting Unit has Health 0 and cannot be
+    // selected (0x006F32D3). `DeployToFire=` is not in retail RULESMD, and
+    // for a human's Unit CanDeployNow needs it (its TickTank branch is
+    // computer-only), so that arm is DORMANT.
     if action == AttackAction::Attack
         && matches!(
             actor.category(),
@@ -844,7 +843,6 @@ pub(crate) fn resolved_unit_in_range(
                 overlay_grid: sim.overlay_grid(),
                 overlay_registry,
                 alliances: Some(sim.house_alliances()),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
             selection_target,
@@ -1769,14 +1767,14 @@ pub(super) fn guard_area_admitted(
 /// whether `actor_id` answers GuardArea (0x1A) on `cell`, ahead of the move
 /// rungs, as `viewer` sees it. The class wrappers then keep it, except:
 /// - over a shrouded Cell centre a Foot's wrapper turns it into Move or
-///   NoMove (`0x004DDE64..0x004DDEBE`, the bridge-raised test of
-///   [`Simulation::clicked_cell_is_shrouded`]), as the move rungs answer there;
+///   NoMove ([`Simulation::foot_cell_shroud_action`]), as the move rungs
+///   answer there;
 /// - a Building with a rally line turns it into Move (`0x0044774B`); any
 ///   other Building's wrapper (`0x00447540`) keeps it, shroud or not.
 ///
 /// The hover, the Foot click and the Building click all ask this.
 ///
-/// [`Simulation::clicked_cell_is_shrouded`]: crate::sim::world::Simulation::clicked_cell_is_shrouded
+/// [`Simulation::foot_cell_shroud_action`]: crate::sim::world::Simulation::foot_cell_shroud_action
 pub(super) fn cell_guard_area_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1792,7 +1790,10 @@ pub(super) fn cell_guard_area_action(
             .object_type(actor.type_ref(), rules)
             .is_some_and(|object| object.has_rally_line())
     } else {
-        viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+        viewer.is_some_and(|viewer| {
+            sim.foot_cell_shroud_action(viewer, actor_id, cell, rules)
+                .is_some()
+        })
     };
     !rewritten && guard_area_admitted(sim, rules, actor_id, None)
 }
@@ -2312,15 +2313,18 @@ pub(crate) fn try_queue_context_order(
         // receiver's What_Action and ClickedAction see it. Object hit-testing
         // above keeps the raw screen-derived world point.
         let (target_rx, target_ry) = sim.clamped_click_cell((target_rx, target_ry));
-        let cell_is_shrouded = crate::app::presentation::instances::cell_visibility_for_local_owner(
-            Some(owner_id),
-            Some(sim.fog()),
-            target_rx,
-            target_ry,
-            state.match_state.sandbox_full_visibility,
-            sim.resolved_terrain(),
-        )
-            == crate::app::presentation::instances::CellVisibilityState::Shrouded;
+        // Foot's Cell wrapper (`0x004DDDE0`): over the clicked Cell's centre,
+        // raised to a bridge deck, that the player's map shrouds, a Foot's
+        // Attack becomes Move or NoMove, which the Move rungs below answer; a
+        // Building keeps it (`0x00447540`). Nothing is shrouded under the
+        // sandbox's full visibility, as for the cursor.
+        let full_visibility = state.match_state.sandbox_full_visibility;
+        let foot_shrouded = |id: u64| {
+            !full_visibility
+                && sim
+                    .foot_cell_shroud_action(owner_id, id, (target_rx, target_ry), &resources.rules)
+                    .is_some()
+        };
         // The chord test fails — and the order resolves normally — unless every
         // selected object can accept an attack-move order. The walk covers the
         // whole selection, so a selected building or aircraft kills the chord.
@@ -2376,7 +2380,6 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
-        #[cfg(feature = "ares")]
         if let Some(release) = ares_deactivated_selection_click(
             sim,
             &resources.rules,
@@ -2525,7 +2528,6 @@ pub(crate) fn try_queue_context_order(
             }
         }
 
-        #[cfg(feature = "ares")]
         if let Some(target) = hover.as_ref() {
             let mut consumed = false;
             selected_units.retain(|&id| {
@@ -2614,25 +2616,17 @@ pub(crate) fn try_queue_context_order(
                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
             )
         });
-        let cell_hidden =
-            force_fire && matches!(attack_target, TargetKind::Cell(..)) && cell_is_shrouded;
+        let cell_shot = force_fire && matches!(attack_target, TargetKind::Cell(..));
         let attack_dispatch = if force_fire
             || terrain_target.is_some()
             || (enemy_object && context_actions_enabled)
         {
-            // Foot's shroud wrapper (0x004DDE64..0x004DDEBE) takes a
-            // Foot's forced shot at a shrouded Cell back; the Building
-            // wrapper keeps it (0x00447540 passes the Attack through).
+            // Foot's shroud wrapper takes a Foot's forced shot at a shrouded
+            // Cell back.
             let receivers: Vec<u64> = selected_ids
                 .iter()
                 .copied()
-                .filter(|&id| {
-                    !cell_hidden
-                        || sim
-                            .entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-                })
+                .filter(|&id| !(cell_shot && foot_shrouded(id)))
                 .collect();
             attack_branch_orders(
                 sim,
@@ -2651,18 +2645,12 @@ pub(crate) fn try_queue_context_order(
             // unforced Attack rung on its own (0x004AE750's object loop);
             // its tail is the forced shot's (Attack, a healing Unit's
             // AttackSupport, or Infantry's GuardArea). Other answers keep the
-            // object on its Move rungs below. Foot's shroud wrapper
-            // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
-            // shrouded Cell; the Building wrapper keeps it.
+            // object on its Move rungs below, as does Foot's shroud wrapper.
             let rung: Vec<u64> = selected_ids
                 .iter()
                 .copied()
                 .filter(|&id| {
-                    (!cell_is_shrouded
-                        || sim
-                            .entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.category() == EntityCategory::Structure))
+                    !foot_shrouded(id)
                         && sim.cell_attack_rung_admits(
                             id,
                             (rx, ry),
@@ -3249,7 +3237,7 @@ pub(crate) fn try_queue_context_order(
                     // The receiver's own Cell action; under Ctrl too once it
                     // has no weapon to force-fire (`0x007008C5`).
                     order
-                } else if force_fire && !cell_is_shrouded {
+                } else if force_fire && !foot_shrouded(stable_id) {
                     // Unarmed Cell-click fall-through resolves the original
                     // clicked Cell before committing its Move event.
                     push_move_flash(
@@ -3744,7 +3732,6 @@ pub(super) fn self_detonates(
 }
 
 /// What a Deactivated (`+0x1C8`) object answers over an object.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AresDeactivatedAction {
     Detonate,
@@ -3759,8 +3746,7 @@ pub(super) enum AresDeactivatedAction {
 /// 10044AD0` alone, None when it is not Deactivated. Detonate over itself as
 /// the lone selection when its bomb may be set off ([`self_detonates`]),
 /// Select over an allied (`HouseClass::IsAlliedWith`) selectable object,
-/// else 0.
-#[cfg(feature = "ares")]
+/// else 0. None without Ares.
 pub(super) fn ares_deactivated_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -3768,6 +3754,9 @@ pub(super) fn ares_deactivated_action(
     actor: u64,
     target: u64,
 ) -> Option<AresDeactivatedAction> {
+    if !rules.ares() {
+        return None;
+    }
     let actor = sim
         .entities()
         .get(actor)
@@ -3791,7 +3780,7 @@ pub(super) fn ares_deactivated_action(
 /// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
 /// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
 /// the other two reach [`left_release`], so no object receives an order.
-#[cfg(feature = "ares")]
+/// None without Ares.
 fn ares_deactivated_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -3800,6 +3789,9 @@ fn ares_deactivated_selection_click(
     cell: (u16, u16),
 ) -> Option<Result<LeftRelease, u64>> {
     use crate::app::input::cursor::ActionDistanceTarget;
+    if !rules.ares() {
+        return None;
+    }
     let target = hover.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |target| {
         ActionDistanceTarget::Object(target.stable_id)
     });
@@ -3880,11 +3872,11 @@ pub(super) fn self_click_command(
     // Deactivated object's What_Action over itself with GetDeactivatedAction
     // 10044AD0 (Detonate or Select), never Self, so it neither deploys nor
     // repacks.
-    #[cfg(feature = "ares")]
-    if sim
-        .entities()
-        .get(target.stable_id)
-        .is_some_and(|entity| entity.deactivated.is_offline())
+    if rules.ares()
+        && sim
+            .entities()
+            .get(target.stable_id)
+            .is_some_and(|entity| entity.deactivated.is_offline())
     {
         return None;
     }
@@ -4390,7 +4382,8 @@ fn entry_orders(
     consumed.then_some(orders)
 }
 
-#[cfg(feature = "ares")]
+/// Ares 3.0 `10049690` (hook `0x51E7BF`): whether `actor` captures the
+/// vehicle `target`, for the cursor and the click alike, while Ares plays.
 pub(super) fn vehicle_capture_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -4400,18 +4393,20 @@ pub(super) fn vehicle_capture_action(
     force_move_key: bool,
 ) -> bool {
     // Shift and the admitted Ctrl+Alt GuardArea return before51E7A6.
-    !matches!(
-        object_key_action(
-            sim,
-            rules,
-            actor,
-            target,
-            Some(target),
-            modifier,
-            force_move_key
-        ),
-        Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
-    ) && sim.ares_vehicle_capture_action(actor, target, rules)
+    rules.ares()
+        && !matches!(
+            object_key_action(
+                sim,
+                rules,
+                actor,
+                target,
+                Some(target),
+                modifier,
+                force_move_key
+            ),
+            Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
+        )
+        && sim.ares_vehicle_capture_action(actor, target, rules)
 }
 
 /// Engineer object actions before event enqueue. No duplicate geometry query.
@@ -4954,14 +4949,10 @@ fn shot_is_illegal(
         .is_some_and(|(infantry, building)| {
             // Ares 3.0 100261F0 (hook 0x007004AD): any action of the shared
             // classification keeps the rung.
-            #[cfg(feature = "ares")]
-            {
-                let _ = (infantry, building);
+            if rules.ares() {
                 sim.infiltrate_action(actor_id, target_id, rules)
                     != crate::sim::world::InfiltrateAction::None
-            }
-            #[cfg(not(feature = "ares"))]
-            {
+            } else {
                 (if infantry.agent {
                     building.spyable
                 } else {
@@ -5287,7 +5278,6 @@ fn building_object_orders(
         // the building is the trench Enter (100171B0, hook 0x44725F) raises
         // TrenchRedirectClick (0x60, RaiseTrenchRedirectClick 1006A170)
         // with that building's Cell, and sends nothing else.
-        #[cfg(feature = "ares")]
         if ares_trench_enter(sim, rules, id, target) {
             if let Some(record) = sim.encode_ares_trench_redirect_record(id, cell) {
                 orders.push(Command::SynchronizedRecord { record });
@@ -5337,22 +5327,14 @@ fn building_object_orders(
 /// Ares 3.0 BuildingClass_GetActionOnObject_TargetABuilding (`100171B0`,
 /// hook `0x44725F`): the building `id` answers Enter over the building
 /// `target` when its occupants may traverse there (canTraverseTo
-/// `10011690`). Default builds have no such action.
-fn ares_trench_enter(
+/// `10011690`), while Ares plays. The cursor asks it too.
+pub(super) fn ares_trench_enter(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
     target: u64,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    {
-        sim.ares_can_traverse_to(id, target, rules)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (sim, rules, id, target);
-        false
-    }
+    rules.ares() && sim.ares_can_traverse_to(id, target, rules)
 }
 
 fn selected_rally_producer_ids(

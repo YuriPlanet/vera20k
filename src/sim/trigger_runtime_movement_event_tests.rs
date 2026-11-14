@@ -1120,9 +1120,11 @@ fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
 #[test]
 fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
     // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
-    // is civilian (TechLevel -1); this one is not.
-    let red_entered = cfg!(feature = "ares");
-    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, red_entered)] {
+    // is civilian (TechLevel -1); this one is not. `None` is that red entry:
+    // admitted when Ares plays.
+    for (actor_house, health, entered) in
+        [(0, 500, Some(true)), (1, 500, Some(false)), (0, 50, None)]
+    {
         let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
             "[Country7]\nMultiplayPassive=yes\n\
              [InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\n\
@@ -1131,6 +1133,8 @@ fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
              [BuildingTypes]\n0=TAGGARRISON\n[TAGGARRISON]\nStrength=500\n\
              CanBeOccupied=yes\nMaxNumberOccupants=3\n",
         );
+        let red_entered = rules.ares_form();
+        let entered = entered.unwrap_or(red_entered);
         sim.houses
             .get_mut(&houses[1])
             .unwrap()

@@ -770,10 +770,10 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
 /// and AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound (10048DE0, hook
 /// 0x41D5AE): the first aircraft's `VoiceAirstrikeAttack`/`Abort` replaces
 /// the Rules sound, the designator's replaces that, and `none` silences it.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_airstrike_voices_take_the_aircraft_then_the_designator() {
     use crate::rules::ini_parser::IniFile;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[AudioVisual]\nAirstrikeAttackVoice=Rules\nAirstrikeAbortSound=Rules\n\
          [InfantryTypes]\n0=SPOTTER\n1=PLAIN\n[AircraftTypes]\n0=JET\n1=OTHERJET\n\

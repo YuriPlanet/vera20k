@@ -131,7 +131,6 @@ use serde::{Deserialize, Serialize};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
-#[cfg(feature = "ares")]
 use crate::rules::warhead_type::WarheadType;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::game_entity::GameEntity;
@@ -242,7 +241,7 @@ impl GameEntity {
 
     /// `TechnoClass+0x270` BeingWarpedOut (vtable `+0x1D4`, `0x0070C5B0`):
     /// written by TemporalClass and by the Chronosphere's Teleport states
-    /// (state 0 sets it, state 2 clears it), and in Ares builds by the
+    /// (state 0 sets it, state 2 clears it), and when Ares plays by the
     /// building chronoshift. The ordinary teleport never writes it.
     pub fn is_warped_out(&self) -> bool {
         self.temporal.is_warped()
@@ -376,6 +375,7 @@ impl Simulation {
                                 firer_entity,
                                 requested,
                                 stored,
+                                rules.ares_form(),
                             )
                         {
                             self.assign_target_fire_teardown(firer, rules, registry);
@@ -432,12 +432,12 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        let ares = rules.ares_form();
         // 0x0071AF2F..0x0071AF48: the target's spawns die and its captives
         // go free before anything else is decided. Ares
         // TemporalClass_Fire_UnwarpableA (hook 0x71AF2B) skips this to
         // 0x71AF4D and does it once the target proves warpable (below).
-        #[cfg(not(feature = "ares"))]
-        if let Some(target) = target {
+        if !ares && let Some(target) = target {
             self.temporal_free_target(target, rules, registry, effects);
         }
         // 0x0071AF4D..0x0071AF61: the attacker drops its previous victim.
@@ -446,6 +446,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             attacker,
+            ares,
         );
         let Some(target) = target else {
             return;
@@ -456,8 +457,7 @@ impl Simulation {
         // Ares TemporalClass_Fire_PrismForwardAndWarpable (10016BD0, hook
         // 0x71AF76): the warpable target's spawns die and its captives go
         // free, and a building leaves its Prism network.
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             self.temporal_free_target(target, rules, registry, effects);
             self.substrate.ares_prism_remove_from_network(target, true);
         }
@@ -487,8 +487,11 @@ impl Simulation {
                 // 0x0071AF98..0x0071AFB9: the first attacker heads the chain
                 // with Strength * 10 (`LEA x5; SHL 1`).
                 let warp = strength.wrapping_mul(10);
-                #[cfg(feature = "ares")]
-                let warp = self.ares_health_factor_warp(attacker, target, strength, warp, rules);
+                let warp = if ares {
+                    self.ares_health_factor_warp(attacker, target, strength, warp, rules)
+                } else {
+                    warp
+                };
                 self.substrate.set_temporal_head(target, Some(attacker));
                 if let Some(link) = self.substrate.temporal_link_mut(attacker) {
                     link.warp_remaining = warp;
@@ -532,7 +535,7 @@ impl Simulation {
         }) {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //71B126, before release
             self.substrate
-                .set_building_online_for_temporal(target, false); //71B12F
+                .set_building_online_for_temporal(target, false, ares); //71B12F
             self.houses.request_house_tech_tree_recheck(owner); //71B13A
         }
         // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
@@ -541,6 +544,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             target,
+            ares,
         );
         // 0x0071B16D: ObjectClass::Deselect.
         if let Some(entity) = self.substrate.entities.get_mut(target) {
@@ -634,8 +638,7 @@ impl Simulation {
         ) {
             return false;
         }
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             let unwarpable = self
                 .object_type(entity.type_ref(), rules)
                 .and_then(|object| object.promotion_abilities())
@@ -703,6 +706,7 @@ impl Simulation {
                     &mut self.houses,
                     &mut self.power_states,
                     head,
+                    rules.ares_form(),
                 );
                 return;
             }
@@ -711,8 +715,9 @@ impl Simulation {
         // target's JammerClass unjams everything and is freed (its next
         // TechnoClass_Update makes a new one). Its AttachEffect anim hiding
         // (`TemporalHidesAnim`) belongs to the AttachEffect owner's residual.
-        #[cfg(feature = "ares")]
-        if let Some(target) = link.target {
+        if rules.ares_form()
+            && let Some(target) = link.target
+        {
             self.remove_radar_jammer(target);
         }
         // 0x0071A84E..0x0071A88A: the chain first, then the head's own weapon.
@@ -799,6 +804,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        let ares = rules.ares_form();
         let Some(target) = target.filter(|&target| self.substrate.entities.contains(target)) else {
             // 0x0071A895..0x0071A8B5: no target — clear and idle; then the
             // `0x0071A90E` retest jumps to the common tail, which clears and
@@ -812,17 +818,16 @@ impl Simulation {
         // 0x0071A8BD..0x0071A909: WarpAway at the target's Location. Ares
         // TemporalClass_Update_WarpAway (10053CE0, hook 0x71A900) takes the
         // warp weapon's `Temporal.WarpAway=` first.
-        #[cfg(feature = "ares")]
-        let warp_combat = self
-            .ares_warp_warhead(head, rules)
-            .and_then(WarheadType::ares_combat);
-        #[cfg(feature = "ares")]
+        let warp_combat = if ares {
+            self.ares_warp_warhead(head, rules)
+                .and_then(WarheadType::ares_combat)
+        } else {
+            None
+        };
         let warp_away = match warp_combat {
             Some(combat) => combat.temporal_warp_away(&rules.general.warp_away.name),
             None => Some(rules.general.warp_away.name.as_str()),
         };
-        #[cfg(not(feature = "ares"))]
-        let warp_away = Some(rules.general.warp_away.name.as_str());
         if let Some(entity) = self.substrate.entities.get(target)
             && let Some(warp_away) = warp_away
         {
@@ -834,10 +839,9 @@ impl Simulation {
         // Record_The_Kill below. Ares TemporalClass_Update_Erase (1004BBC0)
         // replaces the whole block (to 0x71A97D): no gain here, and the
         // warp weapon's `UnitLost.Suppress=` silences the loss below.
-        #[cfg(feature = "ares")]
-        let unit_lost_suppressed = warp_combat.is_some_and(|combat| combat.unit_lost_suppress());
-        #[cfg(not(feature = "ares"))]
-        let unit_lost_suppressed = {
+        let unit_lost_suppressed = if ares {
+            warp_combat.is_some_and(|combat| combat.unit_lost_suppress())
+        } else {
             self.temporal_veterancy(head, target, rules);
             false
         };
@@ -853,12 +857,13 @@ impl Simulation {
             // Ares 3.0 100177B0 (hook 0x71A995): an erased last tunnel
             // entrance kills its owner's network, credited to the eraser
             // (`sim::ares_tunnel`).
-            #[cfg(feature = "ares")]
-            self.ares_kill_tunnel_feet_if_last(
-                target,
-                Some(head),
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            if ares {
+                self.ares_kill_tunnel_feet_if_last(
+                    target,
+                    Some(head),
+                    UninitContext::new(rules, registry).with_effects(effects),
+                );
+            }
             // Temporal71A9A0..71A9A7: only positive true Occupants count
             // calls KillOccupants(NULL), ahead of Cargo disposal/bunker release.
             if self
@@ -912,8 +917,8 @@ impl Simulation {
         // Ares TemporalClass_Update_Abductor (100564F0, hook 0x71AAAC): an
         // `Abductor.Temporal` warp weapon abducts the erased object instead
         // of announcing, crediting and removing it (to 0x71AAD5).
-        #[cfg(feature = "ares")]
-        if let Some(weapon) = self.ares_warp_weapon(head, rules)
+        if ares
+            && let Some(weapon) = self.ares_warp_weapon(head, rules)
             && weapon.ares_abductor.temporal
             && self.ares_conduct_abduction(head, target, weapon, rules, registry, effects)
         {
@@ -936,6 +941,7 @@ impl Simulation {
                 entity.position.rx(),
                 entity.position.ry(),
                 entity.owner(),
+                ares,
             )
         {
             // 0x0071AAB5 vtable +0x3B8: Death_Announcement. A bunkered
@@ -980,13 +986,11 @@ impl Simulation {
     /// RESIDUAL: native fixes the slot at construction; this reads the
     /// owner's current type, which differs only after a type conversion
     /// that moves its Temporal weapon to another slot.
-    #[cfg(feature = "ares")]
     fn ares_warp_warhead<'r>(&self, owner: u64, rules: &'r RuleSet) -> Option<&'r WarheadType> {
         rules.warhead(self.ares_warp_weapon(owner, rules)?.warhead.as_deref()?)
     }
 
     /// Ares GetWarpWeapon: the owner's weapon in that slot for its rank.
-    #[cfg(feature = "ares")]
     fn ares_warp_weapon<'r>(
         &self,
         owner: u64,
@@ -1025,7 +1029,6 @@ impl Simulation {
     /// head's warp is `(1 - f) * Strength * 10 + f * 0.0` with
     /// `f = (1 - Health / Strength) * Temporal.HealthFactor`, in doubles,
     /// truncated when above 1.0 and else 1.
-    #[cfg(feature = "ares")]
     fn ares_health_factor_warp(
         &self,
         attacker: u64,
@@ -1069,7 +1072,6 @@ impl Simulation {
     /// `Trainable=` attacker (`0x0071A917..0x0071A978`). Each cost is the
     /// type's Cost_Of for its own object's house: the target's
     /// (`0x0071A952`) and the attacker's (`0x0071A968`).
-    #[cfg(not(feature = "ares"))]
     fn temporal_veterancy(&mut self, attacker: u64, target: u64, rules: &RuleSet) {
         let (Some(attacker_entity), Some(target_entity)) = (
             self.substrate.entities.get(attacker),
@@ -1123,31 +1125,36 @@ impl Simulation {
     /// DecideUnitFate (`0x004723E4..0x004723F3`).
     /// Ordinary Stop only clears TarCom; the due Attack handler invokes this
     /// before its cadence draw. Native deadline/LetGo controls are retained in
-    /// `tools/spatial_oracle/temporal_stop.json`.
+    /// `tools/spatial_oracle/temporal_stop.json`. `ares` is the game's
+    /// `RuleSet::ares_form`, for [`Self::temporal_let_go`].
     pub(crate) fn temporal_release_if_warping(
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         power_states: &mut PowerStates,
         attacker: u64,
+        ares: bool,
     ) {
         if substrate
             .entities
             .get(attacker)
             .is_some_and(|entity| entity.temporal.is_warping_someone())
         {
-            Self::temporal_let_go(substrate, houses, power_states, attacker);
+            Self::temporal_let_go(substrate, houses, power_states, attacker, ares);
         }
     }
 
     /// `TemporalClass::LetGo @ 0x0071ABC0`: a head hands the chain and its
     /// progress to the next attacker, a lone head frees the target (a building
     /// comes back online), a chained link unlinks. LetGo never idles its own
-    /// attacker.
+    /// attacker. `ares` is the game's `RuleSet::ares_form`: the building's
+    /// return queues the Ares factory refresh
+    /// ([`ObjectSubstrate::set_building_online_for_temporal`]).
     pub(crate) fn temporal_let_go(
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         power_states: &mut PowerStates,
         attacker: u64,
+        ares: bool,
     ) {
         let Some(link) = Self::temporal_link(substrate, attacker).cloned() else {
             return;
@@ -1164,7 +1171,7 @@ impl Simulation {
                     }
                 } else if let Some(target) = link.target {
                     substrate.set_temporal_head(target, None);
-                    substrate.set_building_online_for_temporal(target, true); //71AC3D
+                    substrate.set_building_online_for_temporal(target, true, ares); //71AC3D
                     if let Some(owner) = substrate.entities.get(target).and_then(|entity| {
                         (entity.category() == EntityCategory::Structure).then_some(entity.owner())
                     }) {
@@ -1300,6 +1307,7 @@ impl Simulation {
                 &mut self.houses,
                 &mut self.power_states,
                 listener,
+                rules.ares_form(),
             );
         } else if target == Some(expired) {
             self.substrate.temporal_clear_fields(listener);
@@ -1312,18 +1320,20 @@ impl Simulation {
     /// TemporalClass returns to the gunner, which lets go of the IFV's victim
     /// (`0x00746557`).
     /// Returns whether the manager moved, so the passenger owner can run
-    /// the callback's conditional burst/GetROF/rearm continuation.
+    /// the callback's conditional burst/GetROF/rearm continuation. `ares` is
+    /// the game's `RuleSet::ares_form`, for [`Self::temporal_let_go`].
     pub(crate) fn temporal_remove_gunner(
         substrate: &mut ObjectSubstrate,
         houses: &mut Houses,
         power_states: &mut PowerStates,
         ifv: u64,
         gunner: u64,
+        ares: bool,
     ) -> bool {
         if !substrate.temporal_move_link(ifv, gunner) {
             return false;
         }
-        Self::temporal_release_if_warping(substrate, houses, power_states, gunner);
+        Self::temporal_release_if_warping(substrate, houses, power_states, gunner, ares);
         true
     }
 

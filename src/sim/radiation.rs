@@ -1031,9 +1031,9 @@ mod tests {
     /// Ares's RadSiteClass_Radiate_UnhardcodeSnow (`0x65B5FB`) keeps every
     /// `RadColor=` channel on a snow map: Mental Omega's amber field, not the
     /// retail snow substitution's green-only light.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_radiation_keeps_rad_color_on_snow() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[Radiation]\nRadLevelFactor=0.2\nRadColor=200,100,0\nRadSiteWarhead=RadSite\n",

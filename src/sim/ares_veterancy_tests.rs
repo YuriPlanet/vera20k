@@ -91,8 +91,6 @@ fn promotion_converts_adds_experience_flashes_and_promotes_passengers() {
 /// An untrainable airstrike plane credits its designator when that
 /// designator has Experience.FromAirstrike, scaled by its
 /// Experience.AirstrikeModifier; without the key the kill pays nobody.
-// Runs again once combat's kill record moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn airstrike_kill_credits_the_designator_scaled() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -147,8 +145,6 @@ fn airstrike_kill_credits_the_designator_scaled() {
 /// An elite IFV with Experience.PromotePassengers passes the kill to its
 /// trainable gunner, times Experience.PassengerModifier, and the gunner,
 /// which never reaches its own AI sample, is promoted at once, without flash.
-// Runs again once combat's kill record moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn elite_ifv_kill_promotes_its_gunner_immediately() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -197,8 +193,6 @@ fn elite_ifv_kill_promotes_its_gunner_immediately() {
 /// A placed academy raises its owner's new trainable infantry to its
 /// Academy.InfantryVeterancy unless Academy.Ignore lists the type; a
 /// capture moves the bonus to the captor, and a Limbo takes it away.
-// Runs again once building placement's academy membership moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn academy_bonus_follows_placement_capture_and_limbo() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

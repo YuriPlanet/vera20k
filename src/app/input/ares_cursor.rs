@@ -39,6 +39,14 @@
 //! `RadarClass_GetMouseAction_AllowMinimap @ 100583F0` (`0x653CA6`) lets the
 //! radar keep an overridden action only when its cursor has radar frames.
 //!
+//! The superweapon cursors are superweapon code and follow
+//! [`RuleSet::ares_form`], as the superweapons do; the other hooks
+//! follow [`RuleSet::ares`]. Only Rules read the Ares way hold the scenario's
+//! `[MouseCursors]` lines and `Cursor.*` keys, so a game Ares plays in whose
+//! Rules were read the stock way shows the cursors Ares draws without them.
+//! The match cursor draws through the list whenever either switch is on
+//! ([`draws_through_list`]).
+//!
 //! Cursor choice is presentation only: the table and its readers stay in the
 //! client, and no simulation state, RNG draw or hash depends on them.
 
@@ -48,6 +56,7 @@ use crate::app::input::cursor::ActionQuery;
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::types::{CursorFeedbackKind, CursorId};
 use crate::rules::ares_mouse_cursor::{MouseCursors, index};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 
 /// The native `Action` values the table is keyed by.
@@ -82,6 +91,15 @@ pub(crate) mod action {
 }
 
 const TABLE_LEN: usize = 0x4A;
+
+/// Whether the match cursor draws every cursor through the `[MouseCursors]`
+/// list (`MouseClass_UpdateCursor @ 10007AC0`, hook `0x5BDC8C`;
+/// `render::cursor_atlas::build_ares_software_cursor`): whenever a hook here
+/// may name one of its entries, so while Ares plays or its superweapons are
+/// on.
+pub(crate) fn draws_through_list(rules: &RuleSet) -> bool {
+    rules.ares() || rules.ares_form()
+}
 
 thread_local! {
     /// The cursor of each action's entry, 0 for none. The What_Action hooks
@@ -263,12 +281,16 @@ fn action_cursor(action: u8) -> i32 {
 /// The tactical cursor of a What_Action answer: the Ares cursor 10057F10
 /// picks when it draws other frames than the row the stock id draws, else
 /// `kind`. A `none` cursor (-1) faults in Ares; VERA keeps the stock cursor.
+/// `kind` without Ares.
 pub(crate) fn tactical(
     kind: CursorFeedbackKind,
     selected_count: usize,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: Option<&RuleSet>,
 ) -> CursorFeedbackKind {
-    let (Some(action), Some(rules)) = (native_action(kind, selected_count), rules) else {
+    let (Some(action), Some(rules)) = (
+        native_action(kind, selected_count),
+        rules.filter(|rules| rules.ares()),
+    ) else {
         return kind;
     };
     let cursors = rules.ares_mouse_cursors();
@@ -304,11 +326,15 @@ fn drawn(cursors: &MouseCursors, cursor: i32, mini: bool) -> Option<[i32; 5]> {
 /// when its cursor has radar frames (`MiniFrame >= 0`) and draws the cursor
 /// 10057F10 picks; without one `vanilla`, the stock keep table (`0x653CAB`),
 /// decides. A kept action that draws the stock frames stays `vanilla`.
+/// `vanilla` without Ares.
 pub(crate) fn radar_action(
     query: &ActionQuery<'_>,
     kind: CursorFeedbackKind,
     vanilla: Option<crate::app::input::radar::RadarAction>,
 ) -> Option<crate::app::input::radar::RadarAction> {
+    if !query.rules.is_some_and(|rules| rules.ares()) {
+        return vanilla;
+    }
     let Some(action) = native_action(kind, query.selected.len()) else {
         return vanilla;
     };
@@ -319,7 +345,7 @@ pub(crate) fn radar_action(
     if cursors.get(cursor)?.mini_frame < 0 {
         return None;
     }
-    let lead = lead_moves_to_shroud(query);
+    let lead = query.lead_moves_to_shroud();
     let (main, shrouded) = (
         cursor_from_action(action, false, lead),
         cursor_from_action(action, true, lead),
@@ -338,17 +364,6 @@ pub(crate) fn radar_action(
     Some(crate::app::input::radar::RadarAction::Ares { main, shrouded })
 }
 
-fn lead_moves_to_shroud(query: &ActionQuery<'_>) -> bool {
-    query.selected.first().is_some_and(|&id| {
-        query.sim.entities().get(id).is_some_and(|entity| {
-            query
-                .rules
-                .and_then(|rules| query.sim.interner().object_type(entity.type_ref(), rules))
-                .is_some_and(|object| object.move_to_shroud)
-        })
-    })
-}
-
 /// A superweapon cursor: `SWTypeExt::ExtData::WhatAction @ 10033EB0` for a
 /// type with Ares cursors ([`crate::rules::ruleset::RuleSet::
 /// ares_super_weapon_cursors`]): `Cursor` over a cell it may fire at (`allowed`: its
@@ -356,12 +371,11 @@ fn lead_moves_to_shroud(query: &ActionQuery<'_>) -> bool {
 /// `super_weapon_target_check`), `NoCursor` elsewhere. Ares sets it as the
 /// override of every action (`Actions::Set @ 10057E40`, action -1), so it is
 /// the cursor whatever the shroud mode does to the action. `None` for the
-/// other types.
-pub(crate) fn super_weapon_cursor(
-    rules: &crate::rules::ruleset::RuleSet,
-    section: &str,
-    allowed: bool,
-) -> Option<i32> {
+/// other types, and without the Ares superweapons.
+pub(crate) fn super_weapon_cursor(rules: &RuleSet, section: &str, allowed: bool) -> Option<i32> {
+    if !rules.ares_form() {
+        return None;
+    }
     let cursors = rules.ares_super_weapon_cursors(section)?;
     Some(if allowed {
         cursors.cursor
@@ -373,15 +387,18 @@ pub(crate) fn super_weapon_cursor(
 /// The radar's armed Ares superweapon (`RadarClass_GetMouseAction_
 /// CustomSWAction @ 10034D00`, hook `0x653B3A`, then `0x653CA6`): kept only
 /// when its cursor has radar frames; a disallowed cell keeps no launch. An
-/// allowed launch drawing the frames of the stock index map's answer
-/// (`vanilla`) stays that answer. `None` for a type without Ares cursors.
+/// allowed launch stays the stock index map's answer (`vanilla`) when that
+/// draws the same frames and its action is the armed type's `Action=`, so
+/// SPECIAL_PLACE launches the armed type from it too (hook `0x4AC20C`,
+/// `commands::special_place_type`). `None` for a type without Ares cursors,
+/// and without the Ares superweapons.
 pub(crate) fn radar_super_weapon(
     query: &ActionQuery<'_>,
     armed: usize,
     cell: (u16, u16),
     vanilla: Option<crate::app::input::radar::RadarAction>,
 ) -> Option<Option<crate::app::input::radar::RadarAction>> {
-    let rules = query.rules?;
+    let rules = query.rules.filter(|rules| rules.ares_form())?;
     let section = rules.super_weapon_order.get(armed)?;
     rules.ares_super_weapon_cursors(section)?;
     let allowed = query
@@ -402,7 +419,14 @@ pub(crate) fn radar_super_weapon(
         let (row, mini) = crate::render::cursor_atlas::vanilla_row(vanilla.cursor(false, false))?;
         drawn(cursors, i32::from(row), mini)
     });
-    if allowed && stock.is_some() && stock == drawn(cursors, cursor, true) {
+    let launches_armed = matches!(
+        vanilla,
+        Some(crate::app::input::radar::RadarAction::SuperWeapon(stock))
+            if rules
+                .super_weapon(section)
+                .is_some_and(|sw| sw.has_action(stock.action_name()))
+    );
+    if allowed && launches_armed && stock.is_some() && stock == drawn(cursors, cursor, true) {
         return Some(vanilla);
     }
     Some(Some(
@@ -499,7 +523,7 @@ pub(crate) fn what_action_attack(
 /// AttackOutOfRange cursors without a weapon.
 fn attack_cursor(
     query: &ActionQuery<'_>,
-    rules: &crate::rules::ruleset::RuleSet,
+    rules: &RuleSet,
     actor_id: u64,
     target: TargetKind,
     out_of_range: bool,
@@ -533,14 +557,17 @@ fn attack_cursor(
 
 /// `InfantryClass_GetActionOnObject_Saboteur @ 10025FC0` (`0x51EE6B`): the
 /// infiltration's Capture with the building's `Cursor.Spy` for a spy and
-/// Sabotage (0x5D) for a saboteur.
+/// Sabotage (0x5D) for a saboteur, while Ares plays.
 pub(crate) fn infiltration(
     sim: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
+    rules: &RuleSet,
     infantry_id: u64,
     building_id: u64,
 ) {
     use crate::sim::world::InfiltrateAction;
+    if !rules.ares() {
+        return;
+    }
     match sim.infiltrate_action(infantry_id, building_id, rules) {
         InfiltrateAction::Spy => {
             if let Some(building) = sim

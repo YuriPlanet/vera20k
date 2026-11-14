@@ -302,6 +302,39 @@ impl SimHost {
         self.job_result.take()
     }
 
+    /// The senders whose departures the frames left
+    /// (`Simulation::take_departed_senders`). Asked read-only first: most
+    /// passes have none, and a write drops the presentation frame, which the
+    /// next read captures again. While a job runs, `runtime()` is its frame,
+    /// so the world comes back and is asked.
+    pub(crate) fn take_departed_senders(&mut self) -> Vec<i8> {
+        if !self.lent
+            && !self
+                .runtime()
+                .is_some_and(|runtime| runtime.simulation.has_departed_senders())
+        {
+            return Vec::new();
+        }
+        self.write_sim(SimWrite::Network)
+            .map(|runtime| runtime.simulation.take_departed_senders())
+            .unwrap_or_default()
+    }
+
+    /// The simulation's pending radar-terrain marks
+    /// (`SimRuntime::take_radar_terrain_dirty`), or `None` with none to take
+    /// or no world; asked read-only first, as [`Self::take_departed_senders`].
+    pub(crate) fn take_radar_terrain_marks(&mut self) -> Option<Vec<(u16, u16)>> {
+        if !self.lent
+            && !self
+                .runtime()
+                .is_some_and(SimRuntime::has_radar_terrain_dirty)
+        {
+            return None;
+        }
+        self.write_sim(SimWrite::Presentation)
+            .map(SimRuntime::take_radar_terrain_dirty)
+    }
+
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
@@ -748,6 +781,27 @@ mod tests {
         assert!(host.lend(Box::new(|_| Box::new(()))));
         assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
+    }
+
+    /// With no departure and no radar mark to take, the world is not taken
+    /// for writing, so the frame the last read captured still stands; a
+    /// waiting mark is taken.
+    #[test]
+    fn taking_nothing_keeps_the_captured_frame() {
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        assert!(host.frame().is_some());
+        assert!(host.take_departed_senders().is_empty());
+        assert!(host.take_radar_terrain_marks().is_none());
+        assert!(host.frame().is_some());
+        assert_eq!(host.snapshot_costs.get().captures, 1);
+
+        host.write_sim(SimWrite::Debug)
+            .unwrap()
+            .simulation
+            .mark_radar_terrain_dirty_for_test([(3, 4)]);
+        assert_eq!(host.take_radar_terrain_marks(), Some(vec![(3, 4)]));
+        assert!(host.take_radar_terrain_marks().is_none());
     }
 
     #[test]

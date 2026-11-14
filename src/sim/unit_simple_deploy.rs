@@ -47,8 +47,7 @@ impl Simulation {
         // `Convert.Deploy` converts in place (TechnoExt::ConvertToType
         // 10043650) and, converted, is no longer deployed; then the Unload
         // waits (return 1 at 0x73E5B1) while the locomotor is moving.
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             let entity = self
                 .substrate
                 .entities
@@ -270,8 +269,7 @@ impl Simulation {
     /// turns (Do_Turn, while its locomotor is not moving) and starts no
     /// animation (0x739C70, the shared sound tail). True while it turns.
     fn ares_simple_deploy_turning(&mut self, id: u64, rules: &RuleSet) -> bool {
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares_form() {
             let frame = self.session.binary_frame();
             let Some(entity) = self.substrate.entities.get(id) else {
                 return false;
@@ -296,10 +294,7 @@ impl Simulation {
                 crate::sim::movement::locomotor_do_turn(entity, dir << 13, frame);
             }
             true
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = (id, rules);
+        } else {
             false
         }
     }

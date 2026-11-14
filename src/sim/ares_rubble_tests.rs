@@ -90,8 +90,6 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64) -> u64 {
 /// A destroyed building turns into its `Rubble.Destroyed` at its own origin
 /// and for its own house (`Default`), with half the rubble's Strength for
 /// `Rubble.Destroyed.Strength=-50`.
-// Runs again once combat's destruction step moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn a_destroyed_building_turns_into_its_rubble() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

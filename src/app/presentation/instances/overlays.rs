@@ -391,7 +391,21 @@ pub(crate) fn build_display_effect_instances(
         .filter_map(|name| sim.interner().get(name))
         .collect::<Vec<_>>();
     let local_owner = input.local_owner;
+    // Everything this loop can draw. Most Display members are entities and
+    // terrain objects, which it never draws: one lookup here passes each by,
+    // where a tree cost a miss in the frame, a miss in the Anim store and a
+    // hit in its own. Display still supplies the order.
+    let drawn_here: crate::util::lookup_hash::LookupSet<u64> = sim
+        .anims()
+        .map(|(&id, _)| id)
+        .chain(input.frame.scene.spotlights.keys().copied())
+        .chain(sim.particle_systems().iter().map(|(&id, _)| id))
+        .chain(particles.keys().copied())
+        .collect();
     for &stable_id in sim.display_layers().ordered_ids() {
+        if !drawn_here.contains(&stable_id) {
+            continue;
+        }
         // One ID namespace (`Simulation::allocate_stable_id`): most members
         // are entities, drawn already, so spare them the lookups below.
         if input.frame.contains(stable_id) {
@@ -436,19 +450,10 @@ pub(crate) fn build_display_effect_instances(
         let Some(atlas) = input.atlas else {
             continue;
         };
-        // Paradrop creates a retained Anim, whose GetCoords resolves its
-        // owner-relative75-lepton lift. Draw it at its own Display encounter.
-        let is_parachute = parachute_types
-            .iter()
-            .copied()
-            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
-        let type_name: &str = sim.interner().resolve(anim.type_id());
-        let config = input.rules.art().anim_runtime_config(type_name);
-        if config
-            .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
-        {
-            continue;
-        }
+        // The draw point first: it reads only the Anim and the frame, and
+        // every Anim off the view stops here, before its type is looked up
+        // by name. The tests up to the detail latch below only read, so
+        // their order changes nothing.
         let Some(AnimDrawPoint {
             center: [center_x, center_y],
             cell: (rx, ry),
@@ -464,6 +469,19 @@ pub(crate) fn build_display_effect_instances(
         else {
             continue;
         };
+        // Paradrop creates a retained Anim, whose GetCoords resolves its
+        // owner-relative75-lepton lift. Draw it at its own Display encounter.
+        let is_parachute = parachute_types
+            .iter()
+            .copied()
+            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
+        let type_name: &str = sim.interner().resolve(anim.type_id());
+        let config = input.rules.art().anim_runtime_config(type_name);
+        if config
+            .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
+        {
+            continue;
+        }
         let is_building_anim = anim.is_building_anim();
         if !crate::sim::anim_class::anim_draw_detail_visible(
             crate::sim::anim_class::AnimDrawDetailInput {
@@ -1097,6 +1115,46 @@ fn overlay_body_window(
     )
 }
 
+/// A terrain object's draw point less half a tile, and its lift.
+/// Terrain Render71CD30 reads the retained Location through GetCoords 5F65A0;
+/// DrawIt71C1B0 applies AdjustForZ to that retained height.
+fn terrain_object_draw_point(
+    obj: &crate::sim::terrain_object::TerrainObjectState,
+) -> (f32, f32, i32) {
+    let coord = obj.world_coord();
+    let point = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    (
+        point.0 - TILE_WIDTH / 2.0,
+        point.1 - TILE_HEIGHT / 2.0,
+        crate::util::native_x87::adjust_for_z_standard(coord.z),
+    )
+}
+
+/// Slack around the terrain object window, in pixels: the draw point sits
+/// half a tile off the cell anchor, and a retained height may differ from
+/// the cell's level today.
+const TERRAIN_OBJECT_WINDOW_SLACK: f32 = 64.0;
+
+/// The cells whose terrain object [`build_overlay_instances`] can admit for
+/// `camera`/`viewport`: its `in_view` box of 120 px with a 120 px margin,
+/// widened by [`TERRAIN_OBJECT_WINDOW_SLACK`].
+fn terrain_object_window(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> crate::render::cell_window::CellWindow {
+    let slack = TERRAIN_OBJECT_WINDOW_SLACK;
+    crate::render::cell_window::CellWindow::covering(
+        crate::render::cell_window::AnchorBounds {
+            left: camera[0] - 240.0 - slack,
+            top: camera[1] - 240.0 - slack,
+            right: camera[0] + viewport[0] + 120.0 + slack,
+            bottom: camera[1] + viewport[1] + 120.0 + slack,
+        },
+        terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
+    )
+}
+
 /// Build the ordinary overlay bodies for the cell body sweep, and the
 /// terrain objects.
 ///
@@ -1221,11 +1279,31 @@ pub(crate) fn build_overlay_instances(
     else {
         return;
     };
+    // A map holds far more trees than a view: each one off the window costs
+    // two integer tests here, not its draw point. The store's order stands.
+    let tree_window = terrain_object_window(terrain, [cam_x, cam_y], [sw, sh]);
+    let tree_in_view = |obj: &crate::sim::terrain_object::TerrainObjectState| {
+        let (screen_x, screen_y, _) = terrain_object_draw_point(obj);
+        in_view(
+            screen_x, screen_y, 120.0, 120.0, cam_x, cam_y, sw, sh, 120.0,
+        )
+    };
+    // What a type's name resolves to, asked once per draw and not per tree:
+    // its rules flags, and each frame's body and shadow sprites.
+    let mut type_flags: BTreeMap<crate::sim::intern::InternedId, (bool, bool)> = BTreeMap::new();
+    let mut type_pieces: BTreeMap<(crate::sim::intern::InternedId, i32), _> = BTreeMap::new();
     for obj in sim.terrain_objects().objects().values() {
         if !obj.is_live() {
             continue;
         }
-        let name = sim.interner().resolve(obj.type_ref());
+        let (rx, ry) = obj.cell();
+        if !tree_window.contains(rx, ry) {
+            debug_assert!(
+                !tree_in_view(obj),
+                "the tree window left out a tree in view at ({rx}, {ry})"
+            );
+            continue;
+        }
         // Ordinary native Ground6D97D0 -> Terrain71CC50/71C1B0 admits live
         // static art independently of anchor exploration; ABuffer clips pixels.
 
@@ -1233,11 +1311,7 @@ pub(crate) fn build_overlay_instances(
         // 5F65A0; DrawIt71C1B0 applies AdjustForZ to that retained height.
         // Original call-chain outputs: tools/spatial_oracle/terrain_render.json.
         // a later map/deck change must not move a stationary tree's artwork.
-        let coord = obj.world_coord();
-        let point = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-        let lift_px = crate::util::native_x87::adjust_for_z_standard(coord.z);
-        let screen_x = point.0 - TILE_WIDTH / 2.0;
-        let screen_y = point.1 - TILE_HEIGHT / 2.0;
+        let (screen_x, screen_y, lift_px) = terrain_object_draw_point(obj);
         // `TerrainClass::Get_Render_Rect @ 0x0071D160` unions frame0 and the
         // shadow frame for Render71CC50's cull and Take_Damage's dirty rect.
         // VERA redraws every frame; this box spans -150..+210 px across and
@@ -1249,11 +1323,17 @@ pub(crate) fn build_overlay_instances(
             continue;
         }
 
-        let terrain_type = state
-            .rules()
-            .and_then(|rules| rules.terrain_object_type_case_insensitive(name));
-        let is_animated = terrain_type.is_some_and(|terrain_type| terrain_type.is_animated);
-        let spawns_tiberium = terrain_type.is_some_and(|terrain_type| terrain_type.spawns_tiberium);
+        let type_ref = obj.type_ref();
+        let name = sim.interner().resolve(type_ref);
+        let (is_animated, spawns_tiberium) = *type_flags.entry(type_ref).or_insert_with(|| {
+            let terrain_type = state
+                .rules()
+                .and_then(|rules| rules.terrain_object_type_case_insensitive(name));
+            (
+                terrain_type.is_some_and(|terrain_type| terrain_type.is_animated),
+                terrain_type.is_some_and(|terrain_type| terrain_type.spawns_tiberium),
+            )
+        });
         // Terrain DrawIt71C208 selects the Stage written by Terrain AI.
         // Wall-clock presentation cannot advance or restart a spawner.
         let stage = is_animated.then(|| {
@@ -1263,7 +1343,9 @@ pub(crate) fn build_overlay_instances(
                 .map_or(0, |animation| animation.current_frame())
         });
         let frame = terrain_draw_frame(stage, obj.health());
-        let (body, shadow) = atlas.terrain_pieces(name, frame);
+        let (body, shadow) = *type_pieces
+            .entry((type_ref, frame))
+            .or_insert_with(|| atlas.terrain_pieces(name, frame));
         if body.is_none() && shadow.is_none() {
             continue;
         }
@@ -2026,5 +2108,35 @@ mod tests {
             300.0
         ));
         assert!(super::overlay_body_window(None, art, camera, viewport).contains(rx, ry));
+    }
+
+    /// The tree pass skips a tree by its cell, so the window must hold a tree
+    /// whose draw point sits on the cull's left limit, and leave out one far
+    /// off the view.
+    #[test]
+    fn a_tree_at_the_cull_limit_stays_in_the_tree_window() {
+        use crate::sim::terrain_object::TerrainObjectState;
+        let (camera, viewport) = ([0.0f32, 0.0], [600.0f32, 400.0]);
+        let window = super::terrain_object_window(None, camera, viewport);
+        let in_view = |rx, ry| {
+            let tree = TerrainObjectState::for_test(1, Default::default(), rx, ry);
+            let (x, y, _) = super::terrain_object_draw_point(&tree);
+            super::super::helpers::in_view(
+                x,
+                y,
+                120.0,
+                120.0,
+                camera[0],
+                camera[1],
+                viewport[0],
+                viewport[1],
+                120.0,
+            )
+        };
+        // Draw point x = -240, the cull's left limit.
+        assert!(in_view(5, 12));
+        assert!(window.contains(5, 12));
+        assert!(!in_view(5, 60));
+        assert!(!window.contains(5, 60));
     }
 }

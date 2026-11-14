@@ -226,9 +226,9 @@ fn a_tethered_unit_refuses_want_ride() {
 /// Ares 3.0 CarryallCanLift (1003D9E0): `Carryall.SizeLimit=2` lifts the
 /// `Size=2` tank but not the `Size=3` one, and `Carryall.Allowed=no` on a
 /// type refuses it; a refusal keeps the base action (hook 0x417D75).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_carryall_keys_gate_the_tote() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut fx = Fixture::new("Carryall.SizeLimit=2\n", "Carryall.Allowed=yes\n");
     let carryall = fx.spawn("CARRY", 15, 15);
     let tank = fx.spawn("TANK", 18, 15);

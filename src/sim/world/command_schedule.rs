@@ -561,6 +561,12 @@ impl Simulation {
         self.executed_exit_owner.take()
     }
 
+    /// Whether [`Self::take_departed_senders`] would hand any over, read
+    /// without taking the world for writing.
+    pub fn has_departed_senders(&self) -> bool {
+        !self.departed_senders.is_empty()
+    }
+
     /// Drain the remote EXIT senders the executor recorded.
     pub fn take_departed_senders(&mut self) -> Vec<i8> {
         std::mem::take(&mut self.departed_senders)

@@ -42,7 +42,6 @@ use crate::sim::world::{FrameEffects, Simulation};
 pub(crate) const DOCK_FACING: u16 = 0x4000;
 
 /// The literal pad offset of `0x0043CA80..0x0043CA8D` (`add dx,3; inc ax`).
-#[cfg(any(test, not(feature = "ares")))]
 const DOCK_PAD_OFFSET: [i32; 2] = [3, 1];
 
 /// The pad cell a DockUnload/Weeder dock sends in MOVE_HERE
@@ -262,12 +261,14 @@ pub(crate) fn can_load(
         return CanLoad::Answer(RadioResponse::None);
     }
     let absorbs = building_type.absorbs_passengers();
+    let ares = rules.ares_form();
     // Ares 3.0 100174E0 (hook 0x43C326) skips the contact-capacity gate for
     // a `Tunnel=` building as for an absorber.
-    #[cfg(feature = "ares")]
-    let tunnel = sim.ares_tunnel_type(building_id, rules);
-    #[cfg(not(feature = "ares"))]
-    let tunnel: Option<usize> = None;
+    let tunnel: Option<usize> = if ares {
+        sim.ares_tunnel_type(building_id, rules)
+    } else {
+        None
+    };
     if matches!(
         building.mission.effective().known(),
         Some(MissionType::Construction | MissionType::Selling)
@@ -287,11 +288,11 @@ pub(crate) fn can_load(
     // class arms: a sender of a type the building type's
     // `Passengers.Allowed`/`.Disallowed` refuses (IsPassengerAllowed
     // 1003DD60) is answered NEGATORY by every building.
-    #[cfg(feature = "ares")]
-    if !building_type
-        .techno_combat()
-        .movement()
-        .passenger_allowed(unit_type.category, &unit_type.id)
+    if ares
+        && !building_type
+            .techno_combat()
+            .movement()
+            .passenger_allowed(unit_type.category, &unit_type.id)
     {
         return CanLoad::Answer(RadioResponse::Negatory);
     }
@@ -307,8 +308,7 @@ pub(crate) fn can_load(
     // or mind-controlled while it holds a capture manager, is refused; with
     // room in the building owner's network (`sim::ares_tunnel`) and the
     // sender's Size= within SizeLimit= it answers ROGER; otherwise the later
-    // arms decide (`0x0043C4F8`).
-    #[cfg(feature = "ares")]
+    // arms decide (`0x0043C4F8`). `tunnel` is `None` without Ares.
     if let Some(tunnel) = tunnel {
         if let Some(manager) = unit.capture_manager.as_ref()
             && (manager.has_any() || unit.mind_control.is_mind_controlled())
@@ -573,10 +573,11 @@ fn building_docking(
     let (rx, ry) = (building.position.rx(), building.position.ry());
     // Ares 3.0 10014540 (hook 0x0043CA80) reads the pad offset from the
     // type's art DockUnloadCell (default 3, 1).
-    #[cfg(feature = "ares")]
-    let pad_offset = object.building_type_ext().dock_unload_cell;
-    #[cfg(not(feature = "ares"))]
-    let pad_offset = DOCK_PAD_OFFSET;
+    let pad_offset = if rules.ares_form() {
+        object.building_type_ext().dock_unload_cell
+    } else {
+        DOCK_PAD_OFFSET
+    };
     // Building43C882/43CB0C..CBC0: Hospital bypasses the general dock's
     // HELLO/NeedToMove arm. Full contacts may release a finished patient.
     if object.hospital {
@@ -801,10 +802,7 @@ fn building_dock_now(
     };
     // 0x0043C710..0x0043C72C: UnitAbsorb/InfantryAbsorb answer ROGER, and
     // with Ares 3.0 a `Tunnel=` building too (100176B0, hook 0x43C716).
-    #[cfg(feature = "ares")]
-    let tunnel = sim.ares_tunnel_type(building_id, rules).is_some();
-    #[cfg(not(feature = "ares"))]
-    let tunnel = false;
+    let tunnel = rules.ares_form() && sim.ares_tunnel_type(building_id, rules).is_some();
     if object.absorbs_passengers() || tunnel {
         return RadioResponse::Roger;
     }
@@ -1063,8 +1061,9 @@ fn unit_docking(
         return RadioResponse::Negatory;
     }
     let movement_zone = sender_type.movement_zone;
+    let ares = rules.ares_form();
     if transport.radio_contacts.slot(0) != Some(from) {
-        if !transport_has_room(transport, transport_type, sender_type) {
+        if !transport_has_room(transport, transport_type, sender_type, ares) {
             return RadioResponse::Negatory;
         }
         if transport.radio_contacts.is_empty() {
@@ -1128,11 +1127,10 @@ fn unit_docking(
             return RadioResponse::Docking;
         }
     }
-    let room = sim
-        .substrate
-        .entities
-        .get(unit)
-        .is_some_and(|transport| transport_has_room(transport, transport_type, sender_type));
+    let room =
+        sim.substrate.entities.get(unit).is_some_and(|transport| {
+            transport_has_room(transport, transport_type, sender_type, ares)
+        });
     if transport_type.passengers <= 0 || !room {
         return foot_receive(
             sim,
@@ -1225,8 +1223,8 @@ pub(crate) fn unit_can_enter_radio(
     };
     // Ares73758A ->1004C250 returns the native no-response tail73761F.
     // CanDrive admission is separate; ordinary cargo cannot board this hull.
-    #[cfg(feature = "ares")]
-    if transport.driver_killed() {
+    let ares = rules.ares_form();
+    if ares && transport.driver_killed() {
         return RadioResponse::None;
     }
     if transport_type.passengers == 0
@@ -1262,17 +1260,17 @@ pub(crate) fn unit_can_enter_radio(
     {
         return RadioResponse::None;
     }
-    if !transport_has_room(transport, transport_type, passenger_type) {
+    if !transport_has_room(transport, transport_type, passenger_type, ares) {
         return RadioResponse::Negatory;
     }
     // Ares 3.0 1004C270 (hook 0x73769E), at the ROGER: a passenger of a type
     // `Passengers.Allowed`/`.Disallowed` refuses (IsPassengerAllowed
     // 1003DD60) takes the no-room answer (`0x0073780F`).
-    #[cfg(feature = "ares")]
-    if !transport_type
-        .techno_combat()
-        .movement()
-        .passenger_allowed(passenger_type.category, &passenger_type.id)
+    if ares
+        && !transport_type
+            .techno_combat()
+            .movement()
+            .passenger_allowed(passenger_type.category, &passenger_type.id)
     {
         return RadioResponse::Negatory;
     }
@@ -1284,18 +1282,19 @@ pub(crate) fn unit_can_enter_radio(
 /// cargo's signed-int total plus the sender's binary64 `Size=` within the
 /// receiver's integer `Passengers=`, and the sender's binary64 `Size=` within
 /// binary64 `SizeLimit=`. The original receiver performs these comparisons
-/// in the x87 owner exposed by PassengerCargo.
+/// in the x87 owner exposed by PassengerCargo. `ares` is the game's
+/// `RuleSet::ares_form`.
 fn transport_has_room(
     transport: &crate::sim::game_entity::GameEntity,
     transport_type: &crate::rules::object_type::ObjectType,
     sender_type: &crate::rules::object_type::ObjectType,
+    ares: bool,
 ) -> bool {
     // Ares 3.0 UnitClass_ReceivedRadioCommand_BySize1/3/4 (1004C150,
     // 1004C1D0, 1004C210; hooks 0x73762B, 0x73782F, 0x737994): a
     // `Passengers.BySize=no` transport counts heads below `Passengers=` in
     // place of the Size total; the SizeLimit test after it stays.
-    #[cfg(feature = "ares")]
-    if !transport_type.ares_passengers_by_size {
+    if ares && !transport_type.ares_passengers_by_size {
         let heads = transport
             .passenger_role
             .cargo()
@@ -1318,20 +1317,19 @@ fn transport_has_room(
     )
 }
 
-/// The facing a docking unit turns to: east ([`DOCK_FACING`]), or in Ares
-/// builds `TechnoExt::GetDockUnloadFacing @ 10044C00`: the art
+/// The facing a docking unit turns to: east ([`DOCK_FACING`]), or in a game
+/// read the Ares way `TechnoExt::GetDockUnloadFacing @ 10044C00`: the art
 /// `DockUnloadFacing` of the building in its first radio contact slot
 /// (`HasAnyLink`, `GetNthLink(0)`), else east.
-#[cfg_attr(not(feature = "ares"), allow(unused_variables))]
 pub(crate) fn dock_unload_facing(sim: &Simulation, unit: u64, rules: &RuleSet) -> u16 {
-    #[cfg(feature = "ares")]
-    if let Some(dock) = sim
-        .substrate
-        .entities
-        .get(unit)
-        .and_then(|entity| entity.radio_contacts.slot(0))
-        .and_then(|dock| sim.substrate.entities.get(dock))
-        .filter(|dock| dock.category() == EntityCategory::Structure)
+    if rules.ares_form()
+        && let Some(dock) = sim
+            .substrate
+            .entities
+            .get(unit)
+            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|dock| sim.substrate.entities.get(dock))
+            .filter(|dock| dock.category() == EntityCategory::Structure)
         && let Some(object) = sim.object_type(dock.type_ref(), rules)
     {
         return object.building_type_ext().dock_unload_direction();
@@ -1598,8 +1596,8 @@ fn aircraft_can_enter_radio(
     let Some(object) = sim.entity_object_type(transport, rules) else {
         return RadioResponse::None;
     };
-    #[cfg(feature = "ares")]
-    if transport.driver_killed() {
+    let ares = rules.ares_form();
+    if ares && transport.driver_killed() {
         return RadioResponse::None;
     }
     if aircraft_refuses_radio(transport)
@@ -1620,8 +1618,8 @@ fn aircraft_can_enter_radio(
     if count >= object.passengers {
         return RadioResponse::Negatory;
     }
-    #[cfg(feature = "ares")]
-    if let Some(from_type) = sim.entity_object_type(passenger, rules)
+    if ares
+        && let Some(from_type) = sim.entity_object_type(passenger, rules)
         && !object
             .techno_combat()
             .movement()
@@ -2541,9 +2539,9 @@ mod tests {
     /// Ares UnitClass_ReceivedRadioCommand_BySize1 (1004C150, hook
     /// 0x73762B): a `Passengers.BySize=no` hold of two size-3 riders takes a
     /// third, which the Size total (3 + 3 + 3 over `Passengers=4`) refuses.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_passengers_by_size_no_counts_heads() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[InfantryTypes]\n0=RIDER\n[VehicleTypes]\n0=BYSIZE\n1=BYHEAD\n\
@@ -2573,7 +2571,7 @@ mod tests {
             cargo.set_passengers_for_test(vec![2, 3]);
             cargo.set_passenger_sizes_for_test(vec![3.0, 3.0]);
             assert_eq!(
-                super::transport_has_room(&hull, object, rider),
+                super::transport_has_room(&hull, object, rider, rules.ares_form()),
                 room,
                 "{transport}"
             );
@@ -3090,9 +3088,9 @@ mod tests {
     /// Ares 3.0 `TechnoExt::GetDockUnloadFacing @ 10044C00`: a unit linked
     /// to a dock faces that type's art `DockUnloadFacing` (16: south), and
     /// east without a link.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_dock_unload_facing_reads_the_linked_dock() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
             &crate::rules::ini_parser::IniFile::from_str(
                 "[BuildingTypes]\n0=GAREFN\n[GAREFN]\nStrength=900\n",
@@ -3739,11 +3737,11 @@ mod tests {
 
     /// Ares 3.0 10048D10 (hook 0x41949F): below `Passengers=`, a sender of a
     /// type the aircraft's `Passengers.Disallowed` lists is NEGATORY.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_aircraft_transport_refuses_a_disallowed_passenger() {
         use crate::rules::ini_parser::IniFile;
         use crate::sim::passenger::{PassengerCargo, PassengerRole};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[AircraftTypes]\n0=SHAD\n[SHAD]\nStrength=200\nPassengers=2\n\
              Passengers.Disallowed=E2\n\

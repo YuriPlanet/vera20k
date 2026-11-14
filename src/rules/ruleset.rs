@@ -938,6 +938,11 @@ pub struct GeneralRules {
     /// within this many cells instead of hovering
     /// ([docs/jumpjet-land-nearby.md]).
     pub jumpjet_land_nearby: i32,
+    /// VERA: `[General] AINearestEnemy=` (default no). When set, a computer
+    /// house picks the nearest enemy base instead of the first house in the
+    /// array, and equal anger goes to the nearer house
+    /// ([docs/ai-nearest-enemy.md]).
+    pub ai_nearest_enemy: bool,
     /// `[General] HoverHeight=`, Rules+0x5CC: the Hover altitude controller's
     /// cruise height in leptons (0x00513D20). Constructor 120 (0x00665E2B).
     pub hover_height: i32,
@@ -2752,6 +2757,7 @@ impl Default for GeneralRules {
             display_cruise_height: 400, // Rules constructor665C3A
             jumpjet_smooth_facing: false,
             jumpjet_land_nearby: 0,
+            ai_nearest_enemy: false,
             // Rules constructor 0x00665E2B..0x00665E81.
             hover_height: 120,
             hover_bob: NativeF64Bits::from_bits(0x403e_0000_0000_0000),
@@ -3726,6 +3732,10 @@ impl GeneralRules {
             .section("JumpjetControls")
             .map_or(0, |s| s.read_int("LandNearby", 0))
             .clamp(0, 8);
+        // VERA key; absent keeps the original's first-house enemy search.
+        let ai_nearest_enemy = ini
+            .section("General")
+            .is_some_and(|s| s.read_bool("AINearestEnemy", false));
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section_or_empty("IQ");
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
@@ -3804,6 +3814,7 @@ impl GeneralRules {
                 display_cruise_height,
                 jumpjet_smooth_facing,
                 jumpjet_land_nearby,
+                ai_nearest_enemy,
                 condition_yellow: condition_yellow_native,
                 condition_red: condition_red_native,
                 path_delay,
@@ -4016,6 +4027,7 @@ impl GeneralRules {
             display_cruise_height,
             jumpjet_smooth_facing,
             jumpjet_land_nearby,
+            ai_nearest_enemy,
             // ReadGeneral 0x0066EDC5..0x0066EE83 reads these into their
             // fields with the current value as default (%-aware ReadDouble).
             hover_height: general.read_int("HoverHeight", defaults.hover_height),
@@ -5399,7 +5411,7 @@ impl RuleSet {
         );
         let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
         let mut rules = rules?;
-        rules.ares = crate::rules::ares_switch::LIVE && processed.ares_inputs().decide(&reads);
+        rules.ares = processed.ares_inputs().decide(&reads);
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         Ok(rules)
     }
@@ -8239,8 +8251,7 @@ impl RuleSet {
 
     /// Whether Ares plays in this game: its Rules layers or map hold an Ares
     /// key, or the game ships `ares.mix` (`rules::ares_switch`). Sim and
-    /// presentation read this one answer. A release build keeps it off until
-    /// the `ares` feature is gone (`ares_switch::LIVE`).
+    /// presentation read this one answer, in every build.
     #[inline]
     pub fn ares(&self) -> bool {
         self.ares
@@ -8251,6 +8262,21 @@ impl RuleSet {
     /// fixed ART, the asset closures) open the same mode with
     /// `ares_switch::read_ares_way`.
     pub fn reads_ares_way(&self) -> bool {
+        self.reads_ares_way
+    }
+
+    /// Whether the code that needs Ares' own Rules takes its Ares form in this
+    /// game: the superweapons, production, power and money. Their Ares arms
+    /// read data only Rules read the Ares way hold (the SWTypeExt metadata
+    /// and handler kinds, BuildingTypeExt, the factory owners, the generic
+    /// prerequisites, a House type's power plants), and a stock arm can
+    /// misread such data (a handler type's absent PreDependent). So they
+    /// follow how the Rules were read, not [`Self::ares`] alone. A game Ares
+    /// turned on in by its keys, read the stock way, keeps the stock form of
+    /// these until loading reads its Rules the Ares way; a build with the
+    /// `ares` feature reads every game the Ares way and keeps their Ares form
+    /// in every game, as before the switch.
+    pub fn ares_form(&self) -> bool {
         self.reads_ares_way
     }
 

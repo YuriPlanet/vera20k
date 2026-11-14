@@ -15,14 +15,16 @@ struct Params {
     hd_scale: u32,
     // 0: every cell revealed; 1: the viewer's cell flags; 2: no plane.
     visibility: u32,
-    // The plane's flag bits (sim::vision).
+    // The plane's flag bits (sim::vision), and the flags of the map's
+    // fallback Cell.
     revealed: u32,
-    gap_covered: u32,
     gap_fog: u32,
+    dummy_flags: u32,
     pad: u32,
 };
 @group(0) @binding(0) var<uniform> params: Params;
-// Generated surface: R5G6B5 words, and each pixel's cell as rx | ry << 16.
+// Generated surface: R5G6B5 words, and each pixel's shroud Cells
+// (terrain::RadarShroudLattice), each rx | ry << 16 or a mark.
 @group(0) @binding(1) var terrain: texture_2d<u32>;
 @group(0) @binding(2) var cells: texture_2d<u32>;
 @group(0) @binding(3) var plane: texture_2d<u32>;
@@ -41,29 +43,46 @@ fn rgb565_bytes(word: u32) -> u32 {
     return red | (green << 8u) | (blue << 16u) | 0xff000000u;
 }
 
-// What a surface pixel shows for its cell, in RenderCellPixel's order: a
-// hostile gap generator's cover first (black wins over half-bright), then a
-// friendly one's half-bright fog, then whether the viewer revealed the cell.
-// Half-bright halves each R5G6B5 channel. A cell off the plane has no flags.
-fn cell_pixel(word: u32, cell: u32) -> u32 {
+// terrain::DUMMY_CELL and terrain::NO_CELL.
+const DUMMY_CELL: u32 = 0xffffffffu;
+const NO_CELL: u32 = 0xfffffffeu;
+
+// A Cell's flags; a Cell off the plane has none.
+fn cell_flags(cell: u32) -> u32 {
+    if cell == DUMMY_CELL {
+        return params.dummy_flags;
+    }
+    let at = vec2u(cell & 0xffffu, cell >> 16u);
+    if all(at < params.plane_size) {
+        return textureLoad(plane, vec2i(at), 0).r;
+    }
+    return 0u;
+}
+
+// What a surface pixel shows, in RenderCellPixel's order
+// (0x00655D06..0x00656089): half-bright where IsFogged, else black where
+// IsShrouded, else the terrain. Both test the pixel's Cell raised by its
+// ground height; an odd level tests two Cells, fogged only when both are and
+// shrouded only when neither is open. Half-bright halves each R5G6B5 channel.
+fn cell_pixel(word: u32, cells: vec2u) -> u32 {
     if params.visibility == 0u {
         return rgb565_bytes(word);
     }
     if params.visibility != 1u {
         return SHROUD;
     }
-    let at = vec2u(cell & 0xffffu, cell >> 16u);
-    var flags = 0u;
-    if all(at < params.plane_size) {
-        flags = textureLoad(plane, vec2i(at), 0).r;
+    let first = cell_flags(cells.x);
+    var fogged = (first & params.gap_fog) != 0u;
+    var open = (first & params.revealed) != 0u;
+    if cells.y != NO_CELL {
+        let next = cell_flags(cells.y);
+        fogged = fogged && (next & params.gap_fog) != 0u;
+        open = open || (next & params.revealed) != 0u;
     }
-    if (flags & params.gap_covered) != 0u {
-        return SHROUD;
-    }
-    if (flags & params.gap_fog) != 0u {
+    if fogged {
         return rgb565_bytes((word >> 1u) & 0x7befu);
     }
-    if (flags & params.revealed) != 0u {
+    if open {
         return rgb565_bytes(word);
     }
     return SHROUD;
@@ -76,7 +95,7 @@ fn native_terrain(pixel: vec2i) -> u32 {
     if any(local < vec2i(0)) || any(local >= params.size) {
         return SHROUD;
     }
-    return cell_pixel(textureLoad(terrain, local, 0).r, textureLoad(cells, local, 0).r);
+    return cell_pixel(textureLoad(terrain, local, 0).r, textureLoad(cells, local, 0).rg);
 }
 
 // One triangle over the whole target.
@@ -139,5 +158,5 @@ fn fs_hd(@builtin(position) position: vec4f) -> @location(0) vec4f {
         return presented(SHROUD);
     }
     return presented(cell_pixel(textureLoad(hd_terrain, local, 0).r,
-                                textureLoad(hd_cells, local, 0).r));
+                                textureLoad(hd_cells, local, 0).rg));
 }

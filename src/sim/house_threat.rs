@@ -88,6 +88,13 @@ impl HouseSpatialThreat {
         }
     }
 
+    /// No grid at all: what a house holds in the presentation copy of the
+    /// world, which never runs a tick or answers a threat query
+    /// (`Simulation::presentation_copy`).
+    pub(crate) fn none() -> Self {
+        Self(Box::new([]))
+    }
+
     pub(crate) fn configure(&mut self, grid: crate::map::cell_index::CellGrid) {
         let old_side = usize::from(self.grid().side()) / 4 + 2;
         let side = usize::from(grid.side()) / 4 + 2;
@@ -120,9 +127,10 @@ impl HouseSpatialThreat {
     /// before its division. Off every fourth row the writes then land away
     /// from the slot the inline readers read for that cell. VERA-only: the
     /// large-map grid takes its own side and stride for Ares's 512 and 130.
-    fn caller_index(grid: crate::map::cell_index::CellGrid, cell: (i16, i16)) -> i32 {
-        #[cfg(feature = "ares")]
-        {
+    ///
+    /// `ares` is the caller's `rules.ares_form()`; the grid holds no rules.
+    fn caller_index(grid: crate::map::cell_index::CellGrid, cell: (i16, i16), ares: bool) -> i32 {
+        if ares {
             let side = i32::from(grid.side());
             let stride = side / 4 + 2;
             let (x, y) = (i32::from(cell.0), i32::from(cell.1));
@@ -130,9 +138,9 @@ impl HouseSpatialThreat {
                 return -1;
             }
             stride * y / 4 + x / 4 + stride + 1
+        } else {
+            Self::index_for_grid(grid, cell)
         }
-        #[cfg(not(feature = "ares"))]
-        Self::index_for_grid(grid, cell)
     }
 
     pub(super) fn values(&self) -> &[i32] {
@@ -170,8 +178,13 @@ impl HouseSpatialThreat {
     /// The nine-slot kernel both `0x0056BC50` callers that write apply: Cell
     /// UpdateThreat through `HouseClass::Adjust_Threat @ 0x004FA2E0`, and
     /// AI_BuildThreatMap inline (`0x0050954B`, `0x0050959A`).
-    pub(super) fn adjust(&mut self, cell: (i16, i16), delta: i32) -> Result<(), String> {
-        let base = Self::caller_index(self.grid(), cell);
+    pub(super) fn adjust(
+        &mut self,
+        cell: (i16, i16),
+        delta: i32,
+        ares: bool,
+    ) -> Result<(), String> {
+        let base = Self::caller_index(self.grid(), cell, ares);
         // Validate dependencies before the first write. Extreme scalar
         // coordinates may alias unrelated native House bytes; no invented zero.
         let first = base - (i32::from(self.grid().side()) / 4 + 3);
@@ -182,9 +195,9 @@ impl HouseSpatialThreat {
             // the rebuild's inline kernel, and the rows past 508 whose
             // scaled index runs off the grid, write outside the grid
             // natively; both are skipped too.
-            #[cfg(feature = "ares")]
-            return Ok(());
-            #[cfg(not(feature = "ares"))]
+            if ares {
+                return Ok(());
+            }
             return Err(format!(
                 "native House threat kernel outside retained grid at {cell:?}"
             ));
@@ -276,6 +289,7 @@ impl Simulation {
         source: InternedId,
         cell: (i16, i16),
         delta: i32,
+        ares: bool,
     ) {
         // Each receiver asks its own IsAlliedWith(source): the index overload
         // 0x004F9A10, called at 0x004818B7.
@@ -285,7 +299,7 @@ impl Simulation {
                 continue;
             }
             house
-                .adjust_spatial_threat(cell, delta)
+                .adjust_spatial_threat(cell, delta, ares)
                 .expect("native Cell UpdateThreat requires an addressable House kernel");
         }
     }
@@ -304,6 +318,7 @@ impl Simulation {
             owner,
             cell,
             value,
+            rules.ares_form(),
         );
     }
 
@@ -314,6 +329,7 @@ impl Simulation {
         houses: &mut Houses,
         id: u64,
         cell: (i16, i16),
+        ares: bool,
     ) {
         let actor = substrate.entities.get(id).unwrap();
         let owner = actor.owner();
@@ -327,6 +343,7 @@ impl Simulation {
             owner,
             cell,
             value.wrapping_neg(),
+            ares,
         );
         substrate
             .entities
@@ -388,13 +405,18 @@ impl Simulation {
                 &mut self.houses,
                 id,
                 cell,
+                rules.ares_form(),
             );
         }
     }
 
     /// Techno701701..701719, after detach and before writing the new owner.
     /// Return the retained Cell so the post-owner half cannot resample it.
-    pub(crate) fn spatial_threat_before_owner_change(&mut self, id: u64) -> Option<(i16, i16)> {
+    pub(crate) fn spatial_threat_before_owner_change(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+    ) -> Option<(i16, i16)> {
         let actor = self.substrate.entities.get(id)?;
         if actor.lifecycle.in_limbo() {
             return None;
@@ -415,6 +437,7 @@ impl Simulation {
             &mut self.houses,
             id,
             cell,
+            rules.ares_form(),
         );
         Some(cell)
     }
@@ -446,8 +469,9 @@ impl Simulation {
             return;
         }
         let current = (actor.position.rx() as i16, actor.position.ry() as i16);
-        if HouseSpatialThreat::caller_index(self.cell_grid(), old)
-            == HouseSpatialThreat::caller_index(self.cell_grid(), current)
+        let ares = rules.ares_form();
+        if HouseSpatialThreat::caller_index(self.cell_grid(), old, ares)
+            == HouseSpatialThreat::caller_index(self.cell_grid(), current, ares)
         {
             return;
         }
@@ -462,6 +486,7 @@ impl Simulation {
             &mut self.houses,
             id,
             old,
+            ares,
         );
         if let Some(current) = self.spatial_threat_current_cell(id, None) {
             self.add_spatial_threat_at(id, current, rules);
@@ -484,6 +509,7 @@ impl Simulation {
                 &mut self.houses,
                 id,
                 cell,
+                rules.ares_form(),
             );
             self.add_spatial_threat_at(id, cell, rules);
         }
@@ -500,7 +526,7 @@ impl Simulation {
         house.clear_spatial_threat();
         for (cell, value) in contributions {
             house
-                .adjust_spatial_threat(cell, value)
+                .adjust_spatial_threat(cell, value, rules.ares_form())
                 .expect("native diplomacy rebuild requires an addressable House kernel");
         }
     }

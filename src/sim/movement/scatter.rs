@@ -85,8 +85,7 @@ pub(super) fn unit_scatter_admitted(
     binary_frame: u32,
 ) -> bool {
     // Techno CanScatter6F3283 -> Ares10049F90/6F32C5: no driver, no scatter.
-    #[cfg(feature = "ares")]
-    if unit.driver_killed() {
+    if rules.ares_form() && unit.driver_killed() {
         return false;
     }
     if matches!(unit.mission.effective().raw(), 0 | 6 | 16) {

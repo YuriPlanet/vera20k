@@ -240,11 +240,9 @@ pub(crate) enum HudMessage {
     LowPower,
     SuperWeapon(&'static str),
     /// The configured label/style is resolved from its type at presentation.
-    #[cfg(feature = "ares")]
     AresSuperWeaponRefused(crate::sim::intern::InternedId),
     /// SWTypeExt::PrintMessage10033BD0 of one `Message.*` label, with the
     /// House its Message.FirerColor would use (None: Gold).
-    #[cfg(feature = "ares")]
     AresSuperWeaponMessage {
         sw_type: crate::sim::intern::InternedId,
         message: crate::rules::superweapon_type::AresSuperWeaponMessage,
@@ -254,7 +252,6 @@ pub(crate) enum HudMessage {
     /// (Ares `BuildingClass_ChangeOwnership_Tech @ 10013E40`'s PrintMessage
     /// lambda): PlayerPtr's colour, MessageDelay through the CRT `_ftol2`
     /// (`100772B0`), silent 0.
-    #[cfg(feature = "ares")]
     AresTechCaptureLabel(crate::sim::intern::InternedId),
     /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
     /// `0x004FC34F`).
@@ -285,7 +282,6 @@ pub(crate) enum HudMessage {
 impl HudMessage {
     fn csf_key(self) -> Option<&'static str> {
         Some(match self {
-            #[cfg(feature = "ares")]
             Self::AresSuperWeaponRefused(_)
             | Self::AresSuperWeaponMessage { .. }
             | Self::AresTechCaptureLabel(_) => return None,
@@ -306,7 +302,6 @@ impl HudMessage {
                 message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
-            #[cfg(feature = "ares")]
             Self::AresSuperWeaponRefused(_)
             | Self::AresSuperWeaponMessage { .. }
             | Self::AresTechCaptureLabel(_) => {
@@ -344,7 +339,6 @@ fn message_timeout_ms_from_buckets(buckets: i32) -> Option<u64> {
 
 /// Ares PrintMessage10033BD0 uses CRT100772B0's signed32 conversion,
 /// unlike the stock callers' Math7C5F00 low dword. Reuse the numeric owner.
-#[cfg(feature = "ares")]
 fn ares_message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Option<u64> {
     use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
     let scaled = X::mul(
@@ -358,7 +352,6 @@ fn ares_message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) 
 /// firer/configured/player colour (Gold only for a null house), MessageDelay
 /// in900 wall-clock buckets, no prefix and silent0. The existing message list
 /// owns CSF lookup, empty-text admission, repeated rows, expiry and insert audio.
-#[cfg(feature = "ares")]
 fn ares_message_post<'a>(
     settings: &'a crate::rules::superweapon_type::AresSuperWeaponMessages,
     message: crate::rules::superweapon_type::AresSuperWeaponMessage,
@@ -398,7 +391,6 @@ fn ares_message_post<'a>(
 
 /// A cameo press refusal's line, with the local player as the firer: the
 /// select hook 10034DA0 prints only the funds and CannotFire labels.
-#[cfg(feature = "ares")]
 pub(crate) fn post_ares_superweapon_refusal(
     state: &mut AppState,
     section: &str,
@@ -417,7 +409,6 @@ pub(crate) fn post_ares_superweapon_refusal(
 
 /// SWTypeExt::PrintMessage10033BD0 of one label of `section`, for `firer`
 /// (the House whose colour Message.FirerColor picks; None prints Gold).
-#[cfg(feature = "ares")]
 pub(crate) fn post_ares_superweapon_message(
     state: &mut AppState,
     section: &str,
@@ -455,7 +446,6 @@ pub(crate) fn post_ares_superweapon_message(
 /// The callers' text flags still share the existing bitmap-text lane; this
 /// transport does not establish native glyph/style raster equivalence.
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
-    #[cfg(feature = "ares")]
     if let HudMessage::AresSuperWeaponRefused(sw_type) = message {
         let section = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime
@@ -473,7 +463,6 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         }
         return;
     }
-    #[cfg(feature = "ares")]
     if let HudMessage::AresSuperWeaponMessage {
         sw_type,
         message,
@@ -492,7 +481,6 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         }
         return;
     }
-    #[cfg(feature = "ares")]
     if let HudMessage::AresTechCaptureLabel(label) = message {
         let Some(label) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
             runtime

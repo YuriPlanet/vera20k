@@ -21,6 +21,7 @@
 
 use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform, SpriteInstance};
 use crate::render::shroud_buffer::InstanceUpload;
+use crate::sim::snapshot::saved_local_view::{SavedRadarHousing, SavedRadarMovie, SavedRadarPhase};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RadarAnimPhase {
@@ -145,10 +146,11 @@ enum RadarPaint {
     Clear,
     /// Frame `n`'s pixels; `4912B0` skips source index 0, transparent here.
     Frame(usize),
-    /// A movie frame along the top, centred in the surface's width.
+    /// A movie frame, its top-left corner at `origin` in the surface.
     Movie {
         picture: BatchTexture,
         size: [u32; 2],
+        origin: [f32; 2],
     },
     /// The online draw (`656EC0`) kept for a later loss: frame 32, then the
     /// minimap's picture through `map_quads` and the solid `solid_quads`, as
@@ -245,6 +247,76 @@ impl RadarPresentation {
         self.needs_show |= !has_radar && self.animation.phase == RadarAnimPhase::Online;
         self.animation.set_has_radar(has_radar)
     }
+    /// A radar with no saved housing to restore (`restore_saved`): a new
+    /// scenario's, which arrives unavailable, or one from a save made while
+    /// no housing was built, which takes the loaded House's radar and is up
+    /// at frame 32 with no RadarOn.
+    pub(in crate::render) fn restore_availability(&mut self, has_radar: bool) {
+        self.pending_radar = has_radar;
+        if has_radar {
+            self.animation.phase = RadarAnimPhase::Online;
+            self.animation.frame = 32;
+            self.paints.push(RadarPaint::Frame(32));
+            self.needs_show = true;
+        }
+    }
+    /// What a save keeps of this radar (`restore_saved`). Stage 0 never
+    /// outlasts the service pass that admits its clip.
+    pub(in crate::render) fn saved(&self) -> SavedRadarHousing {
+        SavedRadarHousing {
+            phase: match self.animation.phase {
+                RadarAnimPhase::Offline => SavedRadarPhase::Offline,
+                RadarAnimPhase::Opening => SavedRadarPhase::Opening,
+                RadarAnimPhase::Online => SavedRadarPhase::Online,
+                RadarAnimPhase::Closing => SavedRadarPhase::Closing,
+                RadarAnimPhase::MovieOpening => SavedRadarPhase::MovieOpening,
+                RadarAnimPhase::MovieRestoring => SavedRadarPhase::MovieRestoring,
+            },
+            frame: self.animation.frame.min(32) as u8,
+            timer: [self.animation.last_bucket, self.animation.duration],
+            movie: self.movie.map(|stage| match stage {
+                MovieStage::Announce | MovieStage::WaitAnnouncement => {
+                    SavedRadarMovie::WaitAnnouncement
+                }
+                MovieStage::WaitStreams => SavedRadarMovie::WaitStreams,
+                MovieStage::Playback => SavedRadarMovie::Playback,
+            }),
+            available: self.pending_radar,
+        }
+    }
+    /// A loaded game's radar. `RadarClass::Load @ 0x006568A0` reads Mode,
+    /// State, PendingMode and MovieStage back, and `MouseClass::Load @
+    /// 0x005BDF70` the Display body with AnimFrame, the housing timer and
+    /// TacticalMapAvailable (`0x005BE092`): an opening or closing goes on
+    /// from its frame, silent (the load rebuilds an empty VocHandle), and the
+    /// next `SetTacticalMapAvailable @ 0x00656DF0` sees no change. The load
+    /// keeps no clip, so `RadarClass::Init @ 0x00655B20` ends Mode 3 with
+    /// State 5 and `SetRadarMode(PendingMode)`, and a Mode 4 stage winds down
+    /// on the radar's own passes (`wind_down_retired`).
+    pub(in crate::render) fn restore_saved(&mut self, saved: SavedRadarHousing) {
+        self.pending_radar = saved.available;
+        self.animation.phase = match saved.phase {
+            SavedRadarPhase::Offline => RadarAnimPhase::Offline,
+            SavedRadarPhase::Opening => RadarAnimPhase::Opening,
+            SavedRadarPhase::Online => RadarAnimPhase::Online,
+            SavedRadarPhase::Closing => RadarAnimPhase::Closing,
+            SavedRadarPhase::MovieOpening => RadarAnimPhase::MovieOpening,
+            SavedRadarPhase::MovieRestoring => RadarAnimPhase::MovieRestoring,
+        };
+        self.animation.frame = usize::from(saved.frame.min(32));
+        [self.animation.last_bucket, self.animation.duration] = saved.timer;
+        self.movie = saved.movie.map(|stage| match stage {
+            SavedRadarMovie::WaitAnnouncement => MovieStage::WaitAnnouncement,
+            SavedRadarMovie::WaitStreams => MovieStage::WaitStreams,
+            SavedRadarMovie::Playback => MovieStage::Playback,
+        });
+        self.movie_pause_latch = false;
+        if self.movie == Some(MovieStage::Playback) {
+            self.finish_movie(false);
+        }
+        self.paints.push(RadarPaint::Frame(self.animation.frame));
+        self.needs_show = true;
+    }
     /// Advance the housing, painting the frame it reaches; returns whether
     /// the surface is shown.
     pub(in crate::render) fn advance_draw(&mut self, wall_ms: u64) -> bool {
@@ -277,8 +349,15 @@ impl RadarPresentation {
     }
     /// One `653100` draw: whether the housing finished opening or closing in
     /// it, where native ends the radar's sound loop (`0x00653267` at frame 0,
-    /// `0x0065328C` at frame 32).
-    fn draw(&mut self, wall_ms: u64) -> bool {
+    /// `0x0065328C` at frame 32). `RenderFrame_main @ 0x004F4480` reaches
+    /// Draw (GScreenClass vt+0x40) only in a tactical composite, inside its
+    /// chrono-screen test, so a picture that owes none (`composites` 0) does
+    /// not draw the housing: offline it steps once per Main_Tick, on the first
+    /// tick four buckets on.
+    fn draw(&mut self, composites: u32, wall_ms: u64) -> bool {
+        if composites == 0 {
+            return false;
+        }
         let moving = self.housing_moving();
         self.advance_draw(wall_ms);
         moving && !self.housing_moving()
@@ -291,6 +370,15 @@ impl RadarPresentation {
         // SetMode4 at656DB2 changes only mode; the housing is preserved while
         // IncomingTransmission plays. SetMode3 below starts its transition.
         true
+    }
+    /// Radar mode 4 (`+0x14B0`): an admitted movie still in its prelude,
+    /// where `RadarClass::AI` runs the prelude (`0x006539A2`) instead of its
+    /// per-pass EVA resume.
+    fn movie_prelude(&self) -> bool {
+        matches!(
+            self.movie,
+            Some(MovieStage::Announce | MovieStage::WaitAnnouncement | MovieStage::WaitStreams)
+        )
     }
     fn movie_step(&mut self, selected_done: bool, streams_ready: bool) -> RadarMovieCommand {
         match self.movie {
@@ -320,6 +408,34 @@ impl RadarPresentation {
             _ => RadarMovieCommand::None,
         }
     }
+    /// One of the radar's own passes over a clip the queue no longer holds:
+    /// `5BF450` emptied it and kept Mode and MovieStage, and a failed load
+    /// keeps the match. `PlayRadarMovie @ 0x006578F0` stage 1 waits for the
+    /// announcement, then moves on without a clip to start
+    /// (`0x00657992..0x006579A0`); stage 2 skips the ready check
+    /// (`0x0065790C..0x00657913`), sets Mode 3 and plays MovieOn
+    /// (`0x00657935..0x0065796F`), and the same frame's `PerFrameMovieUpdate
+    /// @ 0x006579E0` finds no clip and takes its movie-done arm
+    /// (`0x00657BFA..0x00657C71`). A clip in playback takes that arm at once.
+    /// Returns, once the arm ran, whether stage 2 ran in the same pass.
+    fn wind_down_retired(&mut self, ai_runs: bool, selected_done: bool) -> Option<bool> {
+        let movie_on = match self.movie {
+            Some(MovieStage::WaitAnnouncement) => {
+                if ai_runs && selected_done {
+                    self.movie = Some(MovieStage::WaitStreams);
+                }
+                return None;
+            }
+            Some(MovieStage::WaitStreams) if ai_runs => {
+                let _ = self.movie_step(true, true);
+                true
+            }
+            Some(MovieStage::Playback) => false,
+            _ => return None,
+        };
+        self.finish_movie(false);
+        Some(movie_on)
+    }
     fn finish_movie(&mut self, has_next: bool) {
         if has_next {
             //657BEE writes phase4/frame25; no second IncomingTransmission.
@@ -336,27 +452,29 @@ impl RadarPresentation {
             }
         }
     }
-    /// Native movie copies into retained SidebarSurface. Use the stock 140x110
-    /// aperture centered in its168x110 backing. Full native origin/final-paint
-    /// driver equivalence is not established; no battlefield shader involved.
-    fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2]) {
+    /// The movie's frame copied into the retained housing surface at
+    /// `origin` (see `SidebarChromeLayoutSpec::radar_movie_origin`).
+    fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2], origin: [f32; 2]) {
         // Painting the same picture again stores the same pixels.
         if let [
             ..,
             RadarPaint::Movie {
                 picture: last,
                 size: last_size,
+                origin: last_origin,
             },
             RadarPaint::Show,
         ] = self.paints.as_slice()
             && last.view == picture.view
             && *last_size == size
+            && *last_origin == origin
         {
             return;
         }
         self.paints.push(RadarPaint::Movie {
             picture: picture.clone(),
             size,
+            origin,
         });
         self.paints.push(RadarPaint::Show);
     }
@@ -480,15 +598,29 @@ impl RadarAnimState {
     pub fn set_has_radar(&mut self, has_radar: bool) -> Option<RadarAvailabilityCue> {
         self.presentation.set_has_radar(has_radar)
     }
+    /// Hydrate a new owner from the current availability without a cue;
+    /// see [`RadarPresentation::restore_availability`].
+    pub fn restore_availability(&mut self, has_radar: bool) {
+        self.presentation.restore_availability(has_radar);
+    }
+    /// See [`RadarPresentation::saved`].
+    pub fn saved_housing(&self) -> SavedRadarHousing {
+        self.presentation.saved()
+    }
+    /// See [`RadarPresentation::restore_saved`].
+    pub fn restore_saved_housing(&mut self, saved: SavedRadarHousing) {
+        self.presentation.restore_saved(saved);
+    }
     /// Whether the housing is opening or closing: `653100` steps it on the
     /// first draw after each four wall-clock buckets.
     pub fn housing_moving(&self) -> bool {
         self.presentation.housing_moving()
     }
-    /// Native 653100 samples wall time once per draw, independent of game speed.
-    /// Returns whether the housing finished opening or closing in this draw.
-    pub fn tick(&mut self, wall_ms: u64) -> bool {
-        self.presentation.draw(wall_ms)
+    /// Native 653100 samples wall time once per draw that `composites`, see
+    /// [`RadarPresentation::draw`]. Returns whether the housing finished
+    /// opening or closing in this draw.
+    pub fn tick(&mut self, composites: u32, wall_ms: u64) -> bool {
+        self.presentation.draw(composites, wall_ms)
     }
     /// Keep the online draw: the minimap's `map` picture through `map_quads`,
     /// then `white` tinted through the solid quads, as drawn from `origin`.
@@ -532,20 +664,26 @@ impl RadarAnimState {
     pub fn finish_movie(&mut self, has_next: bool) {
         self.presentation.finish_movie(has_next);
     }
-    pub fn retire_movies(&mut self) -> bool {
-        let suspended = matches!(
-            self.presentation.movie,
-            Some(MovieStage::WaitAnnouncement | MovieStage::WaitStreams)
-        );
+    /// Whether the radar still holds a clip's stage.
+    pub fn has_movie(&self) -> bool {
+        self.presentation.movie.is_some()
+    }
+    /// See `RadarPresentation::wind_down_retired`.
+    pub fn wind_down_retired_movie(&mut self, ai_runs: bool, selected_done: bool) -> Option<bool> {
+        self.presentation.wind_down_retired(ai_runs, selected_done)
+    }
+    pub fn retire_movies(&mut self) {
         if self.presentation.movie.is_some() {
             self.presentation.finish_movie(false);
         }
         self.presentation.movie_pause_latch = false;
-        suspended
+    }
+    pub fn movie_prelude(&self) -> bool {
+        self.presentation.movie_prelude()
     }
     /// Paint the movie's current `picture`, `size` pixels, and show it.
-    pub fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2]) {
-        self.presentation.paint_movie(picture, size);
+    pub fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2], origin: [f32; 2]) {
+        self.presentation.paint_movie(picture, size, origin);
     }
     pub fn phase(&self) -> RadarAnimPhase {
         self.presentation.phase()
@@ -608,9 +746,9 @@ impl RadarAnimState {
                 RadarPaint::Movie {
                     picture,
                     size: movie,
+                    origin,
                 } => {
-                    let left = self.width.saturating_sub(movie[0]) / 2;
-                    let quad = picture_quad([left as f32, 0.0], movie.map(|v| v as f32));
+                    let quad = picture_quad(origin, movie.map(|v| v as f32));
                     draw(&mut steps, &picture, 0, &[quad]);
                 }
                 RadarPaint::Online {
@@ -784,6 +922,34 @@ mod tests {
     fn housing() -> Vec<Vec<u8>> {
         (0..33).map(|i| [i * 5, 12, 88, 255].repeat(2)).collect()
     }
+    /// `MouseClass::Load` (`0x005BE092`) brings a saved radar back open, so
+    /// the next House update (`0x00656DF0`) finds no change: no opening, no
+    /// RadarOn. A radar that was down still opens with its cue.
+    #[test]
+    fn loaded_radar_comes_back_open_without_a_cue() {
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        radar.restore_availability(true);
+        assert_eq!(radar.set_has_radar(true), None);
+        assert_eq!(
+            (radar.animation.frame, radar.phase()),
+            (32, RadarAnimPhase::Online)
+        );
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        radar.restore_availability(false);
+        assert_eq!(radar.set_has_radar(true), Some(RadarAvailabilityCue::On));
+    }
+    /// Offline, Draw runs once per Main_Tick, so at GameSpeed 3 (a tick every
+    /// 48 ms) each opening step waits for the first tick four buckets on
+    /// (`0x006531F0..0x00653230`): 96 ms, however often the display redraws.
+    #[test]
+    fn the_housing_steps_only_in_a_draw_that_composites() {
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = radar.set_has_radar(true);
+        for draw in 0..60u64 {
+            radar.draw(u32::from(draw % 3 == 0), draw * 16);
+        }
+        assert_eq!(radar.animation.frame, 10);
+    }
     /// Executed6531DB controls for native phase4/5: at100+3 buckets no
     ///movement; at100+4,25->26 and31->32/phase1. Synthetic colors here only
     ///exercise the owner, never certify retail shape/pixel equivalence.
@@ -808,8 +974,10 @@ mod tests {
         let _ = radar.set_has_radar(true);
         radar.animation.phase = RadarAnimPhase::Online;
         radar.animation.frame = 32;
+        assert!(!radar.movie_prelude());
         assert!(radar.admit_movie());
         assert!(!radar.admit_movie());
+        assert!(radar.movie_prelude(), "mode 4 skips the EVA resume");
         assert_eq!(radar.movie_step(true, true), RadarMovieCommand::Announce);
         assert_eq!(radar.movie_step(false, true), RadarMovieCommand::None);
         assert_eq!(
@@ -817,10 +985,12 @@ mod tests {
             RadarMovieCommand::PrepareStreams
         );
         assert_eq!(radar.movie_step(true, false), RadarMovieCommand::None);
+        assert!(radar.movie_prelude());
         assert_eq!(
             radar.movie_step(true, true),
             RadarMovieCommand::StartPlayback
         );
+        assert!(!radar.movie_prelude(), "playback resumes EVA every pass");
         let _ = radar.set_has_radar(false);
         assert_eq!(radar.movie, Some(MovieStage::Playback));
         radar.movie_pause_latch = true;
@@ -836,6 +1006,75 @@ mod tests {
         radar.finish_movie(false);
         assert!(!radar.movie_pause_latch);
         assert_eq!(radar.animation.phase, RadarAnimPhase::Closing);
+    }
+    /// After `5BF450` empties the queue mid-announcement, the radar waits for
+    /// the announcement, takes one pass to reach stage 2, then winds down
+    /// there (`0x006579A0`, `0x00657935..0x0065796F`, `0x00657BFA`).
+    #[test]
+    fn a_retired_clip_winds_down_on_the_radars_own_passes() {
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = radar.set_has_radar(true);
+        radar.animation.phase = RadarAnimPhase::Online;
+        radar.animation.frame = 32;
+        assert!(radar.admit_movie());
+        assert_eq!(radar.movie_step(true, true), RadarMovieCommand::Announce);
+        assert_eq!(radar.wind_down_retired(true, false), None);
+        assert_eq!(radar.wind_down_retired(false, true), None);
+        assert_eq!(radar.movie, Some(MovieStage::WaitAnnouncement));
+        assert_eq!(radar.wind_down_retired(true, true), None);
+        assert_eq!(radar.wind_down_retired(true, true), Some(true));
+        assert_eq!(radar.movie, None);
+        assert_eq!(
+            (radar.animation.phase, radar.animation.frame),
+            (RadarAnimPhase::MovieOpening, 25)
+        );
+        assert_eq!(radar.wind_down_retired(true, true), None);
+    }
+    /// A load reads the housing back as saved (`0x006568A0`, `0x005BE092`):
+    /// an opening goes on from its frame and timer, a Mode 4 stage stays, and
+    /// `RadarClass::Init @ 0x00655B20` ends a Mode 3 clip through
+    /// `SetRadarMode(PendingMode)`, replaying frames 25..32.
+    #[test]
+    fn a_loaded_radar_resumes_as_saved_and_ends_a_playing_clip() {
+        let mut opening = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = opening.set_has_radar(true);
+        opening.animation.frame = 10;
+        opening.animation.last_bucket = 7;
+        opening.animation.duration = 4;
+        let mut loaded = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        loaded.restore_saved(opening.saved());
+        assert_eq!(
+            (loaded.animation.phase, loaded.animation.frame),
+            (RadarAnimPhase::Opening, 10)
+        );
+        assert_eq!(
+            (loaded.animation.last_bucket, loaded.animation.duration),
+            (7, 4)
+        );
+        assert!(loaded.pending_radar);
+
+        let mut playing = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        let _ = playing.set_has_radar(true);
+        playing.animation.phase = RadarAnimPhase::Online;
+        playing.animation.frame = 32;
+        assert!(playing.admit_movie());
+        let _ = playing.movie_step(true, true);
+        let _ = playing.movie_step(true, true);
+        let waiting = playing.saved();
+        assert_eq!(
+            playing.movie_step(true, true),
+            RadarMovieCommand::StartPlayback
+        );
+        let mut loaded = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        loaded.restore_saved(waiting);
+        assert_eq!(loaded.movie, Some(MovieStage::WaitStreams));
+        let mut loaded = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        loaded.restore_saved(playing.saved());
+        assert_eq!(loaded.movie, None);
+        assert_eq!(
+            (loaded.animation.phase, loaded.animation.frame),
+            (RadarAnimPhase::MovieOpening, 25)
+        );
     }
     /// `653100` ends the radar's sound loop only on the draw that finishes
     /// the housing: MovieOpening reaching 32 (`0x0065328C`) and Closing
@@ -854,9 +1093,9 @@ mod tests {
                 last_bucket: 100,
                 duration: 4,
             };
-            assert!(!radar.draw(1_663), "not due");
-            assert!(radar.draw(1_664), "{phase:?} settles");
-            assert!(!radar.draw(1_728), "settled housing stays");
+            assert!(!radar.draw(1, 1_663), "not due");
+            assert!(radar.draw(1, 1_664), "{phase:?} settles");
+            assert!(!radar.draw(1, 1_728), "settled housing stays");
         }
     }
     /// Native656DF0 suppresses equal availability before direction admission;
