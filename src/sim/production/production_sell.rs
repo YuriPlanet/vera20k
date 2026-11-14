@@ -254,7 +254,8 @@ pub(crate) fn foot_on_sold(
 /// 10048FD0, hook 0x4D9EBD), and measures to the building's dock coordinate
 /// for this object (GetDockCoords vt+0xA8) in place of its centre
 /// (FootClass_CanBeSold_Dock 1005CA30, hook 0x4D9EE1). Only Ares asks it:
-/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`).
+/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`), so
+/// its callers ask it only while Ares plays.
 pub fn foot_can_be_sold(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;

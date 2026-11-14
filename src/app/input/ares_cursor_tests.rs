@@ -1,5 +1,6 @@
 //! Ares 3.0 action cursors through the production What_Action port, on
-//! retail rules with authored `[MouseCursors]` entries and cursor keys.
+//! retail rules read the Ares way, with authored `[MouseCursors]` entries and
+//! cursor keys.
 
 use super::*;
 use crate::app::input::context_order::OrderModifier;
@@ -17,6 +18,7 @@ const PATCH: &str = "[MouseCursors]\n\
                      Cursor.AttackOutOfRange=Still\n";
 
 fn scene(patch: &str) -> Option<(Simulation, RuleSet)> {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let battle = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "Hills.mmx",
         &IniFile::from_str(patch),

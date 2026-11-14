@@ -1248,22 +1248,16 @@ pub(crate) fn super_types_with_type(
 }
 
 /// `SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`: the first
-/// `[SuperWeaponTypes]` entry whose `Action=` (`+0xBC`) is `action`, or none.
-/// An absent `Action=` keeps the constructor's action 0, `None`.
-pub fn first_super_type_with_action<'a>(
-    rules: &'a RuleSet,
-    action: &str,
-) -> Option<&'a str> {
+/// `[SuperWeaponTypes]` entry whose `Action=` (`+0xBC`) is `action`
+/// ([`SuperWeaponType::has_action`]), or none.
+pub fn first_super_type_with_action<'a>(rules: &'a RuleSet, action: &str) -> Option<&'a str> {
     rules
         .super_weapon_order
         .iter()
         .find(|name| {
-            rules.super_weapon(name).is_some_and(|sw| {
-                sw.action
-                    .as_deref()
-                    .unwrap_or("None")
-                    .eq_ignore_ascii_case(action)
-            })
+            rules
+                .super_weapon(name)
+                .is_some_and(|sw| sw.has_action(action))
         })
         .map(String::as_str)
 }

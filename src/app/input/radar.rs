@@ -70,11 +70,9 @@ pub(crate) enum RadarAction {
     /// Ares: an action whose cursor override `0x653CA6` let through, with the
     /// cursors 10057F10 draws over a mapped and a shrouded Cell
     /// ([`crate::app::input::ares_cursor::radar_action`]).
-    #[cfg(feature = "ares")]
     Ares { main: i32, shrouded: i32 },
     /// Ares: the armed superweapon's `Cursor` or `NoCursor` (hook `0x653B3A`),
     /// which launches only where it may fire.
-    #[cfg(feature = "ares")]
     AresSuperWeapon { cursor: i32, launch: bool },
 }
 
@@ -125,9 +123,9 @@ impl RadarAction {
             | Kind::RepairMode(_)
             | Kind::SellMode(_)
             | Kind::PlaceBeacon
-            | Kind::SuperWeaponTarget(_) => return None,
-            #[cfg(feature = "ares")]
-            Kind::AresAction(_) | Kind::SellUnit => return None,
+            | Kind::SuperWeaponTarget(_)
+            | Kind::AresAction(_)
+            | Kind::SellUnit => return None,
         })
     }
 
@@ -159,7 +157,6 @@ impl RadarAction {
             // Row 22 (`0x00731CC0`) in both.
             Self::GuardArea => CursorId::MinimapGuardArea,
             Self::SuperWeapon(super_weapon) => super_weapon.cursor(),
-            #[cfg(feature = "ares")]
             Self::Ares {
                 main,
                 shrouded: under_shroud,
@@ -167,7 +164,6 @@ impl RadarAction {
                 if shrouded { under_shroud } else { main },
                 true,
             ),
-            #[cfg(feature = "ares")]
             Self::AresSuperWeapon { cursor, .. } => {
                 crate::app::input::ares_cursor::cursor_id(cursor, true)
             }
@@ -198,7 +194,7 @@ pub(crate) enum RadarSuperWeapon {
 impl RadarSuperWeapon {
     /// The action's name in the ActionType table (`0x007E4C50`), which
     /// `CCINIClass::ReadAction @ 0x00474EE0` matches `Action=` against.
-    const fn action_name(self) -> &'static str {
+    pub(crate) const fn action_name(self) -> &'static str {
         match self {
             Self::Nuke => "Nuke",
             Self::LightningStorm => "LightningStorm",
@@ -269,7 +265,6 @@ pub(crate) fn action(
 ) -> Option<RadarAction> {
     // Ares RadarClass_GetMouseAction_CustomSWAction 10034D00 (hook
     // 0x653B3A) asks a handled superweapon before the index map.
-    #[cfg(feature = "ares")]
     let ares_super_weapon = armed.and_then(|armed| {
         let vanilla = match armed_action(armed) {
             Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
@@ -277,8 +272,6 @@ pub(crate) fn action(
         };
         crate::app::input::ares_cursor::radar_super_weapon(query, armed, cell, vanilla)
     });
-    #[cfg(not(feature = "ares"))]
-    let ares_super_weapon: Option<Option<RadarAction>> = None;
     let action = match armed.map_or(Armed::Unlisted, armed_action) {
         _ if ares_super_weapon.is_some() => ares_super_weapon.flatten(),
         Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
@@ -287,14 +280,7 @@ pub(crate) fn action(
         Armed::Unlisted => query.selection_action(cell, object).and_then(|kind| {
             // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
             // 0x653CA6).
-            #[cfg(feature = "ares")]
-            return crate::app::input::ares_cursor::radar_action(
-                query,
-                kind,
-                RadarAction::kept(kind),
-            );
-            #[cfg(not(feature = "ares"))]
-            RadarAction::kept(kind)
+            crate::app::input::ares_cursor::radar_action(query, kind, RadarAction::kept(kind))
         }),
     };
     // Planning Mode (`0x00637AA0`) wants every selected object to take
@@ -436,8 +422,9 @@ pub(crate) fn begin_context_press(state: &mut AppState) {
 /// Retail uses Left; VERA's alternative scheme also enters here with Right.
 ///
 /// For a superweapon action its SPECIAL_PLACE names the first type whose
-/// `Action=` is the listed index's action, not the armed type
-/// ([`crate::app::input::commands::special_place_type`]).
+/// `Action=` is the listed index's action, not the armed type; with the Ares
+/// superweapons on, the armed type for an Ares action or its own `Action=`,
+/// else none ([`crate::app::input::commands::special_place_type`]).
 pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
     if !state.match_state.input.finish_minimap_press(button) {
         return;
@@ -453,7 +440,6 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
     // An Ares superweapon's NoCursor action (0x7E) reaches each selected
     // Foot's ClickedAction, which takes it and does nothing (hook 0x4D7524,
     // 10058390).
-    #[cfg(feature = "ares")]
     if matches!(action, RadarAction::AresSuperWeapon { launch: false, .. }) {
         return;
     }
@@ -461,7 +447,6 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
         RadarAction::SuperWeapon(super_weapon) => {
             Some(PlaceAction::Stock(super_weapon.action_name()))
         }
-        #[cfg(feature = "ares")]
         RadarAction::AresSuperWeapon { .. } => Some(PlaceAction::Ares),
         _ => None,
     };

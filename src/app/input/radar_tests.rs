@@ -369,13 +369,38 @@ fn the_armed_superweapon_index_answers_first() {
     assert_eq!(action(&none, Some(3), GROUND, None), None);
     // Installed Ares asks the redirected Chronosphere first (hook 0x653B3A):
     // its Chronosphere cursor has no radar frames, so `0x653CA6` leaves no
-    // action, selection or not.
-    #[cfg(feature = "ares")]
-    assert_eq!(action(&some, Some(3), GROUND, None), None);
-    #[cfg(not(feature = "ares"))]
+    // action, selection or not. A build with the `ares` feature reads every
+    // game the Ares way (`ares_switch::reading_mode`).
     assert_eq!(
         action(&some, Some(3), GROUND, None),
-        Some(RadarAction::Move)
+        (!rules.ares_form()).then_some(RadarAction::Move)
+    );
+}
+
+/// Ares answers an allowed launch with its own action (10033EB0, 10034D00),
+/// which `0x4AC20C` launches as the armed type. A Lightning Storm at index 0
+/// whose `Cursor=` is Nuke draws the Nuke answer's frames, but that stock
+/// answer would launch no Lightning Storm, so the radar keeps the Ares launch.
+#[test]
+fn a_super_weapon_drawing_another_index_cursor_keeps_its_radar_launch() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[NukeSpecial]\nType=LightningStorm\nCursor=Nuke\n",
+        ),
+    ) else {
+        return;
+    };
+    let (sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+    assert_eq!(rules.super_weapon_index("NukeSpecial"), Some(0));
+    let launch = action(&query(&sim, &rules, &[]), Some(0), GROUND, None);
+    assert!(
+        matches!(
+            launch,
+            Some(RadarAction::AresSuperWeapon { launch: true, .. })
+        ),
+        "{launch:?}"
     );
 }
 
@@ -462,7 +487,8 @@ fn the_radar_keeps_the_cursor_where_its_action_writes_none() {
 /// SPECIAL_PLACE names the first type whose `Action=` is the release's action
 /// (`0x004AC20C`, `FindFirstOfAction @ 0x006CEEB0`), not the armed type: the
 /// radar's index 0 is Nuke whatever type it lists. With the Ares superweapons
-/// on (hook `0x4AC20C`) the armed type launches, as before.
+/// on (hook `0x4AC20C`, 10034BF0) an Ares action names the armed type, a stock
+/// one only when it is the armed type's `Action=`.
 #[test]
 fn special_place_names_the_first_type_of_the_release_action() {
     use crate::app::input::commands::special_place_type;
@@ -479,9 +505,8 @@ fn special_place_names_the_first_type_of_the_release_action() {
     let paradrop = PlaceAction::Stock(RadarSuperWeapon::ParaDrop.action_name());
     // A build with the `ares` feature reads every game the Ares way
     // (`ares_switch::reading_mode`).
-    if !cfg!(feature = "ares") {
-        let stock = read("");
-        assert!(!stock.ares_form());
+    let stock = read("");
+    if !stock.ares_form() {
         assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
@@ -490,4 +515,9 @@ fn special_place_names_the_first_type_of_the_release_action() {
     let ares = read("SW.Deferment=1\n");
     assert!(ares.ares_form());
     assert_eq!(special_place_type(&ares, "Bomb2", nuke), Some("Bomb2"));
+    assert_eq!(special_place_type(&ares, "Storm", nuke), None);
+    assert_eq!(
+        special_place_type(&ares, "Storm", PlaceAction::Ares),
+        Some("Storm")
+    );
 }

@@ -745,16 +745,16 @@ pub(crate) fn finish_presentation_assets(
     }
     // Ares draws every cursor through the scenario's [MouseCursors] list
     // (`render::cursor_atlas`, hook 0x5BDC8C).
-    #[cfg(feature = "ares")]
-    let software_cursor = crate::render::cursor_atlas::build_ares_software_cursor(
-        gpu,
-        batch,
-        asset_manager,
-        rules.ares_mouse_cursors(),
-    );
-    #[cfg(not(feature = "ares"))]
-    let software_cursor =
-        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager);
+    let software_cursor = if crate::app::input::ares_cursor::draws_through_list(rules) {
+        crate::render::cursor_atlas::build_ares_software_cursor(
+            gpu,
+            batch,
+            asset_manager,
+            rules.ares_mouse_cursors(),
+        )
+    } else {
+        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager)
+    };
     if software_cursor.is_some() {
         log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");
     } else {
