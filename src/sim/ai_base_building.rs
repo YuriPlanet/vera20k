@@ -320,7 +320,10 @@ pub(crate) fn economy_state_machine(
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.is_controlled_by_human(game_mode_nonzero) || !game_mode_nonzero {
+    if house.is_controlled_by_human(game_mode_nonzero)
+        || house.command_driven()
+        || !game_mode_nonzero
+    {
         return;
     }
     let mode = house.ai_production().mode;

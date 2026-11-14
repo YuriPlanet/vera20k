@@ -581,18 +581,16 @@ pub(crate) fn control_group_status_labels(
         let digit = char::from(b'0' + slot as u8);
         Some((stable_id, digit))
     };
-    // A digit shows only on a member the admission passes, a selected or
-    // hovered one. With none, as on most draws, no Display member is walked.
-    if !slot_by_id
+    // A digit shows only on a Display member the admission passes, a selected
+    // or hovered one, in Display order. The group members are few, so they
+    // are put in that order rather than walking every Display member.
+    let order = frame.display_order(sim.display_layers());
+    let mut labels: Vec<_> = slot_by_id
         .keys()
-        .any(|&stable_id| labelled(stable_id).is_some())
-    {
-        return Vec::new();
-    }
-    sim.display_layers()
-        .ordered_ids()
-        .filter_map(|&stable_id| labelled(stable_id))
-        .collect()
+        .filter_map(|&stable_id| Some((order.position(stable_id)?, labelled(stable_id)?)))
+        .collect();
+    labels.sort_unstable_by_key(|&(position, _)| position);
+    labels.into_iter().map(|(_, label)| label).collect()
 }
 
 /// One parent's fill/outline followed by its GAME.FNT glyphs. Both materials
@@ -902,19 +900,16 @@ pub(crate) fn build_building_status_render_instances(
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
     // `current_house_id` is the frame's local player, whom its records answer
-    // for.
-    let structures = frame
-        .objects()
+    // for. Only the buildings drawn this frame can pass the body-opportunity
+    // test, so they are walked instead of every record; both ascend by id.
+    let structures = body_opportunities
+        .iter()
+        .filter_map(|&id| frame.object(id))
         .filter(|entity| entity.category() == EntityCategory::Structure);
     for entity in structures {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         //requires selected, including when the object is also hovered.
-        // The record's own flags first: all three only read, and few
-        // buildings on a map are selected.
-        if !entity.selection.is_selected()
-            || !entity.lifecycle.cell_marked()
-            || !body_opportunities.contains(&entity.stable_id())
-        {
+        if !entity.selection.is_selected() || !entity.lifecycle.cell_marked() {
             continue;
         }
         let allied = crate::map::houses::is_allied_with(

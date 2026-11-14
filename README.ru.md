@@ -4,24 +4,42 @@
   <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <strong>Русский</strong> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на macOS (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Тесты библиотеки на macOS" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Linux (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Тесты библиотеки на Linux" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Windows (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Тесты библиотеки на Windows" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Последняя сборка WebAssembly (запускается вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="Сборка WebAssembly" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Присоединиться к Discord" height="23" align="middle"></a>
   <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-группа" height="23" align="middle">
 </p>
 
 # VERA20K
 
-VERA20K — новая реализация оригинального движка `gamemd.exe`, которую развивает сообщество.
-Чтобы разрабатывать или играть, понадобится собственная копия
-Red Alert 2: Yuri's Revenge.
+VERA20K — новый движок для Red Alert 2: Yuri's Revenge. Игра идёт так же, как в оригинале: те же
+юниты, карты и графика. Работает на Windows, macOS и Linux. Он рассчитан на большие сражения: до 30
+игроков и 20 000 юнитов на одной карте.
 
 VERA20K делают игроки для игроков, и последнее слово в том, куда движется проект, остаётся за
 игроками.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: настройки схватки и кадр из игры" width="100%">
+
+## Скачать и играть
+
+1. Установи Red Alert 2: Yuri's Revenge через Steam или приложение EA.
+2. Скачай VERA20K для своей системы кнопками ниже.
+3. Открой скачанный файл. Он найдёт игру и установит VERA20K в отдельную папку.
+
+<p dir="ltr">
+  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Скачать для Windows" height="28"></a>
+  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Скачать для macOS (Apple Silicon)" height="28"></a>
+  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Скачать для macOS (Intel)" height="28"></a>
+  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Скачать для Linux" height="28"></a>
+</p>
+
+Что-то не получается? Загляни на [страницу помощи](https://vera20k.org/ru/help).
+
+Идёт активная разработка: схватки доступны на Windows, macOS и Linux, кампании работают частично, а
+мультиплеер по сети (экспериментальный) уже доступен. Прежние версии и список изменений в каждой из
+них — на [странице выпусков](https://github.com/YuriPlanet/vera20k/releases).
+
+Чтобы запускать одиночные схватки или кампании YR через клиент CnCNet, см.
+[настройку офлайн-клиента](integrations/cncnet/README.md).
 
 ## Цели проекта
 
@@ -31,15 +49,6 @@ VERA20K делают игроки для игроков, и последнее �
 4. Встроенный клиент для мультиплеера
 
 Текущие приоритеты и будущие планы — в [дорожной карте](https://github.com/orgs/YuriPlanet/projects/1).
-
-## Скачать и играть
-
-Скачай установщик для Windows, macOS или Linux на
-[странице выпусков](https://github.com/YuriPlanet/vera20k/releases). Он сам найдёт твою копию
-Yuri's Revenge и установит VERA20K в новую папку.
-
-Чтобы запускать одиночные схватки или кампании YR через клиент CnCNet, см.
-[настройку офлайн-клиента](integrations/cncnet/README.md).
 
 ## Как помочь
 
@@ -67,6 +76,13 @@ Yuri's Revenge и установит VERA20K в новую папку.
 ![Приложение передаёт команды симуляции и получает состояние мира; данные отрисовки передаются рендерингу.](docs/images/architecture.ru.png)
 
 ## Сборка и запуск
+
+<p dir="ltr">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на macOS (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Тесты библиотеки на macOS" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Linux (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Тесты библиотеки на Linux" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Последний запуск тестов библиотеки на Windows (запускаются вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Тесты библиотеки на Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Последняя сборка WebAssembly (запускается вручную)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="Сборка WebAssembly" height="23" align="middle"></a>
+</p>
 
 Понадобится:
 

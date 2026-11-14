@@ -85,7 +85,10 @@ pub(crate) fn projectile_visitor<'a>(
     let axis = super::helpers::depth_axis(state);
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
     // retained +114 House's scheme, else the local player's.
-    let house_colors = state.match_state.match_presentation.effective_house_color_map();
+    let house_colors = state
+        .match_state
+        .match_presentation
+        .effective_house_color_map();
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_scheme = local_owner
         .as_deref()
@@ -104,6 +107,16 @@ pub(crate) fn projectile_visitor<'a>(
         let Some(projectile) = sim.projectiles().get(id) else {
             return;
         };
+        // The screen test reads only the position and everything up to it
+        // below only reads, so a bullet off the view stops here, before its
+        // type and its firer's colour are looked up by name.
+        if !projectile_in_view(
+            projectile,
+            [input.camera_x, input.camera_y],
+            [width, height],
+        ) {
+            return;
+        }
         let Some(type_id) = projectile
             .payload()
             .projectile_type()
@@ -214,6 +227,14 @@ pub(crate) fn projectile_draw_instance(
     )
 }
 
+/// Whether `projectile`'s point passes the padded projection admission that
+/// precedes its draw.
+fn projectile_in_view(projectile: &Projectile, camera: [f32; 2], viewport: [f32; 2]) -> bool {
+    let position = projectile.position();
+    let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
+    projection_admitted([x, y], camera, viewport)
+}
+
 pub(crate) fn projectile_draw_instance_for_frame(
     projectile: &Projectile,
     logic_frame: u32,
@@ -240,12 +261,12 @@ pub(crate) fn projectile_draw_instance_for_frame(
     if kind.inviso || projectile.awaiting_anim() {
         return None;
     }
+    if !projectile_in_view(projectile, camera, viewport) {
+        return None;
+    }
     let position = projectile.position();
     let (x, y) = absolute_leptons_to_screen(position.x, position.y, position.z);
     let point = [x, y];
-    if !projection_admitted(point, camera, viewport) {
-        return None;
-    }
     let depth = crate::render::native_z::depth_for_row(
         point[1] + adjust_for_z_standard(position.z) as f32,
         axis.origin_y,

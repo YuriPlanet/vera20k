@@ -1789,6 +1789,46 @@ fn accepts_online_application_packet(payload: &[u8], live: bool, loading: bool) 
                 .is_some_and(|kind| kind == LanMessageKind::Departure.raw().to_le_bytes()))
 }
 
+/// The chat packet `0x005DE360` sends to every other node. The lobby
+/// (`0x005DDEB9`) and both setup rooms (host `0x005DE800`, guest `0x005E1FD5`)
+/// pass it `[0x7EEF2C]`, the fixed `0x0000F0F0`, never the player's colour.
+/// The caller shows the sender's own echo.
+fn chat_packet(
+    name: &str,
+    game_name: &str,
+    text: &[u16],
+) -> Result<LanMessage, crate::net::lan_messages::ingame::InGameMessageError> {
+    LanMessage::in_game_chat(
+        name,
+        crate::ui::wol_chat::PUBLIC_COLOR,
+        game_name,
+        &String::from_utf16_lossy(text),
+    )
+}
+
+/// A received chat packet as `0x005E00B0` shows it (`0x005E14BB..0x005E1564`):
+/// `0x005E2700` draws `"[%s] %s"` (`0x0081B460`) in the packet's colour.
+/// `0x005DE360` never sends to its own node, but VERA broadcasts the lobby's
+/// chat and its own copy comes back; like the other reflections, it shows
+/// nothing. Residual: gamemd tells lobby entries apart by address, so two
+/// lobby players with the same name there still see each other's lines; here
+/// they do not. A setup room refuses a second player with the same name.
+fn chat_line(
+    local_name: &str,
+    message: &LanMessage,
+    chat: &crate::net::lan_messages::ingame::InGameChat<'_>,
+) -> Option<crate::ui::lan_shell::LanChatLine> {
+    if crate::net::lan_messages::wire_name_matches(local_name, message.name_bytes()) {
+        return None;
+    }
+    let mut text: Vec<u16> = format!("[{}] ", message.name()).encode_utf16().collect();
+    text.extend(chat.text_units());
+    Some(crate::ui::lan_shell::LanChatLine {
+        text,
+        color: chat.color,
+    })
+}
+
 fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::Result<()> {
     anyhow::ensure!(incoming.product_id == 0xaa04, "different LAN product");
     if state
@@ -1985,20 +2025,14 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 "chat belongs to a different game"
             );
         }
-        let mut text: Vec<u16> = format!("{}: ", message.name()).encode_utf16().collect();
-        text.extend(chat.text_units());
-        super::shell_lan::append_chat(
-            state,
-            crate::ui::lan_shell::LanChatLine {
-                text,
-                color: chat.color,
-            },
-        );
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.incoming_message_sound())
-            .map(str::to_owned);
-        super::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        if let Some(line) = chat_line(&local_name(state), &message, &chat) {
+            super::shell_lan::append_chat(state, line);
+            let sound = state
+                .rules()
+                .and_then(|rules| rules.general.incoming_message_sound())
+                .map(str::to_owned);
+            super::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        }
         return Ok(());
     }
     match message.kind() {
@@ -2699,10 +2733,9 @@ fn lobby_request(
                 service.force_presence = true;
             }
         }
-        LanServiceRequest::Chat { text, color } => {
+        LanServiceRequest::Chat { text } => {
             let game = active_game_name(state).unwrap_or_default();
-            let message =
-                LanMessage::in_game_chat(&name, color, &game, &String::from_utf16_lossy(&text))?;
+            let message = chat_packet(&name, &game, &text)?;
             send(
                 state,
                 &message,
@@ -3993,19 +4026,11 @@ fn setup_request(
             return Ok(true);
         }
         NetworkSetupRequest::RequestAcceptance => LanMessage::start_prompt(&local_name(state))?,
-        NetworkSetupRequest::Chat(text) => {
-            let color = state
-                .match_state
-                .session
-                .network_setup()
-                .map_or(-2, |launch| color_value(launch.local_player()));
-            LanMessage::in_game_chat(
-                &local_name(state),
-                color as u32,
-                &active_game_name(state).unwrap_or_default(),
-                &String::from_utf16_lossy(text),
-            )?
-        }
+        NetworkSetupRequest::Chat(text) => chat_packet(
+            &local_name(state),
+            &active_game_name(state).unwrap_or_default(),
+            text,
+        )?,
         NetworkSetupRequest::Leave => {
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
@@ -4641,6 +4666,29 @@ mod tests {
                 ..Default::default()
             },
             LOBBY_RETRY_TIMING,
+        );
+    }
+
+    /// Another player sees a room's line as gamemd draws it, `[name] text` in
+    /// the fixed `0x0000F0F0` whatever colour its sender plays, and the
+    /// sender's own broadcast copy shows nothing, a name the wire narrows too.
+    #[test]
+    fn chat_reaches_others_in_the_fixed_colour_and_skips_its_own_copy() {
+        let text: Vec<u16> = "hi".encode_utf16().collect();
+        let message = chat_packet("Guest", "Host's game", &text).unwrap();
+        let chat = message.in_game_chat_fields().unwrap();
+        assert_eq!(
+            chat_line("Host", &message, &chat),
+            Some(crate::ui::lan_shell::LanChatLine {
+                text: "[Guest] hi".encode_utf16().collect(),
+                color: 0x0000_F0F0,
+            })
+        );
+        assert_eq!(chat_line("guest", &message, &chat), None);
+        let own = chat_packet("玩家", "", &text).unwrap();
+        assert_eq!(
+            chat_line("玩家", &own, &own.in_game_chat_fields().unwrap()),
+            None
         );
     }
 

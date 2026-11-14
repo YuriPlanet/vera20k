@@ -1330,6 +1330,16 @@ impl TeamScriptVm {
         }
         named
     }
+
+    /// The TeamType's authored initial waypoint (`Waypoint=`, `+0xD4`,
+    /// constructor -1): the letter index reinforcement action 7 and a
+    /// formed team's initial zone resolve through the Scenario's waypoint
+    /// table. `-1` when the type carries none.
+    pub fn team_type_waypoint(&self, team_type: InternedId) -> i32 {
+        self.team_type_ini
+            .get(&team_type)
+            .map_or(-1, |metadata| metadata.waypoint)
+    }
 }
 
 impl TeamScriptState {
