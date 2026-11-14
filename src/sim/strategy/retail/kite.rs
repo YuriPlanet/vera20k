@@ -375,6 +375,25 @@ pub(super) fn run(
         brain
             .tracked
             .record(tick, unit.entity_id, TrackedKind::Kite, None, Some(step));
+        // What the step walked into, next to what it walked out of. The deaths
+        // are counted against the order (`lost ... while carrying Kite`), so
+        // this is the other half of that pair: a step that lands with the same
+        // exposure it left is a step that changed nothing, and one that lands
+        // worse is the wishlist's "绕不开另一个威胁".
+        if tick % 60 == 0 {
+            let from = exposure(unit.cell, &threats);
+            let to = exposure(step, &threats);
+            log::info!(
+                "auto play: kite {} {:?} -> {:?} covered {} -> {} nearest {} -> {}",
+                unit.entity_id,
+                unit.cell,
+                step,
+                from.covered,
+                to.covered,
+                from.nearest,
+                to.nearest
+            );
+        }
         super::orders::issue(
             brain,
             out,
