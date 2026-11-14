@@ -538,6 +538,14 @@ pub(super) fn advance(
         // Inside its own reach the unit shoots the structure from where it
         // stands; outside it, it walks. The goal is still the one target — this
         // is the same fist, ordered by what each unit can actually do.
+        //
+        // `Attack` alone was measured here — it hands the approach to the native
+        // hunt, which closes to the unit's *own* range and stops, and it is the
+        // shape the wishlist's "卡位" asks for. Across the four arena seeds the
+        // exchange went 1.38/2.57/6.29/13.5 -> 1.00/3.00/4.71/13.0, a mean of
+        // 5.94 down to 5.43, and the seed that matters most fell to a dead-even
+        // trade. So the walk stays an `AttackMove` to the target's cell and the
+        // stand-off is left on the table until something explains that drop.
         let (kind, goal) = if engagement == crate::sim::control::observation::Engage::Ready {
             (super::tracked::TrackedKind::Attack, attack)
         } else {
