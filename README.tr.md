@@ -92,10 +92,8 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-Harita kapasitesi derleme bayrağı olmadan otomatik seçilir: `Size` genişliği ile yüksekliğinin toplamı en fazla 1024 olabilir.
-
 VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
-diğer her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
+her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
 
 - **Bir VERA oyuncu seçeneği**: **Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
 - **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
