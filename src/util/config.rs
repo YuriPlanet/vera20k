@@ -93,6 +93,12 @@ impl PathsConfig {
 
     /// VERA's folder of mods, one subfolder each (docs/modding.md).
     pub fn mods_dir(&self) -> PathBuf {
+        // The browser build keeps mods apart from the saved profile: its page
+        // imports the one a launch plays (web.rs `import_mod_file`) and
+        // never stores it back.
+        if cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")) {
+            return PathBuf::from(WEB_MODS_DIR);
+        }
         self.settings_dir.join("Mods")
     }
 
@@ -118,6 +124,9 @@ impl PathsConfig {
         Ok(())
     }
 }
+
+/// The browser build's Mods folder in its in-memory file system.
+pub const WEB_MODS_DIR: &str = "/mods";
 
 /// Shared by packaged and direct launches. No writable setting defaults to
 /// the retail installation, even when VERA's executable is installed there.
