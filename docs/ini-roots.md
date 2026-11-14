@@ -61,10 +61,11 @@ theater_suffix = "mo"
 from the theater's control name (`TEMPERAT`, `SNOW`, `URBAN`, `URBANN`,
 `DESERT`, `LUNAR`). The suffix replaces `MD`: `md` for `yr` and `custom`, `mo`
 for `mo` (and for `auto` once it selects MO), so a snow map reads
-`snowmd.ini` or `snowmo.ini`. The selected name is the only one read; a missing
-file fails that theater load as the stock name always did, with no fallback to
-`snowmd.ini`. Theater MIX names (`%sMD.MIX`) are unchanged. Letters and digits
-only; the suffix is not probed at startup.
+`snowmd.ini` or `snowmo.ini`. When the selected file is absent the loader warns
+and reads the stock `snowmd.ini`, so a folder that loaded before keeps loading;
+only when neither exists does that theater load fail. Theater MIX names
+(`%sMD.MIX`) are unchanged. Letters and digits only; the suffix is not probed
+at startup.
 
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not

@@ -863,8 +863,8 @@ impl BridgeMiddleTiles {
 /// Load tileset data for a theater.
 ///
 /// Replaces the active theater MIX group, then loads the theater INI the
-/// selected INI roots name (`snowmd.ini` for YR) and the exact palette
-/// filenames.
+/// selected INI roots name (`snowmd.ini` for YR, the stock name when the
+/// selected one is absent) and the exact palette filenames.
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
     let def: &TheaterDef = theater_def(theater_name)?;
@@ -878,8 +878,22 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         return None;
     }
 
-    let ini_name = asset_manager.ini_roots().theater_ini(def.control_name);
-    let Some((ini_data, ini_source)) = asset_manager.get_with_source(&ini_name) else {
+    // VERA: a profile suffix whose file is absent falls back to the stock
+    // `%sMD.INI` name with a warning, so a game folder that loaded the stock
+    // INI before a suffix was selected keeps loading.
+    let mut ini_name = asset_manager.ini_roots().theater_ini(def.control_name);
+    let stock_name = crate::util::ini_roots::IniRoots::default().theater_ini(def.control_name);
+    let found = match asset_manager.get_with_source(&ini_name) {
+        None if ini_name != stock_name => {
+            log::warn!(
+                "Theater {theater_name}: INI '{ini_name}' not found; reading '{stock_name}'"
+            );
+            ini_name = stock_name;
+            asset_manager.get_with_source(&ini_name)
+        }
+        found => found,
+    };
+    let Some((ini_data, ini_source)) = found else {
         log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
         return None;
     };

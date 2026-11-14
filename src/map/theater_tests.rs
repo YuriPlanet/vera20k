@@ -1404,11 +1404,10 @@ fn atlas_growth_reads_the_published_theater_palettes() {
 }
 
 /// `Read_Theater_TileSets_INI` (`0x00545150`) formats the theater INI with
-/// `"%sMD.INI"` (`0x005454FE`); a profile with another suffix replaces that
-/// name outright, so a `mo` profile reads `temperatmo.ini` and never falls
-/// back to the stock file.
+/// `"%sMD.INI"` (`0x005454FE`); a profile with another suffix reads its own
+/// file first and, when that is absent, the stock one.
 #[test]
-fn load_theater_reads_the_profile_theater_ini_without_stock_fallback() {
+fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
     use crate::map::source::test_support::TestDirectory;
     use crate::util::ini_roots::{IniProfile, IniRootConfig};
     let mo = IniRootConfig {
@@ -1420,13 +1419,12 @@ fn load_theater_reads_the_profile_theater_ini_without_stock_fallback() {
     let dir = TestDirectory::new("theater-profile-ini");
     dir.write("isotem.pal", &[0; 768]);
     dir.write("unittem.pal", &[0; 768]);
-    dir.write(
-        "temperatmd.ini",
-        b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
-    );
+    let stock_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n";
+    dir.write("temperatmd.ini", stock_ini);
     let mut assets =
         AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(mo.clone());
-    assert!(load_theater(&mut assets, "TEMPERATE").is_none());
+    let theater = load_theater(&mut assets, "TEMPERATE").expect("stock fallback");
+    assert_eq!(theater.ini_data, stock_ini);
 
     let profile_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=2\n";
     dir.write("temperatmo.ini", profile_ini);
