@@ -5,9 +5,7 @@
 
 use crate::map::playfield::PlayfieldBounds;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::util::native_x87::{
-    NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value,
-};
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value};
 
 pub(super) const RADAR_APERTURE_WIDTH: u32 = 140;
 pub(super) const RADAR_APERTURE_HEIGHT: u32 = 108;
@@ -35,10 +33,7 @@ pub(in crate::render) struct NativeRadarSurfaceGeometry {
 
 /// `InitRadarEvent @ 0x0065FC32..0x0065FC5D`: maximum signed distance from
 /// the event center to an edge of the generated primary surface.
-pub(super) fn native_event_initial_radius(
-    pixel: (i32, i32),
-    surface_size: (i32, i32),
-) -> i32 {
+pub(super) fn native_event_initial_radius(pixel: (i32, i32), surface_size: (i32, i32)) -> i32 {
     pixel
         .0
         .max(pixel.1)
@@ -48,18 +43,13 @@ pub(super) fn native_event_initial_radius(
 
 impl NativeRadarSurfaceGeometry {
     /// Rebuild the generated surface from exact mode-one-valid cells.
-    pub fn from_playfield(
-        terrain: &ResolvedTerrainGrid,
-        bounds: PlayfieldBounds,
-    ) -> Option<Self> {
+    pub fn from_playfield(terrain: &ResolvedTerrainGrid, bounds: PlayfieldBounds) -> Option<Self> {
         // `0x006544D4..0x00654533` narrows the LocalSize inputs to signed
         // words before establishing RadarClass+0x1490. Preserve those wraps.
         let left = bounds.off_fc as i16;
         let top = bounds.off_100 as i16;
         let upper_left_sum = left.wrapping_add(1).wrapping_add(top);
-        let lower_left_sum = (bounds.base as i16)
-            .wrapping_sub(left)
-            .wrapping_add(top);
+        let lower_left_sum = (bounds.base as i16).wrapping_sub(left).wrapping_add(top);
         let raw_offset_x = i32::from(lower_left_sum).wrapping_sub(i32::from(upper_left_sum));
 
         // `ComputeRadarMapBounds @ 0x0065455B..0x00654572` passes literal
@@ -77,10 +67,7 @@ impl NativeRadarSurfaceGeometry {
             })
             .map(|cell| (i32::from(cell.rx as i16), i32::from(cell.ry as i16)))
             .collect();
-        let raw_offset_y = valid_cells
-            .iter()
-            .map(|&(x, y)| x.wrapping_add(y))
-            .min()?;
+        let raw_offset_y = valid_cells.iter().map(|&(x, y)| x.wrapping_add(y)).min()?;
 
         let mut min_x = i32::MAX;
         let mut min_y = i32::MAX;
@@ -190,8 +177,8 @@ impl NativeRadarSurfaceGeometry {
                 .expect("positive radar zoom"),
             X87Chop53::load_i32(self.raw_offset_y),
         );
-        let half = X87Chop53::load_f32(NativeF32Bits::from_bits(0x3f00_0000))
-            .expect("0.5f is finite");
+        let half =
+            X87Chop53::load_f32(NativeF32Bits::from_bits(0x3f00_0000)).expect("0.5f is finite");
         let bias = X87Chop53::load_f64(NativeF64Bits::HALF).expect("0.5 is finite");
         let cell_x = native_ftol(X87Chop53::add(
             X87Chop53::mul(X87Chop53::add(raw_y, raw_x), half),
@@ -235,10 +222,7 @@ impl NativeRadarSurfaceGeometry {
                 load_constant(ONE_OVER_CELL_BITS),
             ))
         };
-        let mut pixel = (
-            project(raw_x),
-            project(raw_y),
-        );
+        let mut pixel = (project(raw_x), project(raw_y));
         if clamp {
             // `0x006557F0` raises to 0, then lowers to the image's last pixel:
             // an empty image gives -1 (`i32::clamp` would panic on it).
@@ -306,16 +290,22 @@ impl NativeRadarSurfaceGeometry {
 fn native_aspect_fit(raw_width: i32, raw_height: i32) -> (f32, i32, i32) {
     // `0x006548B3..0x00654939`: the candidate is stored to f32 before use.
     let width_zoom = store_f32(
-        X87Chop53::div(load_constant(MAX_RADAR_WIDTH_BITS), X87Chop53::load_i32(raw_width))
-            .expect("positive raw radar width"),
+        X87Chop53::div(
+            load_constant(MAX_RADAR_WIDTH_BITS),
+            X87Chop53::load_i32(raw_width),
+        )
+        .expect("positive raw radar width"),
     );
     let scaled_height = X87Chop53::mul(X87Chop53::load_i32(raw_height), load_f32(width_zoom));
-    if X87Chop53::compare(scaled_height, load_constant(MAX_RADAR_HEIGHT_BITS))
-        == X87Ordering::Less
+    if X87Chop53::compare(scaled_height, load_constant(MAX_RADAR_HEIGHT_BITS)) == X87Ordering::Less
     {
         // FST stores the product to f32 before the width-branch ftol call.
         let stored_height = store_f32(scaled_height);
-        (width_zoom, MAX_RADAR_WIDTH, native_ftol(load_f32(stored_height)))
+        (
+            width_zoom,
+            MAX_RADAR_WIDTH,
+            native_ftol(load_f32(stored_height)),
+        )
     } else {
         let height_zoom = store_f32(
             X87Chop53::div(
