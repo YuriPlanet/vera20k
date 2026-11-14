@@ -1515,7 +1515,15 @@ pub(crate) fn prepare_saved_order(
     let mut strips: [Vec<Cameo>; 4] = std::array::from_fn(|_| Vec::new());
     let mut factory_links = HashMap::new();
     for (index, identities) in saved_strips.into_iter().enumerate() {
-        if flash_deadlines[index].len() != identities.len() {
+        // One deadline per entry, then at most the native strip's empty
+        // records ([`CameoStrips::saved_flash`]).
+        let deadlines = flash_deadlines[index].len();
+        if deadlines < identities.len()
+            || deadlines
+                > identities
+                    .len()
+                    .max(crate::ui::sidebar::cameo_order::STRIP_RECORDS)
+        {
             return Err(format!(
                 "saved sidebar strip {index} has mismatched flash deadlines"
             ));

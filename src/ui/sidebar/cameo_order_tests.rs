@@ -1124,3 +1124,87 @@ fn ares_recalculate_keeps_the_top_cameo_row_where_native_jumps() {
         assert_eq!(after("U0"), earlier);
     }
 }
+
+fn priced_vehicle_cameo(id: crate::sim::intern::InternedId, cost: i32) -> Cameo {
+    Cameo {
+        id: CameoId::Object(id),
+        tab: SidebarTab::Vehicle,
+        available: true,
+        key: CameoKey::Techno {
+            own_side: true,
+            considered_aircraft: false,
+            naval: false,
+            tech_level: 1,
+            cost,
+            name: "Test Type".to_string(),
+        },
+    }
+}
+
+/// FlashCameo 6AC5F0 compares TypeIndex alone over all 75 records, so a type
+/// at index 0 that no entry matches lights the empty record at the strip's
+/// count (6AC6F2). A removal moves only the records below the count
+/// (Recalculate 6AA9A5..6AAA25), so the lit record keeps its index, and the
+/// next InsertEntry 6A8710 overwrites only the record at the count it found.
+#[test]
+fn an_unmatched_index_zero_flash_lights_the_first_empty_record() {
+    let mut interner = StringInterner::new();
+    let ids: Vec<_> = (0..3)
+        .map(|index| interner.intern(&format!("CAMEO{index}")))
+        .collect();
+    let mut strips = CameoStrips::default();
+    assert!(strips.insert(&priced_vehicle_cameo(ids[1], 100), false));
+    assert!(strips.insert(&priced_vehicle_cameo(ids[2], 200), false));
+    // No entry has type index 0.
+    let index_of = |id: CameoId| match id {
+        CameoId::Object(id) => ids
+            .iter()
+            .position(|known| *known == id)
+            .map(|i| i as i32 + 1),
+        CameoId::SuperWeapon(_) => None,
+    };
+    strips.flash_type_index(SidebarTab::Vehicle, 0, 30, 1000, index_of, false);
+    strips.set_frame(1001);
+    assert!(strips.empty_slot_flash_darkened(SidebarTab::Vehicle, 2));
+    assert!(!strips.empty_slot_flash_darkened(SidebarTab::Vehicle, 3));
+
+    strips.retain(4, |id| id != CameoId::Object(ids[1]), false);
+    assert!(
+        strips.empty_slot_flash_darkened(SidebarTab::Vehicle, 2),
+        "a removal leaves the lit record where it was"
+    );
+    assert!(strips.insert(&priced_vehicle_cameo(ids[0], 50), false));
+    assert!(strips.empty_slot_flash_darkened(SidebarTab::Vehicle, 2));
+    assert!(strips.insert(&priced_vehicle_cameo(ids[1], 100), false));
+    assert!(
+        !strips.empty_slot_flash_darkened(SidebarTab::Vehicle, 2),
+        "the insert at count 2 overwrites the lit record"
+    );
+    assert!(
+        strips
+            .items(SidebarTab::Vehicle)
+            .iter()
+            .all(|entry| !strips.flash_darkened(entry.id)),
+        "the new entry's deadline starts at zero (6A87DA)"
+    );
+}
+
+/// Mouse Save 5BE6D0 writes all 75 records, so a lit empty record survives a
+/// load.
+#[test]
+fn a_lit_empty_record_survives_save_and_load() {
+    let mut interner = StringInterner::new();
+    let id = interner.intern("CAMEO1");
+    let mut strips = CameoStrips::default();
+    assert!(strips.insert(&priced_vehicle_cameo(id, 100), false));
+    strips.flash_type_index(SidebarTab::Vehicle, 0, 30, 1000, |_| Some(1), false);
+    let (deadlines, redraw_until) = strips.saved_flash();
+    assert_eq!(deadlines[SidebarTab::Vehicle.tab_index()], [0, 1030]);
+
+    let mut retained: [Vec<Cameo>; 4] = std::array::from_fn(|_| Vec::new());
+    retained[SidebarTab::Vehicle.tab_index()] = strips.items(SidebarTab::Vehicle).to_vec();
+    let mut loaded = CameoStrips::from_retained(retained, [0; 4]);
+    loaded.restore_flash(deadlines, redraw_until);
+    loaded.set_frame(1001);
+    assert!(loaded.empty_slot_flash_darkened(SidebarTab::Vehicle, 1));
+}

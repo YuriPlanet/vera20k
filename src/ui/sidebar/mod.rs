@@ -341,6 +341,9 @@ pub struct SidebarView {
     /// The cameos of the sidebar's own grid, then those of each grid a
     /// layout adds ([`Self::added_grids`]).
     pub items: Vec<SidebarItem>,
+    /// Empty slots of the sidebar's own grid that a cameo flash darkens this
+    /// frame ([`cameo_order::CameoStrips::empty_slot_flash_darkened`]).
+    pub flash_empty_slots: Vec<Rect>,
     pub added_grids: Vec<AddedGridView>,
     /// Repair button (toggle mode). Rendered from the per-theme atlas's
     /// `repair_frames[frame_index]`. Hit-test routes to
