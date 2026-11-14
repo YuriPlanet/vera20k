@@ -357,19 +357,18 @@ pub(crate) fn health_bar_drawable(
     local_owner: Option<&str>,
 ) -> bool {
     let player = local_owner.and_then(|owner| sim.interner().get(owner));
-    health_bar_drawable_for(sim, entity, hovered_id, local_owner, player)
+    health_bar_drawable_for(sim, entity, hovered_id, player)
 }
 
-/// [`health_bar_drawable`] for `local_owner` and its interned id `player`.
+/// [`health_bar_drawable`] for the local player's interned id `player`.
 fn health_bar_drawable_for(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
     hovered_id: Option<u64>,
-    local_owner: Option<&str>,
     player: Option<crate::sim::intern::InternedId>,
 ) -> bool {
     let (_, draw_pips) = health_strip_visibility(sim, entity, hovered_id, player, false);
-    draw_pips && admitted_techno_observer(sim, entity, local_owner, player).is_some()
+    draw_pips && admitted_techno_observer(sim, entity, player).is_some()
 }
 
 /// DrawExtras' health dispatch: [`status_visibility`], except that a hovered,
@@ -463,24 +462,20 @@ pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] 
 
 /// Retained Display membership and the shared tactical draw admission.
 /// Return the already derived observer facts for native Extras queries.
-/// `local_owner_id` is `local_owner`'s interned id.
+/// `local_owner_id` is the frame's local player.
 fn admitted_techno_observer(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
-    local_owner: Option<&str>,
     local_owner_id: Option<crate::sim::intern::InternedId>,
 ) -> Option<crate::render::draw_state::ObserverDrawContext> {
     sim.display_layers().layer_of(entity.stable_id())?;
-    // `observer_draw_context` for the frame's local player, `local_owner`.
+    // `observer_draw_context` for the frame's local player.
     let observer = entity.seen.observer;
     crate::app::presentation::instances::tactical_entity_admission(
         crate::app::presentation::instances::TacticalEntityPurpose::Drawing,
         entity,
-        sim.interner().resolve(entity.owner()),
-        local_owner,
         local_owner_id,
         sim.fog(),
-        sim.house_alliances().as_map(),
         false,
         sim.session().binary_frame(),
         0,
@@ -511,13 +506,7 @@ fn entity_status_pips_drawable(
     let Some(current_house_id) = current_house_id else {
         return false;
     };
-    if !health_bar_drawable_for(
-        sim,
-        entity,
-        hovered_entity_id,
-        Some(sim.interner().resolve(current_house_id)),
-        Some(current_house_id),
-    ) {
+    if !health_bar_drawable_for(sim, entity, hovered_entity_id, Some(current_house_id)) {
         return false;
     }
     let building_type = (entity.category() == EntityCategory::Structure)
@@ -1773,7 +1762,7 @@ pub(crate) fn techno_extras_for_parent(
             strip.power_off = prefix(shape, frame, if repairing { 18.0 } else { 0.0 });
         }
     }
-    let Some(observer) = admitted_techno_observer(sim, entity, local_owner, local_owner_id) else {
+    let Some(observer) = admitted_techno_observer(sim, entity, local_owner_id) else {
         return strip;
     };
     #[cfg(not(feature = "phobos"))]

@@ -598,7 +598,6 @@ pub(crate) fn unit_visitor<'a>(
                 let sy = render_pose.screen[1] - render_pose.visual_lift;
                 // Common visibility, passenger, limbo, and DrawState admission is shared below.
                 let pos = &entity.position;
-                let owner_str = sim.interner().resolve(entity.owner());
                 let mut observer = entity.seen.observer;
                 let Some((type_name, mut body)) = unit_body_draw(
                     entity,
@@ -674,11 +673,8 @@ pub(crate) fn unit_visitor<'a>(
                     None => tactical_entity_admission(
                         super::helpers::TacticalEntityPurpose::Drawing,
                         entity,
-                        owner_str,
-                        local_owner.as_deref(),
                         local_owner_id,
                         sim.fog(),
-                        sim.house_alliances().as_map(),
                         ignore_visibility,
                         sim.session().binary_frame(),
                         house_color_to_remap_row(hc),

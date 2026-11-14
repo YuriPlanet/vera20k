@@ -580,32 +580,28 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
 /// filter: an object without map presence is never in the drawn-object list, so
 /// a passenger inside a transport cannot make a rectangle "non-empty".
 ///
-/// The list is **partly** visibility-filtered, and the asymmetry is native:
-/// mobile objects append themselves from inside their own draw routine, so an
-/// object the shroud hides is never registered, while buildings are appended in
-/// bulk from the whole building array with no visibility test at all. A building
-/// under unexplored shroud therefore does make a rectangle non-empty, and an
-/// enemy unit under it does not.
+/// The list is not shroud-filtered. Mobile objects append themselves from
+/// inside their own draw routine (`UnitClass::DrawIt` registers at
+/// `0x0073CF6B`), which the object loop `0x006D8DB0` reaches with no shroud
+/// test, the shroud only masking their pixels; buildings are appended in bulk
+/// from the whole building array. A rectangle over black shroud therefore
+/// catches an enemy beneath it and replaces the selection. The loop's FogOfWar
+/// test, `MapClass::IsFogged @ 0x005865E0`, always answers no, so FogOfWar
+/// changes nothing here.
 ///
-/// The registration helper has exactly four call sites, and every one of them is
-/// the same virtual — the per-class "draw extras" override — reached once from
-/// the vehicle version, twice from the infantry version (its two draw paths) and
-/// once from the aircraft version. Nothing outside a draw routine registers an
-/// object, so the shroud filter above is complete: there is no second, unfiltered
-/// path by which a hidden enemy could enter the list.
+/// The registration helper (`0x006D9EF0`) is called only from draw routines:
+/// `UnitClass::DrawIt`, `InfantryClass::DrawIt` (its two draw paths),
+/// `AircraftClass::Draw_It` and the VeinholeMonster's draw (`0x0074D558`,
+/// Tiberian Sun content). Nothing outside a draw routine registers an object.
 pub(crate) fn band_rect_contains_drawn_object(
     source: impl PickSource,
     encounter_order: &[u64],
-    fog: Option<(&FogState, &crate::map::houses::HouseAllianceMap)>,
-    local_owner: Option<&str>,
     min_x: f32,
     min_y: f32,
     max_x: f32,
     max_y: f32,
-    interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
     let entities = source.entities();
-    let local_owner_id = local_owner.and_then(|o| interner.and_then(|i| i.get(o)));
     encounter_order.iter().any(|id| {
         let Some(entity) = entities.get(*id) else {
             return false;
@@ -625,9 +621,7 @@ pub(crate) fn band_rect_contains_drawn_object(
             // FoggedObject still draws in both fog modes.
             return !source.invisible_in_game_building(entity);
         }
-        let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
         !source.conceals(entity)
-            && is_drawn_for_local_owner(fog, local_owner, owner_str, entity, local_owner_id)
     })
 }
 
@@ -760,17 +754,7 @@ pub(crate) fn compute_box_selection_snapshot_with_playfield(
     interner: Option<&crate::sim::intern::StringInterner>,
     require_playfield_membership: bool,
 ) -> Option<SelectionMutation> {
-    if !band_rect_contains_drawn_object(
-        source,
-        preflight_order,
-        fog,
-        local_owner,
-        min_x,
-        min_y,
-        max_x,
-        max_y,
-        interner,
-    ) {
+    if !band_rect_contains_drawn_object(source, preflight_order, min_x, min_y, max_x, max_y) {
         return None;
     }
     let candidates = entities_in_rect(
@@ -1988,13 +1972,10 @@ mod tests {
                     band_rect_contains_drawn_object(
                         source,
                         &[1],
-                        Some((sim.fog(), sim.house_alliances().as_map())),
-                        Some("viewer"),
                         bx - 1.,
                         by - 1.,
                         bx + 1.,
-                        by + 1.,
-                        Some(sim.interner()),
+                        by + 1.
                     ),
                     "{case} {translucent_viewer:?}"
                 );
@@ -2008,7 +1989,9 @@ mod tests {
     /// VERA's translucent fog with FogOfWar takes an enemy out of the draw
     /// plan, so no point pick, band preflight or type-select box finds it;
     /// the retail fog keeps it pickable, as native does
-    /// (`0x006924A4..0x006924FA`).
+    /// (`0x006924A4..0x006924FA`). A hostile gap hides an enemy from the point
+    /// pick only: AddSelectable (`0x006D9EF0`) tests no shroud, so the band
+    /// box and the type-select box still catch it.
     #[test]
     fn translucent_fog_hides_from_the_pickers_what_it_hides_from_the_draw_plan() {
         use crate::app::presentation::instances::{
@@ -2069,7 +2052,7 @@ mod tests {
             &sim,
             RuleSet::empty_for_test(),
         );
-        for (id, _, owner, retail, translucent) in cases {
+        for (id, _, _, retail, translucent) in cases {
             let entity = sim.entities().get(id).unwrap();
             assert_eq!(
                 !translucent_fog_conceals(&sim, viewer, &entity.position, entity.owner()),
@@ -2078,20 +2061,17 @@ mod tests {
             let screen_selected = tactical_entity_admission(
                 TacticalEntityPurpose::ScreenSelection,
                 frame.object(id).unwrap(),
-                sim.interner().resolve(owner),
-                Some("Americans"),
                 Some(viewer),
                 sim.fog(),
-                sim.house_alliances().as_map(),
                 false,
                 0,
                 0,
                 Default::default(),
             )
             .is_some();
-            assert_eq!(screen_selected, retail, "{id}");
-            let screen_order: &[u64] = if screen_selected { &[id] } else { &[] };
+            assert!(screen_selected, "{id}");
             for (translucent_viewer, shown) in [(None, retail), (Some(viewer), translucent)] {
+                let caught = translucent_viewer.is_none() || translucent;
                 let source = PresentedWorld {
                     sim: &sim,
                     rules: None,
@@ -2102,22 +2082,13 @@ mod tests {
                 let picked = hover_target_at_point(source, x, y, "Americans", false)
                     .map(|hover| hover.stable_id);
                 assert_eq!(picked, shown.then_some(id), "{case}");
-                let band = band_rect_contains_drawn_object(
-                    source,
-                    &[id],
-                    Some((sim.fog(), sim.house_alliances().as_map())),
-                    Some("Americans"),
-                    x - 1.,
-                    y - 1.,
-                    x + 1.,
-                    y + 1.,
-                    Some(sim.interner()),
-                );
-                assert_eq!(band, shown, "{case}");
+                let band =
+                    band_rect_contains_drawn_object(source, &[id], x - 1., y - 1., x + 1., y + 1.);
+                assert_eq!(band, caught, "{case}");
                 // An MTNK in the box selects the viewer's own MTNKs.
                 let typed = compute_type_select_box_mutation_with_playfield(
                     source,
-                    screen_order,
+                    &[id],
                     &all,
                     &[],
                     None,
@@ -2131,7 +2102,11 @@ mod tests {
                     Some(sim.interner()),
                     false,
                 );
-                assert_eq!(typed.select, if shown { vec![1] } else { vec![] }, "{case}");
+                assert_eq!(
+                    typed.select,
+                    if caught { vec![1] } else { vec![] },
+                    "{case}"
+                );
             }
         }
     }
