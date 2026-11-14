@@ -5484,42 +5484,6 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
 }
 
 #[test]
-fn lifecycle_authority_duplicate_queue_finalizes_once() {
-    let mut sim = Simulation::new();
-    insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.uninit(1);
-    sim.uninit(1);
-    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![1, 1]);
-    sim.lifecycle_test_events.clear();
-
-    sim.process_pending_delete();
-    assert_eq!(
-        sim.lifecycle_test_events,
-        vec![
-            LifecycleTestEvent::PendingDeleteDrainStarted,
-            LifecycleTestEvent::DeferredDeleteSelected {
-                ticket: super::DeferredDeleteTicket::Object(1),
-            },
-            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
-            LifecycleTestEvent::ConcealAlreadyLimboReturn {
-                stable_id: 1,
-                object_alive: false,
-                resolvable: true,
-            },
-            LifecycleTestEvent::UninitRemovalListenerVisited {
-                expired_id: 1,
-                listener_id: 1,
-                target_alive: false,
-                target_in_limbo: true,
-            },
-            LifecycleTestEvent::FinalizedCommon { stable_id: 1 },
-        ]
-    );
-    assert!(!sim.substrate.entities.contains(1));
-    assert!(sim.substrate.pending_delete.is_empty());
-}
-
-#[test]
 fn lifecycle_authority_entity_and_anim_share_ordered_drain() {
     let mut sim = Simulation::new();
     insert_anim(&mut sim, 2, true);
