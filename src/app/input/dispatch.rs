@@ -2177,6 +2177,13 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // active strip (up=true/false, tab -1), as the wheel does.
         HotkeyCommand::SidebarUp => sidebar_scroll_command(state, WheelAction::SidebarUp),
         HotkeyCommand::SidebarDown => sidebar_scroll_command(state, WheelAction::SidebarDown),
+        // VERA: Esc leaves the layout edit mode without saving, before it
+        // would open the menu.
+        HotkeyCommand::Options
+            if crate::app::input::layout_edit::active(state) && !state.match_state.paused() =>
+        {
+            crate::app::input::layout_edit::cancel(state)
+        }
         HotkeyCommand::Options => handle_options_hotkey(state),
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
         HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
@@ -2238,8 +2245,8 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         | HotkeyCommand::LockCursor
         | HotkeyCommand::FullScreen
         | HotkeyCommand::StringKeys => run_window_command(state, command),
-        // VERA: the mouse drags the interface's parts until the key comes
-        // again.
+        // VERA: the mouse drags the interface's parts until Save, or until
+        // the key comes again and puts them back.
         HotkeyCommand::LayoutEdit => crate::app::input::layout_edit::toggle(state),
         // A held key: `input::keyboard::in_game_key_edge` tracks it.
         HotkeyCommand::FormationLine => {}
