@@ -378,8 +378,8 @@ pub(crate) enum CursorFeedbackKind {
     SellMode(bool),
     /// Ares 3.0 DisplayClass_ChooseAction_CanSell (10057E70, hook 0x6929FC):
     /// sell mode over the player's own Unit or Aircraft that can be sold
-    /// (`production::foot_can_be_sold`) answers action 0xD, SellUnit.
-    #[cfg(feature = "ares")]
+    /// (`production::foot_can_be_sold`) answers action 0xD, SellUnit, while
+    /// Ares plays.
     SellUnit,
     /// Superweapon targeting reticle — shown while a charged SW is armed
     /// and the cursor is over the tactical map. Payload is the per-SW
@@ -391,7 +391,6 @@ pub(crate) enum CursorFeedbackKind {
     /// Ares 3.0: a What_Action answer drawn with the `[MouseCursors]` entry
     /// (this index) its hooks chose, where that entry draws other frames than
     /// the answer's stock row (`app::input::ares_cursor::tactical`).
-    #[cfg(feature = "ares")]
     AresAction(u16),
 }
 

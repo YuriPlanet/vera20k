@@ -151,7 +151,6 @@ pub(crate) enum CursorId {
     /// Ares 3.0: an entry of the `[MouseCursors]` list by index, its main set
     /// or its radar (`mini`) set ([`crate::rules::ares_mouse_cursor`]). An
     /// Ares cursor draws every id through the list ([`SoftwareCursor::get`]).
-    #[cfg(feature = "ares")]
     Ares {
         index: u16,
         mini: bool,
@@ -167,7 +166,6 @@ pub(crate) struct SoftwareCursor {
     planning_badges: [Option<PlanningBadge>; 2],
     /// Built from the Ares cursor list ([`build_ares_software_cursor`]):
     /// `sequences` holds only [`CursorId::Ares`] keys.
-    #[cfg(feature = "ares")]
     ares: bool,
     /// mouse.sha and its palette, for the window system's images
     /// (`app::input::hardware_cursor`).
@@ -195,7 +193,6 @@ impl SoftwareCursor {
     /// arrow, `Default`'s second packed frame. Through the Ares list it is
     /// row 0's radar set (`MouseClass_UpdateCursor @ 10007AC0`).
     pub(crate) fn planning_arrow(&self) -> (CursorId, usize) {
-        #[cfg(feature = "ares")]
         if self.ares {
             return (CursorId::DefaultMini, 0);
         }
@@ -218,7 +215,6 @@ impl SoftwareCursor {
 
     /// Look up a cursor sequence by id, falling back to Default if not found.
     pub(crate) fn get(&self, id: CursorId) -> Option<&SoftwareCursorSequence> {
-        #[cfg(feature = "ares")]
         if self.ares {
             return ares::lookup(&self.sequences, id);
         }
@@ -760,7 +756,6 @@ pub(crate) fn build_software_cursor(
     Some(SoftwareCursor {
         sequences,
         planning_badges,
-        #[cfg(feature = "ares")]
         ares: false,
         shp,
         palette,
@@ -768,10 +763,8 @@ pub(crate) fn build_software_cursor(
     })
 }
 
-#[cfg(feature = "ares")]
 pub(crate) use ares::{build_ares_software_cursor, vanilla_row};
 
-#[cfg(feature = "ares")]
 #[path = "cursor_atlas_ares.rs"]
 mod ares;
 
