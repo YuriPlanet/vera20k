@@ -453,6 +453,76 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
 }
 
 #[test]
+fn a_turreted_shp_unit_registers_the_turret_frames_after_its_body_blocks() {
+    let directory = StoredFrameTestDirectory::new();
+    // Two walk frames over eight facings (0..15), then the thirty-two turret
+    // heading frames (16..47), then the embedded shadow half repeats it all.
+    std::fs::write(
+        directory.0.join("SHPWALKER.SHP"),
+        raw_shp(&[([2, 2], 1); 96]),
+    )
+    .expect("write the walker body");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let art_ini = crate::rules::ini_parser::IniFile::from_str(
+        "[SHPWALKER]\nVoxel=no\nFacings=8\nWalkFrames=2\n\
+         [SHPPREFIX]\nVoxel=no\nFacings=8\nWalkFrames=2\n",
+    );
+    let art = ArtRegistry::from_ini(&art_ini);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=SHPWALKER\n1=SHPPREFIX\n\n\
+             [SHPWALKER]\nTurret=yes\n\n[SHPPREFIX]\nTurret=no\n",
+        ),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(art);
+    assert_eq!(
+        rules
+            .animation_sequence("SHPWALKER")
+            .and_then(|set| set.shp_vehicle_turret())
+            .map(|turret| turret.start_frame),
+        Some(16),
+        "the turret block follows the two-by-eight walk block"
+    );
+    let color = HouseColorIndex(2);
+    for (type_id, draws_turret) in [("SHPWALKER", true), ("SHPPREFIX", false)] {
+        let (world, interner) = one_object_world(type_id, EntityCategory::Unit);
+        let pairs: HashSet<(String, HouseColorIndex)> =
+            std::iter::once((type_id.to_string(), color)).collect();
+        let mut needed = HashSet::new();
+        insert_new_object_keys(
+            &mut needed,
+            &pairs,
+            &world,
+            Some(&interner),
+            &assets,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        for frame in 0..48u16 {
+            let key = ShpSpriteKey {
+                palette_context: ShpPaletteContext::Legacy,
+                type_id: type_id.into(),
+                facing: 0,
+                frame,
+                house_color: color,
+            };
+            if draws_turret || frame < 16 {
+                assert!(needed.contains(&key), "{type_id} is missing frame {frame}");
+            } else {
+                assert!(
+                    !needed.contains(&key),
+                    "{type_id} drew turret frame {frame} without Turret=yes"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn deploy_targets_get_the_same_keys_as_placed_structures() {
     let directory = StoredFrameTestDirectory::new();
     directory.write_raw_and_rle_frames("BOUNDGI.SHP", [8, 8], [0, 0, 6, 4]);

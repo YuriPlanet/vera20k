@@ -265,6 +265,11 @@ pub struct SequenceSet {
     /// The UnitType's ART death layout a running death counter draws.
     #[serde(default)]
     shp_vehicle_death: Option<ShpVehicleDeathFrames>,
+    /// A `Turret=yes` SHP Unit's thirty-two facing frames, which the SHP
+    /// carries after its declared walk/stand/fire blocks. The Unit draw picks
+    /// one from the turret heading; see [`ShpVehicleTurret`].
+    #[serde(default)]
+    shp_vehicle_turret: Option<ShpVehicleTurret>,
 }
 
 /// UnitType's ART `StartDeathFrame=` (`+0xE34`), `DeathFrames=` (`+0xE20`)
@@ -301,6 +306,26 @@ impl ShpVehicleDeathFrames {
     }
 }
 
+/// Frame block one SHP Unit's turret occupies inside its own body SHP.
+///
+/// RA2/YR appends a turret to a `Turret=yes` SHP vehicle's frame layout: thirty-
+/// two frames, one per 11.25° of turret heading, laid out after the body blocks
+/// the ART keys declare (`WalkFrames`/`StandingFrames`/`FiringFrames`, each
+/// times `Facings`). No separate `<Image>tur.shp` participates, so the frames
+/// share the body canvas and the body's draw point; the offsets baked into each
+/// frame place the turret over the hull. `TurretOffset` does not apply.
+///
+/// MO's Cyclops Walker (`CYCL`, `Voxel=no`, `Turret=yes`, `WalkFrames=22`,
+/// `Facings=8`) is the shipped example: frames 0..175 walk, 176..207 the
+/// turret, and the shadow half repeats both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShpVehicleTurret {
+    /// First turret frame, in the body SHP's own frame numbering.
+    pub start_frame: u16,
+    /// Facing frames in the block: `SHP_TURRET_FACING_FRAMES`.
+    pub facings: u16,
+}
+
 /// Rules-owned divisors consumed by the shared Foot body counter.
 /// SHP Unit sequence configuration also retains these same divisors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -332,6 +357,7 @@ impl SequenceSet {
             infantry_actions: None,
             shp_vehicle_cadence: None,
             shp_vehicle_death: None,
+            shp_vehicle_turret: None,
         }
     }
 
@@ -378,6 +404,16 @@ impl SequenceSet {
 
     pub fn shp_vehicle_death(&self) -> Option<ShpVehicleDeathFrames> {
         self.shp_vehicle_death
+    }
+
+    pub(crate) fn set_shp_vehicle_turret(&mut self, turret: ShpVehicleTurret) {
+        self.shp_vehicle_turret = Some(turret);
+    }
+
+    /// The turret frame block a `Turret=yes` SHP Unit draws over its body, if
+    /// its ART layout leaves room for one.
+    pub fn shp_vehicle_turret(&self) -> Option<ShpVehicleTurret> {
+        self.shp_vehicle_turret
     }
 
     /// Add a sequence definition.
@@ -471,6 +507,7 @@ pub(crate) fn build_animation_sequence_catalog(
                 } else {
                     None
                 },
+                object.has_turret,
             ),
         );
     }

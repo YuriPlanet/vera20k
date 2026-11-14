@@ -14,7 +14,7 @@
 //! - Does NOT depend on sim/ game logic, render/, or any game module.
 
 use crate::rules::animation_sequence::{
-    FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet,
+    FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet, ShpVehicleTurret,
 };
 use crate::rules::art_data::ArtEntry;
 use crate::rules::ini_parser::IniSection;
@@ -168,6 +168,7 @@ pub(crate) fn build_shp_vehicle_sequences(
     art: &ArtEntry,
     cadence: FootBodyCadence,
     retained: Option<&UnitShpReadState>,
+    has_turret: bool,
 ) -> SequenceSet {
     let mut set = SequenceSet::new();
     set.set_shp_vehicle_cadence(cadence);
@@ -304,6 +305,25 @@ pub(crate) fn build_shp_vehicle_sequences(
         );
     }
 
+    // A `Turret=yes` SHP body appends its thirty-two turret facing frames to
+    // the blocks the ART keys declare, so the block starts where the walk,
+    // standing and firing blocks end. `CYCL` (Voxel=no, Turret=yes,
+    // WalkFrames=22, Facings=8, no stand/fire frames) starts its turret at
+    // frame 176; its SHP carries exactly those frames before the shadow half.
+    if has_turret {
+        let declared_blocks = u32::from(walk_frames)
+            .wrapping_add(u32::from(standing_frames))
+            .wrapping_add(u32::from(firing_frames))
+            .wrapping_mul(u32::from(facings));
+        let start = u32::from(start_walk_frame).wrapping_add(declared_blocks);
+        if let Ok(start_frame) = u16::try_from(start) {
+            set.set_shp_vehicle_turret(ShpVehicleTurret {
+                start_frame,
+                facings: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
+            });
+        }
+    }
+
     set
 }
 
@@ -422,6 +442,10 @@ mod tests {
     }
 
     fn build_test(art: &ArtEntry) -> SequenceSet {
+        build_test_with_turret(art, false)
+    }
+
+    fn build_test_with_turret(art: &ArtEntry, has_turret: bool) -> SequenceSet {
         let mut source = format!("[IMAGE]\nFacings={}\n", art.shp_facings);
         for (key, value) in [
             ("WalkFrames", art.walk_frames),
@@ -434,8 +458,39 @@ mod tests {
         }
         let ini = IniFile::from_str(&source);
         let mut native = UnitShpReadState::default();
-        native.read_pass(ini.section_or_empty("IMAGE"), false);
-        build_shp_vehicle_sequences(art, TEST_CADENCE, Some(&native))
+        native.read_pass(ini.section_or_empty("IMAGE"), has_turret);
+        build_shp_vehicle_sequences(art, TEST_CADENCE, Some(&native), has_turret)
+    }
+
+    #[test]
+    fn a_turreted_shp_unit_appends_its_thirty_two_facing_frames() {
+        // MO's Cyclops Walker: Voxel=no, Turret=yes, Facings=8, WalkFrames=22,
+        // no standing or firing block. Its SHP carries the walk block in
+        // 0..175 and a 32-frame turret rotation in 176..207 before the shadow
+        // half, the layout the unit SHP convention puts after the body blocks.
+        let walker = make_art_entry(Some(22), None);
+        let turreted = build_test_with_turret(&walker, true);
+        assert_eq!(
+            turreted.shp_vehicle_turret(),
+            Some(ShpVehicleTurret {
+                start_frame: 176,
+                facings: 32,
+            })
+        );
+
+        // A `Turret=no` body never reads a turret block, and neither does a
+        // three-block layout without one: its declared blocks still decide
+        // where the turret would start.
+        assert_eq!(build_test(&walker).shp_vehicle_turret(), None);
+        let mut with_standing = make_art_entry(Some(22), None);
+        with_standing.standing_frames = Some(4);
+        assert_eq!(
+            build_test_with_turret(&with_standing, true)
+                .shp_vehicle_turret()
+                .map(|turret| turret.start_frame),
+            Some(208),
+            "22 walk + 4 standing frames over eight facings precede the turret"
+        );
     }
 
     fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
