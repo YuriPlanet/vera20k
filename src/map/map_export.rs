@@ -157,23 +157,18 @@ pub fn multiplayer_map_text(
         out.push('\n');
     }
 
-    // The overlay planes: 512 bytes a row, 1024 once a coordinate needs it
-    // (VERA's extended sizes), as `OverlayDataPack::from_cells` picks.
-    let side = if map
-        .overlays
-        .iter()
-        .any(|overlay| overlay.rx >= 512 || overlay.ry >= 512)
-    {
-        1024
-    } else {
-        512
-    };
+    // The overlay planes at the row width the reader takes from `Size`
+    // (`MapHeader::cell_grid`): 512 bytes a row, 1024 on VERA's extended
+    // sizes even when no overlay sits at 512 or beyond.
+    let side = usize::from(header.cell_grid().side());
     let mut ids = vec![NO_OVERLAY; side * side];
     let mut frames = vec![0u8; side * side];
     for overlay in &map.overlays {
-        let at = usize::from(overlay.ry) * side + usize::from(overlay.rx);
-        ids[at] = overlay.overlay_id;
-        frames[at] = overlay.frame;
+        let (rx, ry) = (usize::from(overlay.rx), usize::from(overlay.ry));
+        if rx < side && ry < side {
+            ids[ry * side + rx] = overlay.overlay_id;
+            frames[ry * side + rx] = overlay.frame;
+        }
     }
     push_pack(
         &mut out,
@@ -247,4 +242,39 @@ fn push_pack(out: &mut String, section: &str, bytes: &[u8]) {
         writeln!(out, "{}={}", index + 1, std::str::from_utf8(line).unwrap()).unwrap();
     }
     out.push('\n');
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::overlay::OverlayEntry;
+
+    /// The overlay planes take the row width the map reader uses for this
+    /// `Size`, even when no overlay itself sits at 512 or beyond.
+    #[test]
+    fn overlays_of_a_wide_map_load_back_where_they_were_placed() {
+        let mut map = MapFile::from_bytes(
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n",
+        )
+        .unwrap();
+        // A generated map keeps only its own extra sections (lighting).
+        map.ini = crate::rules::ini_parser::IniFile::from_str("");
+        // 300 + 300 is past the retail 512 sum; the ore sits under 512.
+        (map.header.width, map.header.height) = (300, 300);
+        map.overlays = vec![OverlayEntry {
+            rx: 300,
+            ry: 200,
+            overlay_id: 5,
+            frame: 3,
+        }];
+        let text = multiplayer_map_text(&map, "Wide", 2, 2, None, None);
+        let read = MapFile::from_bytes(text.as_bytes()).unwrap();
+        let placed: Vec<_> = read
+            .overlays
+            .iter()
+            .map(|o| (o.rx, o.ry, o.overlay_id, o.frame))
+            .collect();
+        assert_eq!(placed, [(300, 200, 5, 3)]);
+    }
 }
