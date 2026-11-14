@@ -10,6 +10,7 @@ pub(crate) mod control_links;
 pub(crate) mod detail;
 #[cfg(feature = "phobos")]
 pub(crate) mod digital_display;
+pub(crate) mod display_members;
 pub(crate) mod electric_bolts;
 pub(crate) mod field_parts;
 pub(crate) mod layout_parts;

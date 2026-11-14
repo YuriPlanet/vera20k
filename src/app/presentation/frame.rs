@@ -1149,6 +1149,13 @@ pub(crate) struct PresentationFrame {
     /// searches. A draw asks for every Display member, and a search over the
     /// records themselves lands on a different large record at each step.
     ids: Vec<u64>,
+    /// Each record's screen span, in the same order: what the object loop
+    /// culls from without reading the record.
+    spans: Vec<crate::app::presentation::display_members::ScreenSpan>,
+    /// The Display members of the world this frame was captured from, filed
+    /// by the first draw that asks ([`Self::display_members`]).
+    display_members:
+        crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
     /// The Display order of the world this frame was captured from, built by
     /// the first draw that asks ([`Self::display_order`]). The frame is
     /// dropped before that world can change, so every later draw of it reads
@@ -1210,10 +1217,20 @@ impl PresentationFrame {
             .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
             .collect();
         let psychic_detection = at.psychic.is_some();
-        let ids = objects.iter().map(|object| object.id).collect();
+        let (ids, spans) = objects
+            .iter()
+            .map(|object| {
+                (
+                    object.id,
+                    crate::app::presentation::display_members::ScreenSpan::of(object),
+                )
+            })
+            .unzip();
         Self {
             objects,
             ids,
+            spans,
+            display_members: Default::default(),
             display_order: Default::default(),
             anim_coords,
             scene,
@@ -1225,7 +1242,32 @@ impl PresentationFrame {
         self.ids
             .binary_search(&id)
             .ok()
-            .map(|slot| &self.objects[slot])
+            .and_then(|slot| self.record_at(slot))
+    }
+
+    /// Record `id`'s slot and screen span, without reading the record.
+    pub(crate) fn slot_and_span(
+        &self,
+        id: u64,
+    ) -> Option<(usize, crate::app::presentation::display_members::ScreenSpan)> {
+        let slot = self.ids.binary_search(&id).ok()?;
+        Some((slot, *self.spans.get(slot)?))
+    }
+
+    /// The record in `slot` ([`Self::slot_and_span`]).
+    pub(crate) fn record_at(&self, slot: usize) -> Option<&ObjectRecord> {
+        self.objects.get(slot)
+    }
+
+    /// The Display members of `sim`, filed once for this frame's draws.
+    /// `sim` is the world the frame was captured from.
+    pub(crate) fn display_members(
+        &self,
+        sim: &Simulation,
+    ) -> &crate::app::presentation::display_members::DisplayMembers {
+        self.display_members.get_or_init(|| {
+            crate::app::presentation::display_members::DisplayMembers::of(self, sim)
+        })
     }
 
     /// `display`'s order for this frame's draws. `display` is the Display
