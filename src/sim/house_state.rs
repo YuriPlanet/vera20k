@@ -659,8 +659,8 @@ pub struct HouseState {
     #[serde(default)]
     command_driven: bool,
     /// The HouseType's `Cost*Mult=`, projected from the rules at creation.
-    /// Like the flag above it is the type's, so it is left out of the state
-    /// hash.
+    /// Like `multiplay_passive` it is the type's, so it is left out of the
+    /// state hash.
     #[serde(default)]
     country_cost_mults: CountryCostMults,
     /// The HouseType's `Speed*Mult=`, projected with the cost factors and
