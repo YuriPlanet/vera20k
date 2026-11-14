@@ -1443,14 +1443,32 @@ pub(crate) fn anim_remap_color(
     interner: &crate::sim::intern::StringInterner,
     house_colors: &HouseColorMap,
 ) -> Option<HouseColorIndex> {
+    anim_remap_color_with(anim, |house| house_scheme(interner, house_colors, house))
+}
+
+/// [`anim_remap_color`], with each house's scheme from `scheme`: a draw that
+/// meets many Anims of one house looks it up once.
+pub(crate) fn anim_remap_color_with(
+    anim: &crate::sim::anim_class::AnimObject,
+    scheme: impl FnOnce(crate::sim::intern::InternedId) -> HouseColorIndex,
+) -> Option<HouseColorIndex> {
     use crate::sim::anim_class::AnimRemap;
     Some(match anim.remap()? {
         AnimRemap::ColorScheme(color) => color,
-        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme { house, .. } => house_colors
-            .get(interner.resolve(house))
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP),
+        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme { house, .. } => scheme(house),
     })
+}
+
+/// House `house`'s colour scheme in `house_colors`, or none.
+pub(crate) fn house_scheme(
+    interner: &crate::sim::intern::StringInterner,
+    house_colors: &HouseColorMap,
+    house: crate::sim::intern::InternedId,
+) -> HouseColorIndex {
+    house_colors
+        .get(interner.resolve(house))
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP)
 }
 
 /// The palette a remapped anim's scheme is built on: the unit palette, or
@@ -1760,6 +1778,14 @@ fn insert_object_keys(
                     for walk_frame in 0..6u16 {
                         insert(8 + bucket as u16 * 6 + walk_frame);
                     }
+                }
+            }
+            // A `Turret=yes` SHP Unit draws its turret from the same SHP:
+            // thirty-two frames from `WalkFrames * 8`. The draw picks one from
+            // the turret heading, so all of them stay resident.
+            if let Some(turret) = seq_set.and_then(|set| set.shp_vehicle_turret()) {
+                for slot in 0..turret.facings {
+                    insert(turret.start_frame.saturating_add(slot));
                 }
             }
         }

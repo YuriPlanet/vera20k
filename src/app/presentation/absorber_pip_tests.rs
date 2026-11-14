@@ -24,7 +24,7 @@ fn frames(sim: &Simulation, rules: &RuleSet, reactor: u64, hover: Option<u64>) -
         sim,
         frame.object(reactor).unwrap(),
         hover,
-        Some(OWNER),
+        sim.interner().get(OWNER),
         rules,
     )
     .into_iter()

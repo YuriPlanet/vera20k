@@ -30,6 +30,25 @@ use crate::rules::house_colors::HouseColorIndex;
 use crate::sim::animation;
 use smol_str::StrExt;
 
+/// Frame offset between a turret heading bucket and the SHP turret frame an
+/// SHP Unit draws for it: UnitClass SHP draw `0x0073CCF4` adds 4 to the
+/// 32-step turret heading and masks it to the ring (`0x0073CCFE`).
+const SHP_TURRET_FRAME_BIAS: u16 = 4;
+
+/// The body-SHP frame a `Turret=yes` SHP Unit draws for one turret heading
+/// (`0x0073CCB2..0x0073CD03`): `((step + 4) & 31) + WalkFrames * 8`, with the
+/// turret facing (`+0x3A0`) rounded to 32 steps as the voxel turret does.
+fn shp_turret_frame(
+    turret: crate::rules::animation_sequence::ShpVehicleTurret,
+    heading: u16,
+) -> u16 {
+    let facings = turret.facings.max(1);
+    let step = u16::from(canonical_turret_facing(heading)) >> 3;
+    turret
+        .start_frame
+        .saturating_add((step + SHP_TURRET_FRAME_BIAS) % facings)
+}
+
 /// Borrowed live inputs for the SHP body emitter. The application and offscreen
 /// comparisons use the same admission, frame, light, depth and piece owners.
 pub(crate) struct ShpInputs<'a> {
@@ -820,6 +839,56 @@ pub(crate) fn shp_visitor<'a>(
                 )
             {
                 pieces.push(shadow);
+            }
+            // A `Turret=yes` SHP Unit (`+0xCA1`, gate `0x0073C725`) draws its
+            // turret from the same SHP after the body (`0x0073CD08`), at the
+            // body's draw point; no `TurretOffset` applies. Residual: the
+            // native turret branch draws body and turret with flags
+            // 0x2800/0x2820 and no -16 Z (unlike the no-turret branch used
+            // here), lifts the point 14 px when `+0x424` is set (`0x0073C753`)
+            // and draws a voxel barrel (`type+0xC0`) around the turret; none
+            // is ported. Retail ships no such unit; MO's `CYCL` does.
+            if entity.category() == EntityCategory::Unit
+                && let Some(turret) = rules
+                    .and_then(|rules| {
+                        rules.animation_sequence_in_category(
+                            entity.category().into(),
+                            &body_key.type_id,
+                        )
+                    })
+                    .and_then(|set| set.shp_vehicle_turret())
+            {
+                let turret_key = ShpSpriteKey {
+                    frame: shp_turret_frame(turret, render_pose.turret),
+                    ..body_key.clone()
+                };
+                if let Some(turret_entry) = atlas.get(&turret_key) {
+                    pieces.push(ObjectPieceInstance {
+                        target: ObjectTexture::ShpPage(turret_entry.page as usize),
+                        render_z: parent.policy.render_z,
+                        instance: SpriteInstance {
+                            position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
+                            size: turret_entry.pixel_size,
+                            uv_origin: turret_entry.uv_origin,
+                            uv_size: turret_entry.uv_size,
+                            source_palette: turret_entry.source_palette,
+                            depth,
+                            tint: body_tint,
+                            palette_light: palette_light.with_colour_word(
+                                if parent.policy.ors_colour_word(turret_entry.extended) {
+                                    colour_word
+                                } else {
+                                    0
+                                },
+                            ),
+                            alpha: 1.0,
+                            draw_state,
+                            z_adjust,
+                            z_gradient,
+                            zshape_origin,
+                        },
+                    });
+                }
             }
             ground_objects.push(PlannedObjectInstance::object(parent, pieces));
         }
@@ -1622,6 +1691,7 @@ pub(crate) fn build_building_anim_instances(
     // projected. The window is the slot admission's box
     // (`helpers::projection_admitted`) widened by the slack.
     let slot_window = building_slot_window(sim.resolved_terrain(), camera, projection_viewport);
+    let mut anim_types = super::overlays::AnimTypeArts::new(rules, atlas);
     for building in frame.structures() {
         if !slot_window.contains(building.position.rx(), building.position.ry()) {
             debug_assert!(
@@ -1688,6 +1758,7 @@ pub(crate) fn build_building_anim_instances(
             local_owner_id,
             building,
             &slot_anims,
+            &mut anim_types,
             &|id| anim_colour_word(state, sim, frame, cells.as_ref(), &shrouded, id),
             axis.origin_y,
             axis.world_height,
@@ -1774,6 +1845,7 @@ fn emit_building_anims(
     local_owner_id: Option<crate::sim::intern::InternedId>,
     building: &crate::app::presentation::frame::ObjectRecord,
     slot_anims: &[Option<&crate::sim::anim_class::AnimObject>; 21],
+    anim_types: &mut super::overlays::AnimTypeArts<'_>,
     anim_word: &dyn Fn(u64) -> u16,
     origin_y: f32,
     world_height: f32,
@@ -1813,7 +1885,8 @@ fn emit_building_anims(
             continue;
         }
         let anim_name = sim.interner().resolve(instance.type_id());
-        let Some(runtime_config) = art_reg.anim_runtime_config(anim_name) else {
+        let art = anim_types.of(instance.type_id(), anim_name);
+        let Some(runtime_config) = art.config else {
             continue;
         };
         if !runtime_config.art_body_read && runtime_config.raw_shp_frame_count.is_none() {
@@ -1830,13 +1903,7 @@ fn emit_building_anims(
             Some(runtime_config),
             instance.draw_flags(),
             instance.runtime().current_frame,
-            i32::from(
-                super::overlays::presentation_anim_frame_count(
-                    &atlas.active_anim_frame_counts,
-                    anim_name,
-                )
-                .unwrap_or(0),
-            ),
+            i32::from(art.frame_count.unwrap_or(0)),
             detail_level,
             draw_runtime,
         ) else {
@@ -2288,6 +2355,29 @@ fn resolve_object_shp_frame_with_facing(
 
 #[cfg(test)]
 mod tests {
+    /// `0x0073CCF4` draws the frame four steps past the heading's bucket and
+    /// wraps inside the ring.
+    #[test]
+    fn an_shp_unit_turret_draws_four_frames_clockwise_of_its_bucket() {
+        use crate::rules::animation_sequence::ShpVehicleTurret;
+        use crate::rules::art_data::SHP_TURRET_FACING_FRAMES;
+        let turret = ShpVehicleTurret {
+            start_frame: 176,
+            facings: SHP_TURRET_FACING_FRAMES,
+        };
+        assert_eq!(super::shp_turret_frame(turret, 0), 180, "heading 0");
+        assert_eq!(
+            super::shp_turret_frame(turret, 128 * 256),
+            196,
+            "heading 180"
+        );
+        assert_eq!(
+            super::shp_turret_frame(turret, 248 * 256),
+            179,
+            "the last bucket wraps to the ring's fourth frame"
+        );
+    }
+
     /// A building is passed by only when its cell is past the slot
     /// admission's box and the slack: one whose anchor sits 1,050 px left
     /// of the view may still hold a slot Anim the admission passes.

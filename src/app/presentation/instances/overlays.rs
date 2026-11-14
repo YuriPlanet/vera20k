@@ -263,7 +263,14 @@ pub(crate) struct DisplayEffectInputs<'a> {
 impl DisplayEffectInputs<'_> {
     /// Tactical6D2140's view, in world pixels, for draw admission measured
     /// from the camera, the frame's corner: the battlefield and its offset on
-    /// both sides (`camera::tactical_centring_size`).
+    /// both sides (`camera::tactical_centring_size`). Every Display member
+    /// is admitted in it, as gamemd admits them all in one rect (0xB0CE28).
+    ///
+    /// Residual: gamemd measures from the battlefield's own corner, so with
+    /// a sidebar on the left or a bar on top this view also admits members
+    /// up to that inset past the left and top edges. They are drawn under
+    /// the battlefield's scissor, so nothing shows; only the frame-rate
+    /// latch (`0x55AF60`) is asked for those extra Anims and particles.
     pub(crate) fn projection_viewport(&self) -> [f32; 2] {
         [
             (self.tactical[2] + 2 * self.tactical[0]) as f32 / self.zoom,
@@ -437,12 +444,7 @@ pub(crate) fn build_display_effect_instances(
 ) -> Option<Vec<super::particles::ParticleDrawObservation>> {
     let mut observations = input.observe_particles.then(Vec::new);
     let sim = input.sim;
-    let context = super::particles::ParticleDrawContext::new(
-        input.camera,
-        input.zoom,
-        input.tactical,
-        input.axis,
-    );
+    let context = super::particles::ParticleDrawContext::new(input);
     let z2 = input.zoom;
     let (cam_x, cam_y, sw, sh) = (
         input.camera[0],
@@ -473,10 +475,14 @@ pub(crate) fn build_display_effect_instances(
     // still supplies the order. Particles have their own AIR registrations,
     // including live bodies detached from a System.
     use crate::app::presentation::display_members::EffectKind;
-    // One read of each Anim type's art for the whole draw.
-    let mut anim_types: crate::util::lookup_hash::LookupMap<
+    // One read of each Anim type's art, and of each house's scheme, for the
+    // whole draw.
+    let mut anim_types = input
+        .atlas
+        .map(|atlas| AnimTypeArts::new(input.rules, atlas));
+    let mut house_schemes: crate::util::lookup_hash::LookupMap<
         crate::sim::intern::InternedId,
-        AnimTypeArt<'_>,
+        HouseColorIndex,
     > = Default::default();
     for member in input.frame.display_members(sim).effects() {
         let stable_id = member.id;
@@ -485,11 +491,10 @@ pub(crate) fn build_display_effect_instances(
         // Tactical6D2140's bounds, before DrawIt's mutative55AF60 query, and
         // the particle builders test their point first too. So a member off
         // the view is passed by on the point its frame keeps, before any
-        // store is asked. Each kind keeps the viewport it is tested in.
-        let admitted = member.point().is_some_and(|point| match member.kind {
-            EffectKind::Anim(_) => projection_admitted(point, input.camera, projection_viewport),
-            _ => context.admits(point),
-        });
+        // store is asked.
+        let admitted = member
+            .point()
+            .is_some_and(|point| projection_admitted(point, input.camera, projection_viewport));
         if !admitted {
             debug_assert!(
                 passed_by_effect_plans_nothing(input, member, &context, ground_order),
@@ -517,7 +522,7 @@ pub(crate) fn build_display_effect_instances(
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
-        let Some(atlas) = input.atlas else {
+        let (Some(atlas), Some(anim_types)) = (input.atlas, anim_types.as_mut()) else {
             continue;
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its
@@ -531,21 +536,7 @@ pub(crate) fn build_display_effect_instances(
             config,
             frame_count,
             behind,
-        } = *anim_types
-            .entry(anim.type_id())
-            .or_insert_with(|| AnimTypeArt {
-                config: input.rules.art().anim_runtime_config(type_name),
-                frame_count: presentation_anim_frame_count(
-                    &atlas.active_anim_frame_counts,
-                    type_name,
-                ),
-                behind: input
-                    .rules
-                    .general
-                    .behind
-                    .as_deref()
-                    .is_some_and(|behind| behind.eq_ignore_ascii_case(type_name)),
-            });
+        } = anim_types.of(anim.type_id(), type_name);
         if config
             .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
         {
@@ -603,8 +594,11 @@ pub(crate) fn build_display_effect_instances(
         let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
-        let remap_color =
-            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
+        let remap_color = crate::render::sprite_atlas::anim_remap_color_with(anim, |house| {
+            *house_schemes.entry(house).or_insert_with(|| {
+                crate::render::sprite_atlas::house_scheme(sim.interner(), input.house_colors, house)
+            })
+        });
         let palette_light = crate::app::presentation::lighting::anim_palette_light(
             input.lighting,
             (rx, ry),
@@ -820,10 +814,45 @@ pub(super) fn anim_instance_flags(
 /// One Anim type's art for a draw: its runtime config, its loaded frame
 /// count and whether it is the `[General] Behind=` type.
 #[derive(Clone, Copy)]
-struct AnimTypeArt<'a> {
-    config: Option<&'a AnimTypeRuntimeConfig>,
-    frame_count: Option<u16>,
-    behind: bool,
+pub(super) struct AnimTypeArt<'a> {
+    pub(super) config: Option<&'a AnimTypeRuntimeConfig>,
+    pub(super) frame_count: Option<u16>,
+    pub(super) behind: bool,
+}
+
+/// Each Anim type's [`AnimTypeArt`], read once per draw: the free Anims'
+/// loop and the building slots' each keep one.
+pub(super) struct AnimTypeArts<'a> {
+    rules: &'a crate::rules::ruleset::RuleSet,
+    frame_counts: &'a HashMap<String, u16>,
+    types: crate::util::lookup_hash::LookupMap<crate::sim::intern::InternedId, AnimTypeArt<'a>>,
+}
+
+impl<'a> AnimTypeArts<'a> {
+    pub(super) fn new(
+        rules: &'a crate::rules::ruleset::RuleSet,
+        atlas: &'a crate::render::sprite_atlas::SpriteAtlas,
+    ) -> Self {
+        Self {
+            rules,
+            frame_counts: &atlas.active_anim_frame_counts,
+            types: Default::default(),
+        }
+    }
+
+    /// The art of type `id`, named `name`.
+    pub(super) fn of(&mut self, id: crate::sim::intern::InternedId, name: &str) -> AnimTypeArt<'a> {
+        let (rules, frame_counts) = (self.rules, self.frame_counts);
+        *self.types.entry(id).or_insert_with(|| AnimTypeArt {
+            config: rules.art().anim_runtime_config(name),
+            frame_count: presentation_anim_frame_count(frame_counts, name),
+            behind: rules
+                .general
+                .behind
+                .as_deref()
+                .is_some_and(|behind| behind.eq_ignore_ascii_case(name)),
+        })
+    }
 }
 
 pub(super) fn presentation_anim_frame_count(

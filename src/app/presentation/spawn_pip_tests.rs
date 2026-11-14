@@ -23,7 +23,7 @@ fn frames(sim: &Simulation, rules: &RuleSet, carrier: u64, hover: Option<u64>) -
         sim,
         frame.object(carrier).unwrap(),
         hover,
-        Some(OWNER),
+        sim.interner().get(OWNER),
         rules,
     )
     .into_iter()

@@ -160,6 +160,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
                 camera,
                 [size[0] as f32, size[1] as f32],
             ),
+            &mut super::super::overlays::AnimTypeArts::new(&rules, &atlas),
             &|_| 0,
             0.,
             10000.,

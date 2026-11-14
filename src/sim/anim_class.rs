@@ -3106,6 +3106,17 @@ impl Simulation {
         ))
     }
 
+    /// Every Anim's [`Self::anim_absolute_coord`], in one walk of the store.
+    pub fn anim_absolute_coords(&self) -> impl Iterator<Item = (AnimId, AnimWorldCoord)> + '_ {
+        let terrain = self.resolved_terrain.as_ref();
+        self.substrate.anims.iter().map(move |(&id, anim)| {
+            (
+                id,
+                anim_world_coords(anim, &self.substrate.entities, terrain),
+            )
+        })
+    }
+
     pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
         // A terrain owner's centre is its GetCoords (Terrain VT+48 ->
         // Object5F65A0), for the Ares terrain fire.

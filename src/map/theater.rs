@@ -9,9 +9,12 @@
 //! - Part of map/ — depends on assets/, rules/ (for INI parsing).
 //! - Does NOT depend on render/ or sim/.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::mix_archive::MixArchive;
+use crate::assets::mix_hash::mix_hash;
 use crate::assets::pal_file::Palette;
 use crate::assets::tmp_file::TmpFile;
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
@@ -675,32 +678,6 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         })?;
     }
 
-    // Diagnostic: log first 15 tilesets for debugging tile mapping.
-    for (idx, (bounds, name)) in tileset_bounds
-        .iter()
-        .zip(set_names.iter())
-        .enumerate()
-        .take(15)
-    {
-        let fname: &str = entries
-            .get(bounds.start as usize)
-            .and_then(|o| o.as_deref())
-            .unwrap_or("(blank)");
-        log::info!(
-            "  TileSet{:04}: start={:4}, count={:3}, name={:20} file={}",
-            idx,
-            bounds.start,
-            bounds.count,
-            name,
-            fname,
-        );
-    }
-    log::info!(
-        "  ... {} total tilesets, {} total tile_id slots",
-        tileset_bounds.len(),
-        entries.len()
-    );
-
     Ok(TilesetLookup {
         entries,
         variant_filenames,
@@ -860,11 +837,191 @@ impl BridgeMiddleTiles {
     }
 }
 
+/// The theater INI `load_theater` reads for a control name: the one the
+/// selected INI roots name (`IniRoots::theater_ini`), else the stock
+/// `%sMD.INI` name. VERA: falling back keeps a game folder that loaded the
+/// stock INI before a suffix was selected loading.
+fn theater_ini_name(asset_manager: &AssetManager, control_name: &str) -> String {
+    let selected = asset_manager.ini_roots().theater_ini(control_name);
+    if asset_manager.resolve_ref(&selected).is_some() {
+        return selected;
+    }
+    crate::util::ini_roots::IniRoots::default().theater_ini(control_name)
+}
+
+/// VERA: each theater's INI as `load_theater` names it, in table order. Its
+/// tilesets decide every map cell's land and height, so the multiplayer
+/// agreement and Quick Match's check for changed game files compare it.
+/// The lookup sees whichever theater MIX group the last load activated, and a
+/// suffixed INI that only a theater MIX holds is outside this; theater MIXes
+/// search last, and retail theater INIs come from `localmd.mix`.
+pub fn theater_ini_names(asset_manager: &AssetManager) -> Vec<String> {
+    THEATER_DEFS
+        .iter()
+        .map(|(_, def)| theater_ini_name(asset_manager, def.control_name))
+        .collect()
+}
+
+/// VERA: the theater tiles the game folder changes ([`changed_tiles`]).
+pub struct ChangedTiles {
+    /// The loose files and outermost archives that change them, once each.
+    pub files: Vec<String>,
+    /// Each changed tile's name and the bytes the game reads for it, in
+    /// theater and tile order; `None` when no tile changes.
+    pub digest: Option<String>,
+}
+
+/// VERA: the tiles each theater reads, compared with the ones a retail
+/// install reads, for the multiplayer agreement and Quick Match. These are
+/// the pristine files the tilesets of its INI (`theater_ini_name`) name and
+/// their contiguous variants (`resolve_contiguous_variant_chains`). A tile
+/// decides the land, height and ramp of the cells it covers, and map loading
+/// picks each cell's variant by how many files its tile has
+/// (`TileVariantSelectionContext::select_variant`), so a changed, added or
+/// missing tile file changes a match. A retail install searches the shipped
+/// archives (`retail_sources::shipped_source`) in the same order, with the
+/// shipped copy of an archive the game folder replaces (a loose
+/// `isosnomd.mix`, even one that does not open) in its place, and no loose
+/// files. A replaced shipped archive is not caught, as in
+/// `files_changing_shipped_inis`. Read with no theater active, the theater
+/// MIXes as `AssetManager::theater_archives_unmounted` finds them.
+pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
+    use crate::rules::retail_sources::{game_folder_file, shipped_source};
+    let registered: Vec<_> = asset_manager
+        .registered_archives()
+        .filter_map(|(source, archive)| retail_archive(asset_manager, source, Some(archive)))
+        .collect();
+    // The first registered archive listing each name, as `lookup_index`.
+    let mut registered_index = HashMap::new();
+    for (position, (_, archive)) in registered.iter().enumerate() {
+        for entry in archive.entries() {
+            registered_index.entry(entry.id).or_insert(position);
+        }
+    }
+    let mut files = Vec::new();
+    let mut digest: Option<crate::util::sha256::Sha256> = None;
+    for (_, def) in THEATER_DEFS {
+        let Some(lookup) = asset_manager
+            .get_with_source_ref(&theater_ini_name(asset_manager, def.control_name))
+            .and_then(|(bytes, _)| IniFile::from_bytes(bytes).ok())
+            .and_then(|ini| parse_tileset_sections(&ini, def.extension).ok())
+        else {
+            continue;
+        };
+        let theater = asset_manager.theater_archives_unmounted(def.mix_archives);
+        let theater_retail: Vec<_> = theater
+            .iter()
+            .filter_map(|unmounted| {
+                retail_archive(
+                    asset_manager,
+                    &unmounted.source,
+                    unmounted.archive.as_deref(),
+                )
+            })
+            .collect();
+        let read = |name: &str| asset_manager.resolve_ref_with_unmounted(name, &theater);
+        let read_retail = |name: &str| {
+            let id = mix_hash(name);
+            let (replaces, archive) = match registered_index.get(&id) {
+                Some(&position) => &registered[position],
+                None => theater_retail
+                    .iter()
+                    .find(|(_, archive)| archive.contains_id(id))?,
+            };
+            archive.get_by_id(id).map(|bytes| (*replaces, bytes))
+        };
+        for pristine in lookup.entries.iter().flatten() {
+            let used = tile_files(pristine, |name| read(name).is_some());
+            let original = tile_files(pristine, |name| read_retail(name).is_some());
+            for index in 0..used.len().max(original.len()) {
+                let Some(name) = used.get(index).or(original.get(index)) else {
+                    continue;
+                };
+                let found = used.get(index).and_then(|name| read(name));
+                let retail_found = original.get(index).and_then(|name| read_retail(name));
+                // A shipped archive is the same object on both sides, so its
+                // tiles compare without being read.
+                let same = match (found, retail_found) {
+                    (Some((_, bytes)), Some((_, retail))) => {
+                        std::ptr::eq(bytes, retail) || bytes == retail
+                    }
+                    (found, retail) => found.is_none() && retail.is_none(),
+                };
+                if same {
+                    continue;
+                }
+                // The file the game reads it from, else the replacement that
+                // hides the retail copy.
+                let file = match found {
+                    Some((source, _)) if !shipped_source(source) => Some(game_folder_file(source)),
+                    _ => retail_found
+                        .and_then(|(replaces, _)| replaces)
+                        .map(game_folder_file),
+                };
+                let file = file.unwrap_or_else(|| name.clone());
+                if !files.contains(&file) {
+                    files.push(file);
+                }
+                let hash = digest.get_or_insert_with(|| {
+                    let mut hash = crate::util::sha256::Sha256::new();
+                    hash.update(b"VERA20k theater tiles v1\0");
+                    hash
+                });
+                hash.update(name.as_bytes());
+                hash.update(&[0]);
+                match found {
+                    Some((_, bytes)) => {
+                        hash.update(&[1]);
+                        hash.update(&(bytes.len() as u64).to_le_bytes());
+                        hash.update(bytes);
+                    }
+                    None => hash.update(&[0]),
+                }
+            }
+        }
+    }
+    ChangedTiles {
+        files,
+        digest: digest.map(|hash| crate::util::sha256::digest_hex(hash.finalize())),
+    }
+}
+
+/// What a retail install searches in place of one archive (`None` when it
+/// does not open): the archive itself when it ships; else the shipped copy of
+/// the archive of its name, with the source it stands in for; else nothing
+/// (`expandmd99.mix`).
+fn retail_archive<'a>(
+    assets: &AssetManager,
+    source: &'a str,
+    archive: Option<&'a MixArchive>,
+) -> Option<(Option<&'a str>, Cow<'a, MixArchive>)> {
+    if let Some(archive) = archive.filter(|_| crate::rules::retail_sources::shipped_source(source))
+    {
+        return Some((None, Cow::Borrowed(archive)));
+    }
+    let name = source.rsplit("->").next().unwrap_or(source).trim();
+    crate::rules::retail_sources::shipped_nested_archive(assets, name)
+        .map(|copy| (Some(source), Cow::Owned(copy)))
+}
+
+/// A tile's files as a theater reads them: the pristine file and its
+/// contiguous variants, or none without the pristine file.
+fn tile_files(pristine: &str, mut exists: impl FnMut(&str) -> bool) -> Vec<String> {
+    let variants = contiguous_variant_filenames(pristine, &mut exists);
+    if variants.is_empty() && !exists(pristine) {
+        return Vec::new();
+    }
+    std::iter::once(pristine.to_owned())
+        .chain(variants)
+        .collect()
+}
+
 /// Load tileset data for a theater.
 ///
 /// Replaces the active theater MIX group, then loads the theater INI the
 /// selected INI roots name (`snowmd.ini` for YR, the stock name when the
-/// selected one is absent) and the exact palette filenames.
+/// selected one is absent; `theater_ini_name`) and the exact palette
+/// filenames.
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
     let def: &TheaterDef = theater_def(theater_name)?;
@@ -878,22 +1035,12 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         return None;
     }
 
-    // VERA: a profile suffix whose file is absent falls back to the stock
-    // `%sMD.INI` name with a warning, so a game folder that loaded the stock
-    // INI before a suffix was selected keeps loading.
-    let mut ini_name = asset_manager.ini_roots().theater_ini(def.control_name);
-    let stock_name = crate::util::ini_roots::IniRoots::default().theater_ini(def.control_name);
-    let found = match asset_manager.get_with_source(&ini_name) {
-        None if ini_name != stock_name => {
-            log::warn!(
-                "Theater {theater_name}: INI '{ini_name}' not found; reading '{stock_name}'"
-            );
-            ini_name = stock_name;
-            asset_manager.get_with_source(&ini_name)
-        }
-        found => found,
-    };
-    let Some((ini_data, ini_source)) = found else {
+    let selected = asset_manager.ini_roots().theater_ini(def.control_name);
+    let ini_name = theater_ini_name(asset_manager, def.control_name);
+    if ini_name != selected {
+        log::warn!("Theater {theater_name}: INI '{selected}' not found; reading '{ini_name}'");
+    }
+    let Some((ini_data, ini_source)) = asset_manager.get_with_source(&ini_name) else {
         log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
         return None;
     };
@@ -909,6 +1056,31 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
     // tools/rules_oracle/theater_general_reader.md preserves executed results.
     let ini = IniFile::from_bytes(&ini_data).ok()?;
     let mut lookup = parse_tileset_sections(&ini, def.extension).ok()?;
+    // Diagnostic: log first 15 tilesets for debugging tile mapping.
+    for (idx, (bounds, name)) in lookup
+        .tileset_bounds
+        .iter()
+        .zip(lookup.set_names.iter())
+        .enumerate()
+        .take(15)
+    {
+        let fname = lookup
+            .filename(i32::from(bounds.start))
+            .unwrap_or("(blank)");
+        log::info!(
+            "  TileSet{:04}: start={:4}, count={:3}, name={:20} file={}",
+            idx,
+            bounds.start,
+            bounds.count,
+            name,
+            fname,
+        );
+    }
+    log::info!(
+        "  ... {} total tilesets, {} total tile_id slots",
+        lookup.tileset_bounds.len(),
+        lookup.len()
+    );
     resolve_contiguous_variant_chains(&mut lookup, asset_manager);
     log::info!(
         "Theater {}: loaded {} from INI '{}' ({} tile_id slots, {} tilesets)",
