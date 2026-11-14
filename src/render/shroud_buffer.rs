@@ -1325,25 +1325,6 @@ impl ShroudBuffer {
         );
     }
 
-    /// Collect and compose at the current camera, for direct native scene
-    /// comparisons and timing. Empty bounds still retain the authoritative reset.
-    #[cfg(test)]
-    fn rasterize(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        fog: &FogState,
-        owner: InternedId,
-        native_cells: Option<&NativeCellQuery<'_>>,
-        fog_options: FogDrawOptions,
-    ) {
-        let mut blits = std::mem::take(&mut self.next_blits);
-        self.collect_blits(fog, owner, native_cells, fog_options, &mut blits);
-        self.next_blits = std::mem::replace(&mut self.drawn_blits, blits);
-        self.compose(device, queue, encoder, fog_options);
-    }
-
     /// The cells a rebuild blits, in native order, with the frames each
     /// selects at the current camera. Reads the fog state only;
     /// [`Self::compose`] draws the plane from them. Cells that select no
