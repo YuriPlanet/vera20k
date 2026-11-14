@@ -234,8 +234,8 @@ pub(super) struct RadarObjectUpdate {
     pub enemy_sensed_prefilter: bool,
     /// Ares `SensorArray.Warn=`: TechnoClass_RadarTrackingUpdate_
     /// AnnounceDetected10016E60 (hook70DA95) skips the type-5 event of a
-    /// type that does not warn.
-    #[cfg(feature = "ares")]
+    /// type that does not warn. True unless the game's Ares switch read the
+    /// key.
     pub sensor_array_warn: bool,
     pub foundation: Option<(u32, u32)>,
     pub radar_scale: f32,
@@ -426,11 +426,7 @@ impl RetainedRadarTracker {
                 .collect();
             self.register(update.stable_id, &pixels, update.local_front);
         }
-        #[cfg(feature = "ares")]
-        let warns = update.sensor_array_warn;
-        #[cfg(not(feature = "ares"))]
-        let warns = true;
-        if visibility.out_code != 0 && update.enemy_sensed_prefilter && warns {
+        if visibility.out_code != 0 && update.enemy_sensed_prefilter && update.sensor_array_warn {
             update
                 .event_source_cell
                 .map(|cell| RadarSensedPresentationEvent {
@@ -661,7 +657,6 @@ mod tests {
             origin: (40, 60),
             event_source_cell: Some((10, 20)),
             enemy_sensed_prefilter: true,
-            #[cfg(feature = "ares")]
             sensor_array_warn: true,
             foundation: None,
             radar_scale: 1.0,
@@ -772,6 +767,21 @@ mod tests {
             None,
             "native Foot/+0x684 prefilter rejects before CreateRadarEvent"
         );
+    }
+
+    /// Ares hook70DA95 in every build: a sensed type with
+    /// `SensorArray.Warn=no` raises no event.
+    #[test]
+    fn a_type_that_does_not_warn_raises_no_sensed_event() {
+        let mut tracker = RetainedRadarTracker::default();
+        let mut sensed = update(1, false);
+        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
+            cloak_state: 2,
+            has_sensor: true,
+            ..visible_mobile_facts()
+        });
+        sensed.sensor_array_warn = false;
+        assert_eq!(tracker.update_object(sensed, false), None);
     }
 
     /// `0x0065641F..0x00656446` scales at x87 precision: 5 cells at the zoom
