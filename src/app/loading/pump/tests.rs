@@ -1474,7 +1474,7 @@ fn loading_assignments_keep_gather_table_slots_separate_from_sparse_waypoint_ind
     // The compositor still reads original Scenario geometry. Native's odd
     // sparse-prefix rule visits raw waypoint 2 and colors it from table[2],
     // not from the retained Gather vector entry at position 1.
-    let raw_prefix = native_loading_waypoint_prefix(&map.waypoints);
+    let raw_prefix = native_loading_waypoint_prefix(&map.waypoints, 8);
     let markers = build_mmpb_marker_records(
         &raw_prefix,
         &assignments,
