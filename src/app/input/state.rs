@@ -906,12 +906,20 @@ impl MatchInputState {
         }
     }
 
-    /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
-    /// command latch. Edges are synchronous in this app, so no second ring
-    /// exists; discard only app command latches. Physical key state remains
-    /// owned by ordinary press/release delivery, not this bounded receipt.
+    /// KeyboardClear 0x0054F720 empties the keyboard's queued-event ring.
+    /// Lock_User_Input 0x00684240, Unlock_User_Input 0x00684290 and the page
+    /// dialog (0x0077D861, 0x0077D895) call it; Lock and Unlock also zero the
+    /// timed unlock frame 0x00B07784 (Main_Tick 0x0055DE79). Edges are
+    /// synchronous in this app, so no ring exists; discard only app command
+    /// latches. Physical key state remains owned by ordinary press/release
+    /// delivery, not this bounded receipt.
+    ///
+    /// The held T stays: TypeSelect's latch 0x00B0FE65 is cleared only by
+    /// its release (0x00732CC0), and while input is locked no key but Esc is
+    /// queued (0x0054F212..0x0054F223), so a T let go during a lock still
+    /// holds after it and band boxes select by type until T is pressed and
+    /// released again.
     pub(crate) fn clear_command_latches(&mut self) {
-        self.type_select.clear_held();
         self.formation_line.clear_key();
         self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep

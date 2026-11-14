@@ -136,7 +136,8 @@ mod tests {
             assert_eq!((input.camera_x, input.camera_y), (30.0, 60.0));
             assert!(input.keys_held.contains(&KeyCode::ArrowLeft));
             assert!(input.keys_held.contains(&KeyCode::KeyT));
-            assert!(!input.type_select.held());
+            // TypeSelect's latch 0x00B0FE65 survives the lock.
+            assert!(input.type_select.held());
             assert_eq!(input.queued_order_mode, OrderMode::Move);
         }
     }
