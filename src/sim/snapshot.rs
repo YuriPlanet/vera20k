@@ -359,7 +359,6 @@ pub enum SnapshotRestoreError {
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
     InvalidPaidSuperWeaponSelection(&'static str),
-    #[cfg(feature = "ares")]
     #[error("invalid superweapon launch history: {0}")]
     InvalidSuperWeaponLaunchHistory(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
@@ -1789,6 +1788,24 @@ impl Simulation {
         }
     }
 
+    /// Saved Ares state (a delivery base override, an attached superweapon,
+    /// a pending unit delivery, a paid superweapon selection) loads only into
+    /// a game Ares plays in; the player load checks it with the loading
+    /// game's switch before restoring.
+    pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
+        for (_, entity) in self.substrate.entities.iter_sorted() {
+            entity
+                .validate_ares_build_compatibility(ares)
+                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        }
+        self.unit_deliveries
+            .validate_ares_build_compatibility(ares)
+            .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        self.validate_paid_super_weapon_selections_for_load(ares)
+            .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
+        Ok(())
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,
@@ -1804,13 +1821,9 @@ impl Simulation {
                     object_id: entity.stable_id(),
                 });
             }
-            entity
-                .validate_ares_build_compatibility()
-                .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
-        #[cfg(feature = "ares")]
         self.super_weapons
             .validate_ares_launch_history()
             .map_err(SnapshotRestoreError::InvalidSuperWeaponLaunchHistory)?;
@@ -6270,7 +6283,7 @@ mod tests {
         let entity = restored.substrate.entities.get(entity_id).unwrap();
         assert_eq!(entity.air_spatial_bucket(), Some(143));
         assert_eq!(entity.air_spatial_enter_order(), 91);
-        assert_eq!(entity.crate_multipliers.armor().bits(), 1.5_f64.to_bits());
+        assert_eq!(entity.armor_multiplier().bits(), 1.5_f64.to_bits());
         assert!(entity.berserk.is_active());
         assert_eq!(entity.berserk.timer(), -17);
         assert!(entity.ai_sell_repair.was_attacked_by_enemy());
@@ -7595,8 +7608,7 @@ mod tests {
             .set_for_test(Some(crate::sim::c4_plant::PendingC4Detonation::new(
                 crate::sim::timer::CdTimer::from_raw(-1, 0),
                 Some(9_999),
-            ),
-        ));
+            )));
         let mut manager = SpawnManagerState::for_test(
             sim.interner.intern("HORNET"),
             vec![

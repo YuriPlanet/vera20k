@@ -592,7 +592,9 @@ impl Simulation {
                     // clears it for64, then calls the same Foot vt+34C.
                     #[cfg(feature = "ares")]
                     if let Some(foot) = self.substrate.entities.get_mut(current) {
-                        foot.vehicle_driver.set_vehicle_seek(action.action_id != 64);
+                        foot.ares
+                            .vehicle_driver
+                            .set_vehicle_seek(action.action_id != 64);
                     }
                     if self.foot_enter_nearest_occupiable(current, rules, registry, frame_effects) {
                         self.team_remove_member(team_id, current, true, rules, frame_effects);

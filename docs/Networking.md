@@ -29,7 +29,10 @@ and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, and, in a build with Ares, whether the game ships `ares.mix`, which the
-rules agreement covers. Released builds have no Ares and always play stock.
+rules agreement covers. Released builds never mount `ares.mix`: there Ares plays
+only from Ares keys in the rules, mode or map, with the part of Ares that has left
+its build feature ([Ares](ares.md)). Players on one version reach the same answer;
+a game from before this decides differently and is another version.
 
 The rules agreement is one digest of the process's rules sources
 (`ProcessAssets::multiplayer_rules_digest`). With a mod in use
@@ -39,8 +42,19 @@ refused as on any rules difference. The files are read once, starting when the p
 opens Network or Internet. Nothing more is exchanged, and without a mod the digest is the
 same bytes as before. A game from before this is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
-on that build. Quick Match plays the original game: a client with a mod in use ends its
-search with a message that says to pick No mod.
+on that build. Quick Match plays the original game, and the matchbot pairs without the
+rules hash, so a client ends its search before it queues with a message saying what to
+turn off: a mod in use; `[ini]` roots in config.toml other than YR's; game-folder files
+that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+LANGRULE) from the retail copy; a copy from a retail archive (`langmd.mix`,
+`language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as the original, and
+another is compared with the retail archives' own entry, else `ra2md.mix`'s `localmd.mix`
+(`retail_sources::files_changing_shipped_inis`, found at startup and named in the
+message and the log); or personal rules and Terrain Deformation. A difference none of
+these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
+status page says the games differ (`VERA:MatchStartMismatch`), the log records both
+hashes, and the search goes on after the stage timeout; the host only times out. This
+adds nothing to what game, lobby and relay exchange.
 
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
 `ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
@@ -303,6 +317,12 @@ modern online ordering above is an intentional adaptation.
   online name may be 24 characters, so VERA writes the first 19 bytes of a longer
   name and receivers match a sender by that same prefix (together with its
   endpoint, as before). LAN names are at most 19 and travel unchanged.
+  A LAN name is the saved player name's bytes: gamemd copies them into each packet
+  (`5DC6A6`) and shows them one byte to a character (`735120`), so every player,
+  the sender too, sees the same name, and a name beyond ASCII shows as its bytes.
+  The packet is unchanged. Older builds on Windows sent other bytes for such a
+  name than they used themselves, so a game they hosted could not be joined;
+  different builds meet only in the lobby, where such a name now looks different.
 - A player's colour travels as the number the lobby lists it under: 0 to 7 for
   gamemd's eight, 8 for an observer and 9 to 30 for VERA's
   [extra lobby colours](skirmish-colors.md). The LAN fields and the online slot

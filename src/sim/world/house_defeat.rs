@@ -289,8 +289,9 @@ impl Simulation {
             } else {
                 // Ares 3.0 10024B40 (hook 0x004F8440): UpdateTogglePower
                 // 100228A0 at the head of HouseClass::Update.
-                #[cfg(feature = "ares")]
-                self.ares_update_toggle_power(owner, rules, frame_effects);
+                if rules.ares() {
+                    self.ares_update_toggle_power(owner, rules, frame_effects);
+                }
                 self.assess_house_derived_state(owner, rules, frame_effects);
                 self.update_house_anger_and_activation(owner, rules);
                 self.houses.get(&owner).and_then(|house| {
@@ -339,8 +340,9 @@ impl Simulation {
             }
             crate::sim::ai_team_creation::update_team_creation(self, rules, owner, frame_effects);
             // Ares 3.0 100247A0 (hook 0x004F8B08), ahead of the player block.
-            #[cfg(feature = "ares")]
-            self.ares_degrade_buildings(owner, rules, registry, frame_effects);
+            if rules.ares() {
+                self.ares_degrade_buildings(owner, rules, registry, frame_effects);
+            }
             crate::sim::house_eva::update_house_eva(self, rules, owner);
             crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
             if defeat_gate && self.house_holds_nothing(owner, rules) {
@@ -901,8 +903,8 @@ impl Simulation {
             }
             // Ares 3.0 10024150 (hook 0x004FC731, Blowup_All only): a
             // returned structure is skipped (0x004FC770).
-            #[cfg(feature = "ares")]
-            if subset == HouseBlowupSubset::All
+            if rules.ares()
+                && subset == HouseBlowupSubset::All
                 && self.ares_return_structure(id, house, rules, registry, frame_effects)
             {
                 ordinal += 1;
@@ -955,7 +957,6 @@ impl Simulation {
     /// it was spared; otherwise Blowup_All kills it as usual. VERA's first
     /// owner is never null, so Ares' Civilian-side fallback for one has no
     /// counterpart.
-    #[cfg(feature = "ares")]
     fn ares_return_structure(
         &mut self,
         id: u64,
@@ -1149,7 +1150,6 @@ impl Simulation {
     /// while Phobos' animation-owner tail supplies its Scenario draw. Keep the
     /// native distinction between a missing invoker/killer/victim (fallback)
     /// and missing named houses (NULL).
-    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(crate) fn house_kind(
         &self,
         selector: crate::rules::ares_warhead::HouseSelector,

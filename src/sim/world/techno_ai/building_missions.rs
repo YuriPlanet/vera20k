@@ -115,17 +115,14 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
-#[cfg(not(feature = "ares"))]
 use crate::sim::projectile::ProjectilePayload;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
-#[cfg(feature = "ares")]
 #[path = "ares_prism_forwarding.rs"]
 mod ares_prism_forwarding;
-#[cfg(feature = "ares")]
 pub(crate) use ares_prism_forwarding::AresPrismForwarding;
 
 /// A building's delayed fire (`BuildingClass+0x704` mode, `+0x714`
@@ -471,18 +468,20 @@ fn mission_unload(
     // Ares 3.0 BuildingClass_UnloadPassengers_Unload 100145B0 (hook
     // 0x0044D8A1): a `Hospital=` or `Armory=` building kicks out its first
     // passenger (BuildingExt::KickOutHospitalArmory, `sim::ares_transports`).
-    #[cfg(feature = "ares")]
-    sim.ares_kick_out_hospital_armory(id, rules, ctx.overlay_registry, ctx.effects);
+    if rules.ares() {
+        sim.ares_kick_out_hospital_armory(id, rules, ctx.overlay_registry, ctx.effects);
+    }
     // Ares 3.0 100174A0 (hook 0x0044D8A7): a loaded tunnel entrance unloads
     // one member of its owner's network (`sim::ares_tunnel`).
-    #[cfg(feature = "ares")]
-    if let Some(delay) = crate::sim::transport_unload::ares_tunnel_mission_unload(
-        sim,
-        rules,
-        id,
-        ctx.overlay_registry,
-        ctx.effects,
-    ) {
+    if rules.ares()
+        && let Some(delay) = crate::sim::transport_unload::ares_tunnel_mission_unload(
+            sim,
+            rules,
+            id,
+            ctx.overlay_registry,
+            ctx.effects,
+        )
+    {
         return Some(delay);
     }
     let entity = sim.substrate.entities.get(id)?;
@@ -1097,7 +1096,6 @@ impl PrismSupport {
     }
 
     /// Mission_Attack's recruit (`0x0044B4D7`); a native dword, so it wraps.
-    #[cfg(not(feature = "ares"))]
     fn recruit(&mut self) {
         self.count = self.count.wrapping_add(1);
     }
@@ -1225,13 +1223,12 @@ pub(super) fn gattling_idle(
     // Ares 3.0 BuildingClass_Update_Reload (100478E0, hook 0x43FE8E) calls
     // TechnoClass::Reload (vt+0x424) there instead, with its clock and
     // `ReloadAmount`.
-    #[cfg(feature = "ares")]
     if refills {
-        entity.reload_techno_ammo(obj, now);
-    }
-    #[cfg(not(feature = "ares"))]
-    if refills && let Some(ammo) = entity.ammo_mut() {
-        ammo.refill_empty_from_type(obj.ammo);
+        if rules.ares() {
+            entity.reload_techno_ammo(obj, now, rules.ares());
+        } else if let Some(ammo) = entity.ammo_mut() {
+            ammo.refill_empty_from_type(obj.ammo);
+        }
     }
     if !obj.is_gattling {
         return;
@@ -1311,15 +1308,14 @@ fn fire_arm(
     else {
         return;
     };
-    #[cfg(not(feature = "ares"))]
-    if rules.is_prism_type(obj) {
+    if rules.ares() {
+        // Ares BuildingClass_Mi_Attack_IsPrism (100167E0, hook 0x44B2FE) takes
+        // the arm for a `PrismForwarding=` tower in place of the PrismType test.
+        if ares_prism_forwarding::mission_attack_prism(sim, id, rules, obj) {
+            return;
+        }
+    } else if rules.is_prism_type(obj) {
         prism_arm(sim, id, rules, obj);
-        return;
-    }
-    // Ares BuildingClass_Mi_Attack_IsPrism (100167E0, hook 0x44B2FE) takes
-    // the arm for a `PrismForwarding=` tower in place of the PrismType test.
-    #[cfg(feature = "ares")]
-    if ares_prism_forwarding::mission_attack_prism(sim, id, rules, obj) {
         return;
     }
     match rules
@@ -1395,7 +1391,6 @@ fn arm_delayed_fire(
 /// the type's `DelayedFireDelay=` (`+0x16EC`; the supporter is a PrismType
 /// tower too), and the arm returns 1 either way, so one tower is recruited per
 /// visit.
-#[cfg(not(feature = "ares"))]
 fn prism_arm(
     sim: &mut Simulation,
     id: u64,
@@ -1464,7 +1459,6 @@ fn prism_arm(
 ///
 /// FireAt already started the shooter's actual rearm inside its visit
 /// (`0x006FF2B2..0x006FF2BB`); a zero ROF remains expired, as in native.
-#[cfg(not(feature = "ares"))]
 fn prism_supporter(
     sim: &Simulation,
     id: u64,
@@ -1545,14 +1539,14 @@ pub(super) fn process_delayed_fire(
     if entity.death.is_dying() || entity.health.current() == 0 {
         return;
     }
-    #[cfg(feature = "ares")]
-    ares_prism_forwarding::update_prism(sim, id, rules, ctx, bridge_state_changed);
-    #[cfg(not(feature = "ares"))]
-    stock_delayed_fire(sim, id, rules, ctx, bridge_state_changed);
+    if rules.ares() {
+        ares_prism_forwarding::update_prism(sim, id, rules, ctx, bridge_state_changed);
+    } else {
+        stock_delayed_fire(sim, id, rules, ctx, bridge_state_changed);
+    }
 }
 
 /// The stock body of [`process_delayed_fire`].
-#[cfg(not(feature = "ares"))]
 fn stock_delayed_fire(
     sim: &mut Simulation,
     id: u64,
@@ -1624,7 +1618,6 @@ fn stock_delayed_fire(
 /// `((PrismSupportModifier * count + 100) << 8) / 100`, the `imul` and add
 /// wrapping in 32 bits and the division unsigned (`mul 0x51EB851F; shr edx,
 /// 5`), in the bullet's 1/256 damage units.
-#[cfg(not(feature = "ares"))]
 fn support_multiplier(modifier: i32, count: i32) -> i32 {
     let scaled = (modifier.wrapping_mul(count).wrapping_add(100) as u32) << 8;
     (scaled / 100) as i32
@@ -1805,16 +1798,13 @@ impl crate::sim::world::ObjectSubstrate {
     /// Ares BuildingClass_Update_Prism (100169A0) writes the reserves'
     /// multiplier instead and clears them after the shot.
     pub(crate) fn take_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
-        #[cfg(feature = "ares")]
-        {
-            let _ = rules;
+        if rules.ares() {
             self.ares_prism_shot_multiplier(id)
+        } else {
+            self.stock_support_bonus(id, rules)
         }
-        #[cfg(not(feature = "ares"))]
-        self.stock_support_bonus(id, rules)
     }
 
-    #[cfg(not(feature = "ares"))]
     fn stock_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
         let Some(entity) = self.entities.get_mut(id) else {
             return ProjectilePayload::UNSCALED;

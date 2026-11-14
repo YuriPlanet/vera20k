@@ -49,6 +49,7 @@ fn click(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedI
 /// leaves it whole and takes `F2I(damage * 2.5)` frames off the drain.
 #[test]
 fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let fire = rules.super_weapon("Fire").unwrap();
     assert_eq!(fire.kind, SuperWeaponKind::Firestorm);
@@ -93,6 +94,7 @@ fn a_firestorm_super_powers_the_walls_while_it_drains_and_hits_shorten_the_drain
             .entities
             .get(wall)
             .unwrap()
+            .ares
             .ares_firestorm_wall
             .frame()
     };

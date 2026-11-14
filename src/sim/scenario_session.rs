@@ -30,7 +30,6 @@ const fn initial_map_regrowth_timer() -> CdTimer {
 }
 
 /// `ScenarioClass::Set_Defaults @ 0x00683610` stores true.
-#[cfg(feature = "ares")]
 const fn tiberium_death_to_visceroid_default() -> bool {
     true
 }
@@ -183,10 +182,10 @@ impl NukeFlash {
     /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
     /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
-        #[cfg(feature = "ares")]
+        // Ares' test runs in every game: without Ares the duration is only
+        // -1, 15 or 30, where it is stock's `!= -1`; another one comes only
+        // from Ares' impact hook (`start_nuke_flash_for`).
         let running = self.duration >= 0;
-        #[cfg(not(feature = "ares"))]
-        let running = self.duration != -1;
         running && self.start.wrapping_add(self.duration) < frame
     }
 }
@@ -222,7 +221,6 @@ pub struct ScenarioLightingState {
     /// Ares UpdateLightingColor's `Light.Ambient`/`.Red`/`.Green`/`.Blue`
     /// over the selected profile (SWTypeExt of the active superweapon), set
     /// by [`Self::select_ares`]; `None` after a stock [`Self::select`].
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_light: Option<[Option<i32>; 4]>,
 }
@@ -317,7 +315,6 @@ impl ScenarioLightingState {
             nuke_change_rate,
             nuke_flash: NukeFlash::OFF,
             ambient_change_overrides: [None; 2],
-            #[cfg(feature = "ares")]
             ares_light: None,
         }
     }
@@ -468,10 +465,7 @@ impl ScenarioLightingState {
     pub fn select(&mut self, profile: ScenarioLightingProfile) {
         self.selected_profile = profile;
         self.target_ambient = self.profile(profile).ambient_percent;
-        #[cfg(feature = "ares")]
-        {
-            self.ares_light = None;
-        }
+        self.ares_light = None;
     }
 
     /// Ares SWTypeExt::GetLightingColor (hook 53C280, 10037B50) for a special
@@ -480,7 +474,6 @@ impl ScenarioLightingState {
     /// normal ambient, RecalcLighting restores); otherwise the type's set,
     /// nonnegative overrides replace the profile's ambient (x1) and RGB
     /// (x10 in RecalcLighting).
-    #[cfg(feature = "ares")]
     pub(crate) fn select_ares(
         &mut self,
         profile: ScenarioLightingProfile,
@@ -574,9 +567,7 @@ impl ScenarioLightingState {
     /// (`-1, -1, -1`).
     pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
         (self.selected_profile != ScenarioLightingProfile::Normal).then(|| {
-            #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
             let mut rgb = self.profile(self.selected_profile).alternate_rgb();
-            #[cfg(feature = "ares")]
             if let Some([_, red, green, blue]) = self.ares_light {
                 for (slot, value) in rgb.iter_mut().zip([red, green, blue]) {
                     if let Some(value) = value {
@@ -926,7 +917,6 @@ pub struct ScenarioSession {
     /// (`BasicSection`): `Set_Defaults @ 0x00683610` stores true and a map
     /// key replaces it. Ares' tiberium death visceroid (`TechnoExt::
     /// SpawnVisceroid @ 100468B0`) is its only reader.
-    #[cfg(feature = "ares")]
     #[serde(default = "tiberium_death_to_visceroid_default")]
     tiberium_death_to_visceroid: bool,
     /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
@@ -1887,7 +1877,6 @@ impl ScenarioSession {
         if s.truck_crate {
             b"scenario-truck-crate-v1".hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if !s.tiberium_death_to_visceroid {
             b"scenario-no-tiberium-death-to-visceroid-v1".hash(hasher);
         }
@@ -1980,7 +1969,6 @@ impl ScenarioSession {
             0x1668u16.hash(hasher);
             lighting.ambient_change_overrides.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if let Some(light) = lighting.ares_light {
             b"ares-sw-light-v1".hash(hasher);
             light.hash(hasher);
@@ -2027,14 +2015,12 @@ impl ScenarioSession {
     }
 
     /// Scenario+0x34B3 (`TiberiumDeathToVisceroid`).
-    #[cfg(feature = "ares")]
     pub(crate) const fn tiberium_death_to_visceroid(&self) -> bool {
         self.tiberium_death_to_visceroid
     }
 
     /// `ScenarioClass::Read_INI_Basic @ 0x00689E90`: the map's
     /// `TiberiumDeathToVisceroid`, else the fresh `Set_Defaults` true.
-    #[cfg(feature = "ares")]
     pub(crate) fn read_map_tiberium_death_to_visceroid(&mut self, map_value: Option<bool>) {
         self.tiberium_death_to_visceroid =
             map_value.unwrap_or(tiberium_death_to_visceroid_default());
@@ -2101,7 +2087,6 @@ impl ScenarioSession {
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
             train_crate: desc.train_crate,
             truck_crate: desc.truck_crate,
-            #[cfg(feature = "ares")]
             tiberium_death_to_visceroid: tiberium_death_to_visceroid_default(),
             ice_growth: u8::from(desc.ice_growth_enabled.unwrap_or(true)),
             vein_growth: u8::from(desc.vein_growth_enabled.unwrap_or(true)),

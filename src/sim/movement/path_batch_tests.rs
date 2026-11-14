@@ -1,6 +1,7 @@
-//! Rust regression tests for the batched path searches ([`super`]). A
-//! batched answer is checked against Find_Path's own search on the same
-//! world; no native behavior is claimed.
+//! Rust regression tests for the batched path searches ([`super`]) and the
+//! Find_Path redirects they leave to the Foot. A batched answer is checked
+//! against Find_Path's own search on the same world; no native behavior is
+//! claimed for it.
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::components::NavTargetRef;
@@ -115,12 +116,40 @@ fn the_jam_chains_run_through_the_movers() {
     let (sim, movers) = jam(&rules);
     for (mover, y) in movers.into_iter().zip([10, 14]) {
         let jams = |unlisted| {
-            sim.astar_code2_chain_jams((11, y), MovementLayer::Ground, unlisted)
+            sim.astar_code2_chain((11, y), MovementLayer::Ground, unlisted)
                 .unwrap()
+                .jams
         };
         assert!(jams(None), "row {y}: the chain runs back through the mover");
         assert!(!jams(Some(mover)), "row {y}: without the mover it clears");
     }
+}
+
+/// In the tank's row the tank's own walk skips it and clears, so it is not
+/// kept; the infantryman's runs through the tank and jams, so it is, and the
+/// tank still walks its own.
+#[test]
+fn a_kept_chain_answers_a_mover_it_runs_through_by_its_own_walk() {
+    let rules = rules();
+    let (sim, [tank, infantryman]) = jam(&rules);
+    let facts = EntryFacts::fitted(&sim);
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let index = terrain.regular_cell_index((11, 10)).unwrap();
+    let ask = |mover| {
+        facts
+            .code2_chain(index, MovementLayer::Ground, Some(mover), || {
+                sim.astar_code2_chain((11, 10), MovementLayer::Ground, Some(mover))
+            })
+            .unwrap()
+    };
+    assert!(!ask(tank), "the tank's own walk skips it and clears");
+    assert!(
+        facts.is_empty(),
+        "a walk that skipped its mover is not kept"
+    );
+    assert!(ask(infantryman), "the chain runs through the tank");
+    assert!(!facts.is_empty(), "the infantryman's walk is kept");
+    assert!(!ask(tank), "the tank still walks its own");
 }
 
 /// A batched answer is the search Find_Path makes itself on the same world:
@@ -484,6 +513,64 @@ fn a_redirected_request_is_left_to_find_path() {
     sim.foot_find_path(&request, &rules, None, FrameEffects::default())
         .expect("Find_Path runs");
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [0, 0]);
+}
+
+/// When Find_Nearby_Passable_Cell finds no cell near a code-7 target,
+/// Find_Path heads for the zero cell it returns (0x004D3DD8..0x004D3E03 has
+/// no invalid-cell test). With no cell allocated there, as on retail maps,
+/// that is the shared Dummy, which GetCell stamps (0x004D3DF1) before the
+/// destination setter reads it. The search cannot reach it, and the frame
+/// goes on (#4269).
+#[test]
+fn a_code7_redirect_without_a_nearby_cell_heads_for_the_zero_cell() {
+    use crate::sim::movement::fresh_oracle_seam;
+    let rules = rules();
+    let (mut sim, [tank, _]) = jam(&rules);
+    spawn(&mut sim, &rules, "HUT", (20, 10));
+    let allocated: Vec<_> = (0..32)
+        .flat_map(|y| (0..32).map(move |x| (x, y)))
+        .filter(|&cell| cell != (0, 0))
+        .collect();
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    terrain.test_set_native_allocated_cells(&allocated);
+    let request = sim.code2_ladder_request(tank, 1).unwrap();
+    let answer = sim
+        .find_path_target_answer(tank, request.destination, &rules, None)
+        .unwrap();
+    assert_eq!(answer, Some(7), "the hut on the destination answers code 7");
+    let cell = |coord: DriveCoord| (coord.x / 256, coord.y / 256);
+    fresh_oracle_seam::install_nearby_only(vec![None, None]);
+    // An earlier miss left the Dummy at another cell.
+    let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
+    dummy.stamp_coord(5, 6);
+    let goal = sim.find_path_goal_for_answer(
+        tank,
+        request.destination,
+        7,
+        &rules,
+        None,
+        FrameEffects::default(),
+    );
+    let moving_to = sim
+        .substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .locomotor
+        .as_ref()
+        .and_then(|loco| loco.selected_drive_runtime())
+        .and_then(|runtime| runtime.retained())
+        .and_then(|drive| drive.destination());
+    let found = sim.foot_find_path(&request, &rules, None, FrameEffects::default());
+    let (_, unused) = fresh_oracle_seam::finish();
+    assert_eq!(goal.map(cell), Ok((0, 0)));
+    assert_eq!(
+        moving_to.map(cell),
+        Some((0, 0)),
+        "Move_To reads the stamped Dummy"
+    );
+    assert_eq!(found, Ok(crate::sim::movement::FindPathResult::Failed));
+    assert_eq!(unused, 0, "each Find_Path asked for one nearby cell");
 }
 
 /// Each answer is its search's own, whatever thread ran it: the same

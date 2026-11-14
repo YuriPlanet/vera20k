@@ -1755,7 +1755,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         "a command's payload bytes under construction, which the simulation decodes";
     const CELL_MAP: &str =
         "a generic cell-keyed container; every CellMap is a private field of its owner";
-    const COW_CELLS: &str = "the resolved terrain grid's private cell storage (pub(super)); \
+    const TERRAIN: &str = "the resolved terrain grid's private cell storage (pub(super)); \
                              ResolvedTerrainGrid owns every write to its cells";
     const SHARED: &str = "generic change-tracking containers the presentation copy syncs from \
                           (docs/sim-thread.md); every Synced, DerivedCache and ChunkedVec is a \
@@ -1765,9 +1765,13 @@ fn mutable_handouts_and_setters_are_owner_operations() {
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const PINNED_HANDOUTS: &[(&str, &str, &str)] = &[
-        ("map/resolved_terrain/cow_cells.rs", "get_mut", COW_CELLS),
-        ("map/resolved_terrain/cow_cells.rs", "iter_mut", COW_CELLS),
-        ("map/resolved_terrain/cow_cells.rs", "index_mut", COW_CELLS),
+        ("map/resolved_terrain/terrain_cells.rs", "get_mut", TERRAIN),
+        ("map/resolved_terrain/terrain_cells.rs", "iter_mut", TERRAIN),
+        (
+            "map/resolved_terrain/terrain_cells.rs",
+            "index_mut",
+            TERRAIN,
+        ),
         ("map/rmg/grid.rs", "get_mut", RMG),
         ("map/rmg/grid.rs", "ref_cell_mut", RMG),
         ("map/rmg/grid.rs", "cell_native_mut", RMG),

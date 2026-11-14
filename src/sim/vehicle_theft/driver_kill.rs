@@ -74,7 +74,7 @@ impl Simulation {
             if delay > 0
                 && let Some(target) = self.substrate.entities.get_mut(event.target_id)
             {
-                target.ares_self_heal_combat.start(frame, delay);
+                target.ares.ares_self_heal_combat.start(frame, delay);
             }
         }
         let Some(warhead) = self.interner.warhead_type(event.warhead_ref, rules) else {
@@ -121,15 +121,18 @@ impl Simulation {
         let frame = self.session.binary_frame() as i32;
         if sonar > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
-            && target.sonar_timer.remaining(frame) < sonar
+            && target.ares.sonar_timer.remaining(frame) < sonar
         {
-            target.sonar_timer.start(frame, sonar);
+            target.ares.sonar_timer.start(frame, sonar);
         }
         if disable_weapons > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
-            && target.ares_disable_weapons.remaining(frame) < disable_weapons
+            && target.ares.ares_disable_weapons.remaining(frame) < disable_weapons
         {
-            target.ares_disable_weapons.start(frame, disable_weapons);
+            target
+                .ares
+                .ares_disable_weapons
+                .start(frame, disable_weapons);
         }
         // 1004AB50 last: a Flash.Duration above Flashing (+0xF0) calls vt+0x148.
         if flash > 0
@@ -351,7 +354,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get_mut(target) else {
             return false;
         };
-        actor.vehicle_driver.set_killed_from_owner(passive);
+        actor.ares.vehicle_driver.set_killed_from_owner(passive);
         if actor.owner() == owner {
             return false;
         }
@@ -501,8 +504,11 @@ mod tests {
     use crate::sim::house_state::HouseState;
     use crate::sim::passenger::{BoardingArm, board_passenger};
 
+    // Runs again once movement's scatter admission moves to the switch.
+    #[cfg(feature = "ares")]
     #[test]
     fn driver_hit_kills_one_operator_ejects_rider_and_allows_a_new_driver() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for operator_rule in ["_ANY_", "OP"] {
             exercise_driver_handoff(operator_rule);
         }
@@ -726,6 +732,7 @@ mod tests {
 
     #[test]
     fn driver_eligibility_applies_aircraft_airport_and_dock_limits() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for (airport_bound, dock, expected) in [
             ("yes", "", false),
             ("no", "CABHUT", false),
@@ -755,8 +762,11 @@ mod tests {
     /// (`0x1004F881..0x1004F8C7`, `0x1004F8CA..0x1004F91F`) admits 67/69 for
     /// the affected Techno and 68/70 only when the source's House+0x30 is the
     /// event value.
+    // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
+    #[cfg(feature = "ares")]
     #[test]
     fn driver_and_takeover_events_spring_the_vehicles_tag() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let (mut sim, rules, _overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n2=OP\n[VehicleTypes]\n0=HOST\n\
              [OP]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\

@@ -40,6 +40,7 @@ fn spawn_prerequisite_factory(sim: &mut Simulation, rules: &RuleSet) {
 
 #[test]
 fn house_prerequisites_match_executed_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_prerequisites.json");
     let entry = |code: i64| match code {
         code if code >= 0 => Prerequisite::Building(code as i32),
@@ -204,6 +205,7 @@ fn lifecycle_world(query_section: &str) -> (Simulation, RuleSet, InternedId) {
 
 #[test]
 fn generic_member_follows_capture_and_limbo_through_existing_owners() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world("TechLevel=1\nPrerequisite=custom");
     let other = sim.interner.get("H1").unwrap();
     let product = rules.object("Q").unwrap();
@@ -260,6 +262,7 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
 
 #[test]
 fn alternate_follows_owned_limbo_acquisition_and_destruction() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world("TechLevel=1\nPrerequisite=custom");
     let product = rules.object("Q").unwrap();
     let alternate = sim
@@ -290,6 +293,7 @@ fn alternate_follows_owned_limbo_acquisition_and_destruction() {
 
 #[test]
 fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world(
         "TechLevel=-1\nPrerequisite=MISSING\nPrerequisiteOverride=custom\nBuildLimit=1",
     );
@@ -316,6 +320,7 @@ fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
 
 #[test]
 fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = prerequisite_rules_with_factory(IniFile::from_str(
         "[Countries]\n0=C1\n\
          [BuildingTypes]\n0=HOST\n1=UPGRADE\n2=OTHER\n\
@@ -402,6 +407,7 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
 
 #[test]
 fn installed_upgrade_scan_does_not_filter_online_health_or_selling() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::mission::MissionDispatchTimer;
     use crate::sim::mission::state::MissionTestFixture;
 
@@ -461,6 +467,7 @@ fn installed_upgrade_scan_does_not_filter_online_health_or_selling() {
 /// `1003DFB0`) on the map admits it, not only `Prerequisite=`.
 #[test]
 fn any_prerequisite_list_admits_a_human() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world(
         "TechLevel=1\nPrerequisite=MISSING\nPrerequisite.Lists=1\nPrerequisite.List1=MEMBER",
     );
@@ -483,6 +490,7 @@ fn any_prerequisite_list_admits_a_human() {
 /// the type ahead of both other answers.
 #[test]
 fn ares_requirement_gates_answer_in_dll_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world(
         "TechLevel=1\nPrerequisite.RequiredTheaters=SNOW,lunar\n\
          Prerequisite.Negative=MEMBER\nPrerequisite.StolenTechs=3,-1,40",
@@ -508,6 +516,7 @@ fn ares_requirement_gates_answer_in_dll_order() {
 /// a positive limit: the house's counters already hold it.
 #[test]
 fn check_build_limit_counts_the_held_object_once() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world("BuildLimit=2");
     let product = rules.object("Q").unwrap();
     sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
@@ -530,6 +539,7 @@ fn check_build_limit_counts_the_held_object_once() {
 /// (10024F80's FindFactory 10020D40 answer below 3).
 #[test]
 fn check_build_limit_needs_a_usable_factory() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = prerequisite_rules_with_factory(IniFile::from_str(
         "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n[Q]\nStrength=100\nBuildLimit=2\n",
     ));

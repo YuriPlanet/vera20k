@@ -16,8 +16,8 @@
 
 # VERA20K
 
-VERA20K is a community-led rewrite of the original engine, `gamemd.exe`. It uses the original
-game files, so you'll need your own copy of Red Alert 2: Yuri's Revenge.
+VERA20K is a community-led rewrite of the original engine, `gamemd.exe`. Bring your own copy of
+Red Alert 2: Yuri's Revenge to start developing or gaming.
 
 VERA20K is made by gamers, for gamers, and gamers have the final say in where it goes.
 
@@ -43,19 +43,6 @@ To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
 [offline client setup](integrations/cncnet/README.md).
 
 ## Contributing
-
-**Don't be afraid to send a PR.** It doesn't have to be perfect; we'll help with the rest.
-
-Help is welcome anywhere, and these areas need it most. Each links to its roadmap issue, with
-the work in progress and the next step:
-
-- **[Gameplay and combat](https://github.com/YuriPlanet/vera20k/issues/3830):** unit behavior, damage and everyday skirmish reliability.
-- **[Performance](https://github.com/YuriPlanet/vera20k/issues/3831):** frame rate and responsiveness in large battles and on older hardware.
-- **[Multiplayer](https://github.com/YuriPlanet/vera20k/issues/3832):** joining, starting and keeping online matches going, and co-op reliability.
-- **[UI and audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menus, text, [translations](src/i18n/README.md) and sound.
-- **[Campaigns](https://github.com/YuriPlanet/vera20k/issues/3834):** missions launch, but playing them to the end still needs work: objectives, triggers, scripted transitions, save/load and moving on to the next mission.
-- **[Mod compatibility](https://github.com/YuriPlanet/vera20k/issues/3835):** Ares and Phobos features, without changing the original game's defaults.
-- **[Testing](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** play VERA20K next to the original and report what plays differently.
 
 Contributors can take responsibility for engine areas, with broad freedom to make changes that
 move VERA20K forward.
@@ -106,9 +93,8 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-VERA20K plays like the original game by default. Map capacity is selected automatically,
-without a build flag: `Size` width plus height can be up to 1024. Other new features,
-including extensions from mods such as Ares, stay off until they are turned on with one of:
+VERA20K plays like the original game by default. New features, including extensions from
+mods such as Ares, stay off until they are turned on with one of:
 
 - **A VERA player option**, in **Options**, saved under `[VERA]` in `VERA.INI`.
 - **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).

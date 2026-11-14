@@ -4,8 +4,9 @@
 
 use crate::app::AppState;
 use crate::audio::arbiter::HandleOwner;
-use crate::audio::sfx::SpatialGain;
+use crate::audio::sfx::{SfxPlayer, SpatialGain};
 use crate::render::chrono_screen::{ChronoScreenDraw, ChronoScreenRenderer};
+use crate::rules::sound_ini::SoundRegistry;
 use crate::sim::superweapon::chrono_screen::ChronoScreenCommand;
 
 const HANDLE: HandleOwner = HandleOwner::Global(0x00A9F9B8);
@@ -17,7 +18,6 @@ pub(crate) struct ChronoScreenPresentation {
     capture_prior: bool,
     capture_destination: bool,
     draw: Option<ChronoScreenDraw>,
-    eva_credits: u32,
 }
 
 impl ChronoScreenPresentation {
@@ -95,8 +95,12 @@ impl ChronoScreenPresentation {
     }
 }
 
-fn play_cue(state: &mut AppState, returning: bool) {
-    let sound = state
+/// A cue to play: the Rules sound name and the registry that holds it.
+type Cue<'a> = Option<(&'a str, &'a SoundRegistry)>;
+
+/// `TimeWarpOutSound=`, or `TimeWarpInSound=` on the way back.
+fn cue_name(state: &AppState, returning: bool) -> Option<String> {
+    state
         .match_state
         .sim_runtime
         .runtime()
@@ -108,21 +112,46 @@ fn play_cue(state: &mut AppState, returning: bool) {
                 general.time_warp_out_sound()
             }
         })
-        .map(str::to_owned);
-    if let (Some(sound), Some(catalog), Some(sfx)) = (
-        sound,
-        state.process_assets.audio_catalog(),
-        state.audio.sfx_player.as_mut(),
-    ) {
+        .map(str::to_owned)
+}
+
+fn play_cue(sfx: &mut SfxPlayer, cue: Cue<'_>) {
+    if let Some((sound, sounds)) = cue {
         //750920 receives volume1.0, pan2000 and this global VocHandle.
         //Reuse the existing registered owned-event/handle admission owner.
-        sfx.play_animation_sound_spatial(
-            HANDLE,
-            &sound,
-            SpatialGain::CENTRED_FULL,
-            catalog.sounds(),
-        );
+        sfx.play_animation_sound_spatial(HANDLE, sound, SpatialGain::CENTRED_FULL, sounds);
     }
+}
+
+/// Start's sound edges (`0x0053B501..0x0053B554`): EVA stops with its
+/// queues, the cue plays with Voc on, then Voc goes off and EVA is
+/// suspended until Finish.
+fn start_audio(sfx: &mut SfxPlayer, cue: Cue<'_>) {
+    sfx.clear_sound_pool(); //53B501/406E80
+    sfx.stop_eva(true); //53B508/7529A0, preserves nested depths
+    sfx.set_voc_enabled(true);
+    sfx.set_chrono_screen_active(true);
+    play_cue(sfx, cue);
+    sfx.set_voc_enabled(false); //53B538/7518C0
+    sfx.suspend_eva(); //53B554/753570
+}
+
+fn capture_destination_audio(sfx: &mut SfxPlayer, cue: Cue<'_>) {
+    sfx.set_voc_enabled(true);
+    sfx.release_animation_sound(HANDLE); //53B6A0/406060
+    play_cue(sfx, cue);
+    sfx.set_voc_enabled(false);
+}
+
+/// Finish's sound edges (`0x0053B6F0..0x0053B714`). 684180/406F40 runs
+/// while the phase is still 3. Its SFX resume has nothing to undo, since
+/// Enter skipped the sounds under the 53BAD0 gate; it unpauses EVA.
+fn finish_audio(sfx: &mut SfxPlayer) {
+    sfx.release_animation_sound(HANDLE);
+    sfx.stop_animation_sound(HANDLE); //4060F0(NULL),405C00
+    sfx.set_voc_enabled(true);
+    sfx.resume_eva(); //53B714/753580
+    sfx.set_chrono_screen_active(false);
 }
 
 pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
@@ -134,21 +163,10 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
             screen.capture_prior = true;
             screen.capture_destination = false;
             screen.draw = None;
+            let cue = cue_name(state, false);
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                sfx.clear_sound_pool(); //53B501/406E80
-                sfx.stop_eva(true); //53B508/7529A0, preserves nested depths
-                sfx.set_voc_enabled(true);
-                sfx.set_chrono_screen_active(true);
-            }
-            play_cue(state, false);
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                sfx.set_voc_enabled(false); //53B538/7518C0
-                sfx.suspend_eva(); //53B554/753570
-                state
-                    .match_state
-                    .match_presentation
-                    .chrono_screen
-                    .eva_credits += 1;
+                let sounds = state.process_assets.audio_catalog().map(|c| c.sounds());
+                start_audio(sfx, cue.as_deref().zip(sounds));
             }
         }
         ChronoScreenCommand::Draw { step, duration } => {
@@ -165,33 +183,15 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
                 .match_presentation
                 .chrono_screen
                 .capture_destination = true;
+            let cue = cue_name(state, true);
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                sfx.set_voc_enabled(true);
-                sfx.release_animation_sound(HANDLE); //53B6A0/406060
-            }
-            play_cue(state, true);
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                sfx.set_voc_enabled(false);
+                let sounds = state.process_assets.audio_catalog().map(|c| c.sounds());
+                capture_destination_audio(sfx, cue.as_deref().zip(sounds));
             }
         }
         ChronoScreenCommand::Finish => {
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                // 684180/406F40 runs while the phase is still 3. Its SFX
-                // resume has nothing to undo, since Enter skipped the sounds
-                // under the 53BAD0 gate; it unpauses EVA.
-                sfx.release_animation_sound(HANDLE);
-                sfx.stop_animation_sound(HANDLE); //4060F0(NULL),405C00
-                sfx.set_voc_enabled(true);
-                let credits = &mut state
-                    .match_state
-                    .match_presentation
-                    .chrono_screen
-                    .eva_credits;
-                if *credits != 0 {
-                    sfx.resume_eva();
-                    *credits -= 1;
-                }
-                sfx.set_chrono_screen_active(false);
+                finish_audio(sfx);
             }
             if !state
                 .match_state
@@ -205,22 +205,79 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
     }
 }
 
-/// App teardown has no native saved GPU pointer. Release only this owner's
-/// EVA credits, never the movie/menu caller's, and discard both snapshots.
+/// App teardown has no native saved GPU pointer: discard both snapshots. An
+/// EVA suspend left by Start lifts at RadarClass::AI's next resume
+/// (`0x006539B7`) once the phase reads zero, or at the world's ResetAll.
 pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
-    let screen = std::mem::take(&mut state.match_state.match_presentation.chrono_screen);
+    state.match_state.match_presentation.chrono_screen = Default::default();
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         sfx.stop_animation_sound(HANDLE);
         sfx.set_voc_enabled(true);
         sfx.set_chrono_screen_active(false);
-        for _ in 0..screen.eva_credits {
-            sfx.resume_eva();
-        }
     }
     if !state
         .match_state
         .elapsed_clock_paused(&state.frontend.screen)
     {
         state.match_state.scenario_elapsed_clock.resume(wall_ms);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::audio_runtime::AppAudioRuntime;
+    use crate::app::radar_movie::{apply_prelude_audio, prelude_inputs};
+    use crate::render::radar::anim::RadarMovieCommand;
+
+    /// ChronoScreen inside a transmission's prelude, as ALL01 plays it: Start
+    /// stops IncomingTransmission (`0x0053B508` -> `0x007529A0` marks it
+    /// done, so the prelude goes on) and suspends EVA a second time
+    /// (`0x0053B554`). StartPlayback's resume (`0x0065792B`) lifts one
+    /// suspend; EVA takes lines again only once Finish resumes (`0x0053B714`).
+    #[test]
+    fn chrono_screen_keeps_eva_shut_through_a_transmission_until_it_finishes() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut audio) = AppAudioRuntime::with_sfx_output_for_test() else {
+            return;
+        };
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let loaded_index = crate::rules::retail_ini_fixture::retail_audio_index();
+        let index = loaded_index.map(|loaded| &loaded.index);
+        let eva = Some(&**definitions.eva());
+        let sfx = audio.sfx_player.as_mut().unwrap();
+        sfx.set_volume(0.0);
+        sfx.set_paused(false, 1_000);
+
+        apply_prelude_audio(
+            RadarMovieCommand::Announce,
+            &mut audio,
+            eva,
+            index,
+            Some(&assets),
+            1_000,
+        );
+        let sfx = audio.sfx_player.as_mut().unwrap();
+        assert_eq!(sfx.current_eva_event(), Some("EVA_INCOMINGTRANSMISSION"));
+        start_audio(sfx, None);
+        assert_eq!(sfx.current_eva_event(), None);
+        assert!(prelude_inputs(&audio, eva).0);
+
+        apply_prelude_audio(
+            RadarMovieCommand::StartPlayback,
+            &mut audio,
+            eva,
+            index,
+            Some(&assets),
+            1_000,
+        );
+        let sfx = audio.sfx_player.as_mut().unwrap();
+        assert!(!sfx.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
+        finish_audio(sfx);
+        assert!(sfx.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
+        sfx.stop_all();
     }
 }

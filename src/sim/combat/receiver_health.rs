@@ -72,11 +72,12 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
 
     /// 10053A10 culls only without ignoreDefenses, with a warhead and an
     /// attacker object; it passes the attacker without a Techno check. An
-    /// observation-only commit never draws.
-    #[cfg(feature = "ares")]
+    /// observation-only commit never draws, and neither does a game without
+    /// Ares, which never culls: the switch is asked before the warhead.
     fn culls(&mut self) -> bool {
         let event = self.event;
-        if !self.execute_world_callbacks
+        if !self.rules.ares()
+            || !self.execute_world_callbacks
             || event.receiver_flags.ignore_defenses
             || event.attacker_id == RAD_NO_ATTACKER
         {
@@ -329,6 +330,7 @@ pub(super) fn commit_receiver_health(
                 source_owner,
                 delta,
                 world.session.game_mode_nonzero(),
+                rules.general.ai_nearest_enemy,
             );
         }
         Some(delta)

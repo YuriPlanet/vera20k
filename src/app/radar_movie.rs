@@ -14,13 +14,16 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::app::AppState;
+use crate::app::audio_runtime::AppAudioRuntime;
 use crate::app::movie_playback::MoviePlayback;
 use crate::app::movie_subtitles::{self, SubtitleTrack};
+use crate::assets::asset_manager::AssetManager;
+use crate::assets::audio_bag::AudioIndex;
 use crate::audio::arbiter::HandleOwner;
 use crate::audio::sfx::SpatialGain;
 use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::radar::anim::RadarMovieCommand;
-use crate::rules::sound_ini::{EvaPriority, EvaType};
+use crate::rules::sound_ini::{EvaPriority, EvaRegistry, EvaType};
 use crate::sim::replay::ScenarioServiceInput;
 
 const INCOMING: &str = "EVA_IncomingTransmission"; //652D6E literal8392C0
@@ -91,9 +94,6 @@ struct QueuedMovie {
 pub(crate) struct RadarMovies {
     queue: VecDeque<QueuedMovie>,
     playing: Option<MoviePlayback>,
-    /// Credit for this FIFO's prelude suspend. Retirement may run after
-    /// playback already released it, and must not release another caller.
-    eva_suspended: bool,
     /// This FIFO's actual684060 credit, independent of other pause callers.
     scenario_hold: bool,
 }
@@ -131,14 +131,6 @@ impl RadarMovies {
     pub(crate) fn set_active(&mut self, active: bool) {
         if let Some(player) = self.playing.as_mut() {
             player.set_active(active);
-        }
-    }
-
-    fn release_eva_hold(&mut self, sfx: Option<&mut crate::audio::sfx::SfxPlayer>) {
-        if std::mem::take(&mut self.eva_suspended)
-            && let Some(sfx) = sfx
-        {
-            sfx.resume_eva();
         }
     }
 }
@@ -253,82 +245,141 @@ fn reconcile_pause_clock(state: &mut AppState, wall_ms: u64) {
 /// Service outside the simulation gate. Only actual sidebar draws advance the
 /// housing timer; media and its pause must remain live when117 stops simulation.
 pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
-        || state
-            .match_state
-            .match_presentation
-            .radar_movies
-            .queue
-            .is_empty()
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+        return;
+    }
+    // `RadarClass::AI @ 0x00653850` (vt+0x28) runs on Main_Tick's input
+    // path (`0x0055D8AB`), which needs `g_GameState` `0x00A8EDA0` zero
+    // (`0x0055D883`). Every in-game menu runs inside State_Machine
+    // `0x0048C8B0` with it 1..9, so even the network modes' modal pump
+    // (`0x00623120` -> Main_Tick) skips the radar.
+    if !state.match_state.match_presentation.in_game_menu.is_open() {
+        radar_ai(state, wall_ms);
+    }
+    if state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .is_empty()
     {
         return;
     }
-    let selected_index = state
-        .process_assets
-        .audio_catalog()
-        .and_then(|catalog| catalog.eva().index_of(INCOMING))
-        .unwrap_or(-1);
-    let selected_done = match (
-        state.audio.sfx_player.as_ref(),
-        state.process_assets.audio_catalog(),
-    ) {
-        (Some(sfx), Some(catalog)) => sfx.eva_entry_done(selected_index, catalog.eva()),
+    play_head(state, wall_ms);
+}
+
+/// The movie half of `RadarClass::AI`: admission (`0x00653963`) and, in mode
+/// 4, the prelude (`0x006539A2` -> `0x006578F0`). Every other pass resumes
+/// EVA unless ChronoScreen holds the screen (`0x006539AE..0x006539B7`), so
+/// a prelude's suspend, or one a retired movie left, lifts on the next pass.
+fn radar_ai(state: &mut AppState, wall_ms: u64) {
+    let queued = !state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .queue
+        .is_empty();
+    let prelude = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .is_some_and(|radar| {
+            if queued {
+                radar.admit_movie();
+            }
+            radar.movie_prelude()
+        });
+    if !prelude {
+        resume_eva_outside_prelude(state);
+        return;
+    }
+    let catalog = state.process_assets.audio_catalog();
+    let eva = catalog.map(|catalog| catalog.eva());
+    let (selected_done, streams_ready) = prelude_inputs(&state.audio, eva);
+    let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
+        return;
+    };
+    let command = radar.movie_command(selected_done, streams_ready);
+    apply_prelude_audio(
+        command,
+        &mut state.audio,
+        eva,
+        catalog.and_then(|catalog| catalog.index()),
+        state.process_assets.manager(),
+        wall_ms,
+    );
+    if command == RadarMovieCommand::StartPlayback {
+        //6578F0 stage2: SetRadarMode(3), EndLooping, then MovieOn.
+        play_radar_sound_loop(state, true);
+    }
+}
+
+fn incoming_index(eva: Option<&EvaRegistry>) -> i32 {
+    eva.and_then(|registry| registry.index_of(INCOMING))
+        .unwrap_or(-1)
+}
+
+/// What `0x006578F0` reads before it steps the prelude: whether the selected
+/// IncomingTransmission entry is done, and whether the streams settled
+/// (`0x00408410`).
+pub(super) fn prelude_inputs(audio: &AppAudioRuntime, eva: Option<&EvaRegistry>) -> (bool, bool) {
+    let selected_done = match (audio.sfx_player.as_ref(), eva) {
+        (Some(sfx), Some(registry)) => sfx.eva_entry_done(incoming_index(eva), registry),
         // Native admission needs its stream/device. VERA's no-device route
         // leaves the initially-done entry alone, so it does not guess a delay.
         _ => true,
     };
-    let streams_ready = state.audio.movie_streams_ready();
-    // Admission and the prelude run from `RadarClass::AI @ 0x00653850`
-    // (vt+0x28, `0x006539A2`)
-    // on the main loop's input path, which an in-game modal does not pump.
-    let menu_open = state.match_state.match_presentation.in_game_menu.is_open();
-    let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
-        return;
-    };
-    let command = if menu_open {
-        RadarMovieCommand::None
-    } else {
-        radar.admit_movie();
-        radar.movie_command(selected_done, streams_ready)
-    };
+    (selected_done, audio.movie_streams_ready())
+}
+
+/// The EVA and stream edges of one prelude step (`0x006578F0`); the caller
+/// plays the radar's MovieOn loop after StartPlayback.
+pub(super) fn apply_prelude_audio(
+    command: RadarMovieCommand,
+    audio: &mut AppAudioRuntime,
+    eva: Option<&EvaRegistry>,
+    audio_index: Option<&AudioIndex>,
+    assets: Option<&AssetManager>,
+    wall_ms: u64,
+) {
     match command {
         RadarMovieCommand::Announce => {
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
+            if let Some(sfx) = audio.sfx_player.as_mut() {
                 sfx.clear_eva_queues();
-                if let (Some(catalog), Some(assets)) = (
-                    state.process_assets.audio_catalog(),
-                    state.process_assets.manager(),
-                ) {
+                if let (Some(registry), Some(assets)) = (eva, assets) {
                     sfx.queue_eva(
-                        selected_index,
+                        incoming_index(eva),
                         Some(EvaType::Standard),
                         Some(EvaPriority::Critical),
-                        catalog.eva(),
+                        registry,
                         assets,
-                        catalog.index(),
+                        audio_index,
                     );
                 }
-                sfx.suspend_eva();
-                state
-                    .match_state
-                    .match_presentation
-                    .radar_movies
-                    .eva_suspended = true;
+                sfx.suspend_eva(); //6579C0/753570
             }
         }
-        RadarMovieCommand::PrepareStreams => state.audio.prepare_movie_streams(wall_ms),
+        RadarMovieCommand::PrepareStreams => audio.prepare_movie_streams(wall_ms),
         RadarMovieCommand::StartPlayback => {
-            state
-                .match_state
-                .match_presentation
-                .radar_movies
-                .release_eva_hold(state.audio.sfx_player.as_mut());
-            state.audio.set_movie_audio_held(true, wall_ms);
-            //6578F0 stage2: SetRadarMode(3), EndLooping, then MovieOn.
-            play_radar_sound_loop(state, true);
+            if let Some(sfx) = audio.sfx_player.as_mut() {
+                sfx.resume_eva(); //65792B/753580
+            }
+            audio.set_movie_audio_held(true, wall_ms);
         }
         RadarMovieCommand::None => {}
     }
+}
+
+/// `RadarClass::AI`'s pass outside mode 4.
+pub(crate) fn resume_eva_outside_prelude(state: &mut AppState) {
+    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+        sfx.resume_eva_unless_chrono_screen();
+    }
+}
+
+/// Draw and step the FIFO head once Radar has opened for it.
+fn play_head(state: &mut AppState, wall_ms: u64) {
     let ready = state
         .match_state
         .match_presentation
@@ -474,10 +525,8 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
         .radar_movies
         .scenario_hold;
     // Clear Radar's own movie flag before its shared684180 output is applied.
+    // 5BF450 leaves a prelude's EVA suspend to RadarClass::AI's next resume.
     let presentation = &mut state.match_state.match_presentation;
-    presentation
-        .radar_movies
-        .release_eva_hold(state.audio.sfx_player.as_mut());
     presentation.radar_movies = RadarMovies::default();
     if let Some(radar) = presentation.radar_anim.as_mut() {
         radar.retire_movies();
@@ -527,6 +576,63 @@ mod tests {
             (general.movie_on.as_deref(), general.movie_off.as_deref()),
             (Some("MovieOn"), Some("MovieOff"))
         );
+    }
+
+    /// The prelude (`0x006578F0`) suspends EVA right after it queues
+    /// IncomingTransmission, so `QueueVoice @ 0x00752480` refuses a line
+    /// asked for then (`0x00B1D3D8`). StartPlayback's resume (`0x0065792B`)
+    /// lifts that under the clip's PauseEVA (`0x005BF580`): a line asked for
+    /// during the clip waits, and starts once the hold lifts (`0x005BF530`).
+    #[test]
+    fn a_transmission_refuses_eva_in_its_prelude_and_holds_it_through_the_clip() {
+        let Some((_root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let Some(mut audio) = AppAudioRuntime::with_sfx_output_for_test() else {
+            return;
+        };
+        let definitions = crate::rules::retail_ini_fixture::retail_audio_definitions()
+            .expect("retail audio definitions");
+        let loaded_index = crate::rules::retail_ini_fixture::retail_audio_index();
+        let index = loaded_index.map(|loaded| &loaded.index);
+        let eva = Some(&**definitions.eva());
+        let started = crate::util::time::Instant::now();
+        let now = || 1_000 + u64::try_from(started.elapsed().as_millis()).unwrap();
+        let step = |audio: &mut AppAudioRuntime, command| {
+            apply_prelude_audio(command, audio, eva, index, Some(&assets), now());
+        };
+        let pump = |audio: &mut AppAudioRuntime| {
+            let sfx = audio.sfx_player.as_mut().unwrap();
+            sfx.set_paused(false, now());
+            sfx.advance_voice_queue(definitions.eva(), &assets, index);
+        };
+        audio.sfx_player.as_mut().unwrap().set_volume(0.0);
+        pump(&mut audio);
+
+        step(&mut audio, RadarMovieCommand::Announce);
+        let sfx = audio.sfx_player.as_mut().unwrap();
+        assert_eq!(sfx.current_eva_event(), Some("EVA_INCOMINGTRANSMISSION"));
+        assert!(!sfx.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
+        while !prelude_inputs(&audio, eva).0 {
+            assert!(
+                started.elapsed().as_secs() < 15,
+                "IncomingTransmission ends"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            pump(&mut audio);
+        }
+        step(&mut audio, RadarMovieCommand::PrepareStreams);
+        step(&mut audio, RadarMovieCommand::StartPlayback);
+        let sfx = audio.sfx_player.as_mut().unwrap();
+        assert!(sfx.play_eva("EVA_UnitReady", None, definitions.eva(), &assets, index));
+        pump(&mut audio);
+        assert_eq!(audio.sfx_player.as_ref().unwrap().current_eva_event(), None);
+
+        audio.retire_movie_audio(now());
+        pump(&mut audio);
+        let sfx = audio.sfx_player.as_mut().unwrap();
+        assert_eq!(sfx.current_eva_event(), Some("EVA_UNITREADY"));
+        sfx.stop_all();
     }
 
     #[test]

@@ -201,14 +201,16 @@ pub(crate) fn conceal_area_cells(coord: [i32; 3], radius: i32) -> Vec<(u16, u16)
 /// Indexed by `ry * width + rx`. Each byte holds public visibility plus
 /// sustained-sight, current hostile coverage and pending-conceal provenance. This gives O(1) per-cell lookups instead of O(log n)
 /// with the previous BTreeSet design.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct OwnerVisibility {
     cells: Vec<u8>,
     width: u16,
     height: u16,
     /// [`GROUND_VISIBLE`] / [`GROUND_OPEN`] per cell, aligned with `cells`.
     ground_flags: Vec<u8>,
-    shroud_knowledge: Vec<ShroudKnowledge>,
+    /// Chunked so the presentation copy takes only the chunks a write
+    /// touched ([`Self::sync_presentation_into`]).
+    shroud_knowledge: crate::util::synced::ChunkedVec<ShroudKnowledge>,
     map_cell_edge_cache: Vec<MapCellEdgeCache>,
     /// Packed ground/fog inputs for Tactical6D8700; rebuilt after loading.
     #[serde(skip)]
@@ -225,6 +227,75 @@ pub struct OwnerVisibility {
     /// saved or hashed.
     #[serde(skip)]
     stale_frames: StaleFrames,
+}
+
+// `clone_from` keeps the target's arrays: the presentation copy of the world
+// (`FogState::presentation_copy`) copies a plane into the previous copy's.
+impl Clone for OwnerVisibility {
+    fn clone(&self) -> Self {
+        let mut copy = Self::default();
+        copy.clone_from(self);
+        copy
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        let Self {
+            cells,
+            width,
+            height,
+            ground_flags,
+            shroud_knowledge,
+            map_cell_edge_cache,
+            edge_inputs_cache,
+            dummy_visibility,
+            tracked,
+            edge_cells,
+            stale_frames,
+        } = source;
+        self.cells.clone_from(cells);
+        self.width = *width;
+        self.height = *height;
+        self.ground_flags.clone_from(ground_flags);
+        self.shroud_knowledge.clone_from(shroud_knowledge);
+        self.map_cell_edge_cache.clone_from(map_cell_edge_cache);
+        self.edge_inputs_cache.clone_from(edge_inputs_cache);
+        self.dummy_visibility.clone_from(dummy_visibility);
+        self.tracked.clone_from(tracked);
+        self.edge_cells.clone_from(edge_cells);
+        self.stale_frames.clone_from(stale_frames);
+    }
+}
+
+impl OwnerVisibility {
+    /// Bring `mirror`, this plane's presentation copy, up to this plane: as
+    /// `mirror.clone_from(self)`, but the shroud knowledge copies only the
+    /// chunks written since this plane last synced into `mirror`.
+    pub(super) fn sync_presentation_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cells,
+            width,
+            height,
+            ground_flags,
+            shroud_knowledge,
+            map_cell_edge_cache,
+            edge_inputs_cache,
+            dummy_visibility,
+            tracked,
+            edge_cells,
+            stale_frames,
+        } = self;
+        mirror.cells.clone_from(cells);
+        mirror.width = *width;
+        mirror.height = *height;
+        mirror.ground_flags.clone_from(ground_flags);
+        shroud_knowledge.sync_into(&mut mirror.shroud_knowledge);
+        mirror.map_cell_edge_cache.clone_from(map_cell_edge_cache);
+        mirror.edge_inputs_cache.clone_from(edge_inputs_cache);
+        mirror.dummy_visibility.clone_from(dummy_visibility);
+        mirror.tracked.clone_from(tracked);
+        mirror.edge_cells.clone_from(edge_cells);
+        mirror.stale_frames.clone_from(stale_frames);
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -275,7 +346,10 @@ impl OwnerVisibility {
             width,
             height,
             ground_flags: vec![0; len],
-            shroud_knowledge: vec![ShroudKnowledge::default(); len],
+            shroud_knowledge: crate::util::synced::ChunkedVec::filled(
+                ShroudKnowledge::default(),
+                len,
+            ),
             map_cell_edge_cache: vec![MapCellEdgeCache::default(); len],
             edge_inputs_cache: Default::default(),
             dummy_visibility: DummyVisibility::default(),
@@ -799,14 +873,51 @@ impl FogState {
     /// (`Simulation::presentation_copy`): `viewer`'s plane, fogged objects,
     /// sensors and disguise detection, the cloak words and the reveal guard.
     /// The other houses' planes and the sight sources stay with the live
-    /// world. A copy for no viewer holds no plane.
-    pub(crate) fn presentation_copy(&self, viewer: Option<InternedId>) -> Self {
+    /// world. A copy for no viewer holds no plane. `reuse`, the previous
+    /// copy, lends its plane's arrays when it was copied for `viewer`, and
+    /// its cloak words and sensor and disguise counts always.
+    pub(crate) fn presentation_copy(&mut self, viewer: Option<InternedId>, reuse: Self) -> Self {
         let mine = |house: &InternedId| Some(*house) == viewer;
+        let Self {
+            by_owner: old,
+            sensors_by_house: mut old_sensors,
+            disguise_detect_by_house: mut old_disguise,
+            cloaked_by_houses: mut cloaked_by_houses,
+            ..
+        } = reuse;
+        // The previous copy's whole-map arrays take the new values in place
+        // (`clone_from`), so a copy per tick allocates none of them again.
+        let reuse_counts = |old: &mut BTreeMap<InternedId, Vec<i16>>,
+                            live: &BTreeMap<InternedId, Vec<i16>>|
+         -> BTreeMap<InternedId, Vec<i16>> {
+            live.iter()
+                .filter(|(house, _)| mine(house))
+                .map(|(house, counts)| {
+                    let mut kept = old.remove(house).unwrap_or_default();
+                    kept.clone_from(counts);
+                    (*house, kept)
+                })
+                .collect()
+        };
+        let sensors_by_house = reuse_counts(&mut old_sensors, &self.sensors_by_house);
+        let disguise_detect_by_house =
+            reuse_counts(&mut old_disguise, &self.disguise_detect_by_house);
+        cloaked_by_houses.clone_from(&self.cloaked_by_houses);
         let mut by_owner = Planes::default();
         if let Some(viewer) = viewer
-            && let Some(view) = self.by_owner.get(&viewer)
+            && self.by_owner.contains_key(&viewer)
         {
-            by_owner.insert(viewer, view.clone());
+            if old.keys().eq([&viewer]) {
+                by_owner = old;
+                let mirror = by_owner
+                    .get_mut(&viewer)
+                    .expect("the previous copy's plane");
+                self.by_owner.sync_presentation_into(&viewer, mirror);
+            } else {
+                let mut mirror = OwnerVisibility::default();
+                self.by_owner.sync_presentation_into(&viewer, &mut mirror);
+                by_owner.insert(viewer, mirror);
+            }
         }
         Self {
             width: self.width,
@@ -838,19 +949,9 @@ impl FogState {
                 .filter(|(house, _)| mine(house))
                 .collect(),
             next_fogged_object_id: self.next_fogged_object_id,
-            sensors_by_house: self
-                .sensors_by_house
-                .iter()
-                .filter(|(house, _)| mine(house))
-                .map(|(house, counts)| (*house, counts.clone()))
-                .collect(),
-            disguise_detect_by_house: self
-                .disguise_detect_by_house
-                .iter()
-                .filter(|(house, _)| mine(house))
-                .map(|(house, counts)| (*house, counts.clone()))
-                .collect(),
-            cloaked_by_houses: self.cloaked_by_houses.clone(),
+            sensors_by_house,
+            disguise_detect_by_house,
+            cloaked_by_houses,
             ..Self::default()
         }
     }
@@ -1207,6 +1308,7 @@ impl FogState {
 
     /// `viewer`'s accepted map contribution for source `id`. Native
     /// +0x250/+0x254/+0x260 metadata is kept by [`Self::source_sight`].
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn sight_admission(&self, id: u64, viewer: InternedId) -> Option<&SightAdmission> {
         self.sight_admissions.get(&(id, viewer))
     }

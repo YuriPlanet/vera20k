@@ -1,6 +1,6 @@
 //! Ares Prism forwarding (BuildingExt `cPrismForwarding`, `+0x10`), which
 //! replaces the stock Prism support of Mission_Attack and ProcessDelayedFire
-//! in Ares builds. A firing tower (`PrismForwarding.*` of
+//! while Ares plays. A firing tower (`PrismForwarding.*` of
 //! `rules::ares_prism_forwarding`, a `CanAttack` type) recruits whole chains
 //! of supporters in one Mission_Attack visit; each supporter beams its charge
 //! at the tower it feeds once its own charge ends, adding its support
@@ -178,13 +178,13 @@ fn weapon0_flh(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<ProjectileC
 fn senders(entities: &EntityStore, id: u64) -> Vec<u64> {
     entities
         .get(id)
-        .map_or_else(Vec::new, |entity| entity.ares_prism.senders.clone())
+        .map_or_else(Vec::new, |entity| entity.ares.ares_prism.senders.clone())
 }
 
 fn sender_at(entities: &EntityStore, id: u64, index: usize) -> Option<u64> {
     entities
         .get(id)
-        .and_then(|entity| entity.ares_prism.senders.get(index).copied())
+        .and_then(|entity| entity.ares.ares_prism.senders.get(index).copied())
 }
 
 /// Drop `sender` from `tower`'s Senders (the first match, as
@@ -192,12 +192,13 @@ fn sender_at(entities: &EntityStore, id: u64, index: usize) -> Option<u64> {
 fn remove_sender(entities: &mut EntityStore, tower: u64, sender: u64) {
     if let Some(entity) = entities.get_mut(tower)
         && let Some(index) = entity
+            .ares
             .ares_prism
             .senders
             .iter()
             .position(|&id| id == sender)
     {
-        entity.ares_prism.senders.remove(index);
+        entity.ares.ares_prism.senders.remove(index);
     }
 }
 
@@ -206,7 +207,7 @@ fn remove_sender(entities: &mut EntityStore, tower: u64, sender: u64) {
 fn set_support_target(entities: &mut EntityStore, id: u64, target: Option<u64>) {
     let Some(current) = entities
         .get(id)
-        .map(|entity| entity.ares_prism.support_target)
+        .map(|entity| entity.ares.ares_prism.support_target)
     else {
         return;
     };
@@ -217,13 +218,13 @@ fn set_support_target(entities: &mut EntityStore, id: u64, target: Option<u64>) 
         remove_sender(entities, old, id);
     }
     if let Some(entity) = entities.get_mut(id) {
-        entity.ares_prism.support_target = target;
+        entity.ares.ares_prism.support_target = target;
     }
     if let Some(new) = target
         && let Some(entity) = entities.get_mut(new)
-        && !entity.ares_prism.senders.contains(&id)
+        && !entity.ares.ares_prism.senders.contains(&id)
     {
-        entity.ares_prism.senders.push(id);
+        entity.ares.ares_prism.senders.push(id);
     }
 }
 
@@ -233,24 +234,24 @@ fn set_support_target(entities: &mut EntityStore, id: u64, target: Option<u64>) 
 fn remove_all_senders(entities: &mut EntityStore, id: u64) {
     let count = entities
         .get(id)
-        .map_or(0, |entity| entity.ares_prism.senders.len());
+        .map_or(0, |entity| entity.ares.ares_prism.senders.len());
     for index in (0..count).rev() {
         let Some(sender) = sender_at(entities, id, index) else {
             continue;
         };
         let Some(target) = entities
             .get(sender)
-            .and_then(|entity| entity.ares_prism.support_target)
+            .and_then(|entity| entity.ares.ares_prism.support_target)
         else {
             continue;
         };
         remove_sender(entities, target, sender);
         if let Some(entity) = entities.get_mut(sender) {
-            entity.ares_prism.support_target = None;
+            entity.ares.ares_prism.support_target = None;
         }
     }
     if let Some(entity) = entities.get_mut(id) {
-        entity.ares_prism.senders.clear();
+        entity.ares.ares_prism.senders.clear();
     }
 }
 
@@ -266,16 +267,16 @@ fn remove_from_network(entities: &mut EntityStore, id: u64, cease: bool) {
     if entity.category() != EntityCategory::Structure {
         return;
     }
-    if entity.ares_prism.charge_delay != 0 || cease {
-        entity.ares_prism.charge_delay = 0;
-        entity.ares_prism.modifier_reserve = 0;
-        entity.ares_prism.damage_reserve = 0;
+    if entity.ares.ares_prism.charge_delay != 0 || cease {
+        entity.ares.ares_prism.charge_delay = 0;
+        entity.ares.ares_prism.modifier_reserve = 0;
+        entity.ares.ares_prism.damage_reserve = 0;
         entity.building.pending_building_fire.pending = None;
     }
     set_support_target(entities, id, None);
     let count = entities
         .get(id)
-        .map_or(0, |entity| entity.ares_prism.senders.len());
+        .map_or(0, |entity| entity.ares.ares_prism.senders.len());
     for index in (0..count).rev() {
         if let Some(sender) = sender_at(entities, id, index) {
             remove_from_network(entities, sender, false);
@@ -299,7 +300,7 @@ impl ObjectSubstrate {
         let reserve = self
             .entities
             .get(id)
-            .map_or(0, |entity| entity.ares_prism.modifier_reserve);
+            .map_or(0, |entity| entity.ares.ares_prism.modifier_reserve);
         let product = (reserve as f64 + 100.0) * 256.0;
         let scaled = if (-2_147_483_648.0..2_147_483_648.0).contains(&product) {
             product as i32
@@ -321,7 +322,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .map_or(0, |entity| entity.ares_prism.damage_reserve);
+            .map_or(0, |entity| entity.ares.ares_prism.damage_reserve);
         prism.damage_add().wrapping_add(reserve)
     }
 
@@ -364,7 +365,7 @@ impl Simulation {
             let entities = &self.substrate.entities;
             let Some(first) = entities
                 .get(id)
-                .and_then(|entity| entity.ares_prism.support_target)
+                .and_then(|entity| entity.ares.ares_prism.support_target)
             else {
                 return false;
             };
@@ -385,7 +386,7 @@ impl Simulation {
                 for _ in 0..entities.building_registry_len() {
                     match entities
                         .get(last)
-                        .and_then(|entity| entity.ares_prism.support_target)
+                        .and_then(|entity| entity.ares.ares_prism.support_target)
                     {
                         Some(next) => last = next,
                         None => break,
@@ -441,8 +442,8 @@ pub(super) fn mission_attack_prism(
                     .building
                     .pending_building_fire
                     .arm(delay, DelayedFire::Weapon(slot));
-                entity.ares_prism.modifier_reserve = 0;
-                entity.ares_prism.damage_reserve = 0;
+                entity.ares.ares_prism.modifier_reserve = 0;
+                entity.ares.ares_prism.damage_reserve = 0;
             }
             let mut longest_chain = 0;
             let mut network_size = 0;
@@ -467,8 +468,8 @@ pub(super) fn mission_attack_prism(
                 if let Some(pending) = entity.building.pending_building_fire.pending.as_mut() {
                     pending.fire = DelayedFire::Weapon(slot);
                 }
-                entity.ares_prism.modifier_reserve = 0;
-                entity.ares_prism.damage_reserve = 0;
+                entity.ares.ares_prism.modifier_reserve = 0;
+                entity.ares.ares_prism.damage_reserve = 0;
             }
             set_support_target(&mut sim.substrate.entities, id, None);
         }
@@ -799,7 +800,7 @@ fn charge_delay_set(
     let delay = link_charge
         .wrapping_add(link_fire)
         .wrapping_sub(entity.building.pending_building_fire.remaining_ticks());
-    entity.ares_prism.charge_delay = delay;
+    entity.ares.ares_prism.charge_delay = delay;
     entity.building.prism_support_count.count = longest_chain.wrapping_sub(chain);
     if delay == 0 {
         start_charge_anim(sim, tower, rules);
@@ -863,9 +864,9 @@ pub(super) fn update_prism(
     if entity.building.pending_building_fire.pending().is_none() {
         return;
     }
-    if entity.ares_prism.charge_delay >= 1 {
-        entity.ares_prism.charge_delay -= 1;
-        if entity.ares_prism.charge_delay < 1 {
+    if entity.ares.ares_prism.charge_delay >= 1 {
+        entity.ares.ares_prism.charge_delay -= 1;
+        if entity.ares.ares_prism.charge_delay < 1 {
             start_charge_anim(sim, id, rules);
         }
         return;
@@ -873,7 +874,7 @@ pub(super) fn update_prism(
     let Some(fire) = entity.building.pending_building_fire.count_down() else {
         return;
     };
-    let support_target = entity.ares_prism.support_target;
+    let support_target = entity.ares.ares_prism.support_target;
     match fire {
         DelayedFire::SupportBeam { to } => {
             if let Some(target) = support_target
@@ -889,12 +890,12 @@ pub(super) fn update_prism(
                 let entities = &mut sim.substrate.entities;
                 let (own_modifier, own_damage) = entities.get(id).map_or((0, 0), |entity| {
                     (
-                        entity.ares_prism.modifier_reserve,
-                        entity.ares_prism.damage_reserve,
+                        entity.ares.ares_prism.modifier_reserve,
+                        entity.ares.ares_prism.damage_reserve,
                     )
                 });
                 if let Some(target) = entities.get_mut(target) {
-                    let reserve = &mut target.ares_prism;
+                    let reserve = &mut target.ares.ares_prism;
                     reserve.modifier_reserve = i64::from(modifier)
                         .wrapping_add(own_modifier)
                         .wrapping_add(reserve.modifier_reserve);
@@ -941,8 +942,8 @@ pub(super) fn update_prism(
     }
     let entities = &mut sim.substrate.entities;
     if let Some(entity) = entities.get_mut(id) {
-        entity.ares_prism.modifier_reserve = 0;
-        entity.ares_prism.damage_reserve = 0;
+        entity.ares.ares_prism.modifier_reserve = 0;
+        entity.ares.ares_prism.damage_reserve = 0;
     }
     remove_all_senders(entities, id);
     if let Some(entity) = entities.get_mut(id) {

@@ -889,9 +889,9 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
 /// Ares 3.0 TechnoClass_SelectFiringVoice (1004B1D0, hook 0x7090A8): an
 /// elite unit without an elite override speaks its rookie override, with no
 /// Main draw (stock draws from VoiceAttack instead).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_firing_voice_tiers_fall_through() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::util::native_x87::NativeF32Bits;
     let (mut sim, rules, actor) = scene(
         "Primary=Gun\nVoicePrimaryWeaponAttack=Special\nVoiceAttack=Attack\n\

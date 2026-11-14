@@ -949,10 +949,13 @@ impl App {
                     music_player,
                     sfx_player,
                     launcher_audio_available,
-                    theme_startup_suppressed: false,
+                    theme_startup_suppressed: startup_options.theme_and_eva_quiet,
                     master_groups: Default::default(),
                     restore_muted: false,
                 };
+                if let Some(sfx) = startup_audio_runtime.sfx_player.as_mut() {
+                    sfx.set_eva_quiet(startup_options.theme_and_eva_quiet);
+                }
                 if let Some(assets) = startup_asset_manager.as_ref() {
                     startup_audio_runtime.initialize_theme(assets);
                 }
@@ -1118,6 +1121,7 @@ impl App {
                     surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
+                    atlas_refresh_owed: false,
                     overlay_atlas: None,
                     bridge_atlas: None,
                     sidebar_cameo_atlas: None,

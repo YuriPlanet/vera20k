@@ -174,27 +174,26 @@ impl Simulation {
         // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
         // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
         // only while its owner's firestorm is up does the man scatter.
-        #[cfg(feature = "ares")]
-        if object.building_type_ext().is_passable {
-            return Ok(false);
-        }
-        #[cfg(feature = "ares")]
-        if object.building_type_ext().firestorm_wall {
-            if !self.ares_firestorm.is_active(building.owner()) {
+        if rules.ares() {
+            if object.building_type_ext().is_passable {
                 return Ok(false);
             }
-        } else if object.laser_fence {
-            return Ok(false);
+            if object.building_type_ext().firestorm_wall {
+                if !self.ares_firestorm.is_active(building.owner()) {
+                    return Ok(false);
+                }
+            } else if object.laser_fence {
+                return Ok(false);
+            }
         }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
         // with8/12 and reads its owner's Firestorm+1FA. Their runtime
         // owners are absent. Such types retain the prior no-Scatter behavior
         // until those separate mechanisms establish the required state.
         // Stock GAPILE and all ordinary barracks have both type flags false.
-        // (Ares builds own the firestorm arm above; the hook leaves the stock
-        // `FirestormWall=` flag unread.)
-        #[cfg(not(feature = "ares"))]
-        if object.laser_fence || object.firestorm_wall {
+        // (While Ares plays, its firestorm arm above takes this place; the
+        // hook leaves the stock `FirestormWall=` flag unread.)
+        if !rules.ares() && (object.laser_fence || object.firestorm_wall) {
             return Ok(false);
         }
         let slaves = crate::sim::slave_deposit::SlaveDepositQuery {
@@ -280,12 +279,12 @@ impl Simulation {
         // Ares TechnoExt::CreateWithDroppod (10044030) installs the DropPod
         // locomotor over the Foot's own: its Process (`0x004B5B70`) is the
         // one this call makes until the pod lands.
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.ares_drop_pod().is_some())
+        if rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.ares_drop_pod().is_some())
         {
             self.process_drop_pod_locomotor(stable_id, rules, overlay_registry, ctx.effects);
             return Ok(LocomotorProcess::admitted());
@@ -1060,8 +1059,8 @@ impl Simulation {
         // an active firestorm wall, then heals one in tiberium, right after
         // FootAI's TechnoAI call; the hook then replays 4DA53E..548's
         // Object+90 reload, so a burnt Foot returns here.
-        #[cfg(feature = "ares")]
-        if !tube_active_at_entry
+        if rules.ares()
+            && !tube_active_at_entry
             && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
                 matches!(
                     entity.category(),
@@ -1202,10 +1201,11 @@ impl Simulation {
                     return None;
                 }
                 let object = sim.interner.object_type(entity.type_ref(), rules)?;
-                #[cfg(feature = "ares")]
-                let air_rate = object.techno_combat().movement().air_rate();
-                #[cfg(not(feature = "ares"))]
-                let air_rate = 0;
+                let air_rate = if rules.ares() {
+                    object.techno_combat().movement().air_rate()
+                } else {
+                    0
+                };
                 Some((
                     crate::sim::animation::FootBodyCadence {
                         walk_rate: object.walk_rate,
@@ -1344,13 +1344,13 @@ impl Simulation {
             // gamemd51BCB2: out of limbo, Reload(+424) before idle Scatter.
             // The shared Techno owner supplies count/clock semantics; the
             // Unit-only MobileFire pause is deliberately not used here.
-            #[cfg(feature = "ares")]
-            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+            if rules.ares()
+                && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
                 && entity.is_object_alive()
                 && !entity.lifecycle.in_limbo()
                 && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
             {
-                entity.reload_techno_ammo(obj, sim.session.binary_frame() as i32);
+                entity.reload_techno_ammo(obj, sim.session.binary_frame() as i32, rules.ares());
             }
             //51BCA4..51BDCF follows the entire FootAI, including Process and
             // its tails. A successful Scatter invokes Process a second time
@@ -1429,7 +1429,7 @@ impl Simulation {
             }) && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
             {
                 entity
-                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32)
+                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32, rules.ares())
                     .map_err(|cause| super::FrameAdvanceError {
                         tick: sim.session.tick(),
                         binary_frame: sim.session.binary_frame(),

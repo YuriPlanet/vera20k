@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-core"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false
@@ -41,7 +41,8 @@ wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 wasm-net = ["wasm", "dep:wasm-bindgen"]
 wasm-lan = ["wasm-net"]
 wasm-threads = ["wasm", "dep:rayon", "dep:wasm_sync"]
-# Compile the supported Ares behavior; INIs cannot enable an absent capability.
+# Compile the Ares behavior still behind this feature. Ares itself switches on
+# from a game's data in every build (`rules::ares_switch`).
 ares = []
 # Compile the supported Phobos behavior; INIs cannot enable an absent capability.
 # Independent of `ares`: Phobos itself does not require Ares.

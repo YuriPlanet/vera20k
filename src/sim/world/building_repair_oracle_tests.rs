@@ -979,9 +979,11 @@ fn a_sale_s_first_visit_stops_the_repair() {
 /// Ares 3.0 10014630 (hook 0x4509B4): with `[General]
 /// RepairStopOnInsufficientFunds=no` a human player's broke repair stays on
 /// and heals nothing; a computer house's stops as in stock.
+// Runs again once production's repair step for a broke human house moves to the switch.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_broke_human_repair_stays_on_without_repair_stop() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (human, repairing) in [(true, true), (false, false)] {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nRepairStep=4\nRepairStopOnInsufficientFunds=no\n[InfantryTypes]\n\

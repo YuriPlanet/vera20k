@@ -1,10 +1,20 @@
-# Optional Ares compatibility
+# Ares compatibility
 
-VERA20K can build in partial, Rust-native support for some Ares extensions. It does not load the
+VERA20K has partial, Rust-native support for some Ares extensions. It does not load the
 Ares DLL and is not general mod support.
 
-Default builds use the retail readers and dispatch; an INI or client setting cannot enable omitted
-extensions. Build the supported extensions explicitly:
+Ares switches on from a game's data, in every build: a game whose rules or map hold an Ares
+key plays with Ares, and any other game plays as the original (`src/rules/ares_switch.rs`).
+No option or client setting turns it on.
+
+The official downloads hold only part of Ares so far. Its code is moving out of the `ares`
+build feature area by area. In a download, a game with Ares keys plays the parts that have
+moved (the world and unit simulation, and combat) and misses the rest: what the player
+sees and hears, `ares.mix`, the Ares INI syntax, and most Ares rules keys, which are read
+only with `ares.mix` mounted. The superweapon, production, power and money code is in
+every build, but it takes its Ares form only in a game whose rules were read the Ares way,
+so a download keeps the original superweapons, build rules, power and income. Such a game
+can play unlike both the original and Ares. For all the Ares support VERA20K has, build with the feature:
 
 ```sh
 cargo run --release --bin vera20k --features ares

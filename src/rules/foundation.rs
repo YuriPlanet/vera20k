@@ -7,18 +7,33 @@
 /// Resolved BuildingType foundation. The stock name is an input token, not a
 /// free-form size. Ares owns declared dimensions, occupied cells and exit cells
 /// independently; one resolved value follows the type into its existing cache.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// Only a Rules read the Ares way installs `Custom` or `InvalidCustom`.
+/// Every object's record copies its type's foundation, so the rare custom
+/// shape sits behind a pointer and a stock one stays two bytes plus a tag.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Foundation {
     Stock(u8),
-    #[cfg(feature = "ares")]
-    Custom(CustomFoundation),
+    Custom(Box<CustomFoundation>),
     /// A configuration the current 16-bit consumer interface cannot admit.
     /// Retained only until the process-registry validation rejects the load.
-    #[cfg(feature = "ares")]
     InvalidCustom,
 }
 
-#[cfg(feature = "ares")]
+/// A stock foundation hashes as its table id alone, as it did while it was
+/// the only variant, so a stock game's configuration hash is unchanged.
+impl std::hash::Hash for Foundation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Stock(id) => id.hash(state),
+            Self::Custom(custom) => {
+                std::mem::discriminant(self).hash(state);
+                custom.hash(state);
+            }
+            Self::InvalidCustom => std::mem::discriminant(self).hash(state),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CustomFoundation {
     width: i32,
@@ -61,9 +76,7 @@ impl Foundation {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Stock(id) => FOUNDATION_TABLE[usize::from(*id)].name,
-            #[cfg(feature = "ares")]
             Self::Custom(_) => "Custom",
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => "Custom",
         }
     }
@@ -71,9 +84,7 @@ impl Foundation {
     pub(crate) fn selector(&self) -> u8 {
         match self {
             Self::Stock(id) => *id,
-            #[cfg(feature = "ares")]
             Self::Custom(_) => 127,
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => 127,
         }
     }
@@ -81,7 +92,6 @@ impl Foundation {
     pub(crate) fn valid(&self) -> bool {
         match self {
             Self::Stock(id) => usize::from(*id) < FOUNDATION_TABLE.len(),
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => {
                 u16::try_from(custom.width).is_ok()
                     && u16::try_from(custom.height).is_ok()
@@ -91,7 +101,6 @@ impl Foundation {
                     && custom.cells.windows(2).all(|pair| pair[0] < pair[1])
                     && !custom.cells.contains(&(0x7fff, 0x7fff))
             }
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => false,
         }
     }
@@ -102,12 +111,10 @@ impl Foundation {
                 let def = &FOUNDATION_TABLE[usize::from(*id)];
                 (def.width, def.height)
             }
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => (
                 u16::try_from(custom.width).expect("validated custom foundation width"),
                 u16::try_from(custom.height).expect("validated custom foundation height"),
             ),
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
         }
     }
@@ -131,16 +138,13 @@ impl Foundation {
     pub fn cell_offsets(&self) -> Vec<(i16, i16)> {
         match self {
             Self::Stock(_) => foundation_cell_offsets(self.name()),
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => custom.cells.clone(),
-            #[cfg(feature = "ares")]
             Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
         }
     }
 
     pub(crate) fn custom_outline(&self) -> Option<&[(i16, i16)]> {
         match self {
-            #[cfg(feature = "ares")]
             Self::Custom(custom) => Some(&custom.outline),
             _ => None,
         }
@@ -186,15 +190,14 @@ impl Foundation {
     ) {
         match self {
             Self::Stock(id) => *id = read_building_foundation(*id, image, type_id, &mut read),
-            #[cfg(feature = "ares")]
             _ => {}
         }
     }
 
     /// BuildingType ReadINI suffix464A49/464A56 ->1000DD40. Fixed ART
     /// [effective Image], once per extension; never a layered RULES key.
-    /// Native execution: tools/rules_oracle/ares_foundation.json.
-    #[cfg(feature = "ares")]
+    /// Native execution: tools/rules_oracle/ares_foundation.json. Its caller
+    /// runs it only for a Rules read the Ares way.
     pub(crate) fn read_custom_pass(&mut self, art: &crate::rules::ini_parser::IniSection) {
         let _ares = crate::rules::ares_switch::ares_reads();
         if matches!(self, Self::Custom(_) | Self::InvalidCustom)
@@ -248,16 +251,16 @@ impl Foundation {
             outline.push(pair);
         }
         outline.push((0x7fff, 0x7fff));
-        *self = Self::Custom(CustomFoundation {
+        *self = Self::Custom(Box::new(CustomFoundation {
             width,
             height,
             cells,
             outline,
-        });
+        }));
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "foundation_custom_tests.rs"]
 pub(crate) mod custom_tests;
 

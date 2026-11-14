@@ -132,15 +132,16 @@ impl Simulation {
         // Ares ApplyAcademy10020750 closes each class's InitFromType hook,
         // after the spy veterancy above; a map's authored objects are read
         // inside the A8E7AC scope, which skips it.
-        #[cfg(feature = "ares")]
-        self.apply_ares_academy(&mut ge, obj, rules);
+        if rules.ares() {
+            self.apply_ares_academy(&mut ge, obj, rules);
+        }
         // Ares TechnoClass_Init_1 (1004A530, hook 0x6F407D): an object
         // constructed inside the A8E7AC scope after frame 0 (a conversion
         // or deploy product) never makes an InitialPayload. A map's authored
         // objects are constructed at frame 0 (`sim::ares_transports`).
-        #[cfg(feature = "ares")]
-        if self.object_placement_scope_active() && self.session.binary_frame() != 0 {
-            ge.ares_initial_payload.mark_created();
+        if rules.ares() && self.object_placement_scope_active() && self.session.binary_frame() != 0
+        {
+            ge.ares.ares_initial_payload.mark_created();
         }
         Ok(Some(ge))
     }
@@ -179,13 +180,14 @@ impl Simulation {
         let owner_is_playing = session.current_house() == Some(ge.owner());
         ge.discovery.classify_owner(owner_is_playing);
 
-        #[cfg(feature = "ares")]
-        ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
-            crate::sim::factory_owners::parent_or_self_country(
-                rules,
-                interner.resolve(house.house_type_id()),
-            )
-        }));
+        if rules.ares() {
+            ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
+                crate::sim::factory_owners::parent_or_self_country(
+                    rules,
+                    interner.resolve(house.house_type_id()),
+                )
+            }));
+        }
 
         // Building InitManagers442C48..442C5C records the owner's Country
         // array index (+0xB8), not its House registration index. Capture and
@@ -225,14 +227,13 @@ impl Simulation {
             // Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584) and
             // AircraftClass_Init_TurretROT (10048AC0, hook 0x413FFA) give the
             // secondary controller `TurretROT=`, else `ROT=`.
-            #[cfg(feature = "ares")]
-            let rot = if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
+            let rot = if rules.ares()
+                && matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
+            {
                 obj.secondary_turn_rate()
             } else {
                 obj.turret_rot
             };
-            #[cfg(not(feature = "ares"))]
-            let rot = obj.turret_rot;
             let mut secondary = crate::sim::movement::FacingClass::new(initial, rot);
             if category == EntityCategory::Aircraft {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
@@ -296,8 +297,10 @@ impl Simulation {
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
         if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
-            #[cfg(feature = "ares")]
-            ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
+            // Ares' sale rate, which the body folds into its hash once bound.
+            if rules.ares_form() {
+                ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
+            }
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
@@ -429,15 +432,18 @@ impl Simulation {
         // 0x0074689B, 0x00413FD2, 0x00442D1B): the owner's SpyEffect
         // veterancy (HouseExt +0x48..+0x4A, `sim::spy_infiltration`) makes a
         // `Trainable=` naval unit, aircraft or building veteran too.
-        #[cfg(feature = "ares")]
-        let veteran = veteran
-            || obj.trainable
-                && house.is_some_and(|house| match category {
-                    EntityCategory::Unit => obj.naval && house.naval_veterancy(),
-                    EntityCategory::Aircraft => house.aircraft_veterancy(),
-                    EntityCategory::Structure => house.building_veterancy(),
-                    EntityCategory::Infantry => false,
-                });
+        let veteran = if rules.ares() {
+            veteran
+                || obj.trainable
+                    && house.is_some_and(|house| match category {
+                        EntityCategory::Unit => obj.naval && house.naval_veterancy(),
+                        EntityCategory::Aircraft => house.aircraft_veterancy(),
+                        EntityCategory::Structure => house.building_veterancy(),
+                        EntityCategory::Infantry => false,
+                    })
+        } else {
+            veteran
+        };
         if veteran {
             ge.veterancy.set_veteran();
         }
@@ -498,6 +504,11 @@ fn stamp_scoring_flags(
     rules: &RuleSet,
 ) {
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
+    if let Some(multiplier) =
+        crate::sim::house_tracking::retained_plant_multiplier(ge.category(), obj, rules)
+    {
+        ge.ares.factory_plant_multiplier = Some(multiplier);
+    }
 }
 
 fn stamp_building_cell_profile(

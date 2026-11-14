@@ -312,7 +312,11 @@ fn unit_z_adjust_in(
     // ObjectClass cell getter 0x41BEA0 truncates signed coordinates toward zero.
     let coord = [(xy[0] / 256) as i16, (xy[1] / 256) as i16];
     let special = if entity.category() == EntityCategory::Unit {
-        let contact = entity.tether.partner().and(entity.place.contact0.as_ref());
+        let contact = entity
+            .place
+            .contact0
+            .as_ref()
+            .filter(|_| entity.tether.has_partner());
         if contact.is_some_and(|other| {
             other.category == EntityCategory::Structure && other.mission.effective().raw() == 16
         }) {

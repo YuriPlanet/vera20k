@@ -62,8 +62,11 @@ fn bits(value: &serde_json::Value) -> NativeF64Bits {
     NativeF64Bits::from_bits(u64::from_le_bytes(bytes))
 }
 
+// Runs again once the crates' stat recompute moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/rules_oracle/ares_attach_speed.json",
     ))
@@ -171,7 +174,7 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
                 "{label}"
             );
             assert_eq!(
-                victim.foot_speed.effective_multiplier(),
+                victim.speed_multiplier(),
                 bits(&step["derived_speed_bits"]),
                 "{label}"
             );
@@ -183,6 +186,7 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
             assert_eq!(
                 serde_json::json!(
                     victim
+                        .ares
                         .attach_effects
                         .entries
                         .iter()
@@ -204,6 +208,7 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
 
 #[test]
 fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, target, source) = scene();
     sim.commit_fire_visit(
         FireVisit::Direct {
@@ -221,7 +226,13 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
     }
     assert_eq!(
-        sim.entities().get(target).unwrap().attach_effects.entries[0].remaining,
+        sim.entities()
+            .get(target)
+            .unwrap()
+            .ares
+            .attach_effects
+            .entries[0]
+            .remaining,
         60
     );
     assert_eq!(sim.current_speed_for_test(target, &rules), 1);
@@ -242,7 +253,6 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         .entities
         .get_mut(target)
         .unwrap()
-        .foot_speed
         .set_attached_speed(NativeF64Bits::ONE);
     assert!(
         loaded
@@ -284,7 +294,14 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
             assert_eq!(result.tick, first_tick + visit);
             if attached {
                 assert_eq!(
-                    world.entities().get(id).unwrap().attach_effects.entries[0].remaining,
+                    world
+                        .entities()
+                        .get(id)
+                        .unwrap()
+                        .ares
+                        .attach_effects
+                        .entries[0]
+                        .remaining,
                     60 - visit as i32,
                     "one attachment update per admitted Drive visit"
                 );
@@ -304,7 +321,13 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         "Drive uses the attachment, not only the read-only getter"
     );
     assert_eq!(
-        sim.entities().get(target).unwrap().attach_effects.entries[0].remaining,
+        sim.entities()
+            .get(target)
+            .unwrap()
+            .ares
+            .attach_effects
+            .entries[0]
+            .remaining,
         44
     );
 }

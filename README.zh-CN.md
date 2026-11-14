@@ -14,7 +14,7 @@
 
 # VERA20K
 
-VERA20K 是一个由社区主导、对原版引擎 `gamemd.exe` 进行重写的项目。它使用原版游戏文件，因此你需要自行准备一份《红色警戒2：尤里的复仇》。
+VERA20K 是一个由社区主导、对原版引擎 `gamemd.exe` 进行重写的项目。无论是开发还是游玩，都请自行准备一份《红色警戒2：尤里的复仇》。
 
 VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
@@ -36,18 +36,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
 
 ## 参与贡献
-
-**别怕提交 PR。** 不必完美，剩下的我们会帮你。
-
-欢迎任何形式的帮助，以下方向最需要人手。每一项都链接到它在路线图中的页面，里面有正在进行的工作和下一步：
-
-- **[玩法与战斗](https://github.com/YuriPlanet/vera20k/issues/3830)：** 单位行为、伤害，以及遭遇战日常运行的稳定性。
-- **[性能](https://github.com/YuriPlanet/vera20k/issues/3831)：** 大规模战斗和旧硬件上的帧率与响应速度。
-- **[多人模式](https://github.com/YuriPlanet/vera20k/issues/3832)：** 加入、开始和持续进行在线对战，以及合作模式的稳定性。
-- **[界面与音频](https://github.com/YuriPlanet/vera20k/issues/3833)：** 菜单、文本、[翻译](src/i18n/README.md)和声音。
-- **[战役](https://github.com/YuriPlanet/vera20k/issues/3834)：** 任务已可启动，但要完整打通仍需努力：任务目标、触发器、脚本过场、存档读档和进入下一关。
-- **[模组兼容](https://github.com/YuriPlanet/vera20k/issues/3835)：** Ares 和 Phobos 的功能，同时不改变原版游戏的默认行为。
-- **[测试](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity)：** 对照原版游玩 VERA20K，报告玩起来不一样的地方。
 
 贡献者可以负责引擎的某些部分，并有很大的自由度去做推动 VERA20K 发展的改动。
 
@@ -102,9 +90,7 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 ## 自定义
 
-大地图容量会自动选择，无需编译开关：`Size` 的宽与高之和最多为 1024。
-
-默认情况下，VERA20K 的玩法与原版游戏一致。其他新功能（包括 Ares 等模组的扩展）都必须默认关闭，
+默认情况下，VERA20K 的玩法与原版游戏一致。新功能（包括 Ares 等模组的扩展）都必须默认关闭，
 只能通过以下方式之一开启：
 
 - **VERA 玩家选项**，位于 **Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。

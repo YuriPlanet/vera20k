@@ -14,8 +14,8 @@
 
 # VERA20K
 
-VERA20K är en communitydriven nyimplementation av originalmotorn, `gamemd.exe`. Den använder
-de ursprungliga spelfilerna, så du behöver en egen kopia av Red Alert 2: Yuri's Revenge.
+VERA20K är en communitydriven nyimplementation av originalmotorn, `gamemd.exe`. Ta med din egen kopia av
+Red Alert 2: Yuri's Revenge för att utveckla eller spela.
 
 VERA20K görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.
@@ -41,19 +41,6 @@ För att starta skirmish-matcher eller kampanjer i YR för en spelare från en C
 [installationen av offlineklienten](integrations/cncnet/README.md).
 
 ## Bidra
-
-**Var inte rädd för att skicka in en PR.** Den behöver inte vara perfekt; vi hjälper till med resten.
-
-All hjälp är välkommen, och de här områdena behöver den mest. Varje område länkar till sin sida
-i färdplanen, med pågående arbete och nästa steg:
-
-- **[Spelmekanik och strid](https://github.com/YuriPlanet/vera20k/issues/3830):** enheternas beteende, skada och pålitliga skirmish-matcher.
-- **[Prestanda](https://github.com/YuriPlanet/vera20k/issues/3831):** bildfrekvens och respons i stora slag och på äldre hårdvara.
-- **[Flerspelarläge](https://github.com/YuriPlanet/vera20k/issues/3832):** att gå med i, starta och hålla igång onlinematcher, och pålitligt samarbetsspel.
-- **[Gränssnitt och ljud](https://github.com/YuriPlanet/vera20k/issues/3833):** menyer, text, [översättningar](src/i18n/README.md) och ljud.
-- **[Kampanjer](https://github.com/YuriPlanet/vera20k/issues/3834):** uppdragen startar, men att spela dem till slutet kräver mer arbete: mål, triggers, skriptade övergångar, spara/ladda och övergången till nästa uppdrag.
-- **[Moddkompatibilitet](https://github.com/YuriPlanet/vera20k/issues/3835):** funktioner från Ares och Phobos, utan att ändra originalspelets standardbeteende.
-- **[Testning](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** spela VERA20K sida vid sida med originalet och rapportera det som spelar annorlunda.
 
 Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver
 VERA20K framåt.
@@ -105,9 +92,7 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
-Kartkapaciteten väljs automatiskt utan byggflagga: summan av bredd och höjd i `Size` får vara högst 1024.
-
-VERA20K fungerar som standard precis som originalspelet. Varje annan ny funktion, även tillägg från
+VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, även tillägg från
 moddar som Ares, måste vara avstängd tills den slås på med något av följande:
 
 - **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.

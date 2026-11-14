@@ -174,14 +174,15 @@ pub(crate) fn line_damage(
         for id in struck {
             // Ares 3.0 TechnoClass_DealParticleDamage (1005D260, hook
             // 0x70CBDA) passes the firer's house as the source house.
-            #[cfg(feature = "ares")]
-            let house = world
-                .substrate
-                .entities
-                .get(firer_id)
-                .map(|firer| firer.owner());
-            #[cfg(not(feature = "ares"))]
-            let house = None;
+            let house = if rules.ares() {
+                world
+                    .substrate
+                    .entities
+                    .get(firer_id)
+                    .map(|firer| firer.owner())
+            } else {
+                None
+            };
             let event = EntityDamageEvent::direct_receiver(
                 id,
                 weapon.ambient_damage,

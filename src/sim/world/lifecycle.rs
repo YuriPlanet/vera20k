@@ -1212,6 +1212,7 @@ impl Simulation {
 
     /// [`Self::reveal`] for an entity, with the rules context the type-reading
     /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn reveal_entity_with_rules(
         &mut self,
         stable_id: u64,
@@ -1440,22 +1441,23 @@ impl Simulation {
         // included, gives a `HasSpotlight=` Techno its BuildingLight here;
         // BuildingClass_Put_DontSpawnSpotlight (1004EA10, hook 0x441163)
         // skips the building's own construction below.
-        #[cfg(feature = "ares")]
-        self.construct_spotlight(stable_id, context.rules());
+        if context.rules.ares() {
+            self.construct_spotlight(stable_id, context.rules());
+        }
         // Ares 3.0 FootClass_Put_InitialPayload (100491B0, hook 0x4D718C):
         // FootClass::Unlimbo, once TechnoClass::Unlimbo has answered true
         // (the dead arm too), makes a Unit's or Aircraft's InitialPayload.
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                matches!(
-                    entity.category(),
-                    EntityCategory::Unit | EntityCategory::Aircraft
-                )
-            })
+        if context.rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    matches!(
+                        entity.category(),
+                        EntityCategory::Unit | EntityCategory::Aircraft
+                    )
+                })
         {
             self.create_ares_initial_payload(
                 stable_id,
@@ -1713,12 +1715,12 @@ impl Simulation {
         // Ares 3.0 BuildingClass_Put_FirestormWall (10014A70, hook
         // 0x440D01) connects a placed firestorm wall section to its
         // neighbours (`UpdateFirewallLinks`).
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        if context.rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
             self.ares_update_firewall_links(
                 stable_id,
@@ -1777,8 +1779,11 @@ impl Simulation {
         // (0x0062DC50) at its location plus Type+0x768, owned by the
         // building. Not ported: such a building shows no particles. No
         // retail BuildingType sets the key.
-        #[cfg(not(feature = "ares"))]
-        self.construct_spotlight(stable_id, context.rules());
+        // While Ares plays, BuildingClass_Put_DontSpawnSpotlight (1004EA10,
+        // hook 0x441163) skips this: TechnoClass's Put hook built the light.
+        if !context.rules.ares() {
+            self.construct_spotlight(stable_id, context.rules());
+        }
         // Unlimbo44119C clears this object's retained primary before
         //448070 asks the owning house for another live primary.
         self.production.clear_primary_factory(stable_id);
@@ -4190,8 +4195,7 @@ impl Simulation {
         // Ares 3.0 InfantryClass_Remove_Teleport (1005CD50, hook 0x51DF27),
         // first: a `Teleporter=` man's Teleport locomotor forgets its Marked
         // coordinate (`+0x28`).
-        #[cfg(feature = "ares")]
-        {
+        if context.rules.ares() {
             let teleporter = self
                 .substrate
                 .entities
@@ -4302,16 +4306,17 @@ impl Simulation {
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
         // Ares Remove1004B140 frees the jammer (UnjamAll) and the PoweredBy
-        // source before the attached effects.
-        #[cfg(feature = "ares")]
-        {
+        // source before the attached effects. Only a held source is cleared,
+        // so an object without one keeps no Ares part.
+        if context.rules.ares() {
             self.remove_radar_jammer(stable_id);
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.powered_by = None;
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id)
+                && entity.ares.powered_by.is_some()
+            {
+                entity.ares.powered_by = None;
             }
+            self.limbo_ares_attach_effects(stable_id, context.rules());
         }
-        #[cfg(feature = "ares")]
-        self.limbo_ares_attach_effects(stable_id, context.rules());
         // Phobos `TechnoClass_Limbo_Wrapper` replaces the Limbo entry
         // (vtable + the Foot/Building call sites) and runs its
         // DiscardOn=Entry pass before calling the original body. Its work
@@ -4327,8 +4332,9 @@ impl Simulation {
         );
         // Techno Remove6F6AC9 ->1004B140/1004B1A9 flushes even a repeated
         // Limbo, before the base's alive/InLimbo and sight-release branches.
-        #[cfg(feature = "ares")]
-        self.flush_bounty_display(stable_id, context.rules(), context.effects(), true);
+        if context.rules.ares() {
+            self.flush_bounty_display(stable_id, context.rules(), context.effects(), true);
+        }
         if self
             .substrate
             .entities
@@ -4381,8 +4387,9 @@ impl Simulation {
             self.house_removed_from_game(stable_id, context.rules(), context.effects());
             // Ares BuildingClass_Remove_Academy (hook 0x00445905 ->
             // 10023690) precedes them: a marked academy leaves its owner's list.
-            #[cfg(feature = "ares")]
-            self.update_ares_academy_membership(stable_id, false, context.rules());
+            if context.rules.ares() {
+                self.update_ares_academy_membership(stable_id, false, context.rules());
+            }
             // BuildingClass::Limbo 0x00445946..0x00445988: an opened
             // Helipad's docks leave its house's AirportDocks.
             let rules = context.rules();
@@ -4450,8 +4457,8 @@ impl Simulation {
         // Ares 3.0 UnitClass_Remove (1005D610, hook 0x7440BD), after a Foot
         // Limbo that removed the Unit: its Tank Bunker lets it go
         // (`BuildingClass::ClearBunker @ 0x00459470`).
-        #[cfg(feature = "ares")]
-        if outcome == ConcealOutcome::Concealed
+        if context.rules.ares()
+            && outcome == ConcealOutcome::Concealed
             && let Some(bunker) = self
                 .substrate
                 .entities
@@ -4474,12 +4481,12 @@ impl Simulation {
         // Ares 3.0 BuildingClass_Remove_FirestormWall (10014A70, hook
         // 0x445DF4) after the base Limbo disconnects a firestorm wall
         // section from its neighbours (`UpdateFirewallLinks`).
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        if context.rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
             self.ares_update_firewall_links(
                 stable_id,
@@ -4585,8 +4592,7 @@ impl Simulation {
         };
         // Ares BuildingClass_Disappear_PrismForward (10016470, hook
         // 0x44EBF0) takes a building out of its Prism network first.
-        #[cfg(feature = "ares")]
-        if category == EntityCategory::Structure {
+        if context.rules.ares() && category == EntityCategory::Structure {
             self.substrate
                 .ares_prism_remove_from_network(stable_id, true);
         }
@@ -5954,8 +5960,14 @@ impl Simulation {
                 // Techno's Anim callback710455 reaches Object5F6DA0.
                 entity.parachute_animation_expired(expired_id);
                 entity.emp_anim_pointer_expired(expired_id);
-                #[cfg(feature = "ares")]
-                entity.attached_effect_anim_expired(expired_id);
+                // Ares 10058770: only Ares code attaches an effect's Anim, so
+                // only a holder of this one writes its Ares part.
+                if entity
+                    .attached_effect_anims()
+                    .any(|anim| anim == expired_id)
+                {
+                    entity.attached_effect_anim_expired(expired_id);
+                }
             }
             self.substrate
                 .parasite_anim_pointer_expired(owner, expired_id);
@@ -6019,10 +6031,7 @@ impl Simulation {
         // so running it first changes nothing. Ares
         // AnnounceInvalidPointer_BombCloak (10056750, hook 0x725961) skips it
         // unless the object is removed: a cloaking planter keeps its credit.
-        #[cfg(feature = "ares")]
-        let announce_to_bombs = control == PointerExpiryControl::Uninit;
-        #[cfg(not(feature = "ares"))]
-        let announce_to_bombs = true;
+        let announce_to_bombs = !context.rules.ares() || control == PointerExpiryControl::Uninit;
         if announce_to_bombs {
             Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
         }
@@ -7255,8 +7264,9 @@ impl Simulation {
             stable_id,
             context.rules(),
         );
-        #[cfg(feature = "ares")]
-        self.destroy_ares_attach_effects(stable_id, context.rules());
+        if context.rules.ares() {
+            self.destroy_ares_attach_effects(stable_id, context.rules());
+        }
         // Techno destructor6F452C destroys its planning token after the Foot
         // tail, then6F4571 frees any slave manager without a GameState gate.
         // Direct scalar entry has no earlier UnInit to supply either phase.
@@ -7321,8 +7331,7 @@ impl Simulation {
         self.drop_object_custom_sound(stable_id);
         // Ares TunnelData::InvalidatePointer (100091E0): a Foot leaving play
         // inside a tunnel drops out of its network.
-        #[cfg(feature = "ares")]
-        if kind == Some(ObjectKind::Entity) {
+        if context.rules.ares() && kind == Some(ObjectKind::Entity) {
             self.ares_tunnels.forget(stable_id);
         }
         // `ObjectClass::~ObjectClass @ 0x005F3B80` ends by testing the Logic

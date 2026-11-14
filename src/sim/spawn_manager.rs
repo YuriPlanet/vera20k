@@ -259,7 +259,6 @@ pub struct SpawnManagerState {
 impl SpawnManagerState {
     /// Ares capture10045D76..10045D8B resumes the manager's +50 AI gate
     /// only from its -1 start sentinel, preserving the retained duration.
-    #[cfg(feature = "ares")]
     pub(crate) fn resume_update_timer(&mut self, frame: i32) {
         self.update_timer.resume(frame);
     }
@@ -268,7 +267,6 @@ impl SpawnManagerState {
     /// timers, the SpawnTimer (`+0x5C`) then the UpdateTimer (`+0x50`):
     /// `held` pauses each at its time left (0 at least), otherwise each
     /// resumes from its -1 start.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_hold_timers(&mut self, held: bool, frame: i32) {
         for timer in [&mut self.spawn_timer, &mut self.update_timer] {
             if held {
@@ -1315,7 +1313,6 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                 overlay_grid: sim.overlay_grid.as_ref(),
                 overlay_registry: self.context.registry(),
                 alliances: Some(&sim.house_alliances),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         )

@@ -71,7 +71,6 @@ pub struct TerrainObjectState {
     /// `TerrainClass+0xCC` IsOnFire (constructor false). Only the Ares
     /// terrain fire sets it (`sim::terrain_fire`); stock YR never calls
     /// `Catch_Fire @ 0x0071C5B0`.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     on_fire: bool,
 }
@@ -88,7 +87,6 @@ impl std::hash::Hash for TerrainObjectState {
         self.occupation_bits.hash(state);
         self.spawns_tiberium.hash(state);
         self.lifecycle.hash(state);
-        #[cfg(feature = "ares")]
         if self.on_fire {
             b"ares-terrain-on-fire-v1".hash(state);
         }
@@ -146,7 +144,6 @@ impl TerrainObjectState {
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
             spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle,
-            #[cfg(feature = "ares")]
             on_fire: false,
         }
     }
@@ -247,7 +244,6 @@ impl TerrainObjectState {
             occupation_bits: 0,
             spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
-            #[cfg(feature = "ares")]
             on_fire: false,
         }
     }
@@ -455,7 +451,6 @@ impl TerrainObjectState {
     }
 
     /// `TerrainClass+0xCC` IsOnFire.
-    #[cfg(feature = "ares")]
     pub(crate) const fn on_fire(&self) -> bool {
         self.on_fire
     }
@@ -504,7 +499,7 @@ pub struct TerrainObjectStore {
     #[serde(skip)]
     cell_grid: CellGrid,
     animations: BTreeMap<u64, TerrainAnimationState>,
-    /// Shared copy-on-write with presentation frames (docs/sim-thread.md).
+    /// Synced into the presentation copy (docs/sim-thread.md).
     objects: crate::util::synced::Synced<BTreeMap<u64, TerrainObjectState>>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,
@@ -655,7 +650,6 @@ impl TerrainObjectStore {
 
     /// Write `TerrainClass+0xCC` IsOnFire, the Ares terrain fire's one
     /// writer (`sim::terrain_fire`). False for an object not stored.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_on_fire(&mut self, stable_id: u64, on_fire: bool) -> bool {
         let Some(terrain) = self.objects.get_mut(&stable_id) else {
             return false;

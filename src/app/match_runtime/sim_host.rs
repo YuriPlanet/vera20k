@@ -10,7 +10,9 @@
 //! that frame, and any write first takes the runtime back, waiting for the
 //! job to end; the job's result then waits in the host for
 //! [`SimHost::take_job_result`]. Back home, the frame is dropped and reads
-//! see the live world again, so a tick that is not lent copies nothing.
+//! see the live world again. Drawing reads object records either way, captured
+//! from a home world on the first read after a write; release builds copy
+//! the world beside them only for a lent tick.
 //!
 //! A frame-loop pass never waits for a lent job: the host collects it only
 //! once it has ended ([`SimHost::pass_may_run`]), and the simulation thread
@@ -83,9 +85,9 @@ pub(crate) struct SimHost {
     ended: Option<Returned>,
     /// The world without its objects as the frame found it
     /// ([`SimRuntime::presentation_copy`]), which drawing reads beside the
-    /// frame's records while the live world ticks elsewhere. Copy-on-write
-    /// state (the terrain cells, the resources) stays shared with the live
-    /// world until that changes. Release builds keep it only while the
+    /// frame's records while the live world ticks elsewhere. It shares only
+    /// the read-only `SimResources` with the live world; its terrain, grids
+    /// and interner are synced from it. Release builds keep it only while the
     /// runtime is lent; debug builds take one with every frame, so every
     /// draw reads the frame as a lent tick's draw does.
     presentation: Option<Arc<SimRuntime>>,
@@ -300,6 +302,39 @@ impl SimHost {
         self.job_result.take()
     }
 
+    /// The senders whose departures the frames left
+    /// (`Simulation::take_departed_senders`). Asked read-only first: most
+    /// passes have none, and a write drops the presentation frame, which the
+    /// next read captures again. While a job runs, `runtime()` is its frame,
+    /// so the world comes back and is asked.
+    pub(crate) fn take_departed_senders(&mut self) -> Vec<i8> {
+        if !self.lent
+            && !self
+                .runtime()
+                .is_some_and(|runtime| runtime.simulation.has_departed_senders())
+        {
+            return Vec::new();
+        }
+        self.write_sim(SimWrite::Network)
+            .map(|runtime| runtime.simulation.take_departed_senders())
+            .unwrap_or_default()
+    }
+
+    /// The simulation's pending radar-terrain marks
+    /// (`SimRuntime::take_radar_terrain_dirty`), or `None` with none to take
+    /// or no world; asked read-only first, as [`Self::take_departed_senders`].
+    pub(crate) fn take_radar_terrain_marks(&mut self) -> Option<Vec<(u16, u16)>> {
+        if !self.lent
+            && !self
+                .runtime()
+                .is_some_and(SimRuntime::has_radar_terrain_dirty)
+        {
+            return None;
+        }
+        self.write_sim(SimWrite::Presentation)
+            .map(SimRuntime::take_radar_terrain_dirty)
+    }
+
     /// Mutable access to the installed runtime for one write route; a lent
     /// runtime comes back first.
     pub(crate) fn write_sim(&mut self, _route: SimWrite) -> Option<&mut SimRuntime> {
@@ -312,7 +347,10 @@ impl SimHost {
     /// world is kept for the next copy to bring up to date
     /// (`Simulation::presentation_copy`).
     fn forget_frame(&mut self) {
-        self.frame = std::cell::OnceCell::new();
+        // Freeing 20,000 records takes milliseconds; the pool does it.
+        if let Some(frame) = std::mem::take(&mut self.frame).into_inner() {
+            crate::sim::parallel::drop_on_pool(frame);
+        }
         if let Some(copy) = self.presentation.take()
             && let Ok(copy) = Arc::try_unwrap(copy)
         {
@@ -408,6 +446,15 @@ impl SimHost {
         self.runtime = runtime;
         self.forget_frame();
         self.spare = None;
+        // The first copy of the world is a whole one, tens of milliseconds
+        // at 20,000 objects. Taken while the scenario loads, the first lent
+        // tick only brings it up to date.
+        if self.thread_enabled()
+            && let Some(runtime) = self.runtime.as_mut()
+        {
+            let viewer = runtime.simulation.session().current_house();
+            self.spare = Some(runtime.presentation_copy(viewer, None).simulation);
+        }
     }
 
     /// Remove and return the installed runtime.
@@ -425,6 +472,9 @@ impl SimHost {
 /// A question about the live world a draw asks every frame (a cursor's
 /// preview, a hover): answered while the world is home and the answer kept
 /// in `kept`, which the draws beside a lent tick read (docs/sim-thread.md).
+/// Each one is also asked before a tick leaves
+/// (`cursor::answer_kept_questions`), so a kept answer is one tick old at
+/// most even when every frame is lent.
 pub(crate) fn home_answer<T: Clone>(
     host: &SimHost,
     kept: &std::cell::RefCell<T>,
@@ -731,6 +781,27 @@ mod tests {
         assert!(host.lend(Box::new(|_| Box::new(()))));
         assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
+    }
+
+    /// With no departure and no radar mark to take, the world is not taken
+    /// for writing, so the frame the last read captured still stands; a
+    /// waiting mark is taken.
+    #[test]
+    fn taking_nothing_keeps_the_captured_frame() {
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        assert!(host.frame().is_some());
+        assert!(host.take_departed_senders().is_empty());
+        assert!(host.take_radar_terrain_marks().is_none());
+        assert!(host.frame().is_some());
+        assert_eq!(host.snapshot_costs.get().captures, 1);
+
+        host.write_sim(SimWrite::Debug)
+            .unwrap()
+            .simulation
+            .mark_radar_terrain_dirty_for_test([(3, 4)]);
+        assert_eq!(host.take_radar_terrain_marks(), Some(vec![(3, 4)]));
+        assert!(host.take_radar_terrain_marks().is_none());
     }
 
     #[test]

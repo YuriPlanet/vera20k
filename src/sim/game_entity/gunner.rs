@@ -43,7 +43,6 @@ impl GameEntity {
     /// Ares TechnoClass_Update (Ares.dll 1004B320, hook 0x6F9E50, `#1208`):
     /// a `PassengerTurret=` type's current turret (`+0x124`) is its passenger
     /// count, at most 17 and `TurretCount - 1`.
-    #[cfg(feature = "ares")]
     pub(crate) fn update_passenger_turret(&mut self, object: &ObjectType) {
         if object.techno_combat().movement().passenger_turret() {
             let passengers =

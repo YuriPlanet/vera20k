@@ -3715,3 +3715,17 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
         "inactive disguises must not request growth"
     );
 }
+
+/// A type's SHP frame count is found whatever the case of the name asked,
+/// also for a name longer than the stack key.
+#[test]
+fn an_object_shp_frame_count_is_found_by_any_case_of_its_name() {
+    let long = "x".repeat(80);
+    let mut atlas = SpriteAtlas::from_test_entries(Default::default());
+    atlas.set_object_shp_frame_count_for_test("GaPowr", 8);
+    atlas.set_object_shp_frame_count_for_test(&long, 3);
+    assert_eq!(atlas.object_shp_frame_count("gapowr"), Some(8));
+    assert_eq!(atlas.object_shp_frame_count("GAPOWR"), Some(8));
+    assert_eq!(atlas.object_shp_frame_count(&long), Some(3));
+    assert_eq!(atlas.object_shp_frame_count("GAPILE"), None);
+}

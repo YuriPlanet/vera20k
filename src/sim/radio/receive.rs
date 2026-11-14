@@ -1318,20 +1318,19 @@ fn transport_has_room(
     )
 }
 
-/// The facing a docking unit turns to: east ([`DOCK_FACING`]), or in Ares
-/// builds `TechnoExt::GetDockUnloadFacing @ 10044C00`: the art
+/// The facing a docking unit turns to: east ([`DOCK_FACING`]), or in a game
+/// read the Ares way `TechnoExt::GetDockUnloadFacing @ 10044C00`: the art
 /// `DockUnloadFacing` of the building in its first radio contact slot
 /// (`HasAnyLink`, `GetNthLink(0)`), else east.
-#[cfg_attr(not(feature = "ares"), allow(unused_variables))]
 pub(crate) fn dock_unload_facing(sim: &Simulation, unit: u64, rules: &RuleSet) -> u16 {
-    #[cfg(feature = "ares")]
-    if let Some(dock) = sim
-        .substrate
-        .entities
-        .get(unit)
-        .and_then(|entity| entity.radio_contacts.slot(0))
-        .and_then(|dock| sim.substrate.entities.get(dock))
-        .filter(|dock| dock.category() == EntityCategory::Structure)
+    if rules.ares_form()
+        && let Some(dock) = sim
+            .substrate
+            .entities
+            .get(unit)
+            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|dock| sim.substrate.entities.get(dock))
+            .filter(|dock| dock.category() == EntityCategory::Structure)
         && let Some(object) = sim.object_type(dock.type_ref(), rules)
     {
         return object.building_type_ext().dock_unload_direction();

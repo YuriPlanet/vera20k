@@ -2142,7 +2142,6 @@ fn disguise_inputs(
         .context("disguise simulation absent")?;
     let sim = &runtime.simulation;
     let draw = if entity.category() == crate::map::entities::EntityCategory::Unit {
-        let local = crate::app::input::commands::preferred_local_owner_name(state);
         // The record the draw reads (`presentation::frame`).
         let frame = state
             .match_state
@@ -2164,15 +2163,7 @@ fn disguise_inputs(
             instances::drawn_type_uses_voxel(entity, &chosen, sim.interner(), state.rules());
         observer.drawn_voxel = Some(voxel);
         let frame = (!voxel)
-            .then(|| {
-                instances::resolve_object_shp_frame(
-                    state,
-                    &chosen,
-                    entity,
-                    sim.session().binary_frame(),
-                    None,
-                )
-            })
+            .then(|| instances::resolve_object_shp_frame(state, &chosen, entity, None))
             .flatten();
         let terrain_pair = frame.is_some_and(|frame| {
             state

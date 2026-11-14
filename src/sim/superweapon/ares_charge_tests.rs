@@ -55,6 +55,7 @@ fn grant(
 
 #[test]
 fn ares_initial_ready_is_first_shot_only_and_virtual_charge_survives_restore_and_regrant() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw) = scene("SW.InitialReady=yes\nSW.VirtualCharge=yes");
     grant(&mut sim, &rules, owner, sw, 100, false);
     assert!(sim.super_weapons[&owner][&sw].is_ready());
@@ -99,6 +100,7 @@ fn ares_initial_ready_is_first_shot_only_and_virtual_charge_survives_restore_and
 
 #[test]
 fn ares_virtual_charge_keeps_first_recharge_origin_before_any_launch() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw) = scene("SW.VirtualCharge=yes");
     grant(&mut sim, &rules, owner, sw, 100, false);
     assert!(!sim.super_weapons[&owner][&sw].is_ready());
@@ -124,6 +126,7 @@ fn ares_virtual_charge_keeps_first_recharge_origin_before_any_launch() {
 
 #[test]
 fn ares_absent_charge_flags_restart_normally_and_keep_one_time_grants_ready() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw) = scene("");
     grant(&mut sim, &rules, owner, sw, 100, false);
     assert!(!sim.super_weapons[&owner][&sw].is_ready());

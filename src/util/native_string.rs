@@ -126,6 +126,7 @@ pub fn acp_encode(text: &str) -> Vec<u8> {
     }
 }
 
+/// VERA: off Windows there is no code page; text is stored as UTF-8.
 #[cfg(not(windows))]
 pub fn acp_encode(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
@@ -182,9 +183,13 @@ pub fn acp_decode(bytes: &[u8]) -> String {
     }
 }
 
+/// VERA: off Windows [`acp_encode`] writes UTF-8, so this reads UTF-8 back.
+/// Bytes that are not UTF-8, which another code page wrote, widen one to one,
+/// and a last character that a byte cut split is dropped
+/// ([`decode_widened_utf8`]).
 #[cfg(not(windows))]
 pub fn acp_decode(bytes: &[u8]) -> String {
-    widen_bytes(bytes)
+    decode_widened_utf8(&widen_bytes(bytes)).into_owned()
 }
 
 /// Round-trip edit-control text through the Windows active ANSI code page.

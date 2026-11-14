@@ -153,8 +153,7 @@ fn classify_projectile_type(
             gravity: projectile.gravity(),
             elasticity_bits: projectile.elasticity.to_bits(),
             arcing: projectile.arcing,
-            #[cfg(feature = "ares")]
-            subject_to_solid: projectile.bullet_type_ext.subject_to_solid,
+            subject_to_solid: rules.ares() && projectile.bullet_type_ext.subject_to_solid,
         },
         ballistic,
         vertical: projectile
@@ -424,12 +423,9 @@ fn admit_bullet(
             .admitted_spawns
             .push((bullet_id, delivery.inviso, spawn));
     }
-    #[cfg(feature = "ares")]
-    if techno_fire {
+    if rules.ares() && techno_fire {
         world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = techno_fire;
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;
         let placement = inviso_fire_placement(
@@ -442,12 +438,14 @@ fn admit_bullet(
         );
         // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way burns
         // the bullet before the obstacle walk.
-        #[cfg(feature = "ares")]
-        if world.ares_inviso_firestorm(bullet_id, placement, rules) {
-            return false;
-        }
-        #[cfg(feature = "ares")]
-        let placement = world.ares_inviso_obstacle(bullet_id, placement, rules);
+        let placement = if rules.ares() {
+            if world.ares_inviso_firestorm(bullet_id, placement, rules) {
+                return false;
+            }
+            world.ares_inviso_obstacle(bullet_id, placement, rules)
+        } else {
+            placement
+        };
         world
             .projectiles
             .fire_inviso(bullet_id, placement, on_bridge);
@@ -460,7 +458,6 @@ impl Simulation {
     /// weapon (`1001ABF0`, hooks `0x46A5B2`/`0x46AA27`): a `FlakScatter=`
     /// Inviso child takes Fire's flak placement with that weapon's `Range=`
     /// ([`inviso_fire_placement`]), two Scenario draws.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_shrapnel_flak_placement(
         &mut self,
         bullet_id: u64,
@@ -498,12 +495,11 @@ impl Simulation {
     /// and `placement`, at that cell's GetCoords (vt+0x48), else on
     /// `placement` (`FindFirstObstacle 1006E2B0`, with the bullet's Owner
     /// and Target as GetObstacle's pSource/pTarget). Fire's original walk
-    /// result is overwritten (`0x0046897D`), so default builds stand it on
-    /// `placement` even through a wall.
+    /// result is overwritten (`0x0046897D`), so a game without Ares stands it
+    /// on `placement` even through a wall.
     ///
     /// Its firestorm arm, which runs first, is
     /// [`Simulation::ares_inviso_firestorm`].
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_inviso_obstacle(
         &self,
         bullet_id: u64,
@@ -540,6 +536,7 @@ impl Simulation {
                         _ => None,
                     },
                 },
+                rules.ares(),
             ),
             rules,
             &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),

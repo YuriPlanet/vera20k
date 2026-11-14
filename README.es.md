@@ -14,8 +14,8 @@
 
 # VERA20K
 
-VERA20K es una reescritura del motor original, `gamemd.exe`, impulsada por la comunidad. Usa los
-archivos originales del juego, así que necesitarás tu propia copia de Red Alert 2: Yuri's Revenge.
+VERA20K es una reescritura del motor original, `gamemd.exe`, impulsada por la comunidad. Trae tu propia copia de
+Red Alert 2: Yuri's Revenge para empezar a desarrollar o a jugar.
 
 VERA20K está hecho por jugadores y para jugadores, y son los jugadores quienes tienen la última
 palabra sobre su rumbo.
@@ -42,19 +42,6 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 [configuración del cliente sin conexión](integrations/cncnet/README.md).
 
 ## Contribuir
-
-**No tengas miedo de enviar un PR.** No tiene que ser perfecto; te ayudaremos con el resto.
-
-Toda ayuda es bienvenida, y estas áreas son las que más la necesitan. Cada una enlaza a su
-página en la hoja de ruta, con el trabajo en curso y el siguiente paso:
-
-- **[Jugabilidad y combate](https://github.com/YuriPlanet/vera20k/issues/3830):** comportamiento de las unidades, daño y fiabilidad de las escaramuzas.
-- **[Rendimiento](https://github.com/YuriPlanet/vera20k/issues/3831):** fotogramas por segundo y respuesta en batallas grandes y en equipos antiguos.
-- **[Multijugador](https://github.com/YuriPlanet/vera20k/issues/3832):** unirse a partidas en línea, empezarlas y mantenerlas en marcha, y la fiabilidad del juego cooperativo.
-- **[Interfaz y audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menús, textos, [traducciones](src/i18n/README.md) y sonido.
-- **[Campañas](https://github.com/YuriPlanet/vera20k/issues/3834):** las misiones se pueden iniciar, pero jugarlas hasta el final aún requiere trabajo: objetivos, disparadores, transiciones con scripts, guardado y carga, y el paso a la siguiente misión.
-- **[Compatibilidad con mods](https://github.com/YuriPlanet/vera20k/issues/3835):** funciones de Ares y Phobos, sin cambiar los valores predeterminados del juego original.
-- **[Pruebas](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** jugar VERA20K junto al original e informar de lo que se juega de forma distinta.
 
 Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
 cambios que hagan avanzar VERA20K.
@@ -107,9 +94,7 @@ motor original, después portan su comportamiento a Rust y lo comprueban con
 
 ## Personalización
 
-La capacidad del mapa se elige automáticamente, sin opción de compilación: la suma del ancho y alto de `Size` puede llegar a 1024.
-
-De forma predeterminada, VERA20K se comporta igual que el juego original. Toda otra función nueva,
+De forma predeterminada, VERA20K se comporta igual que el juego original. Toda función nueva,
 incluidas las extensiones de mods como Ares, debe permanecer desactivada hasta que se active con una
 de estas opciones:
 

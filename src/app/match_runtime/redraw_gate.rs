@@ -351,6 +351,28 @@ pub(crate) enum ProbeVerdict {
 struct LastDraw {
     started: Instant,
     limits: DrawLimits,
+    /// The earliest the next draw of a changed picture may start. Under the
+    /// same picture limit draws keep a grid of that limit: a draw that
+    /// started late does not push the next one back, which would hold a
+    /// match that redraws every limit below its rate (a 16 ms limit drawing
+    /// about 50 times a second instead of 62). The next one may come early by
+    /// at most half the limit, so draws are never closer than that and their
+    /// rate never passes the limit's.
+    picture_due: Instant,
+}
+
+/// When the draw after one that started at `started` under `limits` may
+/// start, following `previous`'s grid ([`LastDraw::picture_due`]).
+fn next_picture_due(previous: Option<LastDraw>, started: Instant, limits: DrawLimits) -> Instant {
+    let fresh = started + limits.picture;
+    match previous {
+        Some(previous)
+            if previous.limits.picture == limits.picture && !limits.picture.is_zero() =>
+        {
+            (previous.picture_due + limits.picture).clamp(started + limits.picture / 2, fresh)
+        }
+        _ => fresh,
+    }
 }
 
 #[derive(Debug, Default)]
@@ -453,7 +475,12 @@ impl RedrawGate {
         self.pointer_since_present = false;
         self.redraw_held = false;
         self.presented = still;
-        self.last_draw = Some(LastDraw { started, limits });
+        let picture_due = next_picture_due(self.last_draw, started, limits);
+        self.last_draw = Some(LastDraw {
+            started,
+            limits,
+            picture_due,
+        });
     }
 
     /// Input draws at once, and so does pointer motion past its limit.
@@ -468,8 +495,7 @@ impl RedrawGate {
     }
 
     fn inside_picture_limit(&self, now: Instant) -> bool {
-        self.last_draw
-            .is_some_and(|last| now < last.started + last.limits.picture)
+        self.last_draw.is_some_and(|last| now < last.picture_due)
     }
 
     pub(crate) fn next_pass(&self, now: Instant) -> NextPass {
@@ -521,11 +547,14 @@ impl RedrawGate {
         let Some(last) = self.last_draw else {
             return service;
         };
-        let pointer = last.limits.pointer.filter(|_| self.pointer_since_present);
-        [Some(last.limits.picture), pointer]
+        let pointer = last
+            .limits
+            .pointer
+            .filter(|_| self.pointer_since_present)
+            .map(|limit| last.started + limit);
+        [Some(last.picture_due), pointer]
             .into_iter()
             .flatten()
-            .map(|limit| last.started + limit)
             .filter(|at| *at > now)
             .fold(service, Instant::min)
     }
@@ -639,6 +668,27 @@ mod tests {
         }
         gate.record_presented(None, t, LIMITS);
         assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
+    }
+
+    /// A moving picture keeps a grid of its limit: a draw that started late
+    /// lets the next one come that much sooner, by at most half the limit,
+    /// so a late draw never pushes the ones after it back.
+    #[test]
+    fn a_late_draw_does_not_push_the_next_one_back() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let mut gate = RedrawGate::default();
+        gate.record_presented(None, t, LIMITS);
+        assert_eq!(gate.next_pass(ms(15)), NextPass::Probe);
+        assert_eq!(gate.next_pass(ms(16)), NextPass::Draw);
+        // 5 ms late: the next draw keeps the 32 ms grid point.
+        gate.record_presented(None, ms(21), LIMITS);
+        assert_eq!(gate.next_pass(ms(31)), NextPass::Probe);
+        assert_eq!(gate.next_pass(ms(32)), NextPass::Draw);
+        // Far behind the grid: half a limit after the draw, not sooner.
+        gate.record_presented(None, ms(1_000), LIMITS);
+        assert_eq!(gate.next_pass(ms(1_007)), NextPass::Probe);
+        assert_eq!(gate.next_pass(ms(1_008)), NextPass::Draw);
     }
 
     /// Pointer motion over a standing picture waits for its limit, and probes

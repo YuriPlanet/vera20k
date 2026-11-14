@@ -140,7 +140,7 @@ pub(crate) fn firewall_body_frame(entity: &GameEntity, object: &ObjectType) -> O
     (is_firewall_type(object)
         && entity.mission.effective().known()
             != Some(crate::sim::mission::MissionType::Construction))
-    .then_some(entity.ares_firestorm_wall.frame() as i32)
+    .then_some(entity.ares.ares_firestorm_wall.frame() as i32)
 }
 
 /// `BuildingExt::IsActiveFirestormWall @ 10012770`: while any firestorm is
@@ -379,7 +379,7 @@ impl Simulation {
             let frame = self.session.binary_frame();
             if frame & 7 != 0
                 && entity.building_art.anim_slots()[usize::from(IDLE_ANIM_SLOT)].is_none()
-                && !entity.ares_firestorm_wall.is_straight()
+                && !entity.ares.ares_firestorm_wall.is_straight()
                 && self.scenario_rng.next_u32() & 0xF == 0
                 && let Some(name) = globals.idle_anim()
             {
@@ -398,8 +398,8 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 return;
             };
-            entity.ares_firestorm_wall.store(flags);
-            let straight = entity.ares_firestorm_wall.is_straight();
+            entity.ares.ares_firestorm_wall.store(flags);
+            let straight = entity.ares.ares_firestorm_wall.is_straight();
             let has_anim =
                 entity.building_art.anim_slots()[usize::from(ACTIVE_ANIM_SLOT)].is_some();
             if active && !straight && !has_anim {

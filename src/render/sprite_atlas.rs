@@ -792,9 +792,11 @@ impl SpriteAtlas {
 
     /// Physical frame count from the object type's resolved SHP source.
     pub(crate) fn object_shp_frame_count(&self, type_id: &str) -> Option<u16> {
-        self.object_shp_frame_counts
-            .get(&type_id.to_ascii_uppercase())
-            .copied()
+        // Draws ask this for each body and bib shadow: fold the key on the
+        // stack.
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.object_shp_frame_counts.get(key).copied()
+        })
     }
 
     /// Native relative type bounds; `None` means this type has not been prepared.

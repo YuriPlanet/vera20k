@@ -86,10 +86,6 @@ impl<T> Synced<T> {
             mark: SyncMark::new(),
         }
     }
-
-    pub fn into_inner(self) -> T {
-        self.value
-    }
 }
 
 impl<T: Clone> Synced<T> {
@@ -270,12 +266,6 @@ impl<T: Clone> ChunkedVec<T> {
         self.chunks.iter_mut().flat_map(|chunk| chunk.iter_mut())
     }
 
-    pub fn clear(&mut self) {
-        self.chunks.clear();
-        self.len = 0;
-        self.note_all();
-    }
-
     /// Set every element to `value`.
     pub fn fill(&mut self, value: T) {
         for chunk in &mut self.chunks {
@@ -305,30 +295,6 @@ impl<T: Clone> ChunkedVec<T> {
             chunks,
             len,
             ..Self::new()
-        }
-    }
-
-    /// Resize to `len`, filling new elements with `value`.
-    pub fn resize(&mut self, len: usize, value: T) {
-        if len <= self.len {
-            let keep = len.div_ceil(CHUNK);
-            self.chunks.truncate(keep);
-            if let Some(last) = self.chunks.last_mut() {
-                last.truncate(len - (keep - 1) * CHUNK);
-            }
-            self.len = len;
-            self.note_all();
-        } else {
-            while self.len < len {
-                self.push(value.clone());
-            }
-        }
-    }
-
-    /// Copy `values` over the elements from `start`.
-    pub fn copy_from(&mut self, start: usize, values: &[T]) {
-        for (offset, value) in values.iter().enumerate() {
-            self[start + offset] = value.clone();
         }
     }
 

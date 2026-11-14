@@ -41,12 +41,6 @@ pub(crate) struct ProduceCash {
     /// is scratch the fire test never reads. Zero-duration on every
     /// non-derrick object. Hashed (v135) and persisted.
     timer: CdTimer,
-    /// Ares BuildingExt CashUpgradeTimers (`+0x54`, `+0x60`, `+0x6C`): one
-    /// per upgrade slot, at TimerStruct's default (no anchor, nothing left)
-    /// until Ares' ProduceCash hooks start them. Hashed while started.
-    #[cfg(feature = "ares")]
-    #[serde(default)]
-    upgrades: [CdTimer; 3],
 }
 
 impl ProduceCash {
@@ -54,8 +48,6 @@ impl ProduceCash {
     pub(crate) fn new(construction_frame: u32) -> Self {
         Self {
             timer: CdTimer::started(construction_frame as i32, 0),
-            #[cfg(feature = "ares")]
-            upgrades: Default::default(),
         }
     }
 
@@ -64,31 +56,23 @@ impl ProduceCash {
         self.timer
     }
 
-    /// The type's timer (slot 0, `+0x6D0`) or upgrade slot `slot - 1`'s Ares
-    /// BuildingExt timer, in the order Ares' ProduceCash hooks walk them.
-    #[cfg(feature = "ares")]
-    fn ares_timer_mut(&mut self, slot: usize) -> &mut CdTimer {
-        match slot {
-            0 => &mut self.timer,
-            upgrade => &mut self.upgrades[upgrade - 1],
-        }
-    }
-
-    /// Folds the Ares upgrade timers once any was started, so other
-    /// buildings hash as earlier schemas did.
-    pub(crate) fn hash_ares_upgrade_timers(&self, hasher: &mut impl std::hash::Hasher) {
-        #[cfg(not(feature = "ares"))]
-        let _ = hasher;
-        #[cfg(feature = "ares")]
-        if self.upgrades != <[CdTimer; 3]>::default() {
-            std::hash::Hash::hash(b"ares-produce-cash-upgrades-v1", hasher);
-            std::hash::Hash::hash(&self.upgrades, hasher);
-        }
-    }
-
     /// Start the timer at `frame` with `delay` (`ProduceCashDelay`).
     fn arm(&mut self, frame: u32, delay: i32) {
         self.timer = CdTimer::started(frame as i32, delay);
+    }
+}
+
+/// The type's timer (slot 0, `+0x6D0`) or upgrade slot `slot - 1`'s Ares
+/// BuildingExt timer (`AresPart::cash_upgrade_timers`), in the order Ares'
+/// ProduceCash hooks walk them. The upgrade timers sit in the object's Ares
+/// part, so a game without them adds nothing to an object's record.
+fn ares_cash_timer_mut(
+    entity: &mut crate::sim::game_entity::GameEntity,
+    slot: usize,
+) -> &mut CdTimer {
+    match slot {
+        0 => &mut entity.produce_cash.timer,
+        upgrade => &mut entity.ares.cash_upgrade_timers[upgrade - 1],
     }
 }
 
@@ -164,7 +148,6 @@ impl Drain {
 /// frames after each re-arm, and a timer whose expiry frame was skipped (the
 /// two warp gates at `0x0043FD0C`/`0x0043FD1E` jump past the block) is dead
 /// until re-armed.
-#[cfg(not(feature = "ares"))]
 fn produce_cash_fires(timer: CdTimer, frame: u32) -> bool {
     timer.remaining(frame as i32) == 1
 }
@@ -198,6 +181,31 @@ pub(crate) fn available_money(houses: &Houses, owner: InternedId) -> i32 {
 // Oil derrick ProduceCash
 // ---------------------------------------------------------------------------
 
+/// The ProduceCash startup of `BuildingClass::ChangeOwner`: the stock block
+/// ([`stock_produce_cash_on_owner_change`]), or in a game read the Ares way
+/// (`RuleSet::ares_form`) the hook that replaces it
+/// ([`ares_produce_cash_on_owner_change`]).
+pub(crate) fn produce_cash_on_owner_change(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &mut Houses,
+    stable_id: u64,
+    old_owner: InternedId,
+    new_owner: InternedId,
+    rules: &RuleSet,
+) {
+    if rules.ares_form() {
+        ares_produce_cash_on_owner_change(
+            interner, session, substrate, houses, stable_id, old_owner, new_owner, rules,
+        );
+    } else {
+        stock_produce_cash_on_owner_change(
+            interner, session, substrate, houses, stable_id, old_owner, new_owner, rules,
+        );
+    }
+}
+
 /// `BuildingClass::ChangeOwner @ 0x004482AA..0x004482F9`, run BEFORE the
 /// Techno owner swap while `this->Owner` is still the OLD house: when the old
 /// owner's HouseType has `MultiplayPassive` (`HouseType+0x1A6`) set and
@@ -207,8 +215,7 @@ pub(crate) fn available_money(houses: &Houses, owner: InternedId) -> i32 {
 ///
 /// Capture by a non-passive house from a non-passive house (an engineer
 /// retaking a derrick) grants nothing and leaves the timer running as it was.
-#[cfg(not(feature = "ares"))]
-pub(crate) fn produce_cash_on_owner_change(
+fn stock_produce_cash_on_owner_change(
     interner: &StringInterner,
     session: &ScenarioSession,
     substrate: &mut ObjectSubstrate,
@@ -245,7 +252,6 @@ pub(crate) fn produce_cash_on_owner_change(
 /// The building's type and its installed upgrades, in the order Ares'
 /// ProduceCash hooks pair them with their timers (Type with `+0x6D0`, then
 /// `Upgrades[0..3]` with the BuildingExt timers).
-#[cfg(feature = "ares")]
 fn ares_cash_types<'r>(
     interner: &StringInterner,
     entity: &crate::sim::game_entity::GameEntity,
@@ -263,7 +269,6 @@ fn ares_cash_types<'r>(
 /// BuildingExt::ExtData::AddProduceCashDisplay (Ares.dll 100117C0): with
 /// the building type's `ProduceCashDisplay`, `amount` joins the building's
 /// floating money display (TechnoExt BountyDisplayAmount, `sim::bounty`).
-#[cfg(feature = "ares")]
 fn add_produce_cash_display(
     interner: &StringInterner,
     substrate: &mut ObjectSubstrate,
@@ -278,7 +283,7 @@ fn add_produce_cash_display(
         .object_type(entity.type_ref(), rules)
         .is_some_and(|object| object.building_type_ext().produce_cash_display())
     {
-        entity.bounty_display.queue(amount);
+        entity.ares.bounty_display.queue(amount);
     }
 }
 
@@ -291,8 +296,7 @@ fn add_produce_cash_display(
 /// other than zero goes to a new owner whose HouseType is not
 /// `MultiplayPassive` (GiveMoney, or TakeMoney of its negation), then joins
 /// the money display.
-#[cfg(feature = "ares")]
-pub(crate) fn produce_cash_on_owner_change(
+fn ares_produce_cash_on_owner_change(
     interner: &StringInterner,
     session: &ScenarioSession,
     substrate: &mut ObjectSubstrate,
@@ -327,10 +331,7 @@ pub(crate) fn produce_cash_on_owner_change(
         }
         amount = amount.wrapping_add(kind.produce_cash_startup);
         if kind.produce_cash_delay != 0 {
-            entity
-                .produce_cash
-                .ares_timer_mut(slot)
-                .start(frame, kind.produce_cash_delay.wrapping_add(1));
+            ares_cash_timer_mut(entity, slot).start(frame, kind.produce_cash_delay.wrapping_add(1));
         }
     }
     if amount == 0
@@ -369,6 +370,18 @@ pub(crate) fn produce_cash_on_grand_opening(
     }
 }
 
+/// The ProduceCash block of `BuildingClass::Update`: the stock block
+/// ([`stock_produce_cash_step`]), or in a game read the Ares way
+/// (`RuleSet::ares_form`) the hook that replaces it
+/// ([`ares_produce_cash_step`]).
+pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
+    if rules.ares_form() {
+        ares_produce_cash_step(sim, stable_id, rules);
+    } else {
+        stock_produce_cash_step(sim, stable_id, rules);
+    }
+}
+
 /// `BuildingClass::Update @ 0x0043FD2C..0x0043FDD6`, the ProduceCash block:
 /// fire test on the `+0x6D0` timer (see [`produce_cash_fires`]),
 /// re-arm with `ProduceCashDelay`, skip when the owner's HouseType is
@@ -381,8 +394,7 @@ pub(crate) fn produce_cash_on_grand_opening(
 /// VERA the object turn's temporal prologue (`temporal_ai_prologue`) returns
 /// for a warped building before this step, so a timer whose expiry frame
 /// falls inside the warp dies as natively.
-#[cfg(not(feature = "ares"))]
-pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
+fn stock_produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(stable_id) else {
         return;
     };
@@ -429,8 +441,7 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
 /// while the building is operational (vt+0x350): it joins the money display,
 /// then GiveMoney, or TakeMoney of its negation. The stock warp gates still
 /// skip the hook, as above.
-#[cfg(feature = "ares")]
-pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
+fn ares_produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(stable_id) else {
         return;
     };
@@ -448,7 +459,7 @@ pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
         let Some(kind) = kind.filter(|kind| kind.produce_cash_delay > 0) else {
             continue;
         };
-        let timer = entity.produce_cash.ares_timer_mut(slot);
+        let timer = ares_cash_timer_mut(entity, slot);
         let left = timer.remaining(frame);
         if left < 2 {
             timer.start(frame, kind.produce_cash_delay.wrapping_add(1));
@@ -496,6 +507,7 @@ pub(crate) fn install_drain_link(
     power_states: &mut PowerStates,
     drainer_id: u64,
     victim_id: u64,
+    ares: bool,
 ) -> bool {
     let Some((rx, ry)) = substrate
         .entities
@@ -514,11 +526,11 @@ pub(crate) fn install_drain_link(
     }
     // Ares TechnoClass_Drain_PrismForward (10016B90, hook 0x70FD9A): a
     // building not yet drained by this drainer leaves its Prism network.
-    #[cfg(feature = "ares")]
-    if substrate
-        .entities
-        .get(victim_id)
-        .is_some_and(|victim| victim.drain.draining_me != Some(drainer_id))
+    if ares
+        && substrate
+            .entities
+            .get(victim_id)
+            .is_some_and(|victim| victim.drain.draining_me != Some(drainer_id))
     {
         substrate.ares_prism_remove_from_network(victim_id, true);
     }
@@ -943,7 +955,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disc,
-            refinery
+            refinery,
+            rules.ares_form()
         ));
         assert_eq!(sim.entities().get(disc).unwrap().drain.target(), None);
         assert_eq!(
@@ -977,7 +990,8 @@ mod tests {
                 &sim.houses,
                 &mut sim.power_states,
                 disc,
-                refinery
+                refinery,
+                rules.ares_form()
             ),
             "still on the ground list"
         );
@@ -1011,7 +1025,8 @@ mod tests {
                 &sim.houses,
                 &mut sim.power_states,
                 disc,
-                refinery
+                refinery,
+                rules.ares_form()
             ),
             "stored but unlisted"
         );
@@ -1200,7 +1215,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            refinery
+            refinery,
+            rules.ares_form()
         ));
         assert_eq!(
             sim.substrate.entities.get(disk).unwrap().drain.target,
@@ -1267,7 +1283,8 @@ mod tests {
                 &sim.houses,
                 &mut sim.power_states,
                 disk,
-                plant
+                plant,
+                rules.ares_form()
             ));
             *sim.house_alliances_mut_for_test() = crate::map::houses::HouseAllianceMap::from([(
                 asker.to_ascii_uppercase(),
@@ -1302,7 +1319,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            plant
+            plant,
+            rules.ares_form()
         ));
         run_ticks(&mut sim, &rules, 150);
         assert_eq!(credits(&sim, americans), 75, "no credits leave a GAPOWR");
@@ -1565,7 +1583,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            plant
+            plant,
+            rules.ares_form()
         ));
         assert_eq!(
             sim.substrate.entities.get(plant).unwrap().drain.draining_me,
@@ -1578,7 +1597,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            plant
+            plant,
+            rules.ares_form()
         ));
         attach_drain_anim(&mut sim, disk, &rules);
         let anim = assert_drain_anim(&sim, disk);
@@ -1616,7 +1636,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            plant
+            plant,
+            rules.ares_form()
         ));
         attach_drain_anim(&mut sim, disk, &rules);
         let anim = assert_drain_anim(&sim, disk);
@@ -1634,7 +1655,8 @@ mod tests {
             &sim.houses,
             &mut sim.power_states,
             disk,
-            plant
+            plant,
+            rules.ares_form()
         ));
         attach_drain_anim(&mut sim, disk, &rules);
         let anim = assert_drain_anim(&sim, disk);
@@ -1664,11 +1686,11 @@ mod tests {
     /// installed upgrade's never-run timer starts without paying, then pays
     /// its own amount on its own cadence; `ProduceCashDisplay` queues each
     /// payment on the building's money display.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_cash_restarts_spent_timers_and_adds_each_upgrade() {
         use crate::sim::mission::state::MissionTestFixture;
         use crate::sim::mission::{MissionDispatchTimer, MissionId};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=OIL\n1=PUMP\n\
              [OIL]\nStrength=100\nProduceCashAmount=20\nProduceCashDelay=100\n\
@@ -1702,13 +1724,16 @@ mod tests {
             credits(sim, owner) - before
         };
         assert_eq!(step(&mut sim, 99), 20);
-        let cash = &sim.substrate.entities.get(id).unwrap().produce_cash;
-        assert_eq!(cash.timer, CdTimer::started(99, 101));
-        assert_eq!(cash.upgrades[0], CdTimer::started(99, 11));
+        let entity = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(entity.produce_cash.timer, CdTimer::started(99, 101));
+        assert_eq!(entity.ares.cash_upgrade_timers[0], CdTimer::started(99, 11));
         assert_eq!(step(&mut sim, 108), 0);
         assert_eq!(step(&mut sim, 109), 5);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        assert_eq!(entity.produce_cash.upgrades[0], CdTimer::started(109, 11));
-        assert_eq!(entity.bounty_display.take_pending_for_test(), 25);
+        assert_eq!(
+            entity.ares.cash_upgrade_timers[0],
+            CdTimer::started(109, 11)
+        );
+        assert_eq!(entity.ares.bounty_display.take_pending_for_test(), 25);
     }
 }

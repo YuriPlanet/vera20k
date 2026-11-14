@@ -38,6 +38,7 @@ fn native_code(entry: Prerequisite) -> i64 {
 
 #[test]
 fn generic_parser_matches_executed_ares_read_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = crate::test_fixture::json("tools/rules_oracle/ares_prerequisites.json");
     let catalog = oracle_catalog();
     let mut compared = 0;
@@ -74,6 +75,7 @@ fn generic_parser_matches_executed_ares_read_controls() {
 
 #[test]
 fn generic_load_precedence_matches_executed_ares_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::object_type::ObjectCategory;
 
     let corpus = crate::test_fixture::json("tools/rules_oracle/ares_prerequisites.json");
@@ -172,6 +174,7 @@ Prerequisite=custom,COLLIDE,POWER
 
 #[test]
 fn ares_build_resolves_custom_members_and_building_collision_without_ini_opt_in() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(TYPE_RULES)).unwrap();
     assert_eq!(
         rules
@@ -192,6 +195,7 @@ fn ares_build_resolves_custom_members_and_building_collision_without_ini_opt_in(
 
 #[test]
 fn registration_keeps_source_order_first_spelling_and_exact_read_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut catalog = GenericPrerequisites::default();
     catalog.apply_pass(
         &IniFile::from_str(
@@ -230,6 +234,7 @@ fn registration_keeps_source_order_first_spelling_and_exact_read_keys() {
 
 #[test]
 fn ordinary_handoff_and_save_retain_groups_but_scenario_reset_rebuilds_them() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let first = RulesLayerStack::new(IniFile::from_str(&format!(
         "[General]\nPrerequisitePower=A\n{TYPE_RULES}"
     )))
@@ -282,6 +287,7 @@ fn ordinary_handoff_and_save_retain_groups_but_scenario_reset_rebuilds_them() {
 
 #[test]
 fn malformed_saved_prerequisites_are_rejected_before_projection() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::error::RulesError;
 
     let processed = RulesLayerStack::new(IniFile::from_str(&format!(
@@ -336,6 +342,7 @@ fn malformed_saved_prerequisites_are_rejected_before_projection() {
 
 #[test]
 fn generic_name_and_read_capacity_keep_instruction_boundaries() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Name[32]/_TRUNCATE and ReadString2048 are instruction-level bounds.
     // CRT copying and ReadString are supplied oracle leaves, so these are
     // Rust regressions, not native boundary-execution goldens.

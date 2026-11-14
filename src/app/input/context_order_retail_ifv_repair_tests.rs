@@ -683,12 +683,12 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             .collect();
         // Ares 1004E5A0 (hook 0x73FDBD): Alt answers Select and Ctrl+Alt's
         // GuardArea keeps its own path, so neither repairs.
-        let expected = if crate::rules::ARES_BUILD && matches!(name, "alt_friend" | "ctrl_alt_friend")
-        {
-            0
-        } else {
-            native_orders.len()
-        };
+        let expected =
+            if crate::rules::ARES_BUILD && matches!(name, "alt_friend" | "ctrl_alt_friend") {
+                0
+            } else {
+                native_orders.len()
+            };
         assert_eq!(dispatch.commands.len(), expected, "{name}");
         if expected != 0 {
             assert_eq!(native_orders[0]["mission"], 1);

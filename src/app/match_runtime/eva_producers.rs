@@ -158,8 +158,7 @@ pub(crate) const EVA_STRUCTURE_SOLD: &str = "EVA_StructureSold";
 pub(crate) const EVA_REPAIRING: &str = "EVA_Repairing";
 /// String `0x00818FAC`.
 pub(crate) const EVA_BUILDING_CAPTURED: &str = "EVA_BuildingCaptured";
-/// String `0x00818FC4` (Ares builds play the type's `LostEvaEvent`).
-#[cfg(any(test, not(feature = "ares")))]
+/// String `0x00818FC4` (a game Ares plays in plays the type's `LostEvaEvent`).
 pub(crate) const EVA_TECH_BUILDING_LOST: &str = "EVA_TechBuildingLost";
 /// String `0x00824B70`.
 pub(crate) const EVA_PLAYER_DEFEATED: &str = "EVA_PlayerDefeated";

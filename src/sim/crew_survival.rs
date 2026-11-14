@@ -102,7 +102,6 @@
 //!   such a Bio Reactor (more infantry than foundation cells) starts Phase B
 //!   past the list (open native question); VERA skips Phase B's cells.
 
-#[cfg(feature = "ares")]
 mod ares_survivors;
 
 use crate::map::entities::EntityCategory;
@@ -1477,7 +1476,6 @@ fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -
 /// Installed Ares GetCrew707D20 hook1004C780..1004C867. This is the optional
 /// replacement of the retail query above, shared by every Ares crew caller.
 /// Side readers10021230/10021520 and1002DE60/1002E170 preserve explicit NULL.
-#[cfg(feature = "ares")]
 fn ares_techno_crew_type(
     rng: &mut SimRng,
     rules: &RuleSet,

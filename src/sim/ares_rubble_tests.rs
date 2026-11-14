@@ -92,6 +92,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64) -> u64 {
 /// `Rubble.Destroyed.Strength=-50`.
 #[test]
 fn a_destroyed_building_turns_into_its_rubble() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let building = sim
         .spawn_object("BLDG", "Russians", 10, 10, 0, &rules)
@@ -124,6 +125,7 @@ fn a_destroyed_building_turns_into_its_rubble() {
 /// in its place; he is kicked out of the new building, not consumed.
 #[test]
 fn an_engineer_rebuilds_a_friendly_rubble_and_survives() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let ruin = sim
         .spawn_object("RUIN", "Americans", 10, 10, 0, &rules)
@@ -152,6 +154,7 @@ fn an_engineer_rebuilds_a_friendly_rubble_and_survives() {
 /// the damaged building, and an arriving engineer is turned away unspent.
 #[test]
 fn engineer_repairable_no_keeps_engineers_off_a_damaged_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     let shed = sim
         .spawn_object("SHED", "Americans", 10, 10, 0, &rules)
@@ -189,6 +192,7 @@ fn engineer_repairable_no_keeps_engineers_off_a_damaged_building() {
 /// is spent on arrival (hook `0x519D9C`).
 #[test]
 fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     sim.session_mut_for_test()
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
@@ -245,6 +249,7 @@ fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
 /// cell, while an ordinary friendly building does.
 #[test]
 fn an_is_passable_building_does_not_block_entry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = arena();
     sim.spawn_object("PASS", "Americans", 10, 10, 0, &rules)
         .unwrap();

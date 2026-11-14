@@ -87,6 +87,7 @@ fn carried(sim: &Simulation, carrier: u64) -> Vec<u64> {
 /// it nothing; one above it takes the hit.
 #[test]
 fn an_abductor_shot_takes_a_weakened_target_into_its_hold() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, grid) = arena(&rules);
     let catcher = spawn(&mut sim, &rules, "CATCHER", "Russians", 10, 10);
@@ -141,6 +142,7 @@ fn an_abductor_shot_takes_a_weakened_target_into_its_hold() {
 /// and a full hold (CanHoldPassenger by size, `Passengers.BySize`).
 #[test]
 fn immune_types_and_full_holds_refuse_an_abduction() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let (mut sim, _grid) = arena(&rules);
     let catcher = spawn(&mut sim, &rules, "CATCHER", "Russians", 10, 10);

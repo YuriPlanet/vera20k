@@ -155,8 +155,9 @@
 //! their Foot+55C counters, which Mark0 leaves alone. Lookups off the map
 //! stamp the shared Dummy, so each search detaches it
 //! (`SharedCellDummy::detached`). The searches share each real cell's and
-//! blocker's Can_Enter_Cell facts, read once a batch
-//! ([`crate::sim::world::EntryFacts`]); the Dummy is read at each use.
+//! blocker's Can_Enter_Cell facts and each cell's code-2 chain, kept from
+//! their first read in a batch ([`crate::sim::world::EntryFacts`]); the Dummy
+//! is read at each use.
 //!
 //! Residuals: batched searches don't stamp the shared Dummy's coordinate, so
 //! a later read that doesn't stamp first sees the last serial stamp. Mark0's
@@ -344,7 +345,8 @@ pub(crate) struct PathBatch {
     #[serde(skip)]
     ready: BTreeMap<u64, ReadySlot>,
     /// The kept cell and blocker entry facts of the last pass, or of the
-    /// last search a Foot ran at its own turn, emptied before each
+    /// last search a Foot ran at its own turn, and the code-2 chains of the
+    /// last pass, each emptied before the next
     /// ([`Simulation::empty_entry_facts`]).
     #[serde(skip)]
     entry_facts: EntryFacts,
@@ -855,16 +857,22 @@ impl Simulation {
     /// Empty the batch's entry-fact tables ([`EntryFacts`]) before a batch of
     /// core searches, or one a Foot runs at its own turn, reads the world:
     /// until the world changes, the searches keep the facts they read there
-    /// ([`Self::entry_facts`]). Nothing while batching is off.
-    pub(super) fn empty_entry_facts(&mut self) {
+    /// ([`Self::entry_facts`]). `chains` also empties the code-2 chains,
+    /// which only a batch's searches share ([`EntryFacts::code2_chain`]).
+    /// Nothing while batching is off.
+    pub(super) fn empty_entry_facts(&mut self, chains: bool) {
         let (Some(terrain), Some(batch)) =
             (self.resolved_terrain.as_ref(), self.path_batch.as_mut())
         else {
             return;
         };
+        let cells = terrain.cells().len();
         batch
             .entry_facts
-            .reset(terrain.cells().len(), self.substrate.entities.slot_count());
+            .reset(cells, self.substrate.entities.slot_count());
+        if chains {
+            batch.entry_facts.reset_chains(cells);
+        }
     }
 
     /// The tables a core search keeps its entry facts in, emptied by
@@ -907,8 +915,8 @@ impl Simulation {
             rules,
         );
         // Every search reads the same world, so a cell's or blocker's entry
-        // facts are read once a batch and shared.
-        self.empty_entry_facts();
+        // facts and a cell's code-2 chain are read once a batch and shared.
+        self.empty_entry_facts(true);
         let sim = &*self;
         let counts = sim.movement_pass_cache.current_blocker_plane();
         let facts = sim.entry_facts().expect("batching is on");

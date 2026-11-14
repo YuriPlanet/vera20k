@@ -60,6 +60,7 @@ fn pulse(sim: &mut Simulation, rules: &RuleSet, source: u64, id: u64) {
 /// beside it is not.
 #[test]
 fn ares_emp_spares_a_tank_in_a_tank_bunker() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -97,8 +98,11 @@ fn ares_emp_spares_a_tank_in_a_tank_bunker() {
 /// again at expiry, which lifts the system hold. The computer's yard keeps
 /// the player's sidebar pass out of the queue, and the pulse, unlike a
 /// shell, does not mark it hit by an enemy for the computer's sale.
+// Runs again once the powered-unit code's Deactivate moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_on_a_construction_yard_holds_its_production_until_expiry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -147,6 +151,7 @@ fn ares_emp_on_a_construction_yard_holds_its_production_until_expiry() {
 /// whose next AI visit deactivates it (10053DF0).
 #[test]
 fn ares_emp_rides_out_of_a_repacking_yard_on_its_mcv() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut rules) = rules() else {
         return;
     };
@@ -190,6 +195,7 @@ fn ares_emp_rides_out_of_a_repacking_yard_on_its_mcv() {
 /// restores it once the counter ends.
 #[test]
 fn ares_emp_lifts_a_gap_generators_gap_until_expiry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -226,6 +232,7 @@ fn ares_emp_lifts_a_gap_generators_gap_until_expiry() {
 /// powered (10038F10). The stock pass never holds such a type.
 #[test]
 fn ares_emp_holds_a_psychic_sensors_reveal_until_expiry() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -271,6 +278,7 @@ fn ares_emp_holds_a_psychic_sensors_reveal_until_expiry() {
 /// the on edge after expiry brings it back (0x0050E010).
 #[test]
 fn ares_emp_on_a_robot_control_center_takes_its_robots_offline() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -307,6 +315,7 @@ fn ares_emp_on_a_robot_control_center_takes_its_robots_offline() {
 /// offline: its support target and pending beam go.
 #[test]
 fn ares_emp_takes_a_charging_prism_supporter_out_of_its_network() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -323,6 +332,7 @@ fn ares_emp_takes_a_charging_prism_supporter_out_of_its_network() {
         sim.entities()
             .get(supporter)
             .unwrap()
+            .ares
             .ares_prism
             .support_target()
     };
@@ -354,6 +364,7 @@ fn ares_emp_takes_a_charging_prism_supporter_out_of_its_network() {
 /// at expiry.
 #[test]
 fn ares_emp_takes_a_coil_a_garrisonable_building_and_cloning_vats_offline() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };
@@ -388,6 +399,7 @@ fn ares_emp_takes_a_coil_a_garrisonable_building_and_cloning_vats_offline() {
 /// disabled; VERA has no fence sections for that to rebuild.
 #[test]
 fn ares_emp_expiry_enables_an_unpowered_laser_fence_posts_stuff() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(rules) = rules() else {
         return;
     };

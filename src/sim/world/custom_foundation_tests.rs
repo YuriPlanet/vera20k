@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn custom_foundation_mark_navigation_outline_restore_and_uninit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for row in crate::rules::foundation::custom_tests::native_rows() {
         let rules = crate::rules::foundation::custom_tests::rules(&row);
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x568411);

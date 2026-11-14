@@ -120,7 +120,6 @@ impl PassiveScan {
     /// Ares TechnoClass_Fire_FSW (`10024C00`) stores the same byte (YRpp's
     /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
     /// so its next passive scan may drop the target.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_lose_target_now(&mut self) {
         self.acquired = true;
     }
@@ -557,8 +556,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
         return false;
     }
     // Ares7091D6 ->10049F70 returns70927D before the remaining passive gates.
-    #[cfg(feature = "ares")]
-    if entity.driver_killed() {
+    if rules.ares() && entity.driver_killed() {
         return false;
     }
     if entity.slave.owner().is_some() {
@@ -949,7 +947,6 @@ impl Simulation {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
                 alliances: Some(&self.house_alliances),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(self)),
             },
             Some(self),

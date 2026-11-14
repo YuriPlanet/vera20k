@@ -31,6 +31,7 @@ fn shoot(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64) -> u64 
 
 #[test]
 fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "[VehicleTypes]\n0=FIRER\n1=EMITTER\n2=DUMMY\n[Warheads]\n0=AE\n1=HIT\n\
          [FIRER]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\nCanPassiveAquire=no\n\
@@ -108,6 +109,7 @@ fn attached_rof_parent_hit_fireat_expiry_and_restore_share_one_owner() {
         .entities
         .get_mut(firer)
         .unwrap()
+        .ares
         .attach_effects
         .rof_multiplier = NativeF64Bits::ONE;
     assert_ne!(loaded.state_hash(), hash);

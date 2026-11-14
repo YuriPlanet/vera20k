@@ -279,10 +279,10 @@ impl<'a> FireSubject<'a> {
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
-            #[cfg(feature = "ares")]
-            weapons_disabled: firer.ares_disable_weapons.start_frame()
-                != crate::sim::timer::PAUSED_START_FRAME
-                && firer.ares_disable_weapons.remaining(frame as i32) > 0,
+            weapons_disabled: self.rules.ares()
+                && firer.ares.ares_disable_weapons.start_frame()
+                    != crate::sim::timer::PAUSED_START_FRAME
+                && firer.ares.ares_disable_weapons.remaining(frame as i32) > 0,
             emp_remaining: firer.emp_remaining(),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
@@ -301,19 +301,19 @@ impl<'a> FireSubject<'a> {
                 }
                 Some(_) => Transporter::Plain,
             },
-            #[cfg(feature = "ares")]
-            transporter_gunner_open_topped: transport.is_some_and(|transport| {
-                self.world
-                    .object_type(transport.type_ref(), self.rules)
-                    .is_some_and(|object| object.gunner && object.open_topped)
-            }),
-            #[cfg(feature = "ares")]
-            transporter_cloaked: transport.is_some_and(|transport| {
-                transport
-                    .cloak
-                    .as_ref()
-                    .is_some_and(|cloak| cloak.state() != 0)
-            }),
+            transporter_gunner_open_topped: self.rules.ares()
+                && transport.is_some_and(|transport| {
+                    self.world
+                        .object_type(transport.type_ref(), self.rules)
+                        .is_some_and(|object| object.gunner && object.open_topped)
+                }),
+            transporter_cloaked: self.rules.ares()
+                && transport.is_some_and(|transport| {
+                    transport
+                        .cloak
+                        .as_ref()
+                        .is_some_and(|cloak| cloak.state() != 0)
+                }),
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError reads the actual Techno+304 Fire pointer.
             fire_particles_live: firer.fire_particle_system.system().is_some(),
@@ -335,23 +335,27 @@ impl<'a> FireSubject<'a> {
             drain_target: Link::None,
             locomotor_target: Link::None,
             temporal: None,
-            #[cfg(feature = "ares")]
-            temporal_gunner_weapon: obj.turret_count > 0 && !obj.is_gattling && {
-                let entities = &self.world.substrate.entities;
-                let interner = &self.world.interner;
-                let slot = combat_weapon::what_weapon_should_i_use(
-                    self.rules,
-                    obj,
-                    &combat_weapon::attacker_facts(firer, obj),
-                    None,
-                    |slot| {
-                        combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
-                    },
-                );
-                combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
-                    .and_then(|weapon| self.rules.weapon_warhead(weapon))
-                    .is_some_and(|warhead| warhead.temporal)
-            },
+            temporal_gunner_weapon: self.rules.ares()
+                && obj.turret_count > 0
+                && !obj.is_gattling
+                && {
+                    let entities = &self.world.substrate.entities;
+                    let interner = &self.world.interner;
+                    let slot = combat_weapon::what_weapon_should_i_use(
+                        self.rules,
+                        obj,
+                        &combat_weapon::attacker_facts(firer, obj),
+                        None,
+                        |slot| {
+                            combat_weapon::get_weapon(
+                                firer, obj, slot, entities, self.rules, interner,
+                            )
+                        },
+                    );
+                    combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
+                        .and_then(|weapon| self.rules.weapon_warhead(weapon))
+                        .is_some_and(|warhead| warhead.temporal)
+                },
             owner_is_human: crate::sim::house_state::house_state_for_owner_id(
                 &self.world.houses,
                 firer.owner(),
@@ -399,10 +403,10 @@ impl<'a> FireSubject<'a> {
                 && firer
                     .building_upgrades()
                     .has_turret(obj, self.rules, &self.world.interner),
-            #[cfg(feature = "ares")]
-            prism_breaks_support: self
-                .world
-                .ares_prism_breaks_support(firer.stable_id(), self.rules),
+            prism_breaks_support: self.rules.ares()
+                && self
+                    .world
+                    .ares_prism_breaks_support(firer.stable_id(), self.rules),
             ..FirerFacts::default()
         };
         let firer_type = FirerTypeFacts {
@@ -474,8 +478,8 @@ impl<'a> FireSubject<'a> {
                             EntityCategory::Structure => FireTargetKind::Building,
                         },
                         bomb: entity.bomb.is_some(),
-                        #[cfg(feature = "ares")]
-                        bomb_fixed: entity.bomb.is_some()
+                        bomb_fixed: self.rules.ares()
+                            && entity.bomb.is_some()
                             && !self.world.bomb_detachable(entity.stable_id(), self.rules),
                         in_limbo: entity.lifecycle.in_limbo(),
                         sinking: entity.sinking.is_active(),
@@ -510,15 +514,16 @@ impl<'a> FireSubject<'a> {
                         // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
                         // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
                         // type flag and `ImmuneToBerserk` overrides both.
-                        #[cfg(not(feature = "ares"))]
-                        immune_to_psionics: target_obj.immune_to_psionics,
-                        #[cfg(feature = "ares")]
-                        immune_to_psionics: target_obj.techno_combat().combat().immune_to_berserk(
+                        immune_to_psionics: if self.rules.ares() {
+                            target_obj.techno_combat().combat().immune_to_berserk(
+                                target_obj.immune_to_psionics
+                                    || target_obj.promotion_abilities().is_some_and(|abilities| {
+                                        abilities.psionics_immune(entity.veterancy.raw())
+                                    }),
+                            )
+                        } else {
                             target_obj.immune_to_psionics
-                                || target_obj.promotion_abilities().is_some_and(|abilities| {
-                                    abilities.psionics_immune(entity.veterancy.raw())
-                                }),
-                        ),
+                        },
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,
@@ -627,7 +632,6 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.target_center_cell = Some(cells.lookup_world(xy.0, xy.1));
     }
 
-    #[cfg(feature = "ares")]
     fn weapon_ammo_cost(&mut self, index: i32) -> i32 {
         self.subject
             .weapon_at(index)
@@ -715,7 +719,6 @@ impl FireQuery for WorldQuery<'_, '_> {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
                         alliances: subject.fog.map(|fog| fog.alliances),
-                        #[cfg(feature = "ares")]
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                     Some(&subject.world.substrate.entities),
@@ -744,7 +747,6 @@ impl FireQuery for WorldQuery<'_, '_> {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
                         alliances: subject.fog.map(|fog| fog.alliances),
-                        #[cfg(feature = "ares")]
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                 )

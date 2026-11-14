@@ -74,7 +74,6 @@ impl TechnoAmmo {
     /// Installed Ares conversion100437A0..100437B3 keeps the lesser signed
     /// count. Dock/release state and the Techno reload clock are preserved;
     /// InitialAmmo belongs only to construction.
-    #[cfg(feature = "ares")]
     pub(crate) fn change_type_capacity(&mut self, maximum: i32) {
         self.current = self.current.min(maximum);
         self.max = maximum;
@@ -136,7 +135,6 @@ impl TechnoAmmo {
     /// Ares TechnoClass_Reload_ReloadAmount (Ares.dll 10047A70, hook
     /// 0x6FB05B) in place of Reload's one round: add `amount` (negative
     /// removes), then a negative count is zero and the type's `Ammo=` caps it.
-    #[cfg(feature = "ares")]
     pub(crate) fn reload_rounds(&mut self, amount: i32, type_ammo: i32) {
         let ammo = self.current.wrapping_add(amount);
         self.current = if ammo < 0 { 0 } else { ammo.min(type_ammo) };

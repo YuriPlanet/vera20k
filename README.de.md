@@ -15,8 +15,8 @@
 # VERA20K
 
 VERA20K ist eine von der Community getragene Neuimplementierung der ursprünglichen Engine,
-`gamemd.exe`. Sie verwendet die originalen Spieldateien, also brauchst du eine eigene Kopie von
-Red Alert 2: Yuri's Revenge.
+`gamemd.exe`. Bring deine eigene Kopie von Red Alert 2: Yuri's Revenge mit, um zu
+entwickeln oder zu spielen.
 
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
@@ -42,19 +42,6 @@ Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client st
 [Offline-Client-Einrichtung](integrations/cncnet/README.md).
 
 ## Mitmachen
-
-**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
-
-Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
-verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:
-
-- **[Spielmechanik und Kampf](https://github.com/YuriPlanet/vera20k/issues/3830):** Einheitenverhalten, Schaden und zuverlässige Gefechte.
-- **[Leistung](https://github.com/YuriPlanet/vera20k/issues/3831):** Bildrate und Reaktionsfähigkeit in großen Schlachten und auf älterer Hardware.
-- **[Mehrspielermodus](https://github.com/YuriPlanet/vera20k/issues/3832):** Online-Partien beitreten, starten und am Laufen halten sowie zuverlässiges Koop-Spiel.
-- **[Oberfläche und Audio](https://github.com/YuriPlanet/vera20k/issues/3833):** Menüs, Texte, [Übersetzungen](src/i18n/README.md) und Ton.
-- **[Kampagnen](https://github.com/YuriPlanet/vera20k/issues/3834):** Missionen lassen sich starten, aber sie bis zum Ende durchzuspielen braucht noch Arbeit: Ziele, Trigger, geskriptete Übergänge, Speichern/Laden und der Wechsel zur nächsten Mission.
-- **[Mod-Kompatibilität](https://github.com/YuriPlanet/vera20k/issues/3835):** Funktionen aus Ares und Phobos, ohne die Standardwerte des Originalspiels zu ändern.
-- **[Testen](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K neben dem Original spielen und melden, was sich anders spielt.
 
 Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
 Spielraum für Änderungen, die VERA20K voranbringen.
@@ -106,9 +93,7 @@ ursprüngliche Engine mit Ghidra, übertragen dann ihr Verhalten nach Rust und p
 
 ## Anpassung
 
-Die Kartenkapazität wird ohne Build-Schalter automatisch gewählt: Die Summe von `Size`-Breite und -Höhe darf bis zu 1024 betragen.
-
-VERA20K spielt sich standardmäßig wie das Originalspiel. Jede andere neue Funktion, auch Erweiterungen
+VERA20K spielt sich standardmäßig wie das Originalspiel. Jede neue Funktion, auch Erweiterungen
 aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
 
 - **Eine VERA-Spieleroption** unter **Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.

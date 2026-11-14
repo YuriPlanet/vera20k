@@ -57,7 +57,6 @@ pub(crate) fn exit_sell_mode_without_buildings(
 /// from the moved row by the idle tick that follows.
 pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
     // A ready tab's completed object is the frame's (`presentation::frame`).
-    let local_owner = preferred_local_owner_name(state);
     state.match_state.sim_runtime.ensure_frame();
     let Some(frame) = state.match_state.sim_runtime.frame() else {
         return;

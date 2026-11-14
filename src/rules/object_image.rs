@@ -43,7 +43,6 @@ impl ImageTheater {
     /// The TheaterType ordinal FindTheater48DBE0 returns: Temperate0 to
     /// Lunar5, and -1 for an unknown name (Ares `Theater::FindIndex
     /// @ 1003DAE0` and `ScenarioClass+Theater`).
-    #[cfg(feature = "ares")]
     pub(crate) const fn native_index(self) -> i32 {
         match self {
             Self::Uninitialized => -1,

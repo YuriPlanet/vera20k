@@ -542,6 +542,7 @@ mod tests {
     /// `0x52BA78` animates and the nine Ares cursors after it.
     #[test]
     fn defaults_copy_the_compiled_table_and_append_the_ares_cursors() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/mouse_oracle/cursor_table.json",
         ))
@@ -589,6 +590,7 @@ mod tests {
     /// names exactly.
     #[test]
     fn mouse_cursors_entries_parse_tokens_or_copy_a_named_entry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let mut cursors = MouseCursors::default();
         cursors.read_pass(&pass(
             "[MouseCursors]\n\
@@ -628,6 +630,7 @@ mod tests {
     /// unknown name or an empty value keeps the current one.
     #[test]
     fn cursor_keys_store_an_entry_index_or_none() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = pass(
             "[MouseCursors]\nSpin=1,1\n\
              [HTNK]\nCursor.Move=spin\nCursor.NoMove=none\nCursor.Enter=Unknown\nCursor.Deploy=\n\
@@ -651,6 +654,7 @@ mod tests {
     /// handler Initialize names its cursor.
     #[test]
     fn rules_bind_cursor_keys_to_their_types() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
             &pass(
                 "[MouseCursors]\nSpin=100,8,2\n\

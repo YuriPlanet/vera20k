@@ -1588,9 +1588,7 @@ fn check_initialized_no_order_contexts(names: &[&str]) {
         // ClickedAction can send (`click_order_receivers`, the Berserk
         // refusal), then resolves the Cell, which the class What_Action and
         // ClickedAction refuse.
-        let berserk_refused = sim
-            .click_order_receivers(&[id], crate::rules::ARES_BUILD)
-            .is_empty();
+        let berserk_refused = sim.click_order_receivers(&[id], rules.ares()).is_empty();
         assert_eq!(berserk_refused, name.contains("berserk"), "{name}");
         if !berserk_refused {
             let input = &row["inputs"][0];

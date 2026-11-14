@@ -338,18 +338,16 @@ enum InfantryTargetAdmission {
 
 /// 51C2E1..51C37D: the missions whose list walk compares each object with
 /// NavCom and Target. InfantryType EC2=C4 (52453D/825978), EC3=Engineer
-/// (524571/82596C).
-fn infantry_mission_tests_targets(mover: &GameEntity, obj: &ObjectType) -> bool {
+/// (524571/82596C). `ares` is [`RuleSet::ares`].
+fn infantry_mission_tests_targets(mover: &GameEntity, obj: &ObjectType, ares: bool) -> bool {
     // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
     match mover.mission.effective().known() {
         Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
         // Ares 3.0 InfantryClass_IsCellOccupied_C4Ability 10025580 (hook
         // 0x0051C325) also admits a rank holding the C4 ability.
-        #[cfg(feature = "ares")]
-        Some(MissionType::Sabotage) => {
+        Some(MissionType::Sabotage) if ares => {
             crate::sim::combat::veterancy::holds_c4(mover.veterancy.rank_kind(), obj)
         }
-        #[cfg(not(feature = "ares"))]
         Some(MissionType::Sabotage) => obj.c4,
         Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
         _ => false,
@@ -383,7 +381,7 @@ fn infantry_target_admission(
     if blocker.warped_out {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
-    if !infantry_mission_tests_targets(mover, obj) {
+    if !infantry_mission_tests_targets(mover, obj, live.rules.ares()) {
         return Ok(InfantryTargetAdmission::Ordinary);
     }
     if object_target_is(mover, blocker_id) {
@@ -1204,7 +1202,9 @@ fn full_foot_entry<'a>(
             //cell ends the walk at 51C71B (Terrain's +160 is false, 0x426490).
             //Residual: the tree itself as NavCom or Target (51C3B6, 51C3C2)
             //has no retail producer under these missions and no NavTargetRef.
-            if infantry && infantry_mission_tests_targets(e, obj) && nav_com_is_cell(live, e, cell)
+            if infantry
+                && infantry_mission_tests_targets(e, obj, live.rules.ares())
+                && nav_com_is_cell(live, e, cell)
             {
                 return Ok(
                     if layer == MovementLayer::Ground
@@ -1348,10 +1348,11 @@ fn full_foot_entry<'a>(
                 //73F5EF/73F628 have distinct type/mission pairs. +1D4 is
                 //the live warp latch. Ares 3.0 100177F0 (hook 0x73F606)
                 //sends a `Tunnel=` building down the UnitAbsorb path.
-                #[cfg(feature = "ares")]
-                let absorber = bt.unit_absorb || bt.building_type_ext().tunnel.is_some();
-                #[cfg(not(feature = "ares"))]
-                let absorber = bt.unit_absorb;
+                let absorber = if live.rules.ares() {
+                    bt.unit_absorb || bt.building_type_ext().tunnel.is_some()
+                } else {
+                    bt.unit_absorb
+                };
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && bt.grinding))
@@ -1392,12 +1393,10 @@ fn full_foot_entry<'a>(
             // is ignored; a `Firestorm.Wall` one takes the stock
             // FirestormWall branch (0x51C4D2): its owner's firestorm refuses
             // the cell, else the building is ignored.
-            #[cfg(feature = "ares")]
-            if infantry && bt.building_type_ext().is_passable {
+            if live.rules.ares() && infantry && bt.building_type_ext().is_passable {
                 continue;
             }
-            #[cfg(feature = "ares")]
-            if infantry && bt.building_type_ext().firestorm_wall {
+            if live.rules.ares() && infantry && bt.building_type_ext().firestorm_wall {
                 if live.sim.ares_firestorm.is_active(b.owner) {
                     return Ok(7);
                 }
@@ -1445,12 +1444,10 @@ fn full_foot_entry<'a>(
                 // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
                 // building is ignored; a `Firestorm.Wall` one takes the stock
                 // FirestormWall branch (0x73F7BA) as for infantry.
-                #[cfg(feature = "ares")]
-                if bt.building_type_ext().is_passable {
+                if live.rules.ares() && bt.building_type_ext().is_passable {
                     continue;
                 }
-                #[cfg(feature = "ares")]
-                if bt.building_type_ext().firestorm_wall {
+                if live.rules.ares() && bt.building_type_ext().firestorm_wall {
                     if live.sim.ares_firestorm.is_active(b.owner) {
                         return Ok(7);
                     }

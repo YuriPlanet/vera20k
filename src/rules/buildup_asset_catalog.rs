@@ -74,7 +74,6 @@ pub fn buildup_control(
 /// `1000F4D5..1000F4F0`) for the build-up and the sell time, both 1 for a
 /// count below 1. The times are the type's `BuildupTime=`/`SellTime=`
 /// fallbacks ([`crate::rules::ares_building_type::BuildingTypeExtRules`]).
-#[cfg(feature = "ares")]
 pub fn ares_buildup_frames(
     raw_frames: i16,
     gate_stages: Option<i32>,
@@ -110,13 +109,24 @@ pub fn ares_buildup_frames(
 /// The construction control of every building type whose Buildup SHP the
 /// active theater resolves. Keys are uppercase type IDs; a `BTreeMap` keeps
 /// binding and hashing order deterministic.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BuildupAssetCatalog {
     controls: BTreeMap<String, [i32; 3]>,
     /// Ares `SellFrameDuration` (BuildingTypeExt `+0x228`) of each bound
-    /// type; an unbound type keeps the constructor's 0.
-    #[cfg(feature = "ares")]
+    /// type; an unbound type keeps the constructor's 0. Only a bind for Rules
+    /// read the Ares way fills it.
     sell_rates: BTreeMap<String, i32>,
+}
+
+/// The sale rates fold only when bound, so a stock game hashes its controls
+/// alone, as it did before they existed.
+impl std::hash::Hash for BuildupAssetCatalog {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.controls.hash(state);
+        if !self.sell_rates.is_empty() {
+            self.sell_rates.hash(state);
+        }
+    }
 }
 
 impl BuildupAssetCatalog {
@@ -151,10 +161,7 @@ impl BuildupAssetCatalog {
                 continue;
             };
             let gate_stages = object.gate.then_some(art.building_gate_stages);
-            #[cfg(not(feature = "ares"))]
-            let control = buildup_control(raw, gate_stages, buildup_time);
-            #[cfg(feature = "ares")]
-            let control = {
+            let control = if crate::rules::ares_switch::ares_way() {
                 let (buildup, sell) = object
                     .building_type_ext()
                     .buildup_and_sell_time(buildup_time);
@@ -163,6 +170,8 @@ impl BuildupAssetCatalog {
                     .sell_rates
                     .insert(object.id.to_ascii_uppercase(), sell_rate);
                 control
+            } else {
+                buildup_control(raw, gate_stages, buildup_time)
             };
             catalog
                 .controls
@@ -175,7 +184,6 @@ impl BuildupAssetCatalog {
     /// control installed without one (a fixture) sells at its own rate, as a
     /// type without `SellTime=` does; an unbound type keeps the constructor's
     /// rate 0.
-    #[cfg(feature = "ares")]
     pub fn sell_rate(&self, type_id: &str) -> i32 {
         self.sell_rates
             .get(&type_id.to_ascii_uppercase())
@@ -185,10 +193,9 @@ impl BuildupAssetCatalog {
 
     /// The construction control of `type_id` ([`NO_BUILDUP`] when unbound).
     pub fn control(&self, type_id: &str) -> [i32; 3] {
-        self.controls
-            .get(&type_id.to_ascii_uppercase())
-            .copied()
-            .unwrap_or(NO_BUILDUP)
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.controls.get(key).copied().unwrap_or(NO_BUILDUP)
+        })
     }
 
     /// Whether `type_id`'s Buildup SHP is bound: `BuildingClass::Init_Managers`
@@ -196,7 +203,11 @@ impl BuildupAssetCatalog {
     /// (`vt+0xC0`, `0x00465960`) is loaded, and a building without it cannot
     /// be sold (`Sell_Back @ 0x00447110`, `CanSell @ 0x004494C0`).
     pub fn has_buildup(&self, type_id: &str) -> bool {
-        self.controls.contains_key(&type_id.to_ascii_uppercase())
+        // A draw asks this for every building in view: fold the key on the
+        // stack.
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.controls.contains_key(key)
+        })
     }
 
     /// Install one control directly (test fixtures without assets).
@@ -206,7 +217,7 @@ impl BuildupAssetCatalog {
     }
 
     /// Install one Ares sale rate directly (test fixtures without assets).
-    #[cfg(all(feature = "ares", any(test, feature = "test-support")))]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn insert_sell_rate_for_test(&mut self, type_id: &str, rate: i32) {
         self.sell_rates.insert(type_id.to_ascii_uppercase(), rate);
     }
@@ -215,6 +226,19 @@ impl BuildupAssetCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A type's Buildup is found whatever the case of the name asked, also
+    /// for a name longer than the stack key.
+    #[test]
+    fn a_buildup_is_found_by_any_case_of_its_name() {
+        let long = "x".repeat(80);
+        let mut catalog = BuildupAssetCatalog::default();
+        catalog.insert_for_test("GaPowr", [1, 2, 3]);
+        catalog.insert_for_test(&long, [4, 5, 6]);
+        assert!(catalog.has_buildup("gapowr") && catalog.has_buildup("GAPOWR"));
+        assert!(catalog.has_buildup(&long));
+        assert!(!catalog.has_buildup("GAPILE"));
+    }
 
     /// The native slice over retail `BuildupTime=.06` (as `ReadDouble`
     /// stores it, a widened float), the constructor's `.05` and a gate's
@@ -252,9 +276,9 @@ mod tests {
     /// Ares divides before it multiplies under the process's chop: the
     /// constructor's `.05` over 3 frames gives 14 where the original order
     /// gives 15, and a 2-minute `SellTime` 599, not 600 (`1000F450`).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_buildup_frames_divide_first_and_rate_the_sale() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let default = NativeF64Bits::from_bits(0x3FA9_9999_9999_999A);
         assert_eq!(buildup_control(6, None, default), [0, 3, 15]);
         let two_minutes = NativeF64Bits::from_bits(2.0f64.to_bits());

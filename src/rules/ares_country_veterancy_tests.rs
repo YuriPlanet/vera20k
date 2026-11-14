@@ -52,6 +52,7 @@ fn assert_original_lists(state: &CountryVeterancyState, expected: &Value, label:
 
 #[test]
 fn ares_country_list_reads_match_native_find_only_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for row in corpus()["country_lists"].as_array().unwrap() {
         let initial = &row["initial"];
         let mut reader = RulesPassProcessor::default();
@@ -120,6 +121,7 @@ fn seed_parent(reader: &mut RulesPassProcessor, initial: &Value) -> usize {
 
 #[test]
 fn ares_country_extension_histories_match_native_parent_and_retention() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = corpus();
     for row in corpus["extension_histories"].as_array().unwrap() {
         let initial = &row["initial"];
@@ -211,6 +213,7 @@ fn ares_country_extension_histories_match_native_parent_and_retention() {
 
 #[test]
 fn ares_country_constructor_and_extension_stream_keep_retained_state() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let native = corpus();
     let default = AresCountryState::default();
     assert_eq!(
@@ -267,6 +270,7 @@ fn continue_process(processed: ProcessedRulesLayers, pass: IniFile) -> Processed
 
 #[test]
 fn ares_country_veterancy_reaches_layers_save_hash_validation_and_reset() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let processed = RulesLayerStack::new(IniFile::from_str(
         "[Countries]\n0=PARENT\n1=CHILD\n\
          [PARENT]\nParentCountry=PARENT\nVeteranBuildings=KNOWN\n\

@@ -448,10 +448,7 @@ impl crate::sim::world::Simulation {
         // Share the process owner's draw capability without retaining its
         // mutex across Stop. The retained source locks output gate -> Main.
         let main_draws = self.main_rng.draws();
-        #[cfg(feature = "ares")]
-        let ares_cycle = Some(obj.techno_combat().gattling_cyclic());
-        #[cfg(not(feature = "ares"))]
-        let ares_cycle = None;
+        let ares_cycle = rules.ares().then(|| obj.techno_combat().gattling_cyclic());
         let effects = state.increase(
             &obj.gattling_stages,
             elite,

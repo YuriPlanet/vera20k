@@ -40,6 +40,7 @@ AlliedBaseDefenses=ABLD\nSovietBaseDefenses=SBLD\nThirdBaseDefenses=TBLD\n";
 
 #[test]
 fn ares_fourth_side_uses_documented_allied_defaults() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!(
         "{TYPES}{GENERAL}{AI}\
          [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
@@ -79,6 +80,7 @@ fn ares_fourth_side_uses_documented_allied_defaults() {
 
 #[test]
 fn ares_fourth_side_reads_explicit_overrides_in_native_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!(
         "{TYPES}{GENERAL}{AI}\
          [Colors]\nDarkBlue=153,214,212\nDarkRed=0,230,255\n\
@@ -135,6 +137,7 @@ fn ares_fourth_side_reads_explicit_overrides_in_native_order() {
 
 #[test]
 fn ares_side_empty_and_unknown_values_retain_while_none_clears() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let base = format!(
         "{TYPES}{GENERAL}{AI}\
          [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n"
@@ -195,6 +198,7 @@ fn ares_side_empty_and_unknown_values_retain_while_none_clears() {
 
 #[test]
 fn ares_side_graphical_text_slots_keep_the_literal_fallback() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = processed(&format!(
         "{TYPES}{GENERAL}\
          [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
@@ -237,6 +241,7 @@ fn process_owner(ini: &str) -> crate::rules::process_owner::NativeRulesProcessOw
 
 #[test]
 fn ares_side_dialog_background_needs_both_files() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let owner = process_owner(&format!(
         "{TYPES}{GENERAL}\
          [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
@@ -258,6 +263,7 @@ fn ares_side_dialog_background_needs_both_files() {
 
 #[test]
 fn ares_side_score_files_follow_the_side_buffers_the_hooks_copy() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let owner = process_owner(&format!(
         "{TYPES}{GENERAL}\
          [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
@@ -284,6 +290,7 @@ fn ares_side_score_files_follow_the_side_buffers_the_hooks_copy() {
 
 #[test]
 fn ares_side_score_themes_follow_the_two_native_branch_sites() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let owner = process_owner(&format!(
         "{TYPES}{GENERAL}\
          [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\

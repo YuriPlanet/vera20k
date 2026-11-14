@@ -844,7 +844,6 @@ pub(crate) fn resolved_unit_in_range(
                 overlay_grid: sim.overlay_grid(),
                 overlay_registry,
                 alliances: Some(sim.house_alliances()),
-                #[cfg(feature = "ares")]
                 buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
             selection_target,

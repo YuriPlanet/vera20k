@@ -100,7 +100,7 @@ impl Simulation {
                 continue;
             }
             let duration = if duration > 0 {
-                ares_curtain_duration(Some(object), duration, InvulnKind::IronCurtain)
+                ares_curtain_duration(Some(object), duration, InvulnKind::IronCurtain, true)
             } else {
                 duration
             };

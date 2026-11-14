@@ -823,7 +823,6 @@ pub(crate) fn building_mission_unload_absorber(
 /// owner's network of its type holds a Foot unloads one
 /// ([`ares_tunnel_unload_one`]) and returns the Unload epilogue
 /// (`0x0044DC84`), whatever the unload did. `None` takes the stock arms.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_tunnel_mission_unload(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -871,7 +870,6 @@ pub(crate) fn ares_tunnel_mission_unload(
 /// search fails, and drops a member whose Put fails; VERA keeps that
 /// member in the network. Trigger: no free cell for its SpeedType, or a
 /// refused Unlimbo. Frequency: rare.
-#[cfg(feature = "ares")]
 #[allow(clippy::too_many_arguments)]
 fn ares_tunnel_unload_one(
     sim: &mut Simulation,

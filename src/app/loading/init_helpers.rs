@@ -346,6 +346,8 @@ pub(crate) fn bind_rules_art_metadata(
     theater_ext: &str,
     theater_name: &str,
 ) {
+    // ARTMD is read the way the game's Rules were (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(fixed_art));
     let (populated, fallback) = rules.populate_anim_frame_dims(assets, theater_ext, theater_name);
     log::info!("Anim frame dims: {populated} populated, {fallback} fallback (defaults to 30x30)");
@@ -367,6 +369,8 @@ pub(crate) fn bind_rules_asset_closure(
     theater_name: &str,
     terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
 ) -> anyhow::Result<()> {
+    // The asset closures follow the way the game's Rules were read.
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
     rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
     let tolerant_roots = tolerant_anim_class_roots(rules);

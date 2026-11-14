@@ -55,13 +55,13 @@ mod bridge_flags;
 mod build;
 mod cell_recalc;
 mod cliffs;
-mod cow_cells;
 mod deformation;
 mod mutation;
 mod native_cell;
 mod pavement;
 mod recalc_catalog;
 mod saved_terrain;
+mod terrain_cells;
 mod tubes;
 
 #[cfg(test)]
@@ -139,9 +139,8 @@ pub(crate) fn recalc_zone_type(
 /// Impassable (6, `0x00483D6B`). The stock arm's FirestormWall= branch
 /// needs `HouseClass::FirestormActive` (`+0x1FA`), which only Ares sets
 /// (its `Firestorm.Wall` sections take that branch: Ares 3.0 10014B70, hook
-/// 0x483D94), so default builds have no caller; the LaserFence branch is
-/// not ported (no retail type is a laser fence).
-#[cfg(feature = "ares")]
+/// 0x483D94), so only a game where Ares plays calls it; the LaserFence
+/// branch is not ported (no retail type is a laser fence).
 pub(crate) fn recalc_zone_type_with_buildings(
     outside: bool,
     overlay_zone_type: Option<u8>,
@@ -781,8 +780,8 @@ pub struct ResolvedTerrainGrid {
     /// never serialized or included in simulation hashes. Every drawn object
     /// asks it each frame and nothing walks it, so it takes the lookup hasher.
     native_tmp_draw_heights: crate::util::synced::Synced<LookupMap<u16, PristineTmpHeader>>,
-    /// Synced in chunks into the presentation copy ([`cow_cells::CowCells`]).
-    cells: cow_cells::CowCells,
+    /// Synced in chunks into the presentation copy ([`terrain_cells::TerrainCells`]).
+    cells: terrain_cells::TerrainCells,
     /// Derived bound on the signed levels in `cells`, always holding 0 (the
     /// level presentation assumes for a cell the grid lacks). Every
     /// constructor computes it from `cells`; [`Self::set_cell_level`], the one
@@ -1110,7 +1109,7 @@ fn overlay_passability_flags(registry: Option<&OverlayTypeRegistry>) -> Vec<Over
 /// where they changed ([`ResolvedTerrainGrid::sync_into`]).
 #[derive(Default)]
 struct SyncedTerrain {
-    cells: cow_cells::CowCells,
+    cells: terrain_cells::TerrainCells,
     overlay_passability: crate::util::synced::Synced<Vec<OverlayPassability>>,
     native_tmp_draw_heights: crate::util::synced::Synced<LookupMap<u16, PristineTmpHeader>>,
     native_allocated: Option<crate::util::synced::Synced<Vec<bool>>>,
@@ -1216,7 +1215,7 @@ impl ResolvedTerrainGrid {
             width,
             height,
             level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
-            cells: cow_cells::CowCells::new(cells),
+            cells: terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
             native_tmp_draw_heights: Default::default(),
@@ -1508,7 +1507,7 @@ impl ResolvedTerrainGrid {
     }
 
     /// Immutable cells in the grid's established storage order.
-    /// Shared in chunks with presentation frames (see `cow_cells`).
+    /// Synced in chunks into the presentation copy (see `terrain_cells`).
     pub fn cells(&self) -> &crate::util::synced::ChunkedVec<ResolvedTerrainCell> {
         self.cells.all()
     }

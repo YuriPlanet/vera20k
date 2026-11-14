@@ -508,13 +508,12 @@ pub struct ObjectSubstrate {
     pub(crate) pending_delete: DeferredDeleteQueue,
     /// Buildings whose Temporal online latch changed since the last factory
     /// sweep, in order, for the Ares factory queue refresh
-    /// (`Simulation::ares_refresh_temporal_factories`).
-    #[cfg(feature = "ares")]
+    /// (`Simulation::ares_refresh_temporal_factories`). Empty in a game
+    /// without Ares.
     #[serde(default)]
     ares_temporal_factory_refresh: Vec<u64>,
 }
 
-#[cfg(feature = "ares")]
 impl ObjectSubstrate {
     /// The buildings waiting for the Ares factory queue refresh, in order.
     pub(crate) fn ares_temporal_factory_refresh(&self) -> &[u64] {
@@ -555,7 +554,6 @@ impl ObjectSubstrate {
             spotlights: Default::default(),
             particle_systems: ParticleSystemStore::default(),
             pending_delete: DeferredDeleteQueue::default(),
-            #[cfg(feature = "ares")]
             ares_temporal_factory_refresh: Vec::new(),
         }
     }

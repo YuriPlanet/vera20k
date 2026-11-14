@@ -85,6 +85,7 @@ fn resolved_delta(rules: &RuleSet, health: i32, damage: i32) -> i32 {
 /// is kept, and the Verses kernel still applies after it.
 #[test]
 fn relative_damage_replaces_the_packet_before_the_verses_kernel() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let relative = rules("RelativeDamage=yes\nRelativeDamage.Vehicles=25\n");
     assert_eq!(resolved_delta(&relative, 1000, 10), 250);
     assert_eq!(resolved_delta(&relative, 1000, -10), -250);
@@ -134,6 +135,7 @@ fn health_after_hit(rules: &RuleSet, health: i32, elite_attacker: bool) -> i32 {
 /// culls at yellow; BelowHealth and a zero chance decide by rank.
 #[test]
 fn culling_warheads_kill_by_health_status_and_rank() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let culling = rules("Culling=yes\n");
     assert_eq!(health_after_hit(&culling, 200, false), 0, "red culls");
     assert_eq!(health_after_hit(&culling, 400, false), 390, "yellow rookie");
@@ -153,6 +155,7 @@ fn culling_warheads_kill_by_health_status_and_rank() {
 /// head's minimum of one.
 #[test]
 fn deployed_infantry_take_the_deployed_damage_multiplier() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("Damage.Deployed=25%\nProneDamage=200%\n");
     let (mut sim, target, attacker) = scene(&rules, "TROOP");
     let event = hit(&mut sim, target, attacker, 3);
@@ -181,19 +184,31 @@ fn deployed_infantry_take_the_deployed_damage_multiplier() {
 /// Apply_area_damage with zero damage; an inert scenario never does.
 #[test]
 fn zero_damage_enters_the_area_only_when_allowed() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let plain = rules("");
     let allowed = rules("AllowZeroDamage=yes\n");
     let wh = |rules: &RuleSet| rules.warhead("HIT").unwrap().clone();
-    assert!(!combat_aoe::area_damage_enters(0, &wh(&plain), false));
-    assert!(combat_aoe::area_damage_enters(0, &wh(&allowed), false));
-    assert!(!combat_aoe::area_damage_enters(0, &wh(&allowed), true));
-    assert!(combat_aoe::area_damage_enters(5, &wh(&plain), false));
+    assert!(!combat_aoe::area_damage_enters(0, &wh(&plain), false, true));
+    assert!(combat_aoe::area_damage_enters(
+        0,
+        &wh(&allowed),
+        false,
+        true
+    ));
+    assert!(!combat_aoe::area_damage_enters(
+        0,
+        &wh(&allowed),
+        true,
+        true
+    ));
+    assert!(combat_aoe::area_damage_enters(5, &wh(&plain), false, true));
 }
 
 /// DamageArea_Damage_MaxAffect (10053400): each object keeps its nearest
 /// records up to the limit, ties to the earlier record, in record order.
 #[test]
 fn max_affect_keeps_the_nearest_records_of_each_object() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("CellSpread.MaxAffect=2\n");
     let warhead = rules.warhead("HIT").unwrap();
     let record = |target: u64, distance: i32| {
@@ -216,7 +231,7 @@ fn max_affect_keeps_the_nearest_records_of_each_object() {
         ],
         ..Default::default()
     };
-    combat_aoe::limit_records_per_object(&mut result, warhead);
+    combat_aoe::limit_records_per_object(&mut result, warhead, true);
     let kept: Vec<(u64, i32)> = result
         .receivers
         .iter()
@@ -257,8 +272,11 @@ fn kill_human_vehicle(rules: &RuleSet, damage: i32) -> (Simulation, u64) {
 /// TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020) silences the
 /// victim's Death_Announcement; the aftermath (1004AB50) starts a longer
 /// Flash.Duration on a survivor.
+// Runs again once the unit-lost announcement moves to the switch.
+#[cfg(feature = "ares")]
 #[test]
 fn unit_lost_suppress_and_flash_duration_follow_the_hit_warhead() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (sim, _) = kill_human_vehicle(&rules(""), 5000);
     assert_eq!(unit_lost_cues(&sim), 1);
     let (sim, _) = kill_human_vehicle(&rules("UnitLost.Suppress=yes\n"), 5000);
@@ -273,6 +291,7 @@ fn unit_lost_suppress_and_flash_duration_follow_the_hit_warhead() {
 /// hit skips the victim house's own alert, keeping the ally line and Tags.
 #[test]
 fn non_malicious_hits_raise_no_own_building_alert() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[Countries]\n0=Americans\n1=Russians\n[BuildingTypes]\n0=BASE\n\
          [VehicleTypes]\n0=TARGET\n[BASE]\nStrength=1000\n[TARGET]\nStrength=1000\n",

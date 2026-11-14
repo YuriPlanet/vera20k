@@ -607,9 +607,9 @@ impl Simulation {
         let actor = self.substrate.entities.get(id)?;
         // Ares 3.0 GuardCommandClass_Execute (1005CAF0, hook 0x730DB0): only
         // the player's own controllable actor, the miner arm included.
-        #[cfg(feature = "ares")]
-        if Some(actor.owner()) != self.session.current_house()
-            || !self.techno_player_controllable(id, rules)
+        if rules.ares()
+            && (Some(actor.owner()) != self.session.current_house()
+                || !self.techno_player_controllable(id, rules))
         {
             return None;
         }
@@ -820,7 +820,6 @@ impl Simulation {
     /// of `10016F60`, hook `0x443414`): the TrenchRedirectClick event (0x60)
     /// naming the clicked building's `cell` and the selected trench
     /// `source_id`, stamped with the source building's House.
-    #[cfg(feature = "ares")]
     pub fn encode_ares_trench_redirect_record(
         &self,
         source_id: u64,
@@ -1054,8 +1053,9 @@ impl Simulation {
                 )
             });
         }
-        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler.
-        #[cfg(feature = "ares")]
+        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler,
+        // which answers on the switch; no stock opcode decodes as 0x60, and
+        // only a game Ares plays in encodes one.
         if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
             let owner = self.command_sender_owner(record.house_id())?;
             return self.houses.contains_key(&owner).then(|| {
@@ -1752,7 +1752,7 @@ impl Simulation {
         } else {
             cmd
         };
-        if self.network_command_actor_foreign(command_owner, cmd) {
+        if self.network_command_actor_foreign(command_owner, cmd, rules.ares()) {
             return false;
         }
         let ordinary_actor = match cmd {
@@ -1848,7 +1848,7 @@ impl Simulation {
                             u64::try_from(id).ok().map(combat::TargetKind::Entity)
                         }
                     };
-                    return self.execute_archive_event(entity_id, target);
+                    return self.execute_archive_event(entity_id, target, rules.ares());
                 }
                 if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
                     let Ok(carrier) = u64::try_from(event.entity_id) else {
@@ -1861,8 +1861,10 @@ impl Simulation {
                         frame_effects,
                     );
                 }
-                #[cfg(feature = "ares")]
-                if let Some(event) = crate::sim::command::AresTrenchRedirectRecord::decode(record) {
+                if rules.ares()
+                    && let Some(event) =
+                        crate::sim::command::AresTrenchRedirectRecord::decode(record)
+                {
                     return self.ares_respond_to_trench_redirect(
                         &event,
                         rules,
@@ -2216,13 +2218,15 @@ impl Simulation {
                 rx,
                 ry,
                 producer_ids,
-            } => self.set_rally_point_for_producers(producer_ids, *rx, *ry),
+            } => self.set_rally_point_for_producers(producer_ids, *rx, *ry, rules.ares()),
             Command::ArchiveObject {
                 entity_id,
                 target_id,
-            } => {
-                self.execute_archive_event(*entity_id, Some(combat::TargetKind::Entity(*target_id)))
-            }
+            } => self.execute_archive_event(
+                *entity_id,
+                Some(combat::TargetKind::Entity(*target_id)),
+                rules.ares(),
+            ),
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
             Command::QueueProduction { type_id } => {
@@ -2313,8 +2317,8 @@ impl Simulation {
             // and current Owner+30 must match the signed event House
             // (4C6F2D..4C6F48). A building takes SellBack(-1) at4C6FA2;
             // CanSell belongs to input admission, not this receiver.
-            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 run only with Ares
-            // (below); default builds handle buildings alone.
+            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 run only when Ares
+            // plays (below); otherwise buildings alone are sold.
             Command::SellBuilding { entity_id } => {
                 let Some(entity) = self.substrate.entities.get(*entity_id) else {
                     return false;
@@ -2326,14 +2330,15 @@ impl Simulation {
                 }
                 // 4C6F5A..4C6F96: a Unit or Aircraft with a Building in the
                 // cell of its coordinate takes On_Sold(-1). Ares makes the
-                // player's SellUnit click send it (hook 0x6929FC); default
-                // builds keep the building-only receiver.
-                #[cfg(feature = "ares")]
-                if matches!(
-                    entity.category(),
-                    crate::map::entities::EntityCategory::Unit
-                        | crate::map::entities::EntityCategory::Aircraft
-                ) {
+                // player's SellUnit click send it (hook 0x6929FC); a game
+                // without Ares keeps the building-only receiver.
+                if rules.ares()
+                    && matches!(
+                        entity.category(),
+                        crate::map::entities::EntityCategory::Unit
+                            | crate::map::entities::EntityCategory::Aircraft
+                    )
+                {
                     let at = crate::sim::movement::ground_pose::object_get_coords(
                         entity,
                         self.resolved_terrain.as_ref(),
@@ -2614,9 +2619,11 @@ impl Simulation {
                     .is_some_and(|object| object.gap_generator);
                 // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance
                 // unloads its owner's network (`sim::ares_tunnel`).
-                #[cfg(feature = "ares")]
-                let has_passengers =
-                    has_passengers || self.ares_tunnel_offers_unload(*transport_id, rules);
+                let has_passengers = if rules.ares() {
+                    has_passengers || self.ares_tunnel_offers_unload(*transport_id, rules)
+                } else {
+                    has_passengers
+                };
                 if !has_passengers && !gap_generator {
                     return false;
                 }
@@ -2952,11 +2959,19 @@ impl Simulation {
     /// The input owner `factory_rally_cell_input` has already run native
     /// Map56DC20's nearby-passable search separately for each producer. This
     /// synchronized event stores that prepared target without searching again.
-    fn set_rally_point_for_producers(&mut self, producer_ids: &[u64], rx: u16, ry: u16) -> bool {
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    fn set_rally_point_for_producers(
+        &mut self,
+        producer_ids: &[u64],
+        rx: u16,
+        ry: u16,
+        ares: bool,
+    ) -> bool {
         for &stable_id in producer_ids {
             self.execute_archive_event(
                 stable_id,
                 Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
+                ares,
             );
         }
         // `EVA_NewRallyPointEstablished` is not a sim fact: `BuildingClass::
@@ -2971,10 +2986,12 @@ impl Simulation {
     /// `Set_ArchiveTarget @ 0x0070C610` stores `target` as the event resolves
     /// it ([`Self::resolve_event_token`]): null for an object no longer
     /// present, while a Cell always resolves. Returns whether it archived.
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     fn execute_archive_event(
         &mut self,
         entity_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
+        ares: bool,
     ) -> bool {
         self.planning_detach_actor(entity_id);
         // The target resolves only for a live object (`0x004C6DCD` precedes
@@ -2992,8 +3009,9 @@ impl Simulation {
             // Ares 3.0 Networking_RespondToEvent_Selling (1005CE40, hook
             // 0x4C6DDB): an object on Selling (0x13) that has no archive
             // yet keeps none.
-            #[cfg(feature = "ares")]
-            if object.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
+            if ares
+                && object.mission.current().known()
+                    == Some(crate::sim::mission::MissionType::Selling)
                 && object.archive_target().is_none()
             {
                 return true;
@@ -3325,7 +3343,14 @@ impl Simulation {
     ///   and execution is dropped, including its planning detach, where
     ///   retail runs it on the new owner's object. The flag-2 planning
     ///   acknowledge stays ahead of this gate, so that actor's latch clears.
-    fn network_command_actor_foreign(&self, command_owner: &str, cmd: &Command) -> bool {
+    ///
+    /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
+    fn network_command_actor_foreign(
+        &self,
+        command_owner: &str,
+        cmd: &Command,
+        ares: bool,
+    ) -> bool {
         if !self.session.game_mode().is_network() {
             return false;
         }
@@ -3348,14 +3373,17 @@ impl Simulation {
                     .and_then(|event| u64::try_from(event.entity_id).ok());
                 // The Ares trench event's source building
                 // (`1006A540` trusts it as the other receivers do).
-                #[cfg(feature = "ares")]
-                let actor = actor.or_else(|| {
-                    let event = crate::sim::command::AresTrenchRedirectRecord::decode(record)?;
-                    match event.source {
-                        MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
-                        _ => None,
-                    }
-                });
+                let actor = if ares {
+                    actor.or_else(|| {
+                        let event = crate::sim::command::AresTrenchRedirectRecord::decode(record)?;
+                        match event.source {
+                            MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
+                            _ => None,
+                        }
+                    })
+                } else {
+                    actor
+                };
                 actor.is_some_and(foreign)
             }
             Command::PlanningRecord { record } => {

@@ -19,7 +19,6 @@ mod building_missile;
 mod building_missions;
 mod building_retaliation;
 mod foot_patrol;
-#[cfg(feature = "ares")]
 pub(crate) use building_missions::AresPrismForwarding;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
@@ -30,7 +29,6 @@ pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
 mod target_scan;
-pub(super) use target_scan::passive_block_acts;
 pub(crate) use mission_handlers::dispatch_foot_mission;
 pub(crate) use mission_handlers::enter_idle_mode;
 pub(crate) use mission_handlers::foot_enter_idle_mode_selection;
@@ -40,6 +38,7 @@ use mission_handlers::*;
 pub(crate) use scan_batch::ScanBatch;
 pub(crate) use target_scan::PassiveScan;
 pub(crate) use target_scan::direct_greatest_threat;
+pub(super) use target_scan::passive_block_acts;
 pub(crate) use target_scan::passive_target_acquire;
 pub(crate) use target_scan::scan as retaliate_and_scan;
 pub(crate) use target_scan::{can_fire_at, weapon_at_index};
@@ -57,7 +56,6 @@ use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
-#[cfg(not(feature = "ares"))]
 use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
 
@@ -119,18 +117,16 @@ impl Simulation {
     ) -> crate::sim::wave::WaveUpdateContext {
         use crate::sim::combat::TargetKind;
         use crate::sim::projectile::ProjectileCoord;
-        #[cfg(not(feature = "ares"))]
-        let _ = overlay_registry;
-        #[cfg(feature = "ares")]
-        let ares_weapon = self.ares_wave_weapon(wave, rules);
+        let ares_weapon = if rules.ares() {
+            self.ares_wave_weapon(wave, rules)
+        } else {
+            None
+        };
         // Ares WaveClass_Update_Beam (Ares.dll 10057290) asks GetFLH for the
         // owner's wave slot (TechnoExt+8), not index 0.
-        #[cfg(feature = "ares")]
         let flh_index = |entity: &crate::sim::game_entity::GameEntity| {
             ares_weapon.map_or(0, |_| i32::from(entity.ares_wave_weapon_slot()))
         };
-        #[cfg(not(feature = "ares"))]
-        let flh_index = |_: &crate::sim::game_entity::GameEntity| 0;
 
         // WaveClass keeps raw owner/target pointers through the represented
         // dying interval. Only PointerExpired makes either identity null.
@@ -187,7 +183,6 @@ impl Simulation {
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit),
             _ => false,
         };
-        #[cfg(feature = "ares")]
         let ares = ares_weapon.map(|weapon| {
             use crate::rules::ares_weapon::WaveReverseTarget;
             let target_class = match wave.target_ref() {
@@ -250,8 +245,6 @@ impl Simulation {
                     .wave_reversed_against(target_class.unwrap_or(WaveReverseTarget::Other)),
             }
         });
-        #[cfg(not(feature = "ares"))]
-        let ares = None;
         crate::sim::wave::WaveUpdateContext {
             owner_position,
             owner_fire_coordinate,
@@ -264,7 +257,6 @@ impl Simulation {
 
     /// The weapon CreateWave (Ares.dll 10055160) registered in WaveExt for
     /// `wave`; every hooked wave reads it. `None` for a wave without one.
-    #[cfg(feature = "ares")]
     pub fn ares_wave_weapon<'r>(
         &self,
         wave: &crate::sim::wave::Wave,
@@ -385,8 +377,8 @@ impl Simulation {
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
         // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
-        #[cfg(feature = "ares")]
-        if let Some(bullet) = self.projectiles.get(id)
+        if rules.ares()
+            && let Some(bullet) = self.projectiles.get(id)
             && let Some(anim) = bullet.awaited_anim().filter(|_| bullet.awaiting_anim())
             && self
                 .interner
@@ -482,11 +474,9 @@ impl Simulation {
             overlay_registry: ctx.overlay_registry,
             rules,
             map_size: self.map_size_diamond(),
-            #[cfg(feature = "ares")]
             ares_firestorm: &self.ares_firestorm,
         };
         let nuke_ball_type = || crate::sim::superweapon::nuke::nuke_ball_type(rules);
-        #[cfg(feature = "ares")]
         let ares_ball = |warhead, nuke_sw| {
             crate::sim::superweapon::nuke::ares_nuke_ball(rules, interner, warhead, nuke_sw)
         };
@@ -494,8 +484,11 @@ impl Simulation {
             interner,
             &nuke_ball_type,
         ));
-        #[cfg(feature = "ares")]
-        let nuke = nuke.map(|nuke| nuke.with_ares(&ares_ball));
+        let nuke = if rules.ares() {
+            nuke.map(|nuke| nuke.with_ares(&ares_ball))
+        } else {
+            nuke
+        };
         let result = self
             .projectiles
             .advance_after_head(
@@ -516,8 +509,7 @@ impl Simulation {
             )
             .expect("projectile remained present for its Logic slot");
         let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
-        #[cfg(feature = "ares")]
-        if result.ares_firestormed {
+        if rules.ares() && result.ares_firestormed {
             self.ares_burn_flying_bullet(id, rules);
         }
         // The rest of a `NUKE` impact precedes the slot's detonations.
@@ -551,11 +543,11 @@ impl Simulation {
         // WaveClass::AI: a wave whose weapon has AmbientDamage first damages
         // the cells of its previous update, whatever its type; the update and
         // lifecycle follow with the post-damage world.
-        #[cfg(feature = "ares")]
-        if let Some(request) = self
-            .ares_wave_weapon(self.waves.get(id).expect("represented Wave"), rules)
-            .filter(|weapon| weapon.ambient_damage != 0)
-            .and_then(|_| self.waves.ares_damage_request(id))
+        if rules.ares()
+            && let Some(request) = self
+                .ares_wave_weapon(self.waves.get(id).expect("represented Wave"), rules)
+                .filter(|weapon| weapon.ambient_damage != 0)
+                .and_then(|_| self.waves.ares_damage_request(id))
         {
             self.commit_logic_wave_damage_request(
                 rules,
@@ -1073,8 +1065,7 @@ fn techno_ai_shell(
             techno_common_post(sim, id, rules, ctx.effects);
             // Ares BuildingClass_Update_SensorArray10016E30 (hook43FE69),
             // after Update's IsAlive test.
-            #[cfg(feature = "ares")]
-            if ai_alive(&sim.substrate, id) {
+            if rules.ares() && ai_alive(&sim.substrate, id) {
                 sim.update_ares_sensor_array(id, rules, ctx.overlay_registry);
             }
             building_missions::gattling_idle(
@@ -1228,11 +1219,12 @@ fn techno_ai_shell(
             // Ares BuildingClass_Update_FirestormWall (10014B40, hook
             // 0x440378) ahead of the range drop: a `Firestorm.Wall` section's
             // flicker and victims (`UpdateFirewall(false)`).
-            #[cfg(feature = "ares")]
-            if sim.substrate.entities.get(id).is_some_and(|entity| {
-                sim.object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| object.building_type_ext().firestorm_wall)
-            }) {
+            if rules.ares()
+                && sim.substrate.entities.get(id).is_some_and(|entity| {
+                    sim.object_type(entity.type_ref(), rules)
+                        .is_some_and(|object| object.building_type_ext().firestorm_wall)
+                })
+            {
                 sim.ares_update_firewall(id, false, rules, ctx.overlay_registry, ctx.effects);
             }
             // The range drop that ends the Update (`0x00440378`).
@@ -1257,10 +1249,7 @@ fn techno_ai_shell(
             // Ares 3.0 AACombat (1005C190, hook 0x414D36) jumps past the
             // airborne drop to the cloaked-target test: an aircraft keeps an
             // airborne Target.
-            #[cfg(feature = "ares")]
-            let dropped = false;
-            #[cfg(not(feature = "ares"))]
-            let dropped = drop_airborne_target_step(sim, id, rules, ctx.effects);
+            let dropped = !rules.ares() && drop_airborne_target_step(sim, id, rules, ctx.effects);
             if !dropped {
                 drop_unsensed_cloaked_target_step(sim, id, rules, ctx.effects);
             }
@@ -1300,7 +1289,6 @@ fn techno_ai_shell(
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
 /// Ares replaces this whole block (`Simulation::update_ares_veterancy`).
-#[cfg(not(feature = "ares"))]
 fn veterancy_promotion_step(
     interner: &mut StringInterner,
     substrate: &mut ObjectSubstrate,
@@ -1341,6 +1329,7 @@ fn veterancy_promotion_step(
         sound_id,
         type_id,
         world,
+        eva: None,
     });
 }
 
@@ -1540,15 +1529,14 @@ fn self_heal_step(
     };
     // Ares 3.0 1004B820 (hook 0x6FA743) adds GetSelfHealAmount (10044E80)
     // in place of the eligibility virtual and its `+1`.
-    #[cfg(feature = "ares")]
-    let amount = crate::sim::combat::veterancy::ares_self_heal_amount(
-        entity,
-        object,
-        session.binary_frame() as i32,
-        rules.general.repair_rate_minutes,
-    );
-    #[cfg(not(feature = "ares"))]
-    let amount = {
+    let amount = if rules.ares() {
+        crate::sim::combat::veterancy::ares_self_heal_amount(
+            entity,
+            object,
+            session.binary_frame() as i32,
+            rules.general.repair_rate_minutes,
+        )
+    } else {
         use crate::sim::combat::veterancy;
         // The period is an x87 conversion of a rules value, so only an
         // object past the virtual's ability gate, which answers false
@@ -1585,7 +1573,6 @@ fn self_heal_step(
 /// cloaked-target test below is skipped (`JMP 0x00414DA1`). Returns whether
 /// it dropped one. A Cell's slot (`0x00410530`) answers false, and so does a
 /// Terrain object on the ground.
-#[cfg(not(feature = "ares"))]
 fn drop_airborne_target_step(
     sim: &mut Simulation,
     id: u64,
@@ -1759,55 +1746,48 @@ fn techno_common_steps(
     // surface before the same visit updates self-attached effects1004B434.
     // The hook reads the type before converting and keeps it for the
     // PassengerTurret step after.
-    #[cfg(feature = "ares")]
-    let hook_type = sim
-        .substrate
-        .entities
-        .get(id)
-        .map(|entity| entity.type_ref());
-    #[cfg(feature = "ares")]
-    sim.update_ares_surface_conversion(id, rules, effects);
-    #[cfg(feature = "ares")]
-    if let Some(object) = hook_type.and_then(|type_ref| sim.interner.object_type(type_ref, rules))
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
-    {
-        entity.update_passenger_turret(object);
+    if rules.ares() {
+        let hook_type = sim
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| entity.type_ref());
+        sim.update_ares_surface_conversion(id, rules, effects);
+        if let Some(object) =
+            hook_type.and_then(|type_ref| sim.interner.object_type(type_ref, rules))
+            && let Some(entity) = sim.substrate.entities.get_mut(id)
+        {
+            entity.update_passenger_turret(object);
+        }
+        // Ares1004B320 updates a PoweredBy object's power source next. Its
+        // TechnoExt::Destroy kills the object; native continues the hook's
+        // extension updates on the corpse, which this visit skips instead.
+        if !sim.update_ares_powered_by(id, rules, overlay_registry, effects)
+            || !ai_alive(&sim.substrate, id)
+        {
+            return false;
+        }
+        // Ares1004B434 updates attachments before1004B528 EMP recovery.
+        sim.update_ares_attach_effects(id, rules);
     }
-    // Ares1004B320 updates a PoweredBy object's power source next. Its
-    // TechnoExt::Destroy kills the object; native continues the hook's
-    // extension updates on the corpse, which this visit skips instead.
-    #[cfg(feature = "ares")]
-    if !sim.update_ares_powered_by(id, rules, overlay_registry, effects)
-        || !ai_alive(&sim.substrate, id)
-    {
-        return false;
-    }
-    // Ares1004B434 updates attachments before1004B528 EMP recovery.
-    #[cfg(feature = "ares")]
-    sim.update_ares_attach_effects(id, rules);
     // Phobos `TechnoExt::UpdateAttachEffects` (Body.Update.cpp:895): one AI
     // phase and the animation check for every AttachEffect on this object.
     #[cfg(feature = "phobos")]
     sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
-    #[cfg(feature = "ares")]
-    sim.update_ares_operator_operability(id, rules, effects);
-    // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
-    //the stock head. EMP expiry itself must not invent a future-power sweep.
-    #[cfg(feature = "ares")]
-    sim.update_ares_emp_operability(id, rules, effects);
-    // Ares1004B320 then stops a deactivated Unit's driving and unjams a
-    // deactivated jammer or updates an active one.
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
+        sim.update_ares_operator_operability(id, rules, effects);
+        // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
+        //the stock head. EMP expiry itself must not invent a future-power sweep.
+        sim.update_ares_emp_operability(id, rules, effects);
+        // Ares1004B320 then stops a deactivated Unit's driving and unjams a
+        // deactivated jammer or updates an active one.
         sim.stop_ares_deactivated_unit_driving(id, rules, overlay_registry, effects);
         sim.update_ares_radar_jammer(id, rules);
+        sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
+        // Ares1004B64B..1004B658 follows the extension updates and precedes
+        // the original common head, consuming a ready displayed bounty sum.
+        sim.flush_bounty_display(id, rules, effects, false);
     }
-    #[cfg(feature = "ares")]
-    sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
-    // Ares1004B64B..1004B658 follows the extension updates and precedes
-    // the original common head, consuming a ready displayed bounty sum.
-    #[cfg(feature = "ares")]
-    sim.flush_bounty_display(id, rules, effects, false);
     // Techno6F9E70..6F9EA8 re-drives +4A4 at Location before mission
     // Stop/Release. A zero gain must stop a live loop before Guard can
     // release it to decay at the previous gain.
@@ -1853,8 +1833,10 @@ fn techno_common_steps(
             );
         }
     }
-    #[cfg(not(feature = "ares"))]
-    if !quiet {
+    if rules.ares() {
+        // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
+        sim.update_ares_veterancy(id, false, true, rules, effects);
+    } else if !quiet {
         veterancy_promotion_step(
             &mut sim.interner,
             &mut sim.substrate,
@@ -1864,9 +1846,6 @@ fn techno_common_steps(
             rules,
         );
     }
-    // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
-    #[cfg(feature = "ares")]
-    sim.update_ares_veterancy(id, false, true, rules, effects);
     if !quiet {
         crate::sim::credit_income::drain_common_step(sim, id, rules);
     }
@@ -2090,12 +2069,12 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let weapon = target_scan::select_weapon(sim, rules, id, Some(target));
     // Ares TechnoClass_Update_ZeroOutTarget (10056D80, hook 0x6FA4C6) skips
     // the clear for an Aircraft, resuming at 0x6FA4D1.
-    #[cfg(feature = "ares")]
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
+    if rules.ares()
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
     {
         return;
     }
@@ -2355,14 +2334,14 @@ fn techno_after_acquisition(
     }
     // Ares 3.0 1004B820 (hook 0x6FA743): a crashing or sinking techno skips
     // both pulses, resuming at the cloak tick (0x6FA941).
-    #[cfg(feature = "ares")]
-    let heals = sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| !entity.crash.is_crashing() && !entity.sinking.is_active());
-    #[cfg(not(feature = "ares"))]
-    let heals = !quiet;
+    let heals = if rules.ares() {
+        sim.substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| !entity.crash.is_crashing() && !entity.sinking.is_active())
+    } else {
+        !quiet
+    };
     if heals {
         self_heal_step(
             &sim.interner,
@@ -2640,7 +2619,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
 /// The common Techno post-mission stage and the stock-dormant Cyborg Spark
 /// producer. The retained system and both native producers share particles::spawn.
-fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: FrameEffects<'_>) {
+fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
     // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
     // Buildings step at4509DE in their existing UpdateAnimation owner.
     // Native6FABBC..C2 skips ONLY the generic Stage block to6FAC31; the
@@ -2664,8 +2643,9 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: 
     sim.update_techno_discovery_from_shroud(id);
     // Installed Ares6FAF0D ->10053DF0, after the ordinary Techno tail.
     // No global frame sweep: limbo/skipped/dead visits never reach this slot.
-    #[cfg(feature = "ares")]
-    sim.tick_ares_emp(id, rules, _effects);
+    if rules.ares() {
+        sim.tick_ares_emp(id, rules, effects);
+    }
 }
 
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
@@ -4403,9 +4383,9 @@ mod tests {
     /// Ares 3.0 TechnoClass_Update_LoseTarget (1004E4C0, hook 0x6FA361): a
     /// computer house's healer keeps an allied target and lets an enemy go,
     /// the reverse of the stock drop.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_computer_healer_keeps_allies_and_drops_enemies() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [VehicleTypes]\n0=MEDTNK\n1=MTNK\n\n\
@@ -5036,7 +5016,10 @@ mod tests {
             sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
             target_of(&sim, 1)
         };
-        let airborne_kept = cfg!(feature = "ares").then_some(TargetKind::Entity(2));
+        // The visit's rules (`None`) are the empty test rules.
+        let airborne_kept = RuleSet::empty_for_test()
+            .ares()
+            .then_some(TargetKind::Entity(2));
         assert_eq!(visited(208), airborne_kept);
         assert_eq!(visited(207), Some(TargetKind::Entity(2)));
     }
@@ -5549,10 +5532,7 @@ mod tests {
         assert!(!entity.passive_scan.acquired());
         // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps
         // the burst word through Assign_Target(NULL).
-        assert_eq!(
-            entity.weapon_burst.index(),
-            i32::from(cfg!(feature = "ares"))
-        );
+        assert_eq!(entity.weapon_burst.index(), i32::from(rules.ares()));
         assert_eq!(
             entity.mission.dispatch_timer(),
             MissionDispatchTimer::from_raw(0, 1),
@@ -6378,7 +6358,7 @@ mod selfheal_oracle_tests;
 #[path = "techno_ai/signed_health_tests.rs"]
 mod signed_health_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "techno_ai/ares_self_heal_tests.rs"]
 mod ares_self_heal_tests;
 

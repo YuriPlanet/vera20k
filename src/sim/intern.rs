@@ -60,7 +60,7 @@ impl fmt::Display for InternedId {
 pub struct StringInterner {
     /// Uppercase-normalized key → ID. Only looked up, never walked, so it
     /// takes the lookup hasher.
-    /// Shared copy-on-write with presentation frames (docs/sim-thread.md);
+    /// Synced into the presentation copy (docs/sim-thread.md);
     /// [`Self::intern`] writes only for a new string.
     to_id: Synced<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).

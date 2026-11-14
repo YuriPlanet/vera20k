@@ -531,7 +531,6 @@ impl Simulation {
             overlay_grid: self.overlay_grid.as_ref(),
             overlay_registry: registry,
             alliances: Some(&self.house_alliances),
-            #[cfg(feature = "ares")]
             buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
         };
         let can_fire = match (weapon, identity) {
@@ -1140,7 +1139,6 @@ impl Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
-                    #[cfg(feature = "ares")]
                     buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
                 },
             )

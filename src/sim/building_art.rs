@@ -66,7 +66,6 @@ pub struct BuildingArt {
     actually_placed: bool,
     /// Ares BuildingExt `FreeUnits_Done` (`+0xC`): a Place has reached the
     /// free-unit block (BuildingClass_Place_SkipFreeUnits, `10036860`).
-    #[cfg(feature = "ares")]
     #[serde(default)]
     free_units_done: bool,
     /// Derived draw cache from UpdateAnimation, before this object's Techno
@@ -195,20 +194,17 @@ impl BuildingArt {
     /// Ares 3.0 BuildingClass_Place_SkipFreeUnits (10036860, hook 0x446AAF):
     /// whether this Place runs the free-unit block, which only the first
     /// Place to reach it does.
-    #[cfg(feature = "ares")]
     fn take_free_units(&mut self) -> bool {
         !std::mem::replace(&mut self.free_units_done, true)
     }
 
     /// Whether a Place has reached the free-unit block (hashed).
-    #[cfg(feature = "ares")]
     pub(crate) fn free_units_done(&self) -> bool {
         self.free_units_done
     }
 
     /// Ares ChronoWarpStateMachine::Update (`10070230`) drops +6E4 when it
     /// removes a chronoshifted building, so its next Place opens it again.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_actually_placed(&mut self) {
         self.actually_placed = false;
     }
@@ -287,7 +283,6 @@ impl Default for BuildingArt {
             storage: BuildingStorage::default(),
             stuff_enabled: true,
             actually_placed: false,
-            #[cfg(feature = "ares")]
             free_units_done: false,
             tint_sample: None,
         }
@@ -535,14 +530,12 @@ impl Simulation {
         // 446AAF: Ares marks the block run on its first reach, whatever the
         // capture and ScenarioInit arguments, and skips it afterwards (a
         // building ChronoWarp put back opens again with +6E4 clear).
-        #[cfg(feature = "ares")]
-        let free_units = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .is_some_and(|entity| entity.building_art.take_free_units());
-        #[cfg(not(feature = "ares"))]
-        let free_units = true;
+        let free_units = !rules.ares()
+            || self
+                .substrate
+                .entities
+                .get_mut(id)
+                .is_some_and(|entity| entity.building_art.take_free_units());
         if free_units && !captured && !scenario_initialization {
             if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
             {
@@ -551,9 +544,10 @@ impl Simulation {
         }
         // Ares 3.0 BuildingClass_Place_InitialPayload (10048EB0, hook
         // 0x446EE2), where every reached opening resumes past the free unit:
-        // the building's InitialPayload, once.
-        #[cfg(feature = "ares")]
-        self.create_ares_initial_payload(id, rules, registry, effects);
+        // the building's InitialPayload, once, when Ares plays.
+        if rules.ares() {
+            self.create_ares_initial_payload(id, rules, registry, effects);
+        }
     }
     fn building_anim_config(
         &self,
@@ -923,7 +917,6 @@ impl Simulation {
     /// Whether the building's type names an anim for `slot`, the first-byte
     /// test of the anim name (`+0x11F4` for the SpecialAnim) the Ares Prism
     /// charge makes before it swaps anims (`100169A0`, `10017970`).
-    #[cfg(feature = "ares")]
     pub(crate) fn building_has_anim(&self, id: u64, slot: u8, rules: &RuleSet) -> bool {
         self.building_anim_config(id, slot, rules)
             .is_some_and(|config| !config.anim_type.is_empty())
@@ -934,7 +927,6 @@ impl Simulation {
     /// Special (`+0x584`) or SpecialTwo (`+0x588`) slot, not through
     /// `0x00451890`: no other slot or the damage flag changes, and the anim
     /// keeps its constructor's offsets (`sim::ares_firestorm`).
-    #[cfg(feature = "ares")]
     pub(crate) fn install_ares_firewall_anim(&mut self, id: u64, slot: u8, anim: u64) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;

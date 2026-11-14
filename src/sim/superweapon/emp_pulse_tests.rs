@@ -135,6 +135,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
 /// (an unknown cannon name is skipped), and Action none under TargetSelf.
 #[test]
 fn ares_emp_pulse_reads_its_handler_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Volley]\nEMPulse.TargetSelf=yes\nEMPulse.PulseBall=NOSUCHANIM\n");
     let pulse = rules.super_weapon("Pulse").unwrap();
     assert_eq!(pulse.kind, SuperWeaponKind::EMPulse);
@@ -164,6 +165,7 @@ fn ares_emp_pulse_reads_its_handler_keys() {
 /// and the cell; the House's EMPTarget is the cell.
 #[test]
 fn ares_emp_pulse_sends_the_cannons_in_range_up_to_its_count() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let (mut sim, owner) = scene(&rules);
     let depot = building(&mut sim, &rules, "DEPOT", (24, 23));
@@ -198,6 +200,7 @@ fn ares_emp_pulse_sends_the_cannons_in_range_up_to_its_count() {
 /// goes back to Guard.
 #[test]
 fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Pulse]\nSW.MaxCount=1\n");
     let (mut sim, _) = scene(&rules);
     let cannon = building(&mut sim, &rules, "CANNON", (20, 20));
@@ -244,6 +247,7 @@ fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
 /// on itself instead.
 #[test]
 fn ares_emp_pulse_listed_cannons_fire_at_the_cell_or_at_themselves() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("");
     let (mut sim, _) = scene(&rules);
     let gun = building(&mut sim, &rules, "GUN", (20, 20));
@@ -282,6 +286,7 @@ fn ares_emp_pulse_listed_cannons_fire_at_the_cell_or_at_themselves() {
 /// (an unknown name is skipped, a later list replaces).
 #[test]
 fn ares_drop_pod_reads_its_handler_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(

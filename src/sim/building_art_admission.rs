@@ -86,7 +86,6 @@ impl Simulation {
     /// Ares 3.0 `10024150` after a structure's return to its first owner: a
     /// `NeedsEngineer=` one loses HasEngineer and is disabled again
     /// (`DisableStuff @ 0x00452480`), as an unengineered tech building is.
-    #[cfg(feature = "ares")]
     pub(crate) fn disable_returned_tech_building(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;

@@ -45,14 +45,12 @@ pub(crate) fn apply_foot_radiation(
     let entity = world.substrate.entities.get(stable_id)?;
     // Ares 3.0 FootClass_Update_RadImmune (10049490, hook 0x4DA584): the
     // rank's RADIMMUNE skips the whole radiation block.
-    #[cfg(feature = "ares")]
-    let rad_immune = world
-        .interner
-        .object_type(entity.type_ref(), rules)
-        .and_then(|object| object.promotion_abilities())
-        .is_some_and(|abilities| abilities.rad_immune(entity.veterancy.raw()));
-    #[cfg(not(feature = "ares"))]
-    let rad_immune = false;
+    let rad_immune = rules.ares()
+        && world
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .and_then(|object| object.promotion_abilities())
+            .is_some_and(|abilities| abilities.rad_immune(entity.veterancy.raw()));
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -509,25 +507,24 @@ pub(crate) fn warhead_is_malicious(
     interner: &StringInterner,
     event: &EntityDamageEvent,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    if let Some(combat) = interner
-        .warhead_type(event.warhead_ref, rules)
-        .and_then(WarheadType::ares_combat)
+    if rules.ares()
+        && let Some(combat) = interner
+            .warhead_type(event.warhead_ref, rules)
+            .and_then(WarheadType::ares_combat)
     {
         return combat.malicious();
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner, event);
     true
 }
 
-fn bridge_absolute_destroyer(warhead: &WarheadType, is_ion_cannon_warhead: bool) -> bool {
-    #[cfg(feature = "ares")]
-    if let Some(combat) = warhead.ares_combat() {
+fn bridge_absolute_destroyer(
+    warhead: &WarheadType,
+    is_ion_cannon_warhead: bool,
+    ares: bool,
+) -> bool {
+    if ares && let Some(combat) = warhead.ares_combat() {
         return combat.bridge_absolute_destroyer(is_ion_cannon_warhead);
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = warhead;
     is_ion_cannon_warhead
 }
 
@@ -582,8 +579,7 @@ pub(crate) fn collect_area(
     // destroyable cliff spends one Scenario draw against CollapseChance. The
     // ground/deck list choice `begin` made is unaffected: a cliff cell has
     // no bridge deck.
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         let mut cliff_effects = crate::sim::combat::DeathEffects::default();
         world.roll_cliff_collapse(
             cell.0,
@@ -599,19 +595,20 @@ pub(crate) fn collect_area(
             .cell_target_detaches
             .append(&mut cliff_effects.cell_target_detaches);
     }
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64).iter() {
+    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
         // Ares 3.0 DamageArea_ChainReaction (10051000, hook 0x48964F): the
         // cell's CellChainReact precedes its Reduce_Tiberium (the prelude).
-        #[cfg(feature = "ares")]
-        world.ares_area_damage_chain_reaction(
-            cell,
-            (dx, dy),
-            warhead,
-            affects_tiberium,
-            rules,
-            overlay_registry,
-            effects,
-        );
+        if rules.ares() {
+            world.ares_area_damage_chain_reaction(
+                cell,
+                (dx, dy),
+                warhead,
+                affects_tiberium,
+                rules,
+                overlay_registry,
+                effects,
+            );
+        }
         let (spread_cell, detached_cell) = {
             let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
                 rules,
@@ -916,7 +913,8 @@ fn collect_area_at<'r>(
         origin,
     );
     let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
-    let entered = combat_aoe::area_damage_enters(damage, warhead, world.session.no_damage());
+    let entered =
+        combat_aoe::area_damage_enters(damage, warhead, world.session.no_damage(), rules.ares());
     let routed_wall = entered && area_routes_to_wall(world, overlay_registry, (rx, ry), warhead);
     let aoe = collect_area(
         world,
@@ -1180,8 +1178,8 @@ pub(crate) fn commit_terrain(
     // Ares 3.0 TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook
     // 0x71B99E): after ObjectClass::ReceiveDamage, a positive `Sparky=` hit
     // on a tree not yet burning calls Catch_Fire (vt+0x178), lethal or not.
-    #[cfg(feature = "ares")]
-    let ignites = !matches!(receive, TerrainAreaReceiveResult::Ignored)
+    let ignites = rules.ares()
+        && !matches!(receive, TerrainAreaReceiveResult::Ignored)
         && packet > 0
         && warhead.sparky
         && world
@@ -1189,7 +1187,6 @@ pub(crate) fn commit_terrain(
             .get(event.stable_id)
             .is_some_and(|terrain| !terrain.on_fire());
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
-        #[cfg(feature = "ares")]
         if ignites {
             world.terrain_catch_fire(event.stable_id, rules);
         }
@@ -1202,25 +1199,23 @@ pub(crate) fn commit_terrain(
     let uninit_context =
         crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
     world.notify_pointer_expired(lethal.stable_id, uninit_context);
-    #[cfg(feature = "ares")]
+    if ignites {
+        world.terrain_catch_fire(lethal.stable_id, rules);
+    }
+    // Take_Damage71BAE0: the lethal arm of a burning ordinary tree
+    // clears its owned anims' loops (ClearLoopsForOwner 0x00422B80)
+    // instead of starting the crumble.
+    if rules.ares()
+        && !lethal.spawns_tiberium
+        && world
+            .terrain_objects
+            .get(lethal.stable_id)
+            .is_some_and(|terrain| terrain.on_fire())
     {
-        if ignites {
-            world.terrain_catch_fire(lethal.stable_id, rules);
-        }
-        // Take_Damage71BAE0: the lethal arm of a burning ordinary tree
-        // clears its owned anims' loops (ClearLoopsForOwner 0x00422B80)
-        // instead of starting the crumble.
-        if !lethal.spawns_tiberium
-            && world
-                .terrain_objects
-                .get(lethal.stable_id)
-                .is_some_and(|terrain| terrain.on_fire())
-        {
-            world
-                .substrate
-                .anims
-                .clear_loops_for_terrain_owner(lethal.stable_id);
-        }
+        world
+            .substrate
+            .anims
+            .clear_loops_for_terrain_owner(lethal.stable_id);
     }
 
     if lethal.spawns_tiberium
@@ -1257,12 +1252,12 @@ pub(crate) fn commit_terrain(
         // The following CellChainReaction request (71BAD5) on the terrain's
         // cell calls 489270, whose active-YR body is RET. Ares 3.0 fills it
         // with CellChainReact (10050DD0).
-        #[cfg(feature = "ares")]
-        if let Some(terrain_cell) = world
-            .terrain_objects
-            .objects()
-            .get(&lethal.stable_id)
-            .map(|terrain| terrain.cell())
+        if rules.ares()
+            && let Some(terrain_cell) = world
+                .terrain_objects
+                .objects()
+                .get(&lethal.stable_id)
+                .map(|terrain| terrain.cell())
         {
             world.ares_cell_chain_react(terrain_cell, rules, overlay_registry, run.effects());
         }
@@ -1402,18 +1397,18 @@ pub(crate) fn commit_entities(
         // Ares 3.0 BuildingClass_ReceiveDamage_FSW (10014A90, hook 0x4423E7),
         // past the type gates: an active firestorm wall section returns 0
         // and the hit shortens its House's firestorm drain instead.
-        #[cfg(feature = "ares")]
-        if world
-            .substrate
-            .entities
-            .get(target_id)
-            .is_some_and(|target| {
-                target.category() == EntityCategory::Structure
-                    && !super::receiver_call::building_type_gate_returns_zero(
-                        world.interner.object_type(target.type_ref(), rules),
-                        event.receiver_flags,
-                    )
-            })
+        if rules.ares()
+            && world
+                .substrate
+                .entities
+                .get(target_id)
+                .is_some_and(|target| {
+                    target.category() == EntityCategory::Structure
+                        && !super::receiver_call::building_type_gate_returns_zero(
+                            world.interner.object_type(target.type_ref(), rules),
+                            event.receiver_flags,
+                        )
+                })
             && world.ares_firestorm_absorbs_damage(target_id, event.damage, rules)
         {
             continue;
@@ -1502,11 +1497,10 @@ pub(crate) fn commit_entities(
         }
 
         #[cfg(feature = "phobos")]
-        #[cfg(feature = "ares")]
         let ares_initially_positive = shield_receipt
             .as_ref()
             .map_or(event.damage > 0, |receipt| receipt.remaining > 0);
-        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        #[cfg(not(feature = "phobos"))]
         let ares_initially_positive = event.damage > 0;
         #[cfg(feature = "phobos")]
         let post_shield_input = shield_receipt
@@ -1838,8 +1832,7 @@ pub(crate) fn commit_entities(
         // protected responses and before Uncloak. The early701914 hook
         // records the sign before defenses; callbacks may alter a pointed
         // damage field before the aftermath reads it again.
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             let current_damage = event
                 .damage_writeback
                 .map(|writeback| writeback.read(world, rules))
@@ -1860,9 +1853,8 @@ pub(crate) fn commit_entities(
 
         //1004AB68..1004AB88 returns702823 for result0, skipping Uncloak
         //even when no extension effect is configured or admitted.
-        #[cfg(feature = "ares")]
-        let uncloak_after_damage =
-            uncloak_after_damage && receive_state != damage::DamageState::Unaffected;
+        let uncloak_after_damage = uncloak_after_damage
+            && (!rules.ares() || receive_state != damage::DamageState::Unaffected);
 
         // Phobos `TechnoClass_ReceiveDamage_Decloak @ 0x00702819` replaces the
         // retail call with a per-warhead switch: only an admitting warhead
@@ -1920,14 +1912,17 @@ pub(crate) fn commit_entities(
             // Ares 3.0 TechnoClass_ReceiveDamage_OpenTopped (1004AD10, hook
             // 0x702A38): a source riding an open-topped transport (+0x82,
             // +0x11C) hands the whole retaliation decision to that transport.
-            #[cfg(feature = "ares")]
-            let attacker_id = world
-                .substrate
-                .entities
-                .get(attacker_id)
-                .filter(|source| source.passenger_role.in_open_transport())
-                .and_then(|source| source.passenger_role.transporter())
-                .unwrap_or(attacker_id);
+            let attacker_id = if rules.ares() {
+                world
+                    .substrate
+                    .entities
+                    .get(attacker_id)
+                    .filter(|source| source.passenger_role.in_open_transport())
+                    .and_then(|source| source.passenger_role.transporter())
+                    .unwrap_or(attacker_id)
+            } else {
+                attacker_id
+            };
             let retaliates = attacker_id != RAD_NO_ATTACKER && {
                 #[cfg(any(test, feature = "test-support"))]
                 death
@@ -1955,14 +1950,12 @@ pub(crate) fn commit_entities(
             // replaces the Scatter call itself: a `PreventScatter=yes`
             // warhead leaves the admitted object in place. The admission
             // before it only reads.
-            #[cfg(feature = "ares")]
-            let prevent_scatter = world
-                .interner
-                .warhead_type(event.warhead_ref, rules)
-                .and_then(WarheadType::ares_combat)
-                .is_some_and(|combat| combat.prevent_scatter());
-            #[cfg(not(feature = "ares"))]
-            let prevent_scatter = false;
+            let prevent_scatter = rules.ares()
+                && world
+                    .interner
+                    .warhead_type(event.warhead_ref, rules)
+                    .and_then(WarheadType::ares_combat)
+                    .is_some_and(|combat| combat.prevent_scatter());
             if !prevent_scatter {
                 match world.receive_damage_scatter(
                     target_id,
@@ -2441,23 +2434,23 @@ pub(crate) fn handle_death(
                 };
                 // The killing hit's warhead: what Techno's death arm reads
                 // from its own ReceiveDamage arguments (stack +0xD0).
-                #[cfg(feature = "ares")]
-                let killing_combat = damage_events
-                    .iter()
-                    .rfind(|event| event.target_id == dead_id)
-                    .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
-                    .and_then(WarheadType::ares_combat);
+                let killing_combat = if rules.ares() {
+                    damage_events
+                        .iter()
+                        .rfind(|event| event.target_id == dead_id)
+                        .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
+                        .and_then(WarheadType::ares_combat)
+                } else {
+                    None
+                };
                 // Ares TechnoClass_ReceiveDamage_OverrideVoiceDie (1004ADA0,
                 // hook 0x702185) and _OverrideDieSound (1004AD60, hook
                 // 0x7021F5) replace the cue at its PlayAt, after the draw:
                 // a set override plays instead, its -1 index plays nothing.
-                #[cfg(feature = "ares")]
-                let overrides = [
+                let overrides: [Option<Option<&str>>; 2] = [
                     killing_combat.and_then(|combat| combat.voice_die_override()),
                     killing_combat.and_then(|combat| combat.die_sound_override()),
                 ];
-                #[cfg(not(feature = "ares"))]
-                let overrides: [Option<Option<&str>>; 2] = [None, None];
                 for (choices, sound_override) in [voice, obj.die_sounds.as_slice()]
                     .into_iter()
                     .zip(overrides)
@@ -2499,8 +2492,7 @@ pub(crate) fn handle_death(
                 }
                 // Ares 3.0 1004AEC0 (hook 0x702200), between the death sounds
                 // and the Stun: TiberiumSpill.
-                #[cfg(feature = "ares")]
-                if callbacks_enabled(world) {
+                if rules.ares() && callbacks_enabled(world) {
                     world.ares_spill_tiberium(dead_id, rules, run.effects());
                 }
                 // 0x00702206..0x00702210: RADIO OVER_OUT to every contact and
@@ -2513,8 +2505,7 @@ pub(crate) fn handle_death(
                     );
                 }
                 // Ares 3.0 1004B050 (hook 0x702216): TiberiumRemains.
-                #[cfg(feature = "ares")]
-                if callbacks_enabled(world) {
+                if rules.ares() && callbacks_enabled(world) {
                     world.ares_tiberium_remains(dead_id, rules, run.effects());
                 }
                 // 0x00702216..0x00702228: then the Fire system link is released.
@@ -2589,11 +2580,8 @@ pub(crate) fn handle_death(
                 // instead of damaging (`0x00469343`), which goes off below.
                 // Ares TechnoClass_ReceiveDamage_SuppressDeathWeapon (hook
                 // 0x702669) skips only this Fire_Death_Weapon call.
-                #[cfg(feature = "ares")]
                 let death_weapon_suppressed = killing_combat
                     .is_some_and(|combat| combat.suppresses_death_weapon(obj.category, &obj.id));
-                #[cfg(not(feature = "ares"))]
-                let death_weapon_suppressed = false;
                 if explodes
                     && !death_weapon_suppressed
                     && let Some(detonation) = super::death_weapon_detonation(
@@ -2692,10 +2680,11 @@ pub(crate) fn handle_death(
             // Ares BuildingClass_ReceiveDamage_PrismForward (10016950, hook
             // 0x4424EF), after the bunker release and before the captives go
             // free: the building leaves its Prism network.
-            #[cfg(feature = "ares")]
-            world
-                .substrate
-                .ares_prism_remove_from_network(dead_id, true);
+            if rules.ares() {
+                world
+                    .substrate
+                    .ares_prism_remove_from_network(dead_id, true);
+            }
             let (nested, pings) =
                 world.building_now_dead_contacts(dead_id, &contacts, rules, overlay_registry, run);
             effects.append(nested);
@@ -2747,6 +2736,8 @@ fn finish_concrete_death(
     // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
     // FootClass_Destroyed (10049080) and BuildingClass_Destroyed_UnitLost
     // (10013F10) then stay silent.
+    // Still on the feature: it moves with the unit-lost event, whose Ares
+    // fields (`UnitLostEvent`, `SimSoundEvent::UnitLost`) the app reads.
     #[cfg(feature = "ares")]
     let unit_lost_suppressed = damage_events
         .iter()
@@ -2790,7 +2781,6 @@ fn finish_concrete_death(
         .map(|event| event.receiver_flags);
     let ignore_defenses = killing_flags.is_some_and(|flags| flags.ignore_defenses);
     // Ares's survivor release (`0x100464C0`) reads only IgnoreDefenses.
-    #[cfg(not(feature = "ares"))]
     let prevent_crew_escape = killing_flags.is_some_and(|flags| flags.arg6);
 
     // BuildingClass runs DestructionEffects/SpawnSurvivors only after
@@ -2857,16 +2847,15 @@ fn finish_concrete_death(
             ignore_defenses,
             selected_by_player,
         };
-        #[cfg(feature = "ares")]
-        world.release_ares_vehicle_survivors(
-            rules,
-            overlay_registry,
-            dead_id,
-            dying,
-            frame_effects,
-        );
-        #[cfg(not(feature = "ares"))]
-        {
+        if rules.ares() {
+            world.release_ares_vehicle_survivors(
+                rules,
+                overlay_registry,
+                dead_id,
+                dying,
+                frame_effects,
+            );
+        } else {
             world.release_dying_unit_passengers(
                 rules,
                 overlay_registry,
@@ -2925,13 +2914,14 @@ fn finish_concrete_death(
                     .rfind(|event| event.target_id == dead_id)
                     .and_then(|event| event.source_house)
             });
-        #[cfg(feature = "ares")]
-        let inf_death_anim = killing_warhead
-            .as_ref()
-            .and_then(|(wh, _)| wh.ares_combat())
-            .and_then(|combat| combat.inf_death_anim());
-        #[cfg(not(feature = "ares"))]
-        let inf_death_anim = None;
+        let inf_death_anim = if rules.ares() {
+            killing_warhead
+                .as_ref()
+                .and_then(|(wh, _)| wh.ares_combat())
+                .and_then(|combat| combat.inf_death_anim())
+        } else {
+            None
+        };
         let postlude = world.begin_infantry_receiver_death(
             dead_id,
             inf_death,
@@ -2976,8 +2966,7 @@ fn finish_concrete_death(
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Aircraft && callbacks_enabled(world) {
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             //41668B ->10048C50 reads the live selected byte here (unlike
             //Unit's entry snapshot), then calls shared survivors100464C0.
             let selected = world
@@ -3000,15 +2989,13 @@ fn finish_concrete_death(
                 frame_effects,
             );
         }
-        #[cfg(feature = "ares")]
-        let may_crash = world
-            .substrate
-            .entities
-            .get(dead_id)
-            .and_then(|aircraft| world.entity_object_type(aircraft, rules))
-            .is_none_or(|object| object.aircraft_crashable_override() != Some(false));
-        #[cfg(not(feature = "ares"))]
-        let may_crash = true;
+        let may_crash = !rules.ares()
+            || world
+                .substrate
+                .entities
+                .get(dead_id)
+                .and_then(|aircraft| world.entity_object_type(aircraft, rules))
+                .is_none_or(|object| object.aircraft_crashable_override() != Some(false));
         //10048CB5..10048CDB skips the original Crash only for an explicit
         //Crashable=no; absence still takes Aircraft416694's original call.
         if !may_crash
@@ -3092,8 +3079,14 @@ fn finish_concrete_death(
                     // Ares 3.0 10017160 (hook 0x441F12): after NoSurvivor,
                     // before SpawnSurvivors, the building turns into its
                     // Rubble.Destroyed.
-                    #[cfg(feature = "ares")]
-                    world.ares_destroy_into_rubble(dead_id, rules, overlay_registry, frame_effects);
+                    if rules.ares() {
+                        world.ares_destroy_into_rubble(
+                            dead_id,
+                            rules,
+                            overlay_registry,
+                            frame_effects,
+                        );
+                    }
                     let deferred = &mut effects.smudge_spawn_requests;
                     world.spawn_building_survivors(
                         rules,
@@ -3122,12 +3115,19 @@ fn finish_concrete_death(
                     );
                     // Ares 3.0 10017130 (hook 0x441F2C): the Foots on the
                     // foundation leave the rubble.
-                    #[cfg(feature = "ares")]
-                    world.ares_kick_out_of_rubble(dead_id, rules, overlay_registry, frame_effects);
+                    if rules.ares() {
+                        world.ares_kick_out_of_rubble(
+                            dead_id,
+                            rules,
+                            overlay_registry,
+                            frame_effects,
+                        );
+                    }
                 }
                 // Ares 3.0 10014520 (hook 0x44266B): after DestructionEffects
                 // the building runs Destroyed(Attacker) (vt+0x3B8, Death_
                 // Announcement 0x0044D760), which stock ReceiveDamage skips.
+                // Still on the feature with the unit-lost event above.
                 #[cfg(feature = "ares")]
                 {
                     let attacker = killing_attacker(world, damage_events, dead_id);
@@ -3251,12 +3251,13 @@ fn run_special_detonation_arm(
             world.temporal_detonation(owner, target, rules, overlay_registry, effects);
         }
         SpecialDetonationAction::IvanBomb => {
-            // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
-            #[cfg(not(feature = "ares"))]
-            world.bomb_attach(owner, object, None, rules);
             // Ares replaces the arm (hook 0x46934D, Ares.dll 10056AF0).
-            #[cfg(feature = "ares")]
-            world.ares_ivan_bomb_detonation(detonation, rules);
+            if rules.ares() {
+                world.ares_ivan_bomb_detonation(detonation, rules);
+            } else {
+                // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
+                world.bomb_attach(owner, object, None, rules);
+            }
         }
         SpecialDetonationAction::BombDisarm => {
             // 0x004699C4..0x004699FE: a bombed Object target is defused.
@@ -3376,13 +3377,14 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     // Ares hook 46B371 (10036880): a superweapon's falling nuke takes that
     // type's `Nuke.Payload` (its speed and BulletType) with its GetDamage
     // and GetWarhead; without a payload it logs and keeps NukePayload.
-    #[cfg(feature = "ares")]
-    let nuke_sw = world
-        .projectiles
-        .get(detonation.projectile_id)
-        .and_then(|bullet| bullet.ares_nuke_sw());
-    #[cfg(feature = "ares")]
+    let nuke_sw = rules.ares().then(|| {
+        world
+            .projectiles
+            .get(detonation.projectile_id)
+            .and_then(|bullet| bullet.ares_nuke_sw())
+    });
     let (weapon, warhead, damage) = match nuke_sw
+        .flatten()
         .and_then(|sw| rules.super_weapon(world.interner.resolve(sw)))
         .and_then(|sw| crate::sim::superweapon::nuke::ares_payload_hit(rules, sw))
     {
@@ -3428,8 +3430,9 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
         super::admit_fired_bullet(world, rules, weapon, bullet_id, bullet);
     }
     // Hook 46B423 (10036930): the falling nuke keeps the superweapon type.
-    #[cfg(feature = "ares")]
-    world.projectiles.set_ares_nuke_sw(bullet_id, nuke_sw);
+    if let Some(nuke_sw) = nuke_sw {
+        world.projectiles.set_ares_nuke_sw(bullet_id, nuke_sw);
+    }
 }
 
 /// The weapon NukeMaker drops, named by the literal `0x0081AFA0`.
@@ -3513,6 +3516,7 @@ fn continue_area_damage(
             is_ion_cannon: bridge_absolute_destroyer(
                 context.warhead,
                 context.warhead_ref == world.rule_handles().ion_cannon,
+                rules.ares(),
             ),
             impact_z_leptons: context.impact.z,
         };
@@ -3528,12 +3532,10 @@ fn continue_area_damage(
     let position = glam::IVec3::new(coord.x, coord.y, coord.z);
     // Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes= overlay also needs the
     // call's damage at or above [General] OverlayExplodeThreshold.
-    #[cfg(feature = "ares")]
-    let threshold_met = rules
-        .ares_tiberium_globals()
-        .overlay_explodes(context.damage);
-    #[cfg(not(feature = "ares"))]
-    let threshold_met = true;
+    let threshold_met = !rules.ares()
+        || rules
+            .ares_tiberium_globals()
+            .overlay_explodes(context.damage);
     if let (Some(cell), Some(registry)) = (cell, overlay_registry)
         && threshold_met
         && world.remove_exploding_overlay(cell, rules, registry, run.effects())
@@ -3644,7 +3646,6 @@ fn continue_area_damage(
 /// Installed46920B ->100536E0's local extension-effect coordinate. The
 /// original receiver still consumes its unchanged impact argument. Kept here
 /// with the single pre-effect owner, using the shared5F6440 distance port.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_warhead_effect_coordinate(
     world: &Simulation,
     detonation: &ProjectileDetonation,
@@ -3669,7 +3670,6 @@ pub(crate) fn ares_warhead_effect_coordinate(
 /// 100536E0's snap: the bullet's target when it is within 64 leptons of it
 /// (`DistanceFrom < 64`), which also gates the abduction and occupant
 /// damage there.
-#[cfg(feature = "ares")]
 fn ares_snapped_target(
     world: &Simulation,
     detonation: &ProjectileDetonation,
@@ -3698,7 +3698,6 @@ fn ares_snapped_target(
 /// of the bullet's warhead from its owner (not ignoring defences, no
 /// passenger escape). The firing index is fixed up and the raid status
 /// evaluated. True when the shot passed through.
-#[cfg(feature = "ares")]
 fn ares_damage_occupants(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -3853,8 +3852,7 @@ fn emit_detonation_receivers<'r>(
 
     // Installed Ares46920B ->100536E0/10052870 runs after radiation,
     // before the exclusive special/ordinary damage arms (including Damage=0).
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares() {
         let coordinate = ares_warhead_effect_coordinate(world, detonation);
         // 100536E0 raises the ripple first, whatever happens to the target.
         world.ares_apply_ripples([coordinate.x, coordinate.y, coordinate.z], warhead);
