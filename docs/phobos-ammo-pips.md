@@ -19,10 +19,12 @@ and the Ammo arm of `app/presentation/ui_overlays.rs::scale_pip_draws`.
   `GetPipMax` slots when `EmptyAmmoPipFrame >= 0`, else stops at the fill
   count. Filled slots use `AmmoPipFrame`; the rest use `EmptyAmmoPipFrame`.
 - `TechnoClass_DrawPips_Sizes` (`0x709B2E`, `Hooks.Pips.cpp:156-180`)
-  replaces the pip width/height used as the X/Y step with
-  `AmmoPipSize.Get(size)`. VERA has no `[General] Pips_Ammo_Size` or
-  `Pips_Ammo_Buildings_Size` globals, so `None` keeps the stock `4` /
-  (building ? `2` : `0`) step of the shared `pip()` closure.
+  chooses one size pair for the whole DrawPips call from the type's
+  `PipScale` and the drawn class: `Pips.Ammo[.Buildings].Size` for
+  `PipScale=Ammo`, `Pips.Generic[.Buildings].Size` otherwise. The Ammo arm
+  then replaces it with the type's `AmmoPipSize` when that nullable is set.
+  The constructor defaults reproduce the stock `4` / (building ? `2` : `0`)
+  step, so an unset `[AudioVisual]` keeps the old drawing.
 - `AmmoPipOffset` is added once to the strip's draw origin
   (`Hooks.Pips.cpp:241`); in VERA's replayed `ScalePipDraw` that is the same
   pair on every pip's `offset_pixels`, applied after the slot step.
@@ -36,8 +38,28 @@ and the Ammo arm of `app/presentation/ui_overlays.rs::scale_pip_draws`.
   a stock build enters on any nonzero wrap and draws nothing when negative,
   as vanilla `0x70A374`/`0x70A42C` do.
 
+## Global size pairs
+
+Four `[AudioVisual]` keys (`Ext/Rules/Body.cpp:160-163`, constructor
+`Body.h:620-623`) supply the fallback step; each is a `Valueable<Point2D>`
+read with `read_phobos_int_pair` (short reads fill only the leading slot, a
+failed conversion keeps the whole pair):
+
+| Key | Default |
+|---|---|
+| `Pips.Generic.Size` | `4,0` |
+| `Pips.Generic.Buildings.Size` | `4,2` |
+| `Pips.Ammo.Size` | `4,0` |
+| `Pips.Ammo.Buildings.Size` | `4,2` |
+
+The generic pair also sizes the spawn-pip row (when `SpawnsPipSize` is unset)
+and the occupant/passenger rows, which is why the pair is selected once per
+call rather than per arm. In a stock build `pip()` keeps the built-in
+`4`/(building ? `2` : `0`) step and the Ammo arm keeps its own
+`AmmoPipSize` override.
+
 Readers use the native pairing helpers in `rules/ini_value.rs`:
-`read_phobos_int_pair` for the `Valueable<Point2D>` offset and
+`read_phobos_int_pair` for the `Valueable<Point2D>` offset and globals,
 `read_phobos_nullable_int_pair` for the `Nullable<Point2D>` size (only a full
 two-integer read sets it, and `<default>`/`none` clear it). Each read is
 gated with `#[cfg(feature = "phobos")]` and falls back to the constructor
@@ -48,11 +70,9 @@ value in a stock build, so the three feature sets keep identical drawing.
 - `ScalePipDraw.frame` is a `usize`; a negative authored `AmmoPipFrame`
   falls back to the stock 13, and a negative `AmmoPipWrapStartFrame` draws
   frame 0, instead of a negative frame index.
-- No `[General] Pips_Ammo_Size` / `Pips_Ammo_Buildings_Size` globals are
-  ported, so `AmmoPipSize` overrides VERA's built-in step rather than the
-  native global fallback.
-- `AmmoPipSize` changes only the Ammo-scale arm's step; the shared `pip()`
-  closure keeps its stock step for every other PipScale.
+- The global pairs are plain `[i32; 2]` in `PhobosGlobals`; a partial read
+  writes the leading slot and keeps the default elsewhere, matching
+  `Parser<int, 2>` rather than re-deriving a Point2D.
 
 ## Tests
 
@@ -64,6 +84,13 @@ value in a stock build, so the three feature sets keep identical drawing.
 - `the_ammo_pip_size_changes_the_strip_step_only_when_authored`
 - `an_authored_ammo_pip_offset_translates_every_pip_in_the_strip`
 - `the_pip_wrap_arm_counts_the_wrap_levels`
+- `the_global_ammo_size_drives_the_strip_step`
+- `the_building_ammo_size_global_drives_the_building_strip`
+
+Global readers/defaults: `the_pip_size_globals_default_and_read_from_audio_visual`
+in `src/rules/phobos_globals_tests.rs`. Generic-pair consumers:
+`spawn_pips_fall_back_to_the_global_generic_size`,
+`the_global_generic_size_drives_the_passenger_strip`.
 
 The existing `an_authored_empty_ammo_frame_continues_the_strip_to_capacity`
 and the retail Harrier replay are unchanged.

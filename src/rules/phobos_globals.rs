@@ -222,6 +222,20 @@ pub struct PhobosGlobals {
     /// `Ext/Rules/Body.cpp:515`): a burst index other than zero also counts
     /// as pre-firing (`Ext/Techno/Hooks.WeaponRange.cpp:79-80`).
     pub extra_range_prefiring_include_burst: bool,
+    /// `[AudioVisual] Pips.Generic.Size` (`Valueable<Point2D>` default
+    /// `{4,0}`, `Ext/Rules/Body.cpp:160`, `Body.h:620`): the per-slot X/Y
+    /// advance every non-Ammo pip arm uses
+    /// (`TechnoClass_DrawPips_Sizes @ 0x709B2E`,
+    /// `Ext/Techno/Hooks.Pips.cpp:156..180`).
+    pub pips_generic_size: [i32; 2],
+    /// `Pips.Generic.Buildings.Size=` (default `{4,2}`, `Body.h:621`).
+    pub pips_generic_buildings_size: [i32; 2],
+    /// `Pips.Ammo.Size=` (default `{4,0}`, `Ext/Rules/Body.cpp:162`,
+    /// `Body.h:622`): the Ammo arm's advance, overridden per type by
+    /// `AmmoPipSize`.
+    pub pips_ammo_size: [i32; 2],
+    /// `Pips.Ammo.Buildings.Size=` (default `{4,2}`, `Body.h:623`).
+    pub pips_ammo_buildings_size: [i32; 2],
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1375,6 +1389,10 @@ impl Default for PhobosGlobals {
             extra_range_firer_moving: 0,
             extra_range_prefiring: 0,
             extra_range_prefiring_include_burst: true,
+            pips_generic_size: [4, 0],
+            pips_generic_buildings_size: [4, 2],
+            pips_ammo_size: [4, 0],
+            pips_ammo_buildings_size: [4, 2],
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1616,6 +1634,19 @@ impl PhobosGlobals {
             "LightFlashAlphaImageDetailLevel",
             globals.light_flash_alpha_image_detail_level,
         );
+        // `Ext/Rules/Body.cpp:160-163`: the four pip-size pairs, `Point2D`
+        // values (Read2Integers); the constructor defaults reproduce the
+        // stock 4 / (building ? 2 : 0) advance.
+        globals.pips_generic_size =
+            audio_visual.read_phobos_int_pair("Pips.Generic.Size", globals.pips_generic_size);
+        globals.pips_generic_buildings_size = audio_visual.read_phobos_int_pair(
+            "Pips.Generic.Buildings.Size",
+            globals.pips_generic_buildings_size,
+        );
+        globals.pips_ammo_size =
+            audio_visual.read_phobos_int_pair("Pips.Ammo.Size", globals.pips_ammo_size);
+        globals.pips_ammo_buildings_size = audio_visual
+            .read_phobos_int_pair("Pips.Ammo.Buildings.Size", globals.pips_ammo_buildings_size);
         globals.firing_anim_update =
             audio_visual.read_bool("FiringAnim.Update", globals.firing_anim_update);
         // `Ext/Rules/Body.cpp:291-297`: the income-label switch and cadence. A

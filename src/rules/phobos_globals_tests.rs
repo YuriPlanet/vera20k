@@ -902,3 +902,31 @@ ToolTip.Background.Opacity=101
     );
     assert_eq!(over.tooltip_background_opacity, 101);
 }
+
+/// `[AudioVisual] Pips.{Generic,Ammo}[.Buildings].Size` are
+/// `Valueable<Point2D>` pairs (`Ext/Rules/Body.cpp:160..163`) whose
+/// constructor defaults reproduce the stock `4 / (building ? 2 : 0)` advance
+/// (`Body.h:620..623`).
+#[test]
+fn the_pip_size_globals_default_and_read_from_audio_visual() {
+    let defaults = PhobosGlobals::default();
+    assert_eq!(defaults.pips_generic_size, [4, 0]);
+    assert_eq!(defaults.pips_generic_buildings_size, [4, 2]);
+    assert_eq!(defaults.pips_ammo_size, [4, 0]);
+    assert_eq!(defaults.pips_ammo_buildings_size, [4, 2]);
+
+    let set = read(
+        "[AudioVisual]\nPips.Generic.Size=7,3\nPips.Generic.Buildings.Size=8,4\n\
+         Pips.Ammo.Size=9,5\nPips.Ammo.Buildings.Size=10,6\n",
+    );
+    assert_eq!(set.pips_generic_size, [7, 3]);
+    assert_eq!(set.pips_generic_buildings_size, [8, 4]);
+    assert_eq!(set.pips_ammo_size, [9, 5]);
+    assert_eq!(set.pips_ammo_buildings_size, [10, 6]);
+
+    // `Parser<int, 2>`: a short read fills only the leading slot, and a value
+    // that converts nothing keeps the whole previous pair.
+    let partial = read("[AudioVisual]\nPips.Generic.Size=7\nPips.Ammo.Size=bad\n");
+    assert_eq!(partial.pips_generic_size, [7, 0]);
+    assert_eq!(partial.pips_ammo_size, [4, 0]);
+}

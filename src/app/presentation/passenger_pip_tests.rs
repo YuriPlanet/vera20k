@@ -363,3 +363,50 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
         );
     }
 }
+
+/// `Pips.Generic.Size` (`[AudioVisual]`, `Ext/Rules/Body.cpp:160`) is the
+/// advance of every non-Ammo pip arm, here the passenger strip.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_global_generic_size_drives_the_passenger_strip() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=CARRIER\n1=E1\n\
+         [CARRIER]\nStrength=100\nArmor=heavy\nSpeed=4\nPassengers=2\nPipScale=Passengers\n\
+         [E1]\nStrength=100\nArmor=heavy\nSpeed=4\n\
+         [AudioVisual]\nPips.Generic.Size=7,3\n",
+    ))
+    .expect("generic size rules");
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let carrier = sim
+        .spawn_object("CARRIER", OWNER, 16, 16, 64, &rules)
+        .expect("carrier");
+    let first = sim
+        .spawn_object("E1", OWNER, 16, 15, 64, &rules)
+        .expect("passenger");
+    let mut cargo = PassengerCargo::new(2, 2.0);
+    cargo.board_forced_chain(&[(first, 1.0)]);
+    sim.entities_mut_for_test()
+        .get_mut(carrier)
+        .unwrap()
+        .passenger_role = PassengerRole::transport(cargo);
+    assert!(sim.apply_command(
+        OWNER,
+        &Command::Select {
+            entity_ids: vec![carrier],
+            additive: false,
+        },
+        Some(&rules),
+    ));
+    let entity = sim.entities().get(carrier).unwrap();
+    let placed: Vec<[i32; 2]> =
+        super::ui_overlays::scale_pip_draws(&sim, entity, None, Some(OWNER), &rules)
+            .iter()
+            .map(|pip| pip.offset_pixels)
+            .collect();
+    assert_eq!(placed, [[0, 10], [7, 13]], "the 7x3 generic step");
+}

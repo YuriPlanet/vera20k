@@ -496,3 +496,80 @@ fn a_negative_pip_wrap_draws_no_stock_strip() {
         .collect();
     assert_eq!(advances, [4, 8, 12, 16, 20]);
 }
+
+/// `Pips.Ammo.Size` (`[AudioVisual]`, `Ext/Rules/Body.cpp:162`) is the Ammo
+/// strip's default X/Y advance; the per-type `AmmoPipSize` still overrides it.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_global_ammo_size_drives_the_strip_step() {
+    let (rules, sim, id) = ammo_pip_scene(3, 2, "\n[AudioVisual]\nPips.Ammo.Size=9,3\n");
+    let placed: Vec<[i32; 2]> = draws(&sim, &rules, id)
+        .iter()
+        .map(|draw| draw.offset_pixels)
+        .collect();
+    assert_eq!(placed, [[0, 7], [9, 10]], "row_y - 3 plus the 9x3 step");
+
+    let (rules, sim, id) = ammo_pip_scene(
+        3,
+        2,
+        "AmmoPipSize=5,2\n\n[AudioVisual]\nPips.Ammo.Size=9,3\n",
+    );
+    assert_eq!(
+        rules.object("RIPU").unwrap().ammo_pip_size(),
+        Some([5, 2]),
+        "the type override reads"
+    );
+    let placed: Vec<[i32; 2]> = draws(&sim, &rules, id)
+        .iter()
+        .map(|draw| draw.offset_pixels)
+        .collect();
+    assert_eq!(placed, [[0, 7], [5, 9]], "AmmoPipSize overrides the global");
+}
+
+/// `Pips.Ammo.Buildings.Size` is the building half of the same pair: the
+/// `0x709B2E` selector keys on the drawn class, so a building with
+/// `PipScale=Ammo` takes `Pips.Ammo.Buildings.Size` and never the mobile
+/// `Pips.Ammo.Size`.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_building_ammo_size_global_drives_the_building_strip() {
+    use crate::sim::ammo::TechnoAmmo;
+
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[BuildingTypes]\n0=RIPU\n\
+         [RIPU]\nStrength=100\nAmmo=3\nInitialAmmo=2\nPipScale=Ammo\n\
+         \n[AudioVisual]\nPips.Ammo.Size=9,3\nPips.Ammo.Buildings.Size=7,1\n",
+    ))
+    .unwrap();
+    assert_eq!(rules.phobos_globals.pips_ammo_buildings_size, [7, 1]);
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.fog_mut_for_test().reveal_all_for_owner(owner);
+    let id = sim
+        .spawn_object("RIPU", "Americans", 10, 10, 0, &rules)
+        .expect("RIPU building spawns");
+    sim.entities_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .install_ammo_for_test(Some(TechnoAmmo::new(2)));
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Select {
+            entity_ids: vec![id],
+            additive: false,
+        },
+        Some(&rules),
+    ));
+    let placed: Vec<[i32; 2]> = draws(&sim, &rules, id)
+        .iter()
+        .map(|draw| draw.offset_pixels)
+        .collect();
+    assert_eq!(
+        placed,
+        [[0, -3], [7, -2]],
+        "building row at y 0 with the 7x1 pair"
+    );
+}

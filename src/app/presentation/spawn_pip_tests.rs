@@ -437,3 +437,19 @@ fn spawn_pip_keys_replace_the_frames_size_and_anchor() {
 fn show_spawns_pips_no_suppresses_the_row() {
     assert!(spawn_pips("ShowSpawnsPips=no\n").is_empty());
 }
+
+/// `TechnoClass_DrawPips_Spawns` falls back to the Generic size pair when the
+/// type authors no `SpawnsPipSize` (`Ext/Techno/Hooks.Pips.cpp:214-218`).
+#[cfg(feature = "phobos")]
+#[test]
+fn spawn_pips_fall_back_to_the_global_generic_size() {
+    assert_eq!(
+        spawn_pips("SpawnsPipSize=9,5\n"),
+        [(1, [0, 10]), (1, [9, 15]), (0, [18, 20])]
+    );
+    assert_eq!(
+        spawn_pips("\n[AudioVisual]\nPips.Generic.Size=7,3\n"),
+        [(1, [0, 10]), (1, [7, 13]), (0, [14, 16])],
+        "the generic global replaces the stock 4x0 fallback"
+    );
+}

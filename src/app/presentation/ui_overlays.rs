@@ -1939,8 +1939,9 @@ pub(crate) fn techno_extras_for_parent(
 }
 
 /// One709A90 pip command relative to the caller's class-specific row anchor.
-/// Buildings use PIPS and step(4,2); mobiles use PIPS2 and step(4,0).
-/// Independent native arms restart their slot origins.
+/// Buildings use PIPS and mobiles PIPS2; the per-slot step comes from the
+/// Phobos size pairs (stock `(4,2)`/`(4,0)`). Independent native arms restart
+/// their slot origins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScalePipDraw {
     pub frame: usize,
@@ -1991,12 +1992,38 @@ pub(crate) fn scale_pip_draws(
         return Vec::new();
     };
     let building = entity.category() == EntityCategory::Structure;
-    let row_y = if building { 0 } else { 10 };
+    let row_y: i32 = if building { 0 } else { 10 };
+    // Phobos `TechnoClass_DrawPips_Sizes @ 0x709B2E`
+    // (`Ext/Techno/Hooks.Pips.cpp:156..180`): one pair is chosen for the
+    // whole DrawPips call by the type's `PipScale` and the building flag; the
+    // Ammo arm takes the type's `AmmoPipSize` on top. The constructor
+    // defaults reproduce the stock 4 / (building ? 2 : 0).
+    #[cfg(feature = "phobos")]
+    let generic_size = if building {
+        rules.phobos_globals.pips_generic_buildings_size
+    } else {
+        rules.phobos_globals.pips_generic_size
+    };
+    #[cfg(feature = "phobos")]
+    let pip_size = if object.pip_scale == crate::rules::object_type::PipScale::Ammo {
+        let fallback = if building {
+            rules.phobos_globals.pips_ammo_buildings_size
+        } else {
+            rules.phobos_globals.pips_ammo_size
+        };
+        object.ammo_pip_size().unwrap_or(fallback)
+    } else {
+        generic_size
+    };
+    #[cfg(not(feature = "phobos"))]
+    let generic_size = if building { [4, 2] } else { [4, 0] };
+    #[cfg(not(feature = "phobos"))]
+    let pip_size = generic_size;
     let pip = |slot: usize, frame: usize, y: i32| ScalePipDraw {
         frame,
         offset_pixels: [
-            (slot * 4) as i32,
-            y + if building { (slot * 2) as i32 } else { 0 },
+            (slot as i32).wrapping_mul(pip_size[0]),
+            y.wrapping_add((slot as i32).wrapping_mul(pip_size[1])),
         ],
     };
     let mut pips = Vec::new();
@@ -2017,19 +2044,25 @@ pub(crate) fn scale_pip_draws(
         // SpawnsPipOffset the row anchor.
         #[cfg(feature = "phobos")]
         if object.phobos_show_spawns_pips() {
-            let size =
-                object
-                    .phobos_spawns_pip_size()
-                    .unwrap_or(if building { [4, 2] } else { [4, 0] });
+            let size = object.phobos_spawns_pip_size().unwrap_or(generic_size);
             let offset = object.phobos_spawns_pip_offset();
             let filled = object.phobos_spawns_pip_frame().max(0) as usize;
             let empty = object.phobos_empty_spawns_pip_frame().max(0) as usize;
-            pips.extend((0..object.spawns_number as usize).map(|slot| ScalePipDraw {
-                frame: if slot < docked { filled } else { empty },
-                offset_pixels: [
-                    slot as i32 * size[0] + offset[0],
-                    row_y + slot as i32 * size[1] + offset[1],
-                ],
+            pips.extend((0..object.spawns_number as usize).map(|slot| {
+                let slot = slot as i32;
+                ScalePipDraw {
+                    frame: if (slot as usize) < docked {
+                        filled
+                    } else {
+                        empty
+                    },
+                    offset_pixels: [
+                        slot.wrapping_mul(size[0]).wrapping_add(offset[0]),
+                        row_y
+                            .wrapping_add(slot.wrapping_mul(size[1]))
+                            .wrapping_add(offset[1]),
+                    ],
+                }
             }));
         }
         #[cfg(not(feature = "phobos"))]
@@ -2160,10 +2193,12 @@ pub(crate) fn scale_pip_draws(
         // A negative authored frame has no VERA `usize` frame counterpart;
         // fall back to the stock 13 for that degenerate read.
         let full = usize::try_from(object.ammo_pip_frame()).unwrap_or(13);
-        // Phobos `TechnoClass_DrawPips_Sizes` (`0x709B2E`,
-        // `Ext/Techno/Hooks.Pips.cpp:172`) replaces the Ammo pip width/height
-        // that the draw loop uses as its X/Y step; `None` keeps the stock
-        // `pip()` closure's 4 / (building ? 2 : 0) layout untouched.
+        // A Phobos build already carries the Ammo pair (and the type's
+        // `AmmoPipSize`) in `pip`; the stock build keeps its per-arm
+        // `AmmoPipSize` override.
+        #[cfg(feature = "phobos")]
+        let sized_step: Option<[i32; 2]> = None;
+        #[cfg(not(feature = "phobos"))]
         let sized_step = object.ammo_pip_size();
         // Phobos `TechnoClass_DrawPips_Ammo` (`0x70A36E`,
         // `Ext/Techno/Hooks.Pips.cpp:241`) adds the offset to the draw
