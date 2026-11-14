@@ -52,16 +52,30 @@ impl BuildingBodyMode {
 /// Native Building+534/+538 and a derived immutable type-control cache. The
 /// cache is bound by the shared type initializer (or explicit oracle fixture);
 /// it is not an animation clock or a second mission.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingBody {
     state: i32,
     queued: i32,
     construction_control: [i32; 3],
     /// Ares `SellFrameDuration` (BuildingTypeExt `+0x228`), bound with the
-    /// control (`rules::buildup_asset_catalog`).
-    #[cfg(feature = "ares")]
+    /// control (`rules::buildup_asset_catalog`) in a game read the Ares way.
+    /// `None`, any other game, leaves a sale at its mode's own rate.
     #[serde(default)]
-    sell_rate: i32,
+    sell_rate: Option<i32>,
+}
+
+/// The stock fields in their order; the sale rate folds once bound, so a
+/// game without it hashes as before.
+impl std::hash::Hash for BuildingBody {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        self.state.hash(hasher);
+        self.queued.hash(hasher);
+        self.construction_control.hash(hasher);
+        if let Some(rate) = self.sell_rate {
+            b"ares-building-sell-rate-v1".hash(hasher);
+            rate.hash(hasher);
+        }
+    }
 }
 
 impl Default for BuildingBody {
@@ -70,8 +84,7 @@ impl Default for BuildingBody {
             state: -1,
             queued: -1,
             construction_control: crate::rules::buildup_asset_catalog::NO_BUILDUP,
-            #[cfg(feature = "ares")]
-            sell_rate: 0,
+            sell_rate: None,
         }
     }
 }
@@ -81,14 +94,14 @@ impl BuildingBody {
         self.construction_control = control;
         // Ares: without a bound SellTime the sale runs at the control's own
         // rate (`1000F450` with `SellTime` unset); `bind_sell_rate` follows.
-        #[cfg(feature = "ares")]
-        {
-            self.sell_rate = control[2];
+        // Only a body that already holds a sale rate is Ares'.
+        if self.sell_rate.is_some() {
+            self.sell_rate = Some(control[2]);
         }
     }
-    #[cfg(feature = "ares")]
+    /// Called only in a game read the Ares way (`RuleSet::ares_form`).
     pub(crate) fn bind_sell_rate(&mut self, rate: i32) {
-        self.sell_rate = rate;
+        self.sell_rate = Some(rate);
     }
     pub(crate) const fn construction_control(&self) -> [i32; 3] {
         self.construction_control
@@ -148,7 +161,6 @@ impl BuildingBody {
             }
         }
     }
-    #[cfg_attr(not(feature = "ares"), allow(unused_variables))]
     fn apply(
         &mut self,
         stage: &mut StageClass,
@@ -163,9 +175,8 @@ impl BuildingBody {
         // Ares 3.0 100144E0 (hook 0x447A63): while the current mission is
         // Selling, any mode starts at the type's SellFrameDuration instead
         // of its own rate; the normalization below still applies.
-        #[cfg(feature = "ares")]
-        if selling {
-            rate = self.sell_rate;
+        if selling && let Some(sell_rate) = self.sell_rate {
+            rate = sell_rate;
         }
         if queued_tail {
             rate = options.speed_normalize(rate);

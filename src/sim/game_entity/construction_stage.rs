@@ -19,7 +19,6 @@ impl GameEntity {
             .bind_control(control);
     }
     /// Ares: the type's sale frame rate, bound beside its control.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_building_sell_rate(&mut self, rate: i32) {
         self.building
             .building_body

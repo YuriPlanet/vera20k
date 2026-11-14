@@ -92,9 +92,7 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
-Kartkapaciteten väljs automatiskt utan byggflagga: summan av bredd och höjd i `Size` får vara högst 1024.
-
-VERA20K fungerar som standard precis som originalspelet. Varje annan ny funktion, även tillägg från
+VERA20K fungerar som standard precis som originalspelet. Varje ny funktion, även tillägg från
 moddar som Ares, måste vara avstängd tills den slås på med något av följande:
 
 - **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.

@@ -150,7 +150,7 @@ pub(crate) use phobos::{PhobosLimboControl, PhobosPlacement};
 
 /// The type facts the counters test, fixed when the Techno is constructed
 /// ([`TrackingFacts::of`]).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrackingFacts {
     /// `DontScore=`: the score bookkeeping and the house counts skip the
     /// object. Persisted, so a count removed after a reload skips it as its
@@ -187,9 +187,31 @@ pub struct TrackingFacts {
     #[serde(default)]
     storage_capacity: i32,
     /// Ares10021F70 resolves TypeExt.KeepAlive before the original score
-    /// exclusions. Retained with the other constructor-bound type facts.
-    #[cfg(feature = "ares")]
+    /// exclusions. Retained with the other constructor-bound type facts,
+    /// and set only for facts built from Rules read the Ares way
+    /// (`RuleSet::ares_form`), so the counters need no other answer.
     keep_alive: bool,
+}
+
+/// The stock facts hash as the derived hash did, in declaration order; an
+/// object Ares keeps its House alive for adds its own fold, so a game
+/// without Ares hashes as before.
+impl std::hash::Hash for TrackingFacts {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.dont_score.hash(state);
+        self.insignificant.hash(state);
+        self.unit_like_building.hash(state);
+        self.naval_combatant.hash(state);
+        self.resource_gatherer.hash(state);
+        self.resource_destination.hash(state);
+        self.war_factory.hash(state);
+        self.force_value.hash(state);
+        self.factory.hash(state);
+        self.storage_capacity.hash(state);
+        if self.keep_alive {
+            b"ares-keep-alive-fact-v1".hash(state);
+        }
+    }
 }
 
 impl TrackingFacts {
@@ -202,6 +224,7 @@ impl TrackingFacts {
         let Some(ty) = ty else {
             return Self::default();
         };
+        let ares = rules.ares_form();
         let unit_like_building = category == EntityCategory::Structure
             && (ty.is_1x1_with_undeploy()
                 || ty
@@ -223,7 +246,7 @@ impl TrackingFacts {
             resource_gatherer: ty.resource_gatherer,
             resource_destination: ty.resource_destination,
             war_factory: category == EntityCategory::Structure && ty.weapons_factory && !ty.naval,
-            force_value: ForceValueFacts::of(category, ty),
+            force_value: ForceValueFacts::of(category, ty, ares),
             factory: (category == EntityCategory::Structure)
                 .then(|| {
                     FactoryType::for_production_rtti(ty.factory_rtti())
@@ -235,10 +258,10 @@ impl TrackingFacts {
             } else {
                 0
             },
-            #[cfg(feature = "ares")]
-            keep_alive: ty.keep_alive().unwrap_or(
-                category == EntityCategory::Structure && !ty.insignificant && !ty.dont_score,
-            ),
+            keep_alive: ares
+                && ty.keep_alive().unwrap_or(
+                    category == EntityCategory::Structure && !ty.insignificant && !ty.dont_score,
+                ),
         }
     }
 
@@ -249,7 +272,6 @@ impl TrackingFacts {
             b"building-storage-capacity-input-v1".hash(hasher);
             self.storage_capacity.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if self.keep_alive {
             b"ares-keep-alive-input-v1".hash(hasher);
         }
@@ -376,7 +398,7 @@ pub enum ForceKind {
 }
 
 /// What the on-map writers price: the total and the type's `Cost_Of` inputs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForceValueFacts {
     kind: ForceKind,
     /// `TechnoType+0x610`, the `Cost=` that `Cost_Of` scales (read through
@@ -384,36 +406,68 @@ pub struct ForceValueFacts {
     cost: i32,
     /// [`ObjectType::factor_slot`].
     factor_slot: u8,
-    /// Ares `FactoryPlant.Multiplier`, which `Cost_Of`'s plant factor
-    /// reads (`HouseCostFactors::ares_factory_plant`).
-    #[cfg(feature = "ares")]
-    #[serde(default = "crate::sim::house_tracking::neutral_plant_multiplier")]
-    factory_plant_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Whether `Cost_Of` takes its Ares form for this object:
+    /// `RuleSet::ares_form` of the Rules the facts were built from. Its
+    /// `FactoryPlant.Multiplier` sits in the object's Ares part
+    /// ([`retained_plant_multiplier`]), so the facts stay their stock size.
+    #[serde(default)]
+    ares_form: bool,
 }
 
-#[cfg(feature = "ares")]
-fn neutral_plant_multiplier() -> crate::util::native_x87::NativeF64Bits {
-    crate::util::native_x87::NativeF64Bits::ONE
+/// The Ares `FactoryPlant.Multiplier` an object of class `category` and type
+/// `ty` retains beside its facts (`AresPart::factory_plant_multiplier`): the
+/// type's, for a priced object in a game read the Ares way, unless it is the
+/// neutral 1.0, which an unset one reads as.
+pub(crate) fn retained_plant_multiplier(
+    category: EntityCategory,
+    ty: Option<&ObjectType>,
+    rules: &RuleSet,
+) -> Option<crate::util::native_x87::NativeF64Bits> {
+    let ty = ty.filter(|_| rules.ares_form() && category != EntityCategory::Structure)?;
+    let multiplier = ty.ares_production().factory_plant_multiplier();
+    (multiplier != crate::util::native_x87::NativeF64Bits::ONE).then_some(multiplier)
+}
+
+/// The stock inputs hash as the derived hash did, in declaration order; an
+/// object priced the Ares way adds its own fold, so a game without Ares
+/// hashes as before.
+impl std::hash::Hash for ForceValueFacts {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.kind.hash(state);
+        self.cost.hash(state);
+        self.factor_slot.hash(state);
+        if self.ares_form {
+            b"ares-force-value-v1".hash(state);
+        }
+    }
 }
 
 impl ForceValueFacts {
-    /// `Cost_Of` for this House's `factors`.
-    fn priced(self, factors: &HouseCostFactors) -> i32 {
-        #[cfg(feature = "ares")]
-        return factors.ares_adjust(
-            self.cost,
-            self.factor_slot.into(),
-            self.factory_plant_multiplier,
-        );
-        #[cfg(not(feature = "ares"))]
-        factors.adjust(self.cost, self.factor_slot.into())
+    /// `Cost_Of` for this House's `factors`, in the form the facts were
+    /// built for. `plant_multiplier` is the object's retained Ares
+    /// `FactoryPlant.Multiplier` ([`retained_plant_multiplier`]), which
+    /// `Cost_Of`'s plant factor reads (`HouseCostFactors::ares_factory_plant`).
+    fn priced(
+        self,
+        factors: &HouseCostFactors,
+        plant_multiplier: Option<crate::util::native_x87::NativeF64Bits>,
+    ) -> i32 {
+        if self.ares_form {
+            factors.ares_adjust(
+                self.cost,
+                self.factor_slot.into(),
+                plant_multiplier.unwrap_or(crate::util::native_x87::NativeF64Bits::ONE),
+            )
+        } else {
+            factors.adjust(self.cost, self.factor_slot.into())
+        }
     }
 }
 
 impl ForceValueFacts {
     /// The value arm an object of class `category` and type `ty` takes (see
-    /// the module doc).
-    fn of(category: EntityCategory, ty: &ObjectType) -> Option<Self> {
+    /// the module doc), priced the Ares way when `ares_form`.
+    fn of(category: EntityCategory, ty: &ObjectType, ares_form: bool) -> Option<Self> {
         let kind = match category {
             EntityCategory::Aircraft => ForceKind::Air,
             EntityCategory::Infantry if ty.considered_aircraft => ForceKind::Air,
@@ -426,8 +480,7 @@ impl ForceValueFacts {
             kind,
             cost: ty.cost,
             factor_slot: ty.factor_slot() as u8,
-            #[cfg(feature = "ares")]
-            factory_plant_multiplier: ty.ares_production().factory_plant_multiplier(),
+            ares_form,
         })
     }
 }
@@ -546,7 +599,8 @@ impl HouseTracking {
         let facts = entity.tracking_facts;
         // Ares4FF71B/4FF563 ->10021F70 runs before the original early return.
         // Explicit KeepAlive=yes also counts insignificant/DontScore objects.
-        #[cfg(feature = "ares")]
+        // Runs in every game: only facts built from Rules read the Ares way
+        // set it ([`TrackingFacts::of`]).
         if facts.keep_alive {
             self.keep_alive = self.keep_alive.wrapping_add(delta);
             if entity.category() == EntityCategory::Structure {
@@ -865,7 +919,8 @@ impl HouseTracking {
         }
         if let Some(value) = entity.tracking_facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total = total.wrapping_add(value.priced(factors));
+            *total =
+                total.wrapping_add(value.priced(factors, entity.ares.factory_plant_multiplier));
         }
         let dont_score = entity.tracking_facts.dont_score();
         let counts = match entity.category() {
@@ -912,7 +967,8 @@ impl HouseTracking {
         }
         if let Some(value) = entity.tracking_facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total = total.wrapping_sub(value.priced(factors));
+            *total =
+                total.wrapping_sub(value.priced(factors, entity.ares.factory_plant_multiplier));
         }
         if entity.tracking_facts.dont_score() {
             return;
@@ -940,6 +996,8 @@ impl HouseTracking {
         _build_refinery_2: Option<InternedId>,
         _foot_present: impl Fn(EntityCategory) -> bool,
     ) -> bool {
+        // Still on the feature: the House counters hold no rules; moves when
+        // the gate's callers (`world::house_defeat`) pass the answer.
         #[cfg(feature = "ares")]
         {
             if self.keep_alive != 0 {
@@ -1095,9 +1153,9 @@ impl HouseTracking {
     pub fn set_buildings_for_test(&mut self, buildings: i32) {
         self.buildings = buildings;
         // Synthetic ordinary-building priors stand for default scoreable
-        // Building instances, which also contribute to Ares HouseExt+18.
-        #[cfg(feature = "ares")]
-        {
+        // Building instances, which also contribute to Ares HouseExt+18 in
+        // a fixture whose thread reads Rules the Ares way.
+        if crate::rules::ares_switch::ares_way() {
             self.keep_alive = buildings;
             self.keep_alive_buildings = buildings;
         }

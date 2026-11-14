@@ -106,6 +106,23 @@ fn computer_paranoid_allies_the_computers_against_the_human() {
     assert_eq!(sim.houses[&ids[1]].grudge_scores().get(&player), Some(&2));
 }
 
+/// VERA `[General] AINearestEnemy=`: the computers stay apart and none is
+/// turned on the human.
+#[test]
+fn ai_nearest_enemy_keeps_the_computers_from_banding_against_the_human() {
+    let mut rules = rules();
+    rules.general.ai_nearest_enemy = true;
+    let houses = [
+        ("Player", "Americans", true),
+        ("Computer1", "Russians", false),
+        ("Computer2", "Russians", false),
+    ];
+    let (mut sim, ids) = sim_with(&rules, &houses);
+    paranoid(&mut sim, &rules);
+    assert!(sim.house_alliances.as_map().is_empty());
+    assert!(sim.houses[&ids[1]].grudge_scores().is_empty());
+}
+
 /// The gate (`0x00501640..0x00501675`): Rules `AlliesAllowed=`, and no
 /// computer slot with a team, which `Create_Houses` records
 /// (`0x006881F5..0x00688209`).

@@ -63,7 +63,6 @@ pub use self::production_repair::{buildings_wanting_repair, can_repair_building}
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
-#[cfg(feature = "ares")]
 pub use self::production_sell::foot_can_be_sold;
 pub(crate) use self::production_sell::foot_on_sold;
 pub(crate) use self::production_sell::sell_back;
@@ -88,9 +87,7 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-#[cfg(feature = "ares")]
 pub(crate) use self::can_build::ares_build_limit_remaining;
-#[cfg(feature = "ares")]
 pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{CanBuild, can_build};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
