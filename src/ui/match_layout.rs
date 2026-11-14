@@ -737,6 +737,51 @@ impl MatchLayoutFile {
     pub fn problems(&self) -> &[LayoutProblem] {
         &self.problems
     }
+
+    /// A file's text without the layout `layout`: its own section, its
+    /// parts' sections and every `[Layouts]` line that names it, and
+    /// `[Layouts]` itself once it has no line left. Every other byte stays.
+    /// The edit mode's Reset takes the player's changes out this way.
+    pub fn without_layout(text: &[u8], layout: &str) -> Vec<u8> {
+        use crate::util::ini_writer::{remove_ini_keys, remove_ini_sections};
+        // `LoadFromStraw` drops a last line that has no line break.
+        let parsed = |text: &[u8]| {
+            let mut complete = text.to_vec();
+            complete.push(b'\n');
+            IniFile::from_bytes(&complete).ok()
+        };
+        let text = remove_ini_sections(text, |name| part_of(name, layout).is_some());
+        let sides: Vec<String> = parsed(&text)
+            .and_then(|ini| {
+                let layouts = find_section(&ini, LAYOUTS_SECTION)?;
+                Some(
+                    layouts
+                        .keys()
+                        .filter(|side| {
+                            layouts
+                                .read_name(side, NAME_CAPACITY)
+                                .is_some_and(|name| name.eq_ignore_ascii_case(layout))
+                        })
+                        .map(str::to_owned)
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
+        if sides.is_empty() {
+            return text;
+        }
+        let sides: Vec<&str> = sides.iter().map(String::as_str).collect();
+        let text = remove_ini_keys(&text, LAYOUTS_SECTION, &sides);
+        let emptied = parsed(&text).is_none_or(|ini| {
+            find_section(&ini, LAYOUTS_SECTION)
+                .is_none_or(|layouts| layouts.keys().next().is_none())
+        });
+        if emptied {
+            remove_ini_sections(&text, |name| name.eq_ignore_ascii_case(LAYOUTS_SECTION))
+        } else {
+            text
+        }
+    }
 }
 
 fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
@@ -2208,5 +2253,26 @@ mod tests {
                 .fixed_in([0.0, 0.0, 800.0, 600.0], [86.0, 38.0]),
             Some([8.0, 554.0])
         );
+    }
+
+    #[test]
+    fn a_reset_takes_the_sides_layout_and_the_lines_naming_it_out_of_the_file() {
+        // The player's own Soviet layout, also named by `Default=`, and an
+        // Allied one that stays.
+        let text = b"; mine\r\n[Layouts]\r\nNod=OwnNod\r\nDefault=ownnod\r\nGDI=OwnGDI\r\n\
+                     [OwnNod]\r\nVersion=1\r\n[OwnNod.Radar]\r\nX=-3\r\nY=35\r\n\
+                     [OwnNodTwo.Radar]\r\nX=1\r\n[OwnGDI.Radar]\r\nY=52";
+        let reset = MatchLayoutFile::without_layout(text, "OwnNod");
+        assert_eq!(
+            String::from_utf8(reset.clone()).unwrap(),
+            "; mine\r\n[Layouts]\r\nGDI=OwnGDI\r\n[OwnNodTwo.Radar]\r\nX=1\r\n[OwnGDI.Radar]\r\nY=52"
+        );
+        let file = MatchLayoutFile::from_bytes(&reset);
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        assert_eq!(file.layout_name_for_side(Some("Nod")), None);
+        assert_eq!(file.layout_name_for_side(Some("GDI")), Some("OwnGDI"));
+        // Once no side names a layout, `[Layouts]` goes too: nothing is left.
+        let text = b"[Layouts]\nNod=OwnNod\n[OwnNod.Radar]\nX=-3\n[OwnNod.Power]\nY=194\n";
+        assert_eq!(MatchLayoutFile::without_layout(text, "OwnNod"), b"");
     }
 }

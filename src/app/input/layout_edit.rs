@@ -2,12 +2,15 @@
 //! with the mouse, and the game keeps where they put them in the player's own
 //! layout file (`presentation::player_layout`).
 //!
-//! The Edit Layout key turns the mode on and off. While it is on every part
-//! that has a place shows an outline and its name; a press on one grabs it,
-//! it follows the cursor, and letting go saves the file. The mouse reaches
-//! nothing else in the match meanwhile. A drag writes the part's `X` and `Y`
-//! into the side's layout section, so it is the same change a modder would
-//! write by hand.
+//! The Edit Layout key turns the mode on. While it is on every part that has
+//! a place shows an outline and its name; a press on one grabs it and it
+//! follows the cursor. The mouse reaches nothing else in the match meanwhile.
+//! A drag writes the part's `X` and `Y` into the side's layout section, so it
+//! is the same change a modder would write by hand.
+//!
+//! Two buttons end it: Save writes the file, Reset puts the side's parts back
+//! as the mod, or the original, has them, for Save to keep. The key again, or
+//! Esc, leaves without saving and puts back what the mode started from.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -23,8 +26,33 @@ use crate::ui::sidebar::{Rect, SidebarPart};
 #[derive(Debug, Default)]
 pub(crate) struct LayoutEditState {
     grab: Option<Grab>,
-    /// Whether a part has moved since the mode came on.
-    moved: bool,
+    /// The player's file as it was when the mode came on.
+    before: Vec<u8>,
+    /// The button a left press went down on: it acts if the press comes up
+    /// on it.
+    pressed: Option<EditButton>,
+}
+
+impl LayoutEditState {
+    /// Leave the mode with the player's file now `text`: without `save` the
+    /// text goes back to what the mode started from. Whether the file is to
+    /// be written: only a Save that changed something writes.
+    fn leave(self, text: &mut Vec<u8>, save: bool) -> bool {
+        if *text == self.before {
+            return false;
+        }
+        if !save {
+            *text = self.before;
+        }
+        save
+    }
+}
+
+/// The mode's two buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditButton {
+    Save,
+    Reset,
 }
 
 /// The part the mouse holds.
@@ -56,23 +84,85 @@ pub(crate) fn active(state: &AppState) -> bool {
     state.match_state.match_presentation.layout_edit.is_some()
 }
 
-/// Turn the mode on, or off. It exists in a match only.
+/// The Edit Layout key: turn the mode on, or leave it without saving. It
+/// exists in a match only.
 pub(crate) fn toggle(state: &mut AppState) {
     if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
         return;
     }
-    let on = !active(state);
-    state.match_state.match_presentation.layout_edit = on.then(LayoutEditState::default);
-    if on {
-        // Whatever the mouse was doing in the match ends here.
-        state.match_state.input.cancel_tactical_drag();
-        state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .cancel_pointer_capture();
+    if active(state) {
+        finish(state, false);
+        return;
     }
-    crate::app::input::messages::post_layout_edit(state, on);
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.layout_edit = Some(LayoutEditState {
+        before: presentation.player_layout_text.clone(),
+        ..Default::default()
+    });
+    // Whatever the mouse was doing in the match ends here.
+    state.match_state.input.cancel_tactical_drag();
+    state
+        .match_state
+        .match_presentation
+        .in_game_gadgets
+        .cancel_pointer_capture();
+    crate::app::input::messages::post_layout_edit(
+        state,
+        crate::app::input::messages::LayoutEditLine::On,
+    );
+}
+
+/// Esc while the mode is on: leave it without saving.
+pub(crate) fn cancel(state: &mut AppState) {
+    finish(state, false);
+}
+
+/// End the mode: Save writes what moved, anything else puts back the file
+/// the mode started from.
+fn finish(state: &mut AppState, save: bool) {
+    let presentation = &mut state.match_state.match_presentation;
+    let Some(edit) = presentation.layout_edit.take() else {
+        return;
+    };
+    let changed = presentation.player_layout_text != edit.before;
+    if edit.leave(&mut presentation.player_layout_text, save) {
+        crate::app::presentation::player_layout::write(state);
+    } else if changed {
+        // The parts go back where the mode found them.
+        relayout(state);
+    }
+    crate::app::input::messages::post_layout_edit(
+        state,
+        if save {
+            crate::app::input::messages::LayoutEditLine::Saved
+        } else {
+            crate::app::input::messages::LayoutEditLine::Cancelled
+        },
+    );
+}
+
+/// Reset: the side's layout leaves the player's file, so its parts stand as
+/// the mod, or the original, has them. Save keeps it.
+fn reset(state: &mut AppState) {
+    let Some(side) = sidebar_render::local_side_name(state).map(str::to_owned) else {
+        return;
+    };
+    let presentation = &mut state.match_state.match_presentation;
+    let Some(layout) = presentation.match_layouts.layout_name_for_side(Some(&side)) else {
+        return;
+    };
+    presentation.player_layout_text = crate::ui::match_layout::MatchLayoutFile::without_layout(
+        &presentation.player_layout_text,
+        layout,
+    );
+    relayout(state);
+}
+
+/// Read the layouts again from the player's text and lay the match out by
+/// them.
+fn relayout(state: &mut AppState) {
+    crate::app::presentation::player_layout::rebuild(state, false);
+    sidebar_render::refresh_sidebar_projection(state);
 }
 
 /// How `X` and `Y` change for a frame pixel: by the holder's scale, and
@@ -237,21 +327,61 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     out
 }
 
-/// A left press grabs the topmost part under the cursor; letting go saves
-/// the player's file when something moved.
+/// The Save and Reset buttons with their labels, in frame pixels: side by
+/// side in the middle of the battlefield, just under the banner's handle
+/// where the original layout centres it.
+fn buttons(state: &AppState) -> [(EditButton, String, [i32; 4]); 2] {
+    let font = &state.renderer.bit_font;
+    let labels = [
+        (EditButton::Save, crate::i18n::tr("VERA:LayoutEditSave")),
+        (EditButton::Reset, crate::i18n::tr("VERA:LayoutEditReset")),
+    ];
+    let width = labels
+        .iter()
+        .map(|(_, label)| font.text_width(label) as i32 + 16)
+        .max()
+        .unwrap_or(0)
+        .max(56);
+    let height = font.cell_height().round() as i32 + 8;
+    let gap = 8;
+    let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(state);
+    let [x, y, w, h] = [x, y, w, h].map(|v| v as i32);
+    let left = x + (w - 2 * width - gap) / 2;
+    // `targets` gives the banner a handle up to 60 high round the middle.
+    let top = y + h / 2 + h.min(60) / 2 + 6;
+    let mut column = 0;
+    labels.map(|(button, label)| {
+        let rect = [left + column * (width + gap), top, width, height];
+        column += 1;
+        (button, label, rect)
+    })
+}
+
+fn contains([x, y, w, h]: [i32; 4], cursor: (i32, i32)) -> bool {
+    (x..x + w).contains(&cursor.0) && (y..y + h).contains(&cursor.1)
+}
+
+/// A left press on a button holds it; one elsewhere grabs the topmost part
+/// under the cursor. Letting go over the held button runs it.
 pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pressed: bool) {
     if button != winit::event::MouseButton::Left {
         return;
     }
     let cursor = state.match_state.input.cursor_px();
     if pressed {
-        let grab = targets(state)
+        let held = buttons(state)
             .into_iter()
-            .rev()
-            .find(|target| {
-                let [x, y, w, h] = target.rect;
-                (x..x + w).contains(&cursor.0) && (y..y + h).contains(&cursor.1)
+            .find(|(_, _, rect)| contains(*rect, cursor))
+            .map(|(button, ..)| button);
+        let grab = held
+            .is_none()
+            .then(|| {
+                targets(state)
+                    .into_iter()
+                    .rev()
+                    .find(|target| contains(target.rect, cursor))
             })
+            .flatten()
             .map(|target| Grab {
                 name: target.name,
                 cursor,
@@ -260,18 +390,25 @@ pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pre
                 at: target.xy,
             });
         if let Some(edit) = &mut state.match_state.match_presentation.layout_edit {
+            edit.pressed = held;
             edit.grab = grab;
         }
         return;
     }
-    let released = state
-        .match_state
-        .match_presentation
-        .layout_edit
-        .as_mut()
-        .is_some_and(|edit| edit.grab.take().is_some() && edit.moved);
-    if released {
-        crate::app::presentation::player_layout::write(state);
+    let Some(edit) = &mut state.match_state.match_presentation.layout_edit else {
+        return;
+    };
+    edit.grab = None;
+    let Some(held) = edit.pressed.take() else {
+        return;
+    };
+    let released_on_it = buttons(state)
+        .iter()
+        .any(|(button, _, rect)| *button == held && contains(*rect, cursor));
+    match held {
+        _ if !released_on_it => {}
+        EditButton::Save => finish(state, true),
+        EditButton::Reset => reset(state),
     }
 }
 
@@ -293,7 +430,6 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         return;
     }
     grab.at = at;
-    edit.moved = true;
     let name = grab.name.clone();
     let Some(side) = sidebar_render::local_side_name(state).map(str::to_owned) else {
         return;
@@ -306,8 +442,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         &name,
         at,
     );
-    crate::app::presentation::player_layout::rebuild(state, false);
-    sidebar_render::refresh_sidebar_projection(state);
+    relayout(state);
 }
 
 /// The player's file with part `name` of the side's layout at `at`: `X` and
@@ -339,7 +474,9 @@ fn placed_in_text(
 
 /// The mode's picture, for the tooltip's lanes over the whole frame: a
 /// one-pixel frame around every part it can move and the part's name on
-/// black in its corner. The grabbed part's are white.
+/// black in its corner, then the Save and Reset buttons, framed the same
+/// with their labels in the middle. The grabbed part's and the held
+/// button's are white.
 pub(crate) fn instances(
     state: &AppState,
 ) -> (
@@ -369,27 +506,29 @@ pub(crate) fn instances(
         alpha: 1.0,
         ..Default::default()
     };
+    let outline = |[x, y, w, h]: [f32; 4], colour: [f32; 3]| {
+        [
+            (x, y, w, 1.0),
+            (x, y + h - 1.0, w, 1.0),
+            (x, y, 1.0, h),
+            (x + w - 1.0, y, 1.0, h),
+        ]
+        .map(|(x, y, w, h)| quad(x, y, w, h, colour, 0.000205))
+    };
     let (mut fills, mut borders, mut texts) = (Vec::new(), Vec::new(), Vec::new());
     // Where names already stand: two parts that start at one corner get
     // their names one under the other.
     let mut named: Vec<[f32; 2]> = Vec::new();
     let line = font.cell_height() + 2.0;
     for target in targets(state) {
-        let [x, y, w, h] = target.rect.map(|v| v as f32);
+        let rect = target.rect.map(|v| v as f32);
         let colour = if grabbed == Some(target.name.as_str()) {
             [1.0; 3]
         } else {
             tint
         };
-        for (x, y, w, h) in [
-            (x, y, w, 1.0),
-            (x, y + h - 1.0, w, 1.0),
-            (x, y, 1.0, h),
-            (x + w - 1.0, y, 1.0, h),
-        ] {
-            borders.push(quad(x, y, w, h, colour, 0.000205));
-        }
-        let mut at = [x + 1.0, y + 1.0];
+        borders.extend(outline(rect, colour));
+        let mut at = [rect[0] + 1.0, rect[1] + 1.0];
         while named
             .iter()
             .any(|taken| (taken[0] - at[0]).abs() < 24.0 && (taken[1] - at[1]).abs() < line)
@@ -409,6 +548,25 @@ pub(crate) fn instances(
             &target.name,
             at[0] + 2.0,
             at[1] + 1.0,
+            1.0,
+            0.00020,
+            colour,
+            camera,
+        ));
+    }
+    for (button, label, rect) in buttons(state) {
+        let [x, y, w, h] = rect.map(|v| v as f32);
+        let colour = if edit.pressed == Some(button) {
+            [1.0; 3]
+        } else {
+            tint
+        };
+        fills.push(quad(x, y, w, h, [0.0; 3], 0.00021));
+        borders.extend(outline([x, y, w, h], colour));
+        texts.extend(font.build_text(
+            &label,
+            x + ((w - font.text_width(&label) as f32) / 2.0).round(),
+            y + ((h - font.cell_height()) / 2.0).round(),
             1.0,
             0.00020,
             colour,
@@ -476,5 +634,25 @@ mod tests {
             [5, 30, 627, 538]
         );
         assert_eq!(file.layout_name_for_side(Some("Nod")), Some("Low"));
+    }
+
+    #[test]
+    fn leaving_without_save_puts_the_file_back_and_only_a_save_that_changed_it_writes() {
+        let mode = || LayoutEditState {
+            before: b"[OwnNod.Radar]\nX=1\n".to_vec(),
+            ..Default::default()
+        };
+        let moved = b"[OwnNod.Radar]\nX=9\n".to_vec();
+        let mut text = moved.clone();
+        assert!(!mode().leave(&mut text, false));
+        assert_eq!(text, mode().before);
+        let mut text = moved.clone();
+        assert!(mode().leave(&mut text, true));
+        assert_eq!(text, moved);
+        let mut text = mode().before;
+        assert!(
+            !mode().leave(&mut text, true),
+            "nothing moved, nothing written"
+        );
     }
 }

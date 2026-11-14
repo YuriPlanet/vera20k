@@ -924,13 +924,24 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
     post_grey_row(state, &text, false, false);
 }
 
+/// What the layout edit mode tells the player (`input::layout_edit`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutEditLine {
+    /// It is on, and how to use it.
+    On,
+    /// Save ended it, and what they moved is kept.
+    Saved,
+    /// It ended without saving.
+    Cancelled,
+}
+
 /// Tell the player the layout edit mode is on and how to use it, or that it
-/// is off and what they moved is kept.
-pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
-    let key = if on {
-        "VERA:LayoutEditHint"
-    } else {
-        "VERA:LayoutEditDone"
+/// is off and whether what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, line: LayoutEditLine) {
+    let key = match line {
+        LayoutEditLine::On => "VERA:LayoutEditHint",
+        LayoutEditLine::Saved => "VERA:LayoutEditDone",
+        LayoutEditLine::Cancelled => "VERA:LayoutEditCancelled",
     };
     post_grey_row(state, &crate::i18n::tr(key), false, false);
 }

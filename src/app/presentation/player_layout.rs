@@ -33,12 +33,24 @@ fn read(state: &AppState) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-/// Write the player's file as the match holds it. A capture run writes none.
+/// Write the player's file as the match holds it; with nothing left in it,
+/// as after a Reset, remove the file. A capture run writes none.
 pub(crate) fn write(state: &AppState) {
     let Some(path) = path(state) else {
         return;
     };
     let text = &state.match_state.match_presentation.player_layout_text;
+    if text.iter().all(u8::is_ascii_whitespace) {
+        match crate::util::file_system::remove_file(&path) {
+            Ok(()) => log::info!("Interface layout reset: removed {}", path.display()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => log::warn!(
+                "Interface layout could not be removed from {}: {error}",
+                path.display()
+            ),
+        }
+        return;
+    }
     let written = path
         .parent()
         .map_or(Ok(()), crate::util::file_system::create_dir_all)
