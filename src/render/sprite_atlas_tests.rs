@@ -866,6 +866,59 @@ fn gate_structure_keys_cover_every_stage_and_damaged_stage_frame() {
     assert_eq!(frames, expected);
 }
 
+/// Unit73C6AD..73C6D3: a still SHP Unit with a running death count draws
+/// StartDeathFrame plus the count over DeathFrameRate, held on the last of
+/// DeathFrames; a moving one keeps walking. The atlas holds the death images
+/// its SHP has (`DTH.SHP` here ends at frame 41).
+#[test]
+fn a_counting_shp_unit_draws_death_frames_the_atlas_holds() {
+    use crate::rules::ini_parser::IniFile;
+
+    let art_ini = IniFile::from_str(
+        "[DTH]\nWalkFrames=6\nDeathFrames=3\nDeathFrameRate=2\nStartDeathFrame=40\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=DTH\n[DTH]\nStrength=100\n"),
+        &art_ini,
+    )
+    .expect("death frame rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    let set = rules.animation_sequence("DTH").expect("SHP unit layout");
+    let frame = |death, moving| {
+        crate::sim::animation::resolve_shp_vehicle_body_frame(set, 0, 4, -1, death, moving, false)
+    };
+    assert_eq!(frame(3, false), Some(41));
+    assert_eq!(frame(9, false), Some(42), "held on the last death frame");
+    assert_eq!(frame(3, true), frame(-1, true), "a moving body walks");
+
+    let directory = StoredFrameTestDirectory::new();
+    let frames: Vec<_> = (0..42).map(|frame| ([2, 2], (frame + 1) as u8)).collect();
+    std::fs::write(directory.0.join("DTH.SHP"), raw_shp(&frames)).expect("write DTH.SHP");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let (world, interner) = one_object_world("DTH", EntityCategory::Unit);
+    let mut needed = HashSet::new();
+    insert_new_object_keys(
+        &mut needed,
+        &HashSet::from([("DTH".to_string(), HouseColorIndex(2))]),
+        &world,
+        Some(&interner),
+        &assets,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+    );
+    let has = |frame| {
+        needed
+            .iter()
+            .any(|key| key.type_id == "DTH" && key.frame == frame)
+    };
+    assert!(
+        has(40) && has(41) && !has(42),
+        "the death images DTH.SHP holds"
+    );
+}
+
 /// BuildingType45F230's final image pass, after the base ObjectType load.
 /// Stock YAYARD omits NewTheater: the original requests YTYARD.SHP, then
 /// YGYARD.SHP. A plain-name file or a different extension is not a third try.

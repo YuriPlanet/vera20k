@@ -348,6 +348,58 @@ impl UnitFiringCounter {
     }
 }
 
+/// UnitClass+6D8, the art `DeathFrames=` counter. The constructor stores -1
+/// (`0x00735416`); a lethal hit on a type with `DeathFrames=` above zero
+/// starts it at 0 (`UnitClass::ReceiveDamage`, `0x00737DB1..0x00737DBF`), and
+/// `UnitClass::AI` counts it (`0x0073635B..0x0073637D`) until the count passes
+/// `MaxDeathCounter=`. While it runs the Unit's vt+0x37C (`0x00746C90`)
+/// answers yes and its SHP body draws death frames (`0x0073C6AD`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct UnitDeathCounter {
+    value: i32,
+}
+
+impl Default for UnitDeathCounter {
+    fn default() -> Self {
+        Self { value: -1 }
+    }
+}
+
+impl UnitDeathCounter {
+    pub const fn get(self) -> i32 {
+        self.value
+    }
+
+    /// Every value but the constructor's -1.
+    pub(crate) const fn running(self) -> bool {
+        self.value != -1
+    }
+
+    /// `0x00737DB1..0x00737DBF`: the first lethal hit starts the count, a
+    /// later one leaves it. Returns whether this hit started it.
+    pub(crate) fn start(&mut self) -> bool {
+        if self.value != -1 {
+            return false;
+        }
+        self.value = 0;
+        true
+    }
+
+    /// `0x00736366..0x0073637D`: store the next count and answer whether the
+    /// one before it had reached `max` (a signed compare).
+    pub(crate) fn advance(&mut self, max: i32) -> bool {
+        let old = self.value;
+        self.value = old.wrapping_add(1);
+        max <= old
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, value: i32) {
+        self.value = value;
+    }
+}
+
 /// Admitted Unit7363C9..7363DE, before Hunt/Ready/Foot AI. Entry lifecycle,
 /// Tube and Temporal gates belong to the existing Unit AI caller.
 pub(crate) fn tick_unit_firing_counter(entity: &mut crate::sim::game_entity::GameEntity) {
@@ -458,13 +510,15 @@ pub(crate) fn foot_body_frame_due(
 
 /// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and
 /// advances one image per two counter steps, in descending image order.
-/// The persistent Foot counter continues to own Stand/Walk. Death drawing
-/// remains outside this admitted live-body branch.
+/// The persistent Foot counter continues to own Stand/Walk. A still body
+/// with no `IdleRate=` and a running death counter draws its death image
+/// instead of Stand (`0x0073C6AD..0x0073C6D3`).
 pub fn resolve_shp_vehicle_body_frame(
     set: &SequenceSet,
     facing: u8,
     body_frame_counter: u32,
     firing_counter: i32,
+    death_counter: i32,
     locomotor_is_moving: bool,
     disguised: bool,
 ) -> Option<u16> {
@@ -487,6 +541,8 @@ pub fn resolve_shp_vehicle_body_frame(
     }
     let sequence = if locomotor_is_moving || cadence.idle_rate != 0 {
         SequenceKind::Walk
+    } else if death_counter >= 0 {
+        return u16::try_from(set.shp_vehicle_death()?.image(death_counter)).ok();
     } else {
         SequenceKind::Stand
     };

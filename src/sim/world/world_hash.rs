@@ -2000,6 +2000,10 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         b"unit-firing-counter-v1".hash(hasher);
         entity.unit_firing_counter.hash(hasher);
     }
+    if entity.unit_death_counter.running() {
+        b"unit-death-counter-v1".hash(hasher);
+        entity.unit_death_counter.hash(hasher);
+    }
     if !entity.building.tesla_charge.is_default() {
         b"building-tesla-charge-v1".hash(hasher);
         entity.building.tesla_charge.hash(hasher);

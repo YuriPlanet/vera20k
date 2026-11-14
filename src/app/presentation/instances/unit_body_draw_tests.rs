@@ -1136,6 +1136,7 @@ fn retail_mirage_body_frame_matches_original_unit_shp() {
             (input["facing_u16"].as_u64().unwrap() >> 8) as u8,
             input["body_counter"].as_u64().unwrap() as u32,
             -1,
+            -1,
             input["is_moving"].as_bool().unwrap(),
             true,
         )

@@ -262,6 +262,43 @@ pub struct SequenceSet {
     /// body-frame counter on `GameEntity`.
     #[serde(default)]
     shp_vehicle_cadence: Option<FootBodyCadence>,
+    /// The UnitType's ART death layout a running death counter draws.
+    #[serde(default)]
+    shp_vehicle_death: Option<ShpVehicleDeathFrames>,
+}
+
+/// UnitType's ART `StartDeathFrame=` (`+0xE34`), `DeathFrames=` (`+0xE20`)
+/// and `DeathFrameRate=` (`+0xE24`, at least 1), as
+/// `UnitClass::Draw_Body_And_Turret` reads them (`0x0073C6B7..0x0073C6D1`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShpVehicleDeathFrames {
+    start: i32,
+    frames: i32,
+    rate: i32,
+}
+
+impl ShpVehicleDeathFrames {
+    pub(crate) const fn new(start: i32, frames: i32, rate: i32) -> Self {
+        Self {
+            start,
+            frames,
+            rate: if rate < 1 { 1 } else { rate },
+        }
+    }
+
+    /// The raw image for a death counter: StartDeathFrame plus the counter
+    /// over DeathFrameRate (signed), held on the last of DeathFrames. It has
+    /// no facing.
+    pub fn image(self, counter: i32) -> i32 {
+        let step = counter / self.rate;
+        self.start
+            .wrapping_add(step.min(self.frames.wrapping_sub(1)))
+    }
+
+    /// Every image [`Self::image`] reaches, StartDeathFrame onwards.
+    pub fn images(self) -> std::ops::Range<i32> {
+        self.start..self.start.saturating_add(self.frames.max(0))
+    }
 }
 
 /// Rules-owned divisors consumed by the shared Foot body counter.
@@ -294,6 +331,7 @@ impl SequenceSet {
             sequences: BTreeMap::new(),
             infantry_actions: None,
             shp_vehicle_cadence: None,
+            shp_vehicle_death: None,
         }
     }
 
@@ -332,6 +370,14 @@ impl SequenceSet {
 
     pub fn shp_vehicle_cadence(&self) -> Option<FootBodyCadence> {
         self.shp_vehicle_cadence
+    }
+
+    pub(crate) fn set_shp_vehicle_death(&mut self, death: ShpVehicleDeathFrames) {
+        self.shp_vehicle_death = Some(death);
+    }
+
+    pub fn shp_vehicle_death(&self) -> Option<ShpVehicleDeathFrames> {
+        self.shp_vehicle_death
     }
 
     /// Add a sequence definition.

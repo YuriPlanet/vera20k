@@ -1736,9 +1736,6 @@ pub(crate) enum ActionDistanceTarget {
 /// (`0x00535532..0x00535557`), from the object's GetCoords (`vt+0x48`) to the
 /// cell centre at height 0 when a cell was supplied, else to the target
 /// object's GetCoords.
-///
-/// RESIDUAL: score 1 comes from the EMP counter (`+0x504`) alone; VERA has no
-/// producer for a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
 pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1777,7 +1774,7 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
-        } else if entity.emp_remaining() > 0 {
+        } else if entity.is_under_emp() {
             1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())

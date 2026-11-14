@@ -447,14 +447,13 @@ pub(crate) fn attack_action(
     // (0x00700D10, 74041B..74042E) admits it, and is 0 otherwise. That test
     // refuses a Unit in a tube (Foot +0x684 >= 0) whose vt+0x4E4
     // (0x00736D50) answers yes, and a Unit whose vt+0x37C (0x00746C90)
-    // answers yes: one under EMP (+0x504 > 0) or one counting down art
-    // `DeathFrames=` (+0x6D8 != -1, set at 0x00737DBF only when UnitType
-    // +0xE20 > 0). Not ported. EMP is UNREACHABLE: EMPulseClass::Apply
-    // (0x004C5718) is reached only from the unreferenced constructor
-    // 0x004C52B0. Neither `DeathFrames=` nor `DeployToFire=` appears in
-    // retail ARTMD/RULESMD, and for a human's Unit CanDeployNow needs
-    // DeployToFire= (its TickTank branch is computer-only), so both other
-    // arms are DORMANT.
+    // answers yes (`GameEntity::is_under_emp`): one under EMP or one counting
+    // down art `DeathFrames=`. Not ported. Stock EMP is UNREACHABLE:
+    // EMPulseClass::Apply (0x004C5718) is reached only from the unreferenced
+    // constructor 0x004C52B0. A death-counting Unit has Health 0 and cannot be
+    // selected (0x006F32D3). `DeployToFire=` is not in retail RULESMD, and
+    // for a human's Unit CanDeployNow needs it (its TickTank branch is
+    // computer-only), so that arm is DORMANT.
     if action == AttackAction::Attack
         && matches!(
             actor.category(),
