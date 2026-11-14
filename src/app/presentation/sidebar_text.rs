@@ -23,7 +23,9 @@ use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarView};
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
 /// and the layout table's place for the counter: centred on the credits
-/// plate, `plate_width` wide, which in the original spans the sidebar.
+/// plate, `plate_width` wide, which in the original spans the sidebar. The
+/// observer's counter shows the match's time through `time_format`
+/// (`TXT_TIME_FORMAT_HOURS`).
 /// Residual: CreditsClass::Draw centres on the sidebar surface's width; the
 /// two differ only for a plate narrower than the 168 px surface (retail
 /// credits.shp is 168 px wide in SIDEC01.MIX and SIDEC02.MIX).
@@ -32,9 +34,15 @@ pub fn build_sidebar_credits_instances(
     view: &SidebarView,
     spec: SidebarChromeLayoutSpec,
     plate_width: f32,
+    time_format: &str,
     tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
+    let text = if view.observer.is_some() {
+        crate::render::sidebar_text::format_observer_clock(view.credits, time_format)
+    } else {
+        crate::render::sidebar_text::format_credits(view.credits)
+    };
     let plate = crate::ui::sidebar::Rect {
         x: view.panel_rect.x + spec.credits_x,
         w: plate_width,
@@ -42,7 +50,7 @@ pub fn build_sidebar_credits_instances(
     };
     build_credits_instances(
         font,
-        view.credits,
+        &text,
         plate,
         [spec.money_x, spec.credits_y + spec.money_y],
         tint,
@@ -88,7 +96,7 @@ mod tests {
     fn credits_render_through_the_retail_font_glyph_table() {
         let font = digit_font();
         let inst =
-            build_credits_instances(&font, 1250, panel(), STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
+            build_credits_instances(&font, "1250", panel(), STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
 
         // One quad per digit — no shadow pass, no outline pass.
         assert_eq!(inst.len(), 4, "expected exactly one quad per digit");
@@ -123,14 +131,14 @@ mod tests {
             w: 167.0,
             h: 600.0,
         };
-        let inst = build_credits_instances(&font, 1, rect, STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
+        let inst = build_credits_instances(&font, "1", rect, STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
         // 167/2 = 83, 4/2 = 2 → 100 + 81. Float halving would give 100 + 81.5.
         assert_eq!(inst[0].position[0], 181.0);
         assert_eq!(inst[0].position[0].fract(), 0.0);
 
         // A fractional panel origin still resolves to a whole pixel.
         let skewed = Rect { x: 100.4, ..rect };
-        let inst = build_credits_instances(&font, 1, skewed, STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
+        let inst = build_credits_instances(&font, "1", skewed, STOCK, [1.0, 1.0, 0.0], [0.0, 0.0]);
         assert_eq!(inst[0].position[0].fract(), 0.0);
     }
 
@@ -138,19 +146,17 @@ mod tests {
     /// sidebar panel rect off a real `SidebarView`, and land the glyphs inside
     /// the sidebar column. This is what `render::build_instances` appends
     /// to the `sidebar_text` lane, which is drawn from the GAME.FNT atlas.
-    #[test]
-    fn view_wrapper_places_credits_inside_the_sidebar_panel() {
+    /// A stock 1024x768 view whose counter shows `credits`.
+    fn stock_view(credits: i32) -> SidebarView {
         use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
-        use crate::ui::sidebar::{
-            SidebarChromeLayoutSpec, SidebarTab, build_sidebar_view_with_spec,
-        };
+        use crate::ui::sidebar::{SidebarTab, build_sidebar_view_with_spec};
 
-        let view = build_sidebar_view_with_spec(
+        build_sidebar_view_with_spec(
             SidebarChromeLayoutSpec::stock(),
             1024.0,
             768.0,
             SidebarTab::Building,
-            1250,
+            credits,
             0,
             0,
             Some([28.0, 27.0]),
@@ -167,13 +173,19 @@ mod tests {
             None,
             [None; 2],
             &crate::ui::sidebar::cameo_order::CameoStrips::default(),
-        );
+        )
+    }
+
+    #[test]
+    fn view_wrapper_places_credits_inside_the_sidebar_panel() {
+        let view = stock_view(1250);
         let font = digit_font();
         let inst = build_sidebar_credits_instances(
             &font,
             &view,
             SidebarChromeLayoutSpec::stock(),
             168.0,
+            "Time: %02d:%02d:%02d",
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
         );
@@ -193,5 +205,35 @@ mod tests {
         assert_eq!(view.panel_rect.w, 168.0);
         let expected_x = view.panel_rect.x + (168 / 2 - 26 / 2) as f32;
         assert_eq!(inst[0].position[0], expected_x);
+    }
+
+    /// The observer's counter shows the match's time, anything past 99 hours
+    /// as 99:59:59 (`CreditsClass::Draw @ 0x004A2370`, `0x004A2437..0x004A24A4`).
+    #[test]
+    fn the_observers_counter_shows_the_time_capped_at_99_hours() {
+        let widths = [(b'0', 7), (b'1', 3), (b'5', 5), (b'9', 6), (b':', 2)];
+        let font = make_test_font(&widths.map(|(glyph, w)| (u16::from(glyph), w)), 4);
+        let mut view = stock_view(0);
+        view.observer = Some(Vec::new());
+        for (seconds, shown) in [(3_661, "01:01:01"), (360_000, "99:59:59")] {
+            view.credits = seconds;
+            let drawn: Vec<f32> = build_sidebar_credits_instances(
+                &font,
+                &view,
+                SidebarChromeLayoutSpec::stock(),
+                168.0,
+                "%02d:%02d:%02d",
+                [1.0, 1.0, 0.0],
+                [0.0, 0.0],
+            )
+            .iter()
+            .map(|glyph| glyph.size[0])
+            .collect();
+            let expected: Vec<f32> = shown
+                .bytes()
+                .map(|c| widths.iter().find(|(glyph, _)| *glyph == c).unwrap().1 as f32)
+                .collect();
+            assert_eq!(drawn, expected, "{seconds} s shows {shown}");
+        }
     }
 }

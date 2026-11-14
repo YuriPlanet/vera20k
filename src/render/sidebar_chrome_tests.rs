@@ -320,6 +320,24 @@ fn original_n1_tables_drive_sidebar_palette_and_skip_alpha() {
     }
 }
 
+/// LoadSHPs 0x006A5AB7..0x006A5BDB finds the observer strip's pictures
+/// outside the side archives (retail LOCALMD.MIX), with their palettes.
+#[test]
+#[ignore = "requires the configured stock retail RA2/YR install"]
+fn retail_observer_art_finds_every_background_and_flag() {
+    let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL)
+        .expect("load retail asset stack");
+    let mix = assets.archive("sidec01.mix").expect("sidec01.mix");
+    let art = super::observer_art::load(&assets, mix, "sidec01.mix", false);
+    for side in 0..3 {
+        assert!(art.background(side).is_some(), "side {side}");
+    }
+    for country in (-3..=9).filter(|&country| country != -1) {
+        assert!(art.flag(country).is_some(), "flag {country}");
+    }
+    assert!(art.flag(-1).is_none());
+}
+
 #[test]
 #[ignore = "requires the configured stock retail RA2/YR install"]
 fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {

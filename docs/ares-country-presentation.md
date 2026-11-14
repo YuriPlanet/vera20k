@@ -16,7 +16,7 @@ defaults.
 | `ListIndex=` | Dropdown position; ties keep `[Countries]` order. A negative value hides the row. Default 100. |
 | `RandomSelectionWeight=` | Human “Random” country weight. Default 1. |
 | `AIRandomSelectionWeight=` | AI “Random” country weight. Optional: until a read sets it, AI rows use `RandomSelectionWeight`. `ParentCountry` does not copy it. |
-| `File.ObserverFlag=`, `File.ObserverBackground=`, `File.ObserverFlagAltPalette=` | Retained observer-strip art. Its only consumers are `StripClass_Draw_DrawObserverBackground @ 0x6AA0CA` and `StripClass_Draw_DrawObserverFlag @ 0x6AA164`; VERA ports no observer strip, so no consumer yet. |
+| `File.ObserverFlag=`, `File.ObserverBackground=`, `File.ObserverFlagAltPalette=` | Retained observer-strip art. Its only consumers are `StripClass_Draw_DrawObserverBackground @ 0x6AA0CA` and `StripClass_Draw_DrawObserverFlag @ 0x6AA164`; VERA's observer strip (`app::presentation::observer_strip`) does not read it yet. |
 
 `ParentCountry=` runs a one-shot copy (`0x1001BDC0`) after the primary-Rules
 block (`0x1001C770`) has read the child's `File.*` and `MenuText.Status`
@@ -70,9 +70,11 @@ describes.
   background SHP, or blits the PCX into the sidebar at the row origin sized
   121x96; `0x6AA164` (6 bytes) substitutes the observer flag SHP with palette
   index 9 when `File.ObserverFlagAltPalette` is set and 0 otherwise, or blits
-  the PCX 45x21 at row origin + (70, 70). VERA draws no observer cameo strip
-  (`ui::sidebar::cameo_order` records the same page-1 gap), so porting this
-  needs that strip first.
+  the PCX 45x21 at row origin + (70, 70). VERA's observer strip draws the
+  stock pictures (`render::sidebar_chrome` `ObserverArt`) for every country;
+  a country's own SHP or PCX, and its palette choice, need a per-country
+  picture load beside that atlas. Only an Ares mod that sets these keys, in
+  a LAN or online game with an observer, sees the difference.
 - A `File.Flag` whose PCX is missing or unparsable leaves the row without an
   insignia in VERA. Ares clears the name when the load fails
   (`0x1001C7CA..0x1001C7E5`), so gamemd sees a null surface and answers the

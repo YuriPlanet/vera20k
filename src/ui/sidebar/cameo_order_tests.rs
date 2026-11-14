@@ -970,6 +970,33 @@ fn scroll_commands_queue_one_row_each_until_the_next_visit() {
     assert!(!strips.has_pending_scroll());
 }
 
+#[test]
+fn the_observers_arrows_move_one_house_of_two_rows() {
+    // Sidebar Action 0x006A7BA2 / 0x006A7CD9 and StripClass::AI 0x006A8BA7:
+    // five Houses, of which six rows show three.
+    let mut strips = CameoStrips::default();
+    strips.set_observer_entries(Some(5));
+    let tab = SidebarTab::Building;
+    assert!(
+        strips.queue_scroll(tab, true, 6, 6),
+        "one House is left below"
+    );
+    strips.step_pending_scroll(6);
+    assert_eq!(strips.scroll_row(tab), 1, "a page moves one House");
+    assert!(strips.queue_scroll(tab, true, 6, 6));
+    strips.step_pending_scroll(6);
+    assert_eq!(strips.scroll_row(tab), 2);
+    assert!(
+        !strips.queue_scroll(tab, true, 6, 6),
+        "the last House shows"
+    );
+    // All five fit on ten rows: nothing moves.
+    assert!(strips.queue_scroll(tab, false, 10, 1));
+    strips.step_pending_scroll(10);
+    assert_eq!(strips.scroll_row(tab), 2);
+    assert!(!strips.has_pending_scroll());
+}
+
 /// Ares 3.0 drops the 75-entry strip limit (`SidebarClass_AddCameo_SkipSizeCheck`
 /// Ares.dll 1002C160, hook 0x6A63B7; `StripClass_AddCameo_ReplaceItAll`
 /// Ares.dll 1002C2D0, hook 0x6A8710) and runs `FlashCameo` (Ares.dll 1002C1D0,
@@ -1008,14 +1035,7 @@ fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
         CameoId::Object(id) => ids.iter().position(|known| *known == id).map(|i| i as i32),
         CameoId::SuperWeapon(_) => None,
     };
-    strips.flash_type_index(
-        SidebarTab::Vehicle,
-        119,
-        30,
-        1000,
-        index_of,
-        true,
-    );
+    strips.flash_type_index(SidebarTab::Vehicle, 119, 30, 1000, index_of, true);
     let (deadlines, _) = strips.saved_flash();
     let at = strips
         .items(SidebarTab::Vehicle)

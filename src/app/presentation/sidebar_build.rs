@@ -872,6 +872,66 @@ pub(crate) fn build_sidebar_cameo_instances(
     }
 }
 
+/// The observer strip's pictures, from the chrome atlas: each listed House's
+/// side background at its row pair, its flag 70 pixels right and down
+/// (`0x006AA0F1..0x006AA154`, `0x006AA1E3..0x006AA2C9`).
+pub(crate) fn build_observer_strip_instances(
+    state: &AppState,
+    view: &SidebarView,
+) -> Vec<SpriteInstance> {
+    let (Some(houses), Some(atlas)) = (view.observer.as_deref(), current_sidebar_chrome(state))
+    else {
+        return Vec::new();
+    };
+    let co = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let art = &atlas.observer_art;
+    let mut out = Vec::new();
+    for house in houses {
+        let [x, y] = house.origin;
+        if let Some(&background) = art.background(house.side) {
+            push_chrome(&mut out, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
+        }
+        if let Some(&flag) = art.flag(house.country) {
+            push_chrome(&mut out, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+        }
+    }
+    out
+}
+
+/// Over the strip's SIDE2 tiles, under its text.
+const OBSERVER_BACKGROUND_DEPTH: f32 = 0.00045;
+const OBSERVER_FLAG_DEPTH: f32 = 0.000449;
+
+/// The observer strip's texts in each House's colour (Fancy_Text_Print
+/// `0x004A61C0`, style `0x42`): the name at 8, 4 into the row pair, each
+/// line 17 pixels below the last (`0x006AA373..0x006AA583`).
+fn observer_strip_text(
+    font: &BitFont,
+    houses: &[crate::ui::sidebar::ObserverEntry],
+    co: [f32; 2],
+) -> Vec<SpriteInstance> {
+    let mut out = Vec::new();
+    for house in houses {
+        let tint = house.rgb.map(|c| f32::from(c) / 255.0);
+        let [x, y] = [house.origin[0] + 8.0, house.origin[1] + 4.0];
+        for (line, text) in std::iter::once(&house.name).chain(&house.lines).enumerate() {
+            out.extend(font.build_text(
+                text,
+                x,
+                y + line as f32 * 17.0,
+                1.0,
+                crate::render::sidebar_text::CREDITS_DEPTH,
+                tint,
+                co,
+            ));
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Text label instances
 // ---------------------------------------------------------------------------
@@ -954,6 +1014,9 @@ pub(crate) fn build_sidebar_text_instances(
                     .build_text(&count_str, text_x, text_y, 1.0, 0.00042, ready_tint, co),
             );
         }
+    }
+    if let Some(houses) = view.observer.as_deref() {
+        instances.extend(observer_strip_text(&state.renderer.bit_font, houses, co));
     }
     SidebarTextInstances {
         status: instances,

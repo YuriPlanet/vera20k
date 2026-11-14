@@ -26,6 +26,9 @@ pub use in_game_shell::InGameShellArt;
 #[path = "sidebar_chrome_layout_art.rs"]
 mod layout_art;
 pub use layout_art::LayoutArt;
+#[path = "sidebar_chrome_observer.rs"]
+mod observer_art;
+pub use observer_art::ObserverArt;
 
 #[cfg(test)]
 pub(crate) fn packed_command_bar_fixture(
@@ -65,9 +68,8 @@ const UNKNOWN_MID_PANEL_ID: i32 = 0xB0259C24u32 as i32;
 const ALLIED_SIDE_ARCHIVE_ORDER: &[&str] = &["sidec01md.mix", "sidec01.mix", "sidenc01.mix"];
 const SIDE_TWO_ARCHIVE_ORDER: &[&str] = &["sidec02md.mix", "sidec02.mix", "sidenc02.mix"];
 // SidebarClass::LoadSHPs 6A5840 loads SIDE1..3, ADDON, GCLOCK2 and the button
-// shapes (FreeSHPs 6A5BF0 frees them). Its observer flag shapes feed only
-// StripClass::Draw's observer strip (6AA0DA), which ordinary skirmish never
-// shows: only network setups make an observer.
+// shapes (FreeSHPs 6A5BF0 frees them). Its observer backgrounds and flags are
+// not side art; `observer_art` finds them.
 const GENERIC_SIDEBAR_SHP_NAMES: &[&str] = &[
     "side1.shp",
     "side2.shp",
@@ -309,6 +311,8 @@ pub struct SidebarChromeAtlas {
     pub in_game_shell: InGameShellArt<SidebarChromeEntry>,
     /// The pictures of the buttons the layout file adds (`Art=`).
     pub layout_art: LayoutArt<SidebarChromeEntry>,
+    /// The observer strip's backgrounds and flags.
+    pub observer_art: ObserverArt<SidebarChromeEntry>,
     pub top_strip_left: Option<SidebarChromeEntry>,
     pub top_strip_sidebar: Option<SidebarChromeEntry>,
     pub top_strip_thin: Option<SidebarChromeEntry>,
@@ -834,6 +838,7 @@ fn build_theme_atlas(
     let command_bar_art = command_bar::load(side_route, &generic_palette);
     let in_game_shell_art = in_game_shell::load(side_route, &generic_palette);
     let layout_art_rendered = layout_art::load(side_route, &generic_palette);
+    let observer_art_rendered = observer_art::load(asset_manager, mix, mix_name, ares);
     log::debug!(
         "{theme:?} generic sidebar palette resolved from {}",
         generic_palette_source.archive_name
@@ -1008,6 +1013,7 @@ fn build_theme_atlas(
     all_entries.extend(command_bar_art.entries());
     all_entries.extend(in_game_shell_art.entries());
     all_entries.extend(layout_art_rendered.entries());
+    all_entries.extend(observer_art_rendered.entries());
     if let Some(ref top) = top_strip_left {
         all_entries.push(top);
     }
@@ -1081,6 +1087,11 @@ fn build_theme_atlas(
         uv
     });
     let layout_art = layout_art_rendered.map(|entry| {
+        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
+        y += entry.height + CHROME_PADDING;
+        uv
+    });
+    let observer_art = observer_art_rendered.map(|entry| {
         let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
         y += entry.height + CHROME_PADDING;
         uv
@@ -1256,6 +1267,7 @@ fn build_theme_atlas(
         .entries()
         .copied()
         .chain(layout_art.entries().copied())
+        .chain(observer_art.entries().copied())
         .chain(
             [
                 top_strip_left_uv,
@@ -1302,6 +1314,7 @@ fn build_theme_atlas(
         command_bar,
         in_game_shell,
         layout_art,
+        observer_art,
         top_strip_left: top_strip_left_uv,
         top_strip_sidebar: top_strip_sidebar_uv,
         top_strip_thin: top_strip_thin_uv,

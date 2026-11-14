@@ -1371,6 +1371,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             state.match_state.input.camera_y,
         ],
     ));
+    // The observer's strip draws over the strip's tiles from the same atlas.
+    if let Some(v) = view.as_ref() {
+        chrome.extend(
+            crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
+        );
+    }
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
         .as_ref()
@@ -1469,6 +1475,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
                     .and_then(|atlas| atlas.top_strip_thin)
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
+                &crate::app::frontend::shell_pass::resolve_csf(state, "TXT_TIME_FORMAT_HOURS"),
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,

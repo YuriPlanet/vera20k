@@ -343,6 +343,7 @@ pub(crate) fn build_sidebar_view_with_spec(
         panel_rect,
         layout,
         credits,
+        observer: None,
         power_produced,
         power_drained,
         low_power,
@@ -454,6 +455,56 @@ pub(crate) fn append_added_grids(
         });
         view.items.extend(items);
     }
+}
+
+/// The observer's strip over a built view. `StripClass::Draw @ 0x006A9540`
+/// draws, for the observer (`0x006AA043..0x006AA59B`), `rows / 2` Houses
+/// from the strip's TopRow, each two cameo rows (`2 * [0xB0B500]`) below the
+/// last from the cameo grid's origin. `SidebarClass::UpdateScrollButtons @
+/// 0x006A6610`'s observer branch (`0x006A66EA..`) enables both arrows while
+/// they do not all fit (`count * 4 > rows * 2`). A layout without the strip
+/// shows no House.
+pub(crate) fn apply_observer_strip(
+    view: &mut SidebarView,
+    layout_spec: SidebarChromeLayoutSpec,
+    houses: Vec<super::ObserverEntry>,
+    top: usize,
+    gadget_state: &SidebarGadgetState,
+) {
+    let rows = view.layout.side2_tile_count;
+    let max_top = houses.len().saturating_sub(rows / 2);
+    let top = top.min(max_top);
+    let shown = if layout_spec.shows(SidebarPart::Cameos) {
+        rows / 2
+    } else {
+        0
+    };
+    let origin = [
+        view.layout.strip_x + layout_spec.cameo_inset_x,
+        view.layout.cameo_grid_top + layout_spec.cameo_inset_y,
+    ];
+    let disabled = houses.len() * 2 <= rows;
+    view.observer = Some(
+        houses
+            .into_iter()
+            .skip(top)
+            .take(shown)
+            .enumerate()
+            .map(|(index, house)| super::ObserverEntry {
+                origin: [
+                    origin[0].round(),
+                    (origin[1] + index as f32 * 2.0 * layout_spec.cameo_row_height).round(),
+                ],
+                ..house
+            })
+            .collect(),
+    );
+    view.scroll_rows = top;
+    view.max_scroll_rows = max_top;
+    view.scroll_down_button.disabled = disabled;
+    view.scroll_down_button.frame_index = gadget_state.scroll_down_frame(disabled);
+    view.scroll_up_button.disabled = disabled;
+    view.scroll_up_button.frame_index = gadget_state.scroll_up_frame(disabled);
 }
 
 /// The cameos of one grid: `entries` in rows of `columns`, the first at
