@@ -420,6 +420,7 @@ impl GpuContext {
 
         // Configure the surface with our chosen format and the window's current size.
         let window_size: winit::dpi::PhysicalSize<u32> = window.inner_size();
+        let (present_mode, desired_maximum_frame_latency) = present_settings(true);
         let config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: required_surface_usages,
             format: surface_format,
@@ -427,15 +428,10 @@ impl GpuContext {
             height: window_size.height.max(1),
             // `App::sync_present_mode` applies the Options page's VSync box
             // once the profile is loaded.
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            // One picture queued ahead of the screen, not wgpu's default two:
-            // the cursor and scrolling show a refresh sooner. The cost is that
-            // the CPU and GPU no longer overlap, so a picture whose work takes
-            // longer than one refresh waits for the next one.
-            // https://docs.rs/wgpu/30.0.1/wgpu/struct.SurfaceConfiguration.html#structfield.desired_maximum_frame_latency
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency,
             // wgpu 30 selects an HDR colour space per surface format; Auto keeps
             // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -624,17 +620,15 @@ impl GpuContext {
     /// VSync box (`[VERA] VSync=`).
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.PresentMode.html
     pub fn set_vsync(&mut self, vsync: bool) {
-        let mode = if vsync {
-            wgpu::PresentMode::Fifo
-        } else {
-            wgpu::PresentMode::AutoNoVsync
-        };
-        if self.config.present_mode == mode {
+        let (mode, latency) = present_settings(vsync);
+        if self.config.present_mode == mode && self.config.desired_maximum_frame_latency == latency
+        {
             return;
         }
         // Configuring a surface needs its last frame presented.
         self.handoff.waiter().wait();
         self.config.present_mode = mode;
+        self.config.desired_maximum_frame_latency = latency;
         if let Some(surface) = self
             .surface
             .get_mut()
@@ -799,6 +793,25 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
+/// The present mode and queued pictures for the VSync box: `Fifo` in step
+/// with the display, else `AutoNoVsync` (`Immediate`, else `Mailbox`, else
+/// `Fifo`).
+///
+/// VSync keeps wgpu's default two pictures queued, as every build before the
+/// box did. With one, the CPU and GPU no longer overlap: a picture whose work
+/// takes longer than one refresh waits for the next, and since a lent tick
+/// starts once per picture, the game itself slows to half speed. Without VSync
+/// a present never waits for the screen, so one queued picture only cuts the
+/// input delay.
+/// https://docs.rs/wgpu/30.0.1/wgpu/struct.SurfaceConfiguration.html#structfield.desired_maximum_frame_latency
+fn present_settings(vsync: bool) -> (wgpu::PresentMode, u32) {
+    if vsync {
+        (wgpu::PresentMode::Fifo, 2)
+    } else {
+        (wgpu::PresentMode::AutoNoVsync, 1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -807,7 +820,17 @@ mod tests {
 
     use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
-    use super::{CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on};
+    use super::{
+        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
+    };
+
+    /// With VSync a picture over one refresh must not wait a whole refresh
+    /// more: two pictures stay queued. Without it, one keeps input delay low.
+    #[test]
+    fn vsync_keeps_two_pictures_queued() {
+        assert_eq!(present_settings(true), (wgpu::PresentMode::Fifo, 2));
+        assert_eq!(present_settings(false), (wgpu::PresentMode::AutoNoVsync, 1));
+    }
 
     /// Run one acquisition over `results`, the acquire answers in call order;
     /// returns its outcome and recovery requests. Real frame presentation is
