@@ -841,10 +841,9 @@ impl SpriteAtlas {
 
     /// Whether the atlas has collected every [`object_pairs`] pair the world
     /// draws, every live AnimClass colour remap, and the harvest overlay once
-    /// a harvester exists. This runs on every tick with a spawn, death or
-    /// Limbo, so it allocates nothing per object and stops at the first miss.
-    /// Keys found unrenderable count as collected: a sprite with nothing to
-    /// draw never forces another refresh.
+    /// a harvester exists. It allocates nothing per object and stops at the
+    /// first miss. Keys found unrenderable count as collected: a sprite with
+    /// nothing to draw never forces another refresh.
     fn covers_world(
         &self,
         entities: &crate::sim::entity_store::EntityStore,
@@ -856,13 +855,21 @@ impl SpriteAtlas {
         object_pairs(entities, house_colors, extra_building_types, interner)
             .all(|(type_id, color)| self.covers_object(type_id, color))
             && anim_remaps.is_subset(&self.covered_anim_remaps)
-            && (self.harvest_overlay_loaded || !entities.values().any(|e| e.miner.is_some()))
+            && self.covers_harvest_overlay(entities.values())
     }
 
     fn covers_object(&self, type_id: &str, color: HouseColorIndex) -> bool {
         self.covered_objects
             .get(type_id)
             .is_some_and(|colors| colors.contains(&color))
+    }
+
+    /// The harvest overlay is loaded, or none of `objects` harvests.
+    fn covers_harvest_overlay<'a>(
+        &self,
+        mut objects: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity>,
+    ) -> bool {
+        self.harvest_overlay_loaded || !objects.any(|entity| entity.miner.is_some())
     }
 
     /// Admit one logical key only after its physical rectangle was uploaded.
@@ -1129,21 +1136,33 @@ pub fn atlas_covers_world(
     }
 }
 
-/// Every (type, house colour) pair the world's objects draw: each placed
-/// non-voxel object in its owner's colour, each active Infantry disguise in
-/// its disguise house's colour, and every building a unit can deploy into in
-/// every house colour. Every sprite key an object needs
+/// Every (type, house colour) pair the world's objects draw: each
+/// [`entity_pairs`] pair of a stored object, and every building a unit can
+/// deploy into in every house colour. Every sprite key an object needs
 /// derives from one of these pairs, so the atlas records coverage per pair.
-/// Objects of one type and owner give one pair between them, at the first.
 fn object_pairs<'a>(
     entities: &'a crate::sim::entity_store::EntityStore,
     house_colors: &'a HouseColorMap,
     extra_building_types: &'a [&'a str],
     interner: Option<&'a crate::sim::intern::StringInterner>,
 ) -> impl Iterator<Item = (&'a str, HouseColorIndex)> + 'a {
+    let deploy_targets = extra_building_types
+        .iter()
+        .flat_map(move |&type_id| house_colors.values().map(move |&color| (type_id, color)));
+    entity_pairs(entities.values(), house_colors, interner).chain(deploy_targets)
+}
+
+/// The (type, house colour) pairs `objects` draw: each non-voxel object in
+/// its owner's colour, and each active Infantry disguise in its disguise
+/// house's colour. Objects of one type and owner give one pair between them,
+/// at the first.
+fn entity_pairs<'a>(
+    objects: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity> + 'a,
+    house_colors: &'a HouseColorMap,
+    interner: Option<&'a crate::sim::intern::StringInterner>,
+) -> impl Iterator<Item = (&'a str, HouseColorIndex)> + 'a {
     let mut asked = crate::util::lookup_hash::LookupSet::default();
-    let placed = entities
-        .values()
+    objects
         .filter(|entity| !entity.is_voxel())
         .flat_map(|entity| {
             // InfantryClass::DrawIt @ 0x00518DDF and TechnoClass::GetRemapColour
@@ -1176,11 +1195,7 @@ fn object_pairs<'a>(
                 .copied()
                 .unwrap_or(crate::rules::house_colors::NO_REMAP);
             (interner.map_or("", |i| i.resolve(type_id)), color)
-        });
-    let deploy_targets = extra_building_types
-        .iter()
-        .flat_map(move |&type_id| house_colors.values().map(move |&color| (type_id, color)));
-    placed.chain(deploy_targets)
+        })
 }
 
 /// The world-derived inputs, beyond the live objects, that decide which SHP
@@ -1215,7 +1230,12 @@ impl<'r> EntityAtlasCoverage<'r> {
                 .map(|anim| anim.anim_name.to_ascii_uppercase())
                 .collect(),
             frozen_keys: rules.map_or_else(HashSet::new, |rules| {
-                collect_fogged_sprite_keys(sim, rules, house_colors)
+                fogged_sprite_keys(
+                    sim.fog().fogged_objects().values(),
+                    sim.interner(),
+                    rules,
+                    house_colors,
+                )
             }),
         }
     }
@@ -1254,31 +1274,28 @@ pub fn collect_anim_remap_base_keys(
     anim_remap_base_keys(sim, house_colors).collect()
 }
 
-/// Immutable FoggedObject4D1890 inputs also survive the last live source.
-/// Their ordinary building/Anim palettes are separate atlas variants, with
-/// their exact recorded frames rather than a reconstructed live animation.
-pub(crate) fn collect_fogged_sprite_keys(
-    sim: &crate::sim::world::Simulation,
+/// The sprite keys of these FoggedObject records' pictures. Immutable
+/// FoggedObject4D1890 inputs also survive the last live source. Their
+/// ordinary building/Anim palettes are separate atlas variants, with their
+/// exact recorded frames rather than a reconstructed live animation.
+fn fogged_sprite_keys<'a>(
+    records: impl Iterator<Item = &'a crate::sim::vision::FoggedObjectFootprintRecord>,
+    interner: &crate::sim::intern::StringInterner,
     rules: &RuleSet,
     house_colors: &HouseColorMap,
 ) -> HashSet<ShpSpriteKey> {
     use crate::sim::vision::FoggedDrawKind;
     let mut keys = HashSet::new();
-    for frozen in sim
-        .fog()
-        .fogged_objects()
-        .values()
-        .filter_map(|record| record.drawing.as_ref())
-    {
+    for frozen in records.filter_map(|record| record.drawing.as_ref()) {
         let color = house_colors
-            .get(sim.interner().resolve(frozen.owner))
+            .get(interner.resolve(frozen.owner))
             .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP);
         for record in &frozen.records {
             let Ok(frame) = u16::try_from(record.frame) else {
                 continue;
             };
-            let name = sim.interner().resolve(record.type_ref);
+            let name = interner.resolve(record.type_ref);
             let context = match record.kind {
                 FoggedDrawKind::Building => {
                     let Some(object) = rules.object(name) else {
@@ -1353,32 +1370,64 @@ fn fogged_shadow_key(body: &ShpSpriteKey, count: u16) -> Option<ShpSpriteKey> {
     })
 }
 
-/// Anim construction and producer palette assignment can occur without an
-/// entity spawn or ownership change. Check their coverage on committed ticks
-/// so those variants reach the ordinary AnimClass draw before its first frame.
-/// Only live Anims are visited; the first missing pair ends the check.
-pub(crate) fn atlas_covers_anim_remaps(
+/// Whether `atlas` holds what the objects whose look changed now draw: the
+/// pairs and harvest overlay of `objects`, the colour remaps of `anims` and
+/// the frames of the FoggedObject `records` added since the last check. A
+/// look that changes without an entity spawn (a disguise, an in-place type
+/// change, a producer's anim palette) reaches the ordinary draw this way
+/// before its first frame. [`atlas_covers_world`] and
+/// [`atlas_covers_sprite_keys`] ask the same of the whole world.
+pub(crate) fn atlas_covers_changes<'a>(
     atlas: Option<&SpriteAtlas>,
-    sim: &crate::sim::world::Simulation,
+    objects: &[&crate::sim::game_entity::GameEntity],
+    anims: &[&crate::sim::anim_class::AnimObject],
+    records: impl Iterator<Item = &'a crate::sim::vision::FoggedObjectFootprintRecord>,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&RuleSet>,
     house_colors: &HouseColorMap,
 ) -> bool {
-    anim_remap_base_keys(sim, house_colors)
-        .all(|key| atlas.is_some_and(|atlas| atlas.covered_anim_remaps.contains(&key)))
+    let mut pairs = entity_pairs(objects.iter().copied(), house_colors, Some(interner));
+    let mut remaps = anim_remap_keys(anims.iter().copied(), interner, house_colors);
+    let frozen = rules.map_or_else(HashSet::new, |rules| {
+        fogged_sprite_keys(records, interner, rules, house_colors)
+    });
+    match atlas {
+        Some(atlas) => {
+            pairs.all(|(type_id, color)| atlas.covers_object(type_id, color))
+                && atlas.covers_harvest_overlay(objects.iter().copied())
+                && remaps.all(|key| atlas.covered_anim_remaps.contains(&key))
+                && atlas_covers_sprite_keys(Some(atlas), &frozen, rules)
+        }
+        None => pairs.next().is_none() && remaps.next().is_none() && frozen.is_empty(),
+    }
 }
 
-/// The atlas key of every live remapped Anim. Many Anims share a type,
-/// palette and colour: each such triple gives one key, at its first Anim.
+/// The atlas key of every live remapped Anim.
 fn anim_remap_base_keys<'a>(
     sim: &'a crate::sim::world::Simulation,
     house_colors: &'a HouseColorMap,
 ) -> impl Iterator<Item = AnimRemapKey> + 'a {
+    anim_remap_keys(
+        sim.anims().map(|(_, anim)| anim),
+        sim.interner(),
+        house_colors,
+    )
+}
+
+/// The atlas key of each remapped Anim of `anims`. Many Anims share a type,
+/// palette and colour: each such triple gives one key, at its first Anim.
+fn anim_remap_keys<'a>(
+    anims: impl Iterator<Item = &'a crate::sim::anim_class::AnimObject> + 'a,
+    interner: &'a crate::sim::intern::StringInterner,
+    house_colors: &'a HouseColorMap,
+) -> impl Iterator<Item = AnimRemapKey> + 'a {
     let mut asked = crate::util::lookup_hash::LookupSet::default();
-    sim.anims().filter_map(move |(_, anim)| {
-        let color = anim_remap_color(anim, sim.interner(), house_colors)?;
+    anims.filter_map(move |anim| {
+        let color = anim_remap_color(anim, interner, house_colors)?;
         let context = anim_remap_context(anim);
         asked.insert((anim.type_id(), context, color)).then(|| {
             (
-                sim.interner().resolve(anim.type_id()).to_ascii_uppercase(),
+                interner.resolve(anim.type_id()).to_ascii_uppercase(),
                 context,
                 color,
             )

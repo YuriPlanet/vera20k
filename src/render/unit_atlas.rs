@@ -279,19 +279,19 @@ enum VoxelModel<'a> {
     Turret(&'a str),
 }
 
-/// The voxel models the world's objects draw with, keyed by rules type, each
-/// once however many objects share it: an object's model follows from its
-/// type, whether it is voxel, and its class.
+/// The voxel models `objects` draw with, keyed by rules type, each once
+/// however many objects share it: an object's model follows from its type,
+/// whether it is voxel, and its class.
 /// Buildings keep that identity too: their native loader resolves separate
 /// TurretAnim turret/barrel slots, and the draw consumes their own metadata.
-fn world_voxel_models<'a>(
-    entities: &'a crate::sim::entity_store::EntityStore,
+fn voxel_models<'a>(
+    objects: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity> + 'a,
     rules: Option<&'a RuleSet>,
     interner: Option<&'a crate::sim::intern::StringInterner>,
 ) -> impl Iterator<Item = VoxelModel<'a>> + 'a {
     use crate::map::entities::EntityCategory;
     let mut asked = crate::util::lookup_hash::LookupSet::default();
-    entities.values().filter_map(move |entity| {
+    objects.filter_map(move |entity| {
         let voxel = entity.is_voxel();
         let category = entity.category();
         if !voxel && category != EntityCategory::Structure {
@@ -316,16 +316,26 @@ fn world_voxel_models<'a>(
 }
 
 /// Whether `atlas` — None while no unit atlas exists — has admitted every
-/// voxel model the world draws, so no admission is needed. This runs on
-/// every tick with a spawn, death or Limbo, so it asks once for each model
-/// and stops at the first miss.
+/// voxel model the world draws, so no admission is needed. It asks once for
+/// each model and stops at the first miss.
 pub fn atlas_covers_world(
     atlas: Option<&UnitAtlas>,
     entities: &crate::sim::entity_store::EntityStore,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
-    let mut models = world_voxel_models(entities, rules, interner);
+    atlas_covers_objects(atlas, entities.values(), rules, interner)
+}
+
+/// Whether `atlas` has admitted every voxel model `objects` draw: the
+/// atlas check asks this of the objects whose look changed.
+pub(crate) fn atlas_covers_objects<'a>(
+    atlas: Option<&UnitAtlas>,
+    objects: impl Iterator<Item = &'a crate::sim::game_entity::GameEntity> + 'a,
+    rules: Option<&'a RuleSet>,
+    interner: Option<&'a crate::sim::intern::StringInterner>,
+) -> bool {
+    let mut models = voxel_models(objects, rules, interner);
     match atlas {
         Some(atlas) => models.all(|model| atlas.covered.contains(model)),
         None => models.next().is_none(),
@@ -340,7 +350,7 @@ impl UnitAtlasDemand {
         interner: Option<&crate::sim::intern::StringInterner>,
     ) -> Self {
         let mut demand = Self::default();
-        for model in world_voxel_models(entities, rules, interner) {
+        for model in voxel_models(entities.values(), rules, interner) {
             if !demand.contains(model) {
                 let (set, type_id) = match model {
                     VoxelModel::Ground(type_id) => (&mut demand.ground, type_id),

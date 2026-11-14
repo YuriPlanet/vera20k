@@ -1122,6 +1122,7 @@ impl App {
                     surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
+                    atlas_check: Default::default(),
                     atlas_refresh_owed: false,
                     overlay_atlas: None,
                     bridge_atlas: None,

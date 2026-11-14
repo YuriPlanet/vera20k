@@ -3013,7 +3013,6 @@ fn lifecycle_authority_conceal_without_dirty_eligibility_still_clears_drawn_stat
         sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
             LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
             LifecycleOutput::ClearDrawnState { stable_id: 1 },
             LifecycleOutput::ClearRedraw { stable_id: 1 },
@@ -3039,7 +3038,6 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
             LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
             LifecycleOutput::DirtyTacticalRect { stable_id: 1 },
             LifecycleOutput::ClearDrawnState { stable_id: 1 },
