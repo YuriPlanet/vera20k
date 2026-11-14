@@ -78,8 +78,6 @@ fn fire(
     )
 }
 
-// Runs again once the power system moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn battery_drains_by_its_ratio_lends_power_and_stops_when_drain_money_runs_out() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

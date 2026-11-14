@@ -1334,7 +1334,7 @@ fn a_super_holds_only_while_no_provider_is_online() {
 
 /// A game Ares turned on in by a key, with its Rules read the stock way
 /// (no `ares.mix`), holds no SWTypeExt data, so its superweapons stay
-/// stock (`RuleSet::ares_super_weapons`): the house is granted its Supers
+/// stock (`RuleSet::ares_form`): the house is granted its Supers
 /// and one that is not `IsPowered=` charges on. A build with the `ares`
 /// feature reads every game the Ares way and has no such game.
 #[cfg(not(feature = "ares"))]

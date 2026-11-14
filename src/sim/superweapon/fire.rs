@@ -57,7 +57,7 @@ impl Simulation {
         overlays: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        if rules.ares_super_weapons() && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id)) {
+        if rules.ares_form() && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id)) {
             let launched = super::ai_fire::fire_extension_automatic(
                 self, rules, owner, sw_type_id, overlays, effects, true,
             );
@@ -119,7 +119,7 @@ impl Simulation {
     ) -> bool {
         // Whether Ares plays in this game, read once: without it only the
         // stock Fire_SW statements below run, in the stock order.
-        let ares = rules.ares_super_weapons();
+        let ares = rules.ares_form();
         let automatic = target_source != super::SuperWeaponTargetSource::Manual;
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
@@ -392,7 +392,7 @@ fn click_fire(
     payment: Option<(InternedId, &SuperWeaponType)>,
     selecting_paid_source: bool,
 ) -> bool {
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     if sw.use_charge_drain {
         // ClickFire6CB934..6CBA7A precedes ordinary ready/running/one-time
         // admission. House control is independent of local launch output.
@@ -412,7 +412,7 @@ fn click_fire(
             let Some(instance) = super_instance(sim, owner, sw_type_id) else {
                 return false;
             };
-            instance.click_charge_drain(sw, frame, ratio, rules.ares_super_weapons())
+            instance.click_charge_drain(sw, frame, ratio, rules.ares_form())
         } else {
             // HouseCtor4F573A clears +1FA; no enabled fresh writer has been
             // established. Native6CBA52 tests that byte, without human timer
@@ -609,7 +609,7 @@ fn launch(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     use super::paradrop::ParaDropKind;
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
     // redirected Type's handler Activate runs first; an accepted one ends
     // Launch through the common tail, a refused one falls through to the

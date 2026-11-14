@@ -2682,6 +2682,7 @@ fn commit_fire_bookkeeping(
             &mut world.power_states,
             drainer_id,
             victim_id,
+            rules.ares_form(),
         ) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);

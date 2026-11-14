@@ -567,14 +567,12 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         // Ares 3.0 10014630 (hook 0x4509B4): with [General]
         // RepairStopOnInsufficientFunds=no a human-controlled house's repair
         // stays on (0x4509BB) and retries on a later period.
-        #[cfg(feature = "ares")]
-        let keeps_repairing = !rules.ares_repair_stop_on_insufficient_funds()
+        let keeps_repairing = rules.ares_form()
+            && !rules.ares_repair_stop_on_insufficient_funds()
             && sim
                 .houses
                 .get(&owner)
                 .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
-        #[cfg(not(feature = "ares"))]
-        let keeps_repairing = false;
         if !keeps_repairing && let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.building.repairing.on = false;
         }
