@@ -1622,6 +1622,7 @@ pub(crate) fn build_building_anim_instances(
     // projected. The window is the slot admission's box
     // (`helpers::projection_admitted`) widened by the slack.
     let slot_window = building_slot_window(sim.resolved_terrain(), camera, projection_viewport);
+    let mut anim_types = super::overlays::AnimTypeArts::new(rules, atlas);
     for building in frame.structures() {
         if !slot_window.contains(building.position.rx(), building.position.ry()) {
             debug_assert!(
@@ -1688,6 +1689,7 @@ pub(crate) fn build_building_anim_instances(
             local_owner_id,
             building,
             &slot_anims,
+            &mut anim_types,
             &|id| anim_colour_word(state, sim, frame, cells.as_ref(), &shrouded, id),
             axis.origin_y,
             axis.world_height,
@@ -1774,6 +1776,7 @@ fn emit_building_anims(
     local_owner_id: Option<crate::sim::intern::InternedId>,
     building: &crate::app::presentation::frame::ObjectRecord,
     slot_anims: &[Option<&crate::sim::anim_class::AnimObject>; 21],
+    anim_types: &mut super::overlays::AnimTypeArts<'_>,
     anim_word: &dyn Fn(u64) -> u16,
     origin_y: f32,
     world_height: f32,
@@ -1813,7 +1816,8 @@ fn emit_building_anims(
             continue;
         }
         let anim_name = sim.interner().resolve(instance.type_id());
-        let Some(runtime_config) = art_reg.anim_runtime_config(anim_name) else {
+        let art = anim_types.of(instance.type_id(), anim_name);
+        let Some(runtime_config) = art.config else {
             continue;
         };
         if !runtime_config.art_body_read && runtime_config.raw_shp_frame_count.is_none() {
@@ -1830,13 +1834,7 @@ fn emit_building_anims(
             Some(runtime_config),
             instance.draw_flags(),
             instance.runtime().current_frame,
-            i32::from(
-                super::overlays::presentation_anim_frame_count(
-                    &atlas.active_anim_frame_counts,
-                    anim_name,
-                )
-                .unwrap_or(0),
-            ),
+            i32::from(art.frame_count.unwrap_or(0)),
             detail_level,
             draw_runtime,
         ) else {

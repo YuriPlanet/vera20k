@@ -357,6 +357,17 @@ pub(crate) fn health_bar_drawable(
     local_owner: Option<&str>,
 ) -> bool {
     let player = local_owner.and_then(|owner| sim.interner().get(owner));
+    health_bar_drawable_for(sim, entity, hovered_id, local_owner, player)
+}
+
+/// [`health_bar_drawable`] for `local_owner` and its interned id `player`.
+fn health_bar_drawable_for(
+    sim: &crate::sim::world::Simulation,
+    entity: &ObjectRecord,
+    hovered_id: Option<u64>,
+    local_owner: Option<&str>,
+    player: Option<crate::sim::intern::InternedId>,
+) -> bool {
     let (_, draw_pips) = health_strip_visibility(sim, entity, hovered_id, player, false);
     draw_pips && admitted_techno_observer(sim, entity, local_owner, player).is_some()
 }
@@ -500,11 +511,12 @@ fn entity_status_pips_drawable(
     let Some(current_house_id) = current_house_id else {
         return false;
     };
-    if !health_bar_drawable(
+    if !health_bar_drawable_for(
         sim,
         entity,
         hovered_entity_id,
         Some(sim.interner().resolve(current_house_id)),
+        Some(current_house_id),
     ) {
         return false;
     }
@@ -1946,7 +1958,7 @@ pub(crate) fn techno_extras_for_parent(
         //6F659E projects the foundation edge at Z=0;6F682C passes it to
         //the shared709A90 owner. Building rows use PIPS, (+6,-1), step(4,2).
         //Garrison and passenger arms restart at that origin independently.
-        for pip in scale_pip_draws(sim, entity, hovered_id, local_owner, rules) {
+        for pip in scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules) {
             strip.fills.extend(instance(
                 shape,
                 pip.frame,
@@ -2042,7 +2054,7 @@ pub(crate) fn techno_extras_for_parent(
     // `0x006F6A8E..0x006F6AB0` passes the draw point itself, without the
     // Type+3E0 PixelSelectionBracketDelta that moves the health bar.
     if let Some(art) = overlay.scale_pips() {
-        for pip in scale_pip_draws(sim, entity, hovered_id, local_owner, rules) {
+        for pip in scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules) {
             let x = sx - 15.0 + if infantry { 11.0 } else { 0.0 } + pip.offset_pixels[0] as f32;
             strip.scale.extend(instance(
                 art,
@@ -2193,7 +2205,7 @@ pub(crate) fn scale_pip_draws<'a>(
     sim: &crate::sim::world::Simulation,
     entity: &'a ObjectRecord,
     hovered_id: Option<u64>,
-    local_owner: Option<&str>,
+    local_owner_id: Option<crate::sim::intern::InternedId>,
     rules: &RuleSet,
 ) -> &'a [ScalePipDraw] {
     // Ares6F6A58 ->1004A260 skips mobile scale pips to6F6AB6. The health
@@ -2204,13 +2216,7 @@ pub(crate) fn scale_pip_draws<'a>(
     }
     if entity.sinking.is_active()
         || entity.passenger_role.is_inside_transport()
-        || !entity_status_pips_drawable(
-            sim,
-            entity,
-            hovered_id,
-            local_owner.and_then(|owner| sim.interner().get(owner)),
-            Some(rules),
-        )
+        || !entity_status_pips_drawable(sim, entity, hovered_id, local_owner_id, Some(rules))
     {
         return &[];
     }
