@@ -14,6 +14,13 @@
 //! `RadarClass::MarkPixelDirty @ 0x006562D0` queues one pixel for Update's
 //! RenderCellPixel pass; this owner recomputes every dot on each minimap
 //! update instead, so its callers' requests are subsumed.
+//!
+//! Sim-scale deviation, the maintainer's choice: the tracker syncs once per
+//! drawn picture, not once per Logic frame (`TechnoClass+0x4A0`,
+//! `0x0070D990`), so that no per-tick pass runs over every unit. When several
+//! frames pass between pictures, objects sharing one exact pixel can take
+//! another order there: only which of them colours that pixel or answers a
+//! click on it differs.
 
 use crate::map::houses::HouseColorMap;
 use crate::render::snapshot::SnapshotObject;
@@ -123,8 +130,15 @@ pub(super) fn radar_entity_owner_color(
 /// request at each period boundary (`0x0070DBCC..0x0070DC37`) is subsumed:
 /// every dot is recomputed on each minimap update.
 ///
-/// RESIDUAL: `FlashFrameTime=0` divides by zero natively; here it never
-/// flashes.
+/// Deliberate differences:
+/// - `FlashFrameTime=0` divides by zero natively (`0x0070DC29`); here it
+///   never flashes, as outside data never stops the game.
+/// - The maintainer's choice, with the per-update recompute above: a re-hit
+///   while the dot is inverted restarts the flash, and natively the request
+///   at the restart's first boundary (`r % FlashFrameTime == 0`,
+///   `0x0070DC29..0x0070DC37`) is missed when the hit lands after the
+///   victim's own update that frame, leaving the dot inverted about six
+///   frames longer with retail 49/7; here the new phase shows at once.
 pub(super) fn radar_combat_flash_inverts(
     entity: &impl crate::render::snapshot::SnapshotObject,
     current_player: Option<InternedId>,
@@ -220,8 +234,8 @@ pub(super) struct RadarObjectUpdate {
     pub enemy_sensed_prefilter: bool,
     /// Ares `SensorArray.Warn=`: TechnoClass_RadarTrackingUpdate_
     /// AnnounceDetected10016E60 (hook70DA95) skips the type-5 event of a
-    /// type that does not warn.
-    #[cfg(feature = "ares")]
+    /// type that does not warn. True unless the game's Ares switch read the
+    /// key.
     pub sensor_array_warn: bool,
     pub foundation: Option<(u32, u32)>,
     pub radar_scale: f32,
@@ -412,11 +426,7 @@ impl RetainedRadarTracker {
                 .collect();
             self.register(update.stable_id, &pixels, update.local_front);
         }
-        #[cfg(feature = "ares")]
-        let warns = update.sensor_array_warn;
-        #[cfg(not(feature = "ares"))]
-        let warns = true;
-        if visibility.out_code != 0 && update.enemy_sensed_prefilter && warns {
+        if visibility.out_code != 0 && update.enemy_sensed_prefilter && update.sensor_array_warn {
             update
                 .event_source_cell
                 .map(|cell| RadarSensedPresentationEvent {
@@ -568,9 +578,33 @@ pub(super) fn radar_foundation_brush(
     foundation_height: u32,
     radar_scale: f32,
 ) -> Vec<(i32, i32)> {
+    // `0x006563E2..0x00656446`: FILD the cell count, FMUL the f32 zoom, FADD
+    // 0.5, raise to 1.0 for one cell (the multiply skipped) or 2.0 otherwise,
+    // then `ftol`, all at x87 precision; f32 arithmetic rounds 5 x 0.7 up to
+    // 3.5 and gives a cell too many.
     let scaled_dimension = |cells: u32| {
-        let rounded = (cells as f32 * radar_scale + 0.5).floor() as i32;
-        rounded.max(if cells <= 1 { 1 } else { 2 })
+        use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering};
+        let constant = |value: f64| X87Chop53::load_f64(NativeF64Bits::from_bits(value.to_bits()));
+        let minimum = if cells == 1 { 1 } else { 2 };
+        let (Ok(scale), Ok(half), Ok(floor)) = (
+            X87Chop53::load_f32(NativeF32Bits::from_bits(radar_scale.to_bits())),
+            constant(0.5),
+            constant(f64::from(minimum)),
+        ) else {
+            return minimum;
+        };
+        let scaled = if cells == 1 {
+            scale
+        } else {
+            X87Chop53::mul(X87Chop53::load_i32(cells as i32), scale)
+        };
+        let value = X87Chop53::add(scaled, half);
+        let value = if X87Chop53::compare(floor, value) == X87Ordering::Greater {
+            floor
+        } else {
+            value
+        };
+        X87Chop53::ftol_i32_low_masked(value)
     };
     let width = scaled_dimension(foundation_width);
     let height = scaled_dimension(foundation_height);
@@ -623,7 +657,6 @@ mod tests {
             origin: (40, 60),
             event_source_cell: Some((10, 20)),
             enemy_sensed_prefilter: true,
-            #[cfg(feature = "ares")]
             sensor_array_warn: true,
             foundation: None,
             radar_scale: 1.0,
@@ -734,6 +767,32 @@ mod tests {
             None,
             "native Foot/+0x684 prefilter rejects before CreateRadarEvent"
         );
+    }
+
+    /// Ares hook70DA95 in every build: a sensed type with
+    /// `SensorArray.Warn=no` raises no event.
+    #[test]
+    fn a_type_that_does_not_warn_raises_no_sensed_event() {
+        let mut tracker = RetainedRadarTracker::default();
+        let mut sensed = update(1, false);
+        sensed.visibility = RadarRegistrationVisibilityFacts::Mobile(RadarMobileVisibilityFacts {
+            cloak_state: 2,
+            has_sensor: true,
+            ..visible_mobile_facts()
+        });
+        sensed.sensor_array_warn = false;
+        assert_eq!(tracker.update_object(sensed, false), None);
+    }
+
+    /// `0x0065641F..0x00656446` scales at x87 precision: 5 cells at the zoom
+    /// a 200-wide raw map gets (f32 0.7, just under) make 3.9999... and
+    /// `ftol` gives 3, where f32 arithmetic rounds to 4.
+    #[test]
+    fn radar_brush_scales_foundations_at_x87_precision() {
+        let zoom = 140.0_f32 / 200.0;
+        let rows = |cells| radar_foundation_brush(cells, 1, zoom).last().unwrap().1 + 1;
+        assert_eq!(rows(5), 3);
+        assert_eq!(rows(2), 2);
     }
 
     #[test]

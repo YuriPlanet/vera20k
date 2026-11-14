@@ -123,9 +123,9 @@ impl GadgetSpec {
     }
 
     /// Invisible Action-only click region ctor (A3): sticky, custom event mask
-    /// (tactical 0x7F / minimap 0x9F), `ClickRegion` behavior, no id. The sticky
+    /// (tactical 0x7F / minimap 0xDF), `ClickRegion` behavior, no id. The sticky
     /// byte makes the dispatcher acquire capture on a press so a drag stays
-    /// bound to the region across the sidebar boundary (G17). The 0x7F/0x9F
+    /// bound to the region across the sidebar boundary (G17). The 0x7F/0xDF
     /// masks already include the sticky `|5` bits.
     pub fn click_region(rect: GadgetRect, flags: u16) -> Self {
         let mut spec = Self::new(rect, flags, true);

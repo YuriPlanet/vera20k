@@ -2748,7 +2748,15 @@ fn finish_concrete_death(
     } else {
         false
     };
-    if let Some(obj) = world.interner.object_type(type_id, rules) {
+    // `UnitClass::ReceiveDamage` `0x00737DA7..0x00737DDD`: an art
+    // `DeathFrames=` type defers its death to its count (`world::death_frames`),
+    // and only the hit that starts the count announces the loss.
+    let deferred_death = world.defer_unit_death(dead_id, rules);
+    if let Some(obj) = world
+        .interner
+        .object_type(type_id, rules)
+        .filter(|_| deferred_death != Some(false))
+    {
         // `TechnoClass::Death_Announcement @ 0x004D98C0` runs at the
         // Aircraft/Infantry/Unit `ReceiveDamage` kill sites (vtable
         // `+0x3B8`; stock `BuildingClass::ReceiveDamage` makes no such call)
@@ -2811,6 +2819,8 @@ fn finish_concrete_death(
     // (`get_xrefs_to 0x00738680`; the `type+0x73C` operand scan), and
     // infantry death anims come from `InfDeath`/`DeathAnims`.
     match category {
+        // The deferred death jumps past all three (`0x00737DDD`).
+        EntityCategory::Unit if deferred_death.is_some() => {}
         EntityCategory::Unit => {
             if world.unit_sinks_on_death(rules, dead_id) {
                 world.begin_ship_sinking(dead_id, rules, frame_effects);
@@ -2936,6 +2946,7 @@ fn finish_concrete_death(
         concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Infantry(postlude));
         effects.despawned_ids.push(dead_id);
     } else if has_animation
+        && deferred_death.is_none()
         && !world
             .substrate
             .entities
@@ -3028,7 +3039,8 @@ fn finish_concrete_death(
     {
         // `UnitClass::ReceiveDamage` (`0x00738457..0x00738475`): an airborne
         // `Crashable=` unit crashes (`Crash(0)`, no attacker) instead of its
-        // UnInit, and falls to its impact (a Jumpjet: `jumpjet_crash_impact`).
+        // UnInit, and falls to its impact (a Jumpjet: `jumpjet_crash_impact`)
+        // or the end of its death count.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Unit
         && !crashable

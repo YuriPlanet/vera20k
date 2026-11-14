@@ -373,7 +373,7 @@ fn production_radar_loss_and_reversal_preserve_final_gpu_pixels() {
         RadarAnimState::new(&gpu.device, &gpu.queue, &batch, frames.clone(), 168, 110).unwrap();
     let _ = radar.set_has_radar(true);
     for frame in 0..32 {
-        radar.tick(frame * 64);
+        radar.tick(1, frame * 64);
     }
     assert_eq!(radar.phase(), RadarAnimPhase::Online);
     let source: Vec<u8> = (0..140 * 108)
@@ -442,19 +442,19 @@ fn production_radar_loss_and_reversal_preserve_final_gpu_pixels() {
     let displayed = online(&frames[32], &source, line);
     radar.retain_online_content(&map_texture, &white, &[map], [line].into_iter(), origin);
     let _ = radar.set_has_radar(false);
-    radar.tick(2032);
+    radar.tick(1, 2032);
     assert_pixels(&shown(&mut radar), &displayed, "pre-due loss");
     radar.retain_online_content(&changed_map, &white, &[map], [line].into_iter(), origin);
-    radar.tick(2032);
+    radar.tick(1, 2032);
     assert_pixels(
         &shown(&mut radar),
         &displayed,
         "internal map changes while closing",
     );
     let _ = radar.set_has_radar(true);
-    radar.tick(2032);
+    radar.tick(1, 2032);
     assert_pixels(&shown(&mut radar), &displayed, "pre-due reversal");
-    radar.tick(2048);
+    radar.tick(1, 2048);
     assert_eq!(radar.phase(), RadarAnimPhase::Online);
     assert_pixels(
         &online(&shown(&mut radar), &source, line),
@@ -465,13 +465,13 @@ fn production_radar_loss_and_reversal_preserve_final_gpu_pixels() {
     let changed_display = online(&frames[32], &changed_source, line);
     radar.retain_online_content(&changed_map, &white, &[map], [line].into_iter(), origin);
     let _ = radar.set_has_radar(false);
-    radar.tick(2080);
+    radar.tick(1, 2080);
     assert_pixels(
         &shown(&mut radar),
         &changed_display,
         "new Online map and outline retained without trails",
     );
-    radar.tick(2112);
+    radar.tick(1, 2112);
     assert_pixels(
         &shown(&mut radar),
         &gpu.render(

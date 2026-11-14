@@ -63,6 +63,27 @@ impl UnitShpReadState {
         self.firing_frames
     }
 
+    /// `DeathFrames=` (`+0xE20`): above zero, a lethal hit defers the Unit's
+    /// death to its counter (`UnitClass::ReceiveDamage`, `0x00737DA7`).
+    pub(crate) const fn death_frames(&self) -> i32 {
+        self.death_frames
+    }
+
+    /// `MaxDeathCounter=` (`+0xE38`), the count `UnitClass::AI` ends it at.
+    pub(crate) const fn max_death_counter(&self) -> i32 {
+        self.max_death_counter
+    }
+
+    pub(crate) const fn death_layout(
+        &self,
+    ) -> crate::rules::animation_sequence::ShpVehicleDeathFrames {
+        crate::rules::animation_sequence::ShpVehicleDeathFrames::new(
+            self.start_death_frame,
+            self.death_frames,
+            self.death_frame_rate,
+        )
+    }
+
     pub(crate) fn read_pass(&mut self, art: &IniSection, has_turret: bool) {
         // Original7477F1/74780F store AL, with each signed byte as its
         // ReadInteger default. These are not nonnegative u16 frame counts.
@@ -150,6 +171,9 @@ pub(crate) fn build_shp_vehicle_sequences(
 ) -> SequenceSet {
     let mut set = SequenceSet::new();
     set.set_shp_vehicle_cadence(cadence);
+    if let Some(retained) = retained {
+        set.set_shp_vehicle_death(retained.death_layout());
+    }
     let (
         facings,
         walk_frames,

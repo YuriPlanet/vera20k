@@ -488,9 +488,9 @@ impl Simulation {
         // House50E010's power-center recovery also calls this function.
         if ares {
             let entity = self.substrate.entities.get(id).expect("same receiver");
-            // Selected live Drive/Walk path: Techno70EFD0 tests signed>0.
-            // Unit746C90's separate DeathFrame override remains outside this chain.
-            if entity.emp_remaining() > 0 {
+            // vt+0x37C: Techno70EFD0 tests signed +504 > 0, Unit746C90 also
+            // a running DeathFrames= counter.
+            if entity.is_under_emp() {
                 return;
             }
             //100454F0: a PoweredUnit= center or the PoweredBy source.

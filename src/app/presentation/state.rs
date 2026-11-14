@@ -143,6 +143,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) radar_content_insets: Option<[u32; 4]>,
     /// Whether the local player currently has operational radar (power-gated).
     pub(crate) has_radar: bool,
+    /// A loaded game's radar housing, held until the radar is built for it.
+    pub(crate) loaded_radar_housing:
+        Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     /// Selection overlay renderer — highlights and drag rectangle.
     pub(crate) selection_overlay: Option<SelectionOverlay>,
     /// Phobos `[Phobos] DigitalDisplay.Enable` from the imported client

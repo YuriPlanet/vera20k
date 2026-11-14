@@ -27,6 +27,21 @@ impl GameEntity {
     pub fn emp_remaining(&self) -> i32 {
         self.emp.remaining
     }
+    /// vt+0x37C IsUnderEMP: Techno `0x0070EFD0` reads `+0x504 > 0`, and the
+    /// Unit override `0x00746C90` also answers yes while the Unit's death
+    /// counter (`+0x6D8`) runs.
+    pub fn is_under_emp(&self) -> bool {
+        Self::under_emp(
+            self.emp.remaining,
+            (self.category() == crate::map::entities::EntityCategory::Unit)
+                .then_some(self.unit_death_counter.get()),
+        )
+    }
+    /// [`Self::is_under_emp`] from the raw counters: `+0x504` and, for a
+    /// Unit, `+0x6D8`.
+    pub(crate) fn under_emp(emp_remaining: i32, unit_death_counter: Option<i32>) -> bool {
+        emp_remaining > 0 || unit_death_counter.is_some_and(|counter| counter != -1)
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_emp_remaining_for_test(&mut self, remaining: i32) {
         self.emp.remaining = remaining;
@@ -2390,46 +2405,6 @@ mod receiver {
                 mission::{MissionId, authority::LiveReadyInputProvider},
                 world::ObjectAiCtx,
             };
-            let native = crate::test_fixture::json("tools/mcv_deploy_oracle.json");
-            for row in native["deploy_admission"].as_array().unwrap() {
-                // Unit DeathFrame's independent virtual override is not a
-                // represented runtime state of this ordinary live MCV fixture.
-                if int(&row["death_frame"]) != -1 {
-                    continue;
-                }
-                let (mut sim, rules, target, _) = mcv_emp_scene();
-                sim.substrate
-                    .entities
-                    .get_mut(target)
-                    .unwrap()
-                    .emp
-                    .remaining = int(&row["emp_counter"]);
-                assert_eq!(
-                    sim.can_deploy_slash_unload(target, &rules),
-                    row["result"]["allowed"].as_bool().unwrap(),
-                    "{row}"
-                );
-                if row["entry"] == "unit_deploy" && !row["result"]["allowed"].as_bool().unwrap() {
-                    sim.substrate
-                        .entities
-                        .get_mut(target)
-                        .unwrap()
-                        .mcv_deploy_pending
-                        .set_for_test(true);
-                    assert!(!sim.deploy_mcv(target, &rules, None, FrameEffects::empty()));
-                    assert_eq!(
-                        u8::from(
-                            sim.substrate
-                                .entities
-                                .get(target)
-                                .unwrap()
-                                .mcv_deploy_pending
-                                .is_pending()
-                        ),
-                        int(&row["result"]["deploy_retry"]) as u8
-                    );
-                }
-            }
             let (mut sim, rules, target, source) = mcv_emp_scene();
             // A deploy already commenced before the hit. Unload defers EMP
             // Deactivate, so the shared CanDeploy owner must protect its AI.

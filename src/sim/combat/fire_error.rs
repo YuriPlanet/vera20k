@@ -25,9 +25,12 @@
 //! RESIDUAL rows: each is ported and fires on its field, but VERA has no
 //! producer for that field yet, so it holds the constructor value:
 //! - T20: EMP. Only the Ares EMP chain writes it; without Ares it holds 0.
-//! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
+//! - Dormant in retail: T44 (FiringSyncFrame),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy),
 //!   B3 (`EMPulseCannon=`, read live; no retail building sets it).
+//!
+//! U1 and T20's Unit arm read the live death counter (`+0x6D8`), which only
+//! an art `DeathFrames=` type starts; no retail type sets it.
 //! - B7: Building HasTurret (`0x004527D0`), read through the installed-type owner.
 //! - A1: a paradrop plane's payload (`+0x6C9`, `paradrop_payload`).
 //!
@@ -987,8 +990,10 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     }
     // T20 `0x006FC2E0`: EMP (vt+0x37C; a Unit also while its death frames
     // run), except a visceroid.
-    let emp =
-        firer.emp_remaining > 0 || (class == FirerClass::Unit && firer.death_frame_counter != -1);
+    let emp = crate::sim::game_entity::GameEntity::under_emp(
+        firer.emp_remaining,
+        (class == FirerClass::Unit).then_some(firer.death_frame_counter),
+    );
     if emp
         && (class != FirerClass::Unit
             || !(firer_type.large_visceroid || firer_type.small_visceroid))

@@ -44,6 +44,7 @@ fn overlay_color_replaces_both_halves_before_weighted_generation() {
         }],
         BTreeMap::from([((0, 0), [77, 88, 99])]),
         1.0,
+        Default::default(),
     );
     assert_eq!(surface.raw_rgb, vec![[77, 88, 99], [77, 88, 99]]);
     assert!(
@@ -128,7 +129,13 @@ fn ore_depletion_current_pair_and_rebuilt_surface_match_original() {
         left: rgb(&empty["color_pair"][0]),
         right: rgb(&empty["color_pair"][1]),
     };
-    let mut surface = NativeRadarTerrainSurface::new(geometry, vec![base], BTreeMap::new(), 1.0);
+    let mut surface = NativeRadarTerrainSurface::new(
+        geometry,
+        vec![base],
+        BTreeMap::new(),
+        1.0,
+        Default::default(),
+    );
     for row in rows {
         let override_color =
             (row["state"]["overlay_id"].as_i64().unwrap() >= 0).then(|| rgb(&row["color_pair"][0]));
@@ -175,7 +182,8 @@ fn hd_terrain_resamples_changed_cells_like_full_generation() {
             right: color(x, y, 1),
         })
         .collect();
-    let mut surface = NativeRadarTerrainSurface::new(geometry, cells, BTreeMap::new(), 1.0);
+    let mut surface =
+        NativeRadarTerrainSurface::new(geometry, cells, BTreeMap::new(), 1.0, Default::default());
     surface.set_hd_scale(Some(3));
     let (_, revision) = surface.hd_rgb565().unwrap();
     // An inner cell's colours, and an overlay on the raw surface's corner cell.
@@ -211,7 +219,13 @@ fn hd_terrain_resamples_changed_cells_like_full_generation() {
 #[test]
 fn visibility_cells_answer_as_the_native_inverse_on_and_off_the_surface() {
     let geometry = NativeRadarSurfaceGeometry::from_raw_rect(3, 40, 137, 149).unwrap();
-    let surface = NativeRadarTerrainSurface::new(geometry, Vec::new(), BTreeMap::new(), 1.0);
+    let surface = NativeRadarTerrainSurface::new(
+        geometry,
+        Vec::new(),
+        BTreeMap::new(),
+        1.0,
+        Default::default(),
+    );
     let (width, height) = geometry.generated_size();
     for pixel in [
         (0, 0),
@@ -245,7 +259,13 @@ fn cell_updates_match_full_generation_of_the_final_state() {
             right: color(x, y, 1),
         })
         .collect();
-    let mut surface = NativeRadarTerrainSurface::new(geometry, cells.clone(), BTreeMap::new(), 1.0);
+    let mut surface = NativeRadarTerrainSurface::new(
+        geometry,
+        cells.clone(),
+        BTreeMap::new(),
+        1.0,
+        Default::default(),
+    );
     let mut overrides = BTreeMap::new();
     let updates = [
         ((0, 0), [9, 9, 9], None),
@@ -271,7 +291,73 @@ fn cell_updates_match_full_generation_of_the_final_state() {
             None => overrides.remove(&cell),
         };
     }
-    let full = NativeRadarTerrainSurface::new(geometry, cells, overrides, 1.0);
+    let full = NativeRadarTerrainSurface::new(geometry, cells, overrides, 1.0, Default::default());
     assert_eq!(surface.raw_rgb(), full.raw_rgb());
     assert_eq!(surface.generated_rgb565(), full.generated_rgb565());
+}
+
+/// `ProcessDirtyCells` stores a changed left-edge cell's right colour in raw
+/// pixel 1, its neighbour's left half, and leaves pixel 0 as the full fill
+/// wrote it (`0x006553A9..0x006553CD`).
+#[test]
+fn a_changed_left_edge_cell_writes_its_right_colour_one_pixel_on() {
+    let geometry = NativeRadarSurfaceGeometry::from_raw_rect(0, 0, 4, 2).unwrap();
+    let cells = [(0, 1), (1, 0)].map(|cell| NativeRadarCellColors {
+        cell,
+        left: [cell.0 as u8, 10, 0],
+        right: [cell.0 as u8, 20, 0],
+    });
+    let (edge, neighbour) = (cells[0], cells[1]);
+    assert_eq!(geometry.cell_to_raw_pixel(edge.cell), (-1, 1));
+    assert_eq!(geometry.cell_to_raw_pixel(neighbour.cell), (1, 1));
+    let mut surface = NativeRadarTerrainSurface::new(
+        geometry,
+        cells.to_vec(),
+        BTreeMap::new(),
+        1.0,
+        Default::default(),
+    );
+    assert_eq!(&surface.raw_rgb()[4..6], &[edge.right, neighbour.left]);
+    let changed = NativeRadarCellColors {
+        right: [99, 99, 99],
+        ..edge
+    };
+    assert!(surface.set_cell_states([NativeRadarCellUpdate {
+        base: changed,
+        override_color: None,
+    }]));
+    assert_eq!(&surface.raw_rgb()[4..6], &[edge.right, [99, 99, 99]]);
+}
+
+/// `RenderCellPixel @ 0x00655C50` raises a pixel's Cell centre to the ground
+/// (`0x00655D06..0x00655D38`) before `IsShrouded @ 0x00586360` and
+/// `IsFogged @ 0x005864A0` read it: half the level up the lattice, and for an
+/// odd level the next Cell too; a Cell raised off the map or never allocated
+/// reads the fallback Cell.
+#[test]
+fn shroud_cells_follow_the_raised_lattice() {
+    let mut grid = crate::map::resolved_terrain::test_grid(8, 8, |rx, ry| {
+        crate::map::resolved_terrain::test_flat_cell(rx, ry)
+    });
+    for (cell, level) in [((5, 5), 2), ((6, 6), 3), ((0, 0), 2)] {
+        grid.cell_mut_for_test(cell.0, cell.1).unwrap().level = level;
+    }
+    let pack = |(rx, ry): (u32, u32)| rx | ry << 16;
+    let lattice = RadarShroudLattice::new(&grid);
+    assert_eq!(
+        lattice.texels(&[
+            pack((5, 5)),
+            pack((6, 6)),
+            pack((2, 3)),
+            pack((0, 0)),
+            pack((20, 20))
+        ]),
+        vec![
+            [pack((4, 4)), NO_CELL],
+            [pack((4, 4)), pack((5, 5))],
+            [pack((2, 3)), NO_CELL],
+            [DUMMY_CELL, NO_CELL],
+            [DUMMY_CELL, NO_CELL],
+        ]
+    );
 }

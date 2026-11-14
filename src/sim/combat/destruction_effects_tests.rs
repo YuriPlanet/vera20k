@@ -158,12 +158,16 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
+    rules_with_art(text, ART)
+}
+
+fn rules_with_art(text: &str, art_text: &str) -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(text),
-        &IniFile::from_str(ART),
+        &IniFile::from_str(art_text),
     )
     .expect("death anim rules");
-    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(ART));
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(art_text));
     for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
         art.bind_anim_frame_count_for_test(name, 10);
     }
@@ -337,6 +341,25 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         );
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
+}
+
+/// Art `DeathFrames=` (`UnitClass::ReceiveDamage`, `0x00737DA7..0x00737DDD`)
+/// jumps past `Death_Explosion`: the vehicle dies with no anim and, not
+/// being `Crashable=`, is UnInit at once.
+#[test]
+fn a_death_frames_vehicle_dies_without_its_explosion() {
+    let rules = rules_with_art(RULES, &format!("{ART}[PLAIN]\nDeathFrames=4\n"));
+    let mut sim = sim(1);
+    let unit = spawn(&mut sim, &rules, "PLAIN", 12, 12);
+    kill(&mut sim, &rules, unit);
+    assert_eq!(anims(&sim), vec![]);
+    assert!(
+        sim.substrate
+            .entities
+            .get(unit)
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
+        "UnInit at the killing hit"
+    );
 }
 
 /// `0x007386C3..0x007386FF`: an `Explodes=` vehicle (the Apocalypse, the

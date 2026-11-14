@@ -1148,8 +1148,8 @@ impl Simulation {
     /// Ordinary Infantry +504 EMP starts zero in the native constructor.
     /// EMPulseApply4C575E admits RTTI1/2, not Infantry15. The deactivated
     /// latch +1C8 (700CBC) has its owner in `sim::powered_unit`.
-    /// Unit+6D8 death-frame remains separate. The shared+504 predicate uses
-    /// the entity EMP owner; only Ares currently supplies ordinary hits.
+    /// vt+0x37C (700C58) is `GameEntity::is_under_emp`: EMP, which only Ares
+    /// currently supplies, or a Unit's running `DeathFrames=` counter.
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
     pub fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
@@ -1189,7 +1189,7 @@ impl Simulation {
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
             || actor.deactivated.is_offline()
-            || actor.emp_remaining() > 0
+            || actor.is_under_emp()
         {
             return false;
         }
@@ -1206,15 +1206,14 @@ impl Simulation {
 
     /// `TechnoClass::IsActive @ 0x007010D0` (vt+0x9C, no override): not
     /// deactivated (`+0x1C8`), owned by the player's house (`0x0050B6F0`),
-    /// its current weapon (vt+0x3F4) typed and not vt+0x37C. `is_armed`
-    /// stands in for the weapon test; shared EMP+504 comes from its private
-    /// entity owner. Unit death frames retain their existing ctor subset.
+    /// its current weapon (vt+0x3F4) typed and not vt+0x37C
+    /// (`GameEntity::is_under_emp`). `is_armed` stands in for the weapon test.
     pub fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         !actor.deactivated.is_offline()
-            && actor.emp_remaining() <= 0
+            && !actor.is_under_emp()
             && self.house_is_human_player(actor.owner())
             && self
                 .object_type(actor.type_ref(), rules)

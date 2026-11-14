@@ -597,7 +597,8 @@ impl crate::sim::world::Simulation {
         }
         // Ares 3.0 TeleportLocomotionClass_ILocomotion_MoveTo_Deactivated
         // (1005D3E0, hook 0x71810D), first: a deactivated owner, or one whose
-        // locomotor is powered off, refuses too.
+        // locomotor is powered off, refuses too. Then the owner's vt+0x37C
+        // (`0x0071810D`), its vt+0x380 and the warp bytes.
         let ares_refuses = rules.ares_form()
             && (actor.deactivated.is_offline()
                 || !actor
@@ -605,6 +606,7 @@ impl crate::sim::world::Simulation {
                     .as_ref()
                     .is_some_and(|locomotor| locomotor.is_powered()));
         if ares_refuses
+            || actor.is_under_emp()
             || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()

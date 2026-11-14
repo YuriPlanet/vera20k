@@ -742,6 +742,18 @@ pub(crate) fn minimap_shown(state: &AppState) -> bool {
             .is_none_or(|ra| ra.is_minimap_visible())
 }
 
+/// Whether the cursor is over the radar's map gadget (`0x00B04A10`): the
+/// aperture, online or not. [`is_cursor_over_minimap`] is its image.
+pub(crate) fn is_cursor_over_radar_gadget(state: &AppState) -> bool {
+    let (x, y) = sidebar_cursor(state);
+    state
+        .match_state
+        .match_presentation
+        .sidebar_layout_spec
+        .shows(crate::ui::sidebar::SidebarPart::Radar)
+        && active_minimap_screen_rect(state).contains(x, y)
+}
+
 pub(crate) fn is_cursor_over_minimap(state: &AppState) -> bool {
     // Minimap interaction disabled when radar is not online.
     if !minimap_shown(state) {
@@ -1064,9 +1076,13 @@ fn refresh_radar_animation_source(state: &mut AppState) {
         );
         if let Some(radar) = presentation.radar_anim.as_mut() {
             //652E90 source installation does not request a new availability
-            //edge. Hydrate the replacement owner silently; ordinary House
-            //updates consume the typed cue through update_radar_state.
-            let _ = radar.set_has_radar(presentation.has_radar);
+            //edge. A new scenario arrives with has_radar clear and opens on
+            //its first House update; a loaded one arrives with its saved
+            //housing, which MouseLoad5BE092 restores silent.
+            match presentation.loaded_radar_housing.take() {
+                Some(saved) => radar.restore_saved_housing(saved),
+                None => radar.restore_availability(presentation.has_radar),
+            }
         }
     }
     presentation.radar_animation_source = Some(identity);

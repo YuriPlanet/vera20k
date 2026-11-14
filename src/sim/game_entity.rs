@@ -145,6 +145,10 @@ pub struct GameEntity {
     /// LimboLaunch has removed this Unit from Logic; Unlimbo preserves it.
     #[serde(default)]
     pub unit_firing_counter: crate::sim::animation::UnitFiringCounter,
+    /// UnitClass+6D8, owned by sim::animation: the art `DeathFrames=` count
+    /// a lethal hit starts and Unit AI ends.
+    #[serde(default)]
+    pub unit_death_counter: crate::sim::animation::UnitDeathCounter,
     /// The owning house (`TechnoClass+0x21C`), interned.
     /// `TechnoClass::ChangeOwner @ 0x007014A0` moves it; here only the store's
     /// owner-change path does ([`Self::set_owner_from_store`]).
@@ -2332,6 +2336,7 @@ impl GameEntity {
             turret_rotate_latch: Default::default(),
             body_frame_counter: Default::default(),
             unit_firing_counter: Default::default(),
+            unit_death_counter: Default::default(),
             owner,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
