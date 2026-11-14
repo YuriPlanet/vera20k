@@ -4,24 +4,44 @@
   <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter macOS (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliothekstests unter macOS" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Windows (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliothekstests unter Windows" height="23" align="middle"></a>
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Letzter WebAssembly-Build (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-Build" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord beitreten" height="23" align="middle"></a>
   <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe" height="23" align="middle">
 </p>
 
 # VERA20K
 
-VERA20K ist eine von der Community getragene Neuimplementierung der ursprünglichen Engine,
-`gamemd.exe`. Bring deine eigene Kopie von Red Alert 2: Yuri's Revenge mit, um zu
-entwickeln oder zu spielen.
+VERA20K ist eine neue Engine für Red Alert 2: Yuri's Revenge. Sie spielt sich wie das Original, mit
+denselben Einheiten, Karten und demselben Aussehen, und läuft unter Windows, macOS und Linux. Sie
+ist für größere Schlachten gebaut, mit bis zu 30 Spielern und 20.000 Einheiten auf einer Karte.
 
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: Gefechtseinstellungen und eine Szene aus dem Spiel" width="100%">
+
+## Herunterladen und spielen
+
+1. Installiere Red Alert 2: Yuri's Revenge über Steam oder die EA app.
+2. Lade VERA20K für dein System mit den Knöpfen unten herunter.
+3. Öffne die heruntergeladene Datei. Sie findet dein Spiel und richtet VERA20K in einem eigenen
+   Ordner ein.
+
+<p dir="ltr">
+  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Für Windows herunterladen" height="28"></a>
+  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Für macOS (Apple Silicon) herunterladen" height="28"></a>
+  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Für macOS (Intel) herunterladen" height="28"></a>
+  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Für Linux herunterladen" height="28"></a>
+</p>
+
+Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) nach.
+
+Das Projekt ist in aktiver Entwicklung: Gefechte sind unter Windows, macOS und Linux spielbar,
+Kampagnen funktionieren teilweise, und der Online-Mehrspielermodus (experimentell) ist jetzt
+verfügbar. Frühere Versionen und was sich in jeder geändert hat, stehen auf der
+[Release-Seite](https://github.com/YuriPlanet/vera20k/releases).
+
+Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
+[Offline-Client-Einrichtung](integrations/cncnet/README.md).
 
 ## Projektziele
 
@@ -31,15 +51,6 @@ das Projekt entwickelt.
 4. Integrierter Mehrspieler-Client
 
 Die [Roadmap](https://github.com/orgs/YuriPlanet/projects/1) zeigt die aktuellen Prioritäten und zukünftigen Pläne.
-
-## Herunterladen und spielen
-
-Lade den Installer für Windows, macOS oder Linux von der
-[Release-Seite](https://github.com/YuriPlanet/vera20k/releases) herunter. Er findet dein
-Yuri's Revenge und richtet VERA20K in einem neuen Ordner ein.
-
-Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
-[Offline-Client-Einrichtung](integrations/cncnet/README.md).
 
 ## Mitmachen
 
@@ -67,6 +78,13 @@ Die Pfeile zeigen den Datenfluss:
 ![Die Anwendung sendet Befehle an die Simulation, die den Weltzustand zurückgibt; die Anwendung sendet Zeichendaten an das Rendering.](docs/images/architecture.de.png)
 
 ## Kompilieren und starten
+
+<p dir="ltr">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter macOS (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliothekstests unter macOS" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Windows (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliothekstests unter Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Letzter WebAssembly-Build (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-Build" height="23" align="middle"></a>
+</p>
 
 Du brauchst:
 
