@@ -157,8 +157,10 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
                 &sim,
                 &frame,
                 building,
-                camera,
-                [size[0] as f32, size[1] as f32],
+                crate::app::presentation::instances::TacticalAdmission {
+                    corner: camera,
+                    size: [size[0] as f32, size[1] as f32],
+                },
             ),
             &mut super::super::overlays::AnimTypeArts::new(&rules, &atlas),
             &|_| 0,

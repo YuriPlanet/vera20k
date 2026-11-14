@@ -730,18 +730,58 @@ pub(crate) fn cell_visibility_for_local_owner(
     }
 }
 
+/// The battlefield every Display member is admitted in, in world pixels: its
+/// corner, Tactical's ViewOrigin (+0xB0/+0xB4), and its size, the tactical
+/// rect 0xB0CE28's width and height. Set_View_Dimensions4A89B8 /
+/// Scenario687620 copy that rect through6D5F60; the sidebar and bottom strip
+/// are outside it, so a layout that sets the battlefield in from the frame's
+/// corner moves this corner in from the camera.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TacticalAdmission {
+    pub(crate) corner: [f32; 2],
+    pub(crate) size: [f32; 2],
+}
+
+impl TacticalAdmission {
+    /// The battlefield `origin` in from the corner of a frame whose corner is
+    /// the world point `camera`, and `size` across, all in world pixels.
+    pub(crate) fn at(camera: [f32; 2], origin: [f32; 2], size: [f32; 2]) -> Self {
+        Self {
+            corner: [camera[0] + origin[0], camera[1] + origin[1]],
+            size,
+        }
+    }
+
+    /// The battlefield at `tactical` (`[x, y, width, height]` in frame
+    /// pixels) of a frame whose corner is the world point `camera`, at `zoom`
+    /// (`camera::tactical_origin_world`).
+    pub(crate) fn of(camera: [f32; 2], tactical: [u32; 4], zoom: f32) -> Self {
+        let [x, y, width, height] = tactical.map(|v| v as f32 / zoom);
+        Self::at(camera, [x, y], [width, height])
+    }
+
+    /// This draw's battlefield (`camera::tactical_viewport_px`).
+    pub(crate) fn of_state(state: &AppState) -> Self {
+        let input = &state.match_state.input;
+        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        Self::of(
+            [input.camera_x, input.camera_y],
+            [x, y, width, height],
+            input.zoom_level,
+        )
+    }
+}
+
 /// Object5F4B10 -> CoordsToClient2 6D2140 admits this inclusive padding before
-/// invoking a body draw. Both coordinates and tactical dimensions are in world
-/// pixels. Set_View_Dimensions4A89B8 / Scenario687620 copy the tactical rectangle
-/// through6D5F60; the sidebar and bottom strip are outside that rectangle.
-/// Native Unit boundaries and retained sinking history: naval_sinking_clip.py.
+/// invoking a body draw: `point`, in world pixels, measured from `view`'s
+/// corner. Native Unit boundaries and retained sinking history:
+/// naval_sinking_clip.py.
 pub(in crate::app::presentation) fn projection_admitted(
     point: [f32; 2],
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    view: TacticalAdmission,
 ) -> bool {
-    let [x, y] = [point[0] - camera[0], point[1] - camera[1]];
-    x >= -360.0 && x <= viewport[0] + 360.0 && y >= -180.0 && y <= viewport[1] + 180.0
+    let [x, y] = [point[0] - view.corner[0], point[1] - view.corner[1]];
+    x >= -360.0 && x <= view.size[0] + 360.0 && y >= -180.0 && y <= view.size[1] + 180.0
 }
 
 /// Viewport frustum cull check: is the entity's bounding box visible on screen?
@@ -761,10 +801,11 @@ pub(crate) fn in_view(
 
 /// The box a Display record's span must reach before the object loop hands
 /// the record to the unit and SHP visitors: every view they admit from (the
-/// centring size the unit visitor takes, the render size, the building
-/// clip), widened by the widest margin either uses ([`projection_admitted`]'s
-/// 360 px) and by [`super::shp::BUILDING_SLOT_WINDOW_SLACK`] for building art
-/// and aircraft shadows. A record outside it plans nothing in either.
+/// battlefield the unit visitor takes, which the centring size from the
+/// camera covers; the render size; the building clip), widened by the widest
+/// margin either uses ([`projection_admitted`]'s 360 px) and by
+/// [`super::shp::BUILDING_SLOT_WINDOW_SLACK`] for building art and aircraft
+/// shadows. A record outside it plans nothing in either.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PassByWindow {
     left: f32,

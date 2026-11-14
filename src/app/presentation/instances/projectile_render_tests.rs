@@ -55,7 +55,13 @@ fn check_row(input: &Value, row: &Value, terrain: &ResolvedTerrainGrid) {
         "{input}"
     );
     assert_eq!(
-        projection_admitted(actual.body.point, camera, viewport),
+        projection_admitted(
+            actual.body.point,
+            TacticalAdmission {
+                corner: camera,
+                size: viewport,
+            }
+        ),
         row["projection_visible"] == 1,
         "{input}: padded viewport"
     );

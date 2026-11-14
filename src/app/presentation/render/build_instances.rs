@@ -401,8 +401,7 @@ pub(super) fn build_world_instances(
         let mut building_anim_instances = Vec::new();
         instances::build_building_anim_instances(
             state,
-            input.camera,
-            input.projection_viewport(),
+            input.tactical_admission(),
             &mut building_anim_instances,
             display_order,
         );

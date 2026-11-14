@@ -511,20 +511,23 @@ fn free_anim_draw_in(
 }
 
 /// Object5F4B10 admits an Anim out to Tactical6D2140's 360 px past the
-/// view's right edge, inclusive, and the effects loop passes it by on that
-/// same test. The view is the battlefield and its offset on both sides
-/// (`projection_viewport`): 1000 px here, where the battlefield is 800 px
-/// wide and set in 100 px.
+/// battlefield's edges, inclusive, measured from the battlefield's own
+/// corner (ViewOrigin), and the effects loop passes it by on that same test.
+/// The battlefield here is 800 px wide and set in 100 px from the frame's
+/// corner, where the camera is.
 #[test]
 fn a_free_anim_is_passed_by_only_past_its_own_views_margin() {
-    let drawn = |past_edge: f32| {
+    // `across` is the Anim's offset from the battlefield's corner.
+    let drawn = |across: f32| {
         free_anim_draw_in("", 0, false, None, |[x, y]| {
-            ([x - 1000.0 - past_edge, y - 300.0], [100, 0, 800, 600])
+            ([x - across - 100.0, y - 300.0], [100, 0, 800, 600])
         })
         .len()
     };
-    assert_eq!(drawn(360.0), 1);
-    assert_eq!(drawn(361.0), 0);
+    assert_eq!(drawn(800.0 + 360.0), 1);
+    assert_eq!(drawn(800.0 + 361.0), 0);
+    assert_eq!(drawn(-360.0), 1);
+    assert_eq!(drawn(-361.0), 0);
 }
 
 #[test]

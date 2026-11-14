@@ -5,7 +5,7 @@
 //! The expected trajectory/draw values come only from the executed native corpus.
 
 use super::super::foot_depth::floor_probe;
-use super::{geometry, projection_admitted};
+use super::{TacticalAdmission, geometry, projection_admitted};
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::sim::projectile::{
     ProjectileCollisionPhase, ProjectileCollisionPolicy, ProjectileCoord, ProjectilePayload,
@@ -289,7 +289,13 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
             input["camera"][1].as_i64().unwrap() as f32 + 15.0,
         ];
         assert_eq!(
-            projection_admitted(actual.body.point, camera, [800.0, 600.0]),
+            projection_admitted(
+                actual.body.point,
+                TacticalAdmission {
+                    corner: camera,
+                    size: [800.0, 600.0],
+                }
+            ),
             row["projection_visible"] == 1
         );
         let draws = row["draws"].as_array().unwrap();

@@ -1614,7 +1614,7 @@ fn emit_building_bib(
 /// a slot offset can put an animation on screen while its parent is outside.
 /// The existing slot palette/frame/light owner is shared by every building.
 ///
-/// `camera` and `projection_viewport` are the Display traversal's; only the
+/// `admission` is the Display traversal's; only the
 /// slots its encounter can consume ([`admitted_slot_anims`]) are prepared,
 /// and a building with none is skipped before its own work.
 /// How far, in pixels, a building's slot Anim or saved picture may reach from
@@ -1627,16 +1627,16 @@ pub(super) const BUILDING_SLOT_WINDOW_SLACK: f32 = 768.0;
 /// view) can pass, widened by [`BUILDING_SLOT_WINDOW_SLACK`].
 fn building_slot_window(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: super::helpers::TacticalAdmission,
 ) -> crate::render::cell_window::CellWindow {
     let slack = BUILDING_SLOT_WINDOW_SLACK;
+    let ([left, top], [width, height]) = (admission.corner, admission.size);
     crate::render::cell_window::CellWindow::covering(
         crate::render::cell_window::AnchorBounds {
-            left: camera[0] - 360.0 - slack,
-            top: camera[1] - 180.0 - slack,
-            right: camera[0] + viewport[0] + 360.0 + slack,
-            bottom: camera[1] + viewport[1] + 180.0 + slack,
+            left: left - 360.0 - slack,
+            top: top - 180.0 - slack,
+            right: left + width + 360.0 + slack,
+            bottom: top + height + 180.0 + slack,
         },
         terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
     )
@@ -1644,8 +1644,7 @@ fn building_slot_window(
 
 pub(crate) fn build_building_anim_instances(
     state: &AppState,
-    camera: [f32; 2],
-    projection_viewport: [f32; 2],
+    admission: super::helpers::TacticalAdmission,
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
 ) {
@@ -1684,13 +1683,12 @@ pub(crate) fn build_building_anim_instances(
         state.render_width() as f32 / zoom,
         state.render_height() as f32 / zoom,
     ];
-    let admitted_slots =
-        |building| admitted_slot_anims(sim, frame, building, camera, projection_viewport);
+    let admitted_slots = |building| admitted_slot_anims(sim, frame, building, admission);
     // A slot Anim stands on or beside its building, so a building far off
     // the view has none to admit: its cell passes it by before any slot is
     // projected. The window is the slot admission's box
     // (`helpers::projection_admitted`) widened by the slack.
-    let slot_window = building_slot_window(sim.resolved_terrain(), camera, projection_viewport);
+    let slot_window = building_slot_window(sim.resolved_terrain(), admission);
     let mut anim_types = super::overlays::AnimTypeArts::new(rules, atlas);
     for building in frame.structures() {
         if !slot_window.contains(building.position.rx(), building.position.ry()) {
@@ -1803,16 +1801,13 @@ fn admitted_slot_anims<'a>(
     sim: &'a crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
     building: &crate::app::presentation::frame::ObjectRecord,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: super::helpers::TacticalAdmission,
 ) -> [Option<&'a crate::sim::anim_class::AnimObject>; 21] {
     if slot_anims_hidden_by_sale(building) {
         return [None; 21];
     }
     building.building_art.anim_slots().map(|slot| {
-        slot.and_then(|anim| {
-            super::overlays::admitted_slot_anim(sim, frame, anim, camera, viewport)
-        })
+        slot.and_then(|anim| super::overlays::admitted_slot_anim(sim, frame, anim, admission))
     })
 }
 
@@ -2383,7 +2378,13 @@ mod tests {
     /// of the view may still hold a slot Anim the admission passes.
     #[test]
     fn a_building_near_the_view_stays_in_the_slot_window() {
-        let window = super::building_slot_window(None, [0.0, 0.0], [600.0, 400.0]);
+        let window = super::building_slot_window(
+            None,
+            crate::app::presentation::instances::TacticalAdmission {
+                corner: [0.0, 0.0],
+                size: [600.0, 400.0],
+            },
+        );
         // Anchor x = 30 * (10 - 44) - 30 = -1,050.
         assert!(window.contains(10, 44));
         // Anchor x = -3,330.

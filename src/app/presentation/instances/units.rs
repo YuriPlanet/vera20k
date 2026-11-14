@@ -517,11 +517,7 @@ pub(crate) fn unit_visitor<'a>(
         state.render_width() as f32 / z,
         state.render_height() as f32 / z,
     );
-    // Draw admission measures from the camera, the frame's corner, so it
-    // takes the centring size: the battlefield and its offset on both sides.
-    let (tactical_width, tactical_height) =
-        crate::app::input::camera::tactical_centring_size(state);
-    let unit_viewport = [tactical_width as f32 / z, tactical_height as f32 / z];
+    let admission = super::helpers::TacticalAdmission::of_state(state);
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = local_owner.as_deref().and_then(|o| sim.interner().get(o));
     let ignore_visibility = state.match_state.sandbox_full_visibility;
@@ -573,19 +569,14 @@ pub(crate) fn unit_visitor<'a>(
                 // The screen cull reads only the position, and nothing between here
                 // and the waterline capture writes, so an object off the screen
                 // skips the admission work below.
-                let viewport = if entity.category() == EntityCategory::Unit {
-                    unit_viewport
-                } else {
-                    [sw, sh]
-                };
                 let (aircraft_shadow, shadow_render_pose) = aircraft_draw_sample(state, entity)
                     .map_or((None, None), |sample| (sample.shadow, Some(sample.pose)));
                 // A carried cargo is drawn at its Carryall's point, not culled by
                 // its own.
                 let anchor = unit_draw_anchor(
                     entity,
-                    [cam_x, cam_y],
-                    viewport,
+                    admission,
+                    [cam_x, cam_y, sw, sh],
                     aircraft_shadow.as_ref().map(|pose| pose.anchor),
                 );
                 let sx = match (carried, anchor) {
@@ -2377,41 +2368,36 @@ fn push_unit_sprite(
     });
 }
 
+/// Where `entity` draws, if its admission passes: a Unit's is Tactical's
+/// ([`projection_admitted`] in `admission`); an aircraft's is a cull to the
+/// render view `[x, y, width, height]` in world pixels, or its shadow's.
 fn unit_draw_anchor(
     entity: &crate::app::presentation::frame::ObjectRecord,
-    camera: [f32; 2],
-    viewport: [f32; 2],
+    admission: super::helpers::TacticalAdmission,
+    render_view: [f32; 4],
     shadow_anchor: Option<[f32; 2]>,
 ) -> Option<[f32; 2]> {
     let (x, y) = crate::render::locomotor_visual::screen_position(entity);
     // Unit draw admission precedes stateful +3CA capture. A smaller visual
     // cull delays that first capture and changes later visible clipping.
     let admitted = if entity.category() == EntityCategory::Unit {
-        projection_admitted([x, y], camera, viewport)
+        projection_admitted([x, y], admission)
     } else {
-        in_view(
-            x,
-            y,
-            TILE_WIDTH,
-            TILE_HEIGHT,
-            camera[0],
-            camera[1],
-            viewport[0],
-            viewport[1],
-            120.0,
-        ) || shadow_anchor.is_some_and(|[sx, sy]| {
+        let [cam_x, cam_y, width, height] = render_view;
+        let culled_in = |[x, y]: [f32; 2]| {
             in_view(
-                sx,
-                sy,
+                x,
+                y,
                 TILE_WIDTH,
                 TILE_HEIGHT,
-                camera[0],
-                camera[1],
-                viewport[0],
-                viewport[1],
+                cam_x,
+                cam_y,
+                width,
+                height,
                 120.0,
             )
-        })
+        };
+        culled_in([x, y]) || shadow_anchor.is_some_and(culled_in)
     };
     admitted.then_some([x, y - f32::from(entity.ion_blast_lift_pixels())])
 }

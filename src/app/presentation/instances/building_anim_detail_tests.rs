@@ -187,7 +187,15 @@ fn emit(
         &frame,
         local_owner,
         record,
-        &super::admitted_slot_anims(sim, &frame, record, camera, [800.0, 600.0]),
+        &super::admitted_slot_anims(
+            sim,
+            &frame,
+            record,
+            crate::app::presentation::instances::TacticalAdmission {
+                corner: camera,
+                size: [800.0, 600.0],
+            },
+        ),
         &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
         &|_| 0,
         crate::render::batch::DepthAxis::NONE.origin_y,
