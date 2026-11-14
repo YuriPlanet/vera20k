@@ -231,6 +231,12 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The online client's next frame draws its art by it.
         self.persistence.options_profile.smooth_online_menus = enabled;
     }
+    fn store_vsync(&mut self, vsync: bool) {
+        // Applied at once: the window's surface presents by it from the
+        // next frame.
+        self.persistence.options_profile.vsync = vsync;
+        App::sync_present_mode(self);
+    }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;

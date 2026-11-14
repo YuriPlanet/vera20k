@@ -190,7 +190,8 @@ pub(crate) struct TacticalCaptureSettings {
     pub(crate) output_width: u32,
     pub(crate) output_height: u32,
     pub(crate) surface_formats: Vec<String>,
-    /// Always true: the window always presents in step with the display. The
+    /// Always true: a capture presents in step with the display whatever the
+    /// Options page's VSync box says (`App::sync_present_mode`). The
     /// sealed profiles keep the key.
     pub(crate) vsync: bool,
     /// Always false: a capture never zooms. The sealed profiles keep the key.

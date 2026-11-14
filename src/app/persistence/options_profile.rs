@@ -183,6 +183,10 @@ pub(crate) struct RetailOptionsProfile {
     /// art through the smooth shader (`BatchRenderer::draw_chrome`). Off by
     /// default; presentation only.
     pub(crate) smooth_online_menus: bool,
+    /// `[VERA] VSync=`: the window presents in step with the display
+    /// (`GpuContext::set_vsync`). On by default; untick it for lower input
+    /// latency, with tearing. Presentation only.
+    pub(crate) vsync: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -359,6 +363,7 @@ impl Default for RetailOptionsProfile {
             hd_radar: false,
             smooth_sidebar: false,
             smooth_online_menus: false,
+            vsync: true,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -396,7 +401,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 32],
 }
 
 impl RetailOptionsLoad {
@@ -605,6 +610,7 @@ impl RetailOptionsProfile {
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
+            self.vsync = vera.read_bool("VSync", self.vsync);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -806,6 +812,7 @@ impl RetailOptionsProfile {
                     "SmoothOnlineMenus",
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
+                ("VSync", format_bool(self.vsync).to_string()),
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
@@ -1763,6 +1770,21 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
         assert!(changed.smooth_online_menus);
+    }
+
+    #[test]
+    fn vsync_starts_on_and_an_unticked_box_round_trips() {
+        let startup = RetailStartupOptions::default();
+        let unset = load_snapshot(&startup, b"[VERA]\n").retained_profile;
+        assert!(unset.vsync);
+        let off = RetailOptionsProfile {
+            vsync: false,
+            ..RetailOptionsProfile::default()
+        }
+        .transform_settings(b"");
+        let ini = IniFile::from_bytes(&off).unwrap();
+        assert!(!ini.section(VERA_SECTION).unwrap().read_bool("VSync", true));
+        assert!(!load_snapshot(&startup, &off).retained_profile.vsync);
     }
 
     #[test]
