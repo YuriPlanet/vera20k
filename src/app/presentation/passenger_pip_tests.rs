@@ -285,12 +285,20 @@ fn a_slave_shows_the_load_it_carries() {
         },
         Some(rules)
     ));
+    // Phobos replaces this arm unconditionally and draws in DisplayOrder;
+    // its default {0,2,3,1} puts Riparius (index 0) before gems (index 1),
+    // the stock arm's reverse.
+    let mixed = if cfg!(feature = "phobos") {
+        [2, 2, 5]
+    } else {
+        [5, 5, 2]
+    };
     for (ore, gems, expected) in [
         (0, 0, [0, 0, 0]),
         (1, 0, [2, 0, 0]),
         (3, 0, [2, 2, 0]),
         (4, 0, [2, 2, 2]),
-        (2, 2, [5, 5, 2]),
+        (2, 2, mixed),
     ] {
         let bale = |resource_type| CargoBale {
             tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(match resource_type {
@@ -315,6 +323,9 @@ fn a_slave_shows_the_load_it_carries() {
 
 /// Controlled storage-consumer priors; this does not establish harvesting.
 /// Native executions supply expected frames, including PC53/chop half ties.
+/// The oracle is the stock arm; a Phobos build draws in DisplayOrder instead
+/// (`the_tiberium_pip_globals_drive_the_strip`).
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -409,4 +420,78 @@ fn the_global_generic_size_drives_the_passenger_strip() {
             .map(|pip| pip.offset_pixels)
             .collect();
     assert_eq!(placed, [[0, 10], [7, 13]], "the 7x3 generic step");
+}
+
+/// Phobos `Pips.Tiberiums.*` (`Ext/Rules/Body.cpp:164-168`, consumer
+/// `Ext/Techno/Hooks.Pips.cpp:306-410`): per-`[Tiberiums]` counts rounded on
+/// their own, drawn in `DisplayOrder`, `Frames[index]` per class, and
+/// `EmptyFrame` for a slot nothing fills. A 10-unit hold of 6 ore / 2 gems
+/// rounds to 3 + 1 pips at GetPipMax 5; a weeder rounds the whole hold (8
+/// bales) instead.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_tiberium_pip_globals_drive_the_strip() {
+    use crate::rules::ini_parser::IniFile;
+
+    let scene = |extra: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=HARVTEST\n\
+             [HARVTEST]\nStrength=100\nSpeed=4\nStorage=10\nPipScale=Tiberium\n\
+             Harvester=yes\n{extra}\
+             [Tiberiums]\n0=Riparius\n1=Cruentus\n2=Vinifera\n3=Aboreus\n\
+             [Riparius]\n[Cruentus]\n[Vinifera]\n[Aboreus]\n"
+        )))
+        .expect("tiberium pip rules");
+        assert_eq!(rules.tiberium_types.len(), 4);
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim
+            .spawn_object("HARVTEST", OWNER, 16, 16, 64, &rules)
+            .expect("harvester");
+        crate::sim::arena_fixture::install_status_miner_cargo(
+            sim.entities_mut_for_test().get_mut(id).unwrap(),
+            rules.object("HARVTEST").unwrap(),
+            &rules,
+            6,
+            2,
+        );
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::Select {
+                entity_ids: vec![id],
+                additive: false,
+            },
+            Some(&rules),
+        ));
+        frames(&sim, &rules, id, None)
+    };
+
+    assert_eq!(
+        scene(""),
+        [2, 2, 2, 5, 0],
+        "the default scan order draws Riparius before gems"
+    );
+    assert_eq!(
+        scene("[AudioVisual]\nPips.Tiberiums.DisplayOrder=1,0\n"),
+        [5, 2, 2, 2, 0],
+        "DisplayOrder puts gems first"
+    );
+    assert_eq!(
+        scene(
+            "[AudioVisual]\nPips.Tiberiums.DisplayOrder=1,0\n\
+             Pips.Tiberiums.Frames=7,8\nPips.Tiberiums.EmptyFrame=9\n"
+        ),
+        [8, 7, 7, 7, 9],
+        "Frames per index, EmptyFrame for the unfilled slot"
+    );
+    assert_eq!(
+        scene(
+            "Weeder=yes\n[AudioVisual]\nPips.Tiberiums.WeedFrame=4\n\
+             Pips.Tiberiums.WeedEmptyFrame=6\n"
+        ),
+        [4, 4, 4, 4, 6],
+        "a weeder draws its whole hold with the weed frames"
+    );
 }

@@ -2303,36 +2303,131 @@ pub(crate) fn scale_pip_draws(
     //70A1E9..70A340 reads the Techno's Storage (+0x33C) for every
     //PipScale=Tiberium type, with no harvester or slave test: a Yuri Slave
     //shows the load it digs as a War Miner does.
-    let bales = entity.storage_bales();
-    let gems = bales
-        .iter()
-        .filter(|bale| bale.resource_type == crate::sim::miner::ResourceType::Gem)
-        .count();
-    let ore = bales.len() - gems;
-    let maximum = object.pip_max(rules);
-    let slots = usize::try_from(maximum).unwrap_or(0);
-    //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0
-    //(ore) through amount / current Type.Storage * GetPipMax + binary64 0.5.
-    //Ambient0E7F is PC53/chop: stock4/40 remains just below0.5 after the
-    //multiply, so rational half-up is wrong. Reuse the existing numeric owner;
-    //original executable controls: passenger_pips.json/numeric_results.
-    let count = |amount: usize| {
-        let rounded =
-            crate::sim::game_entity::rounded_pip_quantity(amount as i32, object.storage, maximum);
-        usize::try_from(rounded).unwrap_or(0).min(slots)
-    };
-    let gem_pips = count(gems);
-    let ore_pips = count(ore).min(slots - gem_pips);
-    pips.extend((0..slots).map(|slot| {
-        let frame = if slot < gem_pips {
-            5
-        } else if slot < gem_pips + ore_pips {
-            2
-        } else {
-            0
+    #[cfg(not(feature = "phobos"))]
+    {
+        let bales = entity.storage_bales();
+        let gems = bales
+            .iter()
+            .filter(|bale| bale.resource_type == crate::sim::miner::ResourceType::Gem)
+            .count();
+        let ore = bales.len() - gems;
+        let maximum = object.pip_max(rules);
+        let slots = usize::try_from(maximum).unwrap_or(0);
+        //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0
+        //(ore) through amount / current Type.Storage * GetPipMax + binary64 0.5.
+        //Ambient0E7F is PC53/chop: stock4/40 remains just below0.5 after the
+        //multiply, so rational half-up is wrong. Reuse the existing numeric owner;
+        //original executable controls: passenger_pips.json/numeric_results.
+        let count = |amount: usize| {
+            let rounded = crate::sim::game_entity::rounded_pip_quantity(
+                amount as i32,
+                object.storage,
+                maximum,
+            );
+            usize::try_from(rounded).unwrap_or(0).min(slots)
         };
-        pip(slot, frame, row_y)
-    }));
+        let gem_pips = count(gems);
+        let ore_pips = count(ore).min(slots - gem_pips);
+        pips.extend((0..slots).map(|slot| {
+            let frame = if slot < gem_pips {
+                5
+            } else if slot < gem_pips + ore_pips {
+                2
+            } else {
+                0
+            };
+            pip(slot, frame, row_y)
+        }));
+    }
+    // Phobos `TechnoClass_DrawPips_Tiberium` (`0x70A1F6`,
+    // `Ext/Techno/Hooks.Pips.cpp:306-410`) replaces the whole stock arm:
+    // a Weeder draws its whole hold with `WeedFrame`/`WeedEmptyFrame`;
+    // otherwise each `[Tiberiums]` index is counted and rounded on its own,
+    // drawn in `DisplayOrder` (native scan order `{0,2,3,1}` when empty,
+    // duplicates and out-of-range indices dropped, missing classes appended)
+    // with `Frames[index]` (5 for gems, 2 otherwise past the list) and
+    // `EmptyFrame` for a slot no class fills.
+    #[cfg(feature = "phobos")]
+    {
+        let globals = &rules.phobos_globals;
+        let maximum = object.pip_max(rules);
+        let slots = usize::try_from(maximum).unwrap_or(0);
+        let count = |amount: i32| {
+            usize::try_from(crate::sim::game_entity::rounded_pip_quantity(
+                amount,
+                object.storage,
+                maximum,
+            ))
+            .unwrap_or(0)
+        };
+        let bales = entity.storage_bales();
+        let is_weeder = object.weeder
+            && matches!(
+                entity.category(),
+                EntityCategory::Unit | EntityCategory::Structure
+            );
+        if is_weeder {
+            // A Unit reads its whole hold. A Building reads its owner's weed
+            // storage percentage instead, which VERA does not model
+            // (`sim/economy.rs` records that residual), so it stays empty.
+            let filled = if entity.category() == EntityCategory::Unit {
+                count(i32::try_from(bales.len()).unwrap_or(i32::MAX))
+            } else {
+                0
+            };
+            let weed = globals.pips_tiberiums_weed_frame.max(0) as usize;
+            let empty = globals.pips_tiberiums_weed_empty_frame.max(0) as usize;
+            pips.extend(
+                (0..slots).map(|slot| pip(slot, if slot < filled { weed } else { empty }, row_y)),
+            );
+            return pips;
+        }
+        let class_count = rules.tiberium_types.len();
+        let mut counts = vec![0usize; class_count];
+        for bale in bales {
+            if let Some(amount) = counts.get_mut(usize::from(bale.tiberium_type.0)) {
+                *amount += 1;
+            }
+        }
+        for amount in counts.iter_mut() {
+            *amount = count(i32::try_from(*amount).unwrap_or(i32::MAX));
+        }
+        let order: &[i32] = if globals.pips_tiberiums_display_order.is_empty() {
+            &[0, 2, 3, 1]
+        } else {
+            &globals.pips_tiberiums_display_order
+        };
+        let mut pip_order: Vec<usize> = Vec::with_capacity(class_count);
+        for &index in order {
+            let Ok(index) = usize::try_from(index) else {
+                continue;
+            };
+            if index < class_count && !pip_order.contains(&index) {
+                pip_order.push(index);
+            }
+        }
+        for index in 0..class_count {
+            if !pip_order.contains(&index) {
+                pip_order.push(index);
+            }
+        }
+        let frames = &globals.pips_tiberiums_frames;
+        let empty = globals.pips_tiberiums_empty_frame.max(0) as usize;
+        for slot in 0..slots {
+            let mut frame = empty;
+            for &index in &pip_order {
+                if counts[index] > 0 {
+                    counts[index] -= 1;
+                    let fallback = if index == 1 { 5 } else { 2 };
+                    frame = frames
+                        .get(index)
+                        .map_or(fallback, |frame| (*frame).max(0) as usize);
+                    break;
+                }
+            }
+            pips.push(pip(slot, frame, row_y));
+        }
+    }
     pips
 }
 

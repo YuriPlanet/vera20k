@@ -236,6 +236,30 @@ pub struct PhobosGlobals {
     pub pips_ammo_size: [i32; 2],
     /// `Pips.Ammo.Buildings.Size=` (default `{4,2}`, `Body.h:623`).
     pub pips_ammo_buildings_size: [i32; 2],
+    /// `[AudioVisual] Pips.Tiberiums.Frames=`, `ValueableVector<int>`
+    /// (`Ext/Rules/Body.cpp:164`, constructor empty `Body.h:624`): the pip
+    /// frame per `[Tiberiums]` index; an index past the list falls back to 5
+    /// for gems (index 1) and 2 otherwise (`Ext/Techno/Hooks.Pips.cpp:381`).
+    #[serde(default)]
+    pub pips_tiberiums_frames: Vec<i32>,
+    /// `[AudioVisual] Pips.Tiberiums.EmptyFrame=` (`Ext/Rules/Body.cpp:165`,
+    /// constructor 0 `Body.h:625`): the frame of a slot no load fills.
+    #[serde(default)]
+    pub pips_tiberiums_empty_frame: i32,
+    /// `[AudioVisual] Pips.Tiberiums.DisplayOrder=`
+    /// (`Ext/Rules/Body.cpp:166`, constructor empty `Body.h:626`): the draw
+    /// order of `[Tiberiums]` indices; empty takes the native `{0,2,3,1}`
+    /// scan order (`Ext/Techno/Hooks.Pips.cpp:363`).
+    #[serde(default)]
+    pub pips_tiberiums_display_order: Vec<i32>,
+    /// `[AudioVisual] Pips.Tiberiums.WeedFrame=` (`Ext/Rules/Body.cpp:167`,
+    /// constructor 1 `Body.h:627`): a Weeder's filled weed pip.
+    #[serde(default = "one_i32")]
+    pub pips_tiberiums_weed_frame: i32,
+    /// `[AudioVisual] Pips.Tiberiums.WeedEmptyFrame=`
+    /// (`Ext/Rules/Body.cpp:168`, constructor 0 `Body.h:628`).
+    #[serde(default)]
+    pub pips_tiberiums_weed_empty_frame: i32,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1156,6 +1180,24 @@ pub struct PhobosGlobals {
     /// direction; unset keeps `PoseDir * 32`. Only its low byte is used.
     #[serde(default)]
     pub pose_dir_field: Option<i32>,
+    /// `[AudioVisual] DefaultLandingAnim=`, `Valueable<AnimTypeClass*>`
+    /// (`Ext/Rules/Body.cpp:602`, constructor nullptr `Body.h:1003`): the
+    /// anim a landing aircraft plays when its type and the dropship/carryall
+    /// variants name none; its presence also widens the landing effect to
+    /// every aircraft (`Ext/Techno/Hooks.cpp:2178-2225`, hooks `0x4CEB59`,
+    /// `0x4CEB7E`, `0x4CEC31`). Stored as the declared type name.
+    #[serde(default)]
+    pub default_landing_anim: Option<String>,
+    /// `[AudioVisual] DefaultLandingAnim.Dropship=`, `Nullable<AnimTypeClass*>`
+    /// (`Ext/Rules/Body.cpp:603`, constructed unset `Body.h:1004`): overrides
+    /// the stock `DROPLAND` fallback for `IsDropship` aircraft.
+    #[serde(default)]
+    pub default_landing_anim_dropship: Option<String>,
+    /// `[AudioVisual] DefaultLandingAnim.Carryall=` (`Ext/Rules/Body.cpp:604`,
+    /// constructed unset `Body.h:1005`): overrides the stock `CARYLAND`
+    /// fallback for `Carryall` aircraft.
+    #[serde(default)]
+    pub default_landing_anim_carryall: Option<String>,
     /// `[General] VeteranReload=`, default **`1.0`**
     /// (`Ext/Rules/Body.cpp:388`, constructor `Ext/Rules/Body.h:808`).
     #[serde(default = "one_f64")]
@@ -1292,6 +1334,11 @@ fn no_queue_board_distance_default() -> i32 {
     384
 }
 
+/// `Pips.Tiberiums.WeedFrame=`'s constructor value (`Ext/Rules/Body.h:627`).
+fn one_i32() -> i32 {
+    1
+}
+
 /// `1.0`, the constructor value of the three plain `[CombatDamage]` damage
 /// multipliers (`Ext/Rules/Body.h:770-772`) and `[General] VeteranReload=`
 /// (`Ext/Rules/Body.h:808`), stored as bits so `PhobosGlobals` keeps `Eq`.
@@ -1393,6 +1440,11 @@ impl Default for PhobosGlobals {
             pips_generic_buildings_size: [4, 2],
             pips_ammo_size: [4, 0],
             pips_ammo_buildings_size: [4, 2],
+            pips_tiberiums_frames: Vec::new(),
+            pips_tiberiums_empty_frame: 0,
+            pips_tiberiums_display_order: Vec::new(),
+            pips_tiberiums_weed_frame: 1,
+            pips_tiberiums_weed_empty_frame: 0,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1564,6 +1616,9 @@ impl Default for PhobosGlobals {
             aircraft_docking_dir_default_to_pose_dir: true,
             pose_dir_production: None,
             pose_dir_field: None,
+            default_landing_anim: None,
+            default_landing_anim_dropship: None,
+            default_landing_anim_carryall: None,
             veteran_reload: NativeF64Bits::ONE,
             veteran_empty_reload: None,
             is_voice_created_global: false,
@@ -1647,6 +1702,26 @@ impl PhobosGlobals {
             audio_visual.read_phobos_int_pair("Pips.Ammo.Size", globals.pips_ammo_size);
         globals.pips_ammo_buildings_size = audio_visual
             .read_phobos_int_pair("Pips.Ammo.Buildings.Size", globals.pips_ammo_buildings_size);
+        // `Ext/Rules/Body.cpp:164-168`: the Tiberium pip arm's frame table,
+        // empty/order lists and weeder frames.
+        if let Some(frames) = audio_visual.read_ares_int_list("Pips.Tiberiums.Frames") {
+            globals.pips_tiberiums_frames = frames;
+        }
+        globals.pips_tiberiums_empty_frame = audio_visual.read_int(
+            "Pips.Tiberiums.EmptyFrame",
+            globals.pips_tiberiums_empty_frame,
+        );
+        if let Some(order) = audio_visual.read_ares_int_list("Pips.Tiberiums.DisplayOrder") {
+            globals.pips_tiberiums_display_order = order;
+        }
+        globals.pips_tiberiums_weed_frame = audio_visual.read_int(
+            "Pips.Tiberiums.WeedFrame",
+            globals.pips_tiberiums_weed_frame,
+        );
+        globals.pips_tiberiums_weed_empty_frame = audio_visual.read_int(
+            "Pips.Tiberiums.WeedEmptyFrame",
+            globals.pips_tiberiums_weed_empty_frame,
+        );
         globals.firing_anim_update =
             audio_visual.read_bool("FiringAnim.Update", globals.firing_anim_update);
         // `Ext/Rules/Body.cpp:291-297`: the income-label switch and cadence. A
@@ -1710,6 +1785,34 @@ impl PhobosGlobals {
             .read_phobos_nullable_int("PoseDir.Production", globals.pose_dir_production);
         globals.pose_dir_field =
             audio_visual.read_phobos_nullable_int("PoseDir.Field", globals.pose_dir_field);
+        // `Ext/Rules/Body.cpp:602-604`: a landing anim's `Valueable` pointer
+        // keeps its previous value on `<default>` and a failed lookup, while
+        // blank type names resolve to null; the two variants are `Nullable`
+        // and also clear on `<default>`.
+        globals.default_landing_anim = audio_visual.read_string_with(
+            "DefaultLandingAnim",
+            2048,
+            globals.default_landing_anim,
+            |current, raw| {
+                if raw.eq_ignore_ascii_case("<default>") {
+                    current
+                } else if crate::rules::ini_parser::is_native_none_type_name(raw) {
+                    None
+                } else {
+                    Some(raw.to_owned())
+                }
+            },
+        );
+        globals.default_landing_anim_dropship = audio_visual.read_phobos_nullable_with(
+            "DefaultLandingAnim.Dropship",
+            globals.default_landing_anim_dropship,
+            |raw| Some(raw.to_owned()),
+        );
+        globals.default_landing_anim_carryall = audio_visual.read_phobos_nullable_with(
+            "DefaultLandingAnim.Carryall",
+            globals.default_landing_anim_carryall,
+            |raw| Some(raw.to_owned()),
+        );
         globals.walk_locomotor_makes_wake =
             audio_visual.read_bool("WalkLocomotorMakesWake", globals.walk_locomotor_makes_wake);
         globals.drive_locomotor_makes_wake = audio_visual.read_bool(

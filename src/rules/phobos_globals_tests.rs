@@ -930,3 +930,68 @@ fn the_pip_size_globals_default_and_read_from_audio_visual() {
     assert_eq!(partial.pips_generic_size, [7, 0]);
     assert_eq!(partial.pips_ammo_size, [4, 0]);
 }
+
+/// `[AudioVisual] DefaultLandingAnim[.Dropship/.Carryall]`
+/// (`Ext/Rules/Body.cpp:602-604`, constructors `Body.h:1003-1005`): the plain
+/// key is a `Valueable` anim pointer whose `<default>` keeps the previous
+/// name, while the two variants are `Nullable` and clear on it or `none`.
+#[test]
+fn the_landing_anim_globals_default_and_read_from_audio_visual() {
+    let defaults = PhobosGlobals::default();
+    assert_eq!(defaults.default_landing_anim, None);
+    assert_eq!(defaults.default_landing_anim_dropship, None);
+    assert_eq!(defaults.default_landing_anim_carryall, None);
+
+    let set = read(
+        "[AudioVisual]\nDefaultLandingAnim=LAND\n\
+         DefaultLandingAnim.Dropship=DSHIP\nDefaultLandingAnim.Carryall=CARY\n",
+    );
+    assert_eq!(set.default_landing_anim.as_deref(), Some("LAND"));
+    assert_eq!(set.default_landing_anim_dropship.as_deref(), Some("DSHIP"));
+    assert_eq!(set.default_landing_anim_carryall.as_deref(), Some("CARY"));
+
+    let cleared = read(
+        "[AudioVisual]\nDefaultLandingAnim=<default>\n\
+         DefaultLandingAnim.Dropship=<default>\nDefaultLandingAnim.Carryall=none\n",
+    );
+    assert_eq!(
+        cleared.default_landing_anim, None,
+        "<default> leaves the null constructor value"
+    );
+    assert_eq!(cleared.default_landing_anim_dropship, None);
+    assert_eq!(cleared.default_landing_anim_carryall, None);
+
+    // A later rules pass supplies the keep-previous case: the `Valueable`
+    // pointer retains an earlier name when `<default>` fails its lookup.
+    let layered = read("[AudioVisual]\nDefaultLandingAnim=LAND\nDefaultLandingAnim=<default>\n");
+    assert_eq!(layered.default_landing_anim.as_deref(), Some("LAND"));
+
+    // Names are stored unresolved; the landing consumer rejects a name the
+    // anim catalog lacks, as the native pointer read would.
+    let unknown = read("[AudioVisual]\nDefaultLandingAnim=TYPO\n");
+    assert_eq!(unknown.default_landing_anim.as_deref(), Some("TYPO"));
+}
+
+/// `[AudioVisual] Pips.Tiberiums.*` (`Ext/Rules/Body.cpp:164-168`,
+/// constructors `Body.h:624-628`): the per-class frame list, empty frame,
+/// draw order and both weeder frames.
+#[test]
+fn the_tiberium_pip_globals_default_and_read_from_audio_visual() {
+    let defaults = PhobosGlobals::default();
+    assert!(defaults.pips_tiberiums_frames.is_empty());
+    assert_eq!(defaults.pips_tiberiums_empty_frame, 0);
+    assert!(defaults.pips_tiberiums_display_order.is_empty());
+    assert_eq!(defaults.pips_tiberiums_weed_frame, 1);
+    assert_eq!(defaults.pips_tiberiums_weed_empty_frame, 0);
+
+    let set = read(
+        "[AudioVisual]\nPips.Tiberiums.Frames=3,4\nPips.Tiberiums.EmptyFrame=9\n\
+         Pips.Tiberiums.DisplayOrder=1,0\nPips.Tiberiums.WeedFrame=7\n\
+         Pips.Tiberiums.WeedEmptyFrame=8\n",
+    );
+    assert_eq!(set.pips_tiberiums_frames, [3, 4]);
+    assert_eq!(set.pips_tiberiums_empty_frame, 9);
+    assert_eq!(set.pips_tiberiums_display_order, [1, 0]);
+    assert_eq!(set.pips_tiberiums_weed_frame, 7);
+    assert_eq!(set.pips_tiberiums_weed_empty_frame, 8);
+}
