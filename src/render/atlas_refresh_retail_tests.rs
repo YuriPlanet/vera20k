@@ -5,8 +5,8 @@
 //! vehicle type the map did not start with and grows the SHP atlas through
 //! [`EntityAtlasGrowth`] and admits the new voxel model, as a match does. It
 //! prints the calling thread's share of each growth (start and publish) and
-//! the wall time until it published, plus the coverage check that runs on
-//! every spawn, death and Limbo. Timings are printed for the record; the
+//! the wall time until it published, plus the whole-world coverage check a
+//! refresh runs. Timings are printed for the record; the
 //! assertions pin what a growth must leave drawable, that it satisfies the
 //! coverage check, that nothing new starts no growth, that a cancelled growth
 //! publishes nothing, and that the grown atlases hold exactly what a map load
@@ -257,7 +257,7 @@ fn retail_atlas_refresh_costs() {
     );
     assert!(spawn_near(sim, new_vehicle, 6), "{new_vehicle} placed");
 
-    // The check every spawn, death and Limbo runs before any refresh.
+    // The whole-world check a refresh runs before it grows anything.
     let covers = |sim: &crate::sim::world::Simulation,
                   sprites: &sprite_atlas::SpriteAtlas,
                   units: &unit_atlas::UnitAtlas| {
