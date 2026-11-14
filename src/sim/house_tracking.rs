@@ -250,9 +250,36 @@ impl TrackingFacts {
                 0
             },
             #[cfg(feature = "ares")]
-            keep_alive: ty.keep_alive().unwrap_or(
-                category == EntityCategory::Structure && !ty.insignificant && !ty.dont_score,
-            ),
+            keep_alive: {
+                // Phobos `AresHouseExt_UpdateKeepAlive`
+                // (`Misc/Hooks.Ares.cpp:190-243`, `Ext/Rules/Body.cpp:652-656`):
+                // the category globals supply the default, with Combat
+                // buildings taking `KeepAlive.Defenses`; a type's own
+                // `KeepAlive=` still wins.
+                #[cfg(feature = "phobos")]
+                let default = {
+                    let globals = &rules.phobos_globals;
+                    let category_default = match category {
+                        EntityCategory::Infantry => globals.keep_alive_infantry,
+                        EntityCategory::Unit => globals.keep_alive_units,
+                        EntityCategory::Aircraft => globals.keep_alive_aircraft,
+                        EntityCategory::Structure => {
+                            if ty.build_cat
+                                == Some(crate::rules::object_type::BuildCategory::Combat)
+                            {
+                                globals.keep_alive_defenses
+                            } else {
+                                globals.keep_alive_buildings
+                            }
+                        }
+                    };
+                    category_default && !ty.insignificant && !ty.dont_score
+                };
+                #[cfg(not(feature = "phobos"))]
+                let default =
+                    category == EntityCategory::Structure && !ty.insignificant && !ty.dont_score;
+                ty.keep_alive().unwrap_or(default)
+            },
         }
     }
 

@@ -995,3 +995,26 @@ fn the_tiberium_pip_globals_default_and_read_from_audio_visual() {
     assert_eq!(set.pips_tiberiums_weed_frame, 7);
     assert_eq!(set.pips_tiberiums_weed_empty_frame, 8);
 }
+
+/// `[General] KeepAlive.{Infantry,Units,Aircraft,Buildings,Defenses}`
+/// (`Ext/Rules/Body.cpp:652-656`, constructors `Body.h:1046-1050`): the
+/// Ares house keep-alive category defaults, buildings and defenses `yes`.
+#[test]
+fn the_keep_alive_globals_default_and_read_from_general() {
+    let defaults = PhobosGlobals::default();
+    assert!(!defaults.keep_alive_infantry);
+    assert!(!defaults.keep_alive_units);
+    assert!(!defaults.keep_alive_aircraft);
+    assert!(defaults.keep_alive_buildings);
+    assert!(defaults.keep_alive_defenses);
+
+    let set = read(
+        "[General]\nKeepAlive.Infantry=yes\nKeepAlive.Units=yes\n\
+         KeepAlive.Aircraft=yes\nKeepAlive.Buildings=no\nKeepAlive.Defenses=no\n",
+    );
+    assert!(set.keep_alive_infantry);
+    assert!(set.keep_alive_units);
+    assert!(set.keep_alive_aircraft);
+    assert!(!set.keep_alive_buildings);
+    assert!(!set.keep_alive_defenses);
+}

@@ -1137,6 +1137,30 @@ pub struct PhobosGlobals {
     /// building-type fallback for the same key (`0x44DCB1`).
     #[serde(default)]
     pub no_queue_up_to_unload_buildings: Option<bool>,
+    /// `[General] KeepAlive.Infantry=`, default `no`
+    /// (`Ext/Rules/Body.cpp:652`, constructor `Ext/Rules/Body.h:1046`): the
+    /// category default for Ares' house keep-alive tracking when a type does
+    /// not author `KeepAlive=` (`Misc/Hooks.Ares.cpp:190-243`).
+    #[serde(default)]
+    pub keep_alive_infantry: bool,
+    /// `[General] KeepAlive.Units=` (`Ext/Rules/Body.cpp:653`,
+    /// constructor `Body.h:1047`).
+    #[serde(default)]
+    pub keep_alive_units: bool,
+    /// `[General] KeepAlive.Aircraft=` (`Ext/Rules/Body.cpp:654`,
+    /// constructor `Body.h:1048`).
+    #[serde(default)]
+    pub keep_alive_aircraft: bool,
+    /// `[General] KeepAlive.Buildings=` (`Ext/Rules/Body.cpp:655`,
+    /// constructor `Body.h:1049`, default `yes`): the default for a
+    /// non-`BuildCat=Combat` building.
+    #[serde(default = "true_bool")]
+    pub keep_alive_buildings: bool,
+    /// `[General] KeepAlive.Defenses=` (`Ext/Rules/Body.cpp:656`,
+    /// constructor `Body.h:1050`, default `yes`): the default for a
+    /// `BuildCat=Combat` building.
+    #[serde(default = "true_bool")]
+    pub keep_alive_defenses: bool,
     /// `[General] ReloadInTransport=`, default `no`
     /// (`Ext/Rules/Body.cpp:454`, constructor `Ext/Rules/Body.h:869`): a
     /// passenger whose type enables it reloads while inside a transport
@@ -1607,6 +1631,11 @@ impl Default for PhobosGlobals {
             no_queue_up_to_enter_buildings: None,
             no_queue_up_to_unload: false,
             no_queue_up_to_unload_buildings: None,
+            keep_alive_infantry: false,
+            keep_alive_units: false,
+            keep_alive_aircraft: false,
+            keep_alive_buildings: true,
+            keep_alive_defenses: true,
             reload_in_transport: false,
             infantry_gain_self_heal_cap: None,
             units_gain_self_heal_cap: None,
@@ -2026,6 +2055,17 @@ impl PhobosGlobals {
         );
         globals.reload_in_transport =
             general.read_bool("ReloadInTransport", globals.reload_in_transport);
+        // `Ext/Rules/Body.cpp:652-656`: the Ares house keep-alive category
+        // defaults; a `BuildCat=Combat` building takes the Defenses key.
+        globals.keep_alive_infantry =
+            general.read_bool("KeepAlive.Infantry", globals.keep_alive_infantry);
+        globals.keep_alive_units = general.read_bool("KeepAlive.Units", globals.keep_alive_units);
+        globals.keep_alive_aircraft =
+            general.read_bool("KeepAlive.Aircraft", globals.keep_alive_aircraft);
+        globals.keep_alive_buildings =
+            general.read_bool("KeepAlive.Buildings", globals.keep_alive_buildings);
+        globals.keep_alive_defenses =
+            general.read_bool("KeepAlive.Defenses", globals.keep_alive_defenses);
         // `Ext/Rules/Body.cpp:111-115`: the gained-self-heal caps and gates.
         // Each key stays literal on its reader line: the v3 scanner attributes
         // a read by the literal argument of the call on that line.

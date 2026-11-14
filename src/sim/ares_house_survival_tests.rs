@@ -127,6 +127,63 @@ fn keep_alive_tracking_matches_executed_defaults_overrides_and_wrapping() {
     }
 }
 
+/// Phobos `KeepAlive.*` (`Ext/Rules/Body.cpp:652-656`,
+/// `Misc/Hooks.Ares.cpp:190-243`): the category globals supply the default,
+/// a `BuildCat=Combat` building takes `KeepAlive.Defenses`, and a type's own
+/// `KeepAlive=` still wins over both.
+#[cfg(all(feature = "ares", feature = "phobos"))]
+#[test]
+fn phobos_keep_alive_globals_pick_the_category_default() {
+    use crate::map::entities::EntityCategory;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nKeepAlive.Infantry=yes\nKeepAlive.Units=yes\n\
+         KeepAlive.Aircraft=yes\nKeepAlive.Buildings=no\nKeepAlive.Defenses=yes\n\
+         [InfantryTypes]\n0=E1\n[E1]\nStrength=100\n\
+         [VehicleTypes]\n0=MTNK\n1=MTNK2\n[MTNK]\nStrength=100\n\
+         [MTNK2]\nStrength=100\nKeepAlive=no\n\
+         [AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=100\n\
+         [BuildingTypes]\n0=POWR\n1=GAPILL\n[POWR]\nStrength=750\nBuildCat=Power\n\
+         [GAPILL]\nStrength=500\nBuildCat=Combat\n",
+    ))
+    .unwrap();
+    let facts = |name: &str, category: EntityCategory| {
+        super::TrackingFacts::of(category, rules.object(name), &rules)
+    };
+    assert!(facts("E1", EntityCategory::Infantry).keep_alive);
+    assert!(facts("MTNK", EntityCategory::Unit).keep_alive);
+    assert!(facts("ORCA", EntityCategory::Aircraft).keep_alive);
+    assert!(
+        !facts("POWR", EntityCategory::Structure).keep_alive,
+        "KeepAlive.Buildings=no"
+    );
+    assert!(
+        facts("GAPILL", EntityCategory::Structure).keep_alive,
+        "a Combat building takes KeepAlive.Defenses=yes"
+    );
+    assert!(
+        !facts("MTNK2", EntityCategory::Unit).keep_alive,
+        "the type key wins over the category global"
+    );
+
+    let defaults = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\n\
+         [BuildingTypes]\n0=POWR\n[POWR]\nStrength=750\n",
+    ))
+    .unwrap();
+    let default_facts = |name: &str, category: EntityCategory| {
+        super::TrackingFacts::of(category, defaults.object(name), &defaults)
+    };
+    assert!(
+        !default_facts("MTNK", EntityCategory::Unit).keep_alive,
+        "units construct no"
+    );
+    assert!(
+        default_facts("POWR", EntityCategory::Structure).keep_alive,
+        "buildings construct yes"
+    );
+}
+
 #[cfg(feature = "ares")]
 #[test]
 fn short_game_gate_matches_executed_full_vector_and_nonzero_controls() {
