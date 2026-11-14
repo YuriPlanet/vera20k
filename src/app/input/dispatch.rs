@@ -298,6 +298,13 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 if crate::app::input::planning_mode::refuse_press_at_cursor(state) {
                     return;
                 }
+                // PlanMgr's press 0x0063A5A0 also takes a press inside the
+                // hover node's rectangle (AC4CCC), arming AC4C38 and returning
+                // 1 (0x0063A736), so LeftDown never arms a band. RESIDUAL:
+                // natively it skips the capture too; here the capture is kept
+                // so the release still reaches `connect_at_cursor`.
+                let press_on_hover_node =
+                    crate::app::input::planning_mode::hover_node(state).is_some();
                 // gamemd takes the mouse capture on the press edge whether or
                 // not the band drag arms: the modal gates live inside the
                 // drag-arm helper 0x004AC310, not around the capture. The
@@ -309,7 +316,9 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 if !state.match_state.input.tactical_mouse.begin_left_press() {
                     return;
                 }
-                if state.match_state.input.planning.active()
+                // LeftDown 0x004AC310 has no planning test, so a drag off the
+                // hover node in Planning Mode makes a band box.
+                if press_on_hover_node
                     || state.match_state.input.targeting_mode.is_some()
                     || state
                         .match_state
@@ -322,7 +331,11 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                         .sidebar_gadget_state
                         .sell_mode_on
                     // The held-drag 4AC380 never starts a band in beacon
-                    // mode (4AC3A3).
+                    // mode (4AC3A3). RESIDUAL (kept by the maintainer): past
+                    // 4 px it raises the band flag (0x004AC496..0x004AC4B7), so
+                    // the release takes the band path over the last band's
+                    // rectangle and places no beacon when that stale rectangle
+                    // catches an object.
                     || crate::app::input::beacon::mode_active(state)
                     // VERA ferry: the armed click names the drop spot.
                     || state.match_state.input.ferry.armed()
@@ -680,8 +693,8 @@ fn tactical_left_up(state: &mut AppState) {
             SelectAction::Click(sx, sy) => {
                 // Native TacticalPick6DA380 reads the retained
                 // Display registrations after the projected click
-                // gate. ScreenSelection's raw-anchor filter belongs
-                // to band/type scope, not this pointer pick.
+                // gate. The ScreenSelection list belongs to band/type
+                // scope, not this pointer pick.
                 let click_order =
                     crate::app::presentation::instances::tactical_entity_encounter_order(sim);
                 let world_x: f32 =
@@ -900,21 +913,13 @@ fn band_caught_drawn_object(
         return false;
     };
     let z = state.match_state.input.zoom_level;
-    let fog_ref = if state.match_state.sandbox_full_visibility {
-        None
-    } else {
-        Some((sim.fog(), sim.house_alliances().as_map()))
-    };
     crate::app::input::entity_pick::band_rect_contains_drawn_object(
         crate::app::input::entity_pick::presented(state, sim),
         encounter_order,
-        fog_ref,
-        preferred_local_owner_name(state).as_deref(),
         min_x / z + state.match_state.input.camera_x,
         min_y / z + state.match_state.input.camera_y,
         max_x / z + state.match_state.input.camera_x,
         max_y / z + state.match_state.input.camera_y,
-        Some(sim.interner()),
     )
 }
 

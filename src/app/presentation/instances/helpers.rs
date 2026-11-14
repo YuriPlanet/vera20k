@@ -39,6 +39,7 @@ fn display_objects(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TacticalEntityPurpose {
     Drawing,
+    /// The selectable list (`TacticalClass::AddSelectable @ 0x006D9EF0`).
     ScreenSelection,
 }
 
@@ -196,23 +197,24 @@ pub(crate) fn drawn_type_uses_voxel(
 /// Native Building6D9920 ->43CEA0 ->43D290 submits ordinary building bodies
 /// independently of top/center shroud; the existing ABuffer clips their pixels.
 /// Unit73B0B0 and Infantry/Aircraft5F4B10 likewise reach their original
-/// DrawIt entries without querying anchor shroud. Screen selection retains its
-/// exploration gate; lifecycle and DrawState still own transport/cloak admission.
+/// DrawIt entries without querying anchor shroud, and screen selection follows
+/// them; lifecycle and DrawState still own transport/cloak admission.
 /// Native controls: tools/procedural_drawing_oracle/{building_reveal,entity_reveal}.md.
 pub(crate) fn tactical_entity_admission(
     purpose: TacticalEntityPurpose,
     entity: &ObjectRecord,
-    owner: &str,
-    local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
     fog: &FogState,
-    alliances: &crate::map::houses::HouseAllianceMap,
     ignore_visibility: bool,
     current_frame: u32,
     remap_row: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
 ) -> Option<crate::render::draw_state::DrawDecision> {
-    let requires_revealed_anchor = purpose == TacticalEntityPurpose::ScreenSelection;
+    // AddSelectable (0x006D9EF0) tests no shroud, and the object loop
+    // (0x006D8DB0) reaches a Techno's DrawIt, which registers it (UnitClass at
+    // 0x0073CF6B), with no shroud test either: its FogOfWar test,
+    // MapClass::IsFogged 0x005865E0, always answers no. The shroud only masks
+    // the pixels, so screen selection takes what the draw takes.
     if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
         // Tactical6D9985..6D9996 skips the live building while its frozen
         // FoggedObjectClass is drawn by the separate4D1890 base pass.
@@ -223,17 +225,15 @@ pub(crate) fn tactical_entity_admission(
                 .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
-        || (requires_revealed_anchor
-            && !ignore_visibility
-            && !object_shown_to_local_owner(
-                local_owner,
-                local_owner_id,
-                fog,
-                alliances,
-                &entity.position,
-                owner,
-                false,
-            ))
+        // UnitClass::DrawIt returns before AddSelectable while the unit
+        // deploys or undeploys (+0x6E1 / +0x6E2, 0x0073CF46..0x0073CF5C); its
+        // Extras still draw (0x006D9789), so only the list leaves it out.
+        // RESIDUAL (dormant, no retail rules use drop pods): InfantryClass::
+        // DrawIt also skips AddSelectable for an infantry still falling by
+        // DropPod locomotor (0x0051913B..0x0051928C); VERA lists it.
+        || (purpose == TacticalEntityPurpose::ScreenSelection
+            && entity.category() == EntityCategory::Unit
+            && entity.unit_deploying())
     {
         return None;
     }
@@ -302,7 +302,6 @@ fn tactical_bounded_entity_encounter_order(
         sim,
         &frame,
         (min_x, min_y, max_x, max_y),
-        local_owner.as_deref(),
         local_owner_id,
         sim.fog(),
         state.match_state.sandbox_full_visibility,
@@ -315,7 +314,6 @@ fn compose_tactical_screen_entity_encounter_order(
     sim: &crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
     bounds: (f32, f32, f32, f32),
-    local_owner: Option<&str>,
     local_owner_id: Option<InternedId>,
     fog: &FogState,
     ignore_visibility: bool,
@@ -323,6 +321,10 @@ fn compose_tactical_screen_entity_encounter_order(
     bulk_register_live_buildings: bool,
 ) -> Vec<u64> {
     let (min_x, min_y, max_x, max_y) = bounds;
+    // RESIDUAL (kept by the maintainer, for big battles): AddSelectable
+    // (0x006D9EF0) refuses entries past 500, so with more objects in view the
+    // band box and the T key's screen pass reach only the first 500 drawn.
+    // VERA registers all.
     let mut candidates = display_objects(sim, |id| frame.contains(id));
     // Band-box preflight has a separate native bulk Building registration
     // path. Ordinary picking/rendering never scans the unregistered store.
@@ -338,7 +340,6 @@ fn compose_tactical_screen_entity_encounter_order(
         .into_iter()
         .filter(|id| {
             frame.object(*id).is_some_and(|entity| {
-                let owner = sim.interner().resolve(entity.owner());
                 let admitted = if bulk_register_live_buildings
                     && entity.category() == EntityCategory::Structure
                 {
@@ -347,11 +348,8 @@ fn compose_tactical_screen_entity_encounter_order(
                     tactical_entity_admission(
                         TacticalEntityPurpose::ScreenSelection,
                         entity,
-                        owner,
-                        local_owner,
                         local_owner_id,
                         fog,
-                        sim.house_alliances().as_map(),
                         ignore_visibility,
                         current_frame,
                         0,
@@ -520,9 +518,10 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
 }
 
 /// Is `owner`'s object at `pos` shown to the local player? The one rule
-/// tactical presentation (screen selection, VERA's translucent fog) and input
-/// picking (band preflight, TypeSelect's screen stage, translucent pick
-/// concealment) share; callers keep their own full-visibility switch.
+/// VERA's translucent fog and input picking (TypeSelect's screen stage,
+/// translucent pick concealment) share; callers keep their own
+/// full-visibility switch. Screen selection and the band preflight take no
+/// shroud test (`TacticalClass::AddSelectable @ 0x006D9EF0`).
 ///
 /// Without a known local player everything is shown. The local player's
 /// allies, as its house counts them, always are (VERA's policy, with no native
@@ -1040,11 +1039,8 @@ mod tests {
                 tactical_entity_admission(
                     purpose,
                     &building,
-                    "Neutral",
-                    Some("Americans"),
                     Some(local),
                     &fog,
-                    &Default::default(),
                     false,
                     0,
                     0,
@@ -1058,10 +1054,11 @@ mod tests {
                 expected,
                 "{input}"
             );
+            // AddSelectable (0x006D9EF0) tests no shroud.
             assert_eq!(
                 admitted(TacticalEntityPurpose::ScreenSelection),
-                expected && input["top_revealed"].as_bool().unwrap_or(false),
-                "screen selection must retain anchor exploration: {input}",
+                expected,
+                "screen selection follows the draw: {input}",
             );
             compared += 1;
         }
@@ -1153,11 +1150,8 @@ mod tests {
                 tactical_entity_admission(
                     purpose,
                     &entity,
-                    "Neutral",
-                    Some("Americans"),
                     Some(local),
                     &fog,
-                    &Default::default(),
                     false,
                     0,
                     0,
@@ -1169,8 +1163,8 @@ mod tests {
             assert_eq!(admitted(TacticalEntityPurpose::Drawing), expected, "{row}");
             assert_eq!(
                 admitted(TacticalEntityPurpose::ScreenSelection),
-                expected && revealed,
-                "masked pixels must not expose selection: {row}"
+                expected,
+                "a shrouded body still registers: {row}"
             );
             compared += 1;
         }
@@ -1214,7 +1208,6 @@ mod tests {
                 &sim,
                 &frame,
                 bounds,
-                Some("Americans"),
                 Some(owner),
                 sim.fog(),
                 false,
@@ -1251,8 +1244,57 @@ mod tests {
         assert!(mutation.clear);
     }
 
+    /// UnitClass::DrawIt returns before AddSelectable while the unit deploys
+    /// (0x0073CF46..0x0073CF5C), so the band box and the T key miss it.
     #[test]
-    fn item83_band_preflight_source_bulk_registers_hidden_live_building_only() {
+    fn a_deploying_unit_is_not_screen_selectable() {
+        use crate::sim::combat::Health;
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.intern("Americans");
+        let typ = sim.intern("SCHP");
+        for id in [1, 2] {
+            let mut unit = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10 + id as u16,
+                10,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                typ,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            unit.lifecycle.set_in_limbo_for_test(true);
+            sim.entities_mut_for_test().insert(unit);
+            sim.reveal(id);
+        }
+        sim.entities_mut_for_test()
+            .get_mut(2)
+            .unwrap()
+            .set_unit_simple_deploy_for_test(false, true, false);
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+            &sim,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+        );
+        let order = compose_tactical_screen_entity_encounter_order(
+            &sim,
+            &frame,
+            (-1.0e6, -1.0e6, 1.0e6, 1.0e6),
+            Some(owner),
+            sim.fog(),
+            true,
+            0,
+            false,
+        );
+        assert_eq!(order, [1]);
+    }
+
+    #[test]
+    fn band_preflight_catches_shrouded_enemies() {
         use crate::app::input::entity_pick::compute_box_selection_snapshot;
         use crate::sim::combat::Health;
 
@@ -1317,7 +1359,6 @@ mod tests {
             &sim,
             &frame,
             bounds,
-            Some("Americans"),
             Some(local_owner),
             sim.fog(),
             false,
@@ -1328,7 +1369,6 @@ mod tests {
             &sim,
             &frame,
             bounds,
-            Some("Americans"),
             Some(local_owner),
             sim.fog(),
             false,
@@ -1336,14 +1376,13 @@ mod tests {
             true,
         );
 
-        assert!(
-            visible.is_empty(),
-            "neither shrouded enemy is render-tracked"
-        );
+        // UnitClass::DrawIt registers the shrouded unit (0x0073CF6B);
+        // AddSelectable (0x006D9EF0) tests no shroud.
+        assert_eq!(visible, [1], "the shrouded enemy unit still registers");
         assert_eq!(
             preflight,
-            [2],
-            "only the live building is bulk-registered for band preflight"
+            [1, 2],
+            "the live building joins it in bulk for band preflight"
         );
 
         let building_box = compute_box_selection_snapshot(
@@ -1369,26 +1408,24 @@ mod tests {
             "bulk registration affects caught-anything only, not band candidates"
         );
 
-        assert!(
-            compute_box_selection_snapshot(
-                sim.entities(),
-                &preflight,
-                &visible,
-                &[],
-                Some((sim.fog(), sim.house_alliances().as_map())),
-                Some("Americans"),
-                mobile_anchor.0 - 1.0,
-                mobile_anchor.1 - 1.0,
-                mobile_anchor.0 + 1.0,
-                mobile_anchor.1 + 1.0,
-                false,
-                None,
-                None,
-                Some(sim.interner()),
-            )
-            .is_none(),
-            "a shrouded mobile leaves the band truly empty for click fallback"
-        );
+        let mobile_box = compute_box_selection_snapshot(
+            sim.entities(),
+            &preflight,
+            &visible,
+            &[],
+            Some((sim.fog(), sim.house_alliances().as_map())),
+            Some("Americans"),
+            mobile_anchor.0 - 1.0,
+            mobile_anchor.1 - 1.0,
+            mobile_anchor.0 + 1.0,
+            mobile_anchor.1 + 1.0,
+            false,
+            None,
+            None,
+            Some(sim.interner()),
+        )
+        .expect("a shrouded enemy unit consumes the band release too");
+        assert!(mobile_box.clear && mobile_box.select.is_empty());
     }
 
     #[test]

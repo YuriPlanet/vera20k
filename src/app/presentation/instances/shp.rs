@@ -321,11 +321,8 @@ pub(crate) fn shp_visitor<'a>(
         let Some(draw_decision) = tactical_entity_admission(
             super::helpers::TacticalEntityPurpose::Drawing,
             entity,
-            owner_str,
-            local_owner,
             local_owner_id,
             sim.fog(),
-            sim.house_alliances().as_map(),
             ignore_visibility,
             sim.session().binary_frame(),
             super::units::house_color_to_remap_row(hc),
