@@ -26,6 +26,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 
 use super::state::FrameTimer;
+use crate::app::match_runtime::sim_host::SimHost;
 use panel::{DOT, GREEN, HOT, PanelStats, Part, TRACK, WARM};
 
 /// The status line's top when the panel is hidden.
@@ -166,7 +167,7 @@ impl PanelPlacement {
 /// A match the panel reads its unit count and Most CPU areas from.
 pub(crate) struct MatchPanel<'a> {
     pub(crate) placement: PanelPlacement,
-    pub(crate) simulation: Option<&'a crate::sim::world::Simulation>,
+    pub(crate) host: &'a SimHost,
 }
 
 /// The panel over the battlefield of the match on screen, if one is.
@@ -187,11 +188,7 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
             width as f32 * scale,
             scale,
         ),
-        simulation: state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .map(|runtime| &runtime.simulation),
+        host: &state.match_state.sim_runtime,
     })
 }
 
@@ -314,8 +311,8 @@ impl PerformanceOverlay {
         }
         let size = [destination.width(), destination.height()];
         let over_battlefield = in_match.is_some();
-        let (placement, simulation) = match in_match {
-            Some(panel) => (panel.placement, panel.simulation),
+        let (placement, host) = match in_match {
+            Some(panel) => (panel.placement, Some(panel.host)),
             // Loading and menu screens: the window's own pixels.
             None => (
                 PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
@@ -328,7 +325,7 @@ impl PerformanceOverlay {
             let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, tps, simulation.map(match_sample), gpu_ms);
+                .close_window(now, frame_ms, tps, host.and_then(match_sample), gpu_ms);
         }
         let mut rows = panel::rows(&frame.stats.shown);
         let mut instances = Vec::new();
@@ -493,15 +490,16 @@ impl PerformanceOverlay {
     }
 }
 
-fn match_sample(simulation: &crate::sim::world::Simulation) -> panel::MatchSample {
-    let entities = simulation.entities();
-    let structures = entities
-        .values_of_category(crate::map::entities::EntityCategory::Structure)
-        .count();
-    panel::MatchSample {
-        units: entities.len().saturating_sub(structures),
-        profile: simulation.frame_profile().totals_ns(),
-    }
+/// The figures of the match `host` holds. Its units are every object but the
+/// buildings, counted from the frame drawing reads: while a tick runs on the
+/// simulation thread, the world [`SimHost::runtime`] lends for reading is
+/// drawing's copy, which holds no objects (`Simulation::presentation_copy`).
+fn match_sample(host: &SimHost) -> Option<panel::MatchSample> {
+    let frame = host.frame()?;
+    Some(panel::MatchSample {
+        units: frame.objects().len() - frame.structures().len(),
+        profile: host.runtime()?.simulation.frame_profile().totals_ns(),
+    })
 }
 
 /// Lay `rows` out down from `placement.top` in reading order, each on its own
@@ -649,6 +647,53 @@ fn tint(rgb: [u8; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The panel counts every object but the buildings, also while a tick
+    /// runs on the simulation thread: what the host lends for reading then
+    /// is drawing's world copy, which holds no objects.
+    #[test]
+    fn the_unit_count_holds_while_a_tick_is_lent() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::{combat::Health, game_entity::GameEntity, runtime::SimRuntime};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("GTNK");
+        let yard = sim.intern("GACNST");
+        for (id, kind, category) in [
+            (1, tank, EntityCategory::Unit),
+            (2, yard, EntityCategory::Structure),
+            (3, tank, EntityCategory::Unit),
+        ] {
+            sim.entities_mut_for_test()
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    10 + id as u16,
+                    10,
+                    0,
+                    0,
+                    owner,
+                    Health::new(100),
+                    kind,
+                    category,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        let units = |host: &SimHost| match_sample(host).map(|sample| sample.units);
+        assert_eq!(units(&host), Some(2));
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        assert!(host.lend(Box::new(move |_| {
+            wait.recv().unwrap();
+            Box::new(())
+        })));
+        assert_eq!(units(&host), Some(2), "counted beside the lent tick");
+        go.send(()).unwrap();
+        assert!(host.take_job_result().is_some());
+    }
 
     #[test]
     fn simulation_rate_counts_logic_frames_not_draws() {
