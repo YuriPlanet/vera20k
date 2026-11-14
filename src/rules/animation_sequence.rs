@@ -294,6 +294,11 @@ impl ShpVehicleDeathFrames {
         self.start
             .wrapping_add(step.min(self.frames.wrapping_sub(1)))
     }
+
+    /// Every image [`Self::image`] reaches, StartDeathFrame onwards.
+    pub fn images(self) -> std::ops::Range<i32> {
+        self.start..self.start.saturating_add(self.frames.max(0))
+    }
 }
 
 /// Rules-owned divisors consumed by the shared Foot body counter.

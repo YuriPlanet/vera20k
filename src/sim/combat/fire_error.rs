@@ -990,8 +990,10 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     }
     // T20 `0x006FC2E0`: EMP (vt+0x37C; a Unit also while its death frames
     // run), except a visceroid.
-    let emp =
-        firer.emp_remaining > 0 || (class == FirerClass::Unit && firer.death_frame_counter != -1);
+    let emp = crate::sim::game_entity::GameEntity::under_emp(
+        firer.emp_remaining,
+        (class == FirerClass::Unit).then_some(firer.death_frame_counter),
+    );
     if emp
         && (class != FirerClass::Unit
             || !(firer_type.large_visceroid || firer_type.small_visceroid))
