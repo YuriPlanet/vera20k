@@ -167,9 +167,9 @@ impl ShroudKnowledge {
         true
     }
 
-    /// Cell `+0x12C &= ~0x18`, the store 577C90's receiver makes when its
-    /// counter is not negative and 577BB0's makes on every cell. Counters,
-    /// pending and the sources stay.
+    /// The knowledge half of the store 577C90's receiver makes when its
+    /// counter is not negative and 577BB0's makes on every cell (the ground
+    /// half is in `cell_reveal`). Counters, pending and the sources stay.
     pub(super) fn clear_mapped(&mut self) {
         self.open = false;
         self.transient_visible = false;

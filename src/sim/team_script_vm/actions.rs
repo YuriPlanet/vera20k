@@ -20,8 +20,9 @@
 //! - Every stock action, 0 to 64, is ported, and Ares' 67 and 68 in an Ares
 //!   game ([`action_is_ported`]). As natively, a higher action and action 2
 //!   finish nothing, so the team stays on that step for good. Where native
-//!   indexes a type array out of bounds (action 18's TeamType), the team
-//!   stays on the step instead and records the first as its refusal.
+//!   indexes a type array out of bounds, or would build a team from a
+//!   TeamType VERA holds no definition for (action 18), the team stays on
+//!   the step instead and records the first as its refusal.
 //! - Script22's LAN/WOL path remains refused: Map580BC0 reads process-current
 //!   shroud586360; native LAN guest setup5E0841..5E0931 installs its local
 //!   participant at index0, then688109 makes that House PlayerPtr. Feeding
@@ -1110,7 +1111,8 @@ impl Simulation {
     /// outcome) without setting Team+80. A member the new team's `Can_Add`
     /// refuses is left in no team. The new team runs on the next update.
     /// Native indexes the array with no bounds check; VERA keeps a team whose
-    /// argument names no TeamType on this step instead.
+    /// argument names no TeamType it can build (past the array, or a
+    /// TeamType without a definition) on this step instead.
     fn team_action_change_team(
         &mut self,
         team_id: u64,
@@ -1140,7 +1142,7 @@ impl Simulation {
                     action_id: 18,
                     argument,
                 });
-                log::warn!("Team {team_id} Script18 names no TeamType at ordinal {argument}");
+                log::warn!("Team {team_id} Script18 cannot build TeamType ordinal {argument}");
             }
             return;
         };

@@ -478,7 +478,8 @@ pub enum TeamScriptRefusal {
     UnsupportedAction {
         action_id: i32,
     },
-    /// An argument naming no type, which native indexes out of bounds.
+    /// An argument naming no type VERA can use, past the end of the native
+    /// array or without a definition.
     InvalidArgument {
         action_id: i32,
         argument: i32,

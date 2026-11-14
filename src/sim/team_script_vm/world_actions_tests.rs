@@ -172,7 +172,8 @@ fn script28_reduces_ore_under_each_member() {
 
 /// Case 36 reveals the whole map to the player (0x00577F30, NULL); case 35
 /// shrouds it again (0x00577BB0, NULL) and clears House+240, so the next
-/// RevealEntireMap is admitted.
+/// RevealEntireMap is admitted. The re-seeing pass (0x004ADFF0) is the one
+/// Execute31's GrowShroud shares, tested with it.
 #[test]
 fn script36_reveals_and_script35_shrouds_the_whole_map_again() {
     let (mut sim, rules, owner) = scene(&format!("{SCRIPTS}[RUN]\n0=36,0\n1=35,0\n"));
