@@ -15,7 +15,6 @@ use crate::map::waypoints::Waypoint;
 use crate::skirmish_launch::{LaunchCountry, SkirmishLaunchMode, SkirmishLaunchSession};
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 
-const NATIVE_START_LIMIT: u32 = 8;
 const PREVIEW_SCALE: i64 = 1_000;
 const MARKER_FRACTION_SCALE: i64 = 1_000_000;
 const MMPB_OFFSET_X: i64 = -3;
@@ -378,7 +377,10 @@ pub(crate) fn build_loading_composition(
     assignments: &[LoadingStartAssignment],
 ) -> LoadingCompositionSnapshot {
     let region = mmpb_region_rect(loading_authored_size(render_size, scale)[0]).scaled(scale);
-    let prefix = native_loading_waypoint_prefix(&map.waypoints);
+    let slot_limit = crate::map::waypoints::multiplayer_start_slot_limit(
+        crate::map::waypoints::skirmish_player_capacity(&map.ini),
+    );
+    let prefix = native_loading_waypoint_prefix(&map.waypoints, slot_limit);
     let bounds = projected_playfield_bounds(map);
 
     let mut markers = Vec::new();
@@ -432,7 +434,12 @@ pub(crate) fn build_random_map_loading_composition(
         .filter(valid_preview_buffer)
         .and_then(|mut image| {
             let fit = aspect_fit_preview(region, image.width, image.height)?;
-            let prefix = native_loading_waypoint_prefix(active_scenario_waypoints);
+            // The active array holds only the staged starts, so every staging
+            // slot is a start slot.
+            let prefix = native_loading_waypoint_prefix(
+                active_scenario_waypoints,
+                crate::map::preview::START_STAGING_SLOTS as u32,
+            );
             if let Some(bounds) = projected_playfield_bounds(launch_map) {
                 burn_black_start_indicators(&mut image, &prefix, bounds);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
@@ -565,9 +572,18 @@ pub(crate) fn scenario_start_staging(
     staging
 }
 
-/// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices 0..7.
-pub(crate) fn native_loading_waypoint_prefix(waypoints: &HashMap<u32, Waypoint>) -> Vec<Waypoint> {
-    let valid_count = (0..NATIVE_START_LIMIT)
+/// Reproduce the valid-count-then-numeric-prefix behavior over waypoint indices
+/// `0..slot_limit`.
+///
+/// gamemd's compositor `FUN_00640A40` visits waypoints 0..7. VERA extension: a
+/// map that declares 9–30 starts, or a random map staged for more than eight
+/// players, passes its larger start-slot count (the limit Gather uses), so
+/// every start gets its marker. Ordinary maps pass 8 and play as gamemd.
+pub(crate) fn native_loading_waypoint_prefix(
+    waypoints: &HashMap<u32, Waypoint>,
+    slot_limit: u32,
+) -> Vec<Waypoint> {
+    let valid_count = (0..slot_limit)
         .filter(|index| waypoints.contains_key(index))
         .count() as u32;
     (0..valid_count)
@@ -880,7 +896,7 @@ mod tests {
             (4, waypoint(4, 4, 4)),
             (5, waypoint(5, 5, 5)),
         ]);
-        let prefix = native_loading_waypoint_prefix(&waypoints);
+        let prefix = native_loading_waypoint_prefix(&waypoints, 8);
         assert_eq!(
             prefix
                 .iter()
@@ -1506,5 +1522,79 @@ mod tests {
             );
         }
         CsfFile::from_bytes(&data).expect("valid test CSF")
+    }
+
+    #[test]
+    fn more_than_eight_starts_get_a_marker_each() {
+        use crate::map::map_file::MapCell;
+        use crate::rules::ini_parser::IniFile;
+
+        let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
+            rx,
+            ry,
+            tile_index: 0,
+            sub_tile: 0,
+            z: 0,
+        };
+        let starts: HashMap<u32, Waypoint> = (0..30)
+            .map(|index| (index, waypoint(index, 70 + index as i16, 70)))
+            .collect();
+        let assignments: Vec<_> = (0..30)
+            .map(|index| LoadingStartAssignment {
+                start_index: index,
+                participant: LoadingParticipantId::Opponent(index as usize),
+                color_priority: index as u8,
+            })
+            .collect();
+        let image = DecodedPreview {
+            width: 300,
+            height: 100,
+            rgba: vec![255; 300 * 100 * 4],
+        };
+        let map = |declaration: &str| {
+            let mut map = crate::map::rmg::emit::empty_map_file(
+                &crate::map::rmg::RmgOptions::default(),
+                100,
+                100,
+            );
+            map.cells = vec![cell(60, 60), cell(60, 140), cell(140, 60)];
+            let keys: String = (0..30)
+                .map(|index| format!("{index}={}\n", 70_070 + index))
+                .collect();
+            map.ini = IniFile::from_str(&format!("[Basic]\n{declaration}[Waypoints]\n{keys}"));
+            map.waypoints = starts.clone();
+            map.preview.decoded = Some(image.clone());
+            map
+        };
+        let selected = |declaration| {
+            build_loading_composition(
+                &map(declaration),
+                &test_launch_session(),
+                None,
+                [800, 600],
+                ShellScale::RETAIL,
+                &assignments,
+            )
+            .markers
+            .len()
+        };
+        // A map declaring thirty starts marks all thirty; an ordinary map keeps
+        // gamemd's eight.
+        assert_eq!(selected("MaxPlayers=30\n"), 30);
+        assert_eq!(selected(""), 8);
+        // A random map staged for thirty players marks every staged start.
+        let random = build_random_map_loading_composition(
+            &test_launch_session(),
+            None,
+            [800, 600],
+            ShellScale::RETAIL,
+            Some(image.clone()),
+            &map(""),
+            &starts,
+            &assignments,
+        );
+        assert_eq!(random.markers.len(), 30);
+        assert_eq!(random.markers[29].color_priority, 29);
     }
 }
