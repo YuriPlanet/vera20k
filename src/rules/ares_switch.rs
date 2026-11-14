@@ -59,8 +59,9 @@
 //!
 //! Still decided by the build feature, not this switch, until each moves to
 //! it (AGENTS.md): every remaining `cfg(feature = "ares")` site (the
-//! client's match screens, sidebar, input and drawing, the skirmish shell and
-//! the random map generator) and the spawn file's Country and Side limits. A
+//! client's messages, superweapon targeting, input and drawing, the skirmish
+//! shell and the random map generator) and the spawn file's Country and Side
+//! limits. A
 //! game turned on by its keys alone, without `ares.mix`, still loads its INIs
 //! and reads its Rules the stock way.
 

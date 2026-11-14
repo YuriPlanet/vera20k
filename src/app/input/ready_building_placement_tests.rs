@@ -178,7 +178,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
     let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
     let additions = production::initial_construction_options(&sim, &rules);
-    projection.reconcile_cameos(owner, &candidates, 12, &additions);
+    projection.reconcile_cameos(owner, &candidates, 12, &additions, false);
     let starting_credits = production::credits_for_owner(&sim, "Americans");
     let total_cost: i32 = ["GAPOWR", "GAPILL"]
         .iter()
@@ -267,9 +267,13 @@ fn refresh_fixture_sidebar(
         .needs_cameo_seed(fixture.owner)
         .then(|| production::initial_construction_options(&fixture.sim, &fixture.rules))
         .unwrap_or_default();
-    fixture
-        .projection
-        .reconcile_cameos(fixture.owner, &candidates, visible_rows, &seed_additions);
+    fixture.projection.reconcile_cameos(
+        fixture.owner,
+        &candidates,
+        visible_rows,
+        &seed_additions,
+        false,
+    );
     fixture
         .projection
         .reconcile_factory_links(&fixture.sim, fixture.owner);

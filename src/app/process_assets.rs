@@ -594,7 +594,6 @@ impl ProcessAssets {
 
     /// The side's `DialogBackground.Image/.Palette` pair for the shell dialog
     /// chrome, or `None` to keep the stock per-side backgrounds.
-    #[cfg(feature = "ares")]
     pub(crate) fn side_dialog_background(&self, side: i32) -> Option<(String, String)> {
         self.native_rules
             .as_ref()

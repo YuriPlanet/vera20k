@@ -26,6 +26,7 @@ impl CameoStrips {
         candidates: &[Cameo],
         rows: usize,
         recheck: bool,
+        ares: bool,
     ) -> super::cameo_order::CameoReconcile {
         let additions: Vec<_> = candidates
             .iter()
@@ -34,7 +35,7 @@ impl CameoStrips {
                 _ => None,
             })
             .collect();
-        self.reconcile(candidates, rows, recheck, &additions)
+        self.reconcile(candidates, rows, recheck, &additions, ares)
     }
 }
 
@@ -127,19 +128,22 @@ fn pending_clock_strip() -> (CameoStrips, CameoId) {
     let mut interner = StringInterner::new();
     let id = CameoId::Object(interner.intern("E2"));
     let mut strips = CameoStrips::default();
-    strips.insert(&Cameo {
-        id,
-        tab: SidebarTab::Infantry,
-        available: true,
-        key: CameoKey::Techno {
-            own_side: true,
-            considered_aircraft: false,
-            naval: false,
-            tech_level: 1,
-            cost: 100,
-            name: "E2".into(),
+    strips.insert(
+        &Cameo {
+            id,
+            tab: SidebarTab::Infantry,
+            available: true,
+            key: CameoKey::Techno {
+                own_side: true,
+                considered_aircraft: false,
+                naval: false,
+                tech_level: 1,
+                cost: 100,
+                name: "E2".into(),
+            },
         },
-    });
+        false,
+    );
     (strips, id)
 }
 
@@ -213,7 +217,7 @@ fn pending_strip_clock_hold_no_init_and_limit_match_original_histories() {
                 "strip_no_init" | "held_no_init" | "unlinked_held_no_init" => {
                     strips.restore_requests(strips.saved_requests(), frame);
                 }
-                "strip_clear" => strips.retain(0, |_| false),
+                "strip_clear" => strips.retain(0, |_| false, false),
                 _ => {} // Factory/event operations do not own this clock.
             }
             if phase["after"]["total_entries"] == 0 {
@@ -248,7 +252,6 @@ fn pending_strip_clock_hold_no_init_and_limit_match_original_histories() {
 // The native insertion order and top row: Ares 3.0 inserts at its own
 // lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
 // a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_trigger_tabs_and_cameo_flash_deadlines() {
     let native = trigger_corpus();
@@ -261,15 +264,19 @@ fn original_trigger_tabs_and_cameo_flash_deadlines() {
         .filter(|item| fixture.name(item.id) != "UNLISTED")
         .collect();
     let mut initial = CameoStrips::default();
-    initial.reconcile_fixture(&candidates, 3, true);
+    initial.reconcile_fixture(&candidates, 3, true, false);
     fixture.assert_order(&initial, &native["order"], "114/115 initial order");
     for control in native["tab_controls"].as_array().unwrap() {
         let mut strips = initial.clone();
         let counts = control["counts"].as_array().unwrap();
-        strips.retain(3, |id| {
-            let item = candidates.iter().find(|item| item.id == id).unwrap();
-            counts[item.tab.tab_index()].as_u64().unwrap() != 0
-        });
+        strips.retain(
+            3,
+            |id| {
+                let item = candidates.iter().find(|item| item.id == id).unwrap();
+                counts[item.tab.tab_index()].as_u64().unwrap() != 0
+            },
+            false,
+        );
         assert_eq!(
             strips
                 .selectable_tab(control["index"].as_i64().unwrap() as i32)
@@ -302,7 +309,7 @@ fn original_trigger_tabs_and_cameo_flash_deadlines() {
                 control["duration"].as_i64().unwrap() as i32,
                 control["frame"].as_i64().unwrap() as i32,
                 index_of,
-                crate::rules::ARES_BUILD,
+                false,
             );
         }
         let (deadlines, redraw_until) = strips.saved_flash();
@@ -338,7 +345,7 @@ fn original_trigger_tabs_and_cameo_flash_deadlines() {
             control["duration"].as_i64().unwrap() as i32,
             control["frame"].as_i64().unwrap() as i32,
             index_of,
-            crate::rules::ARES_BUILD,
+            false,
         );
         let (deadlines, redraw_until) = strips.saved_flash();
         assert_eq!(
@@ -365,7 +372,7 @@ fn original_flash_signed_frame_phase() {
         .find(|item| fixture.name(item.id) == "E2")
         .unwrap();
     let mut strips = CameoStrips::default();
-    strips.insert(&infantry);
+    strips.insert(&infantry, false);
     for control in native["draw_controls"].as_array().unwrap() {
         let deadline = control[0].as_i64().unwrap() as i32;
         strips.restore_flash([vec![], vec![], vec![deadline], vec![]], 0);
@@ -589,7 +596,7 @@ fn replay_history(context: &Value) {
                 .iter()
                 .find(|item| fixture.name(item.id) == name.as_str().unwrap())
                 .unwrap();
-            assert!(strips.insert(item));
+            assert!(strips.insert(item, false));
         }
         fixture.assert_order(
             &strips,
@@ -608,7 +615,7 @@ fn replay_history(context: &Value) {
                     .find(|item| fixture.name(item.id) == name)
                     .unwrap();
                 assert_eq!(
-                    strips.insert(item),
+                    strips.insert(item, false),
                     step["accepted"].as_bool().unwrap(),
                     "{label}, {name}"
                 );
@@ -637,10 +644,14 @@ fn replay_history(context: &Value) {
             }
             "recalculate" => {
                 let tab = step["tab"].as_u64().unwrap() as usize;
-                strips.retain(3, |id| {
-                    let item = candidates.iter().find(|item| item.id == id).unwrap();
-                    item.tab.tab_index() != tab || !unavailable.contains(&id)
-                });
+                strips.retain(
+                    3,
+                    |id| {
+                        let item = candidates.iter().find(|item| item.id == id).unwrap();
+                        item.tab.tab_index() != tab || !unavailable.contains(&id)
+                    },
+                    false,
+                );
             }
             "init_clear" => strips = CameoStrips::default(),
             other => panic!("uncovered native history action {other}"),
@@ -654,7 +665,6 @@ fn replay_history(context: &Value) {
 // The native insertion order and top row: Ares 3.0 inserts at its own
 // lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
 // a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_histories_preserve_survivors_and_reinsert_using_current_costs() {
     let corpus = corpus();
@@ -666,14 +676,12 @@ fn original_histories_preserve_survivors_and_reinsert_using_current_costs() {
 }
 
 // Ares 3.0 keeps its own unbounded cameo vector per tab, so the native 75-entry
-// capacity history does not hold in an `ares` build.
-#[cfg(not(feature = "ares"))]
+// capacity history does not hold when Ares plays in the game (`RuleSet::ares`).
 #[test]
 fn original_capacity_gate_and_duplicate_rejection_do_not_move_entries() {
     replay_history(&corpus()["capacity_history"]);
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
     let corpus = corpus();
@@ -692,7 +700,7 @@ fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
     let mut strips = CameoStrips::default();
     assert!(
         strips
-            .reconcile_fixture(&candidates, 3, true)
+            .reconcile_fixture(&candidates, 3, true, false)
             .build_inserted()
     );
     fixture.assert_order(&strips, &context["initial_order"], "initial reconciliation");
@@ -703,14 +711,14 @@ fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
     }
     assert!(
         !strips
-            .reconcile_fixture(&candidates, 3, true)
+            .reconcile_fixture(&candidates, 3, true, false)
             .build_inserted(),
         "full strip rejects the new item before removing the old one"
     );
     fixture.assert_order(&strips, &steps[2]["order"], "first reconciliation");
     assert!(
         strips
-            .reconcile_fixture(&candidates, 3, true)
+            .reconcile_fixture(&candidates, 3, true, false)
             .build_inserted()
     );
     fixture.assert_order(&strips, &steps[3]["order"], "second reconciliation");
@@ -747,7 +755,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
 
     // The first entry of an empty sidebar selects its own strip.
     let mut strips = CameoStrips::default();
-    let first = strips.reconcile_fixture(&[cameo(unit, SidebarTab::Vehicle)], 3, true);
+    let first = strips.reconcile_fixture(&[cameo(unit, SidebarTab::Vehicle)], 3, true, false);
     assert_eq!(
         first.transitions().tab_button_disabled(SidebarTab::Vehicle),
         Some(false)
@@ -762,7 +770,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
         cameo(unit, SidebarTab::Vehicle),
         cameo(building, SidebarTab::Building),
     ];
-    let second = strips.reconcile_fixture(&populated, 3, true);
+    let second = strips.reconcile_fixture(&populated, 3, true, false);
     assert_eq!(
         second
             .transitions()
@@ -775,7 +783,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
     // button and re-checks the active tab against the first populated strip.
     let mut pruned = populated;
     pruned[0].available = false;
-    let third = strips.reconcile_fixture(&pruned, 3, true);
+    let third = strips.reconcile_fixture(&pruned, 3, true, false);
     assert_eq!(
         third.transitions().tab_button_disabled(SidebarTab::Vehicle),
         Some(true)
@@ -794,7 +802,7 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
 
     // Re-reconciling the now empty vehicle strip reports no transition: it was
     // already empty, so native never disabled its button on this pass.
-    let fourth = strips.reconcile_fixture(&[cameo(building, SidebarTab::Building)], 3, true);
+    let fourth = strips.reconcile_fixture(&[cameo(building, SidebarTab::Building)], 3, true, false);
     assert_eq!(
         fourth
             .transitions()
@@ -870,11 +878,13 @@ fn original_complete_recalculate_preserves_order_and_adjusts_each_strip_scroll()
             .iter()
             .map(|name| name.as_str().unwrap())
             .collect();
-        strips.retain(case["visible_slots"].as_u64().unwrap() as usize / 2, |id| {
-            !removed.contains(fixture.name(id))
-        });
-        // Ares 3.0 replaces Recalculate's TopRow rule (see `retain`).
-        #[cfg(not(feature = "ares"))]
+        // Ares 3.0 replaces Recalculate's TopRow rule (see `retain`); this
+        // replays the stock one.
+        strips.retain(
+            case["visible_slots"].as_u64().unwrap() as usize / 2,
+            |id| !removed.contains(fixture.name(id)),
+            false,
+        );
         assert_eq!(
             strips.scroll_row(SidebarTab::Vehicle),
             case["top_row_after"].as_u64().unwrap() as usize,
@@ -964,7 +974,6 @@ fn scroll_commands_queue_one_row_each_until_the_next_visit() {
 /// Ares.dll 1002C160, hook 0x6A63B7; `StripClass_AddCameo_ReplaceItAll`
 /// Ares.dll 1002C2D0, hook 0x6A8710) and runs `FlashCameo` (Ares.dll 1002C1D0,
 /// hook 0x6AC6D9) over the whole tab vector. Duplicates are still rejected.
-#[cfg(feature = "ares")]
 #[test]
 fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
     let mut interner = StringInterner::new();
@@ -986,9 +995,12 @@ fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
     };
     let mut strips = CameoStrips::default();
     for id in &ids {
-        assert!(strips.insert(&cameo(*id)));
+        assert!(strips.insert(&cameo(*id), true));
     }
-    assert!(!strips.insert(&cameo(ids[0])), "an identity enters once");
+    assert!(
+        !strips.insert(&cameo(ids[0]), true),
+        "an identity enters once"
+    );
     assert_eq!(strips.items(SidebarTab::Vehicle).len(), ids.len());
 
     // The last-admitted type (index 119) is the 120th entry of the strip.
@@ -1002,7 +1014,7 @@ fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
         30,
         1000,
         index_of,
-        crate::rules::ARES_BUILD,
+        true,
     );
     let (deadlines, _) = strips.saved_flash();
     let at = strips
@@ -1053,20 +1065,22 @@ fn an_equal_key_enters_before_the_existing_cameo_unless_ares_lower_bounds_it() {
         },
     };
     let (first, second) = (twin("FIRST"), twin("SECOND"));
-    let mut strips = CameoStrips::default();
-    assert!(strips.insert(&first));
-    assert!(strips.insert(&second));
-    let order: Vec<_> = strips
-        .items(SidebarTab::Vehicle)
-        .iter()
-        .map(|item| item.id)
-        .collect();
-    let expected = if cfg!(feature = "ares") {
-        [first.id, second.id]
-    } else {
-        [second.id, first.id]
-    };
-    assert_eq!(order, expected);
+    for ares in [false, true] {
+        let mut strips = CameoStrips::default();
+        assert!(strips.insert(&first, ares));
+        assert!(strips.insert(&second, ares));
+        let order: Vec<_> = strips
+            .items(SidebarTab::Vehicle)
+            .iter()
+            .map(|item| item.id)
+            .collect();
+        let expected = if ares {
+            [first.id, second.id]
+        } else {
+            [second.id, first.id]
+        };
+        assert_eq!(order, expected);
+    }
 }
 
 /// Twelve cameos, two visible rows, scrolled to row 2 (top = U4). Native
@@ -1076,18 +1090,17 @@ fn an_equal_key_enters_before_the_existing_cameo_unless_ares_lower_bounds_it() {
 /// U4, because `lower_bound` passes the cameo itself).
 #[test]
 fn ares_recalculate_keeps_the_top_cameo_row_where_native_jumps() {
-    let after = |removed: &str| {
-        let cameos = costed_vehicle_cameos(12);
-        let gone = cameos.iter().find(|c| c.key.name() == removed).unwrap().id;
-        let mut strips = CameoStrips::from_retained([vec![], vec![], vec![], cameos], [0, 0, 0, 2]);
-        strips.retain(2, |id| id != gone);
-        strips.scroll_row(SidebarTab::Vehicle)
-    };
-    let (later, earlier) = if cfg!(feature = "ares") {
-        (2, 2)
-    } else {
-        (3, 3)
-    };
-    assert_eq!(after("U11"), later);
-    assert_eq!(after("U0"), earlier);
+    for ares in [false, true] {
+        let after = |removed: &str| {
+            let cameos = costed_vehicle_cameos(12);
+            let gone = cameos.iter().find(|c| c.key.name() == removed).unwrap().id;
+            let mut strips =
+                CameoStrips::from_retained([vec![], vec![], vec![], cameos], [0, 0, 0, 2]);
+            strips.retain(2, |id| id != gone, ares);
+            strips.scroll_row(SidebarTab::Vehicle)
+        };
+        let (later, earlier) = if ares { (2, 2) } else { (3, 3) };
+        assert_eq!(after("U11"), later);
+        assert_eq!(after("U0"), earlier);
+    }
 }

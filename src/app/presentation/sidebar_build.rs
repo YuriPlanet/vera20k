@@ -345,19 +345,18 @@ pub(crate) struct CameoStatusLabels<'a> {
     pub hold: &'a str,
     pub charging: &'a str,
     pub active: &'a str,
-    /// Ares: each type's localized `Text.*` labels ([`ares_status_texts`]).
-    #[cfg(feature = "ares")]
+    /// Ares: each type's localized `Text.*` labels ([`ares_status_texts`]);
+    /// `None` unless Ares plays in the game (`RuleSet::ares`).
     pub ares: Option<&'a AresStatusTexts>,
 }
 
 /// Each SuperWeaponType's localized NameReadiness texts, keyed by its
 /// upper-case section: Preparing, Hold, Ready, Charging, Active; an empty
 /// label resolves to no text.
-#[cfg(feature = "ares")]
 pub(crate) type AresStatusTexts = std::collections::HashMap<String, [String; 5]>;
 
-/// Resolve every type's Ares `Text.*` labels through the shared CSF owner.
-#[cfg(feature = "ares")]
+/// Resolve every type's Ares `Text.*` labels through the shared CSF owner,
+/// once per match (`install_world_presentation`).
 pub(crate) fn ares_status_texts(
     rules: &crate::rules::ruleset::RuleSet,
     text: impl Fn(&str) -> String,
@@ -390,6 +389,7 @@ pub(crate) fn ares_status_texts(
 
 /// `SuperClass::NameReadiness6CC2B0` status label; `None` while it has no
 /// status text. Shared by the right cameo strip and the left sidebar button.
+/// When Ares plays in the game (`RuleSet::ares`, carried by `labels.ares`),
 /// Ares's replacement (hook 6CC2B0, Ares.dll 100356A0) returns the type's
 /// `Text.*` label, `Text.Preparing` without a status, and nothing for an
 /// empty label.
@@ -399,7 +399,6 @@ pub(crate) fn superweapon_status_label<'a>(
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
     use crate::sim::superweapon::SuperWeaponStatus;
-    #[cfg(feature = "ares")]
     if let (Some(texts), Some(section)) = (labels.ares, section)
         && let Some(texts) = texts.get(&section.to_ascii_uppercase())
     {
@@ -412,8 +411,6 @@ pub(crate) fn superweapon_status_label<'a>(
         }];
         return (!text.is_empty()).then_some(text.as_str());
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = section;
     display.status.map(|status| match status {
         SuperWeaponStatus::Hold => labels.hold,
         SuperWeaponStatus::Ready => labels.ready,
@@ -1147,7 +1144,6 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Firestorm On",
-            #[cfg(feature = "ares")]
             ares: None,
         };
         let display = SuperWeaponDisplay {
@@ -1240,11 +1236,11 @@ mod tests {
     /// this, a held or unaffordable item looked identical to an idle one.
     /// Ares NameReadiness (hook 6CC2B0, 100356A0): per-type `Text.*`,
     /// Text.Preparing without a status, nothing for an empty label.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_status_label_reads_the_type_texts() {
         use super::{CameoStatusLabels, ares_status_texts, superweapon_status_label};
         use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus as S};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[SuperWeaponTypes]\n0=Sonar\n[Sonar]\nText.Preparing=TXT_WAIT\n\
@@ -1289,7 +1285,6 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Active",
-            #[cfg(feature = "ares")]
             ares: None,
         };
 

@@ -1854,6 +1854,7 @@ mod tests {
         let starts = test_launch_starts();
         let map = test_map_with_starts(&starts);
         let rules = test_standard_launch_rules();
+        let ares = rules.ares();
         let roster = roster_with_neutral_and_playable();
 
         for (country, expected_theme) in [
@@ -1887,8 +1888,9 @@ mod tests {
             let side = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
+                ares,
             );
-            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side);
+            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side, ares);
             assert_eq!(
                 actual, expected_theme,
                 "{country:?} launch owner must reach its live side theme"
@@ -1908,14 +1910,11 @@ mod tests {
             let selected = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
+                ares,
             );
             assert_eq!(
                 selected,
-                if cfg!(feature = "ares") {
-                    3
-                } else {
-                    expected_side
-                },
+                if ares { 3 } else { expected_side },
                 "actual Scenario.Side and development owner have separate authority"
             );
         }

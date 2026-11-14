@@ -1392,23 +1392,19 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .as_ref()
         .map(|csf| csf.text("TXT_FIRESTORM_ON"))
         .unwrap_or_else(|| std::borrow::Cow::Borrowed("Firestorm On"));
-    #[cfg(feature = "ares")]
-    let ares_texts = state.rules().map(|rules| {
-        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .map_or_else(|| label.to_owned(), |csf| csf.text(label).into_owned())
-        })
-    });
+    // Ares hook 6CC2B0 labels, resolved once per match
+    // (`install_world_presentation`), only when Ares plays in the game.
+    let ares_texts = state
+        .match_state
+        .match_presentation
+        .ares_status_texts
+        .as_ref();
     let status_labels = crate::app::presentation::sidebar_build::CameoStatusLabels {
         ready: ready_text.as_ref(),
         hold: hold_text.as_ref(),
         charging: charging_text.as_ref(),
         active: active_text.as_ref(),
-        #[cfg(feature = "ares")]
-        ares: ares_texts.as_ref(),
+        ares: ares_texts,
     };
     // StripClass::Draw packs the B0FA1C side colour into the 16-bit surface
     // format before drawing its labels (6A9BF3..6A9C46).
