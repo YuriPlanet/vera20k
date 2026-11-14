@@ -164,6 +164,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
         &sim.house_alliances,
         &mut sim.houses,
         owner,
+        false,
     );
     assert_eq!(sim.houses[&owner].enemy_house(), None);
 
@@ -182,6 +183,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
         &restored.house_alliances,
         &mut restored.houses,
         owner,
+        false,
     );
     assert_eq!(restored.houses[&owner].enemy_house(), Some(names[1]));
 }
@@ -648,7 +650,16 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         anger.insert(second, 7);
     }
 
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 0, true);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        first,
+        0,
+        true,
+        false,
+    );
     assert_eq!(houses[&owner].enemy_house(), Some(first));
 
     houses
@@ -656,7 +667,16 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .set_enemy_house_for_test(None);
     let missing_score = houses[&owner].grudge_scores()[&missing];
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, missing, 5, true);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        missing,
+        5,
+        true,
+        false,
+    );
     assert_eq!(houses[&owner].grudge_scores()[&missing], missing_score);
     assert_eq!(
         houses[&owner].enemy_house(),
@@ -674,7 +694,16 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .grudge_scores_mut_for_test()
         .insert(second, 1);
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 1, true);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        first,
+        1,
+        true,
+        false,
+    );
     assert_eq!(houses[&owner].grudge_scores()[&first], i32::MIN);
     assert_eq!(houses[&owner].enemy_house(), Some(second));
 
@@ -686,6 +715,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         unregistered,
         5,
         true,
+        false,
     );
     assert!(!houses[&owner].grudge_scores().contains_key(&unregistered));
     assert_eq!(houses[&owner].enemy_house(), Some(second));
@@ -694,7 +724,16 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .grudge_scores_mut_for_test()
         .insert(second, 0);
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, owner, 5, true);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        owner,
+        5,
+        true,
+        false,
+    );
     assert!(!houses[&owner].grudge_scores().contains_key(&owner));
     assert_eq!(houses[&owner].enemy_house(), None);
 }
@@ -719,10 +758,28 @@ fn ares_passive_peer_takes_no_anger_outside_a_campaign() {
         .grudge_scores_mut_for_test()
         .insert(enemy, 3);
     let alliances = HouseAlliances::default();
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, passive, 9, true);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        passive,
+        9,
+        true,
+        false,
+    );
     assert!(!houses[&owner].grudge_scores().contains_key(&passive));
     assert_eq!(houses[&owner].enemy_house(), Some(enemy));
-    update_anger_nodes(&mut houses, &alliances, &interner, owner, passive, 9, false);
+    update_anger_nodes(
+        &mut houses,
+        &alliances,
+        &interner,
+        owner,
+        passive,
+        9,
+        false,
+        false,
+    );
     assert_eq!(houses[&owner].grudge_scores().get(&passive), Some(&9));
     assert_eq!(houses[&owner].enemy_house(), Some(passive));
 }
@@ -754,6 +811,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         first,
         0,
         true,
+        false,
     );
     assert!(!houses[&owner].grudge_scores().contains_key(&first));
     assert_eq!(houses[&owner].enemy_house(), Some(second));
@@ -775,6 +833,7 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
         first,
         -5,
         true,
+        false,
     );
     assert_eq!(houses[&owner].grudge_scores().get(&first), Some(&0));
     assert_eq!(houses[&owner].enemy_house(), Some(second));
@@ -968,4 +1027,75 @@ fn non_bincode_missing_house_field_uses_native_constructor_defaults() {
         *restored.strategy_timer(),
         crate::sim::house_state::strategy_timer_at_construction()
     );
+}
+
+/// Three houses with base centres: H0 far from H1, H2 beside it.
+fn houses_with_bases() -> (Simulation, Vec<InternedId>) {
+    let (mut sim, names) = houses(true, 3);
+    for (&name, cell) in names.iter().zip([(100, 100), (20, 20), (25, 20)]) {
+        sim.houses
+            .get_mut(&name)
+            .unwrap()
+            .set_base_center_for_test(Some(cell));
+    }
+    (sim, names)
+}
+
+#[test]
+fn ai_nearest_enemy_key_reads_off_by_default() {
+    let off = RuleSet::from_ini(&IniFile::from_str("[General]\n")).unwrap();
+    assert!(!off.general.ai_nearest_enemy);
+    let on = RuleSet::from_ini(&IniFile::from_str("[General]\nAINearestEnemy=yes\n")).unwrap();
+    assert!(on.general.ai_nearest_enemy);
+}
+
+#[test]
+fn ai_nearest_enemy_search_picks_the_nearest_base_instead_of_the_first_house() {
+    for (nearest, expected) in [(false, 0), (true, 2)] {
+        let (mut sim, names) = houses_with_bases();
+        pick_enemy(
+            &sim.interner,
+            &sim.session,
+            &sim.house_alliances,
+            &mut sim.houses,
+            names[1],
+            nearest,
+        );
+        assert_eq!(
+            sim.houses[&names[1]].enemy_house(),
+            Some(names[expected]),
+            "AINearestEnemy={nearest}"
+        );
+    }
+}
+
+#[test]
+fn ai_nearest_enemy_breaks_equal_anger_by_distance_and_keeps_higher_anger() {
+    let (mut sim, names) = houses_with_bases();
+    let owner = names[1];
+    {
+        let anger = sim
+            .houses
+            .get_mut(&owner)
+            .unwrap()
+            .grudge_scores_mut_for_test();
+        anger.insert(names[0], 1);
+        anger.insert(names[2], 1);
+    }
+    let mut rescan = |sim: &mut Simulation, peer, delta, nearest| {
+        update_anger_nodes(
+            &mut sim.houses,
+            &sim.house_alliances,
+            &sim.interner,
+            owner,
+            peer,
+            delta,
+            true,
+            nearest,
+        );
+        sim.houses[&owner].enemy_house()
+    };
+    assert_eq!(rescan(&mut sim, names[0], 0, false), Some(names[0]));
+    assert_eq!(rescan(&mut sim, names[0], 0, true), Some(names[2]));
+    assert_eq!(rescan(&mut sim, names[0], 5, true), Some(names[0]));
 }
