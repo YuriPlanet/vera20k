@@ -662,6 +662,7 @@ impl SlotScene {
             viewer_id,
             record,
             &super::every_slot_anim(sim, record),
+            &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,
             crate::render::batch::DepthAxis::NONE.world_height,

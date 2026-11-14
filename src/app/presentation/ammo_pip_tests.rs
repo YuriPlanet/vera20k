@@ -14,7 +14,7 @@ fn frames(sim: &Simulation, rules: &RuleSet, id: u64, hover: Option<u64>) -> Vec
         sim,
         frame.object(id).unwrap(),
         hover,
-        Some(sim.interner().resolve(entity.owner())),
+        Some(entity.owner()),
         rules,
     )
     .into_iter()

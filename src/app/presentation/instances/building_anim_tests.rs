@@ -189,6 +189,7 @@ fn emit_admitted(
         Some(building.owner()),
         building,
         &slot_anims,
+        &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
         &|_| 0,
         0.0,
         10000.0,

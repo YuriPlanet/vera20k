@@ -18,8 +18,6 @@
 //! results that depend on the world, the committed binary frame and the
 //! local player, never on the camera, the cursor or render caches.
 
-use std::collections::HashMap;
-
 use crate::app::presentation::instances::TetherDraw;
 use crate::app::presentation::render_pose::RenderPose;
 use crate::map::entities::EntityCategory;
@@ -1171,7 +1169,7 @@ pub(crate) struct PresentationFrame {
     >,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
-    anim_coords: HashMap<u64, crate::sim::anim_class::AnimWorldCoord>,
+    anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
     /// What the scene's other drawers read of the world's objects
     /// (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
@@ -1218,10 +1216,7 @@ impl PresentationFrame {
             },
         );
         let scene = scene.expect("captured beside the records");
-        let anim_coords = sim
-            .anims()
-            .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
-            .collect();
+        let anim_coords = sim.anim_absolute_coords().collect();
         let psychic_detection = at.psychic.is_some();
         let mut ids = Vec::with_capacity(objects.len());
         let mut spans = Vec::with_capacity(objects.len());

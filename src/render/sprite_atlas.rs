@@ -1443,14 +1443,32 @@ pub(crate) fn anim_remap_color(
     interner: &crate::sim::intern::StringInterner,
     house_colors: &HouseColorMap,
 ) -> Option<HouseColorIndex> {
+    anim_remap_color_with(anim, |house| house_scheme(interner, house_colors, house))
+}
+
+/// [`anim_remap_color`], with each house's scheme from `scheme`: a draw that
+/// meets many Anims of one house looks it up once.
+pub(crate) fn anim_remap_color_with(
+    anim: &crate::sim::anim_class::AnimObject,
+    scheme: impl FnOnce(crate::sim::intern::InternedId) -> HouseColorIndex,
+) -> Option<HouseColorIndex> {
     use crate::sim::anim_class::AnimRemap;
     Some(match anim.remap()? {
         AnimRemap::ColorScheme(color) => color,
-        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme { house, .. } => house_colors
-            .get(interner.resolve(house))
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP),
+        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme { house, .. } => scheme(house),
     })
+}
+
+/// House `house`'s colour scheme in `house_colors`, or none.
+pub(crate) fn house_scheme(
+    interner: &crate::sim::intern::StringInterner,
+    house_colors: &HouseColorMap,
+    house: crate::sim::intern::InternedId,
+) -> HouseColorIndex {
+    house_colors
+        .get(interner.resolve(house))
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP)
 }
 
 /// The palette a remapped anim's scheme is built on: the unit palette, or
