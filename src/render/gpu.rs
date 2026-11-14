@@ -163,14 +163,17 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 }
 
 /// The window's surface and the picture taken from it ahead of the next draw.
-struct WindowSurface {
+///
+/// Generic over the surface and its picture only so a test can stand a slow
+/// screen in for them.
+struct WindowSurface<S = wgpu::Surface<'static>, T = wgpu::SurfaceTexture> {
     /// Taken by the hand-off thread once it presented the last picture
     /// ([`GpuContext::hand_off_frame`]). Dropped before every configure, as
     /// wgpu asks of an acquired texture. Declared first, so it also drops
     /// before its surface: wgpu discards it through the surface, and panics
     /// when the surface is gone.
-    next: Option<wgpu::SurfaceTexture>,
-    surface: Option<wgpu::Surface<'static>>,
+    next: Option<T>,
+    surface: Option<S>,
 }
 
 impl WindowSurface {
@@ -184,8 +187,8 @@ impl WindowSurface {
 }
 
 /// The surface, shared with the hand-off thread.
-struct SharedSurface {
-    slot: Mutex<WindowSurface>,
+struct SharedSurface<S = wgpu::Surface<'static>, T = wgpu::SurfaceTexture> {
+    slot: Mutex<WindowSurface<S, T>>,
     /// True from a hand-off until its tail has the next picture or gave up:
     /// a draw then would wait for the screen ([`GpuContext::screen_busy`]).
     taking: AtomicBool,
@@ -200,8 +203,8 @@ struct SharedSurface {
     wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
-impl SharedSurface {
-    fn new(surface: wgpu::Surface<'static>) -> Self {
+impl<S: Send + 'static, T: Send + 'static> SharedSurface<S, T> {
+    fn new(surface: S) -> Self {
         Self {
             slot: Mutex::new(WindowSurface {
                 next: None,
@@ -216,13 +219,13 @@ impl SharedSurface {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, WindowSurface> {
+    fn lock(&self) -> MutexGuard<'_, WindowSurface<S, T>> {
         self.slot.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Lock the slot once no tail is taking a picture, so an acquire never
     /// takes a second one beside it.
-    fn lock_taken(&self) -> MutexGuard<'_, WindowSurface> {
+    fn lock_taken(&self) -> MutexGuard<'_, WindowSurface<S, T>> {
         let mut slot = self.lock();
         while self.taking.load(Ordering::Acquire) {
             slot = self
@@ -233,18 +236,38 @@ impl SharedSurface {
         slot
     }
 
+    /// Whether a hand-off's tail is still taking the next picture.
+    fn busy(&self) -> bool {
+        self.taking.load(Ordering::Acquire)
+    }
+
+    /// Run `job` (submit and present) on the hand-off thread, then take the
+    /// next picture with `acquire` as its tail: waits and queue users go on
+    /// once `job` ended, while the tail may still wait for the screen.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn hand_off(
+        self: &Arc<Self>,
+        handoff: &super::frame_handoff::FrameHandoff,
+        job: impl FnOnce() + Send + 'static,
+        acquire: impl FnOnce(&S) -> Option<T> + Send + 'static,
+    ) {
+        self.taking.store(true, Ordering::Release);
+        let surface = Arc::clone(self);
+        handoff.send_with_tail(job, move || surface.take_next(acquire));
+    }
+
     /// The hand-off's tail: take the next picture now, so the wait for a
     /// free one (the screen's refresh, with VSync on) is spent here and not
-    /// in the next draw. Anything but a plain success is left to that draw's
-    /// own acquire and its recovery.
+    /// in the next draw. `acquire` answers `None` for anything but a plain
+    /// success, which is left to that draw's own acquire and its recovery.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-    fn take_next(&self) {
+    fn take_next(&self, acquire: impl FnOnce(&S) -> Option<T>) {
         /// Ends `taking` and wakes the loop even if the acquire panics.
-        struct Taken<'a>(&'a SharedSurface);
-        impl Drop for Taken<'_> {
+        struct Taken<'a, S, T>(&'a SharedSurface<S, T>);
+        impl<S, T> Drop for Taken<'_, S, T> {
             fn drop(&mut self) {
                 // Under the lock, so `lock_taken` cannot miss the signal.
-                let slot = self.0.lock();
+                let slot = self.0.slot.lock().unwrap_or_else(PoisonError::into_inner);
                 self.0.taking.store(false, Ordering::Release);
                 drop(slot);
                 self.0.taken.notify_all();
@@ -264,9 +287,8 @@ impl SharedSurface {
         let mut slot = self.lock();
         if slot.next.is_none()
             && let Some(surface) = &slot.surface
-            && let wgpu::CurrentSurfaceTexture::Success(texture) = surface.get_current_texture()
         {
-            slot.next = Some(texture);
+            slot.next = acquire(surface);
         }
     }
 }
@@ -625,10 +647,12 @@ impl GpuContext {
         // Captures draw into their own target and take none.
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         if self.capture_target.is_none() {
-            let surface = Arc::clone(&self.surface);
-            surface.taking.store(true, Ordering::Release);
-            self.handoff
-                .send_with_tail(job, move || surface.take_next());
+            self.surface.hand_off(&self.handoff, job, |surface| {
+                match surface.get_current_texture() {
+                    wgpu::CurrentSurfaceTexture::Success(texture) => Some(texture),
+                    _ => None,
+                }
+            });
             return super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter());
         }
         self.handoff.send(job);
@@ -639,7 +663,7 @@ impl GpuContext {
     /// now would wait for the screen. The frame loop services the match
     /// instead and draws when the wake set here comes.
     pub(crate) fn screen_busy(&self) -> bool {
-        self.surface.taking.load(Ordering::Acquire)
+        self.surface.busy()
     }
 
     /// Have the hand-off thread call `wake` when it has the next picture.
@@ -959,8 +983,57 @@ mod tests {
     use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
     use super::{
-        CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on, present_settings,
+        CaptureTarget, SharedSurface, SurfaceRecovery, acquire_with_recovery, block_on,
+        present_settings,
     };
+
+    /// The game never waits for the screen. With a screen that is slow to
+    /// give its next picture, a hand-off leaves this thread free at once:
+    /// waits return, the surface reports busy (the frame loop then services
+    /// ticks instead of drawing), and the wake comes with the picture, which
+    /// the next acquire uses.
+    #[test]
+    fn a_slow_screen_keeps_no_one_waiting_and_wakes_with_its_picture() {
+        use std::sync::mpsc;
+
+        let handoff = crate::render::frame_handoff::FrameHandoff::new();
+        let screen: Arc<SharedSurface<(), u32>> = Arc::new(SharedSurface::new(()));
+        let (woke, wakes) = mpsc::channel::<()>();
+        let woke = std::sync::Mutex::new(woke);
+        *screen.wake.lock().unwrap() = Some(Arc::new(move || {
+            woke.lock().unwrap().send(()).unwrap();
+        }));
+        let (refresh, next_refresh) = mpsc::channel::<()>();
+        let presented = Arc::new(AtomicBool::new(false));
+        let present = Arc::clone(&presented);
+        screen.hand_off(
+            &handoff,
+            move || present.store(true, Ordering::SeqCst),
+            move |()| {
+                next_refresh.recv().unwrap();
+                Some(7)
+            },
+        );
+
+        // The frame is out and this thread is free, though the screen has
+        // not given its next picture.
+        let waiter = handoff.waiter();
+        let (freed, free) = mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            waiter.wait();
+            freed.send(()).unwrap();
+        });
+        free.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a wait must not wait for the screen");
+        assert!(presented.load(Ordering::SeqCst));
+        assert!(screen.busy());
+        assert!(wakes.try_recv().is_err());
+
+        refresh.send(()).unwrap();
+        wakes.recv().unwrap();
+        assert!(!screen.busy());
+        assert_eq!(screen.lock_taken().next.take(), Some(7));
+    }
 
     /// With VSync a picture over one refresh must not wait a whole refresh
     /// more: two pictures stay queued. Without it, one keeps input delay low.
