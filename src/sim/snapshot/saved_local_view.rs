@@ -89,6 +89,10 @@ pub enum SavedRadarMovie {
     Playback,
 }
 
+/// RESIDUAL: `MouseClass::Load @ 0x005BDF70` reads the whole 0x556C-byte Display
+/// body at `0x005BE092`, ScrollClass's and MouseClass's own fields with it; VERA keeps
+/// none of those, and the one difference a player could meet is that an edge-scroll
+/// glide under way at the save does not carry on after the load.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedLocalView {
     /// Raw signed CellStruct words preserved in the app's u16 bit-pattern form.

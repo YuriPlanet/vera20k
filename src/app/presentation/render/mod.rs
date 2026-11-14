@@ -211,6 +211,12 @@ pub(crate) fn render_game(
     // Trigger action 0x28 mutates scroll/radar authority inside the committed
     // sim frame. Install and clamp it before constructing any world instances,
     // so contraction/expansion is visible in this very presentation frame.
+    // RESIDUAL: gamemd does not clamp here. ResizePlayerView 0x006E21E0 only
+    // rewrites LocalSize, and Tactical__AI 0x006D2540 clamps (0x006D8640) only
+    // while a pan runs or the requested view moves. Retail maps grow LocalSize
+    // around the view (ALL06, SOV03) or jump the camera in the same trigger
+    // (SOV01 SP3.6, action 112); only SOV01's SP4.5b and base-gained shrinks
+    // can leave the view outside, until the player scrolls. VERA moves it at once.
     crate::app::input::camera::clamp_camera_to_playable_area(state, sw, sh);
     // Publish the final view once: world instances, CPU A admission and GPU
     // palette sampling must use this frame's clamped camera and zoom.

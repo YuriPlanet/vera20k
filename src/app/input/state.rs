@@ -167,8 +167,9 @@ impl PreparedSavedLocalView {
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         // The preview is derived from the cursor; the next tactical frame
-        // recomputes it. The BandBoxLeftUp retry copy (+1190..+1198) loads
-        // raw but MouseLoad never swizzles it, so no retry survives a load.
+        // recomputes it. RESIDUAL: the BandBoxLeftUp retry copy (+1190..+1198)
+        // loads raw and MouseLoad 0x005BDF70 never swizzles it, so natively it
+        // keeps stale pointers after a load; VERA drops it, so no retry survives.
         input.building_placement_preview = None;
         input.saved_building_placement = None;
         // The foundation latch (+0x1174/+0x1181) is in the same Display body.
@@ -307,12 +308,18 @@ pub(crate) struct MatchInputState {
     saved_building_placement: Option<SavedBuildingPlacement>,
 }
 
-/// `DisplayClass +0x1174`, the foundation's top-left Cell, and `+0x1181`,
+/// `DisplayClass +0x1174`, kept here as the foundation's top-left Cell, and `+0x1181`,
 /// whether the whole foundation was visible there, which `BandBox_LeftUp`
 /// tests (`0x004ABAB2`). `UpdateFoundationCenter @ 0x004A91B0` keeps both
 /// across placements and writes the visibility only when the Cell moves
 /// (early exit `0x004A9356..0x004A936E`, write `0x004A94DA`). `None` is the
 /// constructor's null Cell (`0x004A873D`, `0x004A875F`).
+///
+/// RESIDUAL: native `+0x1174` holds the centre Cell and the top-left is it plus
+/// the type's offset (`+0x1178`), so its compare differs from this top-left one
+/// only on the first call after the armed type changes. Native also refreshes
+/// proximity (`+0x1180`) only when the centre moves; the preview recomputes it,
+/// and the grid colour with it, every frame.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct FoundationLatch(Option<((u16, u16), bool)>);
 

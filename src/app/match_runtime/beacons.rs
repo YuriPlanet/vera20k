@@ -154,9 +154,10 @@ impl BeaconManager {
 
     /// The search `0x00431090` (DetermineAction's beacon test) and
     /// `SelectBeacon 0x00430F70` share: the first beacon, House-major, whose
-    /// distance from `coord` truncates below 128 leptons. Both take Sqrt of
-    /// the integer squares and `ftol` the result; for integers that is the
-    /// squared sum below 128².
+    /// distance from `coord` truncates below 128 leptons. Both take
+    /// `Sqrt_Approx @ 0x004CAC40` of the squared sum and `ftol` the result.
+    /// RESIDUAL: this compares the exact squared sum with 128², which can
+    /// answer differently only at the 128-lepton edge.
     pub(crate) fn find_at(&self, coord: [i32; 3]) -> Option<(usize, usize)> {
         self.iter().find_map(|(house, slot, beacon)| {
             let squared: i64 = (0..3)

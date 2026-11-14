@@ -278,6 +278,11 @@ fn tactical_bounded_entity_encounter_order(
         return Vec::new();
     };
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
+    // RESIDUAL: the 32 pixels are `TacticalClass::AddSelectable @ 0x006D9EF0`'s,
+    // for mobiles. `0x006D9CE0` first clips a building's anchor to the tactical
+    // rectangle Draw passes (0x00886FA0, `0x006D45F2..0x006D461A`), so natively a
+    // building just outside the view is never registered; here it is, and a click
+    // at the view's edge can reach it through its anchor rather than its cell.
     let margin = 32.0 / zoom;
     // The world rectangle the battlefield shows: from the camera, the
     // frame's corner, in by the battlefield's own corner.

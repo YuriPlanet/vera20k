@@ -284,6 +284,12 @@ fn tactical_world_tip_text_for_viewer(
         Some(view.interner()),
         Some(terrain),
     );
+    // RESIDUAL (dormant: retail Tiberiums set no UIName): a non-Techno pick,
+    // a tree, sends Display::GetTooltipText 0x004AE4F0 to CellClass::GetUIName
+    // 0x00484FF0 (call 0x004AE68A), the clicked cell's Tiberium UIName.
+    // AbstractTypeClass::ReadINI 0x00410A60 leaves it the empty string without
+    // a UIName key, so no tip shows either way. A mod's Tiberium UIName would
+    // show over a tree on ore; VERA shows none and does not read that key.
     let Some(entity) = picked.and_then(|id| view.entities().get(id)) else {
         return String::new();
     };
