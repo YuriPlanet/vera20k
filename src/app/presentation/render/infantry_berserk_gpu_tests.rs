@@ -495,7 +495,10 @@ fn render_original_body_pixels(
             gi.body_facing = FacingClass::new(int(&input["facing"]) as u16, 0);
             let sim = &runtime.simulation;
             let gi = sim.entities().get(1).unwrap();
-            let presented = crate::app::presentation::frame::PresentationFrame::capture(&runtime);
+            let presented = crate::app::presentation::frame::PresentationFrame::capture(
+                &runtime,
+                &Default::default(),
+            );
             let gi_record = presented.object(1).unwrap();
             let before = sim.state_hash();
             let rng_before = sim.rng_state();

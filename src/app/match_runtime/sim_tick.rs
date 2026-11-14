@@ -2890,6 +2890,15 @@ fn finish_simulation_frame(
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
         }
+        // The sidebar's next membership pass reads the House pass's AddCameo
+        // attempts from the frame: ask them before it is captured, also when
+        // the next tick is lent with it.
+        let asked = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .asked_types(&[]);
+        state.match_state.sim_runtime.ask_sidebar_types(&asked);
         // Main_Tick runs PlanMgr_Process_Frame after the frame's events
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
         if frame_committed {

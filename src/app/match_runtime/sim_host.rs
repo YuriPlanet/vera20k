@@ -31,6 +31,7 @@ use std::any::Any;
 use std::sync::{Arc, Condvar, PoisonError};
 
 use crate::app::presentation::frame::PresentationFrame;
+use crate::app::sidebar_projection::SidebarTypes;
 use crate::sim::command_queue::{FrameChecksumState, MultiplayerChecksumHistory};
 use crate::sim::runtime::SimRuntime;
 use crate::util::sync::Mutex;
@@ -110,6 +111,9 @@ pub(crate) struct SimHost {
     /// world on its first read after a write, and at [`Self::lend`] for the
     /// world the lent tick starts from. Every write route empties it.
     frame: std::cell::OnceCell<Arc<PresentationFrame>>,
+    /// Every object type the local sidebar has asked of this scenario's
+    /// frames ([`Self::ask_sidebar_types`]), which each frame answers.
+    sidebar_types: SidebarTypes,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -396,13 +400,28 @@ impl SimHost {
         let runtime = self.runtime.as_ref()?;
         Some(self.frame.get_or_init(|| {
             let started = Instant::now();
-            let frame = Arc::new(PresentationFrame::capture(runtime));
+            let frame = Arc::new(PresentationFrame::capture(runtime, &self.sidebar_types));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();
             costs.captures += 1;
             self.snapshot_costs.set(costs);
             frame
         }))
+    }
+
+    /// Have every frame of this scenario answer the local sidebar's `types`
+    /// too (`SidebarProjectionState::asked_types`). A home frame captured
+    /// without one of them is dropped, so the next read captures it; a lent
+    /// tick's frame stands, as the sidebar adds types only from a tick that
+    /// has come back.
+    pub(crate) fn ask_sidebar_types(&mut self, types: &SidebarTypes) {
+        if self.sidebar_types.covers(types) {
+            return;
+        }
+        self.sidebar_types = self.sidebar_types.union(types);
+        if !self.lent {
+            self.forget_frame();
+        }
     }
 
     /// What the last lent job cost this thread, to weigh against the tick
@@ -445,6 +464,7 @@ impl SimHost {
         self.lend_cost = None;
         self.runtime = runtime;
         self.forget_frame();
+        self.sidebar_types = SidebarTypes::default();
         self.spare = None;
         // The first copy of the world is a whole one, tens of milliseconds
         // at 20,000 objects. Taken while the scenario loads, the first lent
@@ -464,6 +484,7 @@ impl SimHost {
         self.job_result = None;
         self.lend_cost = None;
         self.forget_frame();
+        self.sidebar_types = SidebarTypes::default();
         self.spare = None;
         self.runtime.take()
     }
@@ -781,6 +802,29 @@ mod tests {
         assert!(host.lend(Box::new(|_| Box::new(()))));
         assert!(host.take_job_result().is_some());
         assert_eq!((host.lent_jobs, host.early_returns), (2, 1));
+    }
+
+    /// A frame answers every type the sidebar has asked of the scenario. A
+    /// new one drops a home frame but not a lent tick's, whose successor
+    /// answers it; another scenario starts with none asked.
+    #[test]
+    fn a_new_sidebar_type_drops_a_home_frame_and_waits_out_a_lent_one() {
+        let mut sim = Simulation::new();
+        let (a, b, c) = (sim.intern("A"), sim.intern("B"), sim.intern("C"));
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        let answered = |host: &SimHost| host.frame().unwrap().scene.ui.sidebar_types().clone();
+        host.ask_sidebar_types(&SidebarTypes::of([a]));
+        assert_eq!(answered(&host), SidebarTypes::of([a]));
+        host.ask_sidebar_types(&SidebarTypes::of([b]));
+        assert_eq!(answered(&host), SidebarTypes::of([a, b]));
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        host.ask_sidebar_types(&SidebarTypes::of([c]));
+        assert_eq!(answered(&host), SidebarTypes::of([a, b]));
+        assert!(host.take_job_result().is_some());
+        assert_eq!(answered(&host), SidebarTypes::of([a, b, c]));
+        host.install(Some(SimRuntime::from_simulation(Simulation::new())));
+        assert_eq!(answered(&host), SidebarTypes::default());
     }
 
     /// With no departure and no radar mark to take, the world is not taken

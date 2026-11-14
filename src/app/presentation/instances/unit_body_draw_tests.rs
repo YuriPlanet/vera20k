@@ -568,10 +568,13 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         let parent = NativeDisplayOrder::from_display(sim.display_layers())
             .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
             .unwrap();
-        let record = crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime)
-            .object(plane.stable_id())
-            .cloned()
-            .unwrap();
+        let record = crate::app::presentation::frame::PresentationFrame::capture(
+            &scene.runtime,
+            &Default::default(),
+        )
+        .object(plane.stable_id())
+        .cloned()
+        .unwrap();
         samples.push((
             plane.clone(),
             band,

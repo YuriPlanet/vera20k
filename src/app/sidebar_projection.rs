@@ -70,9 +70,9 @@ pub(crate) struct SidebarProjectionState {
     /// These references are independent of Factory completion and the one
     /// current/saved placement transaction. They are not serialized.
     ready_buildings: [Option<u64>; 2],
-    /// The cameo candidates of those inputs, with the right strip's
-    /// superweapons they were derived with.
-    kept_cameos: Option<(SimInputsKey, Vec<SuperWeaponView>, Arc<Vec<Cameo>>)>,
+    /// The cameo candidates of one frame's inputs, for the owner and the
+    /// right strip's superweapons they were derived with.
+    kept_cameos: Option<KeptCameos>,
     /// What `current_view` was built from, while it stands for those inputs.
     view_basis: Option<ViewBasis>,
 }
@@ -88,8 +88,8 @@ pub(crate) struct SidebarViewInputs {
     pub(crate) screen: (f32, f32),
     pub(crate) tab: SidebarTab,
     pub(crate) credits: i32,
-    /// Compared by identity: [`SidebarProjectionState::sim_inputs`] derives
-    /// one per world revision, rules and owner.
+    /// Compared by identity: each frame (`presentation::frame`) derives its
+    /// own.
     pub(crate) sim: Arc<SidebarSimInputs>,
     /// Tab, Repair, Sell, scroll down, scroll up and the two top buttons.
     pub(crate) button_sizes: [Option<[f32; 2]>; 7],
@@ -126,14 +126,10 @@ struct ViewBasis {
     factory_links: HashMap<InternedId, CameoFactoryLink>,
 }
 
-/// What one projection refresh reads from the simulation for the local owner.
-/// These queries walk every rules type, the owner's buildings and factories,
-/// so a pass that only republishes the view reuses them while the world's
-/// [`Simulation::revision`], the rules and the owner are those they were
-/// derived for: between revisions no house, production, power or
-/// superweapon state changes. A new world always comes with its own rules,
-/// and so does a new process string table. Debug builds check each reuse
-/// against a fresh derivation.
+/// What one projection refresh reads from the simulation for the local owner,
+/// captured with each frame (`presentation::frame`), which a pass that only
+/// republishes the view reuses. The build options are those of the object
+/// types the sidebar asks ([`SidebarTypes`]), not of every rules type.
 #[derive(Debug, PartialEq)]
 pub(crate) struct SidebarSimInputs {
     pub(crate) build_options: Vec<BuildOption>,
@@ -146,12 +142,17 @@ pub(crate) struct SidebarSimInputs {
 }
 
 impl SidebarSimInputs {
-    pub(crate) fn derive(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
+    pub(crate) fn derive(
+        sim: &Simulation,
+        rules: &RuleSet,
+        owner: &str,
+        types: &SidebarTypes,
+    ) -> Self {
         use crate::sim::production;
         let (power_produced, power_drained) =
             production::power_balance_for_owner(sim, rules, owner);
         Self {
-            build_options: production::all_build_options_for_owner(sim, rules, owner),
+            build_options: production::build_options_for_types(sim, rules, owner, types.iter()),
             queue_items: production::queue_view_for_owner(sim, rules, owner),
             ready_buildings: production::ready_buildings_for_owner(sim, rules, owner),
             credits: crate::app::presentation::sidebar_render::counter_credits(sim, owner),
@@ -166,26 +167,63 @@ impl SidebarSimInputs {
     }
 }
 
-/// The world revision, rules and owner a kept derivation belongs to.
-#[derive(Debug)]
-struct SimInputsKey {
-    rules: u64,
-    revision: u64,
-    owner: String,
+/// The object types whose build options and drawn states a frame captures
+/// for the sidebar, sorted: the cameos the strips hold and those about to be
+/// added ([`SidebarProjectionState::asked_types`]). The original asks no
+/// other: `StripClass::Recalculate @ 0x006AA600` and `StripClass::Draw @
+/// 0x006A9540` walk the strip's entries, and AddCameo asks its candidate.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SidebarTypes(Arc<[InternedId]>);
+
+impl SidebarTypes {
+    pub(crate) fn of(types: impl IntoIterator<Item = InternedId>) -> Self {
+        let mut types: Vec<_> = types.into_iter().collect();
+        types.sort_unstable();
+        types.dedup();
+        Self(types.into())
+    }
+
+    /// Every type a rules list builds, for a test frame that has no sidebar
+    /// to ask for its own.
+    #[cfg(test)]
+    pub(crate) fn every_rules_type(sim: &Simulation, rules: &RuleSet) -> Self {
+        Self::of(
+            [
+                &rules.building_ids,
+                &rules.infantry_ids,
+                &rules.vehicle_ids,
+                &rules.aircraft_ids,
+            ]
+            .into_iter()
+            .flatten()
+            .filter_map(|id| sim.interner().get(id)),
+        )
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = InternedId> + '_ {
+        self.0.iter().copied()
+    }
+
+    /// Whether every type of `other` is one of these.
+    pub(crate) fn covers(&self, other: &Self) -> bool {
+        other.0.iter().all(|id| self.0.binary_search(id).is_ok())
+    }
+
+    /// These types and `other`'s.
+    pub(crate) fn union(&self, other: &Self) -> Self {
+        Self::of(self.iter().chain(other.iter()))
+    }
 }
 
-impl SimInputsKey {
-    fn new(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
-        Self {
-            rules: rules.serial(),
-            revision: sim.revision(),
-            owner: owner.to_owned(),
-        }
-    }
-
-    fn holds(&self, sim: &Simulation, rules: &RuleSet, owner: &str) -> bool {
-        self.rules == rules.serial() && self.revision == sim.revision() && self.owner == owner
-    }
+/// [`SidebarProjectionState::cameo_candidates`] kept for the frame inputs,
+/// owner and superweapons they were derived from. Holding the inputs keeps
+/// their identity from passing to a later frame's.
+#[derive(Debug)]
+struct KeptCameos {
+    inputs: Arc<SidebarSimInputs>,
+    owner: InternedId,
+    supers: Vec<SuperWeaponView>,
+    cameos: Arc<Vec<Cameo>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,7 +254,7 @@ impl PreparedSidebarOrder {
 
 impl SidebarProjectionState {
     /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
-    /// while the world revision, rules and owner hold.
+    /// while the frame `inputs` came from and the owner hold.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn cameo_candidates(
         &mut self,
@@ -224,33 +262,34 @@ impl SidebarProjectionState {
         rules: &RuleSet,
         csf: Option<&crate::assets::csf_file::CsfFile>,
         owner: InternedId,
-        owner_name: &str,
-        inputs: &SidebarSimInputs,
+        inputs: &Arc<SidebarSimInputs>,
         supers: &[SuperWeaponView],
         reuse: bool,
     ) -> Arc<Vec<Cameo>> {
         let derive = || cameo_candidates(sim, rules, csf, owner, &inputs.build_options, supers);
         if reuse
-            && let Some((key, kept_supers, kept)) = &self.kept_cameos
-            && key.holds(sim, rules, owner_name)
-            && kept_supers.as_slice() == supers
+            && let Some(kept) = &self.kept_cameos
+            && Arc::ptr_eq(&kept.inputs, inputs)
+            && kept.owner == owner
+            && kept.supers.as_slice() == supers
         {
             if crate::sim::live_read_check_enabled() {
                 assert_eq!(
-                    **kept,
+                    *kept.cameos,
                     derive(),
                     "sidebar cameos changed within world revision {}",
                     sim.revision()
                 );
             }
-            return Arc::clone(kept);
+            return Arc::clone(&kept.cameos);
         }
         let cameos = Arc::new(derive());
-        self.kept_cameos = Some((
-            SimInputsKey::new(sim, rules, owner_name),
-            supers.to_vec(),
-            Arc::clone(&cameos),
-        ));
+        self.kept_cameos = Some(KeptCameos {
+            inputs: Arc::clone(inputs),
+            owner,
+            supers: supers.to_vec(),
+            cameos: Arc::clone(&cameos),
+        });
         cameos
     }
 
@@ -380,6 +419,25 @@ impl SidebarProjectionState {
             .cameos
             .as_ref()
             .is_some_and(|(previous, _)| *previous == owner)
+    }
+
+    /// The object types the next membership pass and draw read
+    /// ([`SidebarTypes`]): every object cameo the strips hold, the AddCameo
+    /// attempts waiting for the pass, and a new scenario's `seed`.
+    pub(crate) fn asked_types(&self, seed: &[InternedId]) -> SidebarTypes {
+        let held = self.cameos.iter().flat_map(|(_, strips)| {
+            crate::ui::sidebar::SidebarTab::all()
+                .into_iter()
+                .flat_map(|tab| strips.items(tab))
+                .filter_map(|entry| match entry.id {
+                    CameoId::Object(type_id) => Some(type_id),
+                    CameoId::SuperWeapon(_) => None,
+                })
+        });
+        SidebarTypes::of(
+            held.chain(self.pending_cameo_additions.iter().copied())
+                .chain(seed.iter().copied()),
+        )
     }
 
     /// The local House4F92E2 handoff is waiting for the projection's strip

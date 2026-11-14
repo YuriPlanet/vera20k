@@ -35,6 +35,9 @@ pub(crate) struct Capture<'a> {
     /// The local player drawing reads the frame for, by name and id.
     pub(crate) observer: Option<&'a str>,
     pub(crate) observer_id: Option<InternedId>,
+    /// The object types the local sidebar asks
+    /// ([`crate::app::sidebar_projection::SidebarTypes`]).
+    pub(crate) sidebar_types: &'a crate::app::sidebar_projection::SidebarTypes,
     /// The capture's isolated query of the live map: a miss stamps its own
     /// dummy, not the simulation's.
     pub(crate) cells: Option<crate::map::resolved_terrain::NativeCellQuery<'a>>,
@@ -1192,8 +1195,12 @@ pub(crate) struct PresentationFrame {
 
 impl PresentationFrame {
     /// The records of `runtime`'s objects, as its local player (the
-    /// scenario's current house) sees them.
-    pub(crate) fn capture(runtime: &SimRuntime) -> Self {
+    /// scenario's current house) sees them, with the sidebar's answers for
+    /// `sidebar_types`.
+    pub(crate) fn capture(
+        runtime: &SimRuntime,
+        sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
+    ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
         let observer = observer_id.map(|id| sim.interner().resolve(id));
@@ -1203,6 +1210,7 @@ impl PresentationFrame {
             binary_frame: sim.session().binary_frame(),
             observer,
             observer_id,
+            sidebar_types,
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),
@@ -1379,11 +1387,13 @@ impl PresentationFrame {
             let filler = interner.len();
             interner.intern(&format!("TEST-FILLER-{filler}"));
         }
+        let types =
+            crate::app::sidebar_projection::SidebarTypes::every_rules_type(&simulation, rules);
         let runtime = SimRuntime {
             simulation,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
-        Self::capture(&runtime)
+        Self::capture(&runtime, &types)
     }
 }
 

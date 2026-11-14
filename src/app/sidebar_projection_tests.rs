@@ -206,7 +206,12 @@ fn a_built_view_holds_only_while_its_inputs_and_strips_hold() {
     let options = all_build_options_for_owner(&sim, &rules, "Americans");
     let mut projection = SidebarProjectionState::default();
     projection.reconcile_fixture(owner, &[], 4, false);
-    let kept = Arc::new(SidebarSimInputs::derive(&sim, &rules, "Americans"));
+    let kept = Arc::new(SidebarSimInputs::derive(
+        &sim,
+        &rules,
+        "Americans",
+        &Default::default(),
+    ));
     let inputs = |sim: &Arc<SidebarSimInputs>, tab| SidebarViewInputs {
         spec: SidebarChromeLayoutSpec::stock(),
         screen: (800.0, 600.0),
@@ -223,7 +228,12 @@ fn a_built_view_holds_only_while_its_inputs_and_strips_hold() {
     projection.replace_built_view(drawn, inputs(&kept, SidebarTab::Building));
     assert!(projection.view_holds_for(&inputs(&kept, SidebarTab::Building)));
     assert!(!projection.view_holds_for(&inputs(&kept, SidebarTab::Defense)));
-    let derived = Arc::new(SidebarSimInputs::derive(&sim, &rules, "Americans"));
+    let derived = Arc::new(SidebarSimInputs::derive(
+        &sim,
+        &rules,
+        "Americans",
+        &Default::default(),
+    ));
     assert!(!projection.view_holds_for(&inputs(&derived, SidebarTab::Building)));
     projection.set_scroll_row(SidebarTab::Building, 1);
     assert!(!projection.view_holds_for(&inputs(&kept, SidebarTab::Building)));
@@ -1075,6 +1085,76 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
             .items(SidebarTab::Infantry)
             .iter()
             .any(|entry| entry.id == new_infantry)
+    );
+}
+
+/// One refresh's frame reads (`sidebar_render::refresh_projection`): the
+/// types answered, after the strip pass ran on them.
+fn refresh_through_frame(
+    host: &mut crate::app::match_runtime::sim_host::SimHost,
+    projection: &mut SidebarProjectionState,
+    csf: &CsfFile,
+    owner: InternedId,
+    seed: &[InternedId],
+) -> Vec<InternedId> {
+    let asked = projection.asked_types(seed);
+    host.ask_sidebar_types(&asked);
+    let frame = host.frame().unwrap();
+    assert!(frame.scene.ui.sidebar_types().covers(&asked));
+    let inputs = std::sync::Arc::clone(frame.scene.ui.sidebar().unwrap());
+    let runtime = host.presentation().unwrap();
+    let candidates = projection.cameo_candidates(
+        &runtime.simulation,
+        &runtime.resources.rules,
+        Some(csf),
+        owner,
+        &inputs,
+        &[],
+        false,
+    );
+    projection.reconcile_cameos(owner, &candidates, 3, seed, false);
+    let mut answered: Vec<_> = inputs.build_options.iter().map(|o| o.type_id).collect();
+    answered.sort_unstable();
+    answered
+}
+
+/// A frame answers the sidebar for the types its strips hold and the House
+/// pass is about to add, and no others: `StripClass::Recalculate @
+/// 0x006AA600` and `StripClass::Draw @ 0x006A9540` ask only the strip's
+/// entries, AddCameo only its candidate. A type offered after the frame was
+/// captured still reaches the strip.
+#[test]
+fn the_sidebar_frame_answers_its_strips_and_the_types_the_house_offers() {
+    let (sim, rules, owner, csf, _) = native_history_world();
+    let gi = sim.interner().get("gi").unwrap();
+    let engineer = sim.interner().get("engineer").unwrap();
+    let mut host = crate::app::match_runtime::sim_host::SimHost::default();
+    host.install(Some(crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules)),
+    }));
+    let mut projection = SidebarProjectionState::default();
+    let answered = refresh_through_frame(&mut host, &mut projection, &csf, owner, &[gi]);
+    assert_eq!(answered, [gi]);
+    for output in [
+        LifecycleOutput::SidebarConstructionOption {
+            owner,
+            type_id: engineer,
+        },
+        LifecycleOutput::SidebarRecalculated { owner },
+    ] {
+        projection.apply_lifecycle_output(&output, Some(owner), false);
+    }
+    let mut both = vec![gi, engineer];
+    both.sort_unstable();
+    let answered = refresh_through_frame(&mut host, &mut projection, &csf, owner, &[]);
+    assert_eq!(answered, both);
+    let infantry = projection.cameo_strips().items(SidebarTab::Infantry);
+    assert!(infantry.iter().any(|entry| entry.id == CameoId::Object(gi)));
+    assert!(
+        infantry
+            .iter()
+            .any(|entry| entry.id == CameoId::Object(engineer))
     );
 }
 

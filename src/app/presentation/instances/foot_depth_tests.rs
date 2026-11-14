@@ -25,7 +25,7 @@ fn with_record<R>(
     let store = world.simulation.entities_mut_for_test();
     store.remove(entity.stable_id());
     store.insert(entity.clone());
-    let frame = PresentationFrame::capture(&world);
+    let frame = PresentationFrame::capture(&world, &Default::default());
     let record = frame.object(entity.stable_id()).expect("a record");
     ask(
         DepthWorld {
