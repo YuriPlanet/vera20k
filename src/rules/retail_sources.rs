@@ -50,7 +50,12 @@ enum OptionalIniSelection {
 }
 
 pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
-    if crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED {
+    // A game that ships `ares.mix` loads its INIs with Ares' syntax and
+    // `[#include]` (`ares_switch::ares_way`), as its launch does.
+    let _ares_way = crate::rules::ares_switch::read_ares_way(
+        crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
+    );
+    if crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED {
         select_ini_with_options(assets, name, DirectiveOptions::production())
     } else {
         select_physical_ini(assets, name)
@@ -570,9 +575,49 @@ mod tests {
         assert!(selected.ini.section("Digest").is_some());
     }
 
-    #[cfg(feature = "ares")]
+    /// A game that ships `ares.mix` (Load_Bootstrap_AresMIX, hook
+    /// `0x0053029E`) selects its INIs with Ares' syntax in every build: a `+=`
+    /// list key is numbered as Ares numbers it. Without `ares.mix`, a build
+    /// without the `ares` feature keeps gamemd's syntax.
+    #[test]
+    fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        let directory =
+            crate::assets::asset_manager::test_support::audio_test_install("ares-mix-rules-syntax");
+        std::fs::write(
+            directory.path().join("rulesmd.ini"),
+            b"[BuildingTypes]\n+=GAPOWR\n",
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("artmd.ini"),
+            b"[GAPOWR]\nFoundation=2x2\n",
+        )
+        .unwrap();
+        let keys = || {
+            let assets =
+                AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            let sources = RetailRulesSources::select(&assets).unwrap();
+            let keys: Vec<String> = sources
+                .rulesmd
+                .ini
+                .section_or_empty("BuildingTypes")
+                .keys()
+                .map(str::to_owned)
+                .collect();
+            (assets.ships_ares(), sources.ships_ares, keys)
+        };
+        // A build with the `ares` feature reads every game the Ares way.
+        let feature = cfg!(feature = "ares");
+        let stock_key = if feature { "var_0" } else { "+" };
+        assert_eq!(keys(), (false, feature, vec![stock_key.to_owned()]));
+        directory.write_mix("ares.mix", "ares.txt", b"ares");
+        assert_eq!(keys(), (true, true, vec!["var_0".to_owned()]));
+    }
+
     #[test]
     fn langrule_selection_expands_ares_includes_and_keeps_physical_root_for_digest() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let directory = TestDirectory::new("langrule-ares-include");
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");

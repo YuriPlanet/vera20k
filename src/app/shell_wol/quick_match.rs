@@ -1793,6 +1793,16 @@ mod tests {
         changes.install_native_ini_hashes(&game, &[]);
         assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
         assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
+        // `ares.mix` makes the same folder an Ares game, which Quick Match
+        // does not play either.
+        dir.write_mix("ares.mix", "ares.txt", b"ares");
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini", "ares.mix"]);
         assert_eq!(
             original_game_refusal(true, &changes),
             Some("VERA:QuickMatchNoMod")

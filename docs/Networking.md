@@ -28,11 +28,15 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
-and map, and, in a build with Ares, whether the game ships `ares.mix`, which the
-rules agreement covers. Released builds never mount `ares.mix`: there Ares plays
-only from Ares keys in the rules, mode or map, with the part of Ares that has left
-its build feature ([Ares](ares.md)). Players on one version reach the same answer;
-a game from before this decides differently and is another version.
+and map, and whether the game ships `ares.mix`, which the rules agreement
+covers. Every build mounts `ares.mix` when the game or its mod holds it, and
+reads such a game's INIs and rules the Ares way; without it Ares plays only
+from Ares keys in the rules, mode or map, read the stock way ([Ares](ares.md)).
+A game with `ares.mix` adds one byte to the rules digest, so its digest differs
+from the same files read without it; a game without it keeps the digest it had.
+Players on one version reach the same answer; a game from before this decides
+differently, is another version and is refused by the build check first, and a
+rollback returns everyone on that build to the earlier reading.
 
 The rules agreement is one digest of the process's rules sources
 (`ProcessAssets::multiplayer_rules_digest`). With a mod in use
@@ -44,8 +48,8 @@ same bytes as before. A game from before this is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
-turn off: a mod in use; `[ini]` roots in config.toml other than YR's; game-folder files
-that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+turn off: a mod in use; `[ini]` roots in config.toml other than YR's; `ares.mix` in the
+game folder, which makes it an Ares game; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
 LANGRULE) from the retail copy; a copy from a retail archive (`langmd.mix`,
 `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as the original, and
 another is compared with the retail archives' own entry, else `ra2md.mix`'s `localmd.mix`

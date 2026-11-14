@@ -1052,7 +1052,7 @@ impl IniSection {
         default: u32,
         mut find_house: impl FnMut(&str) -> Option<usize>,
     ) -> u32 {
-        let capacity = if crate::rules::ARES_BUILD {
+        let capacity = if crate::rules::ares_switch::ares_way() {
             0x800
         } else {
             0x80

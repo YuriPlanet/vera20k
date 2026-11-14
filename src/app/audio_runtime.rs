@@ -387,7 +387,6 @@ impl AppAudioRuntime {
     }
 
     /// Ares loading hook inputs use the existing Theme catalog/stream owner.
-    #[cfg(feature = "ares")]
     pub(crate) fn play_ares_loading_theme<'a>(
         &mut self,
         names: impl IntoIterator<Item = Option<&'a str>>,

@@ -554,7 +554,6 @@ impl ThemeRuntime {
     /// Installed Ares1002FB80/1002FC20: ordered Side then Country, or one
     /// campaign Basic name. Exactly-2 retains retail LOADING; unknown-1 must
     /// reach the same Play_Song owner. Native: rules_oracle/ares_loading_themes.
-    #[cfg(feature = "ares")]
     pub(crate) fn play_ares_loading_theme<'a>(
         &mut self,
         names: impl IntoIterator<Item = Option<&'a str>>,
