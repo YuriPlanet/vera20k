@@ -390,6 +390,13 @@ impl Tracker {
             .is_some_and(|tracked| kinds.contains(&tracked.kind) && now < tracked.until)
     }
 
+    /// The live intent's kind, by name, for the log that asks why a claimed
+    /// unit is standing still.
+    pub(super) fn live_kind(&self, now: u64, unit: u64) -> Option<TrackedKind> {
+        let tracked = self.intents.get(&unit)?;
+        (now < tracked.until).then_some(tracked.kind)
+    }
+
     /// Whether any layer has claimed `unit` inside the current term: a live
     /// intent, or a routine holding it.
     ///

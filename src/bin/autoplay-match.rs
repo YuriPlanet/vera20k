@@ -99,14 +99,20 @@ fn parse_args() -> Result<Args, String> {
             "--seed" => seed = value()?.parse().map_err(|_| "seed is a u32".to_string())?,
             "--ticks" => ticks = value()?.parse().map_err(|_| "ticks is a u64".to_string())?,
             "--progress" => {
-                progress = value()?.parse().map_err(|_| "progress is a u64".to_string())?
+                progress = value()?
+                    .parse()
+                    .map_err(|_| "progress is a u64".to_string())?
             }
             "--per-frame" => {
-                per_frame = value()?.parse().map_err(|_| "per-frame is a usize".to_string())?
+                per_frame = value()?
+                    .parse()
+                    .map_err(|_| "per-frame is a usize".to_string())?
             }
             "--opponent" => opponent = parse_country(&value()?)?,
             "--opponents" => {
-                opponents = value()?.parse().map_err(|_| "opponents is a count".to_string())?
+                opponents = value()?
+                    .parse()
+                    .map_err(|_| "opponents is a count".to_string())?
             }
             "--difficulty" => difficulty = parse_difficulty(&value()?)?,
             "--dump" => dump = value()?.parse().map_err(|_| "dump is a u64".to_string())?,
@@ -314,9 +320,9 @@ fn census_teams(
             if vm.team_for_member(entity.entity_id).is_some() {
                 continue;
             }
-            let combat = sim.object_type(entity.type_id, rules).is_some_and(|ty| {
-                ty.category != ObjectCategory::Building && entity.orderable
-            });
+            let combat = sim
+                .object_type(entity.type_id, rules)
+                .is_some_and(|ty| ty.category != ObjectCategory::Building && entity.orderable);
             census.loose += usize::from(combat);
         }
     }
@@ -325,12 +331,7 @@ fn census_teams(
 
 /// Prints one house's live teams: TeamType, script, cursor, current action,
 /// member count by unit type. Read-only.
-fn print_teams(
-    sim: &Simulation,
-    house: InternedId,
-    tick: u64,
-    previous: &BTreeMap<u64, i32>,
-) {
+fn print_teams(sim: &Simulation, house: InternedId, tick: u64, previous: &BTreeMap<u64, i32>) {
     let vm = sim.team_script_vm();
     let name = sim.interner().resolve(house);
     let mut types: BTreeMap<u64, InternedId> = BTreeMap::new();
@@ -366,7 +367,10 @@ fn print_teams(
             "refused"
         } else if !team.formed() {
             "forming"
-        } else if previous.get(&team.id()).is_none_or(|before| team.cursor() > *before) {
+        } else if previous
+            .get(&team.id())
+            .is_none_or(|before| team.cursor() > *before)
+        {
             "running"
         } else {
             "stalled"
@@ -495,7 +499,11 @@ impl log::Log for StderrLog {
 fn main() -> Result<(), String> {
     static LOGGER: StderrLog = StderrLog;
     log::set_logger(&LOGGER).map_err(|error| error.to_string())?;
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(if std::env::var("VERA20K_TRACE").is_ok() {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    });
     log::info!("logger up");
 
     let args = match parse_args() {
@@ -510,13 +518,11 @@ fn main() -> Result<(), String> {
         }
     };
 
-    let seats: Vec<(LaunchCountry, AiDifficulty)> = std::iter::repeat_n(
-        (args.opponent, args.difficulty),
-        args.opponents.max(1),
-    )
-    .collect();
+    let seats: Vec<(LaunchCountry, AiDifficulty)> =
+        std::iter::repeat_n((args.opponent, args.difficulty), args.opponents.max(1)).collect();
     let session = headless_scenario::battle_session(&args.map, &seats);
-    let mut scenario = headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session)?;
+    let mut scenario =
+        headless_scenario::load_session(&args.ra2_dir, &args.map, args.seed, session)?;
     let sim = &scenario.runtime.simulation;
 
     let local = sim
@@ -582,8 +588,15 @@ fn main() -> Result<(), String> {
     let mut last = snapshot(sim, local, &enemies, 0, &host);
     println!(
         "{:>6} {:>9} {:>9} {:>7} {:>6} {:>6} {:>6} {:>9} {:>9}",
-        last.tick, last.credits, last.enemy_credits, last.power, last.own, last.enemy, last.ready,
-        last.rejected, last.not_ready
+        last.tick,
+        last.credits,
+        last.enemy_credits,
+        last.power,
+        last.own,
+        last.enemy,
+        last.ready,
+        last.rejected,
+        last.not_ready
     );
 
     // Both sides, so the report says who is fighting, not just how much.
@@ -651,8 +664,12 @@ fn main() -> Result<(), String> {
                 report_teams(sim, rules, &houses, tick, &mut team_cursors);
             } else {
                 for house in &houses {
-                    let census =
-                        census_teams(sim, rules, &[*house], team_cursors.entry(*house).or_default());
+                    let census = census_teams(
+                        sim,
+                        rules,
+                        &[*house],
+                        team_cursors.entry(*house).or_default(),
+                    );
                     println!(
                         "  teams@{tick} {}: {}",
                         sim.interner().resolve(*house),
@@ -702,10 +719,7 @@ fn main() -> Result<(), String> {
                 let yard = obs
                     .building_in_production()
                     .map(|(type_id, suspended)| {
-                        format!(
-                            "{} held={suspended}",
-                            sim.interner().resolve(type_id)
-                        )
+                        format!("{} held={suspended}", sim.interner().resolve(type_id))
                     })
                     .unwrap_or_else(|| "idle".to_owned());
                 let rules = &scenario.runtime.resources.rules;
@@ -717,9 +731,8 @@ fn main() -> Result<(), String> {
                             let text = obs
                                 .factory_product(category)
                                 .map(|(type_id, suspended)| {
-                                    let progress = obs
-                                        .production_progress(rules, type_id)
-                                        .unwrap_or(0);
+                                    let progress =
+                                        obs.production_progress(rules, type_id).unwrap_or(0);
                                     format!(
                                         "{}@{progress}{}",
                                         sim.interner().resolve(type_id),

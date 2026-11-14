@@ -673,6 +673,30 @@ impl Brain for RetailBrain {
                 .filter(|unit| unit.traits.combat && unit.orderable)
                 .filter(|unit| !self.tracked.is_claimed(obs.tick(), unit.entity_id))
                 .count();
+            // Claimed and still standing: the assignment is fine and the
+            // execution is not landing, so name them and their intent.
+            if obs.tick() % 600 == 0 {
+                for unit in self
+                    .census
+                    .units
+                    .iter()
+                    .filter(|unit| unit.traits.combat && unit.orderable)
+                    .filter(|unit| self.tracked.is_claimed(obs.tick(), unit.entity_id))
+                    .filter(|unit| {
+                        obs.destination(unit.entity_id).is_none()
+                            && obs.attack_target(unit.entity_id).is_none()
+                    })
+                    .take(3)
+                {
+                    log::info!(
+                        "auto play: claimed-and-stuck {} kind={:?} dest={:?} target={:?}",
+                        unit.entity_id,
+                        self.tracked.live_kind(obs.tick(), unit.entity_id),
+                        obs.destination(unit.entity_id),
+                        obs.attack_target(unit.entity_id)
+                    );
+                }
+            }
             log::info!(
                 "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{}",
                 self.census.describe(),
