@@ -305,6 +305,29 @@ pub fn all_build_options_for_owner(
     out
 }
 
+/// [`all_build_options_for_owner`] for `types` alone, by category: what the
+/// player's sidebar asks, as `StripClass::Recalculate @ 0x006AA600` and
+/// `StripClass::Draw @ 0x006A9540` ask only the strip's entries and AddCameo
+/// only its candidate. A type no rules list builds has none.
+pub fn build_options_for_types(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: &str,
+    types: impl IntoIterator<Item = InternedId>,
+) -> Vec<BuildOption> {
+    let owner = sim.interner.get(owner);
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    let mut out: Vec<BuildOption> = types
+        .into_iter()
+        .filter_map(|id| {
+            let name = sim.interner.try_resolve(id)?;
+            build_option_among(sim, rules, owner, factories.as_ref(), name)
+        })
+        .collect();
+    out.sort_by_key(|opt| opt.queue_category);
+    out
+}
+
 pub(super) fn production_category_for_object(
     obj: &crate::rules::object_type::ObjectType,
 ) -> ProductionCategory {

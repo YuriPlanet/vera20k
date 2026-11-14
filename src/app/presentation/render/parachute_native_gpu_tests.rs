@@ -216,7 +216,10 @@ impl Scene {
         frame: u16,
     ) -> PlannedObjectInstance {
         let sim = &self.runtime.simulation;
-        let presented = crate::app::presentation::frame::PresentationFrame::capture(&self.runtime);
+        let presented = crate::app::presentation::frame::PresentationFrame::capture(
+            &self.runtime,
+            &Default::default(),
+        );
         let order = NativeDisplayOrder::from_display(sim.display_layers());
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let mut parents = Vec::new();

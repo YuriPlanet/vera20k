@@ -134,7 +134,10 @@ fn emit(
     let before = (sim.state_hash(), sim.rng_state());
     let before_runtime = serde_json::to_value(sim.anim(id).unwrap().runtime()).unwrap();
     let building = sim.entities().get(plant).unwrap();
-    let frame = crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime);
+    let frame = crate::app::presentation::frame::PresentationFrame::capture(
+        &scene.runtime,
+        &Default::default(),
+    );
     let record = frame.object(plant).unwrap();
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let light = CellLightGrid::new();

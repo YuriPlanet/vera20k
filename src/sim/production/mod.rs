@@ -77,8 +77,8 @@ pub(crate) use self::production_sell::{
 };
 pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::production_tech::{
-    CameoDrawState, all_build_options_for_owner, cameo_draw_state, construction_options_for_owner,
-    initial_construction_options,
+    CameoDrawState, all_build_options_for_owner, build_options_for_types, cameo_draw_state,
+    construction_options_for_owner, initial_construction_options,
 };
 pub use self::production_tech::{
     building_base_foundation_cells, building_movement_blocking_cells,
