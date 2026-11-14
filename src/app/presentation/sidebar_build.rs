@@ -355,7 +355,8 @@ pub(crate) struct CameoStatusLabels<'a> {
 /// label resolves to no text.
 pub(crate) type AresStatusTexts = std::collections::HashMap<String, [String; 5]>;
 
-/// Resolve every type's Ares `Text.*` labels through the shared CSF owner.
+/// Resolve every type's Ares `Text.*` labels through the shared CSF owner,
+/// once per match (`install_world_presentation`).
 pub(crate) fn ares_status_texts(
     rules: &crate::rules::ruleset::RuleSet,
     text: impl Fn(&str) -> String,

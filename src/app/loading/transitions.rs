@@ -242,6 +242,18 @@ pub(crate) fn install_world_presentation(
             .configure(assets.sw_sidebar_ui, significance);
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
+    // Ares hook 6CC2B0's labels, only when Ares plays in the game
+    // (`RuleSet::ares`), resolved once here instead of with every sidebar draw.
+    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
+        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
+            state
+                .process_assets
+                .csf
+                .as_ref()
+                .map_or_else(|| label.to_owned(), |csf| csf.text(label).into_owned())
+        })
+    });
+    state.match_state.match_presentation.ares_status_texts = ares_status_texts;
     state.match_state.match_presentation.end_game_banner = assets.end_game_banner;
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a

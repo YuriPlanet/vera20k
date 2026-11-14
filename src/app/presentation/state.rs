@@ -55,6 +55,11 @@ pub(crate) struct MatchPresentationState {
     /// process InitGame GRFXTXT art.
     pub(crate) outcome_banner_side_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
+    /// This match's Ares `Text.*` superweapon status labels (hook 6CC2B0),
+    /// resolved once with the incoming world: its Rules and the process
+    /// string table stay fixed for the match. `None` unless Ares plays in
+    /// the game (`RuleSet::ares`).
+    pub(crate) ares_status_texts: Option<crate::app::presentation::sidebar_build::AresStatusTexts>,
     /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
