@@ -299,22 +299,54 @@ pub(super) fn build_world_instances(
             .as_ref()
             .map(|input| instances::shp_visitor(input, display_order));
         let mut bullets = instances::projectile_visitor(state, display_order);
-        let view = runtime.view();
-        for (layer, id) in view.display_layers().members_in_order() {
+        // A record far off the view is passed by on its span, before its
+        // large record is read: neither visitor would plan it.
+        let window = instances::PassByWindow::of(
+            state,
+            shp_inputs.as_ref().map(|input| input.building_viewport),
+        );
+        use crate::app::presentation::display_members::ObjectKind;
+        for member in frame.display_members(&runtime.simulation).objects() {
             let objects = &mut planned_objects;
-            // Every object store shares one ID namespace
-            // (`Simulation::allocate_stable_id`): a member found here is
-            // neither debris nor a Bullet.
-            let Some(entity) = frame.object(id) else {
-                if let Some(visit) = debris.as_mut() {
-                    visit(objects, id);
+            let slot = match member.kind {
+                ObjectKind::Record { slot, span } if window.reaches(span) => slot,
+                ObjectKind::Record { slot, .. } => {
+                    debug_assert!(
+                        frame
+                            .record_at(slot)
+                            .zip(instances::layer_draw_band(member.layer))
+                            .is_none_or(|(entity, band)| {
+                                let mut scratch = Vec::new();
+                                if let Some(visit) = units.as_mut() {
+                                    visit(&mut scratch, entity, band);
+                                }
+                                if let Some(visit) = shp.as_mut() {
+                                    visit(&mut scratch, entity);
+                                }
+                                scratch.is_empty()
+                            }),
+                        "object {} was passed by but draws",
+                        member.id
+                    );
+                    continue;
                 }
-                if let Some(visit) = bullets.as_mut() {
-                    visit(objects, id);
+                ObjectKind::Debris => {
+                    if let Some(visit) = debris.as_mut() {
+                        visit(objects, member.id);
+                    }
+                    continue;
                 }
-                continue;
+                ObjectKind::Bullet => {
+                    if let Some(visit) = bullets.as_mut() {
+                        visit(objects, member.id);
+                    }
+                    continue;
+                }
             };
-            let Some(band) = instances::layer_draw_band(layer) else {
+            let (Some(entity), Some(band)) = (
+                frame.record_at(slot),
+                instances::layer_draw_band(member.layer),
+            ) else {
                 continue;
             };
             if let Some(visit) = units.as_mut() {
@@ -521,23 +553,18 @@ pub(super) fn build_world_instances(
             let concealed = |entity: &crate::app::presentation::frame::ObjectRecord| {
                 instances::translucent_fog_conceals(sim, viewer, &entity.position, entity.owner())
             };
-            // Particles owned by an object follow it out of the fog.
-            let particle_owners: std::collections::BTreeMap<u64, Option<u64>> = sim
-                .particle_systems()
-                .display_particles()
-                .map(|(system, particle)| {
-                    (
-                        particle.stable_id(),
-                        system.and_then(|system| system.owner_entity()),
-                    )
-                })
-                .collect();
+            let members = frame.display_members(sim);
             planned_objects.retain(|parent| {
                 let id = parent.parent.id;
                 if let Some(entity) = frame.object(id) {
                     return !concealed(entity);
                 }
-                if let Some(owner) = particle_owners.get(&id) {
+                // Particles owned by an object follow it out of the fog.
+                if let Some(place) = members.particle_place(id) {
+                    let owner = sim
+                        .particle_systems()
+                        .display_particle_at(id, place)
+                        .and_then(|(system, _)| system?.owner_entity());
                     return owner.is_none_or(|owner_id| {
                         frame.object(owner_id).is_none_or(|e| !concealed(e))
                     });

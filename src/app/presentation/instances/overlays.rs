@@ -357,14 +357,6 @@ pub(crate) fn build_display_effect_instances(
         input.tactical,
         input.axis,
     );
-    // Particles have independent AIR registrations, including live bodies
-    // detached from a System. The store owns their lifetime; Display supplies
-    // every encounter, never this frame-local lookup's iteration/hash order.
-    let particles: crate::util::lookup_hash::LookupMap<_, _> = sim
-        .particle_systems()
-        .display_particles()
-        .map(|(system, particle)| (particle.stable_id(), (system, particle)))
-        .collect();
     let z2 = input.zoom;
     let (cam_x, cam_y, sw, sh) = (
         input.camera[0],
@@ -391,60 +383,57 @@ pub(crate) fn build_display_effect_instances(
         .filter_map(|name| sim.interner().get(name))
         .collect::<Vec<_>>();
     let local_owner = input.local_owner;
-    // Everything this loop can draw. Most Display members are entities and
-    // terrain objects, which it never draws: one lookup here passes each by,
-    // where a tree cost a miss in the frame, a miss in the Anim store and a
-    // hit in its own. Display still supplies the order.
-    let drawn_here: crate::util::lookup_hash::LookupSet<u64> = sim
-        .anims()
-        .map(|(&id, _)| id)
-        .chain(input.frame.scene.spotlights.keys().copied())
-        .chain(sim.particle_systems().iter().map(|(&id, _)| id))
-        .chain(particles.keys().copied())
-        .collect();
-    for &stable_id in sim.display_layers().ordered_ids() {
-        if !drawn_here.contains(&stable_id) {
-            continue;
-        }
-        // One ID namespace (`Simulation::allocate_stable_id`): most members
-        // are entities, drawn already, so spare them the lookups below.
-        if input.frame.contains(stable_id) {
-            continue;
-        }
-        // An id names one kind of object, so the order of these tests picks
-        // no winner: Anims and Terrain objects, the many, are asked first.
-        let Some(anim) = sim.anim(stable_id) else {
-            if sim.terrain_objects().objects().contains_key(&stable_id) {
-                continue;
+    // Only the members this loop draws, filed once for the frame; Display
+    // still supplies the order. Particles have their own AIR registrations,
+    // including live bodies detached from a System.
+    use crate::app::presentation::display_members::EffectKind;
+    for member in input.frame.display_members(sim).effects() {
+        let stable_id = member.id;
+        let anim = match member.kind {
+            EffectKind::Anim => sim.anim(stable_id),
+            EffectKind::Spotlight => {
+                if let Some(&light) = input.frame.scene.spotlights.get(&stable_id) {
+                    super::particles::build_spotlight_instance(
+                        input,
+                        stable_id,
+                        light,
+                        &context,
+                        ground_objects,
+                        ground_order,
+                    );
+                }
+                None
             }
-            if let Some(&light) = input.frame.scene.spotlights.get(&stable_id) {
-                super::particles::build_spotlight_instance(
-                    input,
-                    stable_id,
-                    light,
-                    &context,
-                    ground_objects,
-                    ground_order,
-                );
-            } else if let Some(system) = sim.particle_systems().get(stable_id) {
-                super::particles::build_particle_system_instance(
-                    input,
-                    system,
-                    &context,
-                    ground_objects,
-                    ground_order,
-                );
-            } else if let Some(&(system, particle)) = particles.get(&stable_id) {
-                super::particles::build_particle_instance(
-                    input,
-                    system,
-                    particle,
-                    &context,
-                    ground_objects,
-                    ground_order,
-                    &mut observations,
-                );
+            EffectKind::ParticleSystem => {
+                if let Some(system) = sim.particle_systems().get(stable_id) {
+                    super::particles::build_particle_system_instance(
+                        input,
+                        system,
+                        &context,
+                        ground_objects,
+                        ground_order,
+                    );
+                }
+                None
             }
+            EffectKind::Particle(place) => {
+                if let Some((system, particle)) =
+                    sim.particle_systems().display_particle_at(stable_id, place)
+                {
+                    super::particles::build_particle_instance(
+                        input,
+                        system,
+                        particle,
+                        &context,
+                        ground_objects,
+                        ground_order,
+                        &mut observations,
+                    );
+                }
+                None
+            }
+        };
+        let Some(anim) = anim else {
             continue;
         };
         let Some(atlas) = input.atlas else {

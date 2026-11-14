@@ -758,6 +758,95 @@ pub(crate) fn in_view(
     x + w >= cam_x - m && x <= cam_x + sw + m && y + h >= cam_y - m && y <= cam_y + sh + m
 }
 
+/// The box a Display record's span must reach before the object loop hands
+/// the record to the unit and SHP visitors: every view they admit from (the
+/// centring size the unit visitor takes, the render size, the building
+/// clip), widened by the widest margin either uses ([`projection_admitted`]'s
+/// 360 px) and by [`super::shp::BUILDING_SLOT_WINDOW_SLACK`] for building art
+/// and aircraft shadows. A record outside it plans nothing in either.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PassByWindow {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl PassByWindow {
+    const MARGIN: f32 = 360.0 + super::shp::BUILDING_SLOT_WINDOW_SLACK;
+
+    /// The window around `views`, each `[left, top, right, bottom]` in
+    /// world pixels.
+    pub(crate) fn around(views: impl IntoIterator<Item = [f32; 4]>) -> Self {
+        let [left, top, right, bottom] = views.into_iter().fold(
+            [
+                f32::INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+            ],
+            |[left, top, right, bottom], view| {
+                [
+                    left.min(view[0]),
+                    top.min(view[1]),
+                    right.max(view[2]),
+                    bottom.max(view[3]),
+                ]
+            },
+        );
+        Self {
+            left: left - Self::MARGIN,
+            top: top - Self::MARGIN,
+            right: right + Self::MARGIN,
+            bottom: bottom + Self::MARGIN,
+        }
+    }
+
+    /// The window of this draw: `building_view` is the SHP visitor's
+    /// building clip, when it runs.
+    pub(crate) fn of(
+        state: &AppState,
+        building_view: Option<crate::app::presentation::target_lines::TacticalViewport>,
+    ) -> Self {
+        let input = &state.match_state.input;
+        let camera = [input.camera_x, input.camera_y];
+        let zoom = input.zoom_level;
+        let (centring_width, centring_height) =
+            crate::app::input::camera::tactical_centring_size(state);
+        let from_camera = |width: u32, height: u32| {
+            [
+                camera[0],
+                camera[1],
+                camera[0] + width as f32 / zoom,
+                camera[1] + height as f32 / zoom,
+            ]
+        };
+        let buildings = building_view.map(|view| {
+            let [x, y] = view.camera.map(|v| v as f32);
+            [x, y, x + view.clip[2] as f32, y + view.clip[3] as f32]
+        });
+        Self::around(
+            [
+                from_camera(centring_width, centring_height),
+                from_camera(state.render_width(), state.render_height()),
+            ]
+            .into_iter()
+            .chain(buildings),
+        )
+    }
+
+    /// Whether `span` reaches the window.
+    pub(crate) fn reaches(
+        &self,
+        span: crate::app::presentation::display_members::ScreenSpan,
+    ) -> bool {
+        span.x >= self.left
+            && span.x <= self.right
+            && span.bottom >= self.top
+            && span.top <= self.bottom
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1445,6 +1534,26 @@ mod tests {
         explored.mark_visible_for_owner(viewer, 3, 3);
         assert!(!conceal(&explored, &enemy_entity, "Soviet", false));
         assert!(!conceal(&explored, &enemy_entity, "Soviet", true));
+    }
+
+    /// The pass-by window is the union of the views widened by its margin:
+    /// a span on its edge reaches it and one a pixel past does not, and a
+    /// column reaches it by either end, as an aircraft above the view does
+    /// by its shadow.
+    #[test]
+    fn a_span_on_the_widened_views_edge_reaches_it_and_one_past_does_not() {
+        use crate::app::presentation::display_members::ScreenSpan;
+        let window = PassByWindow::around([[100., 50., 900., 650.], [100., 50., 1000., 600.]]);
+        let margin = PassByWindow::MARGIN;
+        let reaches = |x: f32, top: f32, bottom: f32| window.reaches(ScreenSpan { x, top, bottom });
+        assert!(reaches(1000. + margin, 300., 300.));
+        assert!(!reaches(1001. + margin, 300., 300.));
+        assert!(reaches(100. - margin, 300., 300.));
+        assert!(!reaches(99. - margin, 300., 300.));
+        assert!(reaches(500., -2000. - margin, 50. - margin));
+        assert!(!reaches(500., -2000. - margin, 49. - margin));
+        assert!(reaches(500., 650. + margin, 2000. + margin));
+        assert!(!reaches(500., 651. + margin, 2000. + margin));
     }
 }
 
