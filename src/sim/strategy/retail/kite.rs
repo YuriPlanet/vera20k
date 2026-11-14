@@ -357,6 +357,14 @@ pub(super) fn run(
 
         // Reloading: step out of what can hit this cell, towards the target's
         // side so the next shot is one step back.
+        //
+        // A retreat from something faster was tried and is not here. The unit
+        // moves at `Speed=7` against enemies at `Speed=15`, so the step of one
+        // cell cannot open the distance before the gun is loaded. Standing and
+        // shooting seemed the better trade. Measured, enemy deaths over own
+        // deaths at 24000 ticks: 1.38/2.57/1.86/13.5 without it and
+        // 1.17/1.46/8.0/2.35 with it — three of four seeds worse, and seed 42
+        // went from 4 own deaths to 20. Reverted; the numbers are the reason.
         let Some(step) = step_out(unit.cell, &threats, direction_target) else {
             continue;
         };
@@ -375,25 +383,6 @@ pub(super) fn run(
         brain
             .tracked
             .record(tick, unit.entity_id, TrackedKind::Kite, None, Some(step));
-        // What the step walked into, next to what it walked out of. The deaths
-        // are counted against the order (`lost ... while carrying Kite`), so
-        // this is the other half of that pair: a step that lands with the same
-        // exposure it left is a step that changed nothing, and one that lands
-        // worse is the wishlist's "绕不开另一个威胁".
-        if tick % 60 == 0 {
-            let from = exposure(unit.cell, &threats);
-            let to = exposure(step, &threats);
-            log::info!(
-                "auto play: kite {} {:?} -> {:?} covered {} -> {} nearest {} -> {}",
-                unit.entity_id,
-                unit.cell,
-                step,
-                from.covered,
-                to.covered,
-                from.nearest,
-                to.nearest
-            );
-        }
         super::orders::issue(
             brain,
             out,
