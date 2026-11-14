@@ -148,16 +148,7 @@ fn emit_with_material(
     palette: PaletteLight,
     material: DrawState,
 ) -> Vec<PlannedObjectInstance> {
-    emit_admitted(
-        sim,
-        rules,
-        building,
-        atlas,
-        order,
-        palette,
-        material,
-        &|_| true,
-    )
+    emit_admitted(sim, rules, building, atlas, order, palette, material, None)
 }
 
 fn emit_admitted(
@@ -168,11 +159,18 @@ fn emit_admitted(
     order: &NativeDisplayOrder,
     palette: PaletteLight,
     material: DrawState,
-    slot_admitted: &dyn Fn(u64) -> bool,
+    admission: Option<([f32; 2], [f32; 2])>,
 ) -> Vec<PlannedObjectInstance> {
     let mut out = Vec::new();
     let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
     let building = frame.object(building).unwrap();
+    // Every slot, or those a Display walk with this camera and viewport admits.
+    let slot_anims = match admission {
+        None => super::every_slot_anim(sim, building),
+        Some((camera, viewport)) => {
+            super::admitted_slot_anims(sim, &frame, building, camera, viewport)
+        }
+    };
     let grid = crate::map::lighting::CellLightGrid::new();
     emit_building_anims(
         &mut out,
@@ -190,7 +188,7 @@ fn emit_admitted(
         &frame,
         Some(building.owner()),
         building,
-        slot_admitted,
+        &slot_anims,
         &|_| 0,
         0.0,
         10000.0,
@@ -778,7 +776,6 @@ fn slot_preparation_keeps_only_slots_display_can_admit() {
     let viewport = [800.0, 600.0];
     let prepared = |sim: &Simulation, beyond: f32| {
         let camera = [x - viewport[0] - beyond, y];
-        let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, &rules);
         emit_admitted(
             sim,
             &rules,
@@ -787,9 +784,7 @@ fn slot_preparation_keeps_only_slots_display_can_admit() {
             &order,
             PaletteLight::default(),
             DrawState::default(),
-            &|anim| {
-                super::super::overlays::slot_anim_admissible(sim, &frame, anim, camera, viewport)
-            },
+            Some((camera, viewport)),
         )
         .len()
     };

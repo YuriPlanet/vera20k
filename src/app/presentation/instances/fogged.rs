@@ -77,13 +77,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         );
         near
     };
-    let snapshots = fogged_draw_order(
-        sim.fog()
-            .fogged_objects()
-            .values()
-            .filter(|record| record.drawing.as_ref().is_none_or(&near_view)),
-        viewer,
-    );
+    let snapshots = fogged_draw_order(sim.fog().fogged_objects().values(), viewer, near_view);
     lower_fogged_object_pieces(
         snapshots
             .into_iter()
@@ -128,14 +122,17 @@ fn frozen_building_in_window(
 /// FoggedObjectClass::DrawAll @ 0x004D1890 gates each saved picture on its
 /// retained visible byte at4D18F7, not current sight or a live source object.
 /// Constructor4D0EF0 supplies the signed sort key;4D18C6 sorts with4D2ED0.
+/// Only `viewer`'s pictures `near_view` keeps are drawn; the cheap tests go
+/// first, and every test only reads.
 fn fogged_draw_order<'a>(
     records: impl Iterator<Item = &'a FoggedObjectFootprintRecord>,
     viewer: InternedId,
+    near_view: impl Fn(&FrozenBuilding) -> bool,
 ) -> Vec<(FoggedObjectId, &'a FrozenBuilding)> {
     let mut snapshots: Vec<_> = records
         .filter(|record| record.viewer == viewer)
         .filter_map(|record| record.drawing.as_ref().map(|draw| (record.id, draw)))
-        .filter(|(_, draw)| draw.visible)
+        .filter(|(_, draw)| draw.visible && near_view(draw))
         .collect();
     snapshots.sort_by_key(|(_, draw)| {
         i32::MAX
@@ -483,9 +480,9 @@ mod tests {
         };
         // The production selector has only immutable records: current sight
         // and the former live building cannot veto this remembered picture.
-        let selected = fogged_draw_order(std::iter::once(&record), owner);
+        let selected = fogged_draw_order(std::iter::once(&record), owner, |_| true);
         assert_eq!(selected.len(), 1);
-        assert!(fogged_draw_order(std::iter::once(&record), building).is_empty());
+        assert!(fogged_draw_order(std::iter::once(&record), building, |_| true).is_empty());
         let pieces = frozen_building_pieces(&input, selected[0].1);
         assert_eq!(
             pieces.iter().map(|piece| piece.target).collect::<Vec<_>>(),

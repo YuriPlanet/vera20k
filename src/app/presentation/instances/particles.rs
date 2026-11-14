@@ -76,6 +76,12 @@ pub(super) struct ParticleDrawContext {
 }
 
 impl ParticleDrawContext {
+    /// Whether a Particle, System or spotlight at world screen `point` passes
+    /// its builder's projection admission.
+    pub(super) fn admits(&self, point: [f32; 2]) -> bool {
+        projection_admitted(point, self.camera, self.viewport)
+    }
+
     pub(super) fn new(
         camera: [f32; 2],
         zoom: f32,
@@ -455,6 +461,14 @@ pub(super) fn build_ares_particle_draws(
         let held = input.rules.particle_type(ext.held_type());
         for record in ext.particles() {
             let coord = record.coords();
+            // The screen clip before the shroud test: both only read, so a
+            // point off the view skips the fog lookup.
+            let Ok(screen) = project_spark_point(coord, viewport) else {
+                continue;
+            };
+            if !viewport.clip.contains(screen) {
+                continue;
+            }
             if let (Some(viewer), Some(cells)) = (fog_viewer, cells.as_ref())
                 && crate::sim::vision::point_is_shrouded(
                     sim.fog(),
@@ -467,12 +481,6 @@ pub(super) fn build_ares_particle_draws(
                     },
                 )
             {
-                continue;
-            }
-            let Ok(screen) = project_spark_point(coord, viewport) else {
-                continue;
-            };
-            if !viewport.clip.contains(screen) {
                 continue;
             }
             let Ok(adjust) = adjust_for_z(coord.z, viewport.adjust_for_z_multiplier) else {

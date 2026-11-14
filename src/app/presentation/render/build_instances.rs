@@ -1009,7 +1009,7 @@ pub(super) fn build_ui_instances(
             state.match_state.sim_runtime.frame(),
         )
     {
-        for entity in frame.objects() {
+        for entity in frame.line_sources() {
             if entity.health.current() != 0
                 && let Some(designation) = entity.place.airstrike_designation
             {
