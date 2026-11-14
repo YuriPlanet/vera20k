@@ -598,9 +598,9 @@ pub(crate) enum PlaceAction<'a> {
 /// above `SuperWeaponDisallowed` (0x7E) names its current type, the armed one
 /// (resuming at `0x4AC21C`); a stock action names the armed type when it is
 /// that type's `Action=` (`+0xBC`); anything else names none (`0x4AC294`). It
-/// is superweapon code, so it follows [`RuleSet::ares_super_weapons`].
+/// is superweapon code, so it follows [`RuleSet::ares_form`].
 ///
-/// [`RuleSet::ares_super_weapons`]: crate::rules::ruleset::RuleSet::ares_super_weapons
+/// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
 pub(crate) fn special_place_type<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     armed: &'a str,
@@ -608,7 +608,7 @@ pub(crate) fn special_place_type<'a>(
 ) -> Option<&'a str> {
     match action {
         PlaceAction::Ares => Some(armed),
-        PlaceAction::Stock(action) if rules.ares_super_weapons() => rules
+        PlaceAction::Stock(action) if rules.ares_form() => rules
             .super_weapon(armed)
             .is_some_and(|sw| sw.has_action(action))
             .then_some(armed),

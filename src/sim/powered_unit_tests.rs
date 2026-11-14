@@ -785,6 +785,7 @@ fn robot_tank_state_is_saved_and_hashed() {
 /// Ares InfantryClass_UpdatePanic1004CC80 (hook5200B3) and Scatter1004CC60
 /// (hook51D0DD): a Deactivated infantryman's fear only counts down, even a
 /// Fearless one's, and a forced Scatter leaves it standing.
+// Still on the feature: moves with the infantry's panic and scatter hooks.
 #[cfg(feature = "ares")]
 #[test]
 fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
@@ -865,6 +866,6 @@ fn deactivate_sound_waits_for_the_ares_placement_mutex() {
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert_eq!(
         sounds(&events, "RobotTankOffline"),
-        if cfg!(feature = "ares") { 1 } else { 2 }
+        if rules.ares() { 1 } else { 2 }
     );
 }

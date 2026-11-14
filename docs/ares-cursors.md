@@ -3,7 +3,7 @@
 While Ares plays in a game (`RuleSet::ares`), every build draws the software
 cursor through the Ares `[MouseCursors]` list and lets types name the cursors
 of their actions. The superweapon cursors are superweapon code and follow the
-Ares superweapons (`RuleSet::ares_super_weapons`, how the Rules were read).
+Ares superweapons (`RuleSet::ares_form`, how the Rules were read).
 Only Rules read the Ares way hold the list's lines and the `Cursor.*` keys, so
 a game whose Rules were read the stock way draws the list's defaults. A game
 with neither switch keeps the compiled cursor table (`0x0082D028`) and its

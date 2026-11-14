@@ -373,7 +373,7 @@ fn the_armed_superweapon_index_answers_first() {
     // game the Ares way (`ares_switch::reading_mode`).
     assert_eq!(
         action(&some, Some(3), GROUND, None),
-        (!rules.ares_super_weapons()).then_some(RadarAction::Move)
+        (!rules.ares_form()).then_some(RadarAction::Move)
     );
 }
 
@@ -506,14 +506,14 @@ fn special_place_names_the_first_type_of_the_release_action() {
     // A build with the `ares` feature reads every game the Ares way
     // (`ares_switch::reading_mode`).
     let stock = read("");
-    if !stock.ares_super_weapons() {
+    if !stock.ares_form() {
         assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
     }
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ares = read("SW.Deferment=1\n");
-    assert!(ares.ares_super_weapons());
+    assert!(ares.ares_form());
     assert_eq!(special_place_type(&ares, "Bomb2", nuke), Some("Bomb2"));
     assert_eq!(special_place_type(&ares, "Storm", nuke), None);
     assert_eq!(

@@ -40,7 +40,7 @@
 //! radar keep an overridden action only when its cursor has radar frames.
 //!
 //! The superweapon cursors are superweapon code and follow
-//! [`RuleSet::ares_super_weapons`], as the superweapons do; the other hooks
+//! [`RuleSet::ares_form`], as the superweapons do; the other hooks
 //! follow [`RuleSet::ares`]. Only Rules read the Ares way hold the scenario's
 //! `[MouseCursors]` lines and `Cursor.*` keys, so a game Ares plays in whose
 //! Rules were read the stock way shows the cursors Ares draws without them.
@@ -98,7 +98,7 @@ const TABLE_LEN: usize = 0x4A;
 /// may name one of its entries, so while Ares plays or its superweapons are
 /// on.
 pub(crate) fn draws_through_list(rules: &RuleSet) -> bool {
-    rules.ares() || rules.ares_super_weapons()
+    rules.ares() || rules.ares_form()
 }
 
 thread_local! {
@@ -373,7 +373,7 @@ pub(crate) fn radar_action(
 /// the cursor whatever the shroud mode does to the action. `None` for the
 /// other types, and without the Ares superweapons.
 pub(crate) fn super_weapon_cursor(rules: &RuleSet, section: &str, allowed: bool) -> Option<i32> {
-    if !rules.ares_super_weapons() {
+    if !rules.ares_form() {
         return None;
     }
     let cursors = rules.ares_super_weapon_cursors(section)?;
@@ -398,7 +398,7 @@ pub(crate) fn radar_super_weapon(
     cell: (u16, u16),
     vanilla: Option<crate::app::input::radar::RadarAction>,
 ) -> Option<Option<crate::app::input::radar::RadarAction>> {
-    let rules = query.rules.filter(|rules| rules.ares_super_weapons())?;
+    let rules = query.rules.filter(|rules| rules.ares_form())?;
     let section = rules.super_weapon_order.get(armed)?;
     rules.ares_super_weapon_cursors(section)?;
     let allowed = query

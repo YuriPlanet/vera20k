@@ -87,9 +87,7 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-#[cfg(feature = "ares")]
 pub(crate) use self::can_build::ares_build_limit_remaining;
-#[cfg(feature = "ares")]
 pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{CanBuild, can_build};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};

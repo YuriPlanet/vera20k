@@ -91,6 +91,8 @@ pub struct SpriteInstance {
 /// Number of vertex attributes in SpriteInstance: 7 base, 4 DrawState fields,
 /// 3 native-Z fields (z_adjust, z_gradient, zshape_origin / voxel z_rect), the
 /// PaletteLight and the source palette row: the WebGPU default limit of 16.
+/// A shader that also takes `vertex_index` declares at most 15 of them, or the
+/// WebGL2 fallback cannot link it.
 const INSTANCE_ATTRIBUTE_COUNT: usize = 16;
 
 macro_rules! instance_attribute {

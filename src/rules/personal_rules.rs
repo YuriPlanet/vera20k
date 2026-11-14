@@ -320,4 +320,23 @@ mod tests {
         let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
         assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
     }
+
+    #[test]
+    fn a_personal_ai_nearest_enemy_survives_mode_and_map_layers() {
+        let load = |mode: &str, map: &str| {
+            let mut owner = owner("[General]\nAINearestEnemy=yes\n");
+            let mode = IniFile::from_str(mode);
+            let map = IniFile::from_str(map);
+            let (rules, _, _, _) = owner
+                .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
+                .unwrap()
+                .into_parts();
+            rules.general.ai_nearest_enemy
+        };
+        assert!(load("", ""), "no later layer");
+        assert!(load("[MultiplayerDialogSettings]\nCrates=no\n", ""), "mode");
+        assert!(load("", "[Basic]\nName=x\n"), "map without General");
+        assert!(load("[General]\nFlightLevel=500\n", ""), "mode General");
+        assert!(load("", "[General]\nFlightLevel=500\n"), "map General");
+    }
 }

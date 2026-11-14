@@ -42,14 +42,15 @@ pub(crate) enum HarvesterKey {
     KickDelay,
 }
 
-/// `rules_value`, or in Ares builds `object`'s `Harvester.*` override of it
-/// when set (Nullable `.Get(rules_value)`).
+/// `rules_value`, or in a game read the Ares way `object`'s `Harvester.*`
+/// override of it when set (Nullable `.Get(rules_value)`).
 pub(crate) fn harvester_value(
     object: Option<&crate::rules::object_type::ObjectType>,
     key: HarvesterKey,
     rules_value: i32,
 ) -> i32 {
-    #[cfg(feature = "ares")]
+    // Runs in every game: only Rules read the Ares way set a `Harvester.*`
+    // key (TechnoTypeExt `1003DFB0`), and an unset one answers `rules_value`.
     if let Some(object) = object {
         let ext = object.techno_combat().tiberium();
         return match key {
@@ -60,8 +61,6 @@ pub(crate) fn harvester_value(
             HarvesterKey::KickDelay => ext.harvester_kick_delay(rules_value),
         };
     }
-    #[cfg(not(feature = "ares"))]
-    let _ = (object, key);
     rules_value
 }
 

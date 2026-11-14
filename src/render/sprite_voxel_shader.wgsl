@@ -41,7 +41,8 @@ struct Instance {
     @location(1) size: vec2f,
     @location(2) uv_origin: vec2f,
     @location(3) uv_size: vec2f,
-    @location(4) depth: f32,
+    // No `depth` (location 4): fs_main writes frag_depth itself, and WebGL2
+    // has room for 15 inputs beside `vertex_index`.
     @location(5) tint: vec3f,
     @location(6) alpha: f32,
     @location(7) remap_row: u32,
