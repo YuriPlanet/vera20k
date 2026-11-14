@@ -132,8 +132,8 @@ pub fn shape_button_frame(
 
 /// Persistent flash + mode state for the in-game sidebar gadgets.
 ///
-/// Lives on `AppState` (one instance per app session). Ticked once per sim
-/// tick by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
+/// Lives on `AppState` (one instance per app session). Ticked on every pass
+/// by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
 /// per-frame `SidebarView` builder to populate gadget `frame_index` fields.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SidebarGadgetState {
@@ -160,8 +160,9 @@ pub struct SidebarGadgetState {
     /// changes clear it (4AC916, 4AC6BB).
     pub place_beacon_mode_on: bool,
 
-    /// Last sim tick the orchestrator processed; used to advance per
-    /// sim-tick delta (catch-up safe).
+    /// Last sim tick the orchestrator processed: offline, the frames since
+    /// it are this pass's Sidebar Action visits
+    /// (`app::presentation::sidebar_gadgets::sidebar_action_visits`).
     pub last_sim_tick: u64,
 
     /// Transient pressed bits (+0x2C) of the buttons whose frame shows them:
@@ -212,13 +213,17 @@ impl SidebarGadgetState {
         enabled
     }
 
-    /// Advance existing pulses through missed ticks, then perform the current
-    /// frame's poll followed by FlashAI, as Sidebar Action6A77CD/6A7A8C does.
-    /// A newly ready item starts at this frame, rather than consuming ticks
-    /// that passed before it was observed. Repeated renders do not tick again.
-    pub(crate) fn update_tab_flashes(&mut self, tick: u64, frame: i32, ready: [bool; 4]) {
-        let delta = tick.saturating_sub(self.last_sim_tick);
-        for _ in 1..delta {
+    /// This pass's Sidebar Action `visits` (6A77CD/6A7A8C): each polls the
+    /// tabs in StripAI, then runs FlashAI 69E010, whose countdown moves once
+    /// per call. The earlier visits only tick existing pulses; the last one
+    /// polls, so a newly ready item starts at this frame rather than consuming
+    /// visits that passed before it was observed. A pass without a visit
+    /// neither polls nor ticks.
+    pub(crate) fn update_tab_flashes(&mut self, visits: u64, frame: i32, ready: [bool; 4]) {
+        if visits == 0 {
+            return;
+        }
+        for _ in 1..visits {
             for flash in &mut self.tab_flashes {
                 flash.tick();
             }
@@ -230,12 +235,9 @@ impl SidebarGadgetState {
                 flash.stop();
             }
         }
-        if delta != 0 {
-            for flash in &mut self.tab_flashes {
-                flash.tick();
-            }
+        for flash in &mut self.tab_flashes {
+            flash.tick();
         }
-        self.last_sim_tick = tick;
     }
 
     /// Display4AC8C0(0)/4AC660(0): a pending building placement refuses mode
@@ -504,21 +506,22 @@ fn native_tab_flash_phase_and_timer_controls() {
 fn tab_flash_catchup_starts_new_ready_state_at_current_frame() {
     let mut caught_up = SidebarGadgetState::default();
     let mut stepped = SidebarGadgetState::default();
-    caught_up.update_tab_flashes(0, 0, [false; 4]);
-    for tick in 0..=100 {
-        stepped.update_tab_flashes(tick, tick as i32, [tick == 100, false, false, false]);
+    for tick in 1..=100 {
+        stepped.update_tab_flashes(1, tick, [tick == 100, false, false, false]);
     }
     caught_up.update_tab_flashes(100, 100, [true, false, false, false]);
     assert_eq!(caught_up.tab_flashes[0].countdown, 19);
     for tick in 101..=200 {
-        stepped.update_tab_flashes(tick, tick as i32, [true, false, false, false]);
+        stepped.update_tab_flashes(1, tick, [true, false, false, false]);
     }
-    caught_up.update_tab_flashes(200, 200, [true, false, false, false]);
+    caught_up.update_tab_flashes(100, 200, [true, false, false, false]);
     let flash = caught_up.tab_flashes[0];
     assert_eq!(flash.state, stepped.tab_flashes[0].state);
     assert_eq!(flash.countdown, stepped.tab_flashes[0].countdown);
-    caught_up.update_tab_flashes(200, 200, [true, false, false, false]);
-    assert_eq!(caught_up.tab_flashes[0].countdown, flash.countdown);
-    caught_up.update_tab_flashes(201, 201, [false; 4]);
+    // A pass without a Sidebar Action visit (no frame offline, or the menu
+    // or a deactivated window online) neither ticks nor stops the pulse.
+    caught_up.update_tab_flashes(0, 200, [false; 4]);
+    assert_eq!(caught_up.tab_flashes[0], flash);
+    caught_up.update_tab_flashes(1, 201, [false; 4]);
     assert!(!caught_up.tab_flashes[0].is_active());
 }

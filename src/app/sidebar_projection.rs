@@ -19,7 +19,7 @@ use crate::sim::production::{
     ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
-use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
+use crate::sim::world::{LifecycleOutput, Simulation};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
     pending_production_prediction_rate, pending_production_smoothed_stage, strip_rejects_entry,
@@ -1339,10 +1339,6 @@ impl SidebarProjectionState {
     }
 }
 
-pub(crate) fn credits_advance_for_frame(frame_committed: bool, tick_lane: TickLane) -> bool {
-    frame_committed && tick_lane == TickLane::Ordinary
-}
-
 /// Project comparison fields from their existing owners. The full build
 /// roster supplies live costs even for a retained cameo about to be removed.
 /// Super additions follow their native type-array order, not interned-ID order.
@@ -2283,188 +2279,5 @@ mod tests {
         warm.restore_credits_counter(Some("Americans"), None);
         assert_eq!(warm.saved_credits_counter("Americans"), None);
         assert_eq!(warm.displayed_credits_or_seed("Americans", 1000), 1000);
-    }
-
-    /// Compose the production seam: credits step only when the runtime
-    /// decision admits the simulation AND that pass commits an Ordinary frame.
-    /// This mirrors the only advance site, which sits inside the
-    /// `decision.run_sim` block of `advance_in_game_runtime_mode`.
-    fn credits_step(
-        inputs: crate::app::match_runtime::sim_tick::RuntimePassInputs,
-        frame_committed: bool,
-    ) -> bool {
-        let decision = crate::app::match_runtime::sim_tick::decide_runtime_pass(inputs);
-        decision.run_sim && credits_advance_for_frame(frame_committed, decision.tick_lane)
-    }
-
-    #[test]
-    fn sidebar_credit_gate_matrix() {
-        use crate::app::match_runtime::session::SessionMode;
-        use crate::app::match_runtime::sim_tick::{RuntimePassInputs, decide_runtime_pass};
-
-        // Baseline wall-clock pass: active window, accepted startup receipt,
-        // elapsed pacer window, nothing paused, no menu. Every freeze case
-        // below flips exactly one real predicate off this baseline.
-        let admitting = RuntimePassInputs {
-            exact_step: false,
-            window_active: true,
-            focus_frozen: false,
-            startup_admitted: true,
-            frame_stepping: false,
-            paused: false,
-            scenario_paused: false,
-            menu_open: false,
-            session_mode: SessionMode::Skirmish,
-            pacer_timing_admits: true,
-            network_wait: false,
-            network_dialog_open: false,
-        };
-        let baseline = decide_runtime_pass(admitting);
-        assert!(baseline.run_sim);
-        assert_eq!(baseline.tick_lane, TickLane::Ordinary);
-        assert!(baseline.admitted_by_pacer);
-        assert!(credits_step(admitting, true));
-        assert!(
-            !credits_step(admitting, false),
-            "an uncommitted frame must freeze displayed credits"
-        );
-
-        for (case, inputs) in [
-            (
-                "no-admit redraw",
-                RuntimePassInputs {
-                    pacer_timing_admits: false,
-                    ..admitting
-                },
-            ),
-            (
-                "paused redraw",
-                RuntimePassInputs {
-                    paused: true,
-                    ..admitting
-                },
-            ),
-            (
-                // An open menu is a pause (`MatchState::paused`).
-                "menu redraw",
-                RuntimePassInputs {
-                    paused: true,
-                    menu_open: true,
-                    ..admitting
-                },
-            ),
-            (
-                "focus-frozen redraw",
-                RuntimePassInputs {
-                    window_active: false,
-                    focus_frozen: true,
-                    ..admitting
-                },
-            ),
-            (
-                "missing startup receipt",
-                RuntimePassInputs {
-                    startup_admitted: false,
-                    ..admitting
-                },
-            ),
-            (
-                // Wait_For_Players blocks the frame.
-                "network wait",
-                RuntimePassInputs {
-                    network_wait: true,
-                    ..admitting
-                },
-            ),
-        ] {
-            let decision = decide_runtime_pass(inputs);
-            assert!(!decision.run_sim, "{case} must not run the simulation");
-            assert!(
-                !credits_step(inputs, true),
-                "{case} must freeze displayed credits"
-            );
-        }
-
-        // Without `pause_on_focus_loss` a deactivated window keeps the world
-        // and displayed credits advancing; only input polling stops.
-        let background = RuntimePassInputs {
-            window_active: false,
-            ..admitting
-        };
-        let decision = decide_runtime_pass(background);
-        assert!(
-            decision.run_sim,
-            "an unfrozen background match keeps running"
-        );
-        assert!(decision.admitted_by_pacer);
-        assert!(!decision.scroll_input, "a deactivated window never scrolls");
-        assert!(credits_step(background, true));
-
-        // Before 0xEA opens, the wait loop still services tactical input and
-        // draws (0x006497EC); once it is open it does neither.
-        let waiting = RuntimePassInputs {
-            session_mode: SessionMode::Lan,
-            network_wait: true,
-            ..admitting
-        };
-        let decision = decide_runtime_pass(waiting);
-        assert!(decision.tactical_mutation && decision.scroll_input);
-        let decision = decide_runtime_pass(RuntimePassInputs {
-            network_dialog_open: true,
-            ..waiting
-        });
-        assert!(!decision.run_sim && !decision.tactical_mutation && !decision.scroll_input);
-        assert!(
-            !decide_runtime_pass(RuntimePassInputs {
-                exact_step: true,
-                ..waiting
-            })
-            .run_sim,
-            "an exact step cannot pass a network wait"
-        );
-
-        // A committed network-modal frame keeps the world advancing but must
-        // not step displayed credits.
-        let network_modal = RuntimePassInputs {
-            paused: true,
-            menu_open: true,
-            session_mode: SessionMode::Lan,
-            ..admitting
-        };
-        let decision = decide_runtime_pass(network_modal);
-        assert!(
-            decision.run_sim,
-            "the network modal pump keeps the world advancing"
-        );
-        assert_eq!(decision.tick_lane, TickLane::NetworkModal);
-        assert!(
-            !credits_step(network_modal, true),
-            "a committed network-modal frame must freeze displayed credits"
-        );
-
-        // Explicit single steps advance credits iff their one frame commits,
-        // even while paused.
-        let exact = RuntimePassInputs {
-            exact_step: true,
-            paused: true,
-            ..admitting
-        };
-        assert!(
-            credits_step(exact, true),
-            "exact-step commit must advance exactly at its committed Ordinary seam"
-        );
-        assert!(!credits_step(exact, false));
-        let debug_step = RuntimePassInputs {
-            frame_stepping: true,
-            paused: true,
-            pacer_timing_admits: false,
-            ..admitting
-        };
-        let debug_decision = decide_runtime_pass(debug_step);
-        assert!(!debug_decision.admitted_by_pacer);
-        assert!(
-            credits_step(debug_step, true),
-            "debug single-step commit must advance exactly at its committed Ordinary seam"
-        );
     }
 }

@@ -379,7 +379,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
         &gadgets,
     );
     assert_eq!(building_tab.tabs[0].frame_index, 4);
-    gadgets.update_tab_flashes(29, 29, [true, true, false, false]);
+    gadgets.update_tab_flashes(19, 29, [true, true, false, false]);
     let normal = view_with_gadgets(
         &sim,
         &options,
@@ -412,7 +412,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
             expected
         );
     }
-    gadgets.update_tab_flashes(30, 30, [false; 4]);
+    gadgets.update_tab_flashes(1, 30, [false; 4]);
     assert!(!gadgets.tab_flashes[0].is_active());
     assert!(!gadgets.tab_flashes[1].is_active());
 }

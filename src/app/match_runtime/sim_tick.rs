@@ -910,13 +910,20 @@ pub(crate) struct RuntimePassDecision {
     /// Game frames are running, whatever this pass's timing. Only then do
     /// Follow and a cinematic pan rewrite the view.
     pub(crate) frames_running: bool,
+    /// GScreen Input 4F4320 reaches Sidebar Action 6A7780 this pass.
+    /// Main_Tick polls it (55D8AB) only with the window active (A8ED80) and no
+    /// in-game menu (A8EDA0), online too, and returns before it while the
+    /// scenario pauses (55D82E..55D877); Wait_For_Players polls it until
+    /// dialog 0xEA opens (6497EC). Unlike `scroll_input`, no VERA policy
+    /// widens it.
+    pub(crate) sidebar_action: bool,
 }
 
 /// Decide one in-game runtime pass from raw predicates. This is the single
-/// freeze contract for simulation admission and therefore displayed-credit
-/// cadence: paused/menu redraws, focus-frozen windows, missing startup receipts,
-/// and closed pacer windows all resolve to `run_sim: false`, and a committed
-/// network-modal frame keeps its non-`Ordinary` lane. `sidebar_credit_gate_matrix`
+/// freeze contract for simulation admission and Sidebar Action's visits:
+/// paused/menu redraws, focus-frozen windows, missing startup receipts, and
+/// closed pacer windows all resolve to `run_sim: false`, and a committed
+/// network-modal frame keeps its non-`Ordinary` lane. `sidebar_action_gate_matrix`
 /// pins the matrix through this function.
 pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecision {
     if inputs.exact_step && !inputs.network_wait {
@@ -931,6 +938,7 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
             scroll_input: true,
             camera_scroll: true,
             frames_running: true,
+            sidebar_action: true,
         };
     }
     // The session owner (`MatchSession`) carries no network service-only
@@ -976,6 +984,11 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
         // stop that remains: Main_Tick returns before input (0x55D830..0x55D859).
         camera_scroll: input_gate && (!scenario_blocks || input_between_frames),
         frames_running: frame_gate && !inputs.paused,
+        sidebar_action: inputs.window_active
+            && inputs.startup_admitted
+            && !inputs.menu_open
+            && !inputs.network_dialog_open
+            && !scenario_blocks,
     }
 }
 
@@ -1399,7 +1412,7 @@ fn advance_in_game_runtime_mode(
         // A frame sent to the simulation thread has no result yet: the pass
         // that finishes it does this ([`finish_threaded_frame`]).
         if frame_committed || !state.match_state.sim_runtime.is_lent() {
-            after_frame(state, frame_committed, tick_lane);
+            after_frame(state, frame_committed);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
@@ -1414,16 +1427,11 @@ fn advance_in_game_runtime_mode(
 }
 
 /// The client work that follows one frame's result, committed or not.
-fn after_frame(state: &mut AppState, frame_committed: bool, tick_lane: TickLane) {
+fn after_frame(state: &mut AppState, frame_committed: bool) {
     #[cfg(feature = "telemetry-dashboard")]
     if frame_committed && state.diag.telemetry_active() {
         state.match_state.telemetry_tick_rate.record(Instant::now());
     }
-    crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
-        state,
-        frame_committed,
-        tick_lane,
-    );
     if frame_committed {
         // House4F92E2's strip pass reaches this frame as a pending
         // recheck; membership must not wait for the next player input.
@@ -1474,7 +1482,7 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
     {
         return;
     }
-    after_frame(state, frame_committed, TickLane::Ordinary);
+    after_frame(state, frame_committed);
     // What the pass that admitted the frame left to its result: the
     // Main_Tick's tactical composite, and its audio pump after Logic
     // (`0x0055DE4A`), so the tick's sounds start now and not when the next
@@ -1576,8 +1584,13 @@ fn after_simulation_pass(
     refresh_cell_lighting(state);
 
     crate::app::presentation::building_anim::update_radar_state(state);
-    crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms);
-    crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state);
+    let sidebar_visits = crate::app::presentation::sidebar_gadgets::current_sidebar_action_visits(
+        state,
+        decision.sidebar_action,
+    );
+    crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
+    crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
+    crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
     // Per-frame gadget idle tick (G22 rows 2/3 drag-off/drag-back tracking).
     crate::app::input::gadget_input::idle_tick(state);
     // The audio service is NOT gated on the simulation. gamemd's
