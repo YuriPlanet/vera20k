@@ -1872,6 +1872,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              write and TemporalCheck clears",
         ),
         (
+            "sim/anim_class.rs",
+            "set_stored_location",
+            "AnimClass::SetLocation's +0x9C write; Phobos UpdateAsFiringAnim stores the \
+             owner-relative muzzle delta through it",
+        ),
+        (
             "net/global.rs",
             "set_timing",
             "Set_Timing (0x00540C60) forwards its timing to the global channel's +0x28..+0x30 \

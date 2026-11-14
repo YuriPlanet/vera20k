@@ -7307,7 +7307,15 @@ impl Simulation {
                 }
                 entity.is_some()
             }
-            Some(ObjectKind::Anim) => self.substrate.anims.remove(stable_id).is_some(),
+            Some(ObjectKind::Anim) => {
+                let removed = self.substrate.anims.remove(stable_id);
+                #[cfg(feature = "phobos")]
+                if let Some(anim) = removed.as_ref() {
+                    // Phobos `AnimExt::~AnimExt` drops the firing-anim count.
+                    self.release_firing_anim_count(anim);
+                }
+                removed.is_some()
+            }
             Some(ObjectKind::ParticleSystem) => {
                 let system = self.substrate.particle_systems.finalize_remove(stable_id);
                 if let Some(system) = system.as_ref() {

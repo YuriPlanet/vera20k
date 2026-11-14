@@ -57,7 +57,7 @@ fn deploy_anim_name(
 /// a 16-bit facing selects an entry of a 2^n list (n = 3..=16); any other
 /// length takes item 0.
 #[cfg(feature = "phobos")]
-fn item_for_direction(len: usize, raw: u16) -> usize {
+pub(crate) fn item_for_direction(len: usize, raw: u16) -> usize {
     let Some(bits_to) = len.checked_ilog2() else {
         return 0;
     };

@@ -33,6 +33,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[cfg(any(test, feature = "phobos"))]
+use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::house_colors::HouseColorIndex;
@@ -62,6 +64,10 @@ mod flaming_guy;
 #[cfg(test)]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "anim_firing_update_tests.rs"]
+mod anim_firing_update_tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnimWorldCoord {
@@ -819,6 +825,15 @@ impl AnimObject {
     #[cfg(feature = "phobos")]
     pub(crate) fn firing_anim(&self) -> Option<FiringAnimState> {
         self.firing_anim
+    }
+
+    /// `AnimClass::SetLocation` (`ObjectClass+0x9C..+0xA4`): Phobos
+    /// `UpdateAsFiringAnim` writes `GetFLH - GetRenderCoords`
+    /// (`Ext/Anim/Body.cpp:93..103`) while the muzzle anim is owner-attached,
+    /// so the stored coordinate stays owner-relative.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_stored_location(&mut self, coord: AnimWorldCoord) {
+        self.world_coord = coord;
     }
 
     #[cfg(feature = "phobos")]
@@ -2031,6 +2046,102 @@ impl Simulation {
         self.firing_anim_update_count
     }
 
+    /// Phobos `AnimExt::~AnimExt` releases the owner count for a marked anim.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn release_firing_anim_count(&mut self, anim: &AnimObject) {
+        if anim.firing_anim().is_some() {
+            self.firing_anim_update_count = self.firing_anim_update_count.saturating_sub(1);
+        }
+    }
+
+    /// Phobos `AnimExt::UpdateAsFiringAnim`
+    /// (`Ext/Anim/Body.cpp:72..105`), called per anim by the early-AI hook
+    /// `0x423B95` while `FiringAnimUpdateCount > 0`: a changed real facing
+    /// re-picks the type from the weapon's `Anim=` list, and a changed facing
+    /// or owner render coordinate re-anchors the anim at
+    /// `GetFLH(weaponIndex) - GetRenderCoords`.
+    ///
+    /// `TechnoClass::GetRealFacing` (`0x708D70`) forwards to the turret-facing
+    /// virtual (`vt+0x2A8`). The pass uses `fire_coordinate`'s aim facing as
+    /// that value: the barrel facing when the object has one (and for
+    /// aircraft), the body heading otherwise; `Fire_At` picks the muzzle type
+    /// from the same facing.
+    #[cfg(feature = "phobos")]
+    fn update_as_firing_anim(&mut self, id: AnimId, rules: &RuleSet) {
+        let Some(anim) = self.substrate.anims.get(id) else {
+            return;
+        };
+        let Some(mut state) = anim.firing_anim() else {
+            return;
+        };
+        let Some(owner_id) = anim.owner_entity() else {
+            return;
+        };
+        let current_type = anim.type_id();
+        let Some(owner) = self.substrate.entities.get(owner_id) else {
+            return;
+        };
+        if !matches!(
+            owner.category(),
+            EntityCategory::Infantry
+                | EntityCategory::Unit
+                | EntityCategory::Aircraft
+                | EntityCategory::Structure
+        ) {
+            return;
+        }
+        let Some(obj) = self.interner.object_type(owner.type_ref(), rules) else {
+            return;
+        };
+        let Some(weapon) = rules.weapon(self.interner.resolve(state.weapon)) else {
+            return;
+        };
+        let source = crate::sim::combat::fire_coord::FireSource::of_entity(owner);
+        let owner_coords = anim_owner_world_coords(owner, self.resolved_terrain.as_ref());
+        let fire = crate::sim::combat::fire_coord::fire_coordinate(
+            self,
+            rules,
+            &source,
+            obj,
+            i32::from(state.weapon_index),
+            state.burst_index,
+            crate::rules::flh::Flh::default(),
+        );
+
+        let facing_changed = fire.aim_facing16 != state.last_facing;
+        if facing_changed {
+            state.last_facing = fire.aim_facing16;
+            let index = crate::sim::unit_simple_deploy::item_for_direction(
+                weapon.anim.len(),
+                fire.aim_facing16,
+            );
+            if let Some(name) = weapon.anim.get(index) {
+                let type_id = self.interner.intern(name);
+                if type_id != current_type
+                    && let Some(config) = rules.art().anim_runtime_config(name)
+                    && let Some(anim) = self.substrate.anims.get_mut(id)
+                {
+                    // A refused retype (unbound art) keeps the current type.
+                    let _ = anim.retype_for_firing_anim(type_id, name, config);
+                }
+            }
+        }
+
+        if facing_changed || owner_coords != state.last_coords {
+            state.last_coords = owner_coords;
+            if let Some(anim) = self.substrate.anims.get_mut(id) {
+                anim.set_stored_location(AnimWorldCoord {
+                    x: fire.coord.x.wrapping_sub(owner_coords.x),
+                    y: fire.coord.y.wrapping_sub(owner_coords.y),
+                    z: fire.coord.z.wrapping_sub(owner_coords.z),
+                });
+            }
+        }
+        if let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.set_firing_anim(state);
+        }
+    }
+
     pub fn spawn_anim_at_world(
         &mut self,
         rules: &RuleSet,
@@ -2637,6 +2748,12 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
+        // Phobos `AnimClass_AI_Early @ 0x423B95` (`Ext/Anim/Hooks.cpp:714-740`)
+        // runs the firing-anim pass before the stock AI body.
+        #[cfg(feature = "phobos")]
+        if self.firing_anim_update_count() > 0 {
+            self.update_as_firing_anim(id, rules);
+        }
         // HideIfNoOre and the MakeInfantry mark read the stored Location
         // (`+0x9C`, `0x00423BD6..0x00423BFD`), not GetCoords: an owner-attached
         // anim stores an owner-relative delta there.
@@ -3577,7 +3694,10 @@ impl Simulation {
         // Scalar slot deletion451A2C ends its inherited FoggedOut199 flag;
         // the immutable FoggedObject record does not retain this Anim pointer.
         self.fog.forget_fogged_live_object(id);
-        self.substrate.anims.remove(id);
+        if let Some(anim) = self.substrate.anims.remove(id) {
+            #[cfg(feature = "phobos")]
+            self.release_firing_anim_count(&anim);
+        }
     }
 
     /// AnimClass::SetOwnerObject424B50. Normal detach preserves absolute
@@ -5946,6 +6066,7 @@ mod mineral_start_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "phobos")]
     use crate::map::entities::EntityCategory;
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;

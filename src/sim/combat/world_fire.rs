@@ -2922,6 +2922,9 @@ pub(super) fn emit_admitted_fire(
         .map(|name| world.interner.intern(name)),
         // `0x6FF42B` takes the weapon, barrel and burst of a flash that
         // `Anim.Update` keeps on the firer, and only for a weapon `Anim=` list.
+        // `FiringAnim_LastFacing`/`LastCoords` start zero (`Ext/Anim/Body.h:57-61`);
+        // only `UpdateAsFiringAnim` writes them, so the first pass always
+        // re-picks the direction type and re-anchors the muzzle.
         #[cfg(feature = "phobos")]
         firing_anim: (!weapon.anim.is_empty() && weapon.phobos_anim_update(rules)).then(|| {
             crate::sim::anim_class::FiringAnimState {
@@ -2931,12 +2934,8 @@ pub(super) fn emit_admitted_fire(
                     crate::sim::combat::WeaponSlot::Secondary => 1,
                 },
                 burst_index: weapon_burst_index(world, snap.stable_id).unwrap_or(0) as u8,
-                last_facing: fire.aim_facing16,
-                last_coords: crate::sim::anim_class::AnimWorldCoord {
-                    x: launch_source.coord.x,
-                    y: launch_source.coord.y,
-                    z: launch_source.coord.z,
-                },
+                last_facing: 0,
+                last_coords: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
             }
         }),
         occupied_building: snap.garrison.is_some(),

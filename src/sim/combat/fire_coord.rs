@@ -672,13 +672,10 @@ fn phobos_turret_pivot_offset(
     if set.burst_per_turret <= 0 {
         return stock;
     }
-    // The native divisor reads the full signed `CurrentBurstIndex`; the
-    // narrowed argument only stands in for a source without a stored entity.
-    let burst = world
-        .substrate
-        .entities
-        .get(snap.stable_id)
-        .map_or(i32::from(burst_index), |entity| entity.weapon_burst.index());
+    // The native divisor reads the full signed `CurrentBurstIndex`; callers
+    // pass it narrowed to its byte, and Phobos `UpdateAsFiringAnim` passes
+    // the burst it recorded instead of the live one.
+    let burst = i32::from(burst_index);
     let divisor = set.burst_per_turret;
     let index = ((burst / divisor) % divisor.wrapping_add(1)) - 1;
     usize::try_from(index)

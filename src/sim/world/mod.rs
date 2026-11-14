@@ -1867,8 +1867,10 @@ pub struct Simulation {
     particle_light_flash: bool,
     /// `ScenarioExt::Global()->FiringAnimUpdateCount`
     /// (`Ext/Anim/Body.cpp:25`, `Hooks.cpp:731`): how many anims still owe a
-    /// per-frame `UpdateAsFiringAnim`. Transient, never saved.
+    /// per-frame `UpdateAsFiringAnim`. Saved with the scenario
+    /// (`Ext/Scenario/Body.cpp:195`).
     #[cfg(feature = "phobos")]
+    #[serde(default)]
     pub(crate) firing_anim_update_count: u32,
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
