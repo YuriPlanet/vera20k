@@ -181,7 +181,7 @@ fn push_list_scrollbar(
 /// The family pages' parent background (`0x0060D20B`: MNSCRNL, MNSCRNS at
 /// 640 wide) with its darkened copy for list interiors, at its origin: the
 /// native canvas at the centered dialog origin on the retail layout, scaled
-/// over the page's dialog rect on a page that scales the shell.
+/// with the page while retaining the SHP canvas extent.
 pub(crate) struct FamilyBackdrop {
     background: Option<MainMenuShellChromeEntry>,
     darkened: Option<MainMenuShellChromeEntry>,
@@ -196,7 +196,7 @@ pub(crate) fn family_backdrop(
     screen_h: i32,
     scale: ShellScale,
 ) -> FamilyBackdrop {
-    let (background, darkened) = if screen_w == 640 {
+    let (background, darkened) = if scale.is_retail() && screen_w == 640 {
         (
             atlas.parent_background_640_mnscrns,
             atlas.parent_background_640_mnscrns_list,
@@ -224,8 +224,8 @@ impl FamilyBackdrop {
     /// The backdrop's own pixels behind `rect`, taken with the mapping the
     /// backdrop is drawn with: 1:1 from the centered dialog canvas on the
     /// retail layout, and, on a scaled page, proportionally from the canvas
-    /// scaled over the page's dialog rect. The list's darkened interior and the
-    /// scrollbar track go through this, so they match what lies behind them.
+    /// scaled with the page, not stretched to its full extent. The list's darkened
+    /// interior and scrollbar track use this same mapping.
     fn push_pixels(
         &self,
         out: &mut Vec<SpriteInstance>,
@@ -239,7 +239,12 @@ impl FamilyBackdrop {
         if self.scale.is_retail() {
             push_entry_crop(out, entry, self.origin, rect, depth);
         } else {
-            push_entry_window_crop(out, entry, self.scale.dialog_rect(), rect, depth);
+            // 0x0060D20B selects MNSCRNL; its retail SHP canvas is 632x568,
+            // not the enclosing 800x600 dialog. Preserve that authored extent
+            // when scaling, including the darkened list/scrollbar under-patches.
+            let (w, h) = entry.native_size();
+            let area = self.scale.scale_rect(RectPx::new(0, 0, w, h));
+            push_entry_window_crop(out, entry, area, rect, depth);
         }
     }
 }
@@ -636,6 +641,38 @@ pub(crate) fn render_credits_roll(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn family_background_preserves_retail_canvas_when_scaled() {
+        let entry = MainMenuShellChromeEntry {
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            pixel_size: [632.0, 568.0],
+        };
+        for (w, h) in [(1600, 1200), (1920, 1080), (640, 360)] {
+            let scale = ShellScale::from_screen(w, h);
+            let backdrop = FamilyBackdrop {
+                background: Some(entry),
+                darkened: Some(entry),
+                origin: (0, 0),
+                screen: (w, h),
+                scale,
+            };
+            let mut sprites = Vec::new();
+            push_family_backdrop(&mut sprites, &backdrop);
+            let expected = scale.scale_rect(RectPx::new(0, 0, 632, 568));
+            assert_eq!(sprites[0].position, [expected.x as f32, expected.y as f32]);
+            assert_eq!(sprites[0].size, [expected.w as f32, expected.h as f32]);
+            assert_eq!(sprites[0].uv_size, [1.0, 1.0]);
+            let inset = scale.scale_rect(RectPx::new(158, 142, 316, 284));
+            backdrop.push_pixels(&mut sprites, Some(entry), inset, LIST_FILL_DEPTH);
+            let patch = &sprites[1];
+            assert!((patch.uv_origin[0] - 0.25).abs() < 0.002);
+            assert!((patch.uv_origin[1] - 0.25).abs() < 0.002);
+            assert!((patch.uv_size[0] - 0.5).abs() < 0.002);
+            assert!((patch.uv_size[1] - 0.5).abs() < 0.002);
+        }
+    }
 
     #[test]
     fn list_interior_and_rows_match_the_native_capture() {
