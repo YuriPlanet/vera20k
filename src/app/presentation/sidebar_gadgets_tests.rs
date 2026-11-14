@@ -147,3 +147,153 @@ fn add_flash_super(
         .insert(type_id, instance);
     type_id
 }
+
+/// Main_Tick polls Sidebar Action once per frame (55D8AB); only the network
+/// modes' ThrottleFrame spin polls it again before each picture
+/// (55E1A5..55E1B6, 55E23A..55E253).
+#[test]
+fn sidebar_action_runs_once_per_frame_offline_and_once_per_pass_online() {
+    use super::sidebar_action_visits;
+    // Campaign or skirmish: a paused or waiting pass runs no frame, no visit.
+    assert_eq!(sidebar_action_visits(true, true, 40, 40), 0);
+    assert_eq!(sidebar_action_visits(true, true, 41, 40), 1);
+    assert_eq!(sidebar_action_visits(true, true, 43, 40), 3);
+    // A new scenario's tick restarts below the last one seen.
+    assert_eq!(sidebar_action_visits(true, true, 0, 40), 0);
+    // LAN and online: every pass polls, frame or not.
+    assert_eq!(sidebar_action_visits(true, false, 40, 40), 1);
+    assert_eq!(sidebar_action_visits(true, false, 41, 40), 1);
+    // A pass that does not reach Input runs no visit in any mode.
+    assert_eq!(sidebar_action_visits(false, true, 41, 40), 0);
+    assert_eq!(sidebar_action_visits(false, false, 41, 40), 0);
+}
+
+/// GScreen Input reaches Sidebar Action, and so the power bar, the strip
+/// scroll and the credits counter, only with the window active (A8ED80), no
+/// in-game menu (A8EDA0, online too), the scenario running (55D82E..55D877)
+/// and no Wait_For_Players dialog (6497EC), whether or not a frame runs.
+#[test]
+fn sidebar_action_gate_matrix() {
+    use super::sidebar_action_visits;
+    use crate::app::match_runtime::session::SessionMode;
+    use crate::app::match_runtime::sim_tick::{RuntimePassInputs, decide_runtime_pass};
+
+    // Visits on a pass that ran `ticks` frames since the last one.
+    let visits = |inputs: RuntimePassInputs, ticks: u64| {
+        let decision = decide_runtime_pass(inputs);
+        sidebar_action_visits(
+            decision.sidebar_action,
+            inputs.session_mode.is_single_player(),
+            40 + ticks,
+            40,
+        )
+    };
+    let admitting = RuntimePassInputs {
+        exact_step: false,
+        window_active: true,
+        focus_frozen: false,
+        startup_admitted: true,
+        frame_stepping: false,
+        paused: false,
+        scenario_paused: false,
+        menu_open: false,
+        session_mode: SessionMode::Skirmish,
+        pacer_timing_admits: true,
+        network_wait: false,
+        network_dialog_open: false,
+    };
+    assert!(decide_runtime_pass(admitting).run_sim);
+    assert_eq!(visits(admitting, 1), 1);
+    let lan = RuntimePassInputs {
+        session_mode: SessionMode::Lan,
+        ..admitting
+    };
+    for (case, inputs, ticks, expected) in [
+        // A deactivated window keeps an unfrozen world running, unpolled.
+        (
+            "background frame",
+            RuntimePassInputs {
+                window_active: false,
+                ..admitting
+            },
+            1,
+            0,
+        ),
+        (
+            "online background frame",
+            RuntimePassInputs {
+                window_active: false,
+                ..lan
+            },
+            1,
+            0,
+        ),
+        // The network modes keep running frames under the menu.
+        (
+            "online menu frame",
+            RuntimePassInputs {
+                paused: true,
+                menu_open: true,
+                ..lan
+            },
+            1,
+            0,
+        ),
+        (
+            "online redraw between frames",
+            RuntimePassInputs {
+                pacer_timing_admits: false,
+                ..lan
+            },
+            0,
+            1,
+        ),
+        (
+            "online peer wait",
+            RuntimePassInputs {
+                network_wait: true,
+                ..lan
+            },
+            0,
+            1,
+        ),
+        (
+            "peer wait dialog",
+            RuntimePassInputs {
+                network_wait: true,
+                network_dialog_open: true,
+                ..lan
+            },
+            0,
+            0,
+        ),
+        (
+            "missing startup receipt",
+            RuntimePassInputs {
+                startup_admitted: false,
+                ..lan
+            },
+            0,
+            0,
+        ),
+        // Explicit steps run one frame's Main_Tick even while paused.
+        (
+            "exact step",
+            RuntimePassInputs {
+                exact_step: true,
+                paused: true,
+                ..admitting
+            },
+            1,
+            1,
+        ),
+    ] {
+        assert_eq!(visits(inputs, ticks), expected, "{case}");
+    }
+    let menu = decide_runtime_pass(RuntimePassInputs {
+        paused: true,
+        menu_open: true,
+        ..lan
+    });
+    assert!(menu.run_sim && !menu.sidebar_action);
+}

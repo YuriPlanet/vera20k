@@ -222,14 +222,14 @@ pub fn build_sidebar_chrome_instances_for_layout(
 
 /// Render the vertical power bar meter by stacking powerp.shp strip tiles.
 ///
-/// Draws segments from top to bottom matching the original PowerClass::Draw_It:
-///   Empty (top)  = unused bar space (frame 0)
-///   Red          = deficit segments (frame 3)
-///   Yellow       = balance indicator (frame 2)
-///   Green        = surplus / consumed power (frame 1, with frame 4 blink)
+/// Draws segments from top to bottom as PowerClass::Draw 63FB20 does
+/// ([`PowerBarAnimState::visit_draw_segments`]): empty space (frame 0), the
+/// blink (frame 4) in place of the first lit segment, then the surplus over
+/// 100 (frame 1, +152C), the spare up to 100 (frame 2, +1530) and the drain
+/// (frame 3, +1534).
 ///
-/// Segment counts come from `PowerBarAnimState` which animates them
-/// one-at-a-time toward their targets for a smooth sliding effect.
+/// Segment counts come from `PowerBarAnimState`, which moves them one at a
+/// time toward their targets.
 fn render_power_bar(
     inst: &mut Vec<SpriteInstance>,
     atlas: &SidebarChromeAtlas,

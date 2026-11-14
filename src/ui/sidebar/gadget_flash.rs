@@ -132,8 +132,8 @@ pub fn shape_button_frame(
 
 /// Persistent flash + mode state for the in-game sidebar gadgets.
 ///
-/// Lives on `AppState` (one instance per app session). Ticked once per sim
-/// tick by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
+/// Lives on `AppState` (one instance per app session). Ticked on every pass
+/// by `sidebar_gadgets::update_sidebar_gadget_state`. Read by the
 /// per-frame `SidebarView` builder to populate gadget `frame_index` fields.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SidebarGadgetState {

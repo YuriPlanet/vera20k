@@ -210,7 +210,7 @@ pub(crate) struct MatchPresentationState {
     /// Animated power bar — segment-by-segment transition matching original PowerClass.
     pub(crate) power_bar_anim: crate::ui::sidebar::PowerBarAnimState,
     /// Persistent flash + mode state for in-game sidebar gadgets. Ticked from
-    /// `sidebar_gadgets::update_sidebar_gadget_state` once per sim tick;
+    /// `sidebar_gadgets::update_sidebar_gadget_state` on every pass;
     /// read each frame by the sidebar view builder to pick SHP frame indices.
     pub(crate) sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState,
     /// In-game gadget substrate (study §6.1): retained sidebar button list +
