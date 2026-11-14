@@ -8,14 +8,29 @@
 //! world. A log records the hand-out, not a
 //! change, so it over-reports, which is harmless. Transient: never saved,
 //! never hashed, and no simulation result reads it.
+//!
+//! A store may also keep a narrower log of the same kind, noted only where
+//! one kind of fact is written: the entity and anim stores' look logs, which
+//! the presentation's atlas check reads (`Simulation::take_looks`).
 
 /// What a reader takes from a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Touched {
+pub enum Touched {
     /// Anything may have changed: rebuild from the store.
     All,
     /// Only these ids (unsorted, repeats possible).
     Ids(Vec<u64>),
+}
+
+impl Touched {
+    /// Fold a later take into this one, as if both had been one take.
+    pub fn absorb(&mut self, later: Touched) {
+        match (&mut *self, later) {
+            (Touched::All, _) => {}
+            (this, Touched::All) => *this = Touched::All,
+            (Touched::Ids(ids), Touched::Ids(more)) => ids.extend(more),
+        }
+    }
 }
 
 /// One reader's log.

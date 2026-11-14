@@ -34,6 +34,7 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
         .unwrap()
         .land_type = LandType::Water.as_index();
     sim.take_lifecycle_outputs_for_test();
+    sim.take_looks();
     // The new descriptor reaches attached effects in the same AI head.
     for frame in 100..103 {
         sim.session.set_binary_frame_for_test(frame);
@@ -53,9 +54,11 @@ fn surface_conversion_ai_handles_water_beach_bridge_and_land_in_place() {
             actor.firepower_multiplier(),
             crate::util::native_x87::NativeF64Bits::from_bits(3.0_f64.to_bits())
         );
-        assert_eq!(sim.take_lifecycle_outputs_for_test().into_iter().filter(|event|
-            matches!(event, crate::sim::world::LifecycleOutput::ObjectTypeChanged { stable_id } if *stable_id == id)
-        ).count(), 1);
+        // The atlas check learns of the new model.
+        assert_eq!(
+            sim.take_looks().entities,
+            crate::sim::Touched::Ids(vec![id])
+        );
         // A self pointer must not call ConvertTechno again and overwrite
         // the existing damage reservation with actual health.
         sim.substrate

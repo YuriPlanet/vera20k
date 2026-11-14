@@ -9,6 +9,8 @@
 //! stay, and hands the raster to a worker. [`EntityAtlasGrowth::publish`]
 //! completes a finished raster into the atlas it was prepared against. One
 //! growth runs at a time; the atlas is checked again once it publishes.
+//! Between those full checks, [`EntityAtlasCheck`] checks only the objects
+//! whose look changed, and asks for a full check when one is not covered.
 //!
 //! Until a growth lands, the sprites it carries are missing from the picture,
 //! so a new object type appears a few frames late. This is a
@@ -23,8 +25,10 @@ use crate::render::batch::BatchRenderer;
 use crate::render::sprite_atlas::{
     self, PreparedSpriteAtlas, ShpAtlasUpload, ShpRasterOutput, ShpRasterWork, SpriteAtlas,
 };
+use crate::render::unit_atlas::{self, UnitAtlas};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::world::Simulation;
+use crate::sim::Touched;
+use crate::sim::world::{ChangedLooks, Simulation};
 use crate::util::time::Instant;
 
 /// What a growth is prepared from: the world, its rules and files, and the
@@ -61,12 +65,111 @@ fn elapsed_ms(since: Instant) -> f64 {
     since.elapsed().as_secs_f64() * 1000.0
 }
 
+/// What the entity atlases are still to be checked against: the objects whose
+/// look changed since the last check ([`Simulation::take_looks`]), the
+/// FoggedObject records stored since, and the house colours it used. A tick
+/// that changes no look checks nothing; a death or a move changes none.
+/// [`Self::finds_miss`] asks for [`EntityAtlasGrowth::start`]'s full check
+/// only when a changed look is not covered, the colours changed, or a log
+/// lost track (a fresh or restored world).
+pub(crate) struct EntityAtlasCheck {
+    entities: Touched,
+    anims: Touched,
+    /// The last FoggedObject record checked. Records never change once stored
+    /// and their ids only grow, so the new ones lie above it.
+    fogged_through: u64,
+    /// The colours of the last check; `None` before the first.
+    house_colors: Option<HouseColorMap>,
+}
+
+impl Default for EntityAtlasCheck {
+    /// A new check knows nothing, so its first asks for the full one.
+    fn default() -> Self {
+        Self {
+            entities: Touched::All,
+            anims: Touched::All,
+            fogged_through: 0,
+            house_colors: None,
+        }
+    }
+}
+
+impl EntityAtlasCheck {
+    /// Add a tick's changed looks to those still to check.
+    pub(crate) fn note(&mut self, looks: ChangedLooks) {
+        self.entities.absorb(looks.entities);
+        self.anims.absorb(looks.anims);
+    }
+
+    /// Whether the atlases may lack something `sim` now draws: a changed look
+    /// or a new FoggedObject record they do not cover, or anything at all once
+    /// a log lost track or the colours changed.
+    pub(crate) fn finds_miss(
+        &self,
+        sim: &Simulation,
+        rules: Option<&RuleSet>,
+        sprite_atlas: Option<&SpriteAtlas>,
+        unit_atlas: Option<&UnitAtlas>,
+        house_colors: &HouseColorMap,
+    ) -> bool {
+        let (Touched::Ids(entities), Touched::Ids(anims)) = (&self.entities, &self.anims) else {
+            return true;
+        };
+        if self.house_colors.as_ref() != Some(house_colors) {
+            return true;
+        }
+        let objects: Vec<_> = entities
+            .iter()
+            .filter_map(|&id| sim.entities().get(id))
+            .collect();
+        let anims: Vec<_> = anims.iter().filter_map(|&id| sim.anim(id)).collect();
+        let records = sim
+            .fog()
+            .fogged_objects()
+            .range(self.fogged_through.saturating_add(1)..)
+            .map(|(_, record)| record);
+        !(sprite_atlas::atlas_covers_changes(
+            sprite_atlas,
+            &objects,
+            &anims,
+            records,
+            sim.interner(),
+            rules,
+            house_colors,
+        ) && unit_atlas::atlas_covers_objects(
+            unit_atlas,
+            objects.iter().copied(),
+            rules,
+            Some(sim.interner()),
+        ))
+    }
+
+    /// The atlases were checked against all of `sim` in `house_colors`:
+    /// nothing is left to check.
+    pub(crate) fn checked(&mut self, sim: &Simulation, house_colors: &HouseColorMap) {
+        for log in [&mut self.entities, &mut self.anims] {
+            match log {
+                Touched::Ids(ids) => ids.clear(),
+                all => *all = Touched::Ids(Vec::new()),
+            }
+        }
+        self.fogged_through = sim
+            .fog()
+            .fogged_objects()
+            .last_key_value()
+            .map_or(0, |(&id, _)| id);
+        if self.house_colors.as_ref() != Some(house_colors) {
+            self.house_colors = Some(house_colors.clone());
+        }
+    }
+}
+
 impl EntityAtlasGrowth {
     /// Start a growth, unless one is running, when the atlas lacks an object
     /// (type, house colour), an AnimClass colour remap, the harvest overlay
     /// or a FoggedObject frame the world now draws. The checks are per object
-    /// type, never per sprite key, so this is cheap enough to run on every
-    /// spawn, death, ownership change and Limbo.
+    /// type, never per sprite key, but walk the whole world: the tick asks
+    /// for this only when [`EntityAtlasCheck`] finds a miss.
     pub(crate) fn start(&mut self, source: &GrowthSource, sprite_atlas: Option<&SpriteAtlas>) {
         let sim = source.sim;
         if self.sprite.is_some() {

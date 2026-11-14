@@ -836,14 +836,18 @@ mod tests {
                         )
                     })
                     .unwrap();
-                let display = frame
+                // Conceal detaches the attached anims once Display let go.
+                let detach = frame
                     .lifecycle_outputs
                     .iter()
                     .position(|output| {
-                        matches!(output, LifecycleOutput::DisplayRemove { stable_id: 20 })
+                        matches!(
+                            output,
+                            LifecycleOutput::DetachAttachedAnims { stable_id: 20 }
+                        )
                     })
                     .unwrap();
-                assert!(expiry < display);
+                assert!(expiry < detach);
             }
             // Consume actual lifecycle producer facts through the same owner
             // sim_tick calls, without constructing a windowed AppState. This
