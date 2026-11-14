@@ -139,22 +139,23 @@ pub fn placement_preview_for_owner_with_overlays(
     // Ares sub_6D5030 (10015140, hook 0x6D5455): a non-LaserFencePost
     // linkable type (a firestorm wall or a trench, IsLinkable 1000D770)
     // draws the firestorm shadow in place of the wall's.
-    #[cfg(feature = "ares")]
-    let firestorm_shadow = (!obj.laser_fence_post && obj.building_type_ext().is_linkable())
-        .then(|| owner_id.zip(native_cells.as_ref()))
-        .flatten()
-        .map(|(owner_id, query)| {
-            sim.ares_firestorm_placement_shadow(
-                obj,
-                (rx, ry),
-                owner_id,
-                rules,
-                overlay_registry,
-                query,
-            )
-        });
-    #[cfg(not(feature = "ares"))]
-    let firestorm_shadow: Option<Vec<(u16, u16)>> = None;
+    let firestorm_shadow: Option<Vec<(u16, u16)>> = if rules.ares_form() {
+        (!obj.laser_fence_post && obj.building_type_ext().is_linkable())
+            .then(|| owner_id.zip(native_cells.as_ref()))
+            .flatten()
+            .map(|(owner_id, query)| {
+                sim.ares_firestorm_placement_shadow(
+                    obj,
+                    (rx, ry),
+                    owner_id,
+                    rules,
+                    overlay_registry,
+                    query,
+                )
+            })
+    } else {
+        None
+    };
     let wall_coords = if let Some(cells) = firestorm_shadow {
         cells
     } else {
@@ -574,15 +575,16 @@ pub(crate) fn place_production_with_overlays(
     sim.slave_manager_hand_off(new_sid, rules, effects);
     // Ares HouseClass_UnitFromFactory_Firewall (10014D50, hook 0x4FB257):
     // a firestorm wall section fills the gaps to the sections it links to.
-    #[cfg(feature = "ares")]
-    sim.ares_build_lines(
-        new_sid,
-        (rx, ry),
-        owner_id,
-        rules,
-        overlay_registry,
-        effects,
-    );
+    if rules.ares_form() {
+        sim.ares_build_lines(
+            new_sid,
+            (rx, ry),
+            owner_id,
+            rules,
+            overlay_registry,
+            effects,
+        );
+    }
     held.complete_placement(&mut sim.production, &sim.session);
     crate::sim::radio::transmit(
         sim,
@@ -804,6 +806,7 @@ pub fn is_within_build_area(
     if placed_adjacent < 0 {
         return false;
     }
+    let ares = rules.ares_form();
     for e in sim.substrate.entities.values() {
         // A dying structure provides no build-area adjacency during its window.
         if e.death.is_dying() || e.lifecycle.in_limbo() {
@@ -812,8 +815,7 @@ pub fn is_within_build_area(
         if e.category() != EntityCategory::Structure {
             continue;
         }
-        #[cfg(not(feature = "ares"))]
-        if !e.unit_delivery_provides_base_space() {
+        if !ares && !e.unit_delivery_provides_base_space() {
             continue;
         }
         let provider_owner = sim.interner.resolve(e.owner());
@@ -825,21 +827,19 @@ pub fn is_within_build_area(
         // only the own-base flag; the BuildOffAlly test after it (0x004A8FFA)
         // still reads it, and IsAlliedWith answers true for the house itself
         // (`0x004F9A10`).
-        #[cfg(feature = "ares")]
-        let own = provider_owner.eq_ignore_ascii_case(owner);
-        #[cfg(feature = "ares")]
-        if own && e.unit_delivery_provides_base_space() {
-            if !existing.base_normal {
+        if ares {
+            let own = provider_owner.eq_ignore_ascii_case(owner);
+            if own && e.unit_delivery_provides_base_space() {
+                if !existing.base_normal {
+                    continue;
+                }
+            } else if !(sim.session.game_options().build_off_ally
+                && existing.eligibile_for_ally_building
+                && (own || is_allied_with(sim.house_alliances.as_map(), provider_owner, owner)))
+            {
                 continue;
             }
-        } else if !(sim.session.game_options().build_off_ally
-            && existing.eligibile_for_ally_building
-            && (own || is_allied_with(sim.house_alliances.as_map(), provider_owner, owner)))
-        {
-            continue;
-        }
-        #[cfg(not(feature = "ares"))]
-        if provider_owner.eq_ignore_ascii_case(owner) {
+        } else if provider_owner.eq_ignore_ascii_case(owner) {
             if !existing.base_normal {
                 continue;
             }

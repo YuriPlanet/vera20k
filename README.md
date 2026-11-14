@@ -93,9 +93,8 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-VERA20K plays like the original game by default. Map capacity is selected automatically,
-without a build flag: `Size` width plus height can be up to 1024. Other new features,
-including extensions from mods such as Ares, stay off until they are turned on with one of:
+VERA20K plays like the original game by default. New features, including extensions from
+mods such as Ares, stay off until they are turned on with one of:
 
 - **A VERA player option**, in **Options**, saved under `[VERA]` in `VERA.INI`.
 - **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).

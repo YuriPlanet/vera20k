@@ -1107,6 +1107,17 @@ pub(crate) struct AresPart {
     /// [`InitialPayloadState`]: crate::sim::ares_transports::InitialPayloadState
     #[serde(default)]
     pub(crate) ares_initial_payload: crate::sim::ares_transports::InitialPayloadState,
+    /// Ares BuildingExt CashUpgradeTimers (`+0x54`, `+0x60`, `+0x6C`): one
+    /// per upgrade slot, at TimerStruct's default (no anchor, nothing left)
+    /// until Ares' ProduceCash hooks start them (`sim::credit_income`).
+    /// Hashed while started.
+    #[serde(default)]
+    pub(crate) cash_upgrade_timers: [crate::sim::timer::CdTimer; 3],
+    /// The type's Ares `FactoryPlant.Multiplier` when it is not 1.0, retained
+    /// beside the object's tracking facts, whose `Cost_Of` reads it
+    /// (`sim::house_tracking::retained_plant_multiplier`). Hashed while set.
+    #[serde(default)]
+    pub(crate) factory_plant_multiplier: Option<crate::util::native_x87::NativeF64Bits>,
 }
 
 impl crate::util::sparse::SparseDefault for AresPart {
