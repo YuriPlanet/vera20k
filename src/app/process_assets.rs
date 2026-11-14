@@ -78,9 +78,13 @@ pub(crate) struct ProcessAssets {
     /// The network games' Rules/AI/Art INI hashes, computed once from the
     /// process sources; `None` without them.
     native_ini_hashes: Option<crate::rules::native_ini_hash::NativeIniHashes>,
-    /// Game-folder files that change those sources from the retail copies,
-    /// found with the hashes.
+    /// Game-folder files that change those sources or the theater tiles from
+    /// the retail copies, found with the hashes.
     changed_game_files: Vec<String>,
+    /// VERA: the theater tiles the game folder changes, found once from the
+    /// process sources by whichever needs them first: the startup hashes, or
+    /// the rules digest of a process that never starts (the launch probe).
+    changed_tiles: std::sync::OnceLock<crate::map::theater::ChangedTiles>,
 }
 
 fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
@@ -132,6 +136,7 @@ impl ProcessAssets {
             tile_variant_selector_cache: Default::default(),
             native_ini_hashes: None,
             changed_game_files: Vec::new(),
+            changed_tiles: Default::default(),
         }
     }
 
@@ -220,10 +225,15 @@ impl ProcessAssets {
     }
 
     /// Loose files or archives in the game folder that change the rules the
-    /// network compares from the retail copies, e.g. `rulesmd.ini` or
-    /// `expandmd99.mix`; found at startup.
+    /// network compares or a theater's tiles from the retail copies, e.g.
+    /// `rulesmd.ini`, `clear01.sno` or `expandmd99.mix`; found at startup.
     pub(crate) fn changed_game_files(&self) -> &[String] {
         &self.changed_game_files
+    }
+
+    fn changed_tiles(&self, assets: &AssetManager) -> &crate::map::theater::ChangedTiles {
+        self.changed_tiles
+            .get_or_init(|| crate::map::theater::changed_tiles(assets))
     }
 
     /// Recovery uses the process's already resolved choice, never a new Auto
@@ -416,8 +426,9 @@ impl ProcessAssets {
     }
 
     /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
-    /// plus the selected mode and AIMD snapshots used by scenario loading, and
-    /// each theater's INI as `map::theater::load_theater` reads it.
+    /// plus the selected mode and AIMD snapshots used by scenario loading,
+    /// each theater's INI as `map::theater::load_theater` reads it, and the
+    /// theater tiles the game folder changes.
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
         use crate::rules::ini_parser::IniFile;
@@ -444,6 +455,9 @@ impl ProcessAssets {
                         .map(|ini| ini.multiplayer_digest())
                 }),
         );
+        // VERA: and the tiles the game folder changes; none add an absent
+        // digest.
+        digests.push(self.changed_tiles(assets).digest.clone());
         let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
         for digest in digests {
             bytes.push(u8::from(digest.is_some()));
@@ -499,8 +513,8 @@ impl ProcessAssets {
     /// the selected rules root and ART, AIMD, each mode's INI by id
     /// `1..=count` and CoopCampMD.
     /// VERA: also finds the game-folder files that change those sources,
-    /// LANGRULE.INI or a theater INI (VERA's own agreement compares both)
-    /// from the retail copies ([`Self::changed_game_files`]).
+    /// LANGRULE.INI, a theater INI or a theater's tiles (VERA's own agreement
+    /// compares these) from the retail copies ([`Self::changed_game_files`]).
     pub(crate) fn install_native_ini_hashes(
         &mut self,
         assets: &AssetManager,
@@ -530,8 +544,13 @@ impl ProcessAssets {
         if assets.ships_ares() {
             self.changed_game_files.push("ares.mix".to_owned());
         }
+        for file in self.changed_tiles(assets).files.clone() {
+            if !self.changed_game_files.contains(&file) {
+                self.changed_game_files.push(file);
+            }
+        }
         log::info!(
-            "Game files that change the original rules: {}",
+            "Game files that change the original game: {}",
             if self.changed_game_files.is_empty() {
                 "none".to_owned()
             } else {
@@ -937,6 +956,70 @@ mod tests {
         // file, as `nmd` picks New Urban's `urbannmd.ini` for Urban.
         assert!(changed.stock_ini_roots());
         assert!(!started(Some("nmd")).stock_ini_roots());
+    }
+
+    /// VERA: a theater's tiles decide its cells' land and height, and map
+    /// loading picks each cell's variant by how many files its tile has. A
+    /// game-folder tile that adds a variant, or a theater MIX that lacks one or
+    /// does not open, changes the agreement and is named for Quick Match; the
+    /// retail bytes change nothing. The launch probe, which never runs the
+    /// startup hashes, reports the same digest.
+    #[test]
+    fn changed_theater_tiles_take_part_in_the_agreement() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("theater-tiles");
+        let local = make_new_format_mix_bytes(&[
+            ("rulesmd.ini", b"[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", b"[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", b"[AI]\nValue=1\n"),
+            (
+                "snowmd.ini",
+                b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
+            ),
+        ]);
+        let tiles =
+            make_new_format_mix_bytes(&[("clear01.sno", b"tile"), ("clear01a.sno", b"next")]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local), ("isosnomd.mix", &tiles)]),
+        )
+        .unwrap();
+        let started_with = |hashes: bool| {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            if hashes {
+                process.install_native_ini_hashes(&assets, &[]);
+            }
+            process.return_from_loading(assets);
+            process
+        };
+        let started = || started_with(true);
+        let retail = started();
+        assert!(retail.changed_game_files().is_empty());
+        let digest = retail.multiplayer_rules_digest("").unwrap();
+        std::fs::write(dir.path().join("clear01.sno"), b"tile").unwrap();
+        assert_eq!(started().multiplayer_rules_digest("").unwrap(), digest);
+        std::fs::write(dir.path().join("clear01b.sno"), b"next").unwrap();
+        let added = started();
+        assert_eq!(added.changed_game_files(), ["clear01b.sno"]);
+        let changed = added.multiplayer_rules_digest("").unwrap();
+        assert_ne!(changed, digest);
+        // `spawn_probe::probe` digests without the startup hashes.
+        assert_eq!(
+            started_with(false).multiplayer_rules_digest("").unwrap(),
+            changed
+        );
+        std::fs::remove_file(dir.path().join("clear01b.sno")).unwrap();
+        std::fs::write(
+            dir.path().join("isosnomd.mix"),
+            make_new_format_mix_bytes(&[("clear01.sno", b"tile")]),
+        )
+        .unwrap();
+        assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
+        std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
+        assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
     }
 
     #[test]

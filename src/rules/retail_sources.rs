@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::assets::asset_manager::{AssetManager, AssetResolutionRef};
 use crate::assets::error::AssetError;
+use crate::assets::mix_archive::MixArchive;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::directives::{
     DirectiveDiagnostic, DirectiveOptions, include_identity, process_directives,
@@ -338,6 +339,45 @@ const SHIPPED_ARCHIVES: [&str; 5] = [
 const SHIPPED_MASTER: &str = "ra2md.mix";
 const SHIPPED_LOCAL: &str = "localmd.mix";
 
+/// Whether a source (`AssetResolutionRef::source_archive`, an archive's name)
+/// is a shipped archive or nested in one. A loose file never is.
+pub(crate) fn shipped_source(source: &str) -> bool {
+    !source.starts_with("loose:")
+        && SHIPPED_ARCHIVES
+            .iter()
+            .any(|shipped| outermost_archive(source).eq_ignore_ascii_case(shipped))
+}
+
+/// The game-folder file a source comes from: a loose file's name, else the
+/// archive's outermost name (`expandmd99.mix`).
+pub(crate) fn game_folder_file(source: &str) -> String {
+    match source.strip_prefix("loose:") {
+        Some(path) => std::path::Path::new(path).file_name().map_or_else(
+            || path.to_owned(),
+            |file| file.to_string_lossy().into_owned(),
+        ),
+        None => outermost_archive(source).to_owned(),
+    }
+}
+
+fn outermost_archive(source: &str) -> &str {
+    source.split(" -> ").next().unwrap_or(source).trim()
+}
+
+/// The shipped copy of the nested archive `name` (`isosnomd.mix`): the
+/// first shipped archive, in lookup order, that holds one.
+pub(crate) fn shipped_nested_archive(assets: &AssetManager, name: &str) -> Option<MixArchive> {
+    let id = crate::assets::mix_hash::mix_hash(name);
+    SHIPPED_ARCHIVES.iter().find_map(|archive| {
+        assets
+            .archive_with_source(archive)?
+            .1
+            .nested_archive_by_id(id)
+            .ok()
+            .flatten()
+    })
+}
+
 /// VERA: the game-folder files that change any of `names` from the copy the
 /// retail game ships, for Quick Match, which plays the original game. Each
 /// is a loose file's name or an archive's outermost name (`expandmd99.mix`),
@@ -349,11 +389,6 @@ const SHIPPED_LOCAL: &str = "localmd.mix";
 /// (`IniFile::multiplayer_digest`) are unchanged, and so is a name nothing
 /// supplies.
 pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec<String> {
-    let shipped_archive = |archive: &str| {
-        SHIPPED_ARCHIVES
-            .iter()
-            .any(|shipped| archive.eq_ignore_ascii_case(shipped))
-    };
     let mut local = None;
     let mut files = Vec::new();
     for name in names.iter().map(|name| name.trim()) {
@@ -363,14 +398,7 @@ pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec
         else {
             continue;
         };
-        let loose = used.source_archive.strip_prefix("loose:");
-        let outermost = used
-            .source_archive
-            .split(" -> ")
-            .next()
-            .unwrap_or(used.source_archive)
-            .trim();
-        if loose.is_none() && shipped_archive(outermost) {
+        if shipped_source(used.source_archive) {
             continue;
         }
         let local = local.get_or_insert_with(|| {
@@ -394,13 +422,7 @@ pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec
         if shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
             continue;
         }
-        let file = match loose {
-            Some(path) => std::path::Path::new(path).file_name().map_or_else(
-                || name.to_owned(),
-                |file| file.to_string_lossy().into_owned(),
-            ),
-            None => outermost.to_owned(),
-        };
+        let file = game_folder_file(used.source_archive);
         if !files.contains(&file) {
             files.push(file);
         }
