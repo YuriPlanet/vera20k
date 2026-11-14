@@ -26,15 +26,8 @@ oyuncular söylüyor.
 ## İndir ve oyna
 
 1. Red Alert 2: Yuri's Revenge'i Steam'den ya da EA uygulamasından kurun.
-2. Aşağıdaki düğmelerle sisteminize uygun VERA20K'yi indirin.
+2. Sisteminize uygun VERA20K'yi [sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin.
 3. İndirdiğiniz dosyayı açın. Oyununuzu bulur ve VERA20K'yi kendi klasörüne kurar.
-
-<p dir="ltr">
-  <a href="https://vera20k.org/download/windows"><img src="https://img.shields.io/badge/Windows-1E4976?style=for-the-badge&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTMgM2g4LjV2OC41SDN6TTEyLjUgM0gyMXY4LjVoLTguNXpNMyAxMi41aDguNVYyMUgzek0xMi41IDEyLjVIMjFWMjFoLTguNXoiLz48L3N2Zz4%3D" alt="Windows için indir" height="28"></a>
-  <a href="https://vera20k.org/download/macos"><img src="https://img.shields.io/badge/macOS_%C2%B7_Apple_Silicon-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="macOS (Apple Silicon) için indir" height="28"></a>
-  <a href="https://vera20k.org/download/macos-x64"><img src="https://img.shields.io/badge/macOS_%C2%B7_Intel-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="macOS (Intel) için indir" height="28"></a>
-  <a href="https://vera20k.org/download/linux"><img src="https://img.shields.io/badge/Linux-000000?style=for-the-badge&amp;logo=linux&amp;logoColor=white" alt="Linux için indir" height="28"></a>
-</p>
 
 Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 
