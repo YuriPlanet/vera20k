@@ -817,7 +817,7 @@ fn spawn_anim(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     //! Native comparisons (`tools/superweapon_oracle.py` section
     //! `mission_missile`; `--check` regenerates it).

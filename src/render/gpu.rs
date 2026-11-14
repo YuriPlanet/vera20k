@@ -799,7 +799,7 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};

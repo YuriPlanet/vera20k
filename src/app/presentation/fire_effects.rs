@@ -129,7 +129,7 @@ pub(crate) fn build_weapon_wave_draws(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

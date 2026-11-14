@@ -842,7 +842,7 @@ pub struct BunkerWallAnimEvent {
     pub damaged: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::movement::DriveLocomotionRuntime;

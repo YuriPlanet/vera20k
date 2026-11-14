@@ -985,7 +985,7 @@ fn summarise_facings(facings: &[u8]) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

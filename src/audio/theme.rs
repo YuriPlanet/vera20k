@@ -41,7 +41,7 @@ const MENU_THEME_SECTION: &str = "INTRO";
 /// `Next_Song` shuffle rejection budget (`CMP EDI,0x3E8` @ `0x00720AC6`).
 const SHUFFLE_TRIES: u32 = 1_000;
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 #[path = "theme_saved_tests.rs"]
 mod saved_tests;
 
@@ -993,7 +993,7 @@ fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrac
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;

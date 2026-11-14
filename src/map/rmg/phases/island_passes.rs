@@ -220,7 +220,7 @@ pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
     rebuilt
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::rng::RmgRng;

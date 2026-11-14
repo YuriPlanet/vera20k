@@ -23,7 +23,7 @@ pub const LEPTON_DELTAS: [(i32, i32); 8] = {
     out
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

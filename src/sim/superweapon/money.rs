@@ -10,7 +10,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "money_tests.rs"]
 mod tests;
 

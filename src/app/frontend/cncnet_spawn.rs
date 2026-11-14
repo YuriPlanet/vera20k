@@ -1239,10 +1239,10 @@ fn integer(section: &IniSection, key: &str, default: i32) -> Result<i32> {
     Ok(section.read_int(key, default))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 #[path = "cncnet_spawn_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 #[path = "cncnet_campaign_spawn_tests.rs"]
 mod campaign_tests;

@@ -86,7 +86,7 @@ pub(crate) fn parse(file: &[u8]) -> Option<HashMap<String, Arc<CameoLabel>>> {
     Some(labels)
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_root, tests_render_s_z)))]
 pub(crate) mod test_support {
     use super::*;
 
@@ -114,7 +114,7 @@ pub(crate) mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::test_support::label_file;
     use super::*;

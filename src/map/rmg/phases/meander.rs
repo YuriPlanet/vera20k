@@ -397,7 +397,7 @@ pub(crate) fn dilate_chained(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

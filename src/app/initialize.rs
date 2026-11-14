@@ -1426,7 +1426,7 @@ pub(crate) fn quickplay_launch_session(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

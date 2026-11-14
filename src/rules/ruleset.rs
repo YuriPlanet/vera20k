@@ -62,15 +62,15 @@ thread_local! {
     static NAME_KEY_COPIES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "command_bar_sound_rules_tests.rs"]
 mod command_bar_sound_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "multiplayer_rules_tests.rs"]
 mod multiplayer_rules_tests;
 
@@ -12115,7 +12115,7 @@ fn parse_particle_system_types(
     (types, by_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
@@ -17228,18 +17228,18 @@ Projectile=Invisible
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "map_lighting_tests.rs"]
 mod map_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "name_lookup_tests.rs"]
 mod name_lookup_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "global_promotion_tests.rs"]
 mod global_promotion_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ares_script_conversion_tests.rs"]
 mod ares_script_conversion_tests;

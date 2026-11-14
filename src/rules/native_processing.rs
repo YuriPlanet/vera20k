@@ -11061,90 +11061,90 @@ impl RulesPassProcessor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_processing_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_veterancy_tests.rs"]
 mod ares_country_veterancy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_factory_owners_tests.rs"]
 mod ares_factory_owners_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "side_registry_tests.rs"]
 mod side_registry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_sidebar_tests.rs"]
 mod ares_side_sidebar_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_paradrop_tests.rs"]
 mod ares_country_paradrop_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_power_plants_tests.rs"]
 mod ares_country_power_plants_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_presentation_tests.rs"]
 mod ares_country_presentation_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_defaults_tests.rs"]
 mod ares_side_defaults_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_tech_level_tests.rs"]
 mod native_tech_level_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "projectile_art_tests.rs"]
 mod projectile_art_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "weapon_speed_tests.rs"]
 mod weapon_speed_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "weapon_registry_tests.rs"]
 mod weapon_registry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "guided_controls_tests.rs"]
 mod guided_controls_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "select_anim_rules_tests.rs"]
 mod select_anim_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "approach_rules_tests.rs"]
 mod approach_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "chrono_beam_rules_tests.rs"]
 mod chrono_beam_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "control_line_rules_tests.rs"]
 mod control_line_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "disguise_cursor_rules_tests.rs"]
 mod disguise_cursor_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_type_reader_tests.rs"]
 mod native_type_reader_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_eva_tests.rs"]
 mod ares_side_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_loading_tests.rs"]
 mod ares_country_loading_tests;

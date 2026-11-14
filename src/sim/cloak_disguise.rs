@@ -1254,15 +1254,15 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "cloak_sound_tests.rs"]
 mod sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_c_g, tests_sim_world_techno)))]
 #[path = "mirage_disguise_tests.rs"]
 pub(in crate::sim) mod mirage_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 

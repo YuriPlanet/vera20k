@@ -484,7 +484,7 @@ fn send(state: &mut AppState, record: BeaconRecord) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

@@ -865,7 +865,7 @@ fn pack_cameos(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::{legacy_cameo_fallback_candidates, rendered_cameo_from_canvas};
 

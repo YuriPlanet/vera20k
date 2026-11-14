@@ -777,7 +777,7 @@ impl PosePage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::render::atlas_growth::SPRITE_PADDING;

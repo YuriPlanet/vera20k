@@ -139,7 +139,7 @@ impl crate::sim::scenario_session::ScenarioSession {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod tests {
     use super::*;
     use serde_json::Value;

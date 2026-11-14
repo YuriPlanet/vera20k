@@ -73,7 +73,7 @@ pub(crate) fn read(settings_dir: &Path) -> PhobosClientSettings {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

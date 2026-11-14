@@ -49,7 +49,7 @@ pub(crate) fn load_existing(directory: &Path) -> io::Result<Option<Vec<u8>>> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

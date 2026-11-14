@@ -934,7 +934,7 @@ fn modal_child(dialog: RectPx, local: RectPx) -> RectPx {
     RectPx::new(dialog.x + local.x, dialog.y + local.y, local.w, local.h)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

@@ -470,7 +470,7 @@ impl MissionControl {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod mission_type_tests {
     use super::*;
 
@@ -566,7 +566,7 @@ mod mission_type_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod mission_control_tests {
     use super::*;
 
@@ -717,7 +717,7 @@ mod mission_control_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod acceptance_tests {
     use super::*;
     use crate::rules::ruleset::RuleSet;

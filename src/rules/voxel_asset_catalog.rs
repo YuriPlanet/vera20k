@@ -314,7 +314,7 @@ impl VoxelAssetCatalog {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};

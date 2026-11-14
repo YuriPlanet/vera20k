@@ -124,7 +124,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for NeverWaitingOnceLock<T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::NeverWaitingOnceLock;
 

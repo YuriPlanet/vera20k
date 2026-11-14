@@ -268,7 +268,7 @@ pub fn tick(
     key
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::gadget::list::{GadgetBehavior, GadgetSpec};

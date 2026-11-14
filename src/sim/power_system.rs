@@ -1150,7 +1150,7 @@ pub fn has_active_radar(
         .is_some_and(|state| state.radar_available)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

@@ -479,7 +479,7 @@ fn share_check(bytes: &[u8]) -> u8 {
         .fold(0x5Au8, |check, &byte| check.rotate_left(3) ^ byte)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

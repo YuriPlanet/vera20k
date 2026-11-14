@@ -384,7 +384,7 @@ pub(crate) fn timed_line(text: Vec<u16>, sent_at: Option<u64>, now: u64) -> Vec<
     line
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

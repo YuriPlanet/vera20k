@@ -541,7 +541,7 @@ impl SetupCrashCapture {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};

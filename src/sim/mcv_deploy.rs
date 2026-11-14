@@ -489,10 +489,10 @@ pub(crate) fn per_cell_process(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "mcv_deploy_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "mcv_deploy_retask_retail_tests.rs"]
 mod retail_retask_tests;

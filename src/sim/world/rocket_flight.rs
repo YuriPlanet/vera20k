@@ -389,7 +389,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(super) mod retail_tests {
     //! Production composition witnesses: a stock V3 Launcher on retail Hills
     //! and a Dreadnought on retail Lost Lake force-attack a target through an

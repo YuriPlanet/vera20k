@@ -1600,7 +1600,7 @@ pub(crate) fn credit_tick_sound(credit_ticks: &[String], tick: CreditTick) -> Op
     Some(credit_ticks[usize::from(!tick.counting_up)].as_str())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::ui::sidebar::SidebarTab;

@@ -2167,7 +2167,7 @@ pub(crate) fn find_layered_path_marker(
 }
 
 // Tests extracted to core_tests.rs to stay under 400 lines.
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "core_tests.rs"]
 mod core_tests;
 
@@ -2191,6 +2191,6 @@ impl PathGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "astar_entry_tests.rs"]
 mod astar_entry_tests;

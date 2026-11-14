@@ -654,7 +654,7 @@ fn shift_right_jam_u128(value: u128, distance: u32) -> u64 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     #[test]
     fn compare_orders_against_zero_by_sign_not_exponent() {

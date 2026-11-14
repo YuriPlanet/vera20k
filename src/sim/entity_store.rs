@@ -1361,7 +1361,7 @@ fn airborne_entry(entity: &GameEntity) -> Option<(u16, u64, u64)> {
         .map(|bucket| (bucket, entity.air_spatial_enter_order(), entity.stable_id()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;

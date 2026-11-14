@@ -533,7 +533,7 @@ pub(super) fn build_ares_particle_draws(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::particle_draw_flags;
 

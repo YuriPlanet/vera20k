@@ -127,7 +127,7 @@ fn first_yard_distance_accepts(
     distance <= cap
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::find_naval_base_placement;
     use crate::rules::ini_parser::IniFile;

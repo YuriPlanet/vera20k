@@ -18,64 +18,64 @@ pub(crate) use chronosphere::AresChronoWarps;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub use chronosphere::ares_chrono_warp_for;
 pub mod airstrike_tint;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod ares_charge_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod ares_common_keys_tests;
 mod ares_presentation;
 pub use ares_presentation::ares_timer_visible;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod ares_stock_types_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod ares_super_anims_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod ares_target_policy_tests;
 mod battery;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod building_requirements_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod can_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod charge_drain_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod charge_native_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
 pub(crate) mod drop_pod;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod drop_pod_tests;
 mod emp_pulse;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod emp_pulse_tests;
 mod fire;
 mod firewall;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod firewall_tests;
 pub mod force_shield;
 mod generic_warhead;
 pub mod genetic_converter;
 mod hunter_seeker;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod hunter_seeker_tests;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_superweapon, tests_sim_trigger)))]
 pub(crate) mod lightning_storm_tests;
 mod money;
 pub(crate) mod nuke;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod nuke_tests;
 pub mod paradrop;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_superweapon, feature = "phobos"))]
 mod phobos_techno_requirements_tests;
 mod protect;
 pub mod psychic_dominator;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
 mod sonar_pulse;
@@ -92,11 +92,11 @@ pub(crate) enum SuperWeaponTargetSource {
     Automatic,
     SelectedAutomatic,
 }
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod spy_plane_tests;
 mod targeting;
 pub(crate) mod unit_delivery;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 mod view_admission_tests;
 
 use crate::rules::ruleset::RuleSet;

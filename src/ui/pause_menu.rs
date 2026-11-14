@@ -205,7 +205,7 @@ pub fn resolve_abort_action(action: AbortConfirmAction) -> ModalOutcome {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

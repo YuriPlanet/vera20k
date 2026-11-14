@@ -613,7 +613,7 @@ fn log_prepared_load_error(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod save_name_tests {
     use super::sanitize_save_name;
     use crate::sim::snapshot::GameSnapshot;
@@ -652,7 +652,7 @@ mod save_name_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod pending_load_tests {
     use super::PendingSavedGameLoad;
     use std::path::PathBuf;
@@ -673,7 +673,7 @@ mod pending_load_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod initial_save_tests {
     use super::initial_campaign_filename;
 

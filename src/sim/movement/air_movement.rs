@@ -422,7 +422,7 @@ pub(crate) fn update_fly_height(
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_a_b)))]
 pub(crate) mod tests {
     use super::*;
     use crate::rules::locomotor_type::LocomotorKind;
@@ -674,6 +674,6 @@ pub(crate) mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "object_flight_tests.rs"]
 mod object_flight_tests;

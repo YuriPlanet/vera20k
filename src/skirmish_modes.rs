@@ -337,7 +337,7 @@ pub fn mode_by_id(modes: &[SkirmishGameMode], id: i32) -> Option<&SkirmishGameMo
     modes.iter().find(|mode| mode.id == id)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod tests {
 
     #[test]

@@ -76,7 +76,7 @@ fn append_clear_neighbors(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

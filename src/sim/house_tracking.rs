@@ -1247,14 +1247,14 @@ impl HouseTracking {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_tracking_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_storage_capacity_tests.rs"]
 mod storage_capacity_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "ares_house_survival_tests.rs"]
 mod ares_survival_tests;

@@ -824,7 +824,7 @@ fn parse_map_smudges(ini: &IniFile) -> Vec<MapSmudgeEntry> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod smudge_parse_tests {
     use super::*;
 
@@ -866,7 +866,7 @@ mod smudge_parse_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

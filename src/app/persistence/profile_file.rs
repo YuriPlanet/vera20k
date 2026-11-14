@@ -115,7 +115,7 @@ pub(super) fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::frontend::startup_options::RetailStartupOptions;

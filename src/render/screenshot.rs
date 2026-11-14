@@ -578,7 +578,7 @@ fn first_unused_screenshot_path_with(
         .find(|candidate| !exists(candidate))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

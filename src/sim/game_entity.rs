@@ -3018,7 +3018,7 @@ impl GameEntity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 
@@ -3129,7 +3129,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod lifecycle_tests {
     use super::*;
 
@@ -3165,7 +3165,7 @@ mod lifecycle_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod mission_shadow_tests {
     use super::*;
     use crate::sim::mission::state::MissionTestFixture;

@@ -79,7 +79,7 @@ pub(super) fn find_move_path(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

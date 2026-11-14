@@ -454,7 +454,7 @@ fn hue_gap(a: i32, b: i32) -> i32 {
     gap.min(2 * HUES - gap)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::rules::skirmish_colors::FIRST_EXTRA_PRIORITY;

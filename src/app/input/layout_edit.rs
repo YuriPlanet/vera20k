@@ -418,7 +418,7 @@ pub(crate) fn instances(
     (fills, borders, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

@@ -372,7 +372,7 @@ pub(crate) fn dispatch_launcher_parent_result(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

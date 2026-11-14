@@ -805,7 +805,7 @@ fn append_object_run(runs: &mut Vec<ObjectDrawRun>, next: ObjectDrawRun) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
     use crate::render::draw_state::DrawState;

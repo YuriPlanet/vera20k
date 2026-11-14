@@ -344,5 +344,5 @@ fn default_opponents(first_country: LaunchCountry) -> Vec<SkirmishShellOpponent>
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests;

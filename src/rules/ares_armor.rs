@@ -247,6 +247,6 @@ impl AresWarheadVerses {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_armor_tests.rs"]
 mod tests;

@@ -1713,6 +1713,6 @@ pub fn load_tile_images(
 }
 
 // Tests extracted to map/theater_tests.rs to stay under 400 lines.
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 #[path = "theater_tests.rs"]
 mod theater_tests;

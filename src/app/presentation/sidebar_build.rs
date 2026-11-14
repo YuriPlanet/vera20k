@@ -958,7 +958,7 @@ pub(crate) fn build_sidebar_text_instances(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::{
         build_gclock_instance, hovered_cameo_slot, place_canvas_crop_in_slot, push_rect_outline,

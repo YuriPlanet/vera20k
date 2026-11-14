@@ -1164,15 +1164,15 @@ fn wave_geometry(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "wave_magnetic_tests.rs"]
 mod magnetic_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "wave_native_tests.rs"]
 mod native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod laser_tests {
     use super::*;
 

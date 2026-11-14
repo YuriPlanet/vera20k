@@ -83,7 +83,7 @@ impl<'de, T: SparseDefault + serde::Deserialize<'de>> serde::Deserialize<'de> fo
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
     use crate::util::save_codec;

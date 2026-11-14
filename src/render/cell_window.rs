@@ -182,7 +182,7 @@ impl CellWindow {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::map::terrain::iso_to_screen;

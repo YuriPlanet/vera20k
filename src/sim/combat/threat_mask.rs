@@ -208,7 +208,7 @@ pub(super) fn admits_class(
     flags & class_bit(category) != 0 || (flags & 2 != 0 && vehicle_like())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
 

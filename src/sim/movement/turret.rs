@@ -320,7 +320,7 @@ pub(crate) fn current_weapon_is_omni_fire(
         .is_some_and(|weapon| weapon.omni_fire)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

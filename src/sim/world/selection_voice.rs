@@ -20,11 +20,11 @@
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "selection_voice_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "order_voice_tests.rs"]
 mod order_tests;
 

@@ -965,7 +965,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;

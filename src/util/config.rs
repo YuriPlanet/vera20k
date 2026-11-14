@@ -679,7 +679,7 @@ fn retail_asset_root_from_executable(executable: &Path) -> Result<PathBuf> {
         })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

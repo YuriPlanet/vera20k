@@ -1666,7 +1666,7 @@ pub fn choose_map_modal_button_at(
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::RandomMapSetupControl;
     use super::{AdvancedField, random_map_setup_control_at_view};

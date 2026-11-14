@@ -374,6 +374,6 @@ fn unit_z_adjust_in(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "foot_depth_tests.rs"]
 mod tests;

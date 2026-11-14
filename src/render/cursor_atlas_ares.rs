@@ -262,7 +262,7 @@ pub(crate) fn build_ares_software_cursor(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::super::{CURSOR_DEFS, hotspot_offset};
     use super::*;

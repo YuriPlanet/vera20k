@@ -9,26 +9,26 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 mod harvest_mission;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 pub mod miner_dock;
 pub(crate) mod miner_system;
 pub(crate) mod ore_scan;
 mod refinery_dock;
 pub(crate) use refinery_dock::UnloadImage;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "outbound_drive_tests.rs"]
 mod outbound_drive_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "pad_nudge_tests.rs"]
 mod pad_nudge_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "no_ore_park_tests.rs"]
 mod no_ore_park_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "refinery_reach_tests.rs"]
 mod refinery_reach_tests;
 
@@ -391,7 +391,7 @@ pub fn miner_kind_for_object(object: &ObjectType) -> Option<MinerKind> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 

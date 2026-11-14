@@ -298,6 +298,6 @@ impl LanMessage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "ingame_tests.rs"]
 mod tests;

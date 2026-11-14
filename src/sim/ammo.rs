@@ -206,7 +206,7 @@ impl TechnoAmmo {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
 

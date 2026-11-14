@@ -267,7 +267,7 @@ fn qualified_deck_pairs(regions: &[ConnectorRegion], flood: &ConnectorRegion) ->
     pairs
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

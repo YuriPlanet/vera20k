@@ -318,7 +318,7 @@ impl<'a> Resources<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use image::ImageEncoder;

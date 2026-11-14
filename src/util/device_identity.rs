@@ -67,7 +67,7 @@ pub fn suffixed_handle(base: &[u8], suffix: Option<&str>, limit: usize) -> Vec<u
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::suffixed_handle;
 

@@ -761,7 +761,7 @@ const _: () = {
     assert_send::<SimHost>();
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};

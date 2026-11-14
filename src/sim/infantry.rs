@@ -809,11 +809,11 @@ pub fn apply_prone_speed(speed: SimFixed, crawls: bool, multiplier: Option<f64>)
     SimFixed::from_num(adjusted)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "infantry_damage_fear_tests.rs"]
 mod damage_fear_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

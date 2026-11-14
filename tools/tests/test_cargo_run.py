@@ -208,6 +208,61 @@ class CargoRunTests(unittest.TestCase):
                 rendered = cargo_run.cargo_args(args, None)
                 self.assertEqual(rendered, [args[0], '--message-format=json-render-diagnostics', *args[1:], *added])
 
+    def test_a_filtered_one_crate_test_run_compiles_only_the_groups_its_filters_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'src').mkdir()
+            (root / 'Cargo.toml').write_text('[package]\nname = "vera20k"\n')
+            (root / 'src/lib.rs').write_text('mod app;\n')
+            (root / 'src/core_lib.rs').write_text('pub mod sim;\n')
+            (root / 'src/Cargo.toml').write_text(
+                '[package.metadata.test-groups]\nsim = ["sim"]\nsim-combat = ["sim::combat"]\n'
+                'sim-world = ["sim::world"]\n')
+            core = ['test', '-p', 'vera20k-core', '--lib']
+            cases = (
+                ([*core, 'sim::combat::armor'], ['sim-combat']),
+                # A value of --skip is no filter; libtest's own filters count.
+                ([*core, '--', 'sim::ammo', '--skip', 'sim::combat', '--exact'], ['sim']),
+                ([*core, 'sim::combat::', '--', 'sim::world::tests'], ['sim-combat', 'sim-world']),
+                ([*core, 'sim::'], None),               # more groups than FOCUS_GROUPS
+                ([*core, 'wall_sale_detach'], None),    # may match anywhere in the crate
+                ([*core, 'sim::combat::', 'reloads'], None),
+                (core, None),
+                (['test', '--workspace', '--lib', 'sim::combat::'], None),
+                ([*core, '-p', 'vera20k', 'sim::combat::'], None),
+                ([*core, '--features', 'test-focus,tests-sim', 'sim::combat::'], None),
+                (['build', '-p', 'vera20k-core'], None),
+            )
+            for args, groups in cases:
+                with self.subTest(args=args):
+                    focus = cargo_run.focused_groups(root, args)
+                    self.assertEqual(focus, groups and ('vera20k-core', groups))
+        rendered = cargo_run.cargo_args([*core, 'sim::combat::armor', '--', '--exact'], None,
+                                        ('vera20k-core', ['sim-combat']))
+        self.assertEqual(rendered[-4:], [
+            '--features', 'dev-overlays,test-support,test-focus,tests-sim-combat', '--', '--exact'])
+
+    def test_a_test_run_in_which_no_test_matched_fails(self):
+        def run(*summaries):
+            with tempfile.TemporaryDirectory() as directory:
+                record = Path(directory) / 'tests.jsonl'
+                record.write_text(''.join(json.dumps({
+                    'command': [sys.executable, '-c', f'print("running\\n\\ntest result: ok. {summary}")'],
+                    'cwd': directory, 'env': dict(os.environ)}) + '\n' for summary in summaries))
+                with redirect_stdout(io.TextIOWrapper(io.BytesIO())), redirect_stderr(io.StringIO()) as errors:
+                    return cargo_run.run_recorded_tests(record), errors.getvalue()
+
+        none = '0 passed; 0 failed; 0 ignored; 0 measured; 9199 filtered out; finished in 0.00s'
+        status, errors = run(none, none)
+        self.assertEqual(status, 101)
+        self.assertIn('no test matched', errors)
+        # One executable with a match is enough, and an ignored test is a match.
+        for matched in ('2 passed; 0 failed; 0 ignored; 0 measured; 9197 filtered out; finished in 0.10s',
+                        '0 passed; 0 failed; 1 ignored; 0 measured; 9198 filtered out; finished in 0.00s'):
+            status, errors = run(none, matched)
+            self.assertEqual(status, 0)
+            self.assertNotIn('no test matched', errors)
+
     def test_automatic_core_features_stay_before_libtest_separator(self):
         # Cargo consumes the feature selection; everything after -- belongs
         # to libtest. Issue #1841 built successfully, then ran zero assertions.

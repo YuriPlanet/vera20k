@@ -244,7 +244,7 @@ impl Economy {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use serde_json::Value;

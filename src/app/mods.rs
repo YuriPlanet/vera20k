@@ -887,7 +887,7 @@ fn prepare_folder(mods_dir: &Path) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

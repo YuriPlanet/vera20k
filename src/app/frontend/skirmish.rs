@@ -246,7 +246,7 @@ pub(crate) fn build_overlay_presentation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

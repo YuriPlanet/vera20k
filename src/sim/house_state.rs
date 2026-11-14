@@ -3120,7 +3120,7 @@ pub struct MatchStatistics {
     built: u32,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_statistics_tests.rs"]
 mod statistics_tests;
 
@@ -3366,7 +3366,7 @@ pub(crate) fn determine_waypoint_edge(anchor: (u16, u16), bounds: PlayfieldBound
     best_edge
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod ai_activation_latch_tests {
     use super::{HouseAiActivationLatches, HouseDifficulty, HouseState};
 
@@ -3542,7 +3542,7 @@ mod ai_activation_latch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
 
@@ -3673,7 +3673,7 @@ mod outcome_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod difficulty_tests {
     use super::{HouseDifficulty, HouseState, NativeF64Bits};
 
@@ -3798,7 +3798,7 @@ mod difficulty_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod multiplay_passive_tests {
     use super::resolve_multiplay_passive;
     use crate::rules::ini_parser::IniFile;
@@ -3851,7 +3851,7 @@ mod multiplay_passive_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod waypoint_edge_tests {
     use super::*;
 
@@ -3888,7 +3888,7 @@ mod waypoint_edge_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod signed_country_side_tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
@@ -3912,7 +3912,7 @@ mod signed_country_side_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod produced_total_tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};

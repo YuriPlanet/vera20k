@@ -790,7 +790,7 @@ pub fn throw_death_debris(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::rules::voxel_anim_type::VoxelAnimType;

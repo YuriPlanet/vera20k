@@ -1029,11 +1029,11 @@ pub(crate) fn finish_movement_pass(pending: PendingMovementPass) -> MovementTick
     pending.effects.stats
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "track_chain_migration_tests.rs"]
 mod track_chain_migration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod pass_cache_tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;

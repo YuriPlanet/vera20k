@@ -733,7 +733,7 @@ pub(crate) fn insert_game_member(members: &mut Vec<WolMember>, member: WolMember
     members.insert(at, member);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

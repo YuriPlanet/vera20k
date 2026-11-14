@@ -14,13 +14,13 @@ use crate::util::native_x87::MaskedX87Ordering::Greater;
 
 #[path = "building_art_admission.rs"]
 mod admission;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_depot_tests.rs"]
 mod depot_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_expiry_tests.rs"]
 mod expiry_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_garrison_tests.rs"]
 mod garrison_tests;
 #[path = "building_art_power.rs"]
@@ -1365,7 +1365,7 @@ pub(crate) fn receiver_body_frame(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod body_tests {
     use super::*;
     use serde::Deserialize;
@@ -1502,7 +1502,7 @@ pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleS
     (sim, rules, id)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod slot_tests {
     use super::*;
 
@@ -2112,7 +2112,7 @@ mod slot_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod native_slot_tests {
     use super::*;
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};

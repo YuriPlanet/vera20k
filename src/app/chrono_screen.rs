@@ -223,7 +223,7 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::audio_runtime::AppAudioRuntime;

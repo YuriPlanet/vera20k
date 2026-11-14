@@ -569,7 +569,7 @@ fn prefix_hint(name: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

@@ -14,7 +14,7 @@ use crate::map::overlay_mark::{
 use crate::rules::locomotor_type::SpeedType;
 use crate::sim::world::load_object_lifecycle::LoadOverlayHandle;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_constructor_publication_tests.rs"]
 mod tests;
 

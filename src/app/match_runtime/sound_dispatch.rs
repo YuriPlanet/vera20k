@@ -9,19 +9,19 @@ use crate::audio::events::{GameSoundEvent, SoundEventQueue, SoundSource};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "bridge_child_sound_tests.rs"]
 mod bridge_child_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "selection_voice_tests.rs"]
 mod selection_voice_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "sound_boundary_tests.rs"]
 mod sound_boundary_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "building_death_sound_tests.rs"]
 mod building_death_sound_tests;
 
@@ -1610,7 +1610,7 @@ fn cloak_sound_for_app(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::app::input::messages::HudMessage;

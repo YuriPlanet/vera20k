@@ -1410,7 +1410,7 @@ fn same_list(section: &IniSection, key: &str, accepted: &str) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::rules::object_type::ObjectCategory;

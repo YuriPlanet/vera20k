@@ -59,7 +59,7 @@ pub type AnimId = u64;
 
 mod flaming_guy;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
 
@@ -4714,7 +4714,7 @@ fn advance_anim_boundary(anim: &mut AnimObject, config: &AnimTypeRuntimeConfig) 
     AnimBoundary::Loop
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod long_tail_contract_tests {
     use super::*;
 
@@ -4811,19 +4811,19 @@ mod long_tail_contract_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_debris_tests.rs"]
 mod debris_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_a_b, tests_sim_c_g)))]
 #[path = "anim_trigger_tests.rs"]
 pub(in crate::sim) mod trigger_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_mineral_start_tests.rs"]
 mod mineral_start_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -8060,14 +8060,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_move_flash_tests.rs"]
 mod move_flash_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_a_b, tests_sim_trigger, tests_sim_world_t_z)))]
 #[path = "anim_meteor_tests.rs"]
 pub(in crate::sim) mod meteor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "anim_damage_tests.rs"]
 mod damage_tests;

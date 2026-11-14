@@ -22,7 +22,7 @@ pub const DRAGON_FRAME_TABLE: [i32; 32] = {
     out
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

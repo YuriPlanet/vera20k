@@ -4560,7 +4560,7 @@ pub(crate) fn loading_test_pair() -> (
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};

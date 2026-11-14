@@ -165,7 +165,7 @@ fn radar_frame(frames: u32, counter: u32) -> Option<usize> {
     (frame < frames).then_some(frame as usize)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

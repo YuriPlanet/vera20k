@@ -134,6 +134,6 @@ pub(crate) fn repair<H: OrdinaryRepairHost>(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ordinary_repair_tests.rs"]
 mod tests;

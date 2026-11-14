@@ -601,7 +601,7 @@ pub fn end_area_is_placeable(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::playfield::PlayfieldBounds;

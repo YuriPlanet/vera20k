@@ -378,7 +378,7 @@ pub(crate) fn relation_house_colors(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod relation_colour_tests {
     use super::*;
     use crate::rules::house_colors::HouseColorIndex;

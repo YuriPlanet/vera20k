@@ -23,7 +23,7 @@ pub(super) struct FlamingGuyState {
     fall: ObjectFallState,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "flaming_guy_tests.rs"]
 mod tests;
 

@@ -3535,7 +3535,7 @@ fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod completion_tests {
     use super::*;
     use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};

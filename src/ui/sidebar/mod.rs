@@ -7,7 +7,7 @@
 //! from the loaded assets and fixed 60×48 cameo hit zones (`6A8220`).
 
 pub(crate) mod cameo_order;
-#[cfg(test)]
+#[cfg(all(test, any(tests_ui, tests_app_presentation)))]
 mod cameo_order_tests;
 pub mod command_bar;
 mod frame;
@@ -452,5 +452,5 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
 // retained list (one order = hit + draw, R7 complete). `hit_test_item` (the cameo
 // click→action map) stays public for the driver.
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_geometry_tests;

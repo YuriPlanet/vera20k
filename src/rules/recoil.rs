@@ -86,6 +86,6 @@ impl RecoilConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "recoil_tests.rs"]
 mod tests;

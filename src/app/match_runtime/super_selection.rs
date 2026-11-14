@@ -234,7 +234,7 @@ pub(super) fn hide_placement_anims(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::sim::superweapon::chronosphere_tests::{

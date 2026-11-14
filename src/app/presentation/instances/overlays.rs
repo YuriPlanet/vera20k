@@ -1616,19 +1616,19 @@ pub(crate) fn build_weapon_wave_instances(
     // A white quad or alpha approximation would invent visible behavior.
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "ore_gpu_tests.rs"]
 mod ore_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "ordinary_bridge_gpu_tests.rs"]
 mod ordinary_bridge_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "terrain_render_tests.rs"]
 mod terrain_render_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     /// Phobos `UpdateConditionalAnimDrawingLogic` accumulates every
     /// `Animation.DrawOffsetN` rule whose `RequiredTypes` is satisfied; the

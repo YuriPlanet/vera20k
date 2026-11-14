@@ -331,7 +331,7 @@ fn is_inside_diamond(
     x >= x_start && x < x_start + row_width
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
     use crate::assets::tmp_decode::{DIAMOND_INITIAL_WIDTH, DIAMOND_WIDTH_STEP};

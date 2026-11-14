@@ -675,7 +675,7 @@ pub fn initialize_rows_for_selected_map(state: &mut SkirmishShellState, maps: &[
     reset_rows_hidden_by_capacity(state, capacity);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod multiplayer_dialog_value_tests {
     use super::*;
 

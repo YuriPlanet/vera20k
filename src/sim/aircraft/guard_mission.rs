@@ -37,7 +37,7 @@
 
 use crate::sim::mission::MissionType;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "guard_mission_tests.rs"]
 mod tests;
 

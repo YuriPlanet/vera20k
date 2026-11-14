@@ -894,7 +894,7 @@ impl ChooseMapModalState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;

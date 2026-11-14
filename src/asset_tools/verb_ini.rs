@@ -434,7 +434,7 @@ fn run_inner(
     Ok(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     use crate::rules::process_owner::NativeRulesProcessOwner;

@@ -860,7 +860,7 @@ pub fn reduce_tiberium(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};

@@ -92,10 +92,10 @@ pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "ion_blasts_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "ion_blasts_gpu_tests.rs"]
 mod gpu_tests;

@@ -53,11 +53,11 @@ use crate::util::native_x87::NativeF32Bits;
 #[path = "spy_infiltration_tests.rs"]
 pub mod spy_infiltration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spy_infiltration_retail_tests.rs"]
 mod retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spy_infiltration_ares_tests.rs"]
 mod ares_tests;
 

@@ -39,20 +39,20 @@ pub mod spawn;
 pub mod system_ai;
 pub mod wind;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod ares_gas_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod fire_native_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod gas_native_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod native_fixture;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod native_identity_tests;
 // Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_p_s, not(feature = "ares")))]
 mod railgun_native_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod virus_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1195,7 +1195,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

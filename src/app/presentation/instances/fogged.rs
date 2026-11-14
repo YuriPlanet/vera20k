@@ -368,7 +368,7 @@ fn sprite(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -539,7 +539,7 @@ fn piece(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod window_tests {
     use super::*;
     use crate::sim::components::DriveCoord;

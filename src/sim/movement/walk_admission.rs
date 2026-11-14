@@ -606,11 +606,11 @@ pub(super) fn clear_walk_doing(actor: &mut crate::sim::game_entity::GameEntity) 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "walk_jumpjet_flag_tests.rs"]
 mod jumpjet_flag_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use crate::sim::combat::TargetKind;
     use crate::sim::mission::MissionType;

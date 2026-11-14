@@ -450,7 +450,7 @@ fn copy_match(dst: &mut [u8], op: usize, distance: usize, count: usize) -> Resul
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

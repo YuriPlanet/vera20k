@@ -351,7 +351,7 @@ fn start_install_force_track(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;

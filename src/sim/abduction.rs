@@ -308,6 +308,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "abduction_tests.rs"]
 mod tests;

@@ -97,7 +97,7 @@ pub(super) fn check_and_write_report(game_dir: &Path, output_dir: &Path) -> Resu
     Ok(i32::from(!report.required.is_empty()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::assets::asset_manager::test_support::TestDirectory;

@@ -305,7 +305,7 @@ impl ConnectionPage {
 const TEMPLATE_PLAYER_ORDER: [u16; CONNECTION_ROWS] =
     [0x640, 0x641, 0x642, 0x643, 0x644, 0x645, 0x646, 0x647];
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::in_game_shell::allied_fixture_layout as shell;

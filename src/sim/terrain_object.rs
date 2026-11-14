@@ -18,7 +18,7 @@ use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::occupancy::{RawCellKey, RawCellOccupationGrid};
 use crate::sim::terrain_spawn::TerrainAnimationState;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "terrain_coordinate_tests.rs"]
 mod coordinate_tests;
 
@@ -1380,7 +1380,7 @@ impl TerrainObjectStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::map::overlay::TerrainObject;

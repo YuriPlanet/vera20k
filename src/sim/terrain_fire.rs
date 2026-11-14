@@ -135,6 +135,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "terrain_fire_tests.rs"]
 mod tests;

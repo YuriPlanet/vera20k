@@ -951,7 +951,7 @@ fn profile_is_wol(state: &AppState) -> bool {
     state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

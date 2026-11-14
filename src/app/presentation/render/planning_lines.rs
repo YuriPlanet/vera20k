@@ -480,7 +480,7 @@ pub(super) fn emit_solid_segment(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
 

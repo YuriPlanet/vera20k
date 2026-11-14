@@ -40,15 +40,15 @@ use crate::sim::command::Command;
 use crate::sim::selection::SelectAction;
 use crate::ui::sidebar::{SidebarAction, SidebarTab};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "area_guard_tests.rs"]
 mod area_guard_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "mcv_group_tests.rs"]
 mod mcv_group_tests;
 
@@ -1098,7 +1098,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod drag_tests {
     use super::clamp_tactical_drag_endpoint;
     use crate::sim::selection::{SelectAction, SelectionState};
@@ -2574,7 +2574,7 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod wheel_tests {
     use super::{WheelAction, wheel_action, wheel_notch};
 
@@ -3264,7 +3264,7 @@ fn selection_voice_recipients(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod item83_selection_order_tests {
     use super::{
         HELD_TYPE_SELECT_VOICE_POLICY, ORDINARY_SELECTION_ACTION_LINE_POLICY,
@@ -4896,7 +4896,7 @@ fn jump_camera_to_base(state: &mut AppState) {
     crate::app::input::camera::apply_home_camera(state, coord);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod deploy_key_tests {
     use super::{deploy_key_command, deploy_key_commands};
     use crate::rules::ini_parser::IniFile;
@@ -5301,7 +5301,7 @@ mod deploy_key_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod control_group_tests {
     use super::{
         GroupPressAction, KeyModifiers, TEAM_SELECTION_VOICE_POLICY, TeamSelection,
@@ -7166,7 +7166,7 @@ mod control_group_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod stop_command_tests {
     use crate::audio::events::GameSoundEvent;
     use crate::sim::command::Command;
@@ -7223,7 +7223,7 @@ mod stop_command_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod modifier_tests {
     use super::KeyModifiers;
 
@@ -7268,7 +7268,7 @@ mod modifier_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod context_click_route_tests {
     use super::*;
 
@@ -7315,6 +7315,6 @@ mod context_click_route_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "building_occupant_deploy_tests.rs"]
 mod building_occupant_deploy_tests;

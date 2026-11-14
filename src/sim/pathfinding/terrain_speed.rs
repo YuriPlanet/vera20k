@@ -294,7 +294,7 @@ fn cap_terrain_speed(value: NativeF64Bits) -> NativeF64Bits {
         value
     }
 }
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod tests {
     #[test]
     fn original_health_ratio_corpus_drives_flat_drive_and_ship_speed() {

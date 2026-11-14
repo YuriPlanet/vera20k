@@ -243,7 +243,7 @@ pub fn delete_saved_seed(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

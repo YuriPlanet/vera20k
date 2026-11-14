@@ -114,7 +114,7 @@ pub(crate) fn region_cell_count(scratch: &RmgScratch, region: i32) -> i32 {
     count
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

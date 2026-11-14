@@ -1982,7 +1982,7 @@ fn facing_config_for_layer(layer: VxlLayer) -> (u8, u16) {
 }
 
 // Tests extracted to unit_atlas_tests.rs to stay under 600 lines.
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "unit_atlas_tests.rs"]
 mod tests;
 

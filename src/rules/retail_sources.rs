@@ -469,11 +469,11 @@ pub fn load_startup_rules(
         .ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ini_root_tests.rs"]
 mod ini_root_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;

@@ -292,7 +292,7 @@ impl Default for TickRateMeter {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

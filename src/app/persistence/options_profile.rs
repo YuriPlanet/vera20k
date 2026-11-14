@@ -1108,7 +1108,7 @@ fn encode_net_id(progress: crate::ui::movies_credits_shell::MovieProgress) -> St
     crate::rules::ini_value::encode_comma_hex_utf16(&flip_net_id_units(&units))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use std::cell::{Cell, RefCell};
 

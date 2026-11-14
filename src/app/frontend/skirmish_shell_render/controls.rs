@@ -1074,7 +1074,7 @@ pub(super) fn dropdown_selected_row_rect(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};

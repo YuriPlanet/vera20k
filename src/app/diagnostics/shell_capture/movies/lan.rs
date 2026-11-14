@@ -4844,7 +4844,7 @@ fn offline_selection(state: &AppState) -> (i32, usize) {
     (dialog.selected_mode_id, dialog.selected_map_idx)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

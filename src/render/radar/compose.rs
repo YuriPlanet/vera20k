@@ -754,6 +754,6 @@ fn begin_pass<'e>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "compose_gpu_tests.rs"]
 mod gpu_tests;

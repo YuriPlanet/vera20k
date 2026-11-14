@@ -36,7 +36,7 @@ pub(crate) mod combat_targeting;
 pub mod combat_weapon;
 #[cfg(feature = "phobos")]
 pub(crate) mod crit;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod crit_tests;
 pub(crate) mod damage;
 pub(crate) mod destruction_effects;
@@ -75,73 +75,73 @@ pub mod veterancy;
 pub mod world_fire;
 pub(crate) mod world_receiver;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod receiver_fixture;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod aegis_launch_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
 mod airstrike_target_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_armor_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_cliff_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_warhead_combat_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_warhead_effects_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_cluster_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_launch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_live_chain_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_damage_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_combat_a_c, tests_sim_combat_d_z)))]
 mod combat_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_turret_facing_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod electric_bolt_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod fire_particles_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod fireat_launch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod garrison_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod homing_shipyard_tests;
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(all(test, not(feature = "phobos")))]
+#[cfg(all(test, tests_sim_combat_d_z, not(feature = "phobos")))]
 mod ifv_fireat_tests;
 /// Ordinary launch-height, resolved impact presentation and damage-effect
 /// wiring. Bridge Cell+58 launch and +48/+58 impact comparisons use the native
 /// oracle cases in `bridge_launch_tests` and `world::projectile_collision`.
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_combat_d_z, tests_sim_combat_a_c)))]
 mod impact_height_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod laser_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod mirage_disguise_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod open_topped_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod prone_damage_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod radiation_beam_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod railgun_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod screen_shake_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod shrapnel_chain_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod walk_attack_tests;
 
 pub use attack_target::{TarCom, TargetKind};

@@ -797,11 +797,11 @@ fn spawn_pickup_anim(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "pickup_tests.rs"]
 mod pickup_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::super::tests::{crate_registry, crate_ruleset};
     use super::*;

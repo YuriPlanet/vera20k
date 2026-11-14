@@ -302,7 +302,7 @@ pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<Str
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

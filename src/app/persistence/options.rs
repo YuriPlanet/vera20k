@@ -143,7 +143,7 @@ pub(crate) fn persist_options_profile(state: &AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::input::commands::schedule_command_in_sim;

@@ -440,7 +440,7 @@ fn skip_map_select_destination<'a>(
     .unwrap_or("")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

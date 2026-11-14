@@ -374,7 +374,7 @@ pub(crate) fn start_line_for(category: ProductionCategory) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::sim::intern::StringInterner;

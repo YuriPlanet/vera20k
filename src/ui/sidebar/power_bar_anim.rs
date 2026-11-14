@@ -301,7 +301,7 @@ impl PowerBarAnimState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_draw_tests {
     use super::*;
     use serde::Deserialize;
@@ -348,7 +348,7 @@ mod native_draw_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_state_tests {
     use super::*;
     use serde::Deserialize;
@@ -586,7 +586,7 @@ mod native_state_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod strip_resize_tests {
     use super::*;
 

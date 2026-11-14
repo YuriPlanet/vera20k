@@ -54,7 +54,7 @@
 //!   sim/radar, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "genetic_converter_tests.rs"]
 mod tests;
 

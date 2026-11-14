@@ -1678,7 +1678,7 @@ impl<'a> NukeImpactContext<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "projectile/trailer_tests.rs"]
 mod trailer_tests;
 
@@ -3317,7 +3317,7 @@ fn detonation(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

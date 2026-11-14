@@ -305,7 +305,7 @@ impl PreviewImage {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

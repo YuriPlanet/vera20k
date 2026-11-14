@@ -498,7 +498,7 @@ fn blit_rgba_clipped(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;

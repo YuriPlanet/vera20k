@@ -244,7 +244,7 @@ fn push_pack(out: &mut String, section: &str, bytes: &[u8]) {
     out.push('\n');
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::overlay::OverlayEntry;

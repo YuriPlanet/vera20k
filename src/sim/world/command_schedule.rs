@@ -1520,18 +1520,18 @@ fn within_spread_band(target_height: i32, candidate_height: i32) -> bool {
     (candidate_height - target_height).abs() <= 2
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "group_spread_gate_tests.rs"]
 mod group_spread_gate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "command_admission_tests.rs"]
 mod command_admission_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "move_flash_ingress_tests.rs"]
 mod move_flash_ingress_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "control_group_ingress_tests.rs"]
 mod control_group_ingress_tests;

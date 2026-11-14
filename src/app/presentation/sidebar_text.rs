@@ -47,7 +47,7 @@ pub fn build_sidebar_credits_instances(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::render::bit_font::CHAR_SPACING;

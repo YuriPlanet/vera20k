@@ -24,7 +24,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::{motion_query, nav_target_coordinate};
 use crate::sim::world::{ObjectAiCtx, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "patrol_mission_tests.rs"]
 mod tests;
 

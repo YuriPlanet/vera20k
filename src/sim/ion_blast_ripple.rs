@@ -203,6 +203,6 @@ pub fn displacement(byte: u8) -> Option<[i32; 2]> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "ion_blast_ripple_tests.rs"]
 mod tests;

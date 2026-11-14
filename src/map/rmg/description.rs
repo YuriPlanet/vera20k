@@ -57,7 +57,7 @@ pub(super) fn read_description(section: &IniSection, default: &SeedDescription) 
     SeedDescription(section.read_comma_hex_utf16("Description", default.units(), DESCRIPTION_UNITS))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

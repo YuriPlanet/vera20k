@@ -1221,7 +1221,7 @@ fn message_instances(
     (fills, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -1793,7 +1793,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_app_input_d_z, feature = "ares"))]
 mod ares_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

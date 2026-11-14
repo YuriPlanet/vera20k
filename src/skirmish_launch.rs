@@ -1229,7 +1229,7 @@ pub enum LaunchValidationError {
     },
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod tests {
     use super::*;
 

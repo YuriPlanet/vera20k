@@ -635,7 +635,7 @@ fn flag_not_valid(flag: &str, verb: &Verb) -> String {
     format!("{flag} is not valid for `{verb_name}`")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 
