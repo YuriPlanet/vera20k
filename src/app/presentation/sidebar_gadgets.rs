@@ -49,7 +49,8 @@ pub(crate) fn exit_sell_mode_without_buildings(
 }
 
 /// How many times Sidebar Action 6A7780 runs on this pass, for the per-visit
-/// work it drives: StripClass::AI's scroll step, PowerClass AnimationTick
+/// work it drives: StripClass::AI's scroll step and tab poll, FlashAI 69E010
+/// (6A7A8C), PowerClass AnimationTick
 /// 63FEA0 (its only call, 6A7B0A) and, through TabClass::Action 6D099D,
 /// CreditsClass::AI 4A2600. GScreen Input 4F4320 reaches it, behind the gates
 /// of `RuntimePassDecision::sidebar_action`. Main_Tick polls Input once per
@@ -145,9 +146,10 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
         &mut presentation.sidebar_gadget_state,
         ready,
         &superweapon_views,
-        tick,
+        visits,
         frame,
     );
+    presentation.sidebar_gadget_state.last_sim_tick = tick;
 }
 
 /// StripClass::AI @ 0x006A8B30 calls SuperClass::ShouldFlashTab @
@@ -160,12 +162,12 @@ fn update_tab_flashes_for_owner(
     gadgets: &mut SidebarGadgetState,
     ready_building_tabs: [bool; 2],
     superweapon_views: &[crate::sim::superweapon::SuperWeaponView],
-    tick: u64,
+    visits: u64,
     frame: i32,
 ) {
     let has_flash_eligible_super = superweapon_views.iter().any(|sw| sw.should_flash_tab);
     gadgets.update_tab_flashes(
-        tick,
+        visits,
         frame,
         [
             ready_building_tabs[0],

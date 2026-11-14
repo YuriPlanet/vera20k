@@ -64,11 +64,11 @@ fn defense_tab_flash_expires_by_ready_frame_and_keeps_other_eligible_supers() {
     let mut gadgets = SidebarGadgetState::default();
     // 100 + 120 is still greater than frame 219, but not frame 220.
     sim.session_mut_for_test().set_binary_frame_for_test(219);
-    update_flash(&mut gadgets, &sim, &rules, 219);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(gadgets.tab_flashes[1].is_active());
 
     sim.session_mut_for_test().set_binary_frame_for_test(220);
-    update_flash(&mut gadgets, &sim, &rules, 220);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(!gadgets.tab_flashes[1].is_active());
 
     let force_shield = add_flash_super(&mut sim, owner, "ForceShieldSpecial", 210, false);
@@ -78,7 +78,7 @@ fn defense_tab_flash_expires_by_ready_frame_and_keeps_other_eligible_supers() {
         .get_mut(&force_shield)
         .unwrap()
         .set_charge_drain_state_for_test(2);
-    update_flash(&mut gadgets, &sim, &rules, 221);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(
         gadgets.tab_flashes[1].is_active(),
         "drain state 2 passes +7C!=0"
@@ -89,18 +89,18 @@ fn defense_tab_flash_expires_by_ready_frame_and_keeps_other_eligible_supers() {
         .get_mut(&force_shield)
         .unwrap()
         .set_charge_drain_state_for_test(0);
-    update_flash(&mut gadgets, &sim, &rules, 222);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(!gadgets.tab_flashes[1].is_active());
 
     add_flash_super(&mut sim, owner, "ZeroSpecial", 210, true);
-    update_flash(&mut gadgets, &sim, &rules, 223);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(
         !gadgets.tab_flashes[1].is_active(),
         "zero disables this type"
     );
 
     add_flash_super(&mut sim, owner, "PsychicRevealSpecial", 210, true);
-    update_flash(&mut gadgets, &sim, &rules, 224);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(
         gadgets.tab_flashes[1].is_active(),
         "another eligible type keeps the shared flash alive"
@@ -108,7 +108,7 @@ fn defense_tab_flash_expires_by_ready_frame_and_keeps_other_eligible_supers() {
 
     add_flash_super(&mut sim, owner, "NukeSpecial", -100, true);
     sim.session_mut_for_test().set_binary_frame_for_test(10_000);
-    update_flash(&mut gadgets, &sim, &rules, 10_000);
+    update_flash(&mut gadgets, &sim, &rules);
     assert!(gadgets.tab_flashes[1].is_active());
 }
 
@@ -116,7 +116,6 @@ fn update_flash(
     gadgets: &mut SidebarGadgetState,
     sim: &Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    tick: u64,
 ) {
     let owner = sim.interner().get("Americans").unwrap_or_default();
     let views = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner);
@@ -124,7 +123,7 @@ fn update_flash(
         gadgets,
         [false; 2],
         &views,
-        tick,
+        1,
         sim.session().binary_frame() as i32,
     );
 }
