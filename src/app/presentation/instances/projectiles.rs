@@ -103,6 +103,11 @@ pub(crate) fn projectile_visitor<'a>(
         .lighting
         .grid()
         .color_scheme_rgb();
+    // Each firer's scheme, looked up once per draw.
+    let mut firer_schemes: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        crate::rules::house_colors::HouseColorIndex,
+    > = Default::default();
     Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
         let Some(projectile) = sim.projectiles().get(id) else {
             return;
@@ -117,20 +122,20 @@ pub(crate) fn projectile_visitor<'a>(
         ) {
             return;
         }
-        let Some(type_id) = projectile
-            .payload()
-            .projectile_type()
-            .map(|id| sim.interner().resolve(id))
-        else {
+        let Some((kind, type_id)) = projectile.payload().projectile_type().and_then(|id| {
+            let kind = sim.interner().projectile_type(id, rules)?;
+            Some((kind, sim.interner().resolve(id)))
+        }) else {
             return;
         };
-        let Some(kind) = rules.projectile(type_id) else {
-            return;
-        };
-        let scheme = projectile
-            .firer_house()
-            .and_then(|house| house_colors.get(sim.interner().resolve(house)).copied())
-            .unwrap_or(local_scheme);
+        let scheme = projectile.firer_house().map_or(local_scheme, |house| {
+            *firer_schemes.entry(house).or_insert_with(|| {
+                house_colors
+                    .get(sim.interner().resolve(house))
+                    .copied()
+                    .unwrap_or(local_scheme)
+            })
+        });
         let position = projectile.position();
         // VERA's translucent fog: enemy bullets and their trails would outline
         // an unseen firing position. Superweapon impact visuals are separate
