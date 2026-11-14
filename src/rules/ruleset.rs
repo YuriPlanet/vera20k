@@ -4875,6 +4875,11 @@ pub struct RuleSet {
     #[cfg(feature = "phobos")]
     side_tooltip_background:
         Vec<crate::rules::phobos_tooltip_background::TooltipBackgroundSideSettings>,
+    /// Phobos `[SIDE] ToolTip.Background.BlurSize=` (`Nullable<float>`,
+    /// `Ext/Side/Body.cpp:50`, `Body.h:46,77`), in `[Sides]` order: the
+    /// tooltip blur's per-side size over the `[AudioVisual]` global.
+    #[cfg(feature = "phobos")]
+    side_tool_tip_blur_size: Vec<Option<crate::util::native_x87::NativeF32Bits>>,
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
@@ -7250,6 +7255,27 @@ impl RuleSet {
                     .unwrap_or_default()
             })
             .collect();
+        // Phobos `SideExt::LoadFromINIFile` (`Ext/Side/Body.cpp:50`): every
+        // side section's `ToolTip.Background.BlurSize=` nullable float.
+        #[cfg(feature = "phobos")]
+        let side_tool_tip_blur_size: Vec<Option<crate::util::native_x87::NativeF32Bits>> =
+            country_side_registry
+                .side_ids
+                .iter()
+                .map(|name| {
+                    ini.section(name).and_then(|section| {
+                        section.read_phobos_nullable_with(
+                            "ToolTip.Background.BlurSize",
+                            None,
+                            |raw| {
+                                Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                                    crate::rules::ini_value::parse_leading_f32(raw).to_bits(),
+                                ))
+                            },
+                        )
+                    })
+                })
+                .collect();
         let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
@@ -7612,6 +7638,8 @@ impl RuleSet {
             side_producing_progress,
             #[cfg(feature = "phobos")]
             side_tooltip_background,
+            #[cfg(feature = "phobos")]
+            side_tool_tip_blur_size,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
             side_indices: country_side_registry.side_indices,
@@ -11496,6 +11524,19 @@ impl RuleSet {
             .and_then(|index| self.side_producing_progress.get(index))
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Phobos `[SIDE] ToolTip.Background.BlurSize=` for a native side index:
+    /// `None` when the side has no section or the key is unset, which takes
+    /// the `[AudioVisual]` global at the draw
+    /// (`Misc/PhobosToolTip.cpp:439`).
+    #[cfg(feature = "phobos")]
+    pub fn side_tool_tip_blur_size(&self, index: i32) -> Option<NativeF32Bits> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_tool_tip_blur_size.get(index))
+            .copied()
+            .flatten()
     }
 
     /// Resolve a side index back to its source spelling.

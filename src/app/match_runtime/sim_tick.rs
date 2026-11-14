@@ -2498,7 +2498,7 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             }
             #[cfg(feature = "phobos")]
             TriggerEffect::VariableValuePrinted { text } => {
-                crate::app::input::messages::post_variable_value_message(state, text);
+                crate::app::input::messages::post_variable_value_message(state, &text);
             }
             TriggerEffect::SelectSidebarTab { index } => {
                 refresh_sidebar = true;

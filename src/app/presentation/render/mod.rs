@@ -845,6 +845,14 @@ pub(crate) fn render_game(
             smooth_chrome: sidebar.smooth_chrome,
             smooth_command_bar: sidebar.smooth_command_bar,
             software_cursor: ui.software_cursor_draw,
+            #[cfg(feature = "phobos")]
+            tooltip_blur_rects: state
+                .match_state
+                .match_presentation
+                .tooltip_blur_rects
+                .clone(),
+            #[cfg(feature = "phobos")]
+            tooltip_blur_size: state.match_state.match_presentation.tooltip_blur_size,
         },
     );
     let finished = render_started.map(|_| Instant::now());
@@ -945,6 +953,59 @@ fn upload_to_gpu(
     // overlay and before the software cursor (O10).
     let (tooltip_fill, tooltip_border, tooltip_text) =
         crate::app::input::tooltips::build_tooltip_instances(state);
+    // Phobos `ToolTipBlur` (`Misc/PhobosToolTip.cpp:439`): the fill quads'
+    // rects and the resolved `ToolTip.Background.BlurSize` — side first over
+    // the `[AudioVisual]` global; the switch off or a zero size keeps
+    // native's no-op.
+    #[cfg(feature = "phobos")]
+    {
+        let rects: Vec<[f32; 4]> = if state.match_state.match_presentation.tool_tip_blur {
+            tooltip_fill
+                .iter()
+                .map(|quad| {
+                    [
+                        quad.position[0],
+                        quad.position[1],
+                        quad.size[0],
+                        quad.size[1],
+                    ]
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let size = state.rules().map_or(0.0, |rules| {
+            let side = state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .and_then(|runtime| {
+                    #[cfg(feature = "ares")]
+                    {
+                        Some(runtime.simulation.session().scenario_side())
+                    }
+                    #[cfg(not(feature = "ares"))]
+                    {
+                        runtime
+                            .simulation
+                            .session()
+                            .current_house()
+                            .and_then(|owner| runtime.simulation.houses().get(&owner))
+                            .map(|house| i32::from(house.side_index()))
+                    }
+                })
+                .unwrap_or(0);
+            f32::from_bits(
+                rules
+                    .side_tool_tip_blur_size(side)
+                    .unwrap_or(rules.phobos_globals.tool_tip_background_blur_size)
+                    .bits(),
+            )
+        });
+        let presentation = &mut state.match_state.match_presentation;
+        presentation.tooltip_blur_rects = rects;
+        presentation.tooltip_blur_size = size;
+    }
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
     // built before the pool borrow (they step the Supers' blinks).

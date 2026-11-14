@@ -312,6 +312,13 @@ pub struct PhobosGlobals {
     /// (`Ext/Techno/Hooks.cpp:323-326`).
     #[serde(default)]
     pub distribute_targeting_frame_ai_only: bool,
+    /// `[AudioVisual] ToolTip.Background.BlurSize=` (`Valueable<float>`,
+    /// default **0.0**; `Ext/Rules/Body.cpp:171`, `Body.h:202,724`): the
+    /// fallback of a Side's `Nullable<float>` in the tooltip blur
+    /// (`Misc/PhobosToolTip.cpp:439`, hook `0x478FDC`); native's
+    /// `CLOSE_ENOUGH(blurSize, 0)` early return keeps a zero a no-op.
+    #[serde(default = "zero_f32")]
+    pub tool_tip_background_blur_size: NativeF32Bits,
     /// `[Basic] RepairBaseNodes=` (`Valueable<bool>`, default **false**;
     /// `Ext/Rules/Body.cpp:399`, `Body.h:302,817`): the fallback of a map
     /// house's `RepairBaseNodes` difficulty slots (`Ext/House/Body.cpp:626`);
@@ -1368,6 +1375,7 @@ impl Default for PhobosGlobals {
             player_attack_move_targeting_delay: None,
             distribute_targeting_frame: false,
             distribute_targeting_frame_ai_only: true,
+            tool_tip_background_blur_size: NativeF32Bits::POSITIVE_ZERO,
             repair_base_nodes: false,
             crush_slowdown_multiplier: crush_slowdown_default(),
             skip_crush_slowdown: false,
@@ -1980,6 +1988,15 @@ impl PhobosGlobals {
         globals.repair_base_nodes = ini
             .section_or_empty("Basic")
             .read_bool("RepairBaseNodes", globals.repair_base_nodes);
+        // `Ext/Rules/Body.cpp:171`: an `[AudioVisual]` `Valueable<float>`.
+        globals.tool_tip_background_blur_size = NativeF32Bits::from_bits(
+            audio_visual
+                .read_float(
+                    "ToolTip.Background.BlurSize",
+                    f32::from_bits(globals.tool_tip_background_blur_size.bits()),
+                )
+                .to_bits(),
+        );
         globals.crush_slowdown_multiplier = read_double_bits(
             &general,
             "CrushSlowdownMultiplier",

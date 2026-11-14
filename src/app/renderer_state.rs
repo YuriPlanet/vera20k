@@ -55,6 +55,10 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+    /// Phobos `SurfaceExt::BlurRect`'s GPU pass, built on first use against
+    /// the composition's format; the tooltip draw owns its gate and rect.
+    #[cfg(feature = "phobos")]
+    pub(crate) tooltip_blur: Option<crate::render::tooltip_blur::TooltipBlurRenderer>,
 }
 
 impl RendererState {

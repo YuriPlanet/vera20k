@@ -61,6 +61,14 @@ pub(super) struct DrawPassData<'a> {
     pub smooth_command_bar: bool,
     /// The frame the software cursor sprite was built from.
     pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
+    /// Phobos `SurfaceExt::BlurRect`'s tooltip background rects
+    /// (`[x, y, w, h]` in composition pixels), empty when the switch or the
+    /// size keeps native's no-op.
+    #[cfg(feature = "phobos")]
+    pub tooltip_blur_rects: Vec<[f32; 4]>,
+    /// The resolved `ToolTip.Background.BlurSize` for those rects.
+    #[cfg(feature = "phobos")]
+    pub tooltip_blur_size: f32,
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -1214,7 +1222,58 @@ pub(super) fn dispatch_draw_passes(
         for (texture, key) in [
             (solid, "message_fill"),
             (Some(state.renderer.bit_font.atlas()), "message_text"),
-            (solid, "tooltip_fill"),
+        ] {
+            draw_pooled_ui(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                pool,
+                texture,
+                key,
+            );
+        }
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            solid,
+            "tooltip_fill",
+        );
+        // Phobos `SurfaceExt::BlurRect` (`Ext/Surface/Body.cpp:9`) runs after
+        // the background fill (`Misc/PhobosToolTip.cpp:437-440`): the pass
+        // ends so the blur can sample the composition it just drew into, and
+        // the frame/frame border/text resume on a fresh load pass.
+        #[cfg(feature = "phobos")]
+        if !data.tooltip_blur_rects.is_empty() && data.tooltip_blur_size > 0.0 {
+            drop(pass);
+            if state.renderer.tooltip_blur.is_none() {
+                state.renderer.tooltip_blur =
+                    Some(crate::render::tooltip_blur::TooltipBlurRenderer::new(
+                        &state.renderer.gpu.device,
+                        state.renderer.combat_light_renderer.composition_texture(),
+                    ));
+            }
+            let composition_size = state
+                .renderer
+                .combat_light_renderer
+                .composition_texture()
+                .size();
+            for rect in &data.tooltip_blur_rects {
+                state.renderer.tooltip_blur.as_mut().unwrap().draw(
+                    &state.renderer.gpu.device,
+                    &state.renderer.gpu.queue,
+                    encoder,
+                    view,
+                    [
+                        composition_size.width as f32,
+                        composition_size.height as f32,
+                    ],
+                    *rect,
+                    data.tooltip_blur_size,
+                );
+            }
+            pass = begin_main_load_pass(encoder, view, frame_depth);
+        }
+        for (texture, key) in [
             (solid, "tooltip_border"),
             (Some(state.renderer.bit_font.atlas()), "tooltip_text"),
         ] {

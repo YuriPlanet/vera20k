@@ -103,7 +103,7 @@ pub(crate) fn post_variable_value_message(state: &mut AppState, text: &str) {
         state,
         &crate::ui::messages::MessagePost {
             prefix: None,
-            text,
+            text: &text,
             rgb,
             timeout_ms: timeout,
             silent: false,
