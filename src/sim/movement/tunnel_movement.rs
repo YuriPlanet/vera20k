@@ -118,7 +118,7 @@ impl DigEffects {
 }
 
 /// One `TunnelLocomotionClass` object's state.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TunnelRuntime {
     /// `+0x18`.
     state: TunnelState,
