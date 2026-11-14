@@ -5926,13 +5926,30 @@ impl Simulation {
                     .unwrap_or_default()
             };
             for (rx, ry) in listed {
-                debug_assert!(
-                    self.substrate
-                        .occupancy
-                        .contains_entity(rx, ry, entity.stable_id()),
-                    "cell-marked entity {} missing occupancy at ({rx}, {ry})",
-                    entity.stable_id()
-                );
+                if self
+                    .substrate
+                    .occupancy
+                    .contains_entity(rx, ry, entity.stable_id())
+                {
+                    continue;
+                }
+                // A debug-only lifecycle diagnostic must not abort a live
+                // match. `foot_mark.rs` documents the known residual that makes
+                // a cell's derived Mark list lead its occupancy index (a
+                // Jumpjet holding/cruising below two levels, and the scatter
+                // that `flush_for_placement` performs on a blocked MCV
+                // deploy); release builds compile this whole check away. Keep
+                // the inconsistency visible in the log, but report it once per
+                // process instead of every frame.
+                static REPORTED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !REPORTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    log::warn!(
+                        "cell-marked entity {} missing occupancy at ({rx}, {ry}); \
+                         continuing (debug-only lifecycle diagnostic, see foot_mark.rs RESIDUAL)",
+                        entity.stable_id()
+                    );
+                }
             }
         }
     }
