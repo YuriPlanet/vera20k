@@ -359,8 +359,8 @@ pub struct AnimTypeRuntimeConfig {
     /// mode): the palette file a nonempty read names, `~~~` standing for
     /// the theater extension (`CustomPalette::LoadFromINI`, 1000A4B0 after
     /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
-    /// hook 0x4232CE) draws the anim with it when it loads; the anim atlas
-    /// has no per-type palette, so nothing reads it yet.
+    /// hook 0x4232CE) draws the anim with it when it loads; the atlas binds
+    /// it as the type's custom palette when the file loads.
     pub(crate) ares_custom_palette: Option<String>,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
@@ -1243,6 +1243,13 @@ impl AnimTypeRuntimeConfig {
         }
         self.explicit_end
             .unwrap_or(header_end(shp_frame_count, self.shadow))
+    }
+
+    /// The Ares `CustomPalette=` file an animation draws through, if it
+    /// authored one. Ares resolves `~~~` against the active theater; the atlas
+    /// loads the file itself, so this is the unresolved name.
+    pub fn custom_palette(&self) -> Option<&str> {
+        self.ares_custom_palette.as_deref()
     }
 }
 

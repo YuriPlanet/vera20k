@@ -1492,6 +1492,23 @@ pub(crate) fn sprite_palette_choice(
     }
 }
 
+/// Ares 0.2 custom animation/projectile palettes: a BulletType's `Image=`
+/// names the AnimType whose ART section carries `CustomPalette=`, and Ares
+/// requires that name in `[Animations]`. The atlas keys a bullet by its
+/// ProjectileType id (`SEITAADMISSILEP`, not `NANOBALLSM`), so resolve the
+/// alias before looking up the ART section. Non-projectile types keep the
+/// ordinary object `Image=` alias.
+fn projectile_anim_palette_base<'a>(
+    rules: Option<&'a RuleSet>,
+    type_id: &str,
+    fallback: &'a str,
+) -> &'a str {
+    rules
+        .and_then(|rules| rules.projectile(type_id))
+        .and_then(|projectile| projectile.image_loads.first())
+        .map_or(fallback, |load| load.image.as_str())
+}
+
 /// `extra_palette_type_ids` holds the custom-palette TechnoTypes, `None` when
 /// the extra building palette did not load. TechnoClass::DrawSHP tests
 /// TerrainPalette first (`0x00705EC7`), then draws from GetRemapColour
@@ -1504,6 +1521,34 @@ fn sprite_palette_for_key(
     cell_palette_type_ids: &HashSet<String>,
     extra_palette_type_ids: Option<&HashSet<String>>,
 ) -> SpritePaletteChoice {
+    // Ares 0.2 `CustomPalette=` on an AnimType is an explicit palette
+    // override for both the animation and — when that type is a BulletType's
+    // `Image=` and is registered in `[Animations]` — the projectile's SHP
+    // frames. The draw hands that file's convert to `CC_Draw_Shape` and skips
+    // both the selected ColorScheme and the global ANIM.PAL; Ares extends the
+    // same convert to `BulletClass::Draw`, which otherwise picks PALETTE.PAL,
+    // ANIM.PAL or the firer's scheme (`46838D`/`468409`). Only types whose
+    // palette actually loaded are registered, so a missing file keeps the
+    // ordinary arm below. Tiled and fogged draws select ANIM.PAL by their own
+    // literals and stay on them.
+    let custom_palette_context = matches!(
+        key.palette_context,
+        ShpPaletteContext::GlobalAnim
+            | ShpPaletteContext::AnimScheme
+            | ShpPaletteContext::SelectedScheme
+    ) || (cfg!(feature = "ares")
+        && matches!(
+            key.palette_context,
+            ShpPaletteContext::BulletDefault
+                | ShpPaletteContext::BulletAnim
+                | ShpPaletteContext::BulletFirer
+        ));
+    if custom_palette_context
+        && extra_palette_type_ids
+            .is_some_and(|ids| ids.contains(&key.type_id.to_ascii_uppercase()))
+    {
+        return SpritePaletteChoice::ExtraBuilding;
+    }
     match key.palette_context {
         ShpPaletteContext::BulletDefault => SpritePaletteChoice::Bullet,
         ShpPaletteContext::BulletAnim => SpritePaletteChoice::Anim,
@@ -2678,6 +2723,9 @@ pub(crate) fn prepare_sprite_atlas(
         let base = type_id.strip_suffix("_MAKE").unwrap_or(type_id);
         let object = rules.and_then(|rules| rules.object(base));
         let image = object.map_or(base, |object| object.image.as_str());
+        // A projectile is keyed by its BulletType id, but `CustomPalette=`
+        // lives on the ART section named by its `Image=` AnimType.
+        let anim_base = projectile_anim_palette_base(rules, base, image);
         if art
             .and_then(|art| art.resolve_metadata_entry(base, image))
             .is_some_and(|entry| entry.terrain_palette)
@@ -2689,6 +2737,42 @@ pub(crate) fn prepare_sprite_atlas(
                 rules?
                     .load_extra_building_palette(asset_manager, theater_ext, Some(name))
                     .map(|(_, palette)| palette)
+            });
+            if palette.is_some() {
+                extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
+                extra_palette_names.insert(type_id.to_ascii_uppercase(), name);
+            }
+        }
+        // Ares 0.2 `CustomPalette=` on the ART section names a palette *file*,
+        // not a rules palette group: the theater suffix a TechnoType request
+        // gets must not be appended, and `~~~` stands for the theater's
+        // three-letter extension (`lib~~~.pal` -> `libtem.pal`). A missing
+        // file leaves the ordinary scheme instead of abandoning the atlas.
+        // For a projectile the ART section is the BulletType's `Image=`
+        // AnimType resolved above.
+        if let Some(name) = art
+            .and_then(|art| art.anim_runtime_config(anim_base))
+            .and_then(|config| config.custom_palette())
+        {
+            let resolved = {
+                #[cfg(feature = "ares")]
+                {
+                    name.replace("~~~", theater_ext)
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    name.to_owned()
+                }
+            };
+            let file = if resolved.to_ascii_lowercase().ends_with(".pal") {
+                resolved
+            } else {
+                format!("{resolved}.pal")
+            };
+            let palette = extra_palettes.entry(name).or_insert_with(|| {
+                asset_manager
+                    .get_ref(&file)
+                    .and_then(|data| Palette::from_bytes(data).ok())
             });
             if palette.is_some() {
                 extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
@@ -2840,6 +2924,20 @@ pub(crate) fn prepare_sprite_atlas(
         // (0x0068C710), which writes the colour's ramp over indices 16..31.
         let house_remap = match key.palette_context {
             ShpPaletteContext::Legacy => palette_choice != SpritePaletteChoice::CellIso,
+            // Ares `CustomPalette=` (animation or projectile) is a *plain*
+            // convert: no ColorScheme is built, so the SHP's 16..31 band
+            // keeps the custom file's own colours. A TechnoType palette
+            // request (`Legacy` above) is scheme-owned and does remap.
+            ShpPaletteContext::GlobalAnim
+            | ShpPaletteContext::AnimScheme
+            | ShpPaletteContext::SelectedScheme
+            | ShpPaletteContext::BulletDefault
+            | ShpPaletteContext::BulletAnim
+            | ShpPaletteContext::BulletFirer
+                if palette_choice == SpritePaletteChoice::ExtraBuilding =>
+            {
+                false
+            }
             _ => matches!(
                 palette_choice,
                 SpritePaletteChoice::Unit | SpritePaletteChoice::ExtraBuilding
