@@ -664,7 +664,7 @@ impl MatchInputState {
 
     /// Explicit House placement/abandon tails clear the type/foundation even
     /// when pointer expiry has already cleared the current product.
-    fn clear_building_placement(&mut self) -> bool {
+    pub(crate) fn clear_building_placement(&mut self) -> bool {
         if self
             .targeting_mode
             .as_ref()
@@ -865,15 +865,6 @@ impl MatchInputState {
         // when the drag is torn down would deliver its release into the screen
         // that replaced it.
         self.touch_mapper.reset();
-    }
-
-    /// TAction46 clears the active display modes before Lock684240 cancels
-    /// the tactical drag through6938C0/4AEAD0/6DA160. Selection membership,
-    /// camera requests/focus and physical held-key state survive this call.
-    pub(crate) fn cancel_tactical_gesture_and_targeting(&mut self) {
-        self.targeting_mode = None;
-        self.building_placement_preview = None;
-        self.cancel_tactical_drag();
     }
 
     /// Follow the pause across window events. While paused (Esc menu, shared

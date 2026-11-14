@@ -253,9 +253,9 @@ impl SidebarGadgetState {
 
     /// SetRepairMode(0) and SetSellMode(0), then the direct Power, Planning
     /// and Beacon byte clears (+0x11B2..+0x11B4) that Begin_Building_Placement
-    /// (4FB883..4FB8A2), SelectClass::Action (6AAF6D..6AAF8B) and the input
-    /// locks (6DEDB2..6DEDD0, 6E268A..6E26A6) share. Only the first two are
-    /// refused while a placement is pending. SetTogglePowerMode (4AC87B) and
+    /// (4FB883..4FB8A2), SelectClass::Action (6AAF6D..6AAF8B) and TAction46's
+    /// lock (6DEDB2..6DEDD0, 6E268A..6E26A6) share. Only the first two are
+    /// refused while a placement type is set; TAction46 nulls it first. SetTogglePowerMode (4AC87B) and
     /// SetWaypointMode (4AC756) also clear the beacon byte, and
     /// SetPlaceBeaconMode clears +0x11B2/+0x11B3; VERA has no owner for the
     /// Power or Planning-waypoint modes, so neither path exists here.

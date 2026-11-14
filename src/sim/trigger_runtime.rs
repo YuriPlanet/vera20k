@@ -81,6 +81,9 @@ pub enum TriggerEffect {
         locked: bool,
         was_locked: bool,
     },
+    /// TAction46's Display clears ahead of its lock: the current placement
+    /// and its foundation, then the cursor modes. The other locks only lock.
+    CancelPlacementModes,
     LocalizedMessage {
         csf_label: String,
     },
@@ -5207,6 +5210,14 @@ impl Simulation {
             }
             46 | 47 => {
                 let locked = action.kind == 46;
+                if locked {
+                    // TActionClass::Execute case 46 (0x006DED8B..0x006DEDD7;
+                    // 0x006E2660 is an unreferenced copy) clears the Display modes
+                    // before Lock_User_Input 0x00684240. The pause 0x00684060,
+                    // Flag_To_Win/Lose 0x004FCB39/0x004FCD22 and the chrono
+                    // screen 0x0053B54F lock without them.
+                    effects.push(TriggerEffect::CancelPlacementModes);
+                }
                 let was_locked = if locked {
                     self.session.lock_input()
                 } else {

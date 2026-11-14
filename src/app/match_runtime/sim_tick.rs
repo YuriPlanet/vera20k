@@ -3093,6 +3093,12 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             TriggerEffect::InputLockChanged { locked, was_locked } => {
                 crate::app::input::campaign_input::apply_lock_effect(state, *locked, *was_locked);
             }
+            TriggerEffect::CancelPlacementModes => {
+                crate::app::input::campaign_input::cancel_placement_modes(
+                    &mut state.match_state.input,
+                    &mut state.match_state.match_presentation.sidebar_gadget_state,
+                );
+            }
             TriggerEffect::RecentEventCell { cell } => {
                 if let Some(minimap) = state.match_state.match_presentation.minimap.as_mut() {
                     minimap.remember_event_cell(*cell);
