@@ -148,7 +148,9 @@ impl NativeRadarSurfaceGeometry {
         // `0x00655117`). That origin lies at least MapAreaX 16 / MapAreaY 49
         // into the sidebar surface, so a position left of or above the image
         // rounds down, not toward zero. RESIDUAL: one further out than that
-        // origin would round toward zero again; no cell lies that far out.
+        // origin rounds toward zero again natively. Dots there are off the
+        // image either way and the view's centre cell is on it, so only a
+        // radar event centred that far out lands 1 px from native.
         let mut pixel_x = native_floor(X87Chop53::mul(
             X87Chop53::load_i32(raw_x),
             load_f32(self.zoom),
