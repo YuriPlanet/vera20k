@@ -91,7 +91,7 @@ pub(crate) fn game_time_text(seconds: i32) -> String {
 /// sidebar surface centre, so this returns the native absolute base plus the
 /// authored offset for the lane to place.
 pub(crate) fn producing_progress_anchor(offset: [i32; 2], gdi_positions: bool) -> (i32, i32) {
-    let x_base = if gdi_positions { 26 } else { 20 };
+    let x_base: i32 = if gdi_positions { 26 } else { 20 };
     (
         x_base.wrapping_add(offset[0]),
         197i32.wrapping_add(offset[1]),

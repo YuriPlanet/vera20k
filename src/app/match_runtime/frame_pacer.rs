@@ -494,12 +494,10 @@ impl ScenarioElapsedClock {
         *self = Self::new();
     }
 
-    /// Sample the retail raw accumulator without changing clock state.
-    #[cfg(any(
-        test,
-        all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
-    ))]
-    fn elapsed_buckets(&self, now_ms: u64) -> u32 {
+    /// Sample the retail raw accumulator without changing clock state: the
+    /// live `ScenarioClass->ElapsedTimer.TimeLeft + (SystemTimer::GetTime() -
+    /// StartTime)` the score dialog and the `ShowGameTime` board read.
+    pub(crate) fn elapsed_buckets(&self, now_ms: u64) -> u32 {
         self.accumulated_buckets
             .wrapping_add(if self.start_bucket != ELAPSED_CLOCK_STOPPED {
                 frame_bucket(now_ms).wrapping_sub(self.start_bucket)
@@ -508,14 +506,10 @@ impl ScenarioElapsedClock {
             })
     }
 
-    /// gamemd provenance: Score elapsed-time formatting; verified
-    /// ScoreDialog__WndProc @ 0x005C9B10 reads ScenarioClass+0x614/+0x61C,
-    /// treats the wrapped accumulator as signed, and divides it by 60.
-    /// The browser match report reads it after abort/outcome stopped the clock.
-    #[cfg(any(
-        test,
-        all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
-    ))]
+    /// gamemd provenance: score and `ShowGameTime` formatting; verified
+    /// `ScoreDialog__WndProc @ 0x005C9B10` reads ScenarioClass+0x614/+0x61C,
+    /// treats the wrapped accumulator as signed, and divides it by 60
+    /// (`Phobos.cpp:359..364` does the same for the game-time label).
     pub(crate) fn elapsed_seconds(&self, now_ms: u64) -> i32 {
         (self.elapsed_buckets(now_ms) as i32) / SCORE_BUCKETS_PER_SECOND
     }
