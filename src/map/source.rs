@@ -182,11 +182,15 @@ static MOD_DIR: std::sync::RwLock<Option<&'static Path>> = std::sync::RwLock::ne
 /// a start.
 pub fn set_mod_dir(dir: Option<PathBuf>) {
     let dir = dir.map(|dir| &*Box::leak(dir.into_boxed_path()));
-    *MOD_DIR.write().unwrap_or_else(std::sync::PoisonError::into_inner) = dir;
+    *MOD_DIR
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = dir;
 }
 
 pub fn mod_dir() -> Option<&'static Path> {
-    *MOD_DIR.read().unwrap_or_else(std::sync::PoisonError::into_inner)
+    *MOD_DIR
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The folders a listing of the game folder reads, for
@@ -335,7 +339,7 @@ fn expand_map_ini_with_options(
     strict: bool,
     logical_name: Option<&str>,
 ) -> Result<IniFile> {
-    if !(crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED) {
+    if !(crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED) {
         return Ok(ini);
     }
     let name = match source {

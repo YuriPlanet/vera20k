@@ -52,6 +52,7 @@ fn fixture(extra: &str) -> (TestDirectory, ProcessAssets) {
 
 #[test]
 fn ares_loading_theme_selection_matches_two_native_histories() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for history in corpus()["histories"].as_array().unwrap() {
         let campaign = history["name"] == "campaignBasic";
         for stage in history["stages"].as_array().unwrap() {
@@ -113,6 +114,7 @@ fn ares_loading_theme_selection_matches_two_native_histories() {
 
 #[test]
 fn ares_campaign_theme_plays_once_after_map_parse_through_the_asset_lease() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (directory, mut process) = fixture("");
     directory.write("ALL01UMD.MAP", b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[Basic]\nNewINIFormat=4\nLoadingTheme=MISSION_SCORE\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n");
     let mut audio = tests::test_audio();

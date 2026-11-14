@@ -131,6 +131,17 @@ struct DebrisView<'a> {
     axis: DepthAxis,
 }
 
+impl DebrisView<'_> {
+    /// Whether `piece`'s body point passes Object6D2140's padded projection
+    /// admission, which VoxelAnimDrawIfVisible749B20 tests before DrawIt.
+    /// The point is the piece's own position, whatever floor lies under it.
+    fn admits(&self, piece: &VoxelAnimObject) -> bool {
+        let location = piece.world_coord();
+        let (x, y) = absolute_leptons_to_screen(location.x, location.y, location.z);
+        projection_admitted([x, y], self.camera, self.viewport)
+    }
+}
+
 /// One Display member's piece, if `id` names one that draws. The caller
 /// visits the members in Display order.
 pub(crate) fn voxel_anim_visitor<'a>(
@@ -164,7 +175,9 @@ pub(crate) fn voxel_anim_visitor<'a>(
     };
     let presentation = &state.match_state.match_presentation;
     Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
-        let Some(piece) = sim.voxel_anims().get(id) else {
+        // A piece off the view is passed by before its type, palette and
+        // floor are looked up.
+        let Some(piece) = sim.voxel_anims().get(id).filter(|piece| view.admits(piece)) else {
             return;
         };
         let kind = rules.voxel_anim_type(piece.type_id());
@@ -215,9 +228,10 @@ pub(crate) fn voxel_anim_visitor<'a>(
     })
 }
 
-/// One piece's draw. Display membership is admission: storage alone never
-/// draws a piece. `render` rasterizes the bound physical model at the drawing
-/// matrix and places its body and shadow on the pose page.
+/// One admitted piece's draw ([`DebrisView::admits`]). Display membership is
+/// admission: storage alone never draws a piece. `render` rasterizes the
+/// bound physical model at the drawing matrix and places its body and shadow
+/// on the pose page.
 fn voxel_anim_draw_instance(
     id: u64,
     piece: &VoxelAnimObject,
@@ -231,10 +245,6 @@ fn voxel_anim_draw_instance(
     let location = piece.world_coord();
     let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
     let geometry = geometry(location, ground_z, bridge);
-    // Object6D2140's padded projection admission precedes DrawIt.
-    if !projection_admitted(geometry.body.point, view.camera, view.viewport) {
-        return None;
-    }
     let matrix = piece.bounce().drawing_matrix().ok().map(|matrix| {
         crate::render::vxl_raster::hva_to_mat4(&matrix.map(|v| f32::from_bits(v.bits())), 1.)
     })?;

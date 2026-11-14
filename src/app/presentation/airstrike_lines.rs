@@ -205,37 +205,31 @@ pub(crate) enum TacticalLineCall {
     },
 }
 
-/// The existing action-line producer emits opaque white-texture rectangles.
-/// At logical zoom1 their resolved rectangles and RGB565 words can feed the
-/// same surface command stream as the following translucent beam. Geometry
-/// and action-line admission remain with target_lines, not another producer.
-/// A psychic detection dash keeps its A gate: `a_offset` takes a drained
-/// pixel to the A pixel its gate reads (the stores' rounded camera minus the
-/// floored camera of the surface and A planes).
+/// The action-line producer's opaque strokes, drained in order into the same
+/// surface command stream as the following translucent beam, as their
+/// stored rectangles and RGB565 words. Geometry and action-line admission
+/// remain with target_lines, not another producer. A psychic detection dash
+/// keeps its A gate: `a_offset` takes a drained pixel to the A pixel its
+/// gate reads (the stores' rounded camera minus the floored camera of the
+/// surface and A planes).
 pub(crate) fn drain_opaque(
     calls: &mut Vec<TacticalLineCall>,
-    instances: &mut Vec<crate::render::batch::SpriteInstance>,
+    strokes: &mut Vec<crate::render::surface_line::SurfaceStroke>,
     camera: [i32; 2],
     a_offset: [i32; 2],
 ) {
-    use crate::render::draw_state::{FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
-    for instance in instances.drain(..) {
-        debug_assert_eq!(instance.alpha, 1.);
-        debug_assert_eq!(instance.draw_state.fx_flags & FX_SURFACE_A_ZERO, 0);
-        let rect = [
-            instance.position[0] as i32 - camera[0],
-            instance.position[1] as i32 - camera[1],
-            instance.size[0] as i32,
-            instance.size[1] as i32,
-        ];
-        let word = crate::render::native_surface_format::RGB565
-            .pack_rgb8(instance.tint.map(|v| (v * 255.).round() as u8));
-        let a_offset =
-            (instance.draw_state.fx_flags & FX_SURFACE_A_NONZERO != 0).then_some(a_offset);
-        calls.push(TacticalLineCall::Opaque {
-            rect,
-            word,
-            a_offset,
+    use crate::render::surface_line::StoreGate;
+    for stroke in strokes.drain(..) {
+        // Only the rally's second pass stores where A is zero, and it is
+        // not in this stream.
+        debug_assert_ne!(stroke.gate(), StoreGate::AZero);
+        let a_offset = (stroke.gate() == StoreGate::ANonzero).then_some(a_offset);
+        stroke.for_each_rect(|[x, y, width, height]| {
+            calls.push(TacticalLineCall::Opaque {
+                rect: [x - camera[0], y - camera[1], width, height],
+                word: stroke.word(),
+                a_offset,
+            });
         });
     }
 }

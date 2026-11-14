@@ -841,12 +841,6 @@ pub enum LifecycleOutput {
     ObjectPointerExpired {
         stable_id: u64,
     },
-    RevealDisplay {
-        stable_id: u64,
-    },
-    DisplayRemove {
-        stable_id: u64,
-    },
     DetachAttachedAnims {
         stable_id: u64,
     },
@@ -857,12 +851,6 @@ pub enum LifecycleOutput {
         stable_id: u64,
     },
     ClearRedraw {
-        stable_id: u64,
-    },
-    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
-    /// Display membership. Presentation must re-resolve that object's model
-    /// without pretending that another object spawned or entered Display.
-    ObjectTypeChanged {
         stable_id: u64,
     },
 }
@@ -1819,8 +1807,6 @@ impl Simulation {
                 context.rules,
                 context.terrain(),
             );
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::RevealDisplay { stable_id });
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
@@ -4010,14 +3996,6 @@ impl Simulation {
         }
 
         self.substrate.display.remove(stable_id);
-        // The app consumes this projection to refresh entity/Anim atlases.
-        // Particles draw from the retained Display registry directly; their
-        // removal cannot introduce atlas entries and must not trigger a
-        // whole-world atlas coverage scan for every child retirement.
-        if self.substrate.entities.contains(stable_id) {
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::DisplayRemove { stable_id });
-        }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDisplayBoundary);
         self.lifecycle_outputs

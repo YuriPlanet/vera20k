@@ -20,23 +20,27 @@ fn curve_pixels_match_original_704e40_with_clock_height_colors_and_clipping() {
                 input["camera"][1].as_i64().unwrap() as i32 + 15,
             ],
             clip: std::array::from_fn(|i| input["clip"][i].as_i64().unwrap() as i32),
-            zoom: 1.,
         };
-        let mut actual = vec![0x39e7u16; 160 * 120];
-        emit(
+        let mut strokes = Vec::new();
+        append_line_strokes(
+            &mut strokes,
             point(&input["source"]),
             point(&input["target"]),
             std::array::from_fn(|i| input["rgb"][i].as_u64().unwrap() as u8),
             input["wall_ms"].as_u64().unwrap() as u32,
             view,
-            |[x, y, w, h], word| {
+        );
+        let mut actual = vec![0x39e7u16; 160 * 120];
+        for stroke in &strokes {
+            stroke.for_each_rect(|[x, y, w, h]| {
+                let [x, y] = [x - view.camera[0], y - view.camera[1]];
                 for py in y..y + h {
                     for px in x..x + w {
-                        actual[(py * 160 + px) as usize] = word;
+                        actual[(py * 160 + px) as usize] = stroke.word();
                     }
                 }
-            },
-        );
+            });
+        }
         let mut expected = vec![0x39e7u16; 160 * 120];
         for p in row["pixels"].as_array().unwrap() {
             expected[p[1].as_u64().unwrap() as usize * 160 + p[0].as_u64().unwrap() as usize] =

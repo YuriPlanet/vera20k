@@ -103,14 +103,12 @@ pub struct AudioIndex {
     bag_data: Vec<Vec<u8>>,
     /// Parallel to entries; constructed by parsing or the sole merge owner below.
     entry_bags: Vec<usize>,
-    #[cfg(feature = "ares")]
     layout: IndexLayout,
 }
 
 #[derive(Clone, Copy)]
 enum IndexLayout {
     Stock,
-    #[cfg(feature = "ares")]
     Ares,
 }
 
@@ -124,7 +122,6 @@ impl AudioIndex {
 
     /// Installed Ares AudioBag::Open1005AA00, selected by Audio_Load4011C0.
     /// See tools/rules_oracle/ares_audio_bags.md and its executed controls.
-    #[cfg(feature = "ares")]
     pub(crate) fn from_ares_idx_bag(idx_data: &[u8], bag_data: Vec<u8>) -> Option<Self> {
         Self::parse(idx_data, bag_data, IndexLayout::Ares)
     }
@@ -148,9 +145,7 @@ impl AudioIndex {
             // 1005AB3C tests DWORD0, not the version at DWORD1. This installed
             // reader accepts other version tags and rejects ordinary 32-byte
             // GABA/version1 files. Preserve it without weakening stock parsing.
-            #[cfg(feature = "ares")]
             IndexLayout::Ares if read_u32_le(idx_data, 0) == 1 => IDX_ENTRY_SIZE_V1,
-            #[cfg(feature = "ares")]
             IndexLayout::Ares => IDX_ENTRY_SIZE_V2,
         };
 
@@ -211,7 +206,6 @@ impl AudioIndex {
             entries,
             bag_data: vec![bag_data],
             entry_bags: vec![0; entry_count],
-            #[cfg(feature = "ares")]
             layout,
         })
     }
@@ -219,7 +213,6 @@ impl AudioIndex {
     /// AudioLuggage::Create1005A170: later case-insensitive names replace the
     /// entire entry AND its file. This owns both the index and backing mapping;
     /// callers cannot mutate either independently. No offset rebasing/concatenation.
-    #[cfg(feature = "ares")]
     pub(crate) fn merge_ares(bags: impl IntoIterator<Item = Self>) -> Self {
         let mut files = Vec::new();
         let mut winners = std::collections::BTreeMap::new();
@@ -247,7 +240,6 @@ impl AudioIndex {
     /// Returns the entry metadata and a slice of the raw audio data from the .bag.
     pub fn get(&self, name: &str) -> Option<(&AudioBagEntry, &[u8])> {
         // Ares keeps original FindSampleIndex4015C0; no extension aliases.
-        #[cfg(feature = "ares")]
         if matches!(self.layout, IndexLayout::Ares) {
             return self.get_exact(name);
         }

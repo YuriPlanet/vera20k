@@ -153,15 +153,13 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             &frame,
             Some(building.owner()),
             building,
-            &|anim| {
-                super::super::overlays::slot_anim_admissible(
-                    &sim,
-                    &frame,
-                    anim,
-                    camera,
-                    [size[0] as f32, size[1] as f32],
-                )
-            },
+            &super::admitted_slot_anims(
+                &sim,
+                &frame,
+                building,
+                camera,
+                [size[0] as f32, size[1] as f32],
+            ),
             &|_| 0,
             0.,
             10000.,

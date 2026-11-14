@@ -358,7 +358,7 @@ pub(crate) fn health_bar_drawable(
 ) -> bool {
     let player = local_owner.and_then(|owner| sim.interner().get(owner));
     let (_, draw_pips) = health_strip_visibility(sim, entity, hovered_id, player, false);
-    draw_pips && admitted_techno_observer(sim, entity, local_owner).is_some()
+    draw_pips && admitted_techno_observer(sim, entity, local_owner, player).is_some()
 }
 
 /// DrawExtras' health dispatch: [`status_visibility`], except that a hovered,
@@ -452,13 +452,14 @@ pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] 
 
 /// Retained Display membership and the shared tactical draw admission.
 /// Return the already derived observer facts for native Extras queries.
+/// `local_owner_id` is `local_owner`'s interned id.
 fn admitted_techno_observer(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
     local_owner: Option<&str>,
+    local_owner_id: Option<crate::sim::intern::InternedId>,
 ) -> Option<crate::render::draw_state::ObserverDrawContext> {
     sim.display_layers().layer_of(entity.stable_id())?;
-    let local_owner_id = local_owner.and_then(|owner| sim.interner().get(owner));
     // `observer_draw_context` for the frame's local player, `local_owner`.
     let observer = entity.seen.observer;
     crate::app::presentation::instances::tactical_entity_admission(
@@ -581,18 +582,16 @@ pub(crate) fn control_group_status_labels(
         let digit = char::from(b'0' + slot as u8);
         Some((stable_id, digit))
     };
-    // A digit shows only on a member the admission passes, a selected or
-    // hovered one. With none, as on most draws, no Display member is walked.
-    if !slot_by_id
+    // A digit shows only on a Display member the admission passes, a selected
+    // or hovered one, in Display order. The group members are few, so they
+    // are put in that order rather than walking every Display member.
+    let order = frame.display_order(sim.display_layers());
+    let mut labels: Vec<_> = slot_by_id
         .keys()
-        .any(|&stable_id| labelled(stable_id).is_some())
-    {
-        return Vec::new();
-    }
-    sim.display_layers()
-        .ordered_ids()
-        .filter_map(|&stable_id| labelled(stable_id))
-        .collect()
+        .filter_map(|&stable_id| Some((order.position(stable_id)?, labelled(stable_id)?)))
+        .collect();
+    labels.sort_unstable_by_key(|&(position, _)| position);
+    labels.into_iter().map(|(_, label)| label).collect()
 }
 
 /// One parent's fill/outline followed by its GAME.FNT glyphs. Both materials
@@ -902,19 +901,16 @@ pub(crate) fn build_building_status_render_instances(
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
     // `current_house_id` is the frame's local player, whom its records answer
-    // for.
-    let structures = frame
-        .objects()
+    // for. Only the buildings drawn this frame can pass the body-opportunity
+    // test, so they are walked instead of every record; both ascend by id.
+    let structures = body_opportunities
+        .iter()
+        .filter_map(|&id| frame.object(id))
         .filter(|entity| entity.category() == EntityCategory::Structure);
     for entity in structures {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         //requires selected, including when the object is also hovered.
-        // The record's own flags first: all three only read, and few
-        // buildings on a map are selected.
-        if !entity.selection.is_selected()
-            || !entity.lifecycle.cell_marked()
-            || !body_opportunities.contains(&entity.stable_id())
-        {
+        if !entity.selection.is_selected() || !entity.lifecycle.cell_marked() {
             continue;
         }
         let allied = crate::map::houses::is_allied_with(
@@ -1654,6 +1650,7 @@ pub(crate) fn techno_extras_for_parent(
     if entity.sinking.is_active() || entity.passenger_role.is_inside_transport() {
         return strip;
     }
+    let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
     //6F519B..524E clock and6F5253..5345 wrench precede observer/selection
     // admission. Both use the existing per-parent MOUSEPAL N1 material; the
     // clock's886FA0 clip is the tactical viewport, not a sprite's body bounds.
@@ -1674,8 +1671,7 @@ pub(crate) fn techno_extras_for_parent(
     let power_off = false;
     if (bomb_visible || repairing || power_off)
         && (viewport.ignore_visibility
-            || local_owner
-                .and_then(|name| sim.interner().get(name))
+            || local_owner_id
                 .zip(sim.resolved_terrain())
                 .is_some_and(|(viewer, terrain)| {
                     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
@@ -1765,7 +1761,7 @@ pub(crate) fn techno_extras_for_parent(
             strip.power_off = prefix(shape, frame, if repairing { 18.0 } else { 0.0 });
         }
     }
-    let Some(observer) = admitted_techno_observer(sim, entity, local_owner) else {
+    let Some(observer) = admitted_techno_observer(sim, entity, local_owner, local_owner_id) else {
         return strip;
     };
     #[cfg(not(feature = "phobos"))]
@@ -1789,7 +1785,7 @@ pub(crate) fn techno_extras_for_parent(
     // from drawing disguise art; +68 uses VisualCharacter's screen(0,NULL)
     // query. The first screen argument means graphical client, not force_sensor.
     // Both are captured for the frame's local player, `local_owner`.
-    let observer_id = local_owner.and_then(|owner| sim.interner().get(owner));
+    let observer_id = local_owner_id;
     let disguised = observer_id.is_some() && entity.seen.disguised_to_observer;
     let character = entity.seen.visual_character;
     #[cfg(not(feature = "phobos"))]

@@ -341,7 +341,6 @@ pub(crate) struct LoadingCompositionSnapshot {
 impl LoadingCompositionSnapshot {
     /// Ares553820/553B3B/553E54 use the actual retained Country label records,
     /// keeping the shared localization, special uppercase and layout owners.
-    #[cfg(feature = "ares")]
     pub(crate) fn bind_country_loading(
         &mut self,
         loading: &crate::rules::country_loading::AresCountryLoading,
@@ -1421,9 +1420,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_country_loading_uses_retained_labels_instead_of_the_stock_slot() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let csf = test_csf(&[
             ("Name:Arabs", "Iraq"),
             ("Name:DESO", "Desolator"),

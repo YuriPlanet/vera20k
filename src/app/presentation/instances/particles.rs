@@ -76,12 +76,11 @@ pub(super) struct ParticleDrawContext {
 }
 
 impl ParticleDrawContext {
-    pub(super) fn new(
-        camera: [f32; 2],
-        zoom: f32,
-        tactical: [u32; 4],
-        axis: crate::render::batch::DepthAxis,
-    ) -> Self {
+    /// The context of `input`'s draw. Its builders admit in the view every
+    /// Display member is admitted in ([`DisplayEffectInputs::projection_viewport`]).
+    pub(super) fn new(input: &DisplayEffectInputs<'_>) -> Self {
+        let (camera, zoom, axis) = (input.camera, input.zoom, input.axis);
+        let tactical = input.tactical;
         let [x, y, width, height] = tactical;
         let logical = |value: u32| (value as f32 / zoom) as i32;
         Self {
@@ -89,7 +88,7 @@ impl ParticleDrawContext {
             line_camera: crate::app::presentation::render::surface_line_camera(
                 camera, tactical, zoom,
             ),
-            viewport: [width as f32 / zoom, height as f32 / zoom],
+            viewport: input.projection_viewport(),
             axis,
             point_viewport: crate::render::tactical_compat::TacticalPointViewport {
                 clip: crate::render::tactical_compat::TacticalRect {
@@ -455,6 +454,14 @@ pub(super) fn build_ares_particle_draws(
         let held = input.rules.particle_type(ext.held_type());
         for record in ext.particles() {
             let coord = record.coords();
+            // The screen clip before the shroud test: both only read, so a
+            // point off the view skips the fog lookup.
+            let Ok(screen) = project_spark_point(coord, viewport) else {
+                continue;
+            };
+            if !viewport.clip.contains(screen) {
+                continue;
+            }
             if let (Some(viewer), Some(cells)) = (fog_viewer, cells.as_ref())
                 && crate::sim::vision::point_is_shrouded(
                     sim.fog(),
@@ -467,12 +474,6 @@ pub(super) fn build_ares_particle_draws(
                     },
                 )
             {
-                continue;
-            }
-            let Ok(screen) = project_spark_point(coord, viewport) else {
-                continue;
-            };
-            if !viewport.clip.contains(screen) {
                 continue;
             }
             let Ok(adjust) = adjust_for_z(coord.z, viewport.adjust_for_z_multiplier) else {
@@ -560,5 +561,74 @@ mod tests {
                 assert_eq!(particle_draw_flags(detail, byte), 0x2E00);
             }
         }
+    }
+
+    /// Tactical6D2140 admits every Display member in one rect, so a
+    /// spotlight is admitted in the Anims' view (`projection_viewport`): out
+    /// to 360 px past the right edge of a battlefield set in 100 px, whose
+    /// view is then 1000 px wide, not 800.
+    #[test]
+    fn a_spotlight_is_admitted_in_the_view_anims_are() {
+        use crate::app::presentation::instances::{
+            DisplayEffectInputs, build_display_effect_instances,
+        };
+        use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
+        use crate::sim::world::{BuildingSpotlight, Simulation, display_layers::DisplayLayer};
+
+        let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+        let mut sim = Simulation::new();
+        let id = 7;
+        sim.submit_object_display_for_test(id, DisplayLayer::AIR, Some(rules));
+        let coord = [2560, 2560, 0];
+        let light = BuildingSpotlight {
+            coord,
+            glow_stage: 0,
+            glow_flags: 0,
+            beam_origin: coord,
+            beam_edges: None,
+            beam_z_adjust: [0, 0],
+            beam_amount: 0,
+        };
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord[0], coord[1], coord[2]);
+        let order = NativeDisplayOrder::from_display(sim.display_layers());
+        let drawn = |past_edge: f32| {
+            let mut frame =
+                crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
+            frame.scene.spotlights.insert(id, light);
+            let detail =
+                std::cell::RefCell::new(crate::app::presentation::detail::DetailState::new());
+            let lighting = Default::default();
+            let house_colors = Default::default();
+            let hidden = Default::default();
+            let mut planned = Vec::new();
+            build_display_effect_instances(
+                &DisplayEffectInputs {
+                    sim: &sim,
+                    frame: &frame,
+                    rules,
+                    camera: [x - 1000.0 - past_edge, y - 300.0],
+                    render_size: [1000, 600],
+                    tactical: [100, 0, 800, 600],
+                    zoom: 1.0,
+                    axis: crate::render::batch::DepthAxis::NONE,
+                    atlas: None,
+                    detail: &detail,
+                    detail_level: 2,
+                    lighting: &lighting,
+                    retained_anim_intensities: None,
+                    house_colors: &house_colors,
+                    hidden_super_anims: &hidden,
+                    show_hidden: false,
+                    local_owner: None,
+                    observe_particles: false,
+                },
+                &mut planned,
+                &order,
+                Default::default(),
+            );
+            planned.len()
+        };
+        assert_eq!(drawn(360.0), 1);
+        assert_eq!(drawn(361.0), 0);
     }
 }

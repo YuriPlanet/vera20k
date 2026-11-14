@@ -1,3 +1,5 @@
+//! Ares's INI syntax, which a thread that reads the Ares way loads with
+//! (`ares_switch::ares_way`): each test opens that scope first.
 use super::super::IniFile;
 
 fn physical(ini: &IniFile, ordinal: usize) -> Vec<(&str, &str)> {
@@ -6,6 +8,7 @@ fn physical(ini: &IniFile, ordinal: usize) -> Vec<(&str, &str)> {
 
 #[test]
 fn fresh_load_renames_plus_keys_and_lists_a_repeated_key_last() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str("[BuildingTypes]\n+=GAPOWR\n+=GACNST\n[General]\nA=1\nB=2\nA=3\n");
     assert_eq!(
         physical(&ini, 0),
@@ -18,6 +21,7 @@ fn fresh_load_renames_plus_keys_and_lists_a_repeated_key_last() {
 
 #[test]
 fn fresh_load_copies_a_base_into_a_separate_section_of_the_childs_name() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[Base]\nStrength=100\nSpeed=5\n[Child]:[Base]\nStrength=200\n\
          [Early]:[Late]\nOwn=1\n[Late]\nOwn=2\n",
@@ -36,6 +40,7 @@ fn fresh_load_copies_a_base_into_a_separate_section_of_the_childs_name() {
 
 #[test]
 fn merge_load_inherits_from_the_including_file_and_continues_its_counter() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut ini = IniFile::from_str("[Base]\nStrength=100\nSpeed=5\n[BuildingTypes]\n+=GAPOWR\n");
     // The first header is read before the hooked loop, so it never inherits.
     // The unterminated last line is still put.
@@ -65,6 +70,7 @@ fn merge_load_inherits_from_the_including_file_and_continues_its_counter() {
 
 #[test]
 fn an_included_file_lists_its_unterminated_last_line_and_inherits_from_the_root() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use super::super::directives::{DirectiveOptions, process_directives};
     let files = [
         (
@@ -95,6 +101,7 @@ fn an_included_file_lists_its_unterminated_last_line_and_inherits_from_the_root(
 
 #[test]
 fn mod_rules_allocate_plus_registries_inherit_across_includes_and_take_later_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_sources::{load_startup_rules, select_mode_ini};
     let dir = TestDirectory::new("ares-ini-syntax-rules");

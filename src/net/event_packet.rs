@@ -150,8 +150,8 @@ fn event_payload_len(opcode: u8) -> Option<u8> {
         }
         crate::sim::command::VERA_EJECT_BUNKER_OPCODE => Some(5),
         crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE => Some(1),
-        // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes.
-        #[cfg(feature = "ares")]
+        // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
+        // a game Ares plays in raises one (`context_order`'s trench Enter).
         crate::sim::command::ARES_TRENCH_REDIRECT_OPCODE => {
             Some(crate::sim::command::ARES_TRENCH_REDIRECT_PAYLOAD_LEN)
         }

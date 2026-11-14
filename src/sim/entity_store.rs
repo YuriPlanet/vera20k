@@ -151,6 +151,12 @@ pub struct EntityStore {
     /// change every frame and no reader derives from
     /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]).
     touched: TouchLogs<{ TouchReader::COUNT }>,
+    /// Which entities may draw differently since the presentation last took
+    /// the log ([`Self::take_looks`]): stored, or given a new owner, type or
+    /// disguise. [`Self::insert`] and [`Self::change_owner`] note it, and the
+    /// in-place type and disguise writers call [`Self::note_look`]. The
+    /// simulation never reads it; never saved, compared or hashed.
+    looks: TouchLogs<1>,
     /// The empty stand-in of a presentation copy of the world
     /// ([`Self::detached`]), whose objects are in the presentation frame
     /// instead. Debug builds refuse reads of it.
@@ -217,6 +223,7 @@ impl Clone for EntityStore {
             airborne: self.airborne.clone(),
             anim_holders: self.anim_holders.clone(),
             touched: TouchLogs::everything(),
+            looks: TouchLogs::everything(),
             detached: self.detached,
         }
     }
@@ -226,6 +233,17 @@ impl EntityStore {
     /// Take `reader`'s touch log, leaving it empty.
     pub(crate) fn take_touched(&mut self, reader: TouchReader) -> Touched {
         self.touched.take(reader as usize)
+    }
+
+    /// Take the look log, leaving it empty.
+    pub(crate) fn take_looks(&mut self) -> Touched {
+        self.looks.take(0)
+    }
+
+    /// Note that an in-place write changed how `stable_id` draws: its type
+    /// or a disguise it puts on.
+    pub(crate) fn note_look(&mut self, stable_id: u64) {
+        self.looks.note(stable_id, self.slot_of.len());
     }
 
     /// Mark `stable_id` asleep until frame `wake_at` (above 0): the pass may
@@ -403,6 +421,7 @@ impl EntityStore {
             airborne: BTreeSet::new(),
             anim_holders: BTreeSet::new(),
             touched: TouchLogs::everything(),
+            looks: TouchLogs::everything(),
             detached: false,
         }
     }
@@ -432,6 +451,7 @@ impl EntityStore {
     pub fn insert(&mut self, entity: GameEntity) -> u64 {
         let id = entity.stable_id();
         self.touched.note(id, self.len());
+        self.looks.note(id, self.len());
         let category = entity.category();
         let infantry = category == EntityCategory::Infantry;
         let owner = entity.owner();
@@ -989,6 +1009,7 @@ impl EntityStore {
     /// Iterate all entities mutably in stable_id order.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut GameEntity> {
         self.touched.note_all();
+        self.looks.note_all();
         self.wake_all();
         self.entities.iter_mut().filter_map(Option::as_deref_mut)
     }
@@ -1068,6 +1089,7 @@ impl EntityStore {
             self.owners[slot as usize] = new_owner;
             self.unlist_owned(stable_id, (old_owner, category));
             self.list_owned(stable_id, (new_owner, category));
+            self.looks.note(stable_id, self.slot_of.len());
         }
     }
 

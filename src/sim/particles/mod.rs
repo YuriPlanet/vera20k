@@ -856,6 +856,23 @@ struct DetachedParticle {
     in_limbo: bool,
 }
 
+impl DetachedParticle {
+    /// Whether the body still draws: alive and out of Limbo.
+    fn draws(&self) -> bool {
+        self.object_alive && !self.in_limbo
+    }
+}
+
+/// Where a Display particle ([`ParticleSystemStore::display_particles`]) is
+/// kept, so a reader can find it again without walking every system.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisplayParticlePlace {
+    /// Entry `index` of system `system`'s particles.
+    InSystem { system: u64, index: usize },
+    /// A body detached from its system, kept under its own id.
+    Detached,
+}
+
 impl ParticleSystemStore {
     pub(crate) fn gas_cloud_system(&self) -> Option<u64> {
         self.gas_cloud_system
@@ -923,9 +940,59 @@ impl ParticleSystemStore {
             .chain(
                 self.detached_particles
                     .values()
-                    .filter(|particle| particle.object_alive && !particle.in_limbo)
+                    .filter(|particle| particle.draws())
                     .map(|particle| (None, &particle.body)),
             )
+    }
+
+    /// [`Self::display_particles`] as each particle's id and place, in the
+    /// same order. [`Self::display_particle_at`] finds one again.
+    pub fn display_particle_places(
+        &self,
+    ) -> impl Iterator<Item = (u64, DisplayParticlePlace)> + '_ {
+        self.systems
+            .iter()
+            .flat_map(|(&system, body)| {
+                body.particles
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, particle)| {
+                        (
+                            particle.stable_id,
+                            DisplayParticlePlace::InSystem { system, index },
+                        )
+                    })
+            })
+            .chain(
+                self.detached_particles
+                    .iter()
+                    .filter(|(_, particle)| particle.draws())
+                    .map(|(&id, _)| (id, DisplayParticlePlace::Detached)),
+            )
+    }
+
+    /// Display particle `id` at `place`, as [`Self::display_particles`]
+    /// gives it, or `None` when it is no longer there.
+    pub fn display_particle_at(
+        &self,
+        id: u64,
+        place: DisplayParticlePlace,
+    ) -> Option<(Option<&ParticleSystem>, &Particle)> {
+        match place {
+            DisplayParticlePlace::InSystem { system, index } => {
+                let system = self.systems.get(&system)?;
+                let particle = system
+                    .particles
+                    .get(index)
+                    .filter(|particle| particle.stable_id == id)?;
+                Some((Some(system), particle))
+            }
+            DisplayParticlePlace::Detached => self
+                .detached_particles
+                .get(&id)
+                .filter(|particle| particle.draws())
+                .map(|particle| (None, &particle.body)),
+        }
     }
 
     pub fn get(&self, id: u64) -> Option<&ParticleSystem> {

@@ -1,9 +1,9 @@
 //! CaptureManager472160 -> Techno704E40 relationship curves, at Tactical's tail.
 //! The simulation owns nodes and expiry; drawing never mutates those owners.
 
-use super::target_lines::{TacticalViewport, push_surface_word};
+use super::target_lines::{TacticalViewport, push_endpoint_boxes};
 use crate::map::houses::HouseColorMap;
-use crate::render::batch::SpriteInstance;
+use crate::render::surface_line::SurfaceStroke;
 use crate::rules::house_colors::NO_REMAP;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
@@ -16,13 +16,14 @@ pub(crate) fn prepare(
     colors: &HouseColorMap,
     wall_ms: u32,
     view: TacticalViewport,
-) -> std::collections::HashMap<u64, Vec<SpriteInstance>> {
+) -> std::collections::HashMap<u64, Vec<SurfaceStroke>> {
     // Tactical6D47A6/6D47CB visits a Techno's manager, then its controller's.
     // Opaque repeated draws at this frame's fixed clock are idempotent: keep
     // each manager's last visit, preserving overlap order without quadratic
     // work for a manager with many captives. This temporary index has no state.
+    // Only managers and captives can be visited; ranks keep stable-id order.
     let mut last_visit = std::collections::HashMap::new();
-    for (rank, entity) in frame.objects().enumerate() {
+    for (rank, entity) in frame.line_sources().enumerate() {
         let id = entity.stable_id();
         if entity.health.current() == 0 {
             continue;
@@ -39,7 +40,7 @@ pub(crate) fn prepare(
     let viewer = sim.session().current_house();
     #[cfg(not(feature = "phobos"))]
     let _ = viewer;
-    let mut by_entity: std::collections::HashMap<u64, Vec<SpriteInstance>> =
+    let mut by_entity: std::collections::HashMap<u64, Vec<SurfaceStroke>> =
         std::collections::HashMap::new();
     for (controller, (_, after_entity)) in managers {
         // `Simulation::capture_link_coordinates`, captured.
@@ -69,7 +70,7 @@ pub(crate) fn prepare(
                 .unwrap_or(NO_REMAP);
             let rgb =
                 crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, color);
-            append_line_instances(
+            append_line_strokes(
                 by_entity.entry(after_entity).or_default(),
                 link.from,
                 link.to,
@@ -82,37 +83,23 @@ pub(crate) fn prepare(
     by_entity
 }
 
-/// The shared geometry/material producer used by the live overlay and GPU comparison.
-pub(crate) fn append_line_instances(
-    instances: &mut Vec<SpriteInstance>,
-    from: DriveCoord,
-    to: DriveCoord,
-    rgb: [u8; 3],
-    wall_ms: u32,
-    view: TacticalViewport,
-) {
-    emit(from, to, rgb, wall_ms, view, |rect, word| {
-        push_surface_word(instances, rect, word, view);
-    });
-}
-
 /// Original704E40..705260: two opaque3x3 endpoint boxes, then32 solid1px
 /// chords. The pulse lerps House RGB toward white using6612C0, never LaserDraw.
 /// The x87 height expression is exact in integers: 512*(1-((i-16)/16)^2).
 /// Native executable pixel controls: tools/procedural_drawing_oracle/control_links.
-fn emit(
+pub(crate) fn append_line_strokes(
+    strokes: &mut Vec<SurfaceStroke>,
     from: DriveCoord,
     to: DriveCoord,
     rgb: [u8; 3],
     wall_ms: u32,
     view: TacticalViewport,
-    mut draw: impl FnMut([i32; 4], u16),
 ) {
     if view.clip[2] <= 0 || view.clip[3] <= 0 {
         return;
     }
     use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
-    use crate::render::surface_line::{clip_line, solid_line};
+    use crate::render::surface_line::clip_line;
     let project = |point: DriveCoord| {
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(point.x, point.y, point.z);
         [
@@ -120,10 +107,12 @@ fn emit(
             y as i32 - view.camera[1] + view.clip[1],
         ]
     };
-    let base = RGB565.pack_rgb8(rgb);
-    super::target_lines::endpoint_boxes([project(from), project(to)], view.clip, |rect| {
-        draw(rect, base)
-    });
+    push_endpoint_boxes(
+        strokes,
+        [project(from), project(to)],
+        RGB565.pack_rgb8(rgb),
+        view,
+    );
     let mut previous = from;
     let phase = (wall_ms >> 4).wrapping_mul(8);
     for i in 1i32..=32 {
@@ -142,8 +131,12 @@ fn emit(
             } else {
                 rgb
             };
-            let word = RGB565.pack_rgb8(color);
-            solid_line(start, end, |rect| draw(rect, word));
+            strokes.push(SurfaceStroke::solid(
+                start,
+                end,
+                RGB565.pack_rgb8(color),
+                view.camera,
+            ));
         }
         previous = next;
     }

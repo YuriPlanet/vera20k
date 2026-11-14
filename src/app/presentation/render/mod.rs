@@ -259,11 +259,30 @@ pub(crate) fn render_game(
     }
     let world_camera = state.renderer.batch_renderer.camera_uniform();
 
+    // Phase 1: Build game-world instances (terrain, overlays, entities).
+    let phase1_started = render_started.map(|_| Instant::now());
+    // The selection in order and the cursor's pick each walk every object;
+    // the draw reads them once (TacticalPick 6DA380 runs once per frame).
+    let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
+    // A selected building is in the selection, so only its few members are
+    // asked, not every record of the frame.
     let selected_building = state.match_state.sim_runtime.frame().is_some_and(|frame| {
-        frame.objects().any(|entity| {
+        let selected_structure = |entity: &crate::app::presentation::frame::ObjectRecord| {
             entity.category() == crate::map::entities::EntityCategory::Structure
                 && entity.selection.is_selected()
-        })
+        };
+        let found = cursor_targets
+            .selected
+            .iter()
+            .any(|&id| frame.object(id).is_some_and(selected_structure));
+        // A pending selection lists input's order before the frame has
+        // selected it, so only a committed one must agree with the records.
+        debug_assert!(
+            state.match_state.input.selection_order_pending
+                || found == frame.objects().any(selected_structure),
+            "a selected building is missing from the selection"
+        );
+        found
     });
     // FileSystem52BE61..52BFCE's PALETTE.PAL plain N53 Convert is shared
     // by Bolt and the selected Building's15/12 bracket colors.
@@ -292,11 +311,6 @@ pub(crate) fn render_game(
             )
         })
     });
-    // Phase 1: Build game-world instances (terrain, overlays, entities).
-    let phase1_started = render_started.map(|_| Instant::now());
-    // The selection in order and the cursor's pick each walk every object;
-    // the draw reads them once (TacticalPick 6DA380 runs once per frame).
-    let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
     let mut world =
         build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     for layer in &mut world.object_layers {
@@ -1062,13 +1076,14 @@ fn upload_to_gpu(
     }
     pool.upload("drag", &ui.drag);
     pool.upload("ground_marks", &ui.ground_marks);
+    pool.upload_strokes("ground_strokes", &ui.ground_strokes);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]
     pool.upload("placement_ghost", &ui.placement_ghost);
-    pool.upload("factory_rally_first", &ui.factory_rally_first);
-    pool.upload("target_lines", &ui.target_line);
-    pool.upload("factory_rally_second", &ui.factory_rally_second);
+    pool.upload_strokes("factory_rally_first", &ui.factory_rally_first);
+    pool.upload_strokes("target_lines", &ui.target_line);
+    pool.upload_strokes("factory_rally_second", &ui.factory_rally_second);
 
     // Sidebar + minimap
     pool.upload_following("minimap", &sidebar.minimap, ui_camera);

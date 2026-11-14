@@ -543,15 +543,28 @@ pub(crate) fn unit_visitor<'a>(
         .retain(|id| frame.contains(id));
 
     let surface_view = crate::app::presentation::render::tactical_surface_line_viewport(state);
+    // What every unit's draw asks by owner or by name, asked once per draw:
+    // a house's colour, a type's voxel image flags, and a model's frame
+    // count and turret offset.
+    let mut owner_colours: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        HouseColorIndex,
+    > = Default::default();
+    let mut drawers: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        VoxelDrawer,
+    > = Default::default();
+    let mut models: crate::util::lookup_hash::LookupMap<smol_str::SmolStr, ModelFacts> =
+        Default::default();
     Some(
         move |objects: &mut Vec<PlannedObjectInstance>,
               entity: &crate::app::presentation::frame::ObjectRecord,
               member_band: EntityDrawBand| {
             // One object's pieces: the visited member, or the cargo a Carryall
             // draws inside its own Draw_It (`carried`).
-            let draw = |entity: &crate::app::presentation::frame::ObjectRecord,
-                        carried: Option<CarriedDraw>,
-                        pieces_out: &mut Vec<ObjectPieceInstance>|
+            let mut draw = |entity: &crate::app::presentation::frame::ObjectRecord,
+                            carried: Option<CarriedDraw>,
+                            pieces: &mut Vec<ObjectPieceInstance>|
              -> Option<DrawnBody> {
                 if entity.category() != EntityCategory::Unit && !entity.is_voxel() {
                     return None;
@@ -637,15 +650,16 @@ pub(crate) fn unit_visitor<'a>(
                         DrawState::draws_disguise(entity, sim.session().binary_frame(), observer)
                     })
                     .and_then(|state| state.house())
-                    .map(|id| sim.interner().resolve(id))
-                    .unwrap_or(owner_str);
-                let hc: HouseColorIndex = state
-                    .match_state
-                    .match_presentation
-                    .effective_house_color_map()
-                    .get(remap_owner)
-                    .copied()
-                    .unwrap_or_default();
+                    .unwrap_or(entity.owner());
+                let hc: HouseColorIndex = *owner_colours.entry(remap_owner).or_insert_with(|| {
+                    state
+                        .match_state
+                        .match_presentation
+                        .effective_house_color_map()
+                        .get(sim.interner().resolve(remap_owner))
+                        .copied()
+                        .unwrap_or_default()
+                });
                 // The cargo is in limbo inside its Carryall, whose admission the
                 // Display member already passed; only its own DrawState applies.
                 let draw_decision = match carried {
@@ -775,31 +789,37 @@ pub(crate) fn unit_visitor<'a>(
 
                 let turret_index =
                     object_voxel_turret_index(model_object, entity.current_turret_index());
-                let (anim_frame, turret_frame) =
-                    unit_animation_frames(entity, type_str, turret_index, &atlas.frame_counts);
+                let model = *models
+                    .entry(smol_str::SmolStr::new(type_str))
+                    .or_insert_with(|| ModelFacts {
+                        body_frames: body_frame_count(type_str, &atlas.frame_counts),
+                        turret_offset: art_reg
+                            .and_then(|art| art.get(type_str))
+                            .map_or(0, |entry| entry.turret_offset),
+                    });
+                let (anim_frame, turret_frame) = animation_frames_of(
+                    entity,
+                    type_str,
+                    model.body_frames,
+                    turret_index,
+                    &atlas.frame_counts,
+                );
 
                 // Chrono teleport doesn't tint the unit — the visual effect is the
                 // WarpOut animation overlay; the unit itself stays fully opaque.
                 let alpha: f32 = 1.0;
                 // 0x73B140's split is inside the same native parent draw call.
                 // Ground units, including those below bridges, keep LayerClass order.
-                let mut pieces = Vec::new();
-                let drawer =
-                    VoxelDrawer::of(state.rules(), sim.interner().resolve(entity.type_ref()));
+                let drawer = *drawers.entry(entity.type_ref()).or_insert_with(|| {
+                    VoxelDrawer::of(state.rules(), sim.interner().resolve(entity.type_ref()))
+                });
                 // Aircraft4148A0 draws the unmasked ground shadow before its body
                 // at4149D7. Unlike Unit's masked suffix, the body's later pixels
                 // cover its own stencil when parked or low above the ground.
                 if let Some(pose) = aircraft_shadow {
                     emit_aircraft_shadow_sprite(
-                        state,
-                        atlas,
-                        drawer,
-                        entity,
-                        type_str,
-                        anim_frame,
-                        pose,
-                        draw_state,
-                        &mut pieces,
+                        state, atlas, drawer, entity, type_str, anim_frame, pose, draw_state,
+                        pieces,
                     );
                 }
 
@@ -853,7 +873,7 @@ pub(crate) fn unit_visitor<'a>(
                         state,
                         sim,
                         cells.as_ref(),
-                        &mut pieces,
+                        pieces,
                         entity,
                         drawer,
                         image,
@@ -878,7 +898,7 @@ pub(crate) fn unit_visitor<'a>(
                         no_shadow,
                         atlas,
                         drawer,
-                        art_reg,
+                        model.turret_offset,
                         entity,
                         type_str,
                         body_facing,
@@ -901,7 +921,7 @@ pub(crate) fn unit_visitor<'a>(
                         shadow_slope,
                         band,
                         ground_pose,
-                        &mut pieces,
+                        pieces,
                     );
                 } else {
                     // A type with indexed gun models shares its bare hull key when
@@ -961,7 +981,7 @@ pub(crate) fn unit_visitor<'a>(
                                 draw_state,
                                 shadow_slope,
                                 band,
-                                &mut pieces,
+                                pieces,
                             );
                         }
                         let body_center = aircraft_body_anchor(
@@ -1003,7 +1023,7 @@ pub(crate) fn unit_visitor<'a>(
                             zshape_origin: composite_rect,
                             ..Default::default()
                         };
-                        push_unit_sprite(texture_source, sprite, &mut pieces);
+                        push_unit_sprite(texture_source, sprite, pieces);
                         if native_shadow {
                             emit_unit_shadow_sprite(
                                 state,
@@ -1022,7 +1042,7 @@ pub(crate) fn unit_visitor<'a>(
                                 draw_state,
                                 shadow_slope,
                                 band,
-                                &mut pieces,
+                                pieces,
                             );
                         }
                     }
@@ -1038,7 +1058,7 @@ pub(crate) fn unit_visitor<'a>(
                     no_shadow,
                     draw_state,
                     band,
-                    &mut pieces,
+                    pieces,
                 );
 
                 // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
@@ -1064,7 +1084,6 @@ pub(crate) fn unit_visitor<'a>(
                     });
                 }
 
-                pieces_out.append(&mut pieces);
                 Some(DrawnBody {
                     render_pose,
                     body_point: aircraft_body_anchor(
@@ -1155,6 +1174,15 @@ struct DrawnBody {
     band: EntityDrawBand,
 }
 
+/// What a voxel model's draw reads by the model's name, asked once per draw
+/// ([`unit_visitor`]): its [`body_frame_count`] and its art's
+/// `TurretOffset=`.
+#[derive(Clone, Copy)]
+struct ModelFacts {
+    body_frames: u32,
+    turret_offset: i32,
+}
+
 /// How an object's body is drawn this frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum BodyDraw {
@@ -1182,21 +1210,49 @@ fn unit_animation_frames(
     entity: &crate::app::presentation::frame::ObjectRecord,
     model: &str,
     turret_index: i32,
-    frame_counts: &std::collections::BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
+    frame_counts: &VoxelFrameCounts,
 ) -> (u32, u32) {
+    animation_frames_of(
+        entity,
+        model,
+        body_frame_count(model, frame_counts),
+        turret_index,
+        frame_counts,
+    )
+}
+
+/// The voxel frame counts of the models the unit atlas holds.
+type VoxelFrameCounts = std::collections::BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>;
+
+/// `model`'s main HVA frame count, which [`unit_animation_frames`] divides by.
+fn body_frame_count(model: &str, frame_counts: &VoxelFrameCounts) -> u32 {
     let model = smol_str::SmolStr::new(model);
-    let frames = frame_counts
+    frame_counts
         .get(&(model.clone(), VxlLayer::Body, 0))
-        .or_else(|| frame_counts.get(&(model.clone(), VxlLayer::Composite, 0)))
+        .or_else(|| frame_counts.get(&(model, VxlLayer::Composite, 0)))
         .copied()
         .unwrap_or(1)
-        .max(1);
+        .max(1)
+}
+
+/// [`unit_animation_frames`] with `model`'s [`body_frame_count`] in hand.
+fn animation_frames_of(
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    model: &str,
+    frames: u32,
+    turret_index: i32,
+    frame_counts: &VoxelFrameCounts,
+) -> (u32, u32) {
     let body = ((entity.body_frame_counter.get() as i32) % frames as i32) as u32;
     let turret = if body != 0 || entity.turret_anim_frame.frame() == 0 {
         body
     } else {
         frame_counts
-            .get(&(model, VxlLayer::Turret, turret_index))
+            .get(&(
+                smol_str::SmolStr::new(model),
+                VxlLayer::Turret,
+                turret_index,
+            ))
             .filter(|&&frames| frames > 1)
             .map_or(0, |&frames| {
                 (entity.turret_anim_frame.frame() % frames as i32) as u32
@@ -1789,19 +1845,6 @@ fn prepare_unit_shadow(
     if !native_shadow_caller_eligible(entity, no_shadow, slope, band) {
         return false;
     }
-    let parts: Vec<_> = parts
-        .into_iter()
-        .map(
-            |(entry, source, offset)| crate::render::unit_atlas::UnitShadowPart {
-                entry,
-                point: [
-                    128 + entry.offset_x as i32 + offset[0] as i32,
-                    128 + entry.offset_y as i32 + offset[1] as i32,
-                ],
-                posed: !matches!(source, UnitTextureSource::Stable(_)),
-            },
-        )
-        .collect();
     let key = shadow_lookup_key(
         UnitSpriteKey {
             type_id: type_id.into(),
@@ -1821,7 +1864,21 @@ fn prepare_unit_shadow(
         .borrow()
         .flushes();
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
+    // Only a mask not yet filled since the last flush stamps the parts.
     atlas.prepare_native_shadow_with(&key, flushes, |body| {
+        let parts: Vec<_> = parts
+            .into_iter()
+            .map(
+                |(entry, source, offset)| crate::render::unit_atlas::UnitShadowPart {
+                    entry,
+                    point: [
+                        128 + entry.offset_x as i32 + offset[0] as i32,
+                        128 + entry.offset_y as i32 + offset[1] as i32,
+                    ],
+                    posed: !matches!(source, UnitTextureSource::Stable(_)),
+                },
+            )
+            .collect();
         pose_cache.stamp_shadow_parts(atlas, &parts, body)
     })
 }
@@ -2465,7 +2522,7 @@ fn emit_turret_unit_sprites(
     no_shadow: bool,
     atlas: &crate::render::unit_atlas::UnitAtlas,
     drawer: VoxelDrawer,
-    art_reg: Option<&crate::rules::art_data::ArtRegistry>,
+    art_offset: i32,
     entity: &crate::app::presentation::frame::ObjectRecord,
     type_id: &str,
     body_facing: u8,
@@ -2520,11 +2577,7 @@ fn emit_turret_unit_sprites(
         barrel_pitch: 0,
     };
 
-    // Look up TurretOffset from art.ini and compute screen-space shift.
-    let art_offset: i32 = art_reg
-        .and_then(|a| a.get(type_id))
-        .map(|e| e.turret_offset)
-        .unwrap_or(0);
+    // `art_offset` is the model's art.ini TurretOffset, shifted on screen.
     // Use the same stable or quaternion-SLERP slope matrix as every hull,
     // turret, and barrel raster layer in this presentation phase.
     if let Some(pose) = ground_pose.as_mut() {
@@ -2602,22 +2655,19 @@ fn emit_turret_unit_sprites(
     // as ONE rect (`UnitClass vtable+0x55C = 0x0073B140`), so all three share
     // the entry-2 seed of the composite rect: its top and height ride
     // `zshape_origin` (the voxel shader's `z_rect`).
-    let turret_layers: Vec<_> = native_turret_barrel_order(
+    let turret_layers = native_turret_barrel_order(
         turret_facing,
         (&turret_key, turret_image, [tur_ox, tur_oy]),
         (&barrel_key, barrel_image, [barrel_ox, barrel_oy]),
     )
-    .into_iter()
-    .filter_map(|(key, image, offset)| {
+    .map(|(key, image, offset)| {
         voxel_part_entry(state, atlas, drawer, image, key, ground_pose)
             .map(|(entry, source)| (entry, source, offset))
-    })
-    .collect();
+    });
+    let turret_layers = || turret_layers.iter().flatten().copied();
     let native_shadow = body_entry_opt
         .is_some_and(|(_, source)| !matches!(source, UnitTextureSource::Pose(_)))
-        && turret_layers
-            .iter()
-            .all(|(_, source, _)| !matches!(source, UnitTextureSource::Pose(_)))
+        && turret_layers().all(|(_, source, _)| !matches!(source, UnitTextureSource::Pose(_)))
         && prepare_unit_shadow(
             state,
             atlas,
@@ -2630,7 +2680,7 @@ fn emit_turret_unit_sprites(
             body_entry_opt
                 .into_iter()
                 .map(|(entry, source)| (entry, source, [0.0, 0.0]))
-                .chain(turret_layers.iter().copied()),
+                .chain(turret_layers()),
         );
     if !native_shadow {
         emit_unit_shadow_sprite(
@@ -2658,9 +2708,7 @@ fn emit_turret_unit_sprites(
             .into_iter()
             .map(|(entry, _)| (entry, [center_x, center_y]))
             .chain(
-                turret_layers
-                    .iter()
-                    .map(|(entry, _, [ox, oy])| (*entry, [center_x + ox, center_y + oy])),
+                turret_layers().map(|(entry, _, [ox, oy])| (entry, [center_x + ox, center_y + oy])),
             ),
     );
     let (composite_rect, split) =
@@ -2685,7 +2733,7 @@ fn emit_turret_unit_sprites(
         push_unit_sprite(texture_source, sprite, pieces);
     }
 
-    for (entry, texture_source, [ox, oy]) in turret_layers {
+    for (entry, texture_source, [ox, oy]) in turret_layers() {
         let sprite = SpriteInstance {
             position: [
                 center_x + entry.offset_x + ox,

@@ -325,13 +325,15 @@ impl SidebarProjectionState {
     /// The same pass owns the two native tab transitions (an entry arriving
     /// into an empty sidebar, and a strip that just emptied); the caller
     /// applies them, so the tab buttons and the active tab are never
-    /// re-derived from the current strip contents.
+    /// re-derived from the current strip contents. `ares`: whether Ares plays
+    /// in the game (`RuleSet::ares`).
     pub(crate) fn reconcile_cameos(
         &mut self,
         owner: InternedId,
         current: &[Cameo],
         visible_rows: usize,
         seed_additions: &[InternedId],
+        ares: bool,
     ) -> crate::ui::sidebar::cameo_order::CameoReconcile {
         let initialized = self
             .cameos
@@ -360,7 +362,7 @@ impl SidebarProjectionState {
             .as_mut()
             .expect("cameos initialized")
             .1
-            .reconcile(current, visible_rows, recalculate_builds, additions);
+            .reconcile(current, visible_rows, recalculate_builds, additions, ares);
         self.pending_cameo_additions.clear();
         if !initialized || self.pending_tab_initialization {
             reconciled = reconciled.with_initialized_tabs(self.cameo_strips());
@@ -1416,6 +1418,7 @@ pub(crate) fn prepare_saved_order(
     if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
+    let ares = rules.ares();
     let mut seen = std::collections::HashSet::new();
     let mut strips: [Vec<Cameo>; 4] = std::array::from_fn(|_| Vec::new());
     let mut factory_links = HashMap::new();
@@ -1442,7 +1445,7 @@ pub(crate) fn prepare_saved_order(
         }
         // AddCameo admits one entry past 75 (cameo_order.rs); an Ares strip is
         // unbounded (Ares.dll 1002C160, hook 0x6A63B7).
-        if strip_rejects_entry(identities.len().saturating_sub(1)) {
+        if strip_rejects_entry(identities.len().saturating_sub(1), ares) {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
             ));
@@ -1599,7 +1602,7 @@ mod tests {
             })
             .collect();
         let mut projection = SidebarProjectionState::default();
-        projection.reconcile_fixture(owner, &candidates, 1);
+        projection.reconcile_fixture(owner, &candidates, 1, false);
         (sim, rules, owner, projection)
     }
 
@@ -1701,7 +1704,8 @@ mod tests {
 
     // The Infantry request mark falls through to the Vehicle one only without
     // Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
-    // 0x5005CC/0x50067C/0x5007BE).
+    // 0x5005CC/0x50067C/0x5007BE). A build with the `ares` feature reads
+    // every fixture game the Ares way (`ares_switch::reading_mode`).
     #[cfg(not(feature = "ares"))]
     #[test]
     fn begin_attempt_clears_the_first_request_gate_without_discarding_failed_request() {
@@ -1737,7 +1741,7 @@ mod tests {
                 name: "E2".into(),
             },
         };
-        projection.reconcile_cameos(owner, &[cameo.clone()], 3, &[e2]);
+        projection.reconcile_cameos(owner, &[cameo.clone()], 3, &[e2], false);
         let produce = CameoClick {
             order: Some(CameoOrder::Produce),
             ..CameoClick::default()
@@ -1789,7 +1793,7 @@ mod tests {
                 naval: false,
             },
             Some(owner),
-            crate::rules::ARES_BUILD,
+            false,
         );
         assert!(
             projection
@@ -1803,7 +1807,7 @@ mod tests {
                 naval: false,
             },
             Some(owner),
-            crate::rules::ARES_BUILD,
+            false,
         );
         assert!(projection.prediction_categories.is_empty());
         assert_eq!(
@@ -1827,7 +1831,7 @@ mod tests {
             cost: 300,
             name: "changed comparison key".into(),
         };
-        projection.reconcile_cameos(owner, &[repriced], 3, &[]);
+        projection.reconcile_cameos(owner, &[repriced], 3, &[], false);
         assert_eq!(
             projection.cameo_strips().request_clock(cameo.id),
             Some(clock),
@@ -1838,22 +1842,22 @@ mod tests {
         projection.apply_lifecycle_output(
             &LifecycleOutput::SidebarRecalculated { owner },
             Some(owner),
-            crate::rules::ARES_BUILD,
+            false,
         );
-        projection.reconcile_cameos(owner, &[unavailable], 3, &[]);
+        projection.reconcile_cameos(owner, &[unavailable], 3, &[], false);
         assert!(
             projection.cameo_request(e2).is_none(),
             "actual membership removal discards the request"
         );
         for reset in 0..3 {
             projection.reset_cameo_seed();
-            projection.reconcile_cameos(owner, &[cameo.clone()], 3, &[e2]);
+            projection.reconcile_cameos(owner, &[cameo.clone()], 3, &[e2], false);
             projection.record_cameo_click(&sim, &rules, owner, e2, produce);
             match reset {
                 0 => projection.reset_cameo_seed(),
                 1 => projection.replace_view(None),
                 _ => {
-                    projection.reconcile_cameos(other_owner, &[cameo.clone()], 3, &[e2]);
+                    projection.reconcile_cameos(other_owner, &[cameo.clone()], 3, &[e2], false);
                 }
             }
             assert!(projection.cameo_request(e2).is_none());
@@ -1912,7 +1916,7 @@ mod tests {
                 })
             })
             .collect();
-        projection.reconcile_fixture(owner, &cameos, 3);
+        projection.reconcile_fixture(owner, &cameos, 3, false);
         for (tab, entries) in step["before"]["sidebar_entries"].as_object().unwrap() {
             let category = match tab.as_str() {
                 "0" => ProductionCategory::Building,
@@ -1998,13 +2002,13 @@ mod tests {
             })
         };
         let mut projection = SidebarProjectionState::default();
-        projection.reconcile_fixture(owner, &candidates(true), 3);
+        projection.reconcile_fixture(owner, &candidates(true), 3, false);
         let before = projection.cameo_strips().saved_identities();
 
         // FindFactory rejects a Selling producer immediately, but the local
         // House +1FC pass has not run. Strip AI/Draw retain their entries.
         // Native caller/Draw evidence: House 4F927C/4F92E2, Strip 6A8B30/6A9540.
-        let refreshed = projection.reconcile_fixture(owner, &candidates(false), 3);
+        let refreshed = projection.reconcile_fixture(owner, &candidates(false), 3, false);
         assert_eq!(projection.cameo_strips().saved_identities(), before);
         assert_eq!(refreshed.transitions(), Default::default());
 
@@ -2015,7 +2019,7 @@ mod tests {
             Some(owner),
             crate::rules::ARES_BUILD,
         );
-        projection.reconcile_fixture(owner, &candidates(false), 3);
+        projection.reconcile_fixture(owner, &candidates(false), 3, false);
         assert_eq!(projection.cameo_strips().saved_identities(), before);
 
         projection.apply_lifecycle_output(
@@ -2023,7 +2027,7 @@ mod tests {
             Some(owner),
             crate::rules::ARES_BUILD,
         );
-        let recalculated = projection.reconcile_fixture(owner, &candidates(false), 3);
+        let recalculated = projection.reconcile_fixture(owner, &candidates(false), 3, false);
         assert!(
             projection
                 .cameo_strips()
@@ -2060,12 +2064,12 @@ mod tests {
         // Sim A: the first projection seeds silently, growth speaks.
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
         projection.apply_lifecycle_output(
@@ -2075,7 +2079,7 @@ mod tests {
         );
         assert!(
             projection
-                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                 .build_inserted()
         );
         projection.apply_lifecycle_output(
@@ -2085,7 +2089,7 @@ mod tests {
         );
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
         projection.apply_lifecycle_output(
@@ -2095,7 +2099,7 @@ mod tests {
         );
         assert!(
             projection
-                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                 .build_inserted()
         );
         // Sim B with a different pre-placed base: without the reset its
@@ -2103,7 +2107,7 @@ mod tests {
         projection.reset_cameo_seed();
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(b)], 3, false)
                 .build_inserted(),
             "the first refresh after a sim install is the init window"
         );
@@ -2114,19 +2118,19 @@ mod tests {
         );
         assert!(
             projection
-                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3)
+                .reconcile_fixture(owner, &[candidate(a), candidate(b)], 3, false)
                 .build_inserted()
         );
         assert!(
             !projection
-                .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3)
+                .reconcile_fixture(InternedId::from_index(4), &[candidate(a)], 3, false)
                 .build_inserted()
         );
         // Leaving the match still clears the seed.
         projection.replace_view(None);
         assert!(
             !projection
-                .reconcile_fixture(owner, &[candidate(a)], 3)
+                .reconcile_fixture(owner, &[candidate(a)], 3, false)
                 .build_inserted()
         );
     }

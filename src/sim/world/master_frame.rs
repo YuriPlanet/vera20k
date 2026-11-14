@@ -1127,8 +1127,8 @@ impl Simulation {
         frame_clock: Option<crate::sim::frame_profile::FrameClock>,
     ) -> MasterFrameOutput {
         let tick_ms = inputs.tick_ms;
-        // A MindControl shot changes an existing SHP's house-colour key.
-        // Publish the atlas invalidation before the next draw, even with no spawn.
+        // An owner change outside the object pass (a MindControl shot)
+        // reaches the tick's report too.
         frame.ownership_changed |= std::mem::take(&mut self.ownership_changed_since_output);
         let frame_committed = if let FrameTailResult::Complete(committed) = result {
             committed

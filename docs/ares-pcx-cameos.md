@@ -1,7 +1,8 @@
 # Optional Ares PCX sidebar icons
 
-Build with `--features ares` to read ART `CameoPCX` and `AltCameoPCX`, and
-the SuperWeaponType rules key `SidebarPCX`. Default builds ignore these keys.
+A game [Ares](ares.md) plays in draws ART `CameoPCX` and `AltCameoPCX`, and
+the SuperWeaponType rules key `SidebarPCX`, in every build. Other games ignore
+these keys.
 Filenames include their extension. Normal and promoted keys are read only from
 the type's rules `Image` ART section; that section's own `Image` redirect does
 not redirect these reads. A present name is lowercased and limited to 31 bytes.

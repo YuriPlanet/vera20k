@@ -462,6 +462,31 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
     assert_eq!(disguise.house(), Some(houses[1]));
 }
 
+/// A disguise put on is a new look for the presentation's atlas check
+/// (`Simulation::take_looks`); a write that changes no look, and a removal,
+/// are none.
+#[test]
+fn a_disguise_put_on_is_a_new_look_and_a_hit_or_a_death_is_not() {
+    use crate::sim::Touched;
+    let (mut sim, rules, _, _) = fixture();
+    let actor = sim
+        .spawn_object("SPY", "House0", 15, 15, 0, &rules)
+        .unwrap();
+    let target = sim.spawn_object("E2", "House1", 16, 15, 0, &rules).unwrap();
+    let bystander = sim.spawn_object("E1", "House0", 17, 15, 0, &rules).unwrap();
+    sim.take_looks();
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .health
+        .set(50);
+    sim.despawn_entity(bystander);
+    assert_eq!(sim.take_looks().entities, Touched::Ids(Vec::new()));
+    sim.disguise_as(actor, Some(target), true, &rules);
+    assert_eq!(sim.take_looks().entities, Touched::Ids(vec![actor]));
+}
+
 #[test]
 fn non_agent_arrival_does_not_raise_the_spy_cell_event() {
     let (mut sim, rules, registry, houses) = fixture();
