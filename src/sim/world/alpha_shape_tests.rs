@@ -63,10 +63,9 @@ fn a_loaded_alpha_image_glows_from_unlimbo_until_the_purge_after_expiry() {
     assert_eq!(sim.alpha_shapes().count(), 0);
 }
 
-/// Ares 3.0 `Hooks.Alpha.cpp` re-places a glow from its object's live GetCoords
-/// (the `UpdateScreen` hooks of `TacticalClass::UpdateAlphasInRectangle`), so a
-/// Super Thor's ring travels with the gunship. Stock keeps the Unlimbo spot.
-#[cfg(feature = "ares")]
+/// Ares 3.0 `UpdateAlphaShape` (hook `0x005F3E70`) re-places a glow from its
+/// object's live GetCoords, so a Super Thor's ring travels with the gunship.
+/// Stock keeps the Unlimbo spot.
 #[test]
 fn ares_moves_a_glow_with_its_object() {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
@@ -78,9 +77,7 @@ fn ares_moves_a_glow_with_its_object() {
         AlphaImage::for_test([60, 30], [0, 0, 1, 1], vec![254]),
     );
     let entities = crate::map::entities::parse_map_entities(
-        &IniFile::from_str(
-            "[Units]\n0=Americans,ODIN,256,4,4,0,None,None,None,-1,0\n",
-        ),
+        &IniFile::from_str("[Units]\n0=Americans,ODIN,256,4,4,0,None,None,None,-1,0\n"),
         4,
     );
     let mut sim = Simulation::with_seed(5);
@@ -119,6 +116,10 @@ fn ares_moves_a_glow_with_its_object() {
     sim.update_alpha_shape_screens(&rules);
     let after = sim.alpha_shapes().next().expect("still one glow").0;
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(moved.x, moved.y, 0);
-    assert_eq!(after, [x as i32 - 30, y as i32 - 15], "re-placed from GetCoords");
+    assert_eq!(
+        after,
+        [x as i32 - 30, y as i32 - 15],
+        "re-placed from GetCoords"
+    );
     assert_ne!(after, born);
 }
