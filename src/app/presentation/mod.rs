@@ -17,6 +17,8 @@ pub(crate) mod fire_effects;
 #[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) mod flying_credits;
 pub(crate) mod house_ui;
+#[cfg(feature = "phobos")]
+pub(crate) mod hud_boards;
 pub(crate) mod instances;
 pub(crate) mod interpolation;
 pub(crate) mod ion_blasts;

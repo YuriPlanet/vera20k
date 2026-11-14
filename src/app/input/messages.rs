@@ -1221,6 +1221,25 @@ fn sync_view(state: &mut AppState) {
         .match_presentation
         .message_list
         .set_view(0, top, tactical_w);
+    // `MessageColumnClass::Init` (Misc/MessageColumn.cpp:455-465) clamps the
+    // authored label/record counts to the panel's line budget. VERA's list
+    // has no toggle-button column; its 14-slot pool is that budget.
+    #[cfg(feature = "phobos")]
+    {
+        let boards = state.match_state.match_presentation.hud_boards;
+        if boards.message_display_in_center {
+            let (labels, records) = crate::app::presentation::hud_boards::column_capacities(
+                boards.message_labels,
+                boards.message_records,
+                crate::ui::messages::MESSAGE_SLOTS,
+            );
+            state
+                .match_state
+                .match_presentation
+                .message_list
+                .configure_column(labels, records);
+        }
+    }
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -1246,6 +1265,21 @@ pub(crate) fn build_message_instances(
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
     }
+    // `0x623A9F DSurface_sub_623880_DrawBitFontStrings`
+    // (`Misc/MessageColumn.cpp:1106-1112`) fills each message row's board with
+    // `FillRectTrans(..., MessageDisplayInCenter.BoardOpacity)` while the
+    // centre column is drawing. The stock list keeps its opaque black board.
+    #[cfg(feature = "phobos")]
+    let board_alpha = {
+        let boards = state.match_state.match_presentation.hud_boards;
+        if boards.message_display_in_center {
+            crate::app::presentation::hud_boards::board_alpha(boards.message_board_opacity)
+        } else {
+            1.0
+        }
+    };
+    #[cfg(not(feature = "phobos"))]
+    let board_alpha = 1.0;
     message_instances(
         &state.renderer.bit_font,
         &state.match_state.match_presentation.message_list,
@@ -1258,6 +1292,7 @@ pub(crate) fn build_message_instances(
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        board_alpha,
     )
 }
 
@@ -1289,6 +1324,7 @@ fn message_instances(
     list: &crate::ui::messages::MessageList,
     composition: Option<&[u16]>,
     camera_offset: [f32; 2],
+    board_alpha: f32,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let x = list.x() as f32;
     let mut fills = Vec::new();
@@ -1341,7 +1377,7 @@ fn message_instances(
             // (fill 0.00021 > border 0.000205 > text).
             depth: 0.00023,
             tint: [0.0; 3],
-            alpha: 1.0,
+            alpha: board_alpha,
             ..Default::default()
         });
         texts.extend(text);
@@ -1352,6 +1388,34 @@ fn message_instances(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `0x623A9F`: the centre column fills each row board with
+    /// `FillRectTrans(..., BoardOpacity)`, while the stock list stays opaque.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn the_message_row_board_takes_the_phobos_board_opacity() {
+        let font = crate::render::bit_font::tests::make_test_font(
+            &[(b'L' as u16, 6), (b'o' as u16, 6)],
+            4,
+        );
+        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 600);
+        let p = crate::ui::messages::MessagePost {
+            prefix: None,
+            text: "Lo",
+            rgb: [1.0, 1.0, 1.0],
+            timeout_ms: None,
+            silent: true,
+        };
+        list.add_message(&p, 0, &|s| s.chars().count() as i32 * 10);
+        let stock = message_instances(&font, &list, None, [0.0; 2], 1.0);
+        assert_eq!(stock.0.len(), 1);
+        assert_eq!(stock.0[0].alpha, 1.0);
+
+        let alpha = crate::app::presentation::hud_boards::board_alpha(40);
+        let phobos = message_instances(&font, &list, None, [0.0; 2], alpha);
+        assert_eq!(phobos.0[0].alpha, 0.4);
+        assert_eq!(phobos.1.len(), stock.1.len(), "only the board changes");
+    }
 
     #[test]
     fn movie_subtitle_rows_keep_native_duration_and_literal_text() {
@@ -1779,9 +1843,15 @@ mod tests {
             4,
         );
         assert_eq!(list.advance_reveal(now as u32), 1);
-        assert_eq!(message_instances(&font, &list, None, [0.0; 2]).1.len(), 1);
+        assert_eq!(
+            message_instances(&font, &list, None, [0.0; 2], 1.0).1.len(),
+            1
+        );
         assert_eq!(list.advance_reveal(now as u32 + 16), 1);
-        assert_eq!(message_instances(&font, &list, None, [0.0; 2]).1.len(), 2);
+        assert_eq!(
+            message_instances(&font, &list, None, [0.0; 2], 1.0).1.len(),
+            2
+        );
         // Offline menus skip Manage. Equality still retains the row; a
         // first resumed poll past the deadline removes it immediately.
         assert!(!list.manage(deadline));
@@ -1848,7 +1918,7 @@ mod tests {
         let font = make_test_font(&[(b'a' as u16, 6), (0x4E2D, 15)], 4);
         let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 1_000);
         assert!(list.add_edit("a", [1.0, 1.0, 1.0], true));
-        let (fills, texts) = message_instances(&font, &list, Some(&[0x4E2D]), [0.0; 2]);
+        let (fills, texts) = message_instances(&font, &list, Some(&[0x4E2D]), [0.0; 2], 1.0);
         let expected = font.build_text_label(
             "\u{4E2D}",
             3.0 + font.text_width("a") as f32,
@@ -1882,9 +1952,9 @@ mod tests {
             &|text| font.text_width(text) as i32,
         );
 
-        let at_origin = message_instances(&font, &list, None, [0.0, 0.0]).1;
+        let at_origin = message_instances(&font, &list, None, [0.0, 0.0], 1.0).1;
         let ui_camera = [640.0_f32, 480.0_f32];
-        let panned = message_instances(&font, &list, None, ui_camera).1;
+        let panned = message_instances(&font, &list, None, ui_camera, 1.0).1;
 
         assert_eq!(at_origin.len(), 3);
         assert_eq!(panned.len(), at_origin.len());
