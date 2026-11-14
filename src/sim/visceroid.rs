@@ -265,6 +265,10 @@ impl Simulation {
             return false;
         }
         self.store_techno_type(other, large, rules);
+        // Health at the new type's Strength (`+0x6C`).
+        if let Some(entity) = self.substrate.entities.get_mut(other) {
+            entity.health.set(large.strength);
+        }
         self.refresh_spatial_threat(other, rules, None);
         self.uninit_with_context(
             id,
