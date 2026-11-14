@@ -3094,6 +3094,12 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 crate::app::input::campaign_input::apply_lock_effect(state, *locked, *was_locked);
             }
             TriggerEffect::CancelPlacementModes => {
+                // Main_Tick runs Logic, where action 46 fires (0x0055DC9E),
+                // before the frame's events (0x00647260 at 0x0055DE40 ->
+                // Execute_DoList 0x0064C380). A PLACE that fails in that frame
+                // restores its placement (HousePlace 0x004FB395..0x004FB49A)
+                // after this clear; the BuildingPlacementRetry outputs, applied
+                // after these effects, keep that order.
                 crate::app::input::campaign_input::cancel_placement_modes(
                     &mut state.match_state.input,
                     &mut state.match_state.match_presentation.sidebar_gadget_state,
