@@ -820,9 +820,9 @@ fn a_removed_foot_controller_frees_its_captives() {
 
 /// Ares CaptureManagerClass_DecideUnitFate_BuildingFate (1005C680, hook
 /// 0x47243F): a computer's captured building queues Guard with no fate roll.
-#[cfg(feature = "ares")]
 #[test]
 fn a_computer_building_guards_without_a_fate_roll() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = sim(1);
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);

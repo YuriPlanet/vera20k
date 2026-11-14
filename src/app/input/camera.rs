@@ -832,11 +832,18 @@ pub(crate) fn set_view_bookmark(state: &mut AppState, slot: usize) {
 }
 
 /// `View<slot+1>` — jump the camera to a bookmark.
+/// With a building armed, its foundation follows the cursor's new Cell
+/// (the View1..View4 commands, `0x005373C3`, `0x005374B3`, `0x005375A3`,
+/// `0x00537693`).
 pub(crate) fn recall_view_bookmark(state: &mut AppState, slot: usize) {
     let Some((rx, ry)) = state.match_state.input.view_bookmarks.get(slot) else {
         return;
     };
     center_camera_on_cell(state, rx, ry);
+    crate::app::match_runtime::sim_tick::update_building_placement_preview(
+        state,
+        crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
+    );
 }
 
 /// Seed all four bookmarks with the cell the view is currently centred on.
@@ -1987,7 +1994,10 @@ pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
     if let Some([x, y, z]) = coord {
         center_camera_on_lepton_point(state, x, y, z);
     }
-    crate::app::match_runtime::sim_tick::update_building_placement_preview(state);
+    crate::app::match_runtime::sim_tick::update_building_placement_preview(
+        state,
+        crate::app::match_runtime::sim_tick::FoundationCentre::Cursor,
+    );
     state.match_state.input.follow_target = None;
 }
 

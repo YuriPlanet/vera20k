@@ -29,6 +29,7 @@ mod building_upgrade_art;
 mod camera_home;
 mod cell_content;
 mod crash;
+mod death_frames;
 mod disk_laser;
 pub use disk_laser::DiskLaserObservation;
 #[cfg(test)]
@@ -583,6 +584,18 @@ pub struct AresTechCaptureLines {
     pub message_capture: Option<InternedId>,
 }
 
+/// What Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+/// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760) add to
+/// [`SimSoundEvent::UnitLost`]. A game without Ares carries none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AresUnitLostLine {
+    /// The victim type's `EVA.Lost`, spoken whether or not the event's
+    /// `radar` is admitted.
+    pub eva: InternedId,
+    /// A Foot creates the radar event; a building creates none.
+    pub radar_event: bool,
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
@@ -860,15 +873,9 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: RadarEventRequest,
         type_id: InternedId,
-        /// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
-        /// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): the
-        /// victim type's `EVA.Lost`, spoken whether or not `radar` is
-        /// admitted.
-        #[cfg(feature = "ares")]
-        eva: InternedId,
-        /// Ares: a Foot creates the radar event; a building creates none.
-        #[cfg(feature = "ares")]
-        radar_event: bool,
+        /// The Ares announcement, when Ares plays: the app then speaks its
+        /// line instead, whatever `radar` answers. `None` is the stock event.
+        ares: Option<AresUnitLostLine>,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -1137,7 +1144,6 @@ pub enum SimSoundEvent {
     /// Ares SPECIAL_PLACE10038ECA..10038EE0: automatic selection for a
     /// manual event failed. Only the owning client prints Message.CannotFire;
     /// its existing message-list transport owns the insert sound.
-    #[cfg(feature = "ares")]
     AresSuperWeaponRefused {
         owner: InternedId,
         sw_type: InternedId,
@@ -1147,7 +1153,6 @@ pub enum SimSoundEvent {
     /// (10033153), which a handler's NoMessage Flag skips. `sw_type` is the
     /// type whose SWTypeExt the Launch read (a PostClick Super's source); a
     /// handler whose Flags hold both NoMessage and NoCleanup sends none.
-    #[cfg(feature = "ares")]
     AresSuperWeaponFinished {
         owner: InternedId,
         sw_type: InternedId,
@@ -1156,11 +1161,9 @@ pub enum SimSoundEvent {
     /// Common Ares Launch10032FC3: every client plays `sw_type`'s
     /// `EVA_Activated` (the PostClick source's for a PostClick Super),
     /// unless the handler's Flags hold NoEVA.
-    #[cfg(feature = "ares")]
     AresSuperWeaponActivatedEva { sw_type: InternedId },
     /// A new type's AbortFire refused a click (SW_PsychicDominator
     /// 10070780): the owner's client prints the type's `Message.Abort`.
-    #[cfg(feature = "ares")]
     AresSuperWeaponAborted {
         owner: InternedId,
         sw_type: InternedId,
@@ -1168,7 +1171,6 @@ pub enum SimSoundEvent {
     /// A type-13 radar event only the clients whose player `owner` counts as
     /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
     /// the target location before the enemy does").
-    #[cfg(feature = "ares")]
     AresAlliedRadarEvent {
         owner: InternedId,
         radar: RadarEventRequest,
@@ -1176,7 +1178,6 @@ pub enum SimSoundEvent {
     /// Ares SuperClass_Update_DrainMoney100358A0 refused a draining Super's
     /// money for a ControlledByHuman House: every client plays
     /// EVA.InsufficientFunds and prints the label in the player's colour.
-    #[cfg(feature = "ares")]
     AresSuperWeaponDrainRefused {
         owner: InternedId,
         sw_type: InternedId,
@@ -1184,7 +1185,6 @@ pub enum SimSoundEvent {
     /// A new type's deferred activation (UnitDelivery's state machine
     /// Update10075DE0, the Ares Lightning Storm's start 10036B00): every
     /// client prints Message.Activate.
-    #[cfg(feature = "ares")]
     AresSuperWeaponActivated {
         owner: InternedId,
         sw_type: InternedId,
@@ -1192,7 +1192,6 @@ pub enum SimSoundEvent {
     /// An Ares Lightning Storm's countdown reached a multiple of 225 under
     /// `Lightning.PrintText` (hook 53A6CF, 10037330): every client prints
     /// the type's Message.Launch, with no EVA line.
-    #[cfg(feature = "ares")]
     AresLightningStormApproaching {
         owner: InternedId,
         sw_type: InternedId,
@@ -3462,16 +3461,17 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
-            #[cfg(feature = "ares")]
-            let eva = self.interner.intern(&event.eva);
+            // Only the Ares event interns its line. A game without Ares must
+            // not intern one here: a new ID changes later hashes.
+            let ares = event.ares.as_ref().map(|ares| AresUnitLostLine {
+                eva: self.interner.intern(&ares.eva),
+                radar_event: ares.radar_event,
+            });
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
                 type_id: event.type_id,
-                #[cfg(feature = "ares")]
-                eva,
-                #[cfg(feature = "ares")]
-                radar_event: event.radar_event,
+                ares,
             });
         }
     }
@@ -4853,7 +4853,8 @@ impl Simulation {
     /// - it holds no objects (its entity store is [`EntityStore::detached`];
     ///   the presentation frame holds their draw records), and none of the
     ///   state only gameplay reads (the zone and path grids, the team script
-    ///   VM, the movement pass's kept products, the reveal pass's answers);
+    ///   VM, the movement pass's kept products, the reveal pass's answers,
+    ///   the Houses' spatial threat grids);
     /// - its fog is only what `viewer`, the local player, sees
     ///   ([`FogState::presentation_copy`]);
     /// - its terrain, overlays, smudges, terrain objects, interner and
@@ -4867,13 +4868,20 @@ impl Simulation {
         reuse: Option<Simulation>,
     ) -> Simulation {
         // What the copy leaves out.
-        let fog = std::mem::take(&mut self.fog);
+        let mut fog = std::mem::take(&mut self.fog);
         let entities = std::mem::replace(&mut self.substrate.entities, EntityStore::detached());
         let zone_grid = self.zone_grid.take();
         let path_grid = self.path_grid.take();
         let team_script_vm = std::mem::take(&mut self.team_script_vm);
         let movement_pass_cache = std::mem::take(&mut self.movement_pass_cache);
         let reveal_viewers = std::mem::take(&mut self.reveal_viewers);
+        // Each House's spatial threat grid (a large map's is 66,564 dwords,
+        // thirty Houses about 8 MB) is AI state only gameplay reads.
+        let spatial_threats: Vec<_> = self
+            .houses
+            .values_mut()
+            .map(HouseState::take_spatial_threat)
+            .collect();
         #[cfg(any(test, feature = "test-support"))]
         let test_recorders = (
             std::mem::take(&mut self.lifecycle_test_events),
@@ -4889,13 +4897,26 @@ impl Simulation {
             crate::sim::parallel::drop_on_pool(old);
             (theirs, old_fog)
         });
-        let mut rest = None;
+        let mut copy = None;
+        let mut fog_copy = None;
         let this = &*self;
+        let fog_ref = &mut fog;
+        // The three parts share only reads, so they run at once: the syncs
+        // and the viewer's fog on the pool, the clone of the rest here.
         crate::sim::parallel::alongside(
             || synced.sync_into(&mut theirs),
-            || rest = Some((this.clone(), fog.presentation_copy(viewer, old_fog))),
+            || {
+                crate::sim::parallel::alongside(
+                    || fog_copy = Some(fog_ref.presentation_copy(viewer, old_fog)),
+                    || copy = Some(this.clone()),
+                )
+            },
         );
-        let (mut copy, fog_copy) = rest.expect("cloned beside the syncs");
+        for (house, grid) in self.houses.values_mut().zip(spatial_threats) {
+            house.restore_spatial_threat(grid);
+        }
+        let mut copy = copy.expect("cloned beside the syncs");
+        let fog_copy = fog_copy.expect("fog copied beside the clone");
         synced.put(self);
         theirs.put(&mut copy);
         copy.fog = fog_copy;
@@ -5737,9 +5758,6 @@ impl Simulation {
                     if self.ares_inviso_firestorm(stable_id, placement, rules) {
                         continue;
                     }
-                    // The obstacle walk moves to the switch with combat's
-                    // line-of-fire walk (`line_of_fire::ares_obstacle`).
-                    #[cfg(feature = "ares")]
                     let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
                     placement
                 } else {
@@ -6897,13 +6915,14 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        let old_house = self.houses.index_of(old_owner);
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {
-                house.stats_mut().record_kill(category);
+                house.stats_mut().record_kill(category, old_house);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
@@ -6925,7 +6944,7 @@ impl Simulation {
         }
         //Techno701701..719 removes from the old owner using the retained
         //Cell. The same Cell survives the owner write for701774..780.
-        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id);
+        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id, rules);
         // Techno70172F: `ReReveal(0, 0, 0, 0)` before the owner store takes
         // the sight off every map the old owner's reveal wrote. A building
         // released it at 448BD9 and an object in limbo at its Limbo, so for
@@ -8251,6 +8270,18 @@ impl Simulation {
     /// fixed frame count, so the same commands always hash the same frames.
     pub fn hash_state_every(&mut self, frames: std::num::NonZeroU64) {
         self.state_hash_interval = Some(frames);
+    }
+
+    /// Whether the next frame's tick falls on the interval
+    /// [`Self::hash_state_every`] last set, so that frame hashes the state.
+    /// A frame that ends the match hashes too, which is not known beforehand.
+    pub fn next_frame_hashes_state(&self) -> bool {
+        self.state_hash_interval.is_some_and(|frames| {
+            self.session
+                .tick()
+                .saturating_add(1)
+                .is_multiple_of(frames.get())
+        })
     }
 
     /// Start or stop diagnostic wall-clock measurement. A transition starts a

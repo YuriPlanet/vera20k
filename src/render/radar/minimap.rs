@@ -418,7 +418,7 @@ impl MinimapRenderer {
     /// pixels, uploaded for [`Self::encode_composition`] to compose.
     /// Returns a dirty generation only after completion so the app can ack it;
     /// unchanged simulation/view inputs reuse the existing picture.
-    pub fn update_unit_dots(
+    pub(crate) fn update_unit_dots(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -466,6 +466,7 @@ impl MinimapRenderer {
                 overlay_pixels: &mut self.overlay_pixels,
                 native_surface: self.native_radar_surface,
                 native_terrain: &mut self.native_radar_terrain,
+                playfield: self.playfield_bounds,
             },
             CurrentRadarCellAuthority::new(resolved_terrain, overlay_grid, overlay_registry, rules),
             self.structural_bridge_radar_color,
@@ -677,12 +678,31 @@ impl MinimapRenderer {
                                 .get(&owner)
                                 .map(|plane| (plane.cells_raw(), (plane.width(), plane.height())))
                         });
+                        // The fallback Cell a raised pixel can land on: open
+                        // as the viewer's retained Dummy record says.
+                        let dummy =
+                            local_owner
+                                .zip(resolved_terrain)
+                                .is_some_and(|(owner, terrain)| {
+                                    crate::sim::vision::cell_ground_mapped(
+                                        fog,
+                                        terrain,
+                                        owner,
+                                        crate::map::cell_index::NativeCellIdentity::Dummy,
+                                    )
+                                });
                         let shown = match &plane {
                             None => RadarVisibility::Revealed,
                             Some(None) => RadarVisibility::Shrouded,
-                            Some(Some((flags, size))) => {
-                                RadarVisibility::Plane { flags, size: *size }
-                            }
+                            Some(Some((flags, size))) => RadarVisibility::Plane {
+                                flags,
+                                size: *size,
+                                dummy: if dummy {
+                                    crate::sim::vision::FLAG_REVEALED
+                                } else {
+                                    0
+                                },
+                            },
                         };
                         self.compositor.set_visibility(device, queue, shown);
                         self.uploaded_visibility = Some(visibility);

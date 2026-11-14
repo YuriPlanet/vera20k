@@ -4,7 +4,7 @@
 //! and the full-surface path through `GenerateTerrainSurface @ 0x006547C0`.
 //! VERA's optional HD radar keeps a larger copy beside it ([`super::hd`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Value};
@@ -26,6 +26,63 @@ pub(super) struct NativeRadarCellUpdate {
     pub override_color: Option<[u8; 3]>,
 }
 
+/// Marks in a pixel's shroud Cells ([`RadarShroudLattice`]): the map's
+/// fallback Cell, and the absent second Cell of an even level.
+pub(super) const DUMMY_CELL: u32 = u32::MAX;
+pub(super) const NO_CELL: u32 = u32::MAX - 1;
+
+/// What `RenderCellPixel @ 0x00655C50` asks `IsShrouded` and `IsFogged`
+/// about the Cell a pixel shows (`0x00655D06..0x00655D38`): its centre
+/// raised to the ground, so the Cell half its level up the lattice, and for
+/// an odd level the next one too
+/// ([`crate::sim::vision::cell_shroud_lattice`]). Packed `rx | ry << 16`,
+/// built once per map: levels never change.
+#[derive(Debug, Clone, Default)]
+pub(super) struct RadarShroudLattice {
+    /// Per allocated Cell. `None` for a map-less fixture, whose Cells are flat.
+    raised: Option<HashMap<u32, [u32; 2]>>,
+}
+
+impl RadarShroudLattice {
+    pub fn new(terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid) -> Self {
+        use crate::map::cell_index::NativeCellIdentity;
+        let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+        let pack = |cell| match cell {
+            NativeCellIdentity::Dummy => DUMMY_CELL,
+            NativeCellIdentity::Real(_) => {
+                let (x, y) = cells.coord(cell);
+                u32::from(x as u16) | u32::from(y as u16) << 16
+            }
+        };
+        let raised = terrain
+            .iter()
+            .map(|cell| {
+                let (first, next) =
+                    crate::sim::vision::cell_shroud_lattice(&cells, (cell.rx, cell.ry));
+                (
+                    u32::from(cell.rx) | u32::from(cell.ry) << 16,
+                    [pack(first), next.map_or(NO_CELL, pack)],
+                )
+            })
+            .collect();
+        Self {
+            raised: Some(raised),
+        }
+    }
+
+    /// Each packed pixel Cell's shroud Cells. A Cell the map did not
+    /// allocate is its flat fallback Cell.
+    pub fn texels(&self, pixel_cells: &[u32]) -> Vec<[u32; 2]> {
+        pixel_cells
+            .iter()
+            .map(|&cell| match &self.raised {
+                None => [cell, NO_CELL],
+                Some(raised) => raised.get(&cell).copied().unwrap_or([DUMMY_CELL, NO_CELL]),
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct NativeRadarTerrainSurface {
     geometry: NativeRadarSurfaceGeometry,
@@ -42,6 +99,9 @@ pub(super) struct NativeRadarTerrainSurface {
     /// ([`NativeRadarSurfaceGeometry::visibility_cells`]), built once: the
     /// geometry never changes under a surface.
     pixel_cells: Vec<u32>,
+    lattice: RadarShroudLattice,
+    /// `lattice`'s Cells for each of `pixel_cells`.
+    shroud_cells: Vec<[u32; 2]>,
     /// Bumped whenever `generated_rgb565` is regenerated.
     revision: u64,
     /// VERA's optional HD terrain, bumping `hd_revision` whenever it changes.
@@ -55,8 +115,10 @@ impl NativeRadarTerrainSurface {
         base_cells: Vec<NativeRadarCellColors>,
         overrides: BTreeMap<(u16, u16), [u8; 3]>,
         terrain_brightness: f32,
+        lattice: RadarShroudLattice,
     ) -> Self {
         let raw_size = geometry.raw_size();
+        let pixel_cells = geometry.visibility_cells();
         let generated_size = geometry.generated_size();
         let base_index = RadarCellIndex::new(base_cells.iter().map(|base| base.cell));
         let mut surface = Self {
@@ -68,7 +130,9 @@ impl NativeRadarTerrainSurface {
             raw_rgb: vec![[0; 3]; area(raw_size)],
             generated_rgb565: vec![0; area(generated_size)],
             sampler: RadarSampler::new(raw_size, generated_size),
-            pixel_cells: geometry.visibility_cells(),
+            shroud_cells: lattice.texels(&pixel_cells),
+            pixel_cells,
+            lattice,
             revision: 0,
             hd: None,
             hd_revision: 0,
@@ -94,9 +158,16 @@ impl NativeRadarTerrainSurface {
         self.revision
     }
 
-    /// Each generated pixel's packed cell, row-major.
-    pub fn pixel_cells(&self) -> &[u32] {
-        &self.pixel_cells
+    /// The Cells each generated pixel's shroud and fog come from,
+    /// row-major ([`RadarShroudLattice`]).
+    pub fn shroud_cells(&self) -> &[[u32; 2]] {
+        &self.shroud_cells
+    }
+
+    /// [`Self::shroud_cells`] for the HD surface at `scale`.
+    pub fn hd_shroud_cells(&self, scale: u32) -> Vec<[u32; 2]> {
+        self.lattice
+            .texels(&self.geometry.subdivided(scale).visibility_cells())
     }
 
     /// [`NativeRadarSurfaceGeometry::surface_pixel_to_visibility_cell`],
@@ -170,7 +241,8 @@ impl NativeRadarTerrainSurface {
             return false;
         }
         // A cell writes only its own two raw pixels (`fill_raw_cell`), and no
-        // two cells share one: cells in a raw row differ by two in x.
+        // two cells share one: cells in a raw row differ by two in x. The
+        // one exception is native's left-edge store (`fill_dirty_left_edge`).
         let raw_size = self.geometry.raw_size();
         for &cell in &changed_cells {
             if let Some(slot) = self.base_index.slot(cell.0, cell.1) {
@@ -179,13 +251,12 @@ impl NativeRadarTerrainSurface {
                     .overrides
                     .get(&cell)
                     .map_or((base.left, base.right), |&color| (color, color));
-                fill_raw_cell(
-                    &mut self.raw_rgb,
-                    raw_size,
-                    self.geometry.cell_to_raw_pixel(cell),
-                    left,
-                    right,
-                );
+                let origin = self.geometry.cell_to_raw_pixel(cell);
+                if origin.0 == -1 {
+                    fill_dirty_left_edge(&mut self.raw_rgb, raw_size, origin.1, right);
+                } else {
+                    fill_raw_cell(&mut self.raw_rgb, raw_size, origin, left, right);
+                }
             }
         }
         let width = raw_size.0;
@@ -236,6 +307,20 @@ fn area(size: (i32, i32)) -> usize {
     usize::try_from(size.0)
         .expect("positive radar width")
         .saturating_mul(usize::try_from(size.1).expect("positive radar height"))
+}
+
+/// `ProcessDirtyCells @ 0x00655250` moves a changed left-edge cell (raw x -1)
+/// to x 0 at width 1 (`0x006552BC..0x006552D8`), and that width-1 arm stores
+/// its right colour one pixel on (`0x006553A9..0x006553CD`): into raw pixel 1,
+/// the next cell's left half, leaving pixel 0 as it was until a full fill.
+fn fill_dirty_left_edge(raw: &mut [[u8; 3]], size: (i32, i32), y: i32, right: [u8; 3]) {
+    let (width, height) = size;
+    if y < 0 || y >= height || width < 1 {
+        return;
+    }
+    if let Some(pixel) = raw.get_mut(y as usize * width as usize + 1) {
+        *pixel = right;
+    }
 }
 
 /// `FillTerrainColors @ 0x00654F9E..0x00655023`: the clipped left edge

@@ -1166,9 +1166,9 @@ fn droppod_reinforcements_bypass_a_nearby_refinery() {
 /// Ares 3.0 TeamTypeClass_CreateInstance_Plane (1003A340, hook 0x65DBB3):
 /// the carrier is the head owner's GetParadropPlane, here its Country's
 /// `ParaDrop.Aircraft=`, not the PDPLANE literal.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_droppod_reinforcement_carrier_is_the_countrys_paradrop_plane() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/team_paradrop_transport.json",
     ))

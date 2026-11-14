@@ -70,8 +70,6 @@ pub(crate) struct SidebarProjectionState {
     /// These references are independent of Factory completion and the one
     /// current/saved placement transaction. They are not serialized.
     ready_buildings: [Option<u64>; 2],
-    /// The last derived [`SidebarSimInputs`] and the derivation they belong to.
-    sim_inputs: Option<(SimInputsKey, Arc<SidebarSimInputs>)>,
     /// The cameo candidates of those inputs, with the right strip's
     /// superweapons they were derived with.
     kept_cameos: Option<(SimInputsKey, Vec<SuperWeaponView>, Arc<Vec<Cameo>>)>,
@@ -217,36 +215,8 @@ impl PreparedSidebarOrder {
 }
 
 impl SidebarProjectionState {
-    /// The simulation inputs for `owner`: the kept ones when `reuse` and they
-    /// belong to this world revision, rules and owner, else derived anew.
-    pub(crate) fn sim_inputs(
-        &mut self,
-        sim: &Simulation,
-        rules: &RuleSet,
-        owner: &str,
-        reuse: bool,
-    ) -> Arc<SidebarSimInputs> {
-        if reuse
-            && let Some((key, kept)) = &self.sim_inputs
-            && key.holds(sim, rules, owner)
-        {
-            if crate::sim::live_read_check_enabled() {
-                assert_eq!(
-                    **kept,
-                    SidebarSimInputs::derive(sim, rules, owner),
-                    "sidebar inputs changed within world revision {}",
-                    sim.revision()
-                );
-            }
-            return Arc::clone(kept);
-        }
-        let inputs = Arc::new(SidebarSimInputs::derive(sim, rules, owner));
-        self.sim_inputs = Some((SimInputsKey::new(sim, rules, owner), Arc::clone(&inputs)));
-        inputs
-    }
-
     /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
-    /// on the same terms as [`Self::sim_inputs`].
+    /// while the world revision, rules and owner hold.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn cameo_candidates(
         &mut self,

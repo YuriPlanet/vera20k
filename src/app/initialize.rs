@@ -406,9 +406,7 @@ impl App {
                 crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
             })
             .unwrap_or_default();
-        if let Some(dir) = mods.dir() {
-            crate::map::source::set_mod_dir(dir.to_owned());
-        }
+        crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
         let window_visible = window_visible && !hidden_spawn_window;
@@ -951,10 +949,13 @@ impl App {
                     music_player,
                     sfx_player,
                     launcher_audio_available,
-                    theme_startup_suppressed: false,
+                    theme_startup_suppressed: startup_options.theme_and_eva_quiet,
                     master_groups: Default::default(),
                     restore_muted: false,
                 };
+                if let Some(sfx) = startup_audio_runtime.sfx_player.as_mut() {
+                    sfx.set_eva_quiet(startup_options.theme_and_eva_quiet);
+                }
                 if let Some(assets) = startup_asset_manager.as_ref() {
                     startup_audio_runtime.initialize_theme(assets);
                 }
@@ -1074,6 +1075,7 @@ impl App {
                     radar_animation_source: None,
                     radar_content_insets: None,
                     has_radar: false,
+                    loaded_radar_housing: None,
                     selection_overlay: None,
                     #[cfg(feature = "phobos")]
                     digital_display_enabled: phobos_client.digital_display_enabled,

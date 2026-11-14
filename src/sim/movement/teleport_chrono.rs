@@ -138,7 +138,7 @@ impl Simulation {
         // skips Limbo. His Limbo cleared it already, so this only matters if
         // another infantryman took that spot: a later placement may stack.
         if infantry {
-            self.locomotor_mark_all_occupation_bits(id, false);
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
             Self::object_raw_receiver_at(
                 &mut self.substrate,
                 &self.path_grid,
@@ -146,6 +146,7 @@ impl Simulation {
                 id,
                 coord,
                 false,
+                rules.ares_form(),
             );
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return Ok(false);
@@ -175,7 +176,7 @@ impl Simulation {
                 .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
         }
         if category == EntityCategory::Unit {
-            self.locomotor_mark_all_occupation_bits(id, false);
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
             self.force_track(id, -1, coord, rules, registry, effects);
             Self::object_raw_receiver_at(
                 &mut self.substrate,
@@ -184,6 +185,7 @@ impl Simulation {
                 id,
                 coord,
                 false,
+                rules.ares_form(),
             );
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return Ok(false);
@@ -229,7 +231,7 @@ impl Simulation {
         )
         .map_err(|error| error.to_string())?;
         if infantry {
-            self.locomotor_mark_all_occupation_bits(id, false);
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
         }
         Ok(true)
     }
@@ -535,6 +537,7 @@ impl Simulation {
                 id,
                 marked,
                 false,
+                rules.ares_form(),
             );
             let (ground, bridge) = self
                 .resolved_terrain
@@ -574,6 +577,7 @@ impl Simulation {
                 id,
                 marked,
                 true,
+                rules.ares_form(),
             );
             Self::object_raw_receiver_at(
                 &mut self.substrate,
@@ -582,6 +586,7 @@ impl Simulation {
                 id,
                 marked,
                 true,
+                rules.ares_form(),
             );
             return true;
         }
@@ -597,28 +602,29 @@ impl Simulation {
             while let Some(member) = next {
                 // Ares 3.0 1004B980 (hook 0x718275) replaces the walk; it reads
                 // each successor before the kill, as the vanilla loop does.
-                #[cfg(feature = "ares")]
-                self.ares_chrono_make_room(
-                    id,
-                    owner_infantry,
-                    member,
-                    coord,
-                    &mut blocked,
-                    rules,
-                    registry,
-                    effects,
-                );
-                #[cfg(not(feature = "ares"))]
-                self.chrono_telefrag(
-                    id,
-                    owner_infantry,
-                    member,
-                    coord,
-                    &mut blocked,
-                    rules,
-                    registry,
-                    effects,
-                );
+                if rules.ares() {
+                    self.ares_chrono_make_room(
+                        id,
+                        owner_infantry,
+                        member,
+                        coord,
+                        &mut blocked,
+                        rules,
+                        registry,
+                        effects,
+                    );
+                } else {
+                    self.chrono_telefrag(
+                        id,
+                        owner_infantry,
+                        member,
+                        coord,
+                        &mut blocked,
+                        rules,
+                        registry,
+                        effects,
+                    );
+                }
                 next = self.next_cell_object(member);
             }
         }
@@ -640,6 +646,7 @@ impl Simulation {
             id,
             marked,
             true,
+            rules.ares_form(),
         );
         true
     }
@@ -654,7 +661,6 @@ impl Simulation {
     /// unprotected Foot dies, and anything else sends the arrival to
     /// another cell. Every kill is the victim's Strength as `C4Warhead=`,
     /// ignoring defenses, with no attacker or house.
-    #[cfg(feature = "ares")]
     #[allow(clippy::too_many_arguments)]
     fn ares_chrono_make_room(
         &mut self,
@@ -713,7 +719,6 @@ impl Simulation {
     }
 
     /// One object of Update_Position's walk (`0x007182DC..0x0071842A`).
-    #[cfg(not(feature = "ares"))]
     fn chrono_telefrag(
         &mut self,
         id: u64,
@@ -942,8 +947,7 @@ impl Simulation {
         // want of power (`+0x1C8`) does not float, and a `SpeedType=Hover`
         // `JumpJet=` Unit goes straight to `0x00718A66`, whose water-tile,
         // non-infantry arm sinks it with no kill booked.
-        #[cfg(feature = "ares")]
-        let hover = {
+        let hover = if rules.ares() {
             let unit = (water_tile && category == EntityCategory::Unit)
                 .then(|| {
                     let entity = self.substrate.entities.get(id)?;
@@ -959,6 +963,8 @@ impl Simulation {
                 return;
             }
             hover && !unit.is_some_and(|(offline, _)| offline)
+        } else {
+            hover
         };
         let road = land == LandType::Road.as_index() as i32;
         let bridge = flags & CELL_FLAG_BRIDGE != 0;

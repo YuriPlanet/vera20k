@@ -73,9 +73,9 @@ fn retail_berserk_infantry_ctrl_ground_shows_no_move() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selection() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let patch = crate::rules::ini_parser::IniFile::from_str("[E1]\nVehicleThief=yes\n");
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "XMP03T4.MAP",

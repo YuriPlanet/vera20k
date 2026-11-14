@@ -193,10 +193,9 @@ impl BuildupAssetCatalog {
 
     /// The construction control of `type_id` ([`NO_BUILDUP`] when unbound).
     pub fn control(&self, type_id: &str) -> [i32; 3] {
-        self.controls
-            .get(&type_id.to_ascii_uppercase())
-            .copied()
-            .unwrap_or(NO_BUILDUP)
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.controls.get(key).copied().unwrap_or(NO_BUILDUP)
+        })
     }
 
     /// Whether `type_id`'s Buildup SHP is bound: `BuildingClass::Init_Managers`
@@ -204,7 +203,11 @@ impl BuildupAssetCatalog {
     /// (`vt+0xC0`, `0x00465960`) is loaded, and a building without it cannot
     /// be sold (`Sell_Back @ 0x00447110`, `CanSell @ 0x004494C0`).
     pub fn has_buildup(&self, type_id: &str) -> bool {
-        self.controls.contains_key(&type_id.to_ascii_uppercase())
+        // A draw asks this for every building in view: fold the key on the
+        // stack.
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.controls.contains_key(key)
+        })
     }
 
     /// Install one control directly (test fixtures without assets).
@@ -223,6 +226,19 @@ impl BuildupAssetCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A type's Buildup is found whatever the case of the name asked, also
+    /// for a name longer than the stack key.
+    #[test]
+    fn a_buildup_is_found_by_any_case_of_its_name() {
+        let long = "x".repeat(80);
+        let mut catalog = BuildupAssetCatalog::default();
+        catalog.insert_for_test("GaPowr", [1, 2, 3]);
+        catalog.insert_for_test(&long, [4, 5, 6]);
+        assert!(catalog.has_buildup("gapowr") && catalog.has_buildup("GAPOWR"));
+        assert!(catalog.has_buildup(&long));
+        assert!(!catalog.has_buildup("GAPILE"));
+    }
 
     /// The native slice over retail `BuildupTime=.06` (as `ReadDouble`
     /// stores it, a widened float), the constructor's `.05` and a gate's

@@ -1039,9 +1039,9 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
 /// Ares TechnoClass_FireEBolt (Ares.dll 10056350) and EBolt_Fire_Particles
 /// (100562C0): a 6FD460 bolt carries its weapon's Bolt.Color1..3 and spawns
 /// Bolt.ParticleSystem instead of DefaultSparkSystem; `none` spawns nothing.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_bolt_keys_choose_colors_and_spark_system() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
         "[InfantryTypes]\n0=ZAPPER\n1=MARK\n[ZAPPER]\nPrimary=ZAP\nSecondary=OFF\n[MARK]\n\
          [CombatDamage]\nDefaultSparkSystem=SPARKSYS\n\

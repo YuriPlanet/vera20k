@@ -138,11 +138,20 @@ fn elapsed_trigger_anim_removes_ore_before_action41_sets_no_effects() {
 
 #[test]
 fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() {
-    // An Ares build draws RandomRanged(0, 99) < Debris.Chance instead; the
-    // map's Cruentus ReadINI makes that certain.
+    // When Ares plays the Start draws RandomRanged(0, 99) < Debris.Chance
+    // instead; the map's Cruentus ReadINI makes that certain. The scene's
+    // rules are read the way these unpatched ones are.
     let patch = "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=HE\n[HE]\nCellSpread=2.5\n";
-    #[cfg(feature = "ares")]
-    let patch = format!("{patch}[Tiberiums]\n1=Cruentus\n[Cruentus]\nDebris.Chance=100\n");
+    let Some(unpatched) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let patch = if unpatched.rules.ares_form() {
+        format!("{patch}[Tiberiums]\n1=Cruentus\n[Cruentus]\nDebris.Chance=100\n")
+    } else {
+        patch.to_owned()
+    };
     let Some((mut sim, rules)) = scene("GEM01", &patch) else {
         return;
     };
@@ -280,9 +289,9 @@ fn gem_child_retains_mineral_conversion_and_nonzero_area_preserves_nearby_ore() 
 /// Ares 3.0 10050D50 (hook 0x424DD3) and 10050DA0 (hook 0x424EC5): a zero
 /// `Debris.Chance` never throws Debris, and the area damage takes the
 /// mineral's `ExplosionDamage`/`ExplosionWarhead` over the Rules pair.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_mineral_start_uses_debris_chance_and_explosion_keys() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut sim, rules)) = scene(
         "GEM01",
         "[CombatDamage]\nTiberiumExplosionDamage=40\nC4Warhead=Super\n[HE]\nCellSpread=2.5\n\

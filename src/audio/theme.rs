@@ -65,6 +65,11 @@ pub(crate) enum MusicOutputState {
     Ramping,
     /// The current source reached its physical end.
     Finished,
+    /// A movie holds the stream (`Audio__HoldAllStreamPlayersAgainstStop @
+    /// 0x00408200`, `Audio__PauseAllStreamPlayers @ 0x00408270`): the pause
+    /// moves the playing bit to the paused bit, so `IsPlaying` reads 0, and
+    /// `Stop @ 0x00407F40` and `PlayFile @ 0x00407B60` do nothing.
+    Held,
 }
 
 impl MusicOutputState {
@@ -79,7 +84,7 @@ impl MusicOutputState {
     /// The stream as the next step of the same native call chain reads it
     /// again, once this step's Stop, PlayFile and SetTarget have run.
     fn after(self, action: &ThemeAction) -> Self {
-        if !self.stream_exists() {
+        if !self.stream_exists() || self == Self::Held {
             return self;
         }
         let state = if action.start.is_some() {
@@ -331,9 +336,16 @@ impl ThemeRuntime {
 
     /// Catalog load `0x00720590` + scan `0x007207F0`, once per process, with
     /// the requested RA2 gameplay playlist extension appended afterwards.
-    pub(crate) fn initialize_catalog(&mut self, assets: &AssetManager) {
+    /// ReadINI, then Scan `0x007207F0` behind the gate every Theme entry
+    /// point shares (an output device and no `-X…Q`).
+    pub(crate) fn initialize_catalog(&mut self, assets: &AssetManager, gates: ThemeGates) {
         if self.catalog.is_none() {
             let catalog = ThemeCatalog::select(assets);
+            let catalog = if gates.launcher_audio_available && !gates.startup_suppressed {
+                catalog
+            } else {
+                catalog.without_scan()
+            };
             self.resolved_sides = vec![-1; catalog.entries().len()];
             self.catalog = Some(catalog);
         }
@@ -526,7 +538,7 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let index = self.from_name(track_name);
         let mut prepare = |stem: &str| prepare_track(stem, assets);
         self.play_song(index, gates, physical, &mut prepare)
@@ -550,7 +562,7 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let selected = names
             .into_iter()
             .fold(THEME_AUTO, |prior, name| self.read_theme_name(name, prior));
@@ -584,7 +596,7 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let index = self.read_theme_name(requested_section.map(str::trim), THEME_NONE);
         let admitted = self.admitted(gates);
         let action = if index == THEME_NONE {
@@ -837,7 +849,7 @@ impl ThemeRuntime {
         physical: MusicOutputState,
         draw_main: &mut impl FnMut(i32, i32) -> i32,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let mut prepare = |stem: &str| prepare_track(stem, assets);
         self.ai(gates, physical, &mut prepare, draw_main)
     }
@@ -870,12 +882,12 @@ impl ThemeRuntime {
         } else {
             pending
         };
-        // A released source is idle; an absent stream remains absent. Play's
-        // retained/pending writes still run without decoding physical audio.
-        let physical = if physical.stream_exists() {
-            MusicOutputState::Idle
-        } else {
-            MusicOutputState::Unavailable
+        // A released source is idle; an absent or held stream stays as it
+        // is. Play's retained/pending writes still run without decoding
+        // physical audio.
+        let physical = match physical {
+            MusicOutputState::Unavailable | MusicOutputState::Held => physical,
+            _ => MusicOutputState::Idle,
         };
         action = action.then(self.play_song(index, gates, physical, prepare));
         // AI unconditionally restores -2 after attempting Play.
@@ -883,9 +895,10 @@ impl ThemeRuntime {
         action
     }
 
-    /// `ThemeClass__Play_Song @ 0x00720BB0`. The CD-check branch remains
-    /// outside this port; ordinary loaded-song controls execute the body in
-    /// tools/storage_oracle/sound_theme_metadata.
+    /// `ThemeClass__Play_Song @ 0x00720BB0`; ordinary loaded-song controls
+    /// execute the body in tools/storage_oracle/sound_theme_metadata. Its
+    /// no-disc branch (`0x00720CB7`) cannot run: the disc query `0x004790A0`
+    /// jumps to `0x004A80D0`, `MOV EAX,2; RET`, and `-CD` makes it 0.
     fn play_song(
         &mut self,
         index: i32,
@@ -917,7 +930,12 @@ impl ThemeRuntime {
         // Stop and sentinels. A muted request only replaces Pending.
         if index >= 0 && self.score_volume > 0 {
             self.slots.retained = index;
-            if physical.stream_exists() {
+            if physical == MusicOutputState::Held {
+                // PlayFile does nothing on a held stream; Play still writes
+                // active (`0x00720CF2`/`0x00720D07`), so Theme AI moves on
+                // through the list each pass while the paused song waits.
+                self.slots.active = index;
+            } else if physical.stream_exists() {
                 let stem = self.entry(index).map(|entry| entry.sound.clone());
                 match stem.as_deref().and_then(prepare) {
                     Some(prepared) => {
@@ -925,10 +943,9 @@ impl ThemeRuntime {
                         self.slots.active = index;
                     }
                     None => {
-                        // PlayFile's failure is ignored natively (active :=
-                        // index while nothing streams); Rust leaves active -1
-                        // so AI's next poll consumes pending the same way.
-                        self.slots.active = THEME_NONE;
+                        // PlayFile's failure is ignored (`0x00720CF2`):
+                        // active is the index while nothing streams.
+                        self.slots.active = index;
                     }
                 }
             } else {
@@ -1173,7 +1190,7 @@ mod tests {
         let assets = AssetManager::from_loose_root_for_test(&dir);
 
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         let keys: Vec<&str> = theme.entries().iter().map(|e| e.key.as_str()).collect();
         assert_eq!(keys, ["INTRO", "Drok", "Grinder"]);
         assert_eq!(theme.from_name("Grinder"), 2);
@@ -1185,6 +1202,21 @@ mod tests {
             "theme.ini's [Drok] Repeat=yes must not leak in"
         );
         assert!(theme.entries().iter().all(|entry| entry.available));
+        // `-X…Q` (or no device) skips Scan `0x007207F0`: same entries, none
+        // available, so the B8 list offers nothing.
+        let mut quiet = ThemeRuntime::default();
+        let suppressed = ThemeGates {
+            launcher_audio_available: true,
+            startup_suppressed: true,
+        };
+        quiet.initialize_catalog(&assets, suppressed);
+        assert_eq!(quiet.from_name("Grinder"), 2);
+        assert!(
+            quiet
+                .entries()
+                .iter()
+                .all(|entry| !entry.available && entry.duration_seconds == 0)
+        );
         assert_eq!(theme.entries()[1].name_key, "THEME:Drok");
         assert_eq!(
             theme.entries()[1].duration_seconds,
@@ -1204,14 +1236,14 @@ mod tests {
         std::fs::remove_file(dir.join("theme.ini")).expect("remove theme.ini");
         let assets = AssetManager::from_loose_root_for_test(&dir);
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         assert_eq!(theme.entries().len(), 2);
 
         // Both optional inputs missing leave an empty catalog.
         std::fs::remove_file(dir.join("thememd.ini")).expect("remove thememd.ini");
         let assets = AssetManager::from_loose_root_for_test(&dir);
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         assert!(theme.entries().is_empty());
         std::fs::remove_dir_all(dir).expect("remove theme test assets");
     }
@@ -1274,7 +1306,7 @@ mod tests {
             return;
         };
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         let yr_keys = [
             "INTRO",
             "SCORE",
@@ -1737,6 +1769,40 @@ mod tests {
         );
     }
 
+    /// A movie's hold pauses the song and refuses PlayFile (`0x00407B60`),
+    /// so Theme AI (`0x007209D0`) finds nothing playing and moves on through
+    /// the list without starting a track; the paused song plays on after.
+    #[test]
+    fn held_stream_moves_theme_on_without_starting_a_track() {
+        let mut theme = stock_runtime();
+        let mut ok = prepared;
+        theme.queue_song(5, gates(true), MusicOutputState::Idle);
+        theme.ai(gates(true), MusicOutputState::Idle, &mut ok, &mut no_draw);
+        let mut refused = |_: &str| -> Option<PreparedTrack> { panic!("held: nothing decodes") };
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Held,
+            &mut refused,
+            &mut no_draw,
+        );
+        assert!(action.start.is_none());
+        assert_eq!(
+            theme.slots(),
+            ThemeSlots {
+                active: 6,
+                retained: 6,
+                pending: THEME_AUTO
+            }
+        );
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            &mut ok,
+            &mut no_draw,
+        );
+        assert!(action.start.is_none() && !action.stop_output);
+    }
+
     #[test]
     fn scenario_with_basic_theme_queues_and_fades_the_loading_track() {
         let mut theme = stock_runtime();
@@ -1904,10 +1970,11 @@ mod tests {
             &mut missing,
             &mut no_draw,
         );
+        // Play_Song ignores PlayFile's failure (`0x00720CF2`).
         assert_eq!(
             theme.slots(),
             ThemeSlots {
-                active: -1,
+                active: 6,
                 retained: 6,
                 pending: THEME_AUTO
             }

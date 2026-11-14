@@ -364,6 +364,7 @@ impl FootPathQueue {
     /// [`FIND_PATH_WINDOW_WORDS`] words of the whole AStar route; tube jumps
     /// count as one word. The Vec's end represents a short route's
     /// terminator without retaining unused native backing words.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install(
         &mut self,
         reference: (u16, u16),

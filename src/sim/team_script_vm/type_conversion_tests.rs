@@ -20,8 +20,9 @@ fn scene() -> (Simulation, RuleSet, u64, Vec<u64>) {
          [FOOT2]\nStrength=120\nSpeed=4\nROT=6\nHasSpotlight=yes\n\
          Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
     );
-    #[cfg(feature = "ares")]
-    let ini = {
+    // The scene is an Ares game exactly when its thread reads Rules the Ares
+    // way.
+    let ini = if crate::rules::ares_switch::ares_way() {
         let mut ini = ini;
         ini.merge(&crate::rules::ini_parser::IniFile::from_str(
             "[Tiberiums]\n0=CONVERT_ORE\n[CONVERT_ORE]\nValue=25\nImage=1\n\
@@ -30,6 +31,8 @@ fn scene() -> (Simulation, RuleSet, u64, Vec<u64>) {
              Spotlight.StartHeight=650\nSpotlight.DisableGreen=yes\n",
         ));
         crate::rules::tiberium_type::with_tiberium_image_slots(&ini)
+    } else {
+        ini
     };
     let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 19);
@@ -75,11 +78,11 @@ fn scene() -> (Simulation, RuleSet, u64, Vec<u64>) {
     (sim, rules, team, members)
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_and_locomotor() {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::util::native_x87::NativeF64Bits;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, team, members) = scene();
     let cargo = vec![
         crate::sim::miner::CargoBale::of_type(

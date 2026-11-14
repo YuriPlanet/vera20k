@@ -187,14 +187,14 @@ impl Simulation {
                 )
             })?
         };
-        let shrouded = action != MoveAction::None
-            && clicked_cell_shrouded(&self.fog, &cells, viewer, clicked)?;
-        if shrouded {
-            action = if object.move_to_shroud && in_playfield {
-                MoveAction::Move
-            } else {
-                MoveAction::NoMove
-            };
+        let shroud_action = if action == MoveAction::None {
+            None
+        } else {
+            foot_cell_shroud_rung(&self.fog, &cells, viewer, object, clicked, in_playfield)?
+        };
+        let shrouded = shroud_action.is_some();
+        if let Some(shroud_action) = shroud_action {
+            action = shroud_action;
         }
         match entity.category() {
             // Unit asks IsShrouded again at the same Cell centre; the harvest
@@ -666,6 +666,41 @@ impl Simulation {
             viewer,
             (cell.0 as i16, cell.1 as i16),
         )
+    }
+
+    /// Foot What_Action's shroud rung over a Cell
+    /// (`FootClass::What_Action_OnCell @ 0x004DDDE0`) for Techno's nonzero
+    /// answer: over a Cell centre, raised to a bridge deck, that `viewer`'s
+    /// map shrouds (`IsShrouded 0x00586360`), a Foot answers Move for a
+    /// `MoveToShroud=` type in the playfield, else NoMove
+    /// (`0x004DDE64..0x004DDEBE`). The Move rungs' answer goes through it
+    /// ([`Self::cell_move_action`]); the input layer asks it of the Cell
+    /// attack rungs' Attack. None keeps the answer: a Building has no Foot
+    /// wrapper (`0x00447540`).
+    pub fn foot_cell_shroud_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+    ) -> Option<MoveAction> {
+        let entity = self.substrate.entities.get(id)?;
+        if entity.category() == EntityCategory::Structure {
+            return None;
+        }
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let clicked = (cell.0 as i16, cell.1 as i16);
+        let in_playfield = cell_is_in_playfield_height_aware_in_query(
+            (i32::from(clicked.0), i32::from(clicked.1)),
+            self.playfield_bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        foot_cell_shroud_rung(&self.fog, &cells, viewer, object, clicked, in_playfield)
+            .ok()
+            .flatten()
     }
 
     /// The Cell a Foot's Move click resolves, before event encoding. The
@@ -1349,6 +1384,26 @@ fn clicked_cell_shrouded(
         viewer,
         clicked_coordinate(cells, clicked)?,
     ))
+}
+
+/// [`Simulation::foot_cell_shroud_action`]'s rung for a Foot of type `object`.
+fn foot_cell_shroud_rung(
+    fog: &crate::sim::vision::FogState,
+    cells: &NativeCellQuery<'_>,
+    viewer: InternedId,
+    object: &crate::rules::object_type::ObjectType,
+    clicked: (i16, i16),
+    in_playfield: bool,
+) -> Result<Option<MoveAction>, String> {
+    Ok(
+        clicked_cell_shrouded(fog, cells, viewer, clicked)?.then_some(
+            if object.move_to_shroud && in_playfield {
+                MoveAction::Move
+            } else {
+                MoveAction::NoMove
+            },
+        ),
+    )
 }
 
 /// UnitClass What_Action's harvest rungs (`0x007405F5..0x007406C3`), by the

@@ -77,7 +77,6 @@ pub(crate) trait ReloadHost {
 /// One visit of the arm with `[General] ReloadRate=` `reload_rate`
 /// (minutes) and the frames it returns. Ares replaces it
 /// ([`ares_reload_visit`]).
-#[cfg_attr(feature = "ares", allow(dead_code))]
 pub(crate) fn reload_visit(reload_rate: f64, host: &mut impl ReloadHost) -> i32 {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
     let enter = MissionId::from_known(MissionType::Enter);
@@ -146,7 +145,6 @@ impl DockReloadTimers {
 }
 
 /// What Ares' replacement reads besides the stock arm's.
-#[cfg(feature = "ares")]
 pub(crate) trait AresReloadHost: ReloadHost {
     /// `Unsorted::CurrentFrame`.
     fn frame(&mut self) -> i32;
@@ -157,7 +155,7 @@ pub(crate) trait AresReloadHost: ReloadHost {
     fn timers(&mut self) -> &mut DockReloadTimers;
 }
 
-/// With `ares`, hook `0x0044C844` (BuildingClass_MissionRepair_Reload,
+/// When Ares plays, hook `0x0044C844` (BuildingClass_MissionRepair_Reload,
 /// Ares.dll `10014190`) replaces the arm up to `0x0044C968` and makes each
 /// docker independent: a serviced contact off Sleep has its timer cleared
 /// and Sleep queued; asleep, it waits for its own timer, which then moves
@@ -166,7 +164,6 @@ pub(crate) trait AresReloadHost: ReloadHost {
 /// REPAIR. A released contact's timer becomes -1. The airfield is visited
 /// again next frame (1) while it serviced any contact, else it queues Guard
 /// and returns 3.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_reload_visit(host: &mut impl AresReloadHost) -> i32 {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
     let enter = MissionId::from_known(MissionType::Enter);
@@ -222,7 +219,8 @@ pub(crate) fn ares_reload_visit(host: &mut impl AresReloadHost) -> i32 {
     3
 }
 
-/// [`reload_visit`] (with `ares`, [`ares_reload_visit`]) for airfield `dock`.
+/// [`reload_visit`] (when Ares plays, [`ares_reload_visit`]) for airfield
+/// `dock`.
 pub(crate) fn mission_reload(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -236,13 +234,13 @@ pub(crate) fn mission_reload(
         dock,
         registry,
         effects,
-        #[cfg(feature = "ares")]
         detached_timers: DockReloadTimers::default(),
     };
-    #[cfg(feature = "ares")]
-    return ares_reload_visit(&mut host);
-    #[cfg(not(feature = "ares"))]
-    reload_visit(rules.general.reload_rate, &mut host)
+    if rules.ares_form() {
+        ares_reload_visit(&mut host)
+    } else {
+        reload_visit(rules.general.reload_rate, &mut host)
+    }
 }
 
 struct WorldReload<'a> {
@@ -252,11 +250,9 @@ struct WorldReload<'a> {
     registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
     /// Stands in for the timers of a dock that is no longer in the store.
-    #[cfg(feature = "ares")]
     detached_timers: DockReloadTimers,
 }
 
-#[cfg(feature = "ares")]
 impl AresReloadHost for WorldReload<'_> {
     fn frame(&mut self) -> i32 {
         self.sim.session.binary_frame() as i32

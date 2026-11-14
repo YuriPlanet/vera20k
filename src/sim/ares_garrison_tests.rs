@@ -92,8 +92,6 @@ fn owner(sim: &Simulation, id: u64) -> &str {
 /// `CanBeOccupiedBy=GI` keeps E2 out; `Bunker.Raidable=yes` lets the
 /// Americans' GI into the Russians' empty building, which then is theirs
 /// until it is empty again.
-// Runs again once the passenger code's occupier admission moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -133,8 +131,6 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
 /// With `UC.PassThrough=100%` and a projectile that is not
 /// `SubjectToTrenches`, the shot passes through to the occupant with
 /// `UC.DamageMultiplier=50%` of its damage, and the building takes none.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn a_shot_passes_through_to_an_occupant() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -182,8 +178,6 @@ fn a_shot_passes_through_to_an_occupant() {
 /// Cell and source, and its handler (`1006A540`) runs `doTraverseTo`
 /// (`100130E0`): the source's heads move while the target has room, and an
 /// emptied raided trench goes back to its house (evalRaidStatus).
-// Runs again once the passenger code's occupier entry moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

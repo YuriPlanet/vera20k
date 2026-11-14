@@ -1467,9 +1467,10 @@ fn a_death_weapon_detonates_once_without_cluster_draws() {
 /// `BalloonHover=` as asked (a Kirov's impact fires its current weapon, any
 /// other type's plays its `Explosion=` once more) and seats two `RIDER`s. The
 /// type names an `ImpactLandSound=` the Jumpjet impact must not play.
-fn jumpjet_rules(balloon: bool) -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[General]\n\
+fn jumpjet_rules(balloon: bool, art: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[General]\n\
          [AudioVisual]\nConditionRed=0.25\nImpactLandSound=RulesLand\n\
          [VehicleTypes]\n0=TEST\n1=VICTIM\n\
          [InfantryTypes]\n0=RIDER\n\
@@ -1482,8 +1483,10 @@ fn jumpjet_rules(balloon: bool) -> RuleSet {
          [RIDER]\nStrength=100\nArmor=none\n\
          [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
          [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        if balloon { "yes" } else { "no" },
-    )))
+            if balloon { "yes" } else { "no" },
+        )),
+        &IniFile::from_str(art),
+    )
     .unwrap();
     assert_eq!(rules.general.condition_red, 0.25, "crash fixture threshold");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
@@ -1501,9 +1504,13 @@ fn jumpjet_rules(balloon: bool) -> RuleSet {
 /// its cargo, a `VICTIM` stands below and a Soviet shooter at (40, 40).
 /// Answers the victim's and the shooter's ids.
 fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
+    jumpjet_fixture_with_art(balloon, "")
+}
+
+fn jumpjet_fixture_with_art(balloon: bool, art: &str) -> (Simulation, RuleSet, u64, u64) {
     use crate::sim::house_state::HouseState;
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
-    let mut rules = jumpjet_rules(balloon);
+    let mut rules = jumpjet_rules(balloon, art);
     // Explicit loaded-main-VXL input for the native Jumpjet crash boundary.
     rules.supply_loaded_voxel_for_test("TEST");
     let mut sim = Simulation::with_seed(0);
@@ -1715,6 +1722,33 @@ fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
         &[AreaDamageReceiver::Entity(hit)],
         crate::sim::world::FrameEffects::default(),
     );
+}
+
+/// Art `DeathFrames=` on a `Crashable=` Jumpjet: the kill skips
+/// `Death_Explosion` (`0x00737DDD`) and the wreck falls while its death count
+/// runs; Unit AI explodes and UnInits it once the count before a step has
+/// reached `MaxDeathCounter=` (`0x0073635B..0x007363A3`), ahead of its impact.
+#[test]
+fn a_death_frames_jumpjet_explodes_when_its_count_ends() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture_with_art(
+        false,
+        "[TEST]\nVoxel=yes\nDeathFrames=3\nMaxDeathCounter=2\n",
+    );
+    shoot_down(&mut sim, &rules, shooter);
+    assert_eq!(
+        sim.substrate.anims.iter().count(),
+        0,
+        "no Explosion= at the kill"
+    );
+    let wreck = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(wreck.crash.is_crashing());
+    assert_eq!(wreck.unit_death_counter.get(), 0);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!((fall.impact_frame, fall.impact_booms), (3, 1));
 }
 
 /// A drain link breaks at the killing hit (the Techno death arm,

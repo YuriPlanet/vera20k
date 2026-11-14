@@ -393,18 +393,17 @@ impl Simulation {
         } else {
             rules.general.airstrike_attack_voice.as_deref()
         };
-        #[cfg(feature = "ares")]
-        let general = [first, designator].into_iter().fold(general, |voice, id| {
+        if !rules.ares_form() {
+            return general;
+        }
+        [first, designator].into_iter().fold(general, |voice, id| {
             self.substrate
                 .entities
                 .get(id)
                 .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                 .and_then(|object| object.techno_combat().presentation().airstrike_voice(abort))
                 .unwrap_or(voice)
-        });
-        #[cfg(not(feature = "ares"))]
-        let _ = (first, designator);
-        general
+        })
     }
 
     fn airstrike_sound(

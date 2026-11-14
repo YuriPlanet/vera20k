@@ -67,7 +67,7 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     assert!(!offline.enabled);
     // Ares hook 0x50B370 (10024F80) also answers at-limit without a usable
     // factory.
-    assert_eq!(offline.at_build_limit, crate::rules::ARES_BUILD);
+    assert_eq!(offline.at_build_limit, rules.ares_form());
     // The same live query clears the overlay when the yard is back online.
     sim.substrate
         .entities
@@ -119,9 +119,9 @@ fn every_build_option_is_the_one_its_type_gets_alone() {
 
 /// Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
 /// (10053D80, hook 0x4456E5): a factory under EMP attempts no cameo.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_factory_under_emp_attempts_no_construction_option() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, yard) = draw_state_world();
     sim.discover_techno(
         yard,

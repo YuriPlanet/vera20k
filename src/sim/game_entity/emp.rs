@@ -27,6 +27,21 @@ impl GameEntity {
     pub fn emp_remaining(&self) -> i32 {
         self.emp.remaining
     }
+    /// vt+0x37C IsUnderEMP: Techno `0x0070EFD0` reads `+0x504 > 0`, and the
+    /// Unit override `0x00746C90` also answers yes while the Unit's death
+    /// counter (`+0x6D8`) runs.
+    pub fn is_under_emp(&self) -> bool {
+        Self::under_emp(
+            self.emp.remaining,
+            (self.category() == crate::map::entities::EntityCategory::Unit)
+                .then_some(self.unit_death_counter.get()),
+        )
+    }
+    /// [`Self::is_under_emp`] from the raw counters: `+0x504` and, for a
+    /// Unit, `+0x6D8`.
+    pub(crate) fn under_emp(emp_remaining: i32, unit_death_counter: Option<i32>) -> bool {
+        emp_remaining > 0 || unit_death_counter.is_some_and(|counter| counter != -1)
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_emp_remaining_for_test(&mut self, remaining: i32) {
         self.emp.remaining = remaining;
@@ -661,6 +676,7 @@ mod receiver {
                 &mut self.houses,
                 &mut self.power_states,
                 target,
+                rules.ares_form(),
             );
             if self
                 .substrate
@@ -1183,8 +1199,6 @@ mod receiver {
 
         /// Ares3.0 deliver100624C5..10062509 and10062526..10062563 raise
         /// house-specific events before generic events. Natural expiry does not.
-        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_tagged_delivery_orders_events_and_natural_expiry_does_not_emit_them() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1223,8 +1237,6 @@ mod receiver {
             assert!(sim.trigger_local_is_set_for_test(3));
         }
 
-        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_tag_event_house_filter_uses_raw_source_index_and_requires_source() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1253,8 +1265,6 @@ mod receiver {
             }
         }
 
-        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_tag_predicates_require_matching_kind_actor_and_live_counter() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1285,8 +1295,6 @@ mod receiver {
             assert!(!sim.trigger_local_is_set_for_test(3));
         }
 
-        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_first_tag_event_detachment_suppresses_the_generic_raise() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1324,8 +1332,6 @@ mod receiver {
             }
         }
 
-        // Runs again once the trigger runtime's `HasOccurred` moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_first_tag_event_can_kill_the_victim_before_generic_raise() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1459,8 +1465,6 @@ mod receiver {
             .fire_error(false)
         }
 
-        // Runs again once combat's warhead effects move to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_building_parent_bullet_actual_ai_fire_and_power_recovery() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -1610,9 +1614,6 @@ mod receiver {
             assert!(sim.entities().get(target).unwrap().emp_sparkle().is_none());
         }
 
-        // Moves to the switch with combat's warhead effects
-        // (`world_receiver::ares_warhead_effect_coordinate`).
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_building_native_admission_refresh_and_slot_lifecycle() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2231,8 +2232,6 @@ mod receiver {
                 0
             );
         }
-        // Runs again once the deploy admission moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_ai_mcv_cannot_deploy_until_expiry_then_recovers_through_hunt() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2399,8 +2398,6 @@ mod receiver {
                 .unwrap();
             (sim, rules, target, source)
         }
-        // Runs again once the deploy admission moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_mcv_shared_admission_and_pending_unload_respect_emp() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2408,46 +2405,6 @@ mod receiver {
                 mission::{MissionId, authority::LiveReadyInputProvider},
                 world::ObjectAiCtx,
             };
-            let native = crate::test_fixture::json("tools/mcv_deploy_oracle.json");
-            for row in native["deploy_admission"].as_array().unwrap() {
-                // Unit DeathFrame's independent virtual override is not a
-                // represented runtime state of this ordinary live MCV fixture.
-                if int(&row["death_frame"]) != -1 {
-                    continue;
-                }
-                let (mut sim, rules, target, _) = mcv_emp_scene();
-                sim.substrate
-                    .entities
-                    .get_mut(target)
-                    .unwrap()
-                    .emp
-                    .remaining = int(&row["emp_counter"]);
-                assert_eq!(
-                    sim.can_deploy_slash_unload(target, &rules),
-                    row["result"]["allowed"].as_bool().unwrap(),
-                    "{row}"
-                );
-                if row["entry"] == "unit_deploy" && !row["result"]["allowed"].as_bool().unwrap() {
-                    sim.substrate
-                        .entities
-                        .get_mut(target)
-                        .unwrap()
-                        .mcv_deploy_pending
-                        .set_for_test(true);
-                    assert!(!sim.deploy_mcv(target, &rules, None, FrameEffects::empty()));
-                    assert_eq!(
-                        u8::from(
-                            sim.substrate
-                                .entities
-                                .get(target)
-                                .unwrap()
-                                .mcv_deploy_pending
-                                .is_pending()
-                        ),
-                        int(&row["result"]["deploy_retry"]) as u8
-                    );
-                }
-            }
             let (mut sim, rules, target, source) = mcv_emp_scene();
             // A deploy already commenced before the hit. Unload defers EMP
             // Deactivate, so the shared CanDeploy owner must protect its AI.
@@ -2496,8 +2453,6 @@ mod receiver {
                     .any(|entity| sim.interner.resolve(entity.type_ref()) == "YARD")
             );
         }
-        // Runs again once the powered-unit code's Reactivate moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_shared_activation_matches_native_hook_gates() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -2555,8 +2510,6 @@ mod receiver {
                 assert_eq!(sim.rng_state(), rng, "{}", row["name"]);
             }
         }
-        // Runs again once the powered-unit code's Reactivate moves to the switch.
-        #[cfg(feature = "ares")]
         #[test]
         fn ares_emp_power_center_return_cannot_reactivate_an_emp_victim() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);

@@ -110,12 +110,14 @@ impl Simulation {
     pub(crate) fn anim_power_policy(
         object: &crate::rules::object_type::ObjectType,
         entity: &crate::sim::game_entity::GameEntity,
+        rules: &RuleSet,
     ) -> bool {
-        #[cfg(feature = "ares")]
-        if object.needs_engineer && !entity.building.building_has_engineer.is_set() {
+        if rules.ares_form()
+            && object.needs_engineer
+            && !entity.building.building_has_engineer.is_set()
+        {
             return true;
         }
-        let _ = entity;
         object.powered
     }
 
@@ -133,7 +135,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if Self::anim_power_policy(object, entity)
+        if Self::anim_power_policy(object, entity, rules)
             && crate::sim::power_system::native_building_power_drain(object.power) > 0
         {
             self.apply_building_anim_power(id, operational, rules);
@@ -412,10 +414,7 @@ mod tests {
             crate::sim::world::FrameEffects::default(),
         );
         let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert_eq!(
-            sim.anim(anim).unwrap().runtime().paused,
-            cfg!(feature = "ares")
-        );
+        assert_eq!(sim.anim(anim).unwrap().runtime().paused, rules.ares_form());
     }
 
     #[test]

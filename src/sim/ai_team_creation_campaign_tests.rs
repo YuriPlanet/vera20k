@@ -223,9 +223,9 @@ fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
 /// both under `BuildLimit=1`, so the barracks no longer admits it and the
 /// entry falls to the campaign recruit scan, which finds no E1. The
 /// difficulty's `AllowBypassBuildLimit` admits it at the factory again.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_team_factory_admission_honours_the_entry_count_build_limit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let admitted = |bypass: &str| {
         let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
             "[GlobalControls]\nAllowBypassBuildLimit={bypass}\n\

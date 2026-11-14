@@ -469,8 +469,8 @@ pub(crate) struct CaptureVictimFacts {
 
 impl CaptureVictimFacts {
     /// `frame` evaluates gate 7 (vt+0x160, an active Iron Curtain or Force
-    /// Shield).
-    pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32) -> Self {
+    /// Shield). `ares` is the game's `RuleSet::ares_form`.
+    pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32, ares: bool) -> Self {
         // 3: `ImmuneToPsionics=` (`+0xD35`); 4: a Unit in a tank bunker
         // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (+0x2CC,
         // 471CF0); 7: the Iron Curtain; 9: Selling or Construction.
@@ -491,8 +491,7 @@ impl CaptureVictimFacts {
                 Some(MissionType::Construction | MissionType::Selling)
             );
         // Ares CanCapture10048FB8 refuses a killed driver for every consumer.
-        #[cfg(feature = "ares")]
-        let refused = refused || target.driver_killed();
+        let refused = refused || (ares && target.driver_killed());
         #[cfg(feature = "phobos")]
         let mind_control_size = target_obj.mind_control_size;
         #[cfg(not(feature = "phobos"))]
@@ -777,7 +776,12 @@ impl Simulation {
         };
         can_capture(
             controller,
-            CaptureVictimFacts::of(target, target_obj, self.session.binary_frame()),
+            CaptureVictimFacts::of(
+                target,
+                target_obj,
+                self.session.binary_frame(),
+                rules.ares_form(),
+            ),
         )
     }
 
@@ -992,8 +996,7 @@ impl Simulation {
             return false;
         };
         // Ares CanBePermaMindControlled10049E54 shares the driverless refusal.
-        #[cfg(feature = "ares")]
-        if object.driver_killed() {
+        if rules.ares_form() && object.driver_killed() {
             return false;
         }
         if object.category() == EntityCategory::Structure {
@@ -1054,7 +1057,6 @@ impl Simulation {
     /// (vt+0xF8) and `PermaControlledAnimationType=` rings it
     /// (CreateMindControlRingAnim 10043F90 inlined: a building's ring at its
     /// height with ZAdjust -1024). Buildings are not refused.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_apply_perma_mc(
         &mut self,
         id: u64,
@@ -1104,7 +1106,6 @@ impl Simulation {
     /// UnInit and `ring` (`Dominator.ControlAnim`, else
     /// `PermaControlledAnimationType=`) rings it through
     /// CreateMindControlRingAnim. Unlike ApplyPermaMC it queues nothing.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_dominate(
         &mut self,
         id: u64,
@@ -1534,6 +1535,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             unit_id,
+            rules.ares_form(),
         );
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -1560,8 +1562,7 @@ impl Simulation {
         // Ares 3.0 CaptureManagerClass_DecideUnitFate_BuildingFate
         // (1005C680, hook 0x47243F): a building queues Guard, with no roll;
         // the other fates do nothing for a building.
-        #[cfg(feature = "ares")]
-        if !unit_is_foot {
+        if rules.ares_form() && !unit_is_foot {
             let now = self.session.binary_frame();
             let _ = self.mission_queue_exact(
                 unit_id,

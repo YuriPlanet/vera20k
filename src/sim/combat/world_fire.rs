@@ -699,11 +699,9 @@ fn unit_fire_tail(
 /// An Infantryman's fire visit without a TarCom (`0x00520AD2`): the raw
 /// firing latch clears.
 fn infantry_fire_without_target(world: &mut Simulation, id: u64) {
-    if let Some(actor) = world
-        .substrate
-        .entities
-        .get_mut_if(id, |actor| actor.mission_leaf.foot_firing_sequence_latch() != 0)
-    {
+    if let Some(actor) = world.substrate.entities.get_mut_if(id, |actor| {
+        actor.mission_leaf.foot_firing_sequence_latch() != 0
+    }) {
         actor.mission_leaf.set_foot_firing_sequence(0);
     }
 }
@@ -1073,9 +1071,7 @@ fn firepower_stages(
         house_firepower: firer
             .and_then(|firer| houses.get(&firer.owner()))
             .map_or(NativeF64Bits::ONE, |house| house.firepower_bias()),
-        unit_firepower: firer.map_or(NativeF64Bits::ONE, |firer| {
-            firer.firepower_multiplier()
-        }),
+        unit_firepower: firer.map_or(NativeF64Bits::ONE, |firer| firer.firepower_multiplier()),
         rank_firepower: obj
             .filter(|obj| {
                 self::veterancy::has_weapon_ability(
@@ -1400,12 +1396,13 @@ pub(crate) fn snapshot_get_rof(
                     house.rof_bias()
                 }),
             ae_rof: firer.map_or(1.0, |entity| entity.phobos_rof_multiplier()),
-            #[cfg(feature = "ares")]
-            attached_rof: Some(
+            // None describes the unpatched kernel, so a game without Ares
+            // keeps the stock building-ammo shortcut and no FMUL.
+            attached_rof: rules.ares().then(|| {
                 firer.map_or(crate::util::native_x87::NativeF64Bits::ONE, |entity| {
                     entity.attached_rof_multiplier()
-                }),
-            ),
+                })
+            }),
             #[cfg(feature = "phobos")]
             rof_random_delay: Some(
                 rof_weapon
@@ -1828,11 +1825,14 @@ pub(super) fn emit_admitted_fire(
                 );
                 // Ares TechnoClass_Fire_BallisticScatter1/2 (10019930 at
                 // 0x6FE709, 10019980 at 0x6FE7FE).
-                #[cfg(feature = "ares")]
-                let bounds = projectile_type.map_or(bounds, |kind| {
-                    kind.bullet_type_ext
-                        .launch_scatter_bounds(flak, rules.combat_damage.ballistic_scatter)
-                });
+                let bounds = if rules.ares() {
+                    projectile_type.map_or(bounds, |kind| {
+                        kind.bullet_type_ext
+                            .launch_scatter_bounds(flak, rules.combat_damage.ballistic_scatter)
+                    })
+                } else {
+                    bounds
+                };
                 crate::sim::projectile::launch::fireat_launch_scatter(
                     delta,
                     bounds,
@@ -2009,9 +2009,8 @@ pub(super) fn emit_admitted_fire(
             // Ares BuildingClass_Update_Prism (100169A0) also adds the
             // tower's `PrismForwarding.DamageAdd` and damage reserve to the
             // returned bullet's Health.
-            #[cfg(feature = "ares")]
             let base_damage = match snap.building_shot {
-                Some(super::BuildingShot::Delayed { .. }) => base_damage
+                Some(super::BuildingShot::Delayed { .. }) if rules.ares() => base_damage
                     .wrapping_add(world.ares_prism_shot_damage_add(snap.stable_id, rules)),
                 _ => base_damage,
             };
@@ -2025,13 +2024,16 @@ pub(super) fn emit_admitted_fire(
             .with_damage_multiplier(damage_multiplier);
             // Ares TechnoClass_Fire_CreateBullet (1001ADE0, hook 0x6FE53F):
             // the bullet's Range is the weapon's ProjectileRange, which only
-            // a `Ranged=` type spends.
-            #[cfg(feature = "ares")]
-            let payload = payload.with_ares_range(
-                projectile_type
-                    .filter(|kind| kind.ranged)
-                    .map(|_| weapon.ares_projectile_range),
-            );
+            // a `Ranged=` type spends, in a game read the Ares way.
+            let payload = if rules.ares_form() {
+                payload.with_ares_range(
+                    projectile_type
+                        .filter(|kind| kind.ranged)
+                        .map(|_| weapon.ares_projectile_range),
+                )
+            } else {
+                payload
+            };
             #[cfg(feature = "phobos")]
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
@@ -2192,10 +2194,7 @@ pub(super) fn emit_admitted_fire(
     // Ares TechnoClass_Fire_DetachedRailgun (Ares.dll 1004D0C0, hook
     // 0x6FF1FB) enters for IsDetachedRailgun regardless of both tests, and
     // DetachedRailgun2 (1004D0F0, hook 0x6FF26E) then skips the +314 store.
-    #[cfg(feature = "ares")]
-    let detached = weapon.ares_visuals.is_detached_railgun;
-    #[cfg(not(feature = "ares"))]
-    let detached = false;
+    let detached = rules.ares() && weapon.ares_visuals.is_detached_railgun;
     if detached
         || weapon.is_railgun
             && world
@@ -2280,17 +2279,18 @@ pub(super) fn emit_admitted_fire(
     // The remainder (`0x006FF2C5`) divides by the Burst of the weapon fired,
     // where GetROF's mid-burst test read the (next) weapon GetWeapon answers.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
-        #[cfg(feature = "ares")]
-        let rearm = ares_berserk_rearm_frames(
-            rof,
-            entity.berserk.is_active().then(|| {
-                obj.techno_combat()
-                    .combat()
-                    .berserk_rof_multiplier(rules.ares_techno_combat().berserk_rof_multiplier())
-            }),
-        );
-        #[cfg(not(feature = "ares"))]
-        let rearm = fireat_rearm_frames(rof, entity.berserk.is_active());
+        let rearm = if rules.ares() {
+            ares_berserk_rearm_frames(
+                rof,
+                entity.berserk.is_active().then(|| {
+                    obj.techno_combat()
+                        .combat()
+                        .berserk_rof_multiplier(rules.ares_techno_combat().berserk_rof_multiplier())
+                }),
+            )
+        } else {
+            fireat_rearm_frames(rof, entity.berserk.is_active())
+        };
         entity.rearm_after_fire(binary_frame as i32, rearm);
         entity.weapon_burst.complete_shot(weapon.burst.max(1));
         entity.last_fire_frame.record(binary_frame);
@@ -2355,8 +2355,8 @@ pub(super) fn emit_admitted_fire(
     // laser wave (type 2 for `Wave.IsBigLaser`, else 1 for `Wave.IsLaser`)
     // through CreateWave, whatever wave the firer links already; the new wave
     // replaces the link (Techno+0x324).
-    #[cfg(feature = "ares")]
-    if fire_at_effect(weapon) == FireAtEffect::None
+    if rules.ares()
+        && fire_at_effect(weapon) == FireAtEffect::None
         && let Some(wave_type) = weapon.ares_visuals.laser_wave_type()
         && callbacks_enabled(world)
         && let Some(event) = out.fire_events.last().cloned()
@@ -2393,8 +2393,8 @@ pub(super) fn emit_admitted_fire(
     // Concrete class FireAt suffixes follow the base tail, including
     // LimboLaunch. Ares reload / Infantry panic and Unit's firing counter /
     // Scalable work stay here for ordinary and direct mission FireAt callers.
-    #[cfg(feature = "ares")]
-    if snap.category == EntityCategory::Infantry
+    if rules.ares()
+        && snap.category == EntityCategory::Infantry
         && weapon.ammo_cost() > 0
         && let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
         && !entity.lifecycle.in_limbo()
@@ -2631,7 +2631,6 @@ pub(crate) fn fireat_rearm_frames(get_rof: i32, berserk: bool) -> i32 {
 /// 0x6FF28F) in place of the halving: a berserk firer's GetROF value times
 /// its multiplier (`Berserk.ROFMultiplier`, else `[CombatDamage]
 /// BerserkROFMultiplier`), x87 under the game's control word, then `_ftol`.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_berserk_rearm_frames(
     get_rof: i32,
     multiplier: Option<crate::util::native_x87::NativeF64Bits>,
@@ -2684,13 +2683,14 @@ fn commit_fire_bookkeeping(
             &mut world.power_states,
             drainer_id,
             victim_id,
+            rules.ares_form(),
         ) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
             world.leave_team(drainer_id, true, rules, effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
-            represented_assign_target(drainer, None);
+            represented_assign_target(drainer, None, rules.ares_form());
         }
     }
 }
@@ -3756,13 +3756,14 @@ mod welding_native_tests;
 /// Ares 3.0 InfantryClass_UpdateFiringState_Heal (1004E420, hook 0x520731):
 /// a healing infantryman keeps a damaged vehicle as its target, where the
 /// stock ILLEGAL arm keeps infantry only.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_heal_drop_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
     #[test]
     fn ares_healer_keeps_any_damaged_techno_target() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]\n0=MEDIC\n[AircraftTypes]\n[BuildingTypes]\n\
              [VehicleTypes]\n0=MTNK\n\n\

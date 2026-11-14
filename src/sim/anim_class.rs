@@ -453,7 +453,6 @@ pub struct AnimObject {
     /// a terrain owner apart from `owner_entity` and its stored coordinate
     /// absolute: a terrain object never moves, so native's owner-relative
     /// form adds the same constant back on every read.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     owner_terrain: Option<u64>,
 }
@@ -771,7 +770,6 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "ares")]
             owner_terrain: None,
         }
     }
@@ -794,10 +792,7 @@ impl AnimObject {
     /// callback compares must be named here too.
     pub(crate) fn expiry_names(&self) -> [Option<u64>; 2] {
         // An anim names at most one owner at `+0xCC`.
-        #[cfg(feature = "ares")]
         let owner = self.owner_entity.or(self.owner_terrain);
-        #[cfg(not(feature = "ares"))]
-        let owner = self.owner_entity;
         [owner, self.attached_bullet]
     }
 
@@ -849,7 +844,6 @@ impl AnimObject {
             b"anim-flaming-guy-v1".hash(hasher);
             state.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if let Some(terrain) = self.owner_terrain {
             b"anim-owner-terrain-v1".hash(hasher);
             terrain.hash(hasher);
@@ -1033,7 +1027,6 @@ impl AnimStore {
 
     /// Write `id`'s terrain owner (`+0xCC` naming a TerrainClass), returning
     /// the one it replaced, or `None` when `id` is not stored.
-    #[cfg(feature = "ares")]
     pub(crate) fn set_owner_terrain(
         &mut self,
         id: AnimId,
@@ -1048,7 +1041,6 @@ impl AnimStore {
     /// Whether a stored anim other than `id` names the terrain object
     /// `owner`: the Anim array scan of SetOwnerObject424B79..424BB6 for a
     /// terrain owner. Only burning trees own anims, so it walks the store.
-    #[cfg(feature = "ares")]
     pub(crate) fn another_owned_by_terrain(&self, id: AnimId, owner: u64) -> bool {
         self.anims
             .iter()
@@ -1056,7 +1048,6 @@ impl AnimStore {
     }
 
     /// Ares terrain fire: the anims a terrain object owns, in array order.
-    #[cfg(feature = "ares")]
     pub(crate) fn owned_by_terrain(&self, owner: u64) -> Vec<AnimId> {
         self.anims
             .iter()
@@ -1067,7 +1058,6 @@ impl AnimStore {
 
     /// `AnimClass::ClearLoopsForOwner @ 0x00422B80`: every anim naming
     /// `owner` at `+0xCC` ends after its current loop (`+0x195 = 0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_loops_for_terrain_owner(&mut self, owner: u64) {
         let stored = self.anims.len();
         for (&id, anim) in self.anims.iter_mut() {
@@ -1079,7 +1069,6 @@ impl AnimStore {
     }
 
     /// The terrain object an anim is attached to (`+0xCC`).
-    #[cfg(feature = "ares")]
     pub(crate) fn owner_terrain(&self, id: AnimId) -> Option<u64> {
         self.anims.get(&id).and_then(|anim| anim.owner_terrain)
     }
@@ -1656,16 +1645,14 @@ impl Simulation {
             }
             Err(_) => return false,
         };
-        #[cfg(feature = "ares")]
-        if rules
-            .art()
-            .anim_runtime_config(&type_name)
-            .is_some_and(|config| config.make_infantry > -1)
+        if rules.ares_form()
+            && rules
+                .art()
+                .anim_runtime_config(&type_name)
+                .is_some_and(|config| config.make_infantry > -1)
         {
             self.ares_set_make_inf_owner(id, type_id, house, house, house, rules);
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = house;
         self.substrate.set_anim_no_effects(id, true);
         true
     }
@@ -1961,7 +1948,6 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
-            #[cfg(feature = "ares")]
             owner_terrain: None,
         };
         // The insert must run in every build profile: wrapped in
@@ -2493,6 +2479,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
+        let ares = rules.ares_form();
         let Some(anim) = self.anim(id) else {
             return false;
         };
@@ -2507,14 +2494,15 @@ impl Simulation {
         // Ares AnimClass_Update_DamageDelay1000B1AF..1000B1E7 passes the
         // animation's House, falling back to an attached Techno's owner.
         // Neither owner is an attacking object; keep RAD_NO_ATTACKER below.
-        #[cfg(feature = "ares")]
-        let source_house = anim.owner_house.or_else(|| {
-            anim.owner_entity
-                .and_then(|owner| self.substrate.entities.get(owner))
-                .map(|owner| owner.owner())
-        });
-        #[cfg(not(feature = "ares"))]
-        let source_house = None;
+        let source_house = if ares {
+            anim.owner_house.or_else(|| {
+                anim.owner_entity
+                    .and_then(|owner| self.substrate.entities.get(owner))
+                    .map(|owner| owner.owner())
+            })
+        } else {
+            None
+        };
         let no_effects = anim.no_effects;
         let type_id = anim.type_id;
         let accumulator = f64::from_bits(anim.damage_accumulator.bits());
@@ -2528,20 +2516,6 @@ impl Simulation {
             sim.substrate.anims.get_mut(id).unwrap().damage_accumulator =
                 NativeF64Bits::from_bits(bits);
         };
-        #[cfg(not(feature = "ares"))]
-        let whole = {
-            let increment = if terrain_owner { damage * 5.0 } else { damage };
-            let accumulated = accumulator + increment;
-            store(self, accumulated);
-            if !(accumulated >= 1.0) || no_effects {
-                return false;
-            }
-            //4245AC..4245D5 consumes Math7C5F00's low signed32 result, including
-            // masked conversion/overflow, and subtracts that signed integer.
-            let whole = X87Chop53::ftol_f64_low_masked(accumulated);
-            store(self, accumulated - f64::from(whole));
-            whole
-        };
         // Ares 3.0 AnimClass_Update_DamageDelay (1000AFE0, hook 0x424538,
         // resuming at 0x42464C or 0x42465D): with `Damage.Delay=` above zero
         // and `Damage=` at least 1, +0x188 counts frames and the whole Damage
@@ -2550,8 +2524,7 @@ impl Simulation {
         // fraction accumulates. Its conversion (100772B0) truncates and gives
         // the integer indefinite out of range; a result below 1 or a
         // no-effects anim delivers nothing and keeps the count.
-        #[cfg(feature = "ares")]
-        let whole = {
+        let whole = if ares {
             let multiplier = if terrain_owner { 5 } else { 1 };
             let delay = config.ares_damage_delay;
             let delayed = delay >= 1 && !(damage < 1.0);
@@ -2601,6 +2574,18 @@ impl Simulation {
                 );
             }
             whole
+        } else {
+            let increment = if terrain_owner { damage * 5.0 } else { damage };
+            let accumulated = accumulator + increment;
+            store(self, accumulated);
+            if !(accumulated >= 1.0) || no_effects {
+                return false;
+            }
+            //4245AC..4245D5 consumes Math7C5F00's low signed32 result, including
+            // masked conversion/overflow, and subtracts that signed integer.
+            let whole = X87Chop53::ftol_f64_low_masked(accumulated);
+            store(self, accumulated - f64::from(whole));
+            whole
         };
         //4245C3..424630 compares the own stored ID exactly, not Image.
         let warhead_name = if self.interner.resolve(type_id) == "INVISO" {
@@ -2611,8 +2596,11 @@ impl Simulation {
         // Ares1000B179 first reads AnimType+330 (the existing art Warhead
         // reader); only a null pointer uses the stock INVISO/FlameDamage2
         // fallback.
-        #[cfg(feature = "ares")]
-        let warhead_name = config.warhead.as_deref().or(warhead_name);
+        let warhead_name = if ares {
+            config.warhead.as_deref().or(warhead_name)
+        } else {
+            warhead_name
+        };
         let Some((name, warhead)) =
             warhead_name.and_then(|name| rules.warhead(name).map(|warhead| (name, warhead)))
         else {
@@ -2647,7 +2635,6 @@ impl Simulation {
     /// GetCoords and Released. That is the bare `DetonateAtCoord`
     /// Fire_Death_Weapon makes (`ProjectileDetonationReason::DeathWeapon`).
     /// Returns whether a bridge changed.
-    #[cfg(feature = "ares")]
     fn ares_anim_weapon_detonation(
         &mut self,
         id: AnimId,
@@ -2815,8 +2802,7 @@ impl Simulation {
             // Ares 3.0 AnimClass_Update (1005C3E0, hook 0x424B23): the
             // refused infantryman is UnInit and the anim ends (TimeToDie,
             // UnInit) instead of trying again.
-            #[cfg(feature = "ares")]
-            {
+            if rules.ares_form() {
                 self.uninit_with_context(
                     infantry,
                     crate::sim::world::UninitContext::new(rules, overlay_registry)
@@ -2824,13 +2810,10 @@ impl Simulation {
                 );
                 return true;
             }
-            #[cfg(not(feature = "ares"))]
-            {
-                if let Some(anim) = self.substrate.anims.get_mut(id) {
-                    anim.runtime.current_frame = anim.runtime.current_frame.wrapping_sub(1);
-                }
-                return false;
+            if let Some(anim) = self.substrate.anims.get_mut(id) {
+                anim.runtime.current_frame = anim.runtime.current_frame.wrapping_sub(1);
             }
+            return false;
         }
         let at = self.anim_absolute_coord(id).unwrap_or(location);
         let lift = self.resolved_terrain.as_ref().is_some_and(|terrain| {
@@ -2975,9 +2958,7 @@ impl Simulation {
         // A terrain owner (Ares terrain fire): the same detach, whose
         // last-anim callback is TerrainClass vt+0x17C, Finish_Fire_Death
         // (`0x00424BB0`). Its stored coordinate is already absolute.
-        #[cfg(feature = "ares")]
         let owner_terrain = anim.owner_terrain;
-        #[cfg(feature = "ares")]
         if let Some(terrain) = owner_terrain {
             if marked {
                 self.substrate.display.remove(id);
@@ -3011,7 +2992,6 @@ impl Simulation {
             let Some(owner_coord) = self.anim_owner_coords(owner_id) else {
                 return false;
             };
-            #[cfg(feature = "ares")]
             if !self.substrate.entities.contains(owner_id) {
                 // A terrain owner: attach without the coordinate conversion
                 // (see `AnimObject::owner_terrain`) or the Object+84 flag,
@@ -3064,10 +3044,7 @@ impl Simulation {
         use crate::rules::art_data::AnimLayer;
         use crate::sim::world::display_layers::DisplayLayer;
         let anim = self.substrate.anims.get(id)?;
-        #[cfg(feature = "ares")]
         let attached = anim.owner_entity.is_some() || anim.owner_terrain.is_some();
-        #[cfg(not(feature = "ares"))]
-        let attached = anim.owner_entity.is_some();
         if attached {
             return Some(DisplayLayer::GROUND);
         }
@@ -3113,7 +3090,6 @@ impl Simulation {
     pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
         // A terrain owner's centre is its GetCoords (Terrain VT+48 ->
         // Object5F65A0), for the Ares terrain fire.
-        #[cfg(feature = "ares")]
         if !self.substrate.entities.contains(owner_id) {
             let centre = self.terrain_objects.get(owner_id)?.world_coord();
             return Some(AnimWorldCoord {
@@ -3133,7 +3109,6 @@ impl Simulation {
     /// only when this Anim broadcasts its own pointer expiry (44EA45).
     pub(crate) fn detach_anim_from_owner(&mut self, id: AnimId, rules: &RuleSet) -> Option<u64> {
         // A terrain owner's +60 is the Object base, which keeps no anim.
-        #[cfg(feature = "ares")]
         if let Some(terrain) = self.substrate.anims.owner_terrain(id) {
             self.set_anim_owner_object(id, None, rules);
             return Some(terrain);
@@ -3162,12 +3137,9 @@ impl Simulation {
         rules: &RuleSet,
     ) -> bool {
         let mut changed = false;
-        #[cfg(feature = "ares")]
         let owner = self
             .anim(id)
             .and_then(|anim| anim.owner_entity.or(anim.owner_terrain));
-        #[cfg(not(feature = "ares"))]
-        let owner = self.anim(id).and_then(|anim| anim.owner_entity);
         if owner == Some(expired_id) {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DisplayRemove { stable_id: id });
@@ -3878,6 +3850,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
+        let ares = rules.ares_form();
         let sound_name = self.anim(id).and_then(|anim| {
             (!anim.no_effects())
                 .then(|| {
@@ -4013,15 +3986,17 @@ impl Simulation {
         // No zone repair belongs to that first Recalc.
         self.publish_recalculated_cells(rules, &[cell]);
         let debris = mineral.debris();
-        // 424DDF..424DF3 uses one signed raw draw. Only zero is consumed:
-        // abs(raw % 3)==0 also matches wrapped abs(raw)%3==0 at INT_MIN.
-        #[cfg(not(feature = "ares"))]
-        let throw_debris = !debris.is_empty() && self.scenario_rng.next_raw_abs_modulo(3) == 0;
-        // Ares 3.0 10050D50 (hook 0x424DD3), after the Debris count test:
-        // RandomRanged(0, 99) < Debris.Chance replaces the one-in-three draw.
-        #[cfg(feature = "ares")]
-        let throw_debris = !debris.is_empty()
-            && self.scenario_rng.next_range_i32_inclusive(0, 99) < mineral.ares().debris_chance();
+        let throw_debris = if ares {
+            // Ares 3.0 10050D50 (hook 0x424DD3), after the Debris count test:
+            // RandomRanged(0, 99) < Debris.Chance replaces the one-in-three draw.
+            !debris.is_empty()
+                && self.scenario_rng.next_range_i32_inclusive(0, 99)
+                    < mineral.ares().debris_chance()
+        } else {
+            // 424DDF..424DF3 uses one signed raw draw. Only zero is consumed:
+            // abs(raw % 3)==0 also matches wrapped abs(raw)%3==0 at INT_MIN.
+            !debris.is_empty() && self.scenario_rng.next_raw_abs_modulo(3) == 0
+        };
         if throw_debris {
             if let Some(mut child_coord) = self.anim_absolute_coord(id) {
                 child_coord.z = child_coord.z.wrapping_add(10);
@@ -4069,20 +4044,21 @@ impl Simulation {
         // TiberiumExplosionDamage above retail's 0 reaches it.
         // Ares 3.0 10050DA0 (hook 0x424EC5): the mineral's ExplosionWarhead
         // and ExplosionDamage, else C4Warhead and TiberiumExplosionDamage.
-        #[cfg(feature = "ares")]
-        let (warhead_name, damage) = (
-            mineral
-                .ares()
-                .explosion_warhead(Some(rules.bridge_warheads.c4_name.as_str())),
-            mineral
-                .ares()
-                .explosion_damage(rules.combat_damage.tiberium_explosion_damage),
-        );
-        #[cfg(not(feature = "ares"))]
-        let (warhead_name, damage) = (
-            Some(rules.bridge_warheads.c4_name.as_str()),
-            rules.combat_damage.tiberium_explosion_damage,
-        );
+        let (warhead_name, damage) = if ares {
+            (
+                mineral
+                    .ares()
+                    .explosion_warhead(Some(rules.bridge_warheads.c4_name.as_str())),
+                mineral
+                    .ares()
+                    .explosion_damage(rules.combat_damage.tiberium_explosion_damage),
+            )
+        } else {
+            (
+                Some(rules.bridge_warheads.c4_name.as_str()),
+                rules.combat_damage.tiberium_explosion_damage,
+            )
+        };
         if let Some(raw) = self.anim(id).map(|anim| anim.world_coord)
             && let Some(warhead_name) = warhead_name
             && let Some(warhead) = rules.warhead(warhead_name)
@@ -4134,12 +4110,8 @@ impl Simulation {
             .and_then(|name| rules.p_type_id_by_name(name))
             && let Some(coord) = self.anim(id).map(|anim| anim.world_coord)
         {
-            #[cfg(feature = "ares")]
-            let spread = config.ares_spawns_particle_range != [0, 0];
-            #[cfg(not(feature = "ares"))]
-            let spread = false;
+            let spread = rules.ares_form() && config.ares_spawns_particle_range != [0, 0];
             if spread {
-                #[cfg(feature = "ares")]
                 self.ares_spawn_particles_around(id, kind, config, rules);
             } else {
                 for _ in 0..config.num_particles {
@@ -4204,7 +4176,6 @@ impl Simulation {
     /// 0x7FFFFFFF)` times 1/0x7FFFFFFF), keeping the anim's height above the
     /// floor (`0x00578080`). The arithmetic is the DLL's x87 code; its CRT
     /// cos/sin are libm's.
-    #[cfg(feature = "ares")]
     fn ares_spawn_particles_around(
         &mut self,
         id: AnimId,
@@ -4354,7 +4325,8 @@ impl crate::sim::world::ObjectSubstrate {
     /// submission (422961 / 425190). Callers own the distinct +60 and +84
     /// effects: PointerExpired clears CC without releasing the retained flag.
     pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
-        #[cfg(feature = "ares")]
+        // Runs in every game: only the Ares terrain fire gives an anim a
+        // terrain owner, and without one this falls through to the stock clear.
         if let Some(Some(terrain)) = self.anims.set_owner_terrain(id, None) {
             return Some(terrain);
         }
@@ -4637,13 +4609,11 @@ fn native_loop_remaining(loop_count: i32, constructor_loop: i32) -> u8 {
 
 /// Ares.dll's float-to-int conversion (100772B0): toward zero, and the
 /// integer indefinite (`i32::MIN`) for NaN or a value out of range.
-#[cfg(feature = "ares")]
 fn ares_truncate(value: f64) -> i32 {
     X87Chop53::load_f64(NativeF64Bits::from_bits(value.to_bits()))
         .map_or(i32::MIN, ares_truncate_x87)
 }
 
-#[cfg(feature = "ares")]
 fn ares_truncate_x87(value: crate::util::native_x87::X87Value) -> i32 {
     X87Chop53::ftol_i64(value)
         .ok()

@@ -792,9 +792,11 @@ impl SpriteAtlas {
 
     /// Physical frame count from the object type's resolved SHP source.
     pub(crate) fn object_shp_frame_count(&self, type_id: &str) -> Option<u16> {
-        self.object_shp_frame_counts
-            .get(&type_id.to_ascii_uppercase())
-            .copied()
+        // Draws ask this for each body and bib shadow: fold the key on the
+        // stack.
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.object_shp_frame_counts.get(key).copied()
+        })
     }
 
     /// Native relative type bounds; `None` means this type has not been prepared.
@@ -1839,7 +1841,7 @@ fn insert_new_object_keys(
         } else {
             None
         };
-        let body_keys = insert_object_keys(
+        let mut body_keys = insert_object_keys(
             needed,
             type_str,
             category,
@@ -1873,6 +1875,27 @@ fn insert_new_object_keys(
                 .as_ref()
                 .and_then(|source| u16::try_from(source.shp.frames.len()).ok())
             {
+                // Unit73C6AD..73C6D3 draws a counting Unit's death image, which
+                // no sequence holds. Past the SHP, GetFrameData (0x0069E740)
+                // answers NULL and nothing draws.
+                if let Some(death) = rules
+                    .filter(|_| category == EntityCategory::Unit)
+                    .and_then(|rules| rules.animation_sequence(type_str))
+                    .and_then(|set| set.shp_vehicle_death())
+                {
+                    let images = death.images();
+                    for frame in images.start.max(0)..images.end.min(i32::from(raw_count)) {
+                        let key = ShpSpriteKey {
+                            palette_context: ShpPaletteContext::Legacy,
+                            type_id: type_str.as_str().into(),
+                            facing: 0,
+                            frame: frame as u16,
+                            house_color: *color_idx,
+                        };
+                        needed.insert(key.clone());
+                        body_keys.push(key);
+                    }
+                }
                 let shadow_start = raw_count / 2;
                 // Techno7064C2..7064CD adds half the physical SHP count
                 // to the selected body frame. Infantry51958A calls this same

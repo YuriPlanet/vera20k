@@ -1795,7 +1795,12 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     // All three drive future wallet writes, so a divergence here
     // desyncs credits; every object carries them.
     entity.produce_cash.timer().hash(hasher);
-    entity.produce_cash.hash_ares_upgrade_timers(hasher);
+    // Ares' upgrade timers fold once any was started, so other buildings
+    // hash as earlier schemas did.
+    if entity.ares.cash_upgrade_timers != <[crate::sim::timer::CdTimer; 3]>::default() {
+        b"ares-produce-cash-upgrades-v1".hash(hasher);
+        entity.ares.cash_upgrade_timers.hash(hasher);
+    }
     entity.drain.target().hash(hasher);
     entity.drain.draining_me().hash(hasher);
     // ParasiteClass (Foot+69C) of dogs and drones, the victim's
@@ -1910,6 +1915,10 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
         b"naval-tracking-eligibility-v1".hash(hasher);
     }
     entity.tracking_facts.hash_retained_inputs(hasher);
+    if let Some(multiplier) = entity.ares.factory_plant_multiplier {
+        b"ares-plant-multiplier-v1".hash(hasher);
+        multiplier.hash(hasher);
+    }
     if latches != Default::default() {
         b"house-tracking-infantry-latches-v1".hash(hasher);
         latches.hash(hasher);
@@ -1990,6 +1999,10 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     if entity.unit_firing_counter.get() != -1 {
         b"unit-firing-counter-v1".hash(hasher);
         entity.unit_firing_counter.hash(hasher);
+    }
+    if entity.unit_death_counter.running() {
+        b"unit-death-counter-v1".hash(hasher);
+        entity.unit_death_counter.hash(hasher);
     }
     if !entity.building.tesla_charge.is_default() {
         b"building-tesla-charge-v1".hash(hasher);

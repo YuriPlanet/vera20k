@@ -323,8 +323,7 @@ impl Simulation {
             .is_some_and(|object| object.grinding);
         // Ares 3.0 100498D0 (hook 0x5198AD) / 1004C460 (hook 0x73A1BC), first
         // in the Grinding arm: reverse engineering and the hijacker refund.
-        #[cfg(feature = "ares")]
-        if grinding {
+        if rules.ares_form() && grinding {
             self.ares_entered_grinder(id, building_id, rules, context);
         }
         if grinding
@@ -574,12 +573,12 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> bool {
         // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
-        #[cfg(feature = "ares")]
-        if self
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|foot| foot.ares.vehicle_driver.vehicle_seek())
+        if rules.ares_form()
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|foot| foot.ares.vehicle_driver.vehicle_seek())
         {
             return self.ares_enter_nearest_vehicle(id, rules, registry, effects);
         }

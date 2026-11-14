@@ -62,8 +62,6 @@ fn bits(value: &serde_json::Value) -> NativeF64Bits {
     NativeF64Bits::from_bits(u64::from_le_bytes(bytes))
 }
 
-// Runs again once the crates' stat recompute moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -206,8 +204,6 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
     }
 }
 
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

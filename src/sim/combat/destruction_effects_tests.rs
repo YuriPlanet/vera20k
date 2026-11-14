@@ -158,12 +158,16 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
+    rules_with_art(text, ART)
+}
+
+fn rules_with_art(text: &str, art_text: &str) -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(text),
-        &IniFile::from_str(ART),
+        &IniFile::from_str(art_text),
     )
     .expect("death anim rules");
-    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(ART));
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(art_text));
     for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
         art.bind_anim_frame_count_for_test(name, 10);
     }
@@ -337,6 +341,25 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         );
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
+}
+
+/// Art `DeathFrames=` (`UnitClass::ReceiveDamage`, `0x00737DA7..0x00737DDD`)
+/// jumps past `Death_Explosion`: the vehicle dies with no anim and, not
+/// being `Crashable=`, is UnInit at once.
+#[test]
+fn a_death_frames_vehicle_dies_without_its_explosion() {
+    let rules = rules_with_art(RULES, &format!("{ART}[PLAIN]\nDeathFrames=4\n"));
+    let mut sim = sim(1);
+    let unit = spawn(&mut sim, &rules, "PLAIN", 12, 12);
+    kill(&mut sim, &rules, unit);
+    assert_eq!(anims(&sim), vec![]);
+    assert!(
+        sim.substrate
+            .entities
+            .get(unit)
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
+        "UnInit at the killing hit"
+    );
 }
 
 /// `0x007386C3..0x007386FF`: an `Explodes=` vehicle (the Apocalypse, the
@@ -550,14 +573,15 @@ fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
             "death weapon: {case}"
         );
         // The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            sim.substrate
-                .entities
-                .get(rider)
-                .is_none_or(|rider| !rider.lifecycle.object_alive()),
-            "passenger: {case}"
-        );
+        if !rules.ares() {
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(rider)
+                    .is_none_or(|rider| !rider.lifecycle.object_alive()),
+                "passenger: {case}"
+            );
+        }
     }
 }
 
@@ -825,7 +849,7 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
         hall,
         [(
             "DESTA".to_string(),
-            crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner))
+            rules.ares().then_some(AnimRemap::House(owner))
         )]
     );
 }
@@ -1867,7 +1891,9 @@ fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
         remaps,
         [(
             "DESTA",
-            crate::rules::ARES_BUILD.then_some(crate::sim::anim_class::AnimRemap::House(owner))
+            rules
+                .ares()
+                .then_some(crate::sim::anim_class::AnimRemap::House(owner))
         )]
     );
 }
@@ -1942,7 +1968,7 @@ fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
                         palette: sim.interner.get("lib").unwrap(),
                     })
                 } else {
-                    crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner))
+                    rules.ares().then_some(AnimRemap::House(owner))
                 }
             )],
             "{kind}"
@@ -1982,7 +2008,7 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     assert_eq!(
         one_group_hash != rules.simulation_config_hash(),
-        crate::rules::ARES_BUILD
+        rules.ares()
     );
     assert!(rules.art().get("FIRST").unwrap().terrain_palette);
 
@@ -1992,13 +2018,13 @@ fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
     // case-insensitive after this identity is frozen and later rendered.
     let first = sim.interner.intern("FIRST");
     let lib = sim.interner.intern("lib");
-    let fallback = crate::rules::ARES_BUILD.then_some(AnimRemap::House(owner));
+    let fallback = rules.ares().then_some(AnimRemap::House(owner));
     let expected = [
         Some(AnimRemap::ExtraBuildingScheme {
             house: owner,
             palette: first,
         }),
-        if crate::rules::ARES_BUILD {
+        if rules.ares() {
             Some(AnimRemap::ExtraBuildingScheme {
                 house: owner,
                 palette: lib,

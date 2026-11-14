@@ -25,20 +25,24 @@ use crate::assets::asset_manager::MediaArchiveMode;
 /// before anything reads them. The built-in default rule tests for exactly this.
 const SCREEN_SIZE_UNSET: i32 = -1;
 
-/// Native substring switch chain. Speed control has a retained local effect;
-/// the other networking/debug switches remain accepted without a local effect.
-const SUBSTRING_SWITCHES: &[&str] = &[
-    "-DESTNET",
-    "-SOCKET",
-    "-MPDEBUG",
-    "-DROP=",
-    SPEED_CONTROL_SWITCH,
-    "-DLINK1",
-    "-NETGEAR",
-    "-NOROUTER",
-    "-STEALTH",
-    "-MESSAGES",
-    "-ATTRACT",
+/// Native substring switch chain, in order. Speed control has a retained local
+/// effect; the other networking/debug switches remain accepted without one.
+/// `true` marks a branch that sets its flag and falls through to the later
+/// tests instead of jumping to the loop tail `0x0052FB17`: MPDEBUG
+/// (`0x0052F8EB`), SPEEDCONTROL (`0x0052F949`), DLINK1, NETGEAR and NOROUTER
+/// (`0x0052F962`, `0x0052F97E`, `0x0052F996`).
+const SUBSTRING_SWITCHES: &[(&str, bool)] = &[
+    ("-DESTNET", false),
+    ("-SOCKET", false),
+    ("-MPDEBUG", true),
+    ("-DROP=", false),
+    (SPEED_CONTROL_SWITCH, true),
+    ("-DLINK1", true),
+    ("-NETGEAR", true),
+    ("-NOROUTER", true),
+    ("-STEALTH", false),
+    ("-MESSAGES", false),
+    ("-ATTRACT", false),
 ];
 
 /// Switches native compares whole-token and whose effect this engine has no
@@ -68,12 +72,28 @@ pub struct ScreenSize {
     pub height: u32,
 }
 
+/// A switch that ends the launch before a window opens. Both kinds print
+/// through the shared tail of Parse_Command_Line (`0x0052FB52..0x0052FB69`:
+/// StringTable::LoadString, `_putws`, return 0), and WinMain (`0x006BC093`)
+/// then shuts down at `0x006BE0EB` and returns 1 (EBX=1 at `0x006BBFE1`, kept
+/// in ESI from `0x006BC082`, returned at `0x006BE161`). The parser returns at
+/// the first one, so the first in argument order is the one printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupExit {
+    /// A help form: the usage text.
+    Usage,
+    /// `-X` followed by anything but `Q`s (`0x0052FB08` jumps to
+    /// `0x0052FB41`): TXT_INVALID.
+    InvalidSwitch,
+}
+
 /// Everything the native pre-window command-line pass decides. The retained
 /// profile applies `VERA.INI` later, using these screen fields as defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetailStartupOptions {
-    /// A help form was passed: print usage and terminate before a window opens.
-    pub usage_requested: bool,
+    /// A help form or an invalid `-X` tail was passed: print its text and
+    /// terminate before a window opens.
+    pub exit: Option<StartupExit>,
     /// The one parsed archive policy, retained by the process asset owner.
     /// Parse_Command_Line52F620 writes 0x89E3A0; Init_Mix_Files530460
     /// consumes it at 0x53079E. See tools/media_policy.md.
@@ -88,6 +108,9 @@ pub struct RetailStartupOptions {
     /// Parse_Command_Line52F939..52F94B sets the process flag 0xA8EDDC.
     /// Main_Tick55D767 and Options init4E2050 consume it for campaigns.
     pub campaign_speed_control: bool,
+    /// `-X` followed by `Q`s: Parse_Command_Line52FB0A sets 0xA8ED64, which
+    /// turns off every Theme entry point and EVA's dequeue.
+    pub theme_and_eva_quiet: bool,
     /// Screen width, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
     pub screen_width: i32,
     /// Screen height, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
@@ -97,11 +120,12 @@ pub struct RetailStartupOptions {
 impl Default for RetailStartupOptions {
     fn default() -> Self {
         Self {
-            usage_requested: false,
+            exit: None,
             media_archive_mode: MediaArchiveMode::STOCK_DIGITAL,
             windowed: false,
             audio_enabled: true,
             campaign_speed_control: false,
+            theme_and_eva_quiet: false,
             screen_width: SCREEN_SIZE_UNSET,
             screen_height: SCREEN_SIZE_UNSET,
         }
@@ -111,11 +135,14 @@ impl Default for RetailStartupOptions {
 impl RetailStartupOptions {
     fn apply(&mut self, recognized: RecognizedSwitch) {
         match recognized {
-            RecognizedSwitch::Usage => self.usage_requested = true,
+            RecognizedSwitch::Exit(exit) => {
+                self.exit.get_or_insert(exit);
+            }
             RecognizedSwitch::CdMedia => self.media_archive_mode = MediaArchiveMode::CdWildcard,
             RecognizedSwitch::Windowed => self.windowed = true,
             RecognizedSwitch::NoAudio => self.audio_enabled = false,
             RecognizedSwitch::SpeedControl => self.campaign_speed_control = true,
+            RecognizedSwitch::ThemeAndEvaQuiet => self.theme_and_eva_quiet = true,
             RecognizedSwitch::ScreenSize { width, height } => {
                 self.screen_width = width;
                 if let Some(height) = height {
@@ -130,11 +157,12 @@ impl RetailStartupOptions {
 /// What one argument matched in the native switch chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RecognizedSwitch {
-    Usage,
+    Exit(StartupExit),
     CdMedia,
     Windowed,
     NoAudio,
     SpeedControl,
+    ThemeAndEvaQuiet,
     ScreenSize {
         width: i32,
         height: Option<i32>,
@@ -158,9 +186,12 @@ pub fn consume_retail_switches(arguments: Vec<OsString>) -> (RetailStartupOption
     for argument in arguments {
         // Native uppercases the argument in place before every comparison.
         let normalized = argument.to_string_lossy().to_ascii_uppercase();
-        match classify(&normalized) {
-            Some(recognized) => options.apply(recognized),
-            None => passthrough.push(argument),
+        let recognized = classify(&normalized);
+        if recognized.is_empty() {
+            passthrough.push(argument);
+        }
+        for switch in recognized {
+            options.apply(switch);
         }
     }
     (options, passthrough)
@@ -168,29 +199,40 @@ pub fn consume_retail_switches(arguments: Vec<OsString>) -> (RetailStartupOption
 
 /// Walk the native switch chain in its native order. The order is load-bearing:
 /// the `-CD` substring test runs before the numeric-size test, and the numeric
-/// test runs before the whole-token `-WIN` test.
-fn classify(normalized: &str) -> Option<RecognizedSwitch> {
+/// test runs before the whole-token `-WIN` test. Most matches end the chain;
+/// the substring switches marked in [`SUBSTRING_SWITCHES`] go on to the later
+/// tests, so one argument can match several. Empty means nothing matched.
+///
+/// Between the help forms and `-CD` native hashes the argument
+/// (`0x005F9E80`) and, on `0xD95C68A2`, sets the `[Intro] Play=` bit
+/// (`[0x00A8E960] & 4`, see app/persistence/intro_play.rs). That hidden
+/// switch's name is unknown and it is not ported.
+fn classify(normalized: &str) -> Vec<RecognizedSwitch> {
     if normalized == NO_AUDIO_SWITCH {
-        return Some(RecognizedSwitch::NoAudio);
+        return vec![RecognizedSwitch::NoAudio];
     }
     if ACCEPTED_EXACT_SWITCHES.contains(&normalized) {
-        return Some(RecognizedSwitch::NoLocalEffect);
+        return vec![RecognizedSwitch::NoLocalEffect];
     }
     if USAGE_SWITCHES.contains(&normalized) {
-        return Some(RecognizedSwitch::Usage);
+        return vec![RecognizedSwitch::Exit(StartupExit::Usage)];
     }
     if normalized.contains(CD_MEDIA_SWITCH) {
-        return Some(RecognizedSwitch::CdMedia);
+        return vec![RecognizedSwitch::CdMedia];
     }
-    if let Some(switch) = SUBSTRING_SWITCHES
-        .iter()
-        .find(|switch| normalized.contains(**switch))
-    {
-        return Some(if *switch == SPEED_CONTROL_SWITCH {
+    let mut matched = Vec::new();
+    for &(switch, falls_through) in SUBSTRING_SWITCHES {
+        if !normalized.contains(switch) {
+            continue;
+        }
+        matched.push(if switch == SPEED_CONTROL_SWITCH {
             RecognizedSwitch::SpeedControl
         } else {
             RecognizedSwitch::NoLocalEffect
         });
+        if !falls_through {
+            return matched;
+        }
     }
     // Native reaches its size parser through `isdigit(argument[1])`, then runs
     // `sscanf(argument, "-%dX%d", &width, &height)`.
@@ -199,21 +241,29 @@ fn classify(normalized: &str) -> Option<RecognizedSwitch> {
         // nothing. Passing a non-matching argument through instead keeps a
         // capture option's numeric value (`--width 800`) out of this branch.
         // VERA-internal narrowing; native has no such options.
-        return scan_screen_size(normalized)
-            .map(|(width, height)| RecognizedSwitch::ScreenSize { width, height });
+        if let Some((width, height)) = scan_screen_size(normalized) {
+            matched.push(RecognizedSwitch::ScreenSize { width, height });
+        }
+        return matched;
     }
     if normalized == WINDOWED_SWITCH {
-        return Some(RecognizedSwitch::Windowed);
+        matched.push(RecognizedSwitch::Windowed);
+        return matched;
     }
-    // `-X…` is a native debug form that only accepts a run of `Q` characters
-    // after the prefix. Recorded divergence: on any other trailing character
-    // native prints a message and aborts the launch, where this accepts the
-    // argument and carries on. Chosen deliberately — the flag drives no VERA
-    // subsystem, so refusing to start over it would be the worse failure.
-    if normalized.starts_with("-X") {
-        return Some(RecognizedSwitch::NoLocalEffect);
+    // `-X…` (strncmp at 0x0052FAD7): each following `Q` sets 0xA8ED64 at
+    // 0x0052FB0A; a bare `-X` sets nothing. Any other character after it
+    // jumps to 0x0052FB41, which prints TXT_INVALID and ends the launch, even
+    // when Qs before it already set the flag.
+    if let Some(rest) = normalized.strip_prefix("-X") {
+        matched.push(if rest.is_empty() {
+            RecognizedSwitch::NoLocalEffect
+        } else if rest.bytes().all(|byte| byte == b'Q') {
+            RecognizedSwitch::ThemeAndEvaQuiet
+        } else {
+            RecognizedSwitch::Exit(StartupExit::InvalidSwitch)
+        });
     }
-    None
+    matched
 }
 
 /// Reproduce `sscanf(argument, "-%dX%d", &width, &height)`.
@@ -247,8 +297,10 @@ fn scan_i32(text: &str) -> (Option<i32>, &str) {
 
 /// The usage text a help switch prints.
 ///
-/// Native loads six numbered strings from an external debug string table that
-/// does not ship with the retail assets, so its exact wording is UNCHECKED.
+/// Native prints TXT_OPTION_HELP_01..06 through StringTable::LoadString
+/// (`0x0052FB6A..0x0052FC16`). The table is not loaded yet at that point (see
+/// [`exit_text`]), so native prints LoadString's fallback line six times. This
+/// text is VERA's own help instead: it lists VERA's own options too.
 ///
 /// Only switches that actually change what this engine does are listed as
 /// working. The rest are parsed and accepted — which is the point, since a
@@ -274,6 +326,22 @@ pub fn usage_text() -> String {
     .join("\n")
 }
 
+/// The text a [`StartupExit`] prints. For an invalid switch native asks
+/// StringTable::LoadString (`0x00734E60`) for TXT_INVALID, but the label table
+/// `[0x00B1CF74]` is still empty: WinMain loads it at `0x006BD853`, after the
+/// parser, and the -JABBER/-STR/-NOSTR reloads before that pass the loader a
+/// null file name (`[0x00B1CF68]`, written only by the loader), which it
+/// refuses at `0x007346C1`. So LoadString returns its fallback (`0x0084583C`),
+/// misspelling included, and `_putws` adds the newline.
+pub fn exit_text(exit: StartupExit) -> String {
+    match exit {
+        StartupExit::Usage => usage_text(),
+        StartupExit::InvalidSwitch => {
+            "***FATAL*** String Manager failed to initilaized properly".to_owned()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,7 +362,11 @@ mod tests {
     fn every_help_form_requests_usage_in_either_case() {
         for form in ["/?", "-?", "-h", "/h", "-H", "/H"] {
             let (options, rest) = consume(&[form]);
-            assert!(options.usage_requested, "{form} must request usage");
+            assert_eq!(
+                options.exit,
+                Some(StartupExit::Usage),
+                "{form} must request usage"
+            );
             assert!(rest.is_empty(), "{form} must be consumed");
         }
     }
@@ -378,10 +450,54 @@ mod tests {
             "-SOCKET1234",
             "-DESTNET",
             "-O",
-            "-XQ",
+            "-X",
         ]);
         assert!(rest.is_empty(), "every native switch must be consumed");
         assert_eq!(options, RetailStartupOptions::default());
+    }
+
+    #[test]
+    fn x_with_only_qs_quiets_theme_and_eva() {
+        assert!(consume(&["-xq"]).0.theme_and_eva_quiet);
+        assert!(consume(&["-XQQQ"]).0.theme_and_eva_quiet);
+        assert!(!consume(&["-X"]).0.theme_and_eva_quiet);
+    }
+
+    #[test]
+    fn x_with_anything_but_qs_ends_the_launch_and_the_first_exit_wins() {
+        // 0x0052FB08: Qs, then any other character, still jump to the exit.
+        assert_eq!(consume(&["-XQA"]).0.exit, Some(StartupExit::InvalidSwitch));
+        assert_eq!(consume(&["-x1"]).0.exit, Some(StartupExit::InvalidSwitch));
+        assert_eq!(consume(&["-X"]).0.exit, None);
+        // LoadString's fallback, from retail bytes at 0x0084583C.
+        assert_eq!(
+            exit_text(StartupExit::InvalidSwitch),
+            "***FATAL*** String Manager failed to initilaized properly"
+        );
+        // Parse_Command_Line returns at the first exit it meets.
+        assert_eq!(consume(&["-?", "-XA"]).0.exit, Some(StartupExit::Usage));
+        assert_eq!(
+            consume(&["-XA", "-?"]).0.exit,
+            Some(StartupExit::InvalidSwitch)
+        );
+    }
+
+    #[test]
+    fn a_falling_through_switch_reaches_the_later_tests() {
+        // 0x0052F8EB: MPDEBUG goes on to SPEEDCONTROL in the same argument.
+        assert!(consume(&["-MPDEBUG-SPEEDCONTROL"]).0.campaign_speed_control);
+        // 0x0052F949: SPEEDCONTROL goes on to the size scan.
+        let (both, rest) = consume(&["-1024X768-SPEEDCONTROL"]);
+        assert!(both.campaign_speed_control);
+        assert_eq!((both.screen_width, both.screen_height), (1024, 768));
+        assert!(rest.is_empty());
+        // 0x0052F996: NOROUTER goes on to the `-X` test, where `-` is no Q.
+        assert_eq!(
+            consume(&["-XQ-NOROUTER"]).0.exit,
+            Some(StartupExit::InvalidSwitch)
+        );
+        // DROP= ends the chain, so the SPEEDCONTROL after it is never tested.
+        assert!(!consume(&["-DROP=-SPEEDCONTROL"]).0.campaign_speed_control);
     }
 
     #[test]

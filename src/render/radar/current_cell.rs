@@ -46,6 +46,10 @@ impl<'a> CurrentRadarCellAuthority<'a> {
         }
     }
 
+    pub(crate) fn resolved_terrain(&self) -> Option<&'a ResolvedTerrainGrid> {
+        self.resolved_terrain
+    }
+
     /// Production presentation wiring after the restored simulation commits.
     pub(crate) fn from_runtime(runtime: &'a SimRuntime) -> Self {
         Self::new(

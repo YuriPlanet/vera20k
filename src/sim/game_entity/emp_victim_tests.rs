@@ -146,8 +146,6 @@ pub(super) fn missions(sim: &Simulation, id: u64) -> (Option<MissionType>, Optio
 /// Installed10062320 admits a computer infantryman on Walk like any other
 /// Foot: a walking Cyborg-prone E1 stops while the counter runs, then
 /// DisableEMPEffect100627F0's computer branch queues Hunt for it.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_stops_a_walking_computer_infantryman_until_it_hunts() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -183,8 +181,6 @@ fn ares_emp_stops_a_walking_computer_infantryman_until_it_hunts() {
 /// DisableEMPEffect100627F0's Unit Harvester/ResourceGatherer branch: a
 /// human War Miner, Chrono Miner (Teleport) and Slave Miner start their
 /// saved mission again, Enter for a saved Guard, instead of nothing.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_miners_restart_their_saved_mission() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -224,8 +220,6 @@ fn ares_emp_miners_restart_their_saved_mission() {
 
 /// enableEMPEffect10062B40 does not touch the victim's controller: a tank
 /// Yuri took is deactivated, stays his and hunts for his computer House.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_keeps_a_mind_controlled_tank_with_its_controller() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -269,8 +263,6 @@ fn ares_emp_keeps_a_mind_controlled_tank_with_its_controller() {
 /// A paratrooper caught in the spread keeps falling (ObjectAI5F3F11 tests
 /// no deactivation), its canopy spares it from the EMP.Threshold in-air
 /// arm of10062320, and it lands offline until the counter runs out.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_falling_paratrooper_lands_offline() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -320,8 +312,6 @@ fn ares_emp_falling_paratrooper_lands_offline() {
 /// (Hover's override spins it down) stops the moving amphibious APC and
 /// the Sea Scorpion within the cell it is crossing, and both power up and
 /// hunt once the counter ends.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_stops_hover_and_ship_movers() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -386,8 +376,6 @@ fn ares_emp_stops_hover_and_ship_movers() {
 /// enableEMPEffect10062B40 like any Fly mover: above the ground it crashes
 /// through TechnoExt::Destroy10044300. The launcher is made immune so its
 /// own updateSpawnManager10063070 cannot take the rocket first.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_downs_a_v3_rocket_on_its_launcher() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -448,8 +436,6 @@ fn ares_emp_downs_a_v3_rocket_on_its_launcher() {
 /// RecheckRadar, and the House radar and SpySat scans (Ares 10024550,
 /// 10024620) skip it while the counter runs, so the uplink's radar and map
 /// go dark and come back with it.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_darkens_a_spy_satellite_uplink_until_expiry() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -497,8 +483,6 @@ fn ares_emp_darkens_a_spy_satellite_uplink_until_expiry() {
 /// announceAttack10062150 for the player's own victims: the War Miner's
 /// ore-miner warning and the Ore Purifier's base warning, with no ally
 /// line. `Malicious=no` keeps the damage path's warnings out.
-// Runs again once combat's warhead effects move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_emp_announces_the_players_miner_and_base() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

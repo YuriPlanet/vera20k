@@ -123,17 +123,14 @@ fn stock_cloak_tick_facts(
     // CORRECTION: VERA used to put "holds an attack target" in this head gate.
     // Native has no such term here — the target test lives in `CanAutoCloak`
     // step 4 below, as `Target(+0x2B4) != 0 && CanFireAtTarget(vt+0x3AC)`.
-    // vt+0x37C is `IsUnderEMP` (Techno `0x0070EFD0` reads `+0x504 > 0`; the
-    // Unit override `0x00746C90` ORs in `i32(+0x6D8) != -1`; that field's
-    // identity still needs evidence), and
+    // vt+0x37C is `IsUnderEMP` (`GameEntity::is_under_emp`: EMP, or a
+    // Unit's running `DeathFrames=` counter), and
     // vt+0x1D4/+0x1D8 are the chrono warp-in/warp-out flags.
     //
     // Original active-YR producer reachability remains unproven: the
     // dormant TS EMPulse body alone does not establish an original scenario
     // caller. Ares's Bullet hook is a separate, established producer.
-    // Ares ordinary EMP supplies this shared native+504 predicate through
-    // the entity-owned counter. This does not prove a retail TS producer.
-    let emp_active = entity.emp_remaining() > 0;
+    let emp_active = entity.is_under_emp();
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     // Ares ShouldNotCloak10043A40 applies the same blockers to rank cloak
     // and raw ability, and rejects parachutes and deactivated self-cloakers.

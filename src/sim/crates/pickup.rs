@@ -268,8 +268,7 @@ pub(crate) fn multiplayer_eligible_slot(
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded
         // from the type's `Cloakable=` or permanently granted by a crate).
         POWERUP_CLOAK => {
-            #[cfg(feature = "ares")]
-            {
+            if rules.ares_form() {
                 // Cloak1@1005F8D0 calls builtin type/rank predicate10043450,
                 // then checks permanent Ext+98 and TypeExt+1FA. Temporary
                 // attachment cloak must not hide an unclaimed crate bonus.
@@ -284,9 +283,7 @@ pub(crate) fn multiplayer_eligible_slot(
                 !builtin
                     && !actor.stealth_ability.granted()
                     && object.is_none_or(|kind| kind.cloak_allowed())
-            }
-            #[cfg(not(feature = "ares"))]
-            {
+            } else {
                 !actor
                     .stealth_ability
                     .active(object.is_some_and(|kind| kind.cloakable))

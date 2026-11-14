@@ -479,12 +479,14 @@ impl HiddenOccupationGrid {
     }
 
     /// Apply the post-object-list enter contribution for one building.
+    /// `ares` is the caller's `rules.ares_form()`, for the guarded decrement.
     pub(crate) fn enter_building(
         &mut self,
         origin: (u16, u16),
         foundation: &crate::rules::foundation::Foundation,
         profile: crate::rules::object_type::BuildingHiddenOccupancyProfile,
         map_size: Option<(u16, u16)>,
+        ares: bool,
     ) -> bool {
         if !profile.can_hide_things {
             return false;
@@ -502,31 +504,33 @@ impl HiddenOccupationGrid {
             if let Some(offset) = profile.remove_occupy[slot]
                 && let Some(cell) = hidden_offset_cell(origin, offset, map_size)
             {
-                self.decrement_guarded(cell);
+                self.decrement_guarded(cell, ares);
             }
         }
         true
     }
 
     /// Reverse the post-object-list contribution for one building. RemoveOccupy
-    /// slots deliberately have no exit-side inverse.
+    /// slots deliberately have no exit-side inverse. `ares` is the caller's
+    /// `rules.ares_form()`, for the guarded decrement.
     pub(crate) fn exit_building(
         &mut self,
         origin: (u16, u16),
         foundation: &crate::rules::foundation::Foundation,
         profile: crate::rules::object_type::BuildingHiddenOccupancyProfile,
         map_size: Option<(u16, u16)>,
+        ares: bool,
     ) -> bool {
         if !profile.can_hide_things {
             return false;
         }
 
         for cell in hidden_diagonal_cells(origin, foundation, profile.occupy_height, map_size) {
-            self.decrement_guarded(cell);
+            self.decrement_guarded(cell, ares);
         }
         for offset in profile.add_occupy.into_iter().flatten() {
             if let Some(cell) = hidden_offset_cell(origin, offset, map_size) {
-                self.decrement_guarded(cell);
+                self.decrement_guarded(cell, ares);
             }
         }
         true
@@ -541,14 +545,13 @@ impl HiddenOccupationGrid {
         }
     }
 
-    fn decrement_guarded(&mut self, cell: (u16, u16)) {
+    fn decrement_guarded(&mut self, cell: (u16, u16), ares: bool) {
         let Some(current) = self.cells.get_mut(&cell) else {
             return;
         };
         // Installed Ares10015504 uses signed JLE; the original568A97 only
         // tests zero. Both share this counter owner, not separate grids.
-        #[cfg(feature = "ares")]
-        if (*current as i32) <= 0 {
+        if ares && (*current as i32) <= 0 {
             return;
         }
         if *current == 1 {
@@ -1411,14 +1414,14 @@ mod tests {
         profile.add_occupy[1] = Some((-1, -1));
         profile.remove_occupy[0] = Some((3, 1));
 
-        assert!(grid.enter_building((10, 10), &"4x3".into(), profile, Some((32, 32))));
+        assert!(grid.enter_building((10, 10), &"4x3".into(), profile, Some((32, 32)), false));
         assert_eq!(grid.entry_count(), 13);
         assert_eq!(grid.count(10, 10), 1);
         assert_eq!(grid.count(13, 11), 0);
         assert_eq!(grid.count(9, 10), 1);
         assert_eq!(grid.count(9, 9), 1);
 
-        assert!(grid.exit_building((10, 10), &"4x3".into(), profile, Some((32, 32))));
+        assert!(grid.exit_building((10, 10), &"4x3".into(), profile, Some((32, 32)), false));
         assert_eq!(grid.entry_count(), 0);
     }
 }

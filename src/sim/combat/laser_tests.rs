@@ -116,7 +116,7 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
     sim.substrate.entities.insert(entity);
 }
 
-fn assert_birth(actual: LaserBirth, expected: &Value, name: &str) {
+fn assert_birth(actual: LaserBirth, expected: &Value, name: &str, rules: &RuleSet) {
     assert_eq!(
         actual.frame,
         expected["timer_start"].as_i64().unwrap() as i32,
@@ -140,8 +140,7 @@ fn assert_birth(actual: LaserBirth, expected: &Value, name: &str) {
     );
     // The native widths are stock FireAt's; Ares Fire_IsLaser (100563D0)
     // replaces them ([`ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths`]).
-    #[cfg(not(feature = "ares"))]
-    {
+    if !rules.ares() {
         assert_eq!(
             actual.width,
             expected["width"].as_i64().unwrap() as i32,
@@ -256,7 +255,7 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
             assert!(births.is_empty(), "{name}");
         } else {
             assert_eq!(births.len(), 1, "{name}");
-            assert_birth(births[0], &row["laser"], name);
+            assert_birth(births[0], &row["laser"], name, &rules);
             if row["laser"]["house_color"] == 1 {
                 assert_eq!(births[0].color, LaserColor::House(owner), "{name}");
             } else {
@@ -320,9 +319,9 @@ fn an_infantry_house_color_laser_is_two_wide() {
 /// its colour and a non-Prism building's 3; a set thickness replaces both,
 /// supported above 3 for a non-building. TechnoClass_FireLaser (100563A0,
 /// hook 0x6FD438) gives a direct SpawnLaser a thickness above 1.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let fire = |kind: &str, category, input: Value| {
         let rules = fixture_rules(&input);
         let mut sim = Simulation::new();
@@ -574,7 +573,12 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
         .iter()
         .find(|row| row["input"]["name"] == "support")
         .unwrap();
-    assert_birth(*birth, &expected["laser"], "production support visit");
+    assert_birth(
+        *birth,
+        &expected["laser"],
+        "production support visit",
+        &rules,
+    );
     let source = sim.substrate.entities.get(tower).unwrap();
     assert!(source.building.pending_building_fire.pending().is_none());
     assert_eq!(source.building.prism_support_count.count(), 0);
@@ -675,7 +679,12 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
         if target_x == 45 {
             assert_eq!(births.len(), 1, "{births:?}");
             assert!(update < births[0].0);
-            assert_birth(births[0].1, &expected["laser"], "retail delayed main");
+            assert_birth(
+                births[0].1,
+                &expected["laser"],
+                "retail delayed main",
+                rules,
+            );
             assert_eq!(
                 sim.substrate
                     .entities
@@ -698,7 +707,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
                     .building
                     .prism_support_count
                     .count(),
-                if cfg!(feature = "ares") { 0 } else { 1 }
+                if rules.ares() { 0 } else { 1 }
             );
         }
     }

@@ -342,6 +342,7 @@ impl PassengerCargo {
     }
 
     /// Clear the live CargoClass contents while preserving type configuration.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn clear_contents(&mut self) {
         self.passengers.clear();
         self.passenger_sizes.clear();
@@ -984,6 +985,7 @@ pub fn can_dock_occupier_garrison(
             building_obj,
             occupants,
             sim,
+            rules.ares_form(),
         );
     }
     let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
@@ -993,8 +995,7 @@ pub fn can_dock_occupier_garrison(
         rules.general.condition_red,
     );
     // Ares 3.0 10017060 (hook 0x457D58) replaces the occupier arm.
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         crate::sim::ares_garrison::occupier_admitted(
             sim,
             passenger,
@@ -1005,9 +1006,7 @@ pub fn can_dock_occupier_garrison(
             passive,
             red_health,
         )
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         let same_owner = passenger.owner() == building.owner();
         if !same_owner && !passive {
             return false;
@@ -1033,6 +1032,7 @@ pub fn can_dock_occupier_garrison(
 /// Ares 3.0 `BuildingClass_CanBeOccupied_SpecificAssaulters @ 10016FD0`
 /// (hook `0x00457DB7`, past the `+0xEB5` test) adds the building type's
 /// `Assaulter.Level`: not negative, and at most the assaulter type's.
+/// `ares` is the game's `RuleSet::ares_form`.
 fn assaulter_admitted(
     passenger: &GameEntity,
     building: &GameEntity,
@@ -1040,6 +1040,7 @@ fn assaulter_admitted(
     building_obj: &ObjectType,
     occupants: &BuildingOccupants,
     sim: &Simulation,
+    ares: bool,
 ) -> bool {
     let assaultable = passenger_obj.assaulter
         && !crate::sim::combat::combat_weapon::is_ally_by_object(
@@ -1049,13 +1050,11 @@ fn assaulter_admitted(
             passenger.owner(),
         )
         && occupants.count() > 0;
-    #[cfg(feature = "ares")]
-    let assaultable = assaultable && {
-        let level = building_obj.techno_combat().assaulter_level();
-        level >= 0 && level <= passenger_obj.techno_combat().assaulter_level()
-    };
-    #[cfg(not(feature = "ares"))]
-    let _ = building_obj;
+    let assaultable = assaultable
+        && (!ares || {
+            let level = building_obj.techno_combat().assaulter_level();
+            level >= 0 && level <= passenger_obj.techno_combat().assaulter_level()
+        });
     assaultable
 }
 
@@ -1448,8 +1447,9 @@ pub fn add_garrison_occupant(
     }
     // Ares 3.0 10017240 (hook 0x52297F): an occupier of another house
     // raids the building (sim::ares_garrison).
-    #[cfg(feature = "ares")]
-    sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
+    if rules.ares_form() {
+        sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
+    }
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
         let type_id = sim
@@ -1624,6 +1624,7 @@ impl Simulation {
                 &mut self.power_states,
                 transport_id,
                 pax_id,
+                rules.ares_form(),
             )
             && donor_rearming
         {

@@ -204,6 +204,7 @@ fn apply_incremental(
             overlay_pixels: &mut projection.overlay_pixels,
             native_surface: projection.native_radar_surface,
             native_terrain: &mut projection.native_radar_terrain,
+            playfield: Some(expanded_bounds()),
         },
         CurrentRadarCellAuthority::from_runtime(runtime),
         BRIDGE_COLOR,
@@ -745,6 +746,34 @@ fn gsi_04_01_full_and_incremental_paths_share_current_cell_source_precedence() {
         ),
         [[200, 200, 160]; 2],
     );
+}
+
+/// `ProcessDirtyCells @ 0x00655250` redraws only Cells inside the mode-one
+/// playfield (`0x00655285..0x00655298`): a raised Cell in the top row, which
+/// the full build paints, keeps that colour through a dirty update.
+#[test]
+fn dirty_cell_outside_the_mode_one_playfield_keeps_its_colour() {
+    let (grid, mut resolved) = fixture(None);
+    let bounds = expanded_bounds();
+    let cell = grid
+        .cells
+        .iter()
+        .map(|cell| (cell.rx, cell.ry))
+        .find(|&(rx, ry)| {
+            let (x, y) = (i32::from(rx), i32::from(ry));
+            bounds.contains_geometry_packed(x, y)
+                && !bounds.contains_height_aware_packed(x, y, 4, 0)
+        })
+        .expect("a top-row cell");
+    resolved.cell_mut_for_test(cell.0, cell.1).unwrap().level = 4;
+    let colors = colors();
+    let absent = runtime_with_overlay(resolved.clone(), cell, None);
+    let low = runtime_with_overlay(resolved, cell, Some((0x4A, 9)));
+    let full = projection(&grid, &low, &[], bounds, &colors);
+    assert_eq!(raw_pair(&full, cell), [LOW_BRIDGE_COLOR; 2]);
+    let mut incremental = projection(&grid, &absent, &[], bounds, &colors);
+    apply_incremental(&mut incremental, &low, &[cell], &colors);
+    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
 }
 
 #[test]

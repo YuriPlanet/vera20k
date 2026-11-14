@@ -224,8 +224,6 @@ fn alternate_membership_uses_actual_class_when_type_names_collide() {
     }
 }
 
-// Runs again once production's generic and alternate prerequisites move to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

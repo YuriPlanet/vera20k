@@ -387,11 +387,18 @@ fn a_state_hash_interval_selects_frames_by_tick() {
     assert_eq!(first.state_hash, None);
     sim.hash_state_every(std::num::NonZeroU64::new(3).unwrap());
     for step in 1..=6 {
+        let foretold = sim.next_frame_hashes_state();
         let result = sim.advance_tick(&[], None, None, None, 67);
         assert_eq!(
             result.tick,
             first.tick + step,
             "each frame advances the tick"
+        );
+        assert_eq!(
+            foretold,
+            result.state_hash.is_some(),
+            "tick {} was foretold",
+            result.tick
         );
         assert_eq!(
             result.state_hash,
@@ -3625,8 +3632,6 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
 /// `Wave.IsBigLaser` shot creates a TS laser wave of type 1 or 2, whose
 /// AmbientDamage strikes the cells under the beam on each of its 22 updates
 /// (nLaserIntensity 160, less 6 each, leaves below 32), and then it leaves.
-// Runs again once combat's wave creation in FireAt moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

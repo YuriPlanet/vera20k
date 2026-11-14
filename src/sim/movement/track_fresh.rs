@@ -20,12 +20,12 @@
 //! `tools/spatial_oracle/track_blocked_timers`.
 //!
 //! Residuals:
-//! - `vt+0x37C` (Unit `0x746C90`: the EMP lock Techno+504 or the Unit
-//!   death-frame counter +6D8): neither has a Rust producer (VERA has no EMP
-//!   mechanism; see `techno_ai_cloak`), so the prologue gate reads false.
+//! - `vt+0x37C` (`GameEntity::is_under_emp`: EMP, or a Unit's running
+//!   `DeathFrames=` counter) is not asked, so the prologue gate reads false.
 //!   Trigger: an EMP'd or dying Unit. Effect: it could start a track native
-//!   refuses. Frequency: no stock EMP source is proven reachable. Risk: this
-//!   gate is a consumer of the EMP system when it lands.
+//!   refuses. Frequency: Ares EMP; a death counter only on a modded
+//!   `Crashable=` `DeathFrames=` Unit, whose Health of 0 stops the missions
+//!   that would move it. Risk: modded EMP.
 //! - Crates (`CellClass::PickupCrate 0x481A00` at `0x4B405D` and
 //!   `0x4B46E6`) run through [`Simulation::pickup_crate_at`]; a host called
 //!   without the OverlayType table answers as a cell without a crate (the
@@ -212,7 +212,7 @@ impl Simulation {
             return Ok(false);
         }
         //4B2741..4B2761: vt+37C (Unit 0x746C90: the EMP lock +504 or the
-        //death-frame counter +6D8, neither represented; see the residual) and
+        //death-frame counter +6D8, not asked; see the residual) and
         //vt+380, FootClass::IsParalyzed 0x4DE770 (the Foot+6A0 timer a
         //parasite arms), return with the out byte clear. Ship's vt+380 gate
         //is6A1DA9. The consumed track_fresh_response controls cover both
@@ -918,6 +918,7 @@ impl Simulation {
                 id,
                 call.family,
                 true,
+                call.rules.ares_form(),
             );
             return Ok(false);
         }

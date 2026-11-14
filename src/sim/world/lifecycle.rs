@@ -1212,6 +1212,7 @@ impl Simulation {
 
     /// [`Self::reveal`] for an entity, with the rules context the type-reading
     /// Unlimbo writers need (Aircraft Techno+3D4 retention, Ground sort keys).
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn reveal_entity_with_rules(
         &mut self,
         stable_id: u64,
@@ -2451,6 +2452,7 @@ impl Simulation {
                         &foundation,
                         profile,
                         Some((self.session.map_width(), self.session.map_height())),
+                        context.rules.ares_form(),
                     )
                 })
             {
@@ -2838,6 +2840,7 @@ impl Simulation {
                         &foundation,
                         profile,
                         Some((self.session.map_width(), self.session.map_height())),
+                        context.rules.ares_form(),
                     )
                 })
             {
@@ -2957,7 +2960,7 @@ impl Simulation {
             let moving = crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false);
             let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
             if moving {
-                self.locomotor_mark_all_occupation_bits(stable_id, false);
+                self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
             } else {
                 Self::object_raw_receiver_at(
                     &mut self.substrate,
@@ -2966,6 +2969,7 @@ impl Simulation {
                     stable_id,
                     coord,
                     false,
+                    rules.ares_form(),
                 );
             }
         }
@@ -3612,7 +3616,11 @@ impl Simulation {
         let joins_logic = rules
             .terrain_object_type_case_insensitive(self.interner.resolve(terrain.type_ref()))
             .is_some_and(|terrain_type| {
-                terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+                terrain.joins_logic_on_unlimbo(
+                    terrain_type,
+                    self.session.game_mode(),
+                    rules.ares_form(),
+                )
             });
         // Terrain ctor71BC76 reveals at the retained type-adjusted coordinate;
         // Object5F4260 selects Ground even on elevated cells.
@@ -4270,7 +4278,7 @@ impl Simulation {
         // the entry admission across Stop_Driver's synchronous callbacks.
         // Native Hover5171C0 itself has no InLimbo gate and retains its head.
         if first_foot_limbo {
-            self.locomotor_mark_all_occupation_bits(stable_id, false);
+            self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
         }
         // FootClass::Limbo (0x004DB260) then Locks the locomotor (+0xB0) on
         // the first Limbo, so a boarded or stored man keeps no Walk
@@ -4912,7 +4920,11 @@ impl Simulation {
                 FrameEffects::default(),
             );
         } else if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+            crate::sim::mission::concrete_effects::represented_assign_target(
+                entity,
+                None,
+                context.rules.ares_form(),
+            );
         }
         self.assign_null_destination(
             stable_id,

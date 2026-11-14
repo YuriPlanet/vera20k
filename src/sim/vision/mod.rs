@@ -208,7 +208,9 @@ pub struct OwnerVisibility {
     height: u16,
     /// [`GROUND_VISIBLE`] / [`GROUND_OPEN`] per cell, aligned with `cells`.
     ground_flags: Vec<u8>,
-    shroud_knowledge: Vec<ShroudKnowledge>,
+    /// Chunked so the presentation copy takes only the chunks a write
+    /// touched ([`Self::sync_presentation_into`]).
+    shroud_knowledge: crate::util::synced::ChunkedVec<ShroudKnowledge>,
     map_cell_edge_cache: Vec<MapCellEdgeCache>,
     /// Packed ground/fog inputs for Tactical6D8700; rebuilt after loading.
     #[serde(skip)]
@@ -264,6 +266,38 @@ impl Clone for OwnerVisibility {
     }
 }
 
+impl OwnerVisibility {
+    /// Bring `mirror`, this plane's presentation copy, up to this plane: as
+    /// `mirror.clone_from(self)`, but the shroud knowledge copies only the
+    /// chunks written since this plane last synced into `mirror`.
+    pub(super) fn sync_presentation_into(&mut self, mirror: &mut Self) {
+        let Self {
+            cells,
+            width,
+            height,
+            ground_flags,
+            shroud_knowledge,
+            map_cell_edge_cache,
+            edge_inputs_cache,
+            dummy_visibility,
+            tracked,
+            edge_cells,
+            stale_frames,
+        } = self;
+        mirror.cells.clone_from(cells);
+        mirror.width = *width;
+        mirror.height = *height;
+        mirror.ground_flags.clone_from(ground_flags);
+        shroud_knowledge.sync_into(&mut mirror.shroud_knowledge);
+        mirror.map_cell_edge_cache.clone_from(map_cell_edge_cache);
+        mirror.edge_inputs_cache.clone_from(edge_inputs_cache);
+        mirror.dummy_visibility.clone_from(dummy_visibility);
+        mirror.tracked.clone_from(tracked);
+        mirror.edge_cells.clone_from(edge_cells);
+        mirror.stale_frames.clone_from(stale_frames);
+    }
+}
+
 #[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Tests turn this on to run the frame passes over every cell and every
@@ -312,7 +346,10 @@ impl OwnerVisibility {
             width,
             height,
             ground_flags: vec![0; len],
-            shroud_knowledge: vec![ShroudKnowledge::default(); len],
+            shroud_knowledge: crate::util::synced::ChunkedVec::filled(
+                ShroudKnowledge::default(),
+                len,
+            ),
             map_cell_edge_cache: vec![MapCellEdgeCache::default(); len],
             edge_inputs_cache: Default::default(),
             dummy_visibility: DummyVisibility::default(),
@@ -837,22 +874,49 @@ impl FogState {
     /// sensors and disguise detection, the cloak words and the reveal guard.
     /// The other houses' planes and the sight sources stay with the live
     /// world. A copy for no viewer holds no plane. `reuse`, the previous
-    /// copy, lends its plane's arrays when it was copied for `viewer`.
-    pub(crate) fn presentation_copy(&self, viewer: Option<InternedId>, reuse: Self) -> Self {
+    /// copy, lends its plane's arrays when it was copied for `viewer`, and
+    /// its cloak words and sensor and disguise counts always.
+    pub(crate) fn presentation_copy(&mut self, viewer: Option<InternedId>, reuse: Self) -> Self {
         let mine = |house: &InternedId| Some(*house) == viewer;
+        let Self {
+            by_owner: old,
+            sensors_by_house: mut old_sensors,
+            disguise_detect_by_house: mut old_disguise,
+            cloaked_by_houses: mut cloaked_by_houses,
+            ..
+        } = reuse;
+        // The previous copy's whole-map arrays take the new values in place
+        // (`clone_from`), so a copy per tick allocates none of them again.
+        let reuse_counts = |old: &mut BTreeMap<InternedId, Vec<i16>>,
+                            live: &BTreeMap<InternedId, Vec<i16>>|
+         -> BTreeMap<InternedId, Vec<i16>> {
+            live.iter()
+                .filter(|(house, _)| mine(house))
+                .map(|(house, counts)| {
+                    let mut kept = old.remove(house).unwrap_or_default();
+                    kept.clone_from(counts);
+                    (*house, kept)
+                })
+                .collect()
+        };
+        let sensors_by_house = reuse_counts(&mut old_sensors, &self.sensors_by_house);
+        let disguise_detect_by_house =
+            reuse_counts(&mut old_disguise, &self.disguise_detect_by_house);
+        cloaked_by_houses.clone_from(&self.cloaked_by_houses);
         let mut by_owner = Planes::default();
         if let Some(viewer) = viewer
-            && let Some(view) = self.by_owner.get(&viewer)
+            && self.by_owner.contains_key(&viewer)
         {
-            let old = reuse.by_owner;
             if old.keys().eq([&viewer]) {
                 by_owner = old;
-                by_owner
+                let mirror = by_owner
                     .get_mut(&viewer)
-                    .expect("the previous copy's plane")
-                    .clone_from(view);
+                    .expect("the previous copy's plane");
+                self.by_owner.sync_presentation_into(&viewer, mirror);
             } else {
-                by_owner.insert(viewer, view.clone());
+                let mut mirror = OwnerVisibility::default();
+                self.by_owner.sync_presentation_into(&viewer, &mut mirror);
+                by_owner.insert(viewer, mirror);
             }
         }
         Self {
@@ -885,19 +949,9 @@ impl FogState {
                 .filter(|(house, _)| mine(house))
                 .collect(),
             next_fogged_object_id: self.next_fogged_object_id,
-            sensors_by_house: self
-                .sensors_by_house
-                .iter()
-                .filter(|(house, _)| mine(house))
-                .map(|(house, counts)| (*house, counts.clone()))
-                .collect(),
-            disguise_detect_by_house: self
-                .disguise_detect_by_house
-                .iter()
-                .filter(|(house, _)| mine(house))
-                .map(|(house, counts)| (*house, counts.clone()))
-                .collect(),
-            cloaked_by_houses: self.cloaked_by_houses.clone(),
+            sensors_by_house,
+            disguise_detect_by_house,
+            cloaked_by_houses,
             ..Self::default()
         }
     }
@@ -1254,6 +1308,7 @@ impl FogState {
 
     /// `viewer`'s accepted map contribution for source `id`. Native
     /// +0x250/+0x254/+0x260 metadata is kept by [`Self::source_sight`].
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn sight_admission(&self, id: u64, viewer: InternedId) -> Option<&SightAdmission> {
         self.sight_admissions.get(&(id, viewer))
     }
@@ -2906,14 +2961,14 @@ const REVEAL_MIRROR: [(i8, i8); 309] = [
     (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1),
 ];
 
-/// `MapClass::IsShrouded @ 0x00586360`: the Cell under `point`, projected up
-/// by its height level, is not yet mapped (`open` answers the Cell's
-/// ground-open bit, `+0x12C & 0x08`); an odd level also tests the next cell
-/// (`0x00481810(3)`).
-pub(crate) fn coordinate_is_shrouded(
+/// The lattice `MapClass::IsShrouded @ 0x00586360` and `IsFogged @
+/// 0x005864A0` share: `test` holds for the Cell under `point` projected up
+/// by half its height level and, for an odd level, also for the next Cell
+/// (`0x00481810(3)`), which is looked up only once the first passes.
+fn raised_cells_all(
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
     point: crate::sim::components::DriveCoord,
-    open: &impl Fn(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
+    mut test: impl FnMut(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
 ) -> Result<bool, String> {
     let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
     let shift = level / 2 + i32::from(level & 1 != 0);
@@ -2921,15 +2976,50 @@ pub(crate) fn coordinate_is_shrouded(
         ((point.x / 256) as i16).wrapping_sub(shift as i16),
         ((point.y / 256) as i16).wrapping_sub(shift as i16),
     ));
-    if open(first)? {
+    if !test(first)? {
         return Ok(false);
     }
     if level & 1 != 0 {
         let (x, y) = cells.coord(first);
-        let next = cells.lookup((x.wrapping_add(1), y.wrapping_add(1)));
-        return open(next).map(|open| !open);
+        return test(cells.lookup((x.wrapping_add(1), y.wrapping_add(1))));
     }
     Ok(true)
+}
+
+/// `MapClass::IsShrouded @ 0x00586360`: the Cell under `point`, projected up
+/// by its height level, is not yet mapped (`open` answers the Cell's
+/// ground-open bit, `+0x12C & 0x08`); an odd level also tests the next cell.
+pub(crate) fn coordinate_is_shrouded(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    point: crate::sim::components::DriveCoord,
+    open: &impl Fn(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
+) -> Result<bool, String> {
+    raised_cells_all(cells, point, |cell| open(cell).map(|open| !open))
+}
+
+/// The Cells `IsShrouded` and `IsFogged` test for the centre of the Cell at
+/// `cell` raised to its floor, as [`cell_is_shrouded`] asks them: the raised
+/// Cell, and for an odd level the next one too. `cells` should be an
+/// isolated query: a miss stamps its fallback Cell.
+pub fn cell_shroud_lattice(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    cell: (u16, u16),
+) -> (
+    crate::map::cell_index::NativeCellIdentity,
+    Option<crate::map::cell_index::NativeCellIdentity>,
+) {
+    use crate::map::cell_index::NativeCellIdentity;
+    let point = crate::sim::movement::target_cell_coord(cell.0, cell.1, Some(cells));
+    let (mut first, mut next) = (None, None);
+    let _ = raised_cells_all(cells, point, |cell| {
+        *if first.is_none() {
+            &mut first
+        } else {
+            &mut next
+        } = Some(cell);
+        Ok(true)
+    });
+    (first.unwrap_or(NativeCellIdentity::Dummy), next)
 }
 
 /// `0x00487950`: `viewer`'s map shrouds the centre of the Cell at `cell`,

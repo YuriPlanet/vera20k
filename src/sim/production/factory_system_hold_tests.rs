@@ -298,6 +298,7 @@ impl PaidHead {
                 &mut sim.houses,
                 &mut sim.power_states,
                 self.attacker,
+                rules.ares_form(),
             ),
             "release_house_suffix" => {
                 assert!(sim.recheck_house_tech_tree(self.owner, rules).is_empty())

@@ -90,10 +90,10 @@ mod tests {
 
         let image = command(
             Vec::new(),
-            Some("/home/player/VERA20K.AppImage".into()),
+            Some("/games/VERA20K.AppImage".into()),
             "/unused".into(),
         );
-        assert_eq!(image.get_program(), "/home/player/VERA20K.AppImage");
+        assert_eq!(image.get_program(), "/games/VERA20K.AppImage");
         assert!(
             image
                 .get_envs()

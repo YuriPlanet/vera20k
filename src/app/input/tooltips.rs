@@ -68,6 +68,7 @@ const TIP_LABEL_SHADOW: &str = "TXT_SHADOW";
 /// leave the region. Both halves are VERA-local: the native placement branches
 /// on a descriptor byte and its math is undecoded (plan deferred item), so this
 /// offset is a tuned constant, not a gamemd value.
+#[cfg(test)]
 pub(crate) const TIP_CURSOR_OFFSET: [i32; 2] = [
     crate::ui::field_layout::TooltipPlace::ORIGINAL.x,
     crate::ui::field_layout::TooltipPlace::ORIGINAL.y,

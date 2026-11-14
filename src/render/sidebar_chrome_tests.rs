@@ -469,7 +469,7 @@ fn retail_radar_histories_match_original_4912b0_stores() {
                         "one native draw per history step"
                     );
                     let _ = radar.set_has_radar(frame > previous);
-                    radar.tick((step as u64 - 1) * 64);
+                    radar.tick(1, (step as u64 - 1) * 64);
                 }
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 radar.encode_paints(&gpu.device, &gpu.queue, &batch, &mut encoder);

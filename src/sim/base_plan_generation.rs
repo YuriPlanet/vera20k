@@ -92,6 +92,7 @@ pub(crate) fn recalc_base_plan(
     debug_assert!(
         preflight_recalc(rules, country_name, side_index, difficulty, super_weapons).is_ok()
     );
+    let ares = rules.ares_form();
 
     let country = CountryBuildMasks::for_country(rules, country_name);
     let mut eligible: Vec<&ObjectType> = rules
@@ -238,8 +239,7 @@ pub(crate) fn recalc_base_plan(
     // AIBuildCounts/AIExtraCounts copies for the House difficulty (+0x184),
     // each inserted at RandomRanged(i + 1, Count). The count is re-read as
     // the list grows, so inserted copies are visited (and skipped) too.
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         let mut index = 1;
         while index < priority.len() {
             let candidate = priority[index];
@@ -289,7 +289,6 @@ pub(crate) fn recalc_base_plan(
     // campaign GameOptions never turn SuperWeapons off (`match_bootstrap`
     // copies only GameSpeed and BuildOffAlly), so `super_weapons` is already
     // true there.
-    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
     let mut defense_count = match rules.side_base_defense_counts(side_index) {
         Some(counts) => counts.get(difficulty.table_index()).copied().unwrap_or(0),
         None => match side_index {
@@ -305,8 +304,7 @@ pub(crate) fn recalc_base_plan(
     // nodes (-1) at its end until it holds four, each counting as one of the
     // defenses and drawing no RNG; the count can go negative. The rest are
     // inserted as below.
-    #[cfg(feature = "ares")]
-    if defense_count > 0 {
+    if ares && defense_count > 0 {
         while final_values.len() < 4 {
             final_values.push(-1);
             defense_count = defense_count.wrapping_sub(1);
@@ -390,9 +388,9 @@ pub(crate) fn prerequisites_satisfied(
     present: &[&ObjectType],
     rules: &RuleSet,
 ) -> bool {
+    let ares = rules.ares_form();
     let listed = |entry: &Prerequisite| {
-        #[cfg(feature = "ares")]
-        if let Some(group) = rules.ares_prerequisite_group(*entry) {
+        if ares && let Some(group) = rules.ares_prerequisite_group(*entry) {
             // Ares3.0 hook505360 -> ListContainsAll10008370 inspects only
             // immediate building members. Runtime alternates are unread;
             // a negative member code cannot match a BuildingType index.
@@ -425,14 +423,16 @@ pub(crate) fn prerequisites_satisfied(
             Prerequisite::GenericGroup(_) => false,
         }
     };
-    #[cfg(feature = "ares")]
-    let mut lists = candidate.ares_prerequisite_lists();
-    #[cfg(not(feature = "ares"))]
-    let mut lists = std::iter::once(candidate.prerequisite.as_slice());
-    lists.any(|list| list.iter().all(&listed))
+    if ares {
+        candidate
+            .ares_prerequisite_lists()
+            .any(|list| list.iter().all(&listed))
+    } else {
+        candidate.prerequisite.iter().all(&listed)
+    }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "base_plan_generation_ares_tests.rs"]
 mod ares_tests;
 
@@ -577,9 +577,9 @@ mod tests {
     /// defense as a fourth node without a draw; the second then has the one
     /// slot `RandomRanged(3, 3)`, which draws nothing either. Stock draws
     /// `RandomRanged(3, 2)` for the first.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_short_plan_pads_defense_nodes_without_drawing() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nHarvesterUnit=HARV\nAIExtraRefineries=0,0,0\n\
              AISlaveMinerNumber=1,1,1\nAlliedBaseDefenseCounts=2,2,2\n\
@@ -605,9 +605,9 @@ mod tests {
     /// Ares 10023940: `AIBuildCounts=3` plans a type three times (two extra
     /// nodes after its first), `AIExtraCounts` adds up to its value more, and
     /// a difficulty without an entry keeps the single node and draws nothing.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_ai_build_counts_add_copies_after_the_first_node() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = basic_rules(
             "7=TEST\n",
             "[TEST]\nOwner=Americans,Russians,YuriCountry\n\

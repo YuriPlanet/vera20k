@@ -696,8 +696,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
-        #[cfg(not(feature = "ares"))]
-        let _ = registry;
+        let ares = rules.ares_form();
         let Some(source) = source else {
             return;
         };
@@ -735,8 +734,9 @@ impl Simulation {
                 .and_then(|id| vm.team_type_ini.get(&id))
                 .is_some_and(|metadata| metadata.annoyance);
             if !annoyance {
-                #[cfg(feature = "ares")]
-                self.ares_team_retaliate(team_id, source, rules, registry);
+                if ares {
+                    self.ares_team_retaliate(team_id, source, rules, registry);
+                }
                 return;
             }
         }
@@ -744,8 +744,7 @@ impl Simulation {
             team.zone = None;
             team.reforming = true;
         }
-        #[cfg(feature = "ares")]
-        if formed {
+        if ares && formed {
             self.ares_team_retaliate(team_id, source, rules, registry);
         }
     }
@@ -759,7 +758,6 @@ impl Simulation {
     /// against that cell. Otherwise an attacker that is no Aircraft, of no
     /// House the team's owner is allied with (IsAlliedWith, inlined) and, for
     /// a Foot, neither in limbo nor `ConsideredAircraft=` becomes the focus.
-    #[cfg(feature = "ares")]
     fn ares_team_retaliate(
         &mut self,
         team_id: u64,
@@ -980,9 +978,9 @@ mod tests {
     /// Ares TeamClass_AttackedBy_Retaliate (1003A180, hook 0x6EB432): with
     /// `[General] TeamRetaliate=yes` a formed team without a focus takes an
     /// enemy attacker as its focus; with the stock tail it keeps none.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_team_retaliate_focuses_an_enemy_attacker() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for retaliate in [false, true] {
             let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
                 "[General]\nTeamRetaliate={}\n\

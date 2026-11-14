@@ -4,7 +4,6 @@
 //! player, that player's shroud/sensor plane, and fresh mutable MapClass bounds.
 
 use crate::map::entities::EntityCategory;
-use crate::render::snapshot::SnapshotObject;
 use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::veterancy::has_weapon_ability;
@@ -443,7 +442,6 @@ pub(super) fn build_radar_object_update(
         origin,
         event_source_cell,
         enemy_sensed_prefilter,
-        #[cfg(feature = "ares")]
         sensor_array_warn: object.is_none_or(|object| object.sensor_array_warn()),
         foundation,
         radar_scale: projection.cell_axis_scale(),

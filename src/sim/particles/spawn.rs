@@ -115,13 +115,14 @@ impl Simulation {
         };
         // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
         // 0x6FACD9): the type's `DamageSparks`, else its own flag.
-        #[cfg(feature = "ares")]
-        let sparks = object
-            .techno_combat()
-            .damage()
-            .damage_sparks(object.emits_damage_spark());
-        #[cfg(not(feature = "ares"))]
-        let sparks = object.emits_damage_spark();
+        let sparks = if rules.ares_form() {
+            object
+                .techno_combat()
+                .damage()
+                .damage_sparks(object.emits_damage_spark())
+        } else {
+            object.emits_damage_spark()
+        };
         if !sparks {
             return;
         }
@@ -734,10 +735,10 @@ mod tests {
     /// Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
     /// 0x6FACD9): `DamageSparks=yes` admits a damaged vehicle to the Spark
     /// producer stock keeps to Cyborg infantry (its two Scenario draws).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_damage_sparks_admits_a_vehicle_to_the_spark_producer() {
         use crate::sim::game_entity::GameEntity;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=SPARKY\n1=PLAIN\n\
              [SPARKY]\nStrength=100\nDamageSparks=yes\nDamageParticleSystems=Sys\n\

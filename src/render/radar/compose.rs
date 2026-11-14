@@ -60,8 +60,13 @@ pub(super) enum RadarVisibility<'a> {
     /// No viewer, or full visibility: every cell revealed.
     Revealed,
     /// The viewer's cell flags (`OwnerVisibility::cells_raw`), row-major,
-    /// and the plane's size in cells.
-    Plane { flags: &'a [u8], size: (u16, u16) },
+    /// the plane's size in cells, and the flags the map's fallback Cell
+    /// answers with.
+    Plane {
+        flags: &'a [u8],
+        size: (u16, u16),
+        dummy: u8,
+    },
     /// A viewer without a plane has revealed nothing.
     Shrouded,
 }
@@ -78,8 +83,8 @@ struct Params {
     hd_scale: u32,
     visibility: u32,
     revealed: u32,
-    gap_covered: u32,
     gap_fog: u32,
+    dummy_flags: u32,
     pad: u32,
 }
 
@@ -91,21 +96,22 @@ pub(crate) fn shader_source() -> String {
     )
 }
 
-/// A generated surface's R5G6B5 words and the cell each pixel reads, as GPU
-/// textures. The words follow the terrain; the cells only the geometry.
+/// A generated surface's R5G6B5 words and the shroud Cells each pixel reads
+/// ([`super::terrain::RadarShroudLattice`]), as GPU textures. The words
+/// follow the terrain; the Cells only the geometry and the map's levels.
 pub(super) struct SurfaceTextures {
     words: wgpu::Texture,
     cells: wgpu::Texture,
 }
 
 impl SurfaceTextures {
-    /// `cells` ([`NativeRadarSurfaceGeometry::visibility_cells`]) and `words`
-    /// cover a generated surface of `width` by `height` pixels, row-major.
+    /// `cells` and `words` cover a generated surface of `width` by `height`
+    /// pixels, row-major.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         (width, height): (i32, i32),
-        cells: &[u32],
+        cells: &[[u32; 2]],
         words: &[u16],
     ) -> Self {
         let size = [width.max(1) as u32, height.max(1) as u32];
@@ -120,7 +126,7 @@ impl SurfaceTextures {
                 device,
                 "Radar pixel cells",
                 size,
-                wgpu::TextureFormat::R32Uint,
+                wgpu::TextureFormat::Rg32Uint,
             ),
         };
         write_rows(
@@ -147,7 +153,7 @@ impl SurfaceTextures {
                 device,
                 "No radar cells",
                 [1, 1],
-                wgpu::TextureFormat::R32Uint,
+                wgpu::TextureFormat::Rg32Uint,
             ),
         }
     }
@@ -410,7 +416,6 @@ impl RadarCompositor {
         });
         let params = Params {
             revealed: crate::sim::vision::FLAG_REVEALED.into(),
-            gap_covered: crate::sim::vision::FLAG_GAP_COVERED.into(),
             gap_fog: crate::sim::vision::FLAG_GAP_FOG.into(),
             ..Params::zeroed()
         };
@@ -471,7 +476,7 @@ impl RadarCompositor {
                 device,
                 queue,
                 terrain.geometry().generated_size(),
-                terrain.pixel_cells(),
+                terrain.shroud_cells(),
                 terrain.generated_rgb565(),
             )
         });
@@ -518,6 +523,7 @@ impl RadarCompositor {
                 batch,
                 terrain.geometry(),
                 scale,
+                &terrain.hd_shroud_cells(scale),
                 words,
             ))
         });
@@ -546,7 +552,8 @@ impl RadarCompositor {
         let previous = self.params;
         self.params.visibility = match visibility {
             RadarVisibility::Revealed => 0,
-            RadarVisibility::Plane { flags, size } => {
+            RadarVisibility::Plane { flags, size, dummy } => {
+                self.params.dummy_flags = dummy.into();
                 let size = [u32::from(size.0), u32::from(size.1)];
                 debug_assert_eq!(flags.len(), (size[0] * size[1]) as usize);
                 let texture_size = [size[0].max(1), size[1].max(1)];

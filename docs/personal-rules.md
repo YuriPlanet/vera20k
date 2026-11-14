@@ -40,7 +40,9 @@ Changing mission rules can affect mission balance or progression. The game's
 normal rule dependencies and derived values still apply.
 
 In a network game, every player must use matching personal rules and priority.
-They participate in the existing rules compatibility check.
+They participate in the existing rules compatibility check. Quick Match plays the
+original game: with personal rules in effect it says to turn them off and does not
+search.
 
 To return to the original behavior, comment out or remove your changes. An empty
 or fully commented file has no effect. Deleting the file creates a fresh commented
