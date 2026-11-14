@@ -171,13 +171,8 @@ impl PreparedSavedLocalView {
         // raw but MouseLoad never swizzles it, so no retry survives a load.
         input.building_placement_preview = None;
         input.saved_building_placement = None;
-        // RESIDUAL: the foundation latch (Display+0x1174/+0x1181) sits in the
-        // Display block that loads raw with the retry copy above; VERA does
-        // not save it, so the first update after a load takes the cursor's
-        // Cell. Trigger: a load with a building armed, released on the radar
-        // before the cursor crosses the map. Effect: a shrouded game may
-        // refuse or admit that release differently. Frequency: rare.
-        input.foundation_latch = FoundationLatch::default();
+        // The foundation latch (+0x1174/+0x1181) is in the same Display body.
+        input.foundation_latch = FoundationLatch::from_saved(modes.foundation);
         let (order, pending, follow) = self.saved.into_local_input();
         input.selection_order = order;
         input.selection_order_pending = pending;
@@ -325,6 +320,16 @@ impl FoundationLatch {
     /// The latched top-left Cell.
     pub(crate) fn origin(self) -> Option<(u16, u16)> {
         self.0.map(|(origin, _)| origin)
+    }
+
+    /// The latch as a save keeps it (`MouseClass::Load @ 0x005BDF70` reads
+    /// the Display body back raw).
+    pub(crate) fn saved(self) -> Option<((u16, u16), bool)> {
+        self.0
+    }
+
+    pub(crate) fn from_saved(saved: Option<((u16, u16), bool)>) -> Self {
+        Self(saved)
     }
 
     /// The call with no foundation armed stores the centre Cell alone
@@ -964,6 +969,7 @@ impl MatchInputState {
                 planning: false,
                 targeting,
                 command_bar_closed: sidebar.command_bar_closed,
+                foundation: self.foundation_latch.saved(),
             },
         )
     }

@@ -133,6 +133,11 @@ pub struct SavedCursorModes {
     /// ToggleSidebar 6D04F0 keep it, so a load shows the bar as saved.
     #[serde(default)]
     pub command_bar_closed: bool,
+    /// UpdateFoundationCenter's latch in the same Display body: the
+    /// foundation's top-left Cell (+0x1174) and whether the whole foundation
+    /// was visible there (+0x1181). `None` is the constructor's null Cell.
+    #[serde(default)]
+    pub foundation: Option<((u16, u16), bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
