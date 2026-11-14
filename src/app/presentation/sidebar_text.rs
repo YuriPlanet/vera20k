@@ -24,6 +24,9 @@ pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
 /// and the layout table's place for the counter: centred on the credits
 /// plate, `plate_width` wide, which in the original spans the sidebar.
+/// Residual: CreditsClass::Draw centres on the sidebar surface's width; the
+/// two differ only for a plate narrower than the 168 px surface (retail
+/// credits.shp is 168 px wide in SIDEC01.MIX and SIDEC02.MIX).
 pub fn build_sidebar_credits_instances(
     font: &BitFont,
     view: &SidebarView,

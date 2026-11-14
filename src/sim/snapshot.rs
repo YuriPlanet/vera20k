@@ -85,6 +85,10 @@ pub enum SavedCameoId {
 /// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
 /// 6D03A0 at 67E68F, whose SidebarClass Init 6A5310 hides and shows the shown
 /// sidebar, and ToggleSidebar 6A7D70 zeroes every strip's TopRow on the show.
+/// Residual: each strip's PendingScroll, saved inside the same object, is not
+/// carried, so a scroll still rolling at the save does not finish after the
+/// load. Trigger: saving within the few frames after an arrow or wheel
+/// scroll; a player cannot see it.
 /// This neutral transport does not introduce a sim dependency on a UI owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSidebarOrder {
