@@ -434,10 +434,9 @@ pub(crate) fn radar_availability_sound(
         })
 }
 
-/// Reconcile view/tool changes with the same radar owner the reached House
-/// boundaries update. Its equality guard suppresses already-delivered edges.
-pub(crate) fn update_radar_state(state: &mut AppState) {
-    let new_has_radar: bool = match (
+/// Whether the local player's House has the tactical radar.
+pub(crate) fn local_has_radar(state: &AppState) -> bool {
+    match (
         state
             .match_state
             .sim_runtime
@@ -450,7 +449,13 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
             crate::sim::radar::has_radar_for_owner(sim, rules, owner)
         }
         _ => false,
-    };
+    }
+}
+
+/// Reconcile view/tool changes with the same radar owner the reached House
+/// boundaries update. Its equality guard suppresses already-delivered edges.
+pub(crate) fn update_radar_state(state: &mut AppState) {
+    let new_has_radar = local_has_radar(state);
     state.match_state.match_presentation.has_radar = new_has_radar;
 
     let cue = state

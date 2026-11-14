@@ -1768,14 +1768,14 @@ pub(super) fn guard_area_admitted(
 /// whether `actor_id` answers GuardArea (0x1A) on `cell`, ahead of the move
 /// rungs, as `viewer` sees it. The class wrappers then keep it, except:
 /// - over a shrouded Cell centre a Foot's wrapper turns it into Move or
-///   NoMove (`0x004DDE64..0x004DDEBE`, the bridge-raised test of
-///   [`Simulation::clicked_cell_is_shrouded`]), as the move rungs answer there;
+///   NoMove ([`Simulation::foot_cell_shroud_action`]), as the move rungs
+///   answer there;
 /// - a Building with a rally line turns it into Move (`0x0044774B`); any
 ///   other Building's wrapper (`0x00447540`) keeps it, shroud or not.
 ///
 /// The hover, the Foot click and the Building click all ask this.
 ///
-/// [`Simulation::clicked_cell_is_shrouded`]: crate::sim::world::Simulation::clicked_cell_is_shrouded
+/// [`Simulation::foot_cell_shroud_action`]: crate::sim::world::Simulation::foot_cell_shroud_action
 pub(super) fn cell_guard_area_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -1791,7 +1791,10 @@ pub(super) fn cell_guard_area_action(
             .object_type(actor.type_ref(), rules)
             .is_some_and(|object| object.has_rally_line())
     } else {
-        viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+        viewer.is_some_and(|viewer| {
+            sim.foot_cell_shroud_action(viewer, actor_id, cell, rules)
+                .is_some()
+        })
     };
     !rewritten && guard_area_admitted(sim, rules, actor_id, None)
 }
@@ -2311,15 +2314,18 @@ pub(crate) fn try_queue_context_order(
         // receiver's What_Action and ClickedAction see it. Object hit-testing
         // above keeps the raw screen-derived world point.
         let (target_rx, target_ry) = sim.clamped_click_cell((target_rx, target_ry));
-        let cell_is_shrouded = crate::app::presentation::instances::cell_visibility_for_local_owner(
-            Some(owner_id),
-            Some(sim.fog()),
-            target_rx,
-            target_ry,
-            state.match_state.sandbox_full_visibility,
-            sim.resolved_terrain(),
-        )
-            == crate::app::presentation::instances::CellVisibilityState::Shrouded;
+        // Foot's Cell wrapper (`0x004DDDE0`): over the clicked Cell's centre,
+        // raised to a bridge deck, that the player's map shrouds, a Foot's
+        // Attack becomes Move or NoMove, which the Move rungs below answer; a
+        // Building keeps it (`0x00447540`). Nothing is shrouded under the
+        // sandbox's full visibility, as for the cursor.
+        let full_visibility = state.match_state.sandbox_full_visibility;
+        let foot_shrouded = |id: u64| {
+            !full_visibility
+                && sim
+                    .foot_cell_shroud_action(owner_id, id, (target_rx, target_ry), &resources.rules)
+                    .is_some()
+        };
         // The chord test fails — and the order resolves normally — unless every
         // selected object can accept an attack-move order. The walk covers the
         // whole selection, so a selected building or aircraft kills the chord.
@@ -2613,25 +2619,17 @@ pub(crate) fn try_queue_context_order(
                 HoverTargetKind::EnemyUnit | HoverTargetKind::EnemyStructure
             )
         });
-        let cell_hidden =
-            force_fire && matches!(attack_target, TargetKind::Cell(..)) && cell_is_shrouded;
+        let cell_shot = force_fire && matches!(attack_target, TargetKind::Cell(..));
         let attack_dispatch = if force_fire
             || terrain_target.is_some()
             || (enemy_object && context_actions_enabled)
         {
-            // Foot's shroud wrapper (0x004DDE64..0x004DDEBE) takes a
-            // Foot's forced shot at a shrouded Cell back; the Building
-            // wrapper keeps it (0x00447540 passes the Attack through).
+            // Foot's shroud wrapper takes a Foot's forced shot at a shrouded
+            // Cell back.
             let receivers: Vec<u64> = selected_ids
                 .iter()
                 .copied()
-                .filter(|&id| {
-                    !cell_hidden
-                        || sim
-                            .entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
-                })
+                .filter(|&id| !(cell_shot && foot_shrouded(id)))
                 .collect();
             attack_branch_orders(
                 sim,
@@ -2650,18 +2648,12 @@ pub(crate) fn try_queue_context_order(
             // unforced Attack rung on its own (0x004AE750's object loop);
             // its tail is the forced shot's (Attack, a healing Unit's
             // AttackSupport, or Infantry's GuardArea). Other answers keep the
-            // object on its Move rungs below. Foot's shroud wrapper
-            // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
-            // shrouded Cell; the Building wrapper keeps it.
+            // object on its Move rungs below, as does Foot's shroud wrapper.
             let rung: Vec<u64> = selected_ids
                 .iter()
                 .copied()
                 .filter(|&id| {
-                    (!cell_is_shrouded
-                        || sim
-                            .entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.category() == EntityCategory::Structure))
+                    !foot_shrouded(id)
                         && sim.cell_attack_rung_admits(
                             id,
                             (rx, ry),
@@ -3248,7 +3240,7 @@ pub(crate) fn try_queue_context_order(
                     // The receiver's own Cell action; under Ctrl too once it
                     // has no weapon to force-fire (`0x007008C5`).
                     order
-                } else if force_fire && !cell_is_shrouded {
+                } else if force_fire && !foot_shrouded(stable_id) {
                     // Unarmed Cell-click fall-through resolves the original
                     // clicked Cell before committing its Move event.
                     push_move_flash(

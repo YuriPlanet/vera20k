@@ -6907,13 +6907,14 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        let old_house = self.houses.index_of(old_owner);
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {
-                house.stats_mut().record_kill(category);
+                house.stats_mut().record_kill(category, old_house);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede

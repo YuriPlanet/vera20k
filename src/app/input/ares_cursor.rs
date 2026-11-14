@@ -319,7 +319,7 @@ pub(crate) fn radar_action(
     if cursors.get(cursor)?.mini_frame < 0 {
         return None;
     }
-    let lead = lead_moves_to_shroud(query);
+    let lead = query.lead_moves_to_shroud();
     let (main, shrouded) = (
         cursor_from_action(action, false, lead),
         cursor_from_action(action, true, lead),
@@ -336,17 +336,6 @@ pub(crate) fn radar_action(
         return vanilla;
     }
     Some(crate::app::input::radar::RadarAction::Ares { main, shrouded })
-}
-
-fn lead_moves_to_shroud(query: &ActionQuery<'_>) -> bool {
-    query.selected.first().is_some_and(|&id| {
-        query.sim.entities().get(id).is_some_and(|entity| {
-            query
-                .rules
-                .and_then(|rules| query.sim.interner().object_type(entity.type_ref(), rules))
-                .is_some_and(|object| object.move_to_shroud)
-        })
-    })
 }
 
 /// A superweapon cursor: `SWTypeExt::ExtData::WhatAction @ 10033EB0` for a

@@ -132,11 +132,10 @@ pub struct SidebarChromeLayoutSpec {
     pub radar_housing_x: f32,
     pub radar_housing_y: f32,
     /// Radar aperture, from the housing's top-left corner, and its size.
-    /// Radar One_Time `0x00652CF0`: the aperture is the radar source frame
-    /// (stock 140x108). `Init_For_House` moves the two top buttons by
-    /// `(3, 1)` between its GDI and NOD arms and nothing else, so the
-    /// verified GDI aperture keeps its position and the NOD table adds that
-    /// delta.
+    /// `RadarClass::One_Time @ 0x00652CF0` sets MapAreaY 49 (housing at
+    /// RadarShapeY 48) and the 140x108 area; `Init_For_House @ 0x00652E90`
+    /// writes MapAreaX 16 in both its GDI and NOD arms (`0x00652ECF`,
+    /// `0x00652F13`), which differ only in the two top buttons.
     pub radar_x: f32,
     pub radar_y: f32,
     pub radar_width: f32,
@@ -231,8 +230,8 @@ impl SidebarChromeLayoutSpec {
             },
             radar_housing_x: 0.0,
             radar_housing_y: 48.0,
-            radar_x: if allied { 16.0 } else { 19.0 },
-            radar_y: if allied { 1.0 } else { 2.0 },
+            radar_x: 16.0,
+            radar_y: 1.0,
             radar_width: 140.0,
             radar_height: 108.0,
             side1_x: 0.0,
@@ -265,6 +264,14 @@ impl SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
+    /// Where a radar movie's top-left corner sits in the radar housing:
+    /// the enqueue `0x005BF390` places the clip at (MapAreaX - 3,
+    /// MapAreaY - 1) on the sidebar (`0x005BF3D0..0x005BF3E5`), the housing's
+    /// own corner being (ShapeX, RadarShapeY).
+    pub fn radar_movie_origin(&self) -> [f32; 2] {
+        [self.radar_x - 3.0, self.radar_y - 1.0]
+    }
+
     /// Layout-space x of the sidebar's left edge on a layout screen
     /// `screen_w` wide: flush with the edge the layout puts it on.
     pub fn sidebar_x(&self, screen_w: f32) -> f32 {
@@ -333,6 +340,10 @@ mod tests {
         assert_eq!(allied_nod.tab_pitch, 32.0);
         assert_eq!(allied_nod.cameo_column_pitch, 64.0);
         assert_eq!(allied_nod.power_bar_x, 0.0);
-        assert_eq!((allied_nod.radar_x, allied_nod.radar_y), (19.0, 2.0));
+        // Both arms of Init_For_House write MapAreaX 16 (`0x00652F13`).
+        assert_eq!((allied_nod.radar_x, allied_nod.radar_y), (16.0, 1.0));
+        // The 140-wide clip starts 13 px into the 168-wide housing, not
+        // centred at 14.
+        assert_eq!(allied_nod.radar_movie_origin(), [13.0, 0.0]);
     }
 }

@@ -3136,14 +3136,35 @@ impl MatchStatistics {
         *counter = counter.wrapping_add(1);
     }
 
-    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table.
-    /// The existing total projection keeps their sum, rather than a second
-    /// per-house table. Both callers share its mutation and numeric semantics.
-    pub(crate) fn record_kill(&mut self, category: crate::map::entities::EntityCategory) {
-        let counter = if category == crate::map::entities::EntityCategory::Structure {
-            &mut self.buildings_killed
-        } else {
-            &mut self.units_killed
+    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table
+    /// entry at the victim owner's House index (`TechnoClass::
+    /// GetOwningHouseIndex @ 0x006F9DB0`, read before ChangeOwner's owner
+    /// store). The score screen (`0x005C996D..0x005C9995`) and the Diplomacy
+    /// dialog (`0x00658330`) sum the 20 entries of each table, so the totals
+    /// kept here are those sums. Each table is followed by its loss counter:
+    /// units `+0x53E4`, UnitsLost `+0x5434`, buildings `+0x5438`,
+    /// BuildingsLost `+0x5488`, then WhoLastHurtMe `+0x548C`, so a kill of
+    /// House 20 or later lands past its table. Both callers share its
+    /// mutation and numeric semantics.
+    pub(crate) fn record_kill(
+        &mut self,
+        category: crate::map::entities::EntityCategory,
+        victim_house: Option<usize>,
+    ) {
+        let structure = category == crate::map::entities::EntityCategory::Structure;
+        let base = if structure { 21 } else { 0 };
+        let counter = match victim_house.map_or(base, |house| house.saturating_add(base)) {
+            0..=19 => &mut self.units_killed,
+            20 => &mut self.units_lost,
+            21..=40 => &mut self.buildings_killed,
+            41 => &mut self.buildings_lost,
+            // WhoLastHurtMe, which only `HouseClass::ComputeCRC @ 0x0050300D`
+            // reads, the sync check VERA's state hash replaces. RESIDUAL: a
+            // 23rd House, beyond gamemd's 8 players and retail's 14
+            // countries (a map adding countries, or a VERA game with more
+            // players), would reach ComputedBaseCenter (`+0x5490`) and later
+            // AI fields; VERA leaves them.
+            _ => return,
         };
         *counter = counter.wrapping_add(1);
     }
@@ -3170,7 +3191,7 @@ impl MatchStatistics {
         }
     }
 
-    /// Score-screen Kills column: units + buildings destroyed.
+    /// Score-screen and Diplomacy Kills: the sum of both kill tables.
     pub const fn kills(&self) -> u32 {
         self.units_killed.wrapping_add(self.buildings_killed)
     }

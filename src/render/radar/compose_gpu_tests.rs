@@ -23,7 +23,7 @@ fn terrain() -> NativeRadarTerrainSurface {
             right: [(x * 2) as u8, (y * 4) as u8, 240],
         })
         .collect();
-    NativeRadarTerrainSurface::new(geometry, cells, BTreeMap::new(), 1.0)
+    NativeRadarTerrainSurface::new(geometry, cells, BTreeMap::new(), 1.0, Default::default())
 }
 
 fn opaque(word: u16) -> [u8; 4] {
@@ -61,13 +61,14 @@ fn cell_flags_and_stores_follow_render_cell_pixel_and_update_order() {
     let mut compositor = RadarCompositor::new(&gpu.device, &gpu.queue, &batch);
     compositor.set_surface(&gpu.device, &gpu.queue, Some(&terrain));
 
-    // RenderCellPixel @ 0x00655C50: a hostile gap's cover beats a friendly
-    // gap's fog, which beats the viewer's own reveal.
+    // RenderCellPixel @ 0x00655C50: IsFogged (a friendly gap) half-brightens
+    // before IsShrouded blackens (0x00655E7E, 0x00656058), so it also wins
+    // where a hostile gap has covered the cell.
     let surface_pixels = [(20, 60), (30, 70), (40, 80), (50, 60)];
     let flags = [
         FLAG_REVEALED,
         FLAG_REVEALED | FLAG_GAP_FOG,
-        FLAG_REVEALED | FLAG_GAP_FOG | FLAG_GAP_COVERED,
+        FLAG_GAP_FOG | FLAG_GAP_COVERED,
         0,
     ];
     let mut plane = vec![0; 256 * 256];
@@ -83,6 +84,7 @@ fn cell_flags_and_stores_follow_render_cell_pixel_and_update_order() {
         RadarVisibility::Plane {
             flags: &plane,
             size: (256, 256),
+            dummy: 0,
         },
     );
     // Two stores at one pixel: the later one wins.
@@ -104,7 +106,9 @@ fn cell_flags_and_stores_follow_render_cell_pixel_and_update_order() {
     let [red, green, blue] = RGB565.unpack_rgb8(word(surface_pixels[1]));
     let halved = opaque(RGB565.pack_rgb8([red >> 1, green >> 1, blue >> 1]));
     assert_eq!(pixel(&rgba, width, aperture(surface_pixels[1])), halved);
-    assert_eq!(pixel(&rgba, width, aperture(surface_pixels[2])), SHROUD);
+    let [red, green, blue] = RGB565.unpack_rgb8(word(surface_pixels[2]));
+    let overlapped = opaque(RGB565.pack_rgb8([red >> 1, green >> 1, blue >> 1]));
+    assert_eq!(pixel(&rgba, width, aperture(surface_pixels[2])), overlapped);
     assert_eq!(pixel(&rgba, width, aperture(surface_pixels[3])), SHROUD);
     assert_eq!(pixel(&rgba, width, (5, 3)), [0, 0, 255, 255]);
 
@@ -117,6 +121,7 @@ fn cell_flags_and_stores_follow_render_cell_pixel_and_update_order() {
         RadarVisibility::Plane {
             flags: &plane,
             size: (256, 256),
+            dummy: 0,
         },
     );
     compositor.request();

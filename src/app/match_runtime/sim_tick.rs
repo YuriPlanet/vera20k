@@ -1614,7 +1614,7 @@ fn after_simulation_pass(
         crate::app::input::camera::animate_zoom(state);
     }
     if decision.tactical_mutation {
-        update_building_placement_preview(state);
+        update_building_placement_preview(state, FoundationCentre::Tactical);
     }
     decision.run_sim
 }
@@ -2020,7 +2020,7 @@ fn advance_one_simulation_frame(
         // the cursor's kept answers, which ask the live world. Answered now,
         // with the world home, they are one tick late at most however many
         // ticks in a row are lent; no draw may find the world home between.
-        update_building_placement_preview(state);
+        update_building_placement_preview(state, FoundationCentre::Tactical);
         crate::app::input::cursor::answer_kept_questions(state);
         state.match_state.sim_runtime.lend(Box::new(job));
         if let Some(request) = mouse_scroll {
@@ -2770,7 +2770,7 @@ fn finish_simulation_frame(
                 .input
                 .apply_lifecycle_output(&output, local_house)
             {
-                update_building_placement_preview(state);
+                update_building_placement_preview(state, FoundationCentre::Cursor);
             }
             match output {
                 LifecycleOutput::OptionsRequested => {
@@ -3154,9 +3154,66 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
     }
 }
 
-pub(crate) fn update_building_placement_preview(state: &mut AppState) {
+/// Where `DisplayClass::UpdateFoundationCenter @ 0x004A91B0` takes an armed
+/// building's foundation centre from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FoundationCentre {
+    /// The Cell under the cursor wherever it is. The Home view
+    /// (`0x0073181A`), the four view bookmarks (`0x005373C3`, `0x005374B3`,
+    /// `0x005375A3`, `0x00537693`) and the radar event jump (`0x00734200`)
+    /// pass the null centre, which means it (`0x004A91E2..0x004A92B1`); a
+    /// placement retry passes the cursor's `ProcessClickCoords` Cell
+    /// (`0x004FB3F8..0x004FB484`).
+    Cursor,
+    /// The tactical gadget's call each frame (`DisplayClass::Action @
+    /// 0x004AAC10`, at `0x004AAD04`), which only the battlefield's region
+    /// reaches: off it, over the sidebar or the radar, the centre stays.
+    Tactical,
+    /// A given Cell: placement start's factory Cell
+    /// (`HouseClass::Begin_Building_Placement @ 0x004FB840`, at `0x004FB8FE`).
+    Cell((u16, u16)),
+}
+
+impl FoundationCentre {
+    /// The centre Cell this call takes, or `None` where the latched centre
+    /// (`has_centre`) stays; `cursor` answers the Cell under the cursor.
+    fn cell(
+        self,
+        has_centre: bool,
+        over_battlefield: bool,
+        cursor: impl FnOnce() -> (u16, u16),
+    ) -> Option<(u16, u16)> {
+        match self {
+            Self::Cell(cell) => Some(cell),
+            Self::Tactical if has_centre && !over_battlefield => None,
+            Self::Cursor | Self::Tactical => Some(cursor()),
+        }
+    }
+}
+
+/// Re-centre the foundation ([`FoundationCentre`]) through its latch
+/// ([`crate::app::input::state::FoundationLatch`]) and refresh the armed
+/// building's preview there.
+pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: FoundationCentre) {
+    let cursor_cell = |state: &AppState| {
+        screen_point_to_world_cell(
+            state,
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        )
+    };
     let Some(type_id) = state.armed_building_type() else {
         state.match_state.input.building_placement_preview = None;
+        // The world copy beside a lent tick has no Cell heights to pick with.
+        if !state.match_state.sim_runtime.is_lent()
+            && let Some(cell) = centre.cell(
+                state.match_state.input.foundation_latch.origin().is_some(),
+                crate::app::input::camera::cursor_over_battlefield(state),
+                || cursor_cell(state),
+            )
+        {
+            state.match_state.input.foundation_latch.follow(cell);
+        }
         return;
     };
     if state
@@ -3210,28 +3267,28 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
             fh,
         );
     }
-    let cursor_cell = screen_point_to_world_cell(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
+    let mut latch = state.match_state.input.foundation_latch;
     // UpdateFoundationCenter4A91B0 takes the cursor's Cell from
     // `RadarClass::Click_Cell_Calc @ 0x00653760` (`0x004A9251`): the
     // tactical ScreenPixelToCell answer this shared inverse ports.
     // UpdateFoundationCenter4A91B0 uses center + the type's active offset.
     // Resolve it before admission/ground/shroud, through the shared owner
     // also used by a fresh LeftUp; rendering consumes the resulting Cells.
-    let (rx, ry) = foundation_str.placement_origin_at_cursor(cursor_cell);
-    state.match_state.input.building_placement_preview =
+    let origin = centre
+        .cell(
+            latch.origin().is_some(),
+            crate::app::input::camera::cursor_over_battlefield(state),
+            || cursor_cell(state),
+        )
+        .map(|cell| foundation_str.placement_origin_at_cursor(cell));
+    let overlays = state.overlay_registry();
+    let preview = latch.place(origin, |(rx, ry)| {
         production::placement_preview_for_owner_with_overlays(
-            sim,
-            rules,
-            &owner,
-            type_id,
-            rx,
-            ry,
-            state.overlay_registry(),
-        );
+            sim, rules, &owner, type_id, rx, ry, overlays,
+        )
+    });
+    state.match_state.input.foundation_latch = latch;
+    state.match_state.input.building_placement_preview = preview;
 }
 
 /// Admit the voxel models and grow the SHP atlas after entities spawn, die,

@@ -8,7 +8,7 @@
 //! Queued pause transitions: original657BFA/657C7D controls in
 //! tools/scenario_pause.json.
 //! GPU/rodio, failed media decode and missing device are Rust substitutes;
-//! full native copy/final-paint and saved raw Radar fields remain unproven.
+//! the full native copy/final-paint remains unproven.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -248,12 +248,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
     if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
         return;
     }
-    // `RadarClass::AI @ 0x00653850` (vt+0x28) runs on Main_Tick's input
-    // path (`0x0055D8AB`), which needs `g_GameState` `0x00A8EDA0` zero
-    // (`0x0055D883`). Every in-game menu runs inside State_Machine
-    // `0x0048C8B0` with it 1..9, so even the network modes' modal pump
-    // (`0x00623120` -> Main_Tick) skips the radar.
-    if !state.match_state.match_presentation.in_game_menu.is_open() {
+    if ai_runs(state) {
         radar_ai(state, wall_ms);
     }
     if state
@@ -263,9 +258,88 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         .queue
         .is_empty()
     {
+        wind_down_retired(state, wall_ms);
         return;
     }
     play_head(state, wall_ms);
+}
+
+/// Whether `RadarClass::AI @ 0x00653850` (vt+0x28) runs this pass. It runs
+/// on Main_Tick's input path (`0x0055D8AB`), which needs `g_GameState`
+/// `0x00A8EDA0` zero (`0x0055D883`). Every in-game menu runs inside
+/// State_Machine `0x0048C8B0` with it 1..9, so even the network modes' modal
+/// pump (`0x00623120` -> Main_Tick) skips the radar. Main_Tick's offline
+/// scenario-pause path (`0x0055D82E..0x0055D877`: audio pump, ChronoScreen,
+/// `GScreenClass::Render @ 0x004F4480`, throttle, return) skips it too, and
+/// still draws the housing and a playing clip.
+fn radar_ai_runs(
+    menu_open: bool,
+    mode: crate::app::match_runtime::session::SessionMode,
+    scenario_paused: bool,
+) -> bool {
+    !menu_open
+        && !crate::app::match_runtime::scenario_pause::blocks_main_tick(mode, scenario_paused)
+}
+
+fn ai_runs(state: &AppState) -> bool {
+    radar_ai_runs(
+        state.match_state.match_presentation.in_game_menu.is_open(),
+        state.match_state.session_mode(),
+        state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|rt| rt.simulation.session().scenario_paused()),
+    )
+}
+
+/// The radar's own passes over a clip `retire_for_load` took from the queue
+/// (`RadarPresentation::wind_down_retired`). Stage 2 resumes EVA
+/// (`0x0065792B`) and plays MovieOn; the movie-done arm then plays MovieOff
+/// (`0x00657C2C..0x00657C5B`), restores the Normal floor (`0x00657C71`) and
+/// drops the movie's pause (`0x00657C85..0x00657CD4`).
+fn wind_down_retired(state: &mut AppState, wall_ms: u64) {
+    if !state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_ref()
+        .is_some_and(|radar| radar.has_movie())
+    {
+        return;
+    }
+    let ai_runs = ai_runs(state);
+    let eva = state
+        .process_assets
+        .audio_catalog()
+        .map(|catalog| catalog.eva());
+    let (selected_done, _) = prelude_inputs(&state.audio, eva);
+    let Some(movie_on) = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .and_then(|radar| radar.wind_down_retired_movie(ai_runs, selected_done))
+    else {
+        return;
+    };
+    let pause = state
+        .match_state
+        .match_presentation
+        .radar_movies
+        .set_scenario_pause(false);
+    if movie_on {
+        if let Some(sfx) = state.audio.sfx_player.as_mut() {
+            sfx.resume_eva(); //65792B/753580
+        }
+        play_radar_sound_loop(state, true);
+    }
+    play_radar_sound_loop(state, false);
+    set_detail_floor(state, false);
+    if let Some(input) = pause {
+        crate::app::match_runtime::scenario_pause::apply_service(state, input);
+    }
+    reconcile_pause_clock(state, wall_ms);
 }
 
 /// The movie half of `RadarClass::AI`: admission (`0x00653963`) and, in mode
@@ -294,6 +368,10 @@ fn radar_ai(state: &mut AppState, wall_ms: u64) {
         resume_eva_outside_prelude(state);
         return;
     }
+    if !queued {
+        // A stage `retire_for_load` left: `wind_down_retired` steps it.
+        return;
+    }
     let catalog = state.process_assets.audio_catalog();
     let eva = catalog.map(|catalog| catalog.eva());
     let (selected_done, streams_ready) = prelude_inputs(&state.audio, eva);
@@ -312,6 +390,7 @@ fn radar_ai(state: &mut AppState, wall_ms: u64) {
     if command == RadarMovieCommand::StartPlayback {
         //6578F0 stage2: SetRadarMode(3), EndLooping, then MovieOn.
         play_radar_sound_loop(state, true);
+        set_detail_floor(state, true);
     }
 }
 
@@ -466,7 +545,15 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
         .radar_anim
         .as_mut()
         .expect("radar draw owner")
-        .paint_movie(surface.batch_texture(), [surface.width(), surface.height()]);
+        .paint_movie(
+            surface.batch_texture(),
+            [surface.width(), surface.height()],
+            state
+                .match_state
+                .match_presentation
+                .sidebar_layout_spec
+                .radar_movie_origin(),
+        );
     let mut due = Vec::new();
     if active
         && let Some(subtitles) = state
@@ -510,14 +597,55 @@ fn play_head(state: &mut AppState, wall_ms: u64) {
             //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
             state.audio.retire_movie_audio(wall_ms);
             play_radar_sound_loop(state, false);
+            set_detail_floor(state, false);
             reconcile_pause_clock(state, wall_ms);
         }
     }
     state.platform.window.request_redraw();
 }
 
-///5BF450 runs before load preparation (even failure), abort/victory/defeat
-///fades and scene replacement. Repeated callers must be harmless.
+/// The detail floor a radar movie sets: `PlayRadarMovie` stage 2 calls
+/// `Game__SetMinFrameRate` with DetailMinFrameRateMovie (`0x0065797E`) and
+/// `PerFrameMovieUpdate`'s last clip with DetailMinFrameRateNormal
+/// (`0x00657C71`). Retirement (`0x005BF450`) leaves it for the next
+/// scenario's `Fill_In_Data`, or for a failed load's wind-down.
+fn set_detail_floor(state: &AppState, playing: bool) {
+    if let Some(rules) = state.rules() {
+        apply_detail_floor(
+            &mut state.match_state.match_presentation.detail.borrow_mut(),
+            &rules.general.detail,
+            playing,
+        );
+    }
+}
+
+fn apply_detail_floor(
+    detail: &mut crate::app::presentation::detail::DetailState,
+    rules: &crate::rules::ruleset::DetailRules,
+    playing: bool,
+) {
+    detail.set_min_frame_rate(if playing {
+        rules.min_frame_rate_movie
+    } else {
+        rules.min_frame_rate_normal
+    });
+}
+
+/// `Audio__ResumeAfterMovieAndCleanup @ 0x005BF450` alone, before a load's
+/// preparation: it deletes the queued clips and releases the movie audio,
+/// and leaves the radar's Mode, MovieStage, EVA suspend and movie pause. A
+/// load that fails keeps the match, and the radar winds down on its own
+/// passes (`wind_down_retired`); one that succeeds retires the rest.
+pub(crate) fn retire_for_load(state: &mut AppState, wall_ms: u64) {
+    let movies = &mut state.match_state.match_presentation.radar_movies;
+    movies.queue.clear();
+    movies.playing = None;
+    state.audio.retire_movie_audio(wall_ms);
+}
+
+///5BF450 runs before abort/victory/defeat fades, scene replacement and a
+///load's world replacement; no radar pass follows it there, so the radar's
+///own wind-down runs here too. Repeated callers must be harmless.
 pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     let held = state
         .match_state
@@ -544,8 +672,14 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
 }
 
 /// A loaded world retains Scenario62C but not the physical video FIFO. This
-/// Rust recovery policy releases only its recorded credit through684180;
-/// native saved Radar/Bink reconstruction remains an explicit boundary.
+/// releases only the FIFO's recorded credit through684180.
+/// Deliberate difference, the maintainer's choice: native keeps the radar's
+/// `MoviePausedGame` with the rest of its body, and
+/// `RadarClass::Init @ 0x00655B20` ends a playing clip without the movie-done
+/// arm's `ScenarioPause__ExitOneLevel` (`0x00657CC8`), so a game saved under
+/// a pausing clip (action 117) loads paused and nothing in the match lifts
+/// it. A stage still waiting for its clip ends through that arm a few passes
+/// after the load, which lifts it in native too; VERA lifts it at the load.
 pub(crate) fn release_saved_scenario_hold(
     sim: &mut crate::sim::world::Simulation,
     held: bool,
@@ -576,6 +710,41 @@ mod tests {
             (general.movie_on.as_deref(), general.movie_off.as_deref()),
             (Some("MovieOn"), Some("MovieOff"))
         );
+    }
+
+    /// Retail DetailMinFrameRateMovie=20 (`0x0065797E`) cuts effects at 18
+    /// Logic frames a second during a movie; after the last clip's Normal=15
+    /// (`0x00657C71`) they come back once the rate reaches 15 plus the
+    /// buffer of 5 (`0x0055AF60`).
+    #[test]
+    fn radar_movie_raises_the_detail_floor_while_it_plays() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules.general.detail;
+        let mut detail = crate::app::presentation::detail::DetailState::default();
+        detail.configure_normal(rules);
+        for _ in 0..18 {
+            detail.record_logic_visit();
+        }
+        detail.throttle_tail(0);
+        assert_eq!(detail.frame_rate(), 18);
+        assert_eq!(detail.minimum_frame_rate(), 15);
+        apply_detail_floor(&mut detail, rules, true);
+        assert_eq!(detail.minimum_frame_rate(), 25);
+        apply_detail_floor(&mut detail, rules, false);
+        assert_eq!(detail.minimum_frame_rate(), 20);
+    }
+
+    /// A time jump's scenario pause (`0x0055D82E..0x0055D877`) returns before
+    /// `GScreenClass::Input`, so a clip queued meanwhile is not admitted until
+    /// the pause lifts; network modes never take that path.
+    #[test]
+    fn offline_scenario_pause_holds_radar_admission() {
+        use crate::app::match_runtime::session::SessionMode;
+        assert!(radar_ai_runs(false, SessionMode::Campaign, false));
+        assert!(!radar_ai_runs(false, SessionMode::Campaign, true));
+        assert!(radar_ai_runs(false, SessionMode::Lan, true));
     }
 
     /// The prelude (`0x006578F0`) suspends EVA right after it queues
