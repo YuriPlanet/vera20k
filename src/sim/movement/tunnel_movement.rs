@@ -54,6 +54,10 @@ pub(crate) const TUNNEL_MOVEMENT_SPEED: i32 = 19;
 /// The owner's Z underground: DugIn sinks to it (`0x00728FB0..0x00728FCB`)
 /// and ProcessDigging aims at it (`0x007295E6`).
 pub(crate) const TUNNEL_DEPTH_Z: i32 = -0x100;
+/// `Z_Adjust`'s full dig depth, in native Z-buffer rows: the two globals
+/// `[0x844A98]` and `[0x844A9C]` are both 45 (`0x729F5C`, `0x729FAE`,
+/// `0x729FB4`, `0x729FCC`, `0x729FDE`). Idle's base answer is zero.
+pub const TUNNEL_DIG_Z_ADJUST_ROWS: i32 = 45;
 /// ProcessDigging arrives within this many leptons of Destination
 /// (`Point2D::Length @ 0x004C1B50` at `0x007295C0..0x007295CA`).
 pub(crate) const TUNNEL_ARRIVAL_RADIUS: i32 = 0x14;
@@ -197,6 +201,36 @@ impl TunnelRuntime {
         }
         let left = self.dig_timer.remaining(binary_frame as i32);
         (self.dig_timer_rate - left) as f32 / self.dig_timer_rate as f32
+    }
+
+    /// `Z_Adjust` (`0x00729E50`, vtable slot `+0x38`): the draw Z, in native
+    /// screen rows, that puts the already-submerged half of a digging body
+    /// behind the terrain instead of in front of it.
+    ///
+    /// The two `Coord_To_Pixel` calls at `0x729E86`/`0x729EAE` first cancel the
+    /// owner's `Location.Z` lift; `FootClass::GetZAdjustment` already carries
+    /// that same `-AdjustForZ(Location.Z)` in its `0x704350` term, so only the
+    /// state's dig depth belongs here. The state arms at `0x729F40..0x729FDE`
+    /// add at most the 45 rows of `[0x844A98]`/`[0x844A9C]`, scaled by the
+    /// DigTimer progress: DiggingIn ramps 0 -> 45, DugIn/Digging/PreDigOut hold
+    /// 45, DiggingOut ramps 45 -> 0. Idle, PreDigIn and DugOut call the base
+    /// `0x55ABA0` (zero). A Tactical Z-tested sprite then loses to the cell
+    /// tiles that were drawn above it, which is what makes the hull appear to
+    /// sink into the ground rather than float over its crater.
+    pub fn draw_z_adjust(&self, binary_frame: u32) -> i32 {
+        let progress = self.dig_progress(binary_frame).clamp(0.0, 1.0);
+        match self.state {
+            TunnelState::DiggingIn => {
+                (f64::from(TUNNEL_DIG_Z_ADJUST_ROWS) * f64::from(progress)).round() as i32
+            }
+            TunnelState::DugIn | TunnelState::Digging | TunnelState::PreDigOut => {
+                TUNNEL_DIG_Z_ADJUST_ROWS
+            }
+            TunnelState::DiggingOut => {
+                (f64::from(TUNNEL_DIG_Z_ADJUST_ROWS) * f64::from(1.0 - progress)).round() as i32
+            }
+            TunnelState::Idle | TunnelState::PreDigIn | TunnelState::DugOut => 0,
+        }
     }
 
     /// `In_Which_Layer` (`0x0072A1A0`): underground in State 4, else ground.

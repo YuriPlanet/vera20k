@@ -312,3 +312,56 @@ fn ares_null_destination_ends_the_dig() {
     sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
     assert_eq!(tunnel_state(&sim), Some(TunnelState::DugOut));
 }
+
+/// `Z_Adjust` (`0x00729E50`) is the draw Z that puts the submerged half of a
+/// digging body behind the terrain's Z-buffer rows. The dig timer ramps the
+/// depth in, holds it while the owner is below the cells, and ramps it back
+/// out; a settled owner adds nothing.
+#[test]
+fn z_adjust_sinks_the_digging_body_behind_the_surface() {
+    use crate::sim::movement::tunnel_movement::{TUNNEL_DIG_Z_ADJUST_ROWS, TunnelRuntime};
+
+    for state in [
+        TunnelState::Idle,
+        TunnelState::PreDigIn,
+        TunnelState::DugOut,
+    ] {
+        let runtime = TunnelRuntime::for_test_dig(state, 0, 10);
+        assert_eq!(runtime.draw_z_adjust(5), 0, "{state:?} adds no depth");
+    }
+
+    let digging_in = TunnelRuntime::for_test_dig(TunnelState::DiggingIn, 0, 10);
+    assert_eq!(digging_in.draw_z_adjust(0), 0, "the first frame is level");
+    let half = digging_in.draw_z_adjust(4);
+    assert!((half - 18).abs() <= 1, "40% of 45 rows is 18, got {half}");
+    assert_eq!(
+        digging_in.draw_z_adjust(10),
+        TUNNEL_DIG_Z_ADJUST_ROWS,
+        "a finished dig is fully behind the surface"
+    );
+
+    for state in [
+        TunnelState::DugIn,
+        TunnelState::Digging,
+        TunnelState::PreDigOut,
+    ] {
+        let runtime = TunnelRuntime::for_test_dig(state, 0, 10);
+        assert_eq!(
+            runtime.draw_z_adjust(5),
+            TUNNEL_DIG_Z_ADJUST_ROWS,
+            "{state:?} holds the full depth"
+        );
+    }
+
+    let digging_out = TunnelRuntime::for_test_dig(TunnelState::DiggingOut, 0, 10);
+    assert_eq!(
+        digging_out.draw_z_adjust(0),
+        TUNNEL_DIG_Z_ADJUST_ROWS,
+        "surfacing starts fully submerged"
+    );
+    assert_eq!(
+        digging_out.draw_z_adjust(10),
+        0,
+        "surfacing ends on the ground plane"
+    );
+}

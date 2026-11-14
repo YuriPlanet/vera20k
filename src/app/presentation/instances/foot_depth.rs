@@ -351,7 +351,17 @@ fn unit_z_adjust_in(
         world_z_leptons: world_z,
         // Drive 0x4B4870, Ship 0x6A3EA0, and the shared 0x55ABA0 inherited
         // by Walk/Hover/Fly/Jumpjet/Teleport all return zero at loco slot +0x38.
-        locomotor_z: 0,
+        // Tunnel overrides it with Z_Adjust 0x729E50: the dig depth in native
+        // Z rows. It sorts the body behind the cell tiles already in the Z
+        // buffer, so the submerged half of a digging hull is hidden by the
+        // terrain rather than drawn over the crater.
+        locomotor_z: entity
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.tunnel_runtime())
+            .map_or(0, |tunnel| {
+                tunnel.draw_z_adjust(view.session().binary_frame())
+            }),
         bridge_set_base: terrain.concrete_bridge_set_base(),
         unit_special_adjustment: special,
     };
