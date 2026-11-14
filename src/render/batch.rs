@@ -14,6 +14,7 @@ use wgpu::util::DeviceExt;
 
 use crate::render::draw_state::DrawState;
 use crate::render::gpu::GpuContext;
+use crate::render::surface_line::SurfaceStroke;
 
 /// WGSL shader for instanced sprite rendering (loaded from batch_shader.wgsl).
 ///
@@ -126,6 +127,39 @@ pub(crate) const SPRITE_INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; INSTANCE_AT
 
 /// Size of one SpriteInstance in bytes.
 const INSTANCE_STRIDE: u64 = std::mem::size_of::<SpriteInstance>() as u64;
+
+/// WGSL of the stroke draw ([`BatchRenderer::draw_surface_strokes`]).
+pub(crate) const SURFACE_STROKE_SHADER: &str = include_str!("surface_strokes.wgsl");
+
+/// Pixels of a stroke's walk one instance of the stroke draw covers.
+const STROKE_PIECE_PIXELS: u32 = 64;
+
+/// One instance of the stroke draw: [`STROKE_PIECE_PIXELS`] pixels of
+/// `stroke`'s walk from pixel `first`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct StrokePiece {
+    stroke: SurfaceStroke,
+    first: u32,
+}
+
+const STROKE_PIECE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+    0 => Sint32x2, 1 => Sint32x2, 2 => Uint32, 3 => Uint32, 4 => Uint32
+];
+
+/// `strokes` as the stroke draw's instances, in order: a later stroke's
+/// pixels store over an earlier one's.
+pub(crate) fn stroke_pieces(strokes: &[SurfaceStroke], pieces: &mut Vec<StrokePiece>) {
+    pieces.clear();
+    for &stroke in strokes {
+        let count = stroke.pixel_count();
+        pieces.extend(
+            (0..count)
+                .step_by(STROKE_PIECE_PIXELS as usize)
+                .map(|first| StrokePiece { stroke, first }),
+        );
+    }
+}
 
 /// Camera uniform data sent to the GPU vertex shader.
 ///
@@ -310,11 +344,11 @@ pub struct BatchTexture {
 }
 
 /// A reusable GPU instance buffer entry. Tracks the wgpu buffer and its current
-/// capacity (in number of SpriteInstance elements). Grows on demand, never shrinks.
+/// capacity in bytes. Grows on demand, never shrinks.
 struct PooledBuffer {
     /// The GPU buffer. Has VERTEX | COPY_DST usage so we can write_buffer() into it.
     buffer: wgpu::Buffer,
-    /// Maximum number of SpriteInstance elements the buffer can hold.
+    /// Bytes the buffer can hold.
     capacity: usize,
     /// The bytes last uploaded, so a repeated stream is not uploaded again.
     contents: Vec<u8>,
@@ -371,11 +405,13 @@ pub struct InstanceBufferPool {
     /// The staging chunks [`Self::record_uploads`] copies from, created on its
     /// first use. A chunk is reused once the GPU has copied out of it.
     belt: Option<wgpu::util::StagingBelt>,
+    /// The pieces of the last stroke stream uploaded, kept for its allocation.
+    stroke_pieces: Vec<StrokePiece>,
 }
 
-/// Minimum buffer capacity in elements. Avoids tiny buffers that immediately
-/// need reallocation. 64 instances × 48 bytes = 3 KB — negligible VRAM.
-const MIN_POOL_CAPACITY: usize = 64;
+/// Minimum buffer capacity in bytes, 64 sprite instances' worth (7.5 KiB).
+/// Avoids tiny buffers that immediately need reallocation.
+const MIN_POOL_BYTES: usize = 64 * std::mem::size_of::<SpriteInstance>();
 
 /// Bytes in one staging chunk of recorded uploads: a frame's streams at
 /// 1080p with a few hundred objects fit in one. A larger single upload gets
@@ -439,6 +475,23 @@ impl RecordedUploads<'_> {
             [0.0; 2],
         );
     }
+
+    /// `strokes` as the stroke draw's instances, read with
+    /// [`InstanceBufferPool::get`] and drawn with
+    /// [`BatchRenderer::draw_surface_strokes`].
+    pub(crate) fn upload_strokes(&mut self, key: &'static str, strokes: &[SurfaceStroke]) {
+        let mut pieces = std::mem::take(&mut self.pool.stroke_pieces);
+        stroke_pieces(strokes, &mut pieces);
+        self.pool.upload_records(
+            self.device,
+            UploadPath::Recorded(self.encoder),
+            (key, 0),
+            &pieces,
+            [0.0; 2],
+            |_, _| false,
+        );
+        self.pool.stroke_pieces = pieces;
+    }
 }
 
 impl Drop for RecordedUploads<'_> {
@@ -462,6 +515,7 @@ impl InstanceBufferPool {
             buffers: HashMap::new(),
             counts: HashMap::new(),
             belt: None,
+            stroke_pieces: Vec::new(),
         }
     }
 
@@ -537,7 +591,25 @@ impl InstanceBufferPool {
         instances: &[SpriteInstance],
         camera: [f32; 2],
     ) {
-        let needed: usize = instances.len();
+        self.upload_records(device, path, key, instances, camera, |old, old_camera| {
+            followed_camera(old, old_camera, instances, camera)
+        });
+    }
+
+    /// Upload `records` into a named buffer. `followed` says whether the
+    /// bytes last uploaded, drawn with the camera they were uploaded for,
+    /// show what `records` show with `camera`; it is asked only when the
+    /// camera differs.
+    fn upload_records<T: bytemuck::Pod>(
+        &mut self,
+        device: &wgpu::Device,
+        path: UploadPath<'_>,
+        key: (&'static str, usize),
+        records: &[T],
+        camera: [f32; 2],
+        followed: impl FnOnce(&[u8], [f32; 2]) -> bool,
+    ) {
+        let needed: usize = records.len();
         let previous_count = self.counts.insert(key, needed as u32);
         if needed == 0 {
             if let Some(entry) = self.buffers.get_mut(&key)
@@ -548,8 +620,9 @@ impl InstanceBufferPool {
             return;
         }
 
+        let byte_data: &[u8] = bytemuck::cast_slice(records);
         let entry: &mut PooledBuffer = self.buffers.entry(key).or_insert_with(|| {
-            let cap: usize = needed.max(MIN_POOL_CAPACITY);
+            let cap: usize = byte_data.len().max(MIN_POOL_BYTES);
             PooledBuffer {
                 buffer: Self::alloc_buffer(device, key.0, cap),
                 capacity: cap,
@@ -558,13 +631,12 @@ impl InstanceBufferPool {
                 generation: 0,
             }
         });
-        let byte_data: &[u8] = bytemuck::cast_slice(instances);
         let unchanged = entry.contents == byte_data;
         let same_picture = previous_count == Some(needed as u32)
             && if camera == entry.camera {
                 unchanged
             } else {
-                followed_camera(&entry.contents, entry.camera, instances, camera)
+                followed(&entry.contents, entry.camera)
             };
         if !same_picture {
             entry.generation += 1;
@@ -577,8 +649,8 @@ impl InstanceBufferPool {
         entry.contents.extend_from_slice(byte_data);
 
         // Grow if the current buffer is too small.
-        if needed > entry.capacity {
-            let new_cap: usize = (entry.capacity * 2).max(needed);
+        if byte_data.len() > entry.capacity {
+            let new_cap: usize = (entry.capacity * 2).max(byte_data.len());
             entry.buffer = Self::alloc_buffer(device, key.0, new_cap);
             entry.capacity = new_cap;
         }
@@ -621,12 +693,11 @@ impl InstanceBufferPool {
         Some((&entry.buffer, count))
     }
 
-    /// Allocate a GPU buffer with VERTEX + COPY_DST usage for the given capacity.
+    /// Allocate a GPU buffer with VERTEX + COPY_DST usage of `capacity` bytes.
     fn alloc_buffer(device: &wgpu::Device, label: &str, capacity: usize) -> wgpu::Buffer {
-        let byte_size: u64 = (capacity as u64) * (std::mem::size_of::<SpriteInstance>() as u64);
         device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
-            size: byte_size,
+            size: capacity as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         })
@@ -680,6 +751,9 @@ pub struct BatchRenderer {
     /// The same direct store through VERA's smooth client (`fs_shell_smooth`).
     smooth_chrome_pipeline: wgpu::RenderPipeline,
     surface_store_pipeline: wgpu::RenderPipeline,
+    /// [`SurfaceStroke`] points (`surface_strokes.wgsl`): depth compare
+    /// Always, no write, the live A for gated strokes.
+    stroke_pipeline: wgpu::RenderPipeline,
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
     /// pass can be clipped by it, without disturbing colour compositing order.
@@ -987,12 +1061,10 @@ impl BatchRenderer {
             passthrough("Batch Pipeline (Overlay Passthrough)", "fs_main");
         let smooth_chrome_pipeline =
             passthrough("Batch Pipeline (Smooth Chrome)", "fs_shell_smooth");
-        // DSurface4C0750's A-gated dashed stores: the same direct store,
-        // bound with the live A source.
-        let surface_store_pipeline = passthrough(
-            "Batch Pipeline (A-gated Surface Stores)",
-            "fs_surface_store",
-        );
+        // Surface stores at neutral A (the ground marks).
+        let surface_store_pipeline =
+            passthrough("Batch Pipeline (Surface Stores)", "fs_surface_store");
+        let stroke_pipeline = stroke_pipeline(device, &camera_bind_group_layout, surface_format);
 
         // Building bodies stamp their silhouette here so the post-shroud
         // selection-bracket redraw can be clipped by the art it stands behind.
@@ -1447,6 +1519,7 @@ impl BatchRenderer {
             overlay_passthrough_pipeline,
             smooth_chrome_pipeline,
             surface_store_pipeline,
+            stroke_pipeline,
             #[cfg(test)]
             depth_stamp_pipeline,
             depth_test_pipeline,
@@ -2303,9 +2376,7 @@ impl BatchRenderer {
         );
     }
 
-    /// Direct stores DSurface4C0750 keeps or skips per pixel by the live
-    /// tactical A (`FX_SURFACE_A_NONZERO`/`FX_SURFACE_A_ZERO`; neither stores
-    /// everywhere), bypassing Z and reading no palette row.
+    /// Direct stores at neutral A, bypassing Z and reading no palette row.
     pub(crate) fn draw_surface_stores<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
@@ -2321,6 +2392,23 @@ impl BatchRenderer {
         render_pass.set_bind_group(1, &texture.bind_group, &[]);
         render_pass.set_vertex_buffer(0, buffer.slice(..));
         render_pass.draw(0..6, 0..count);
+    }
+
+    /// Draw `pieces` [`StrokePiece`]s ([`stroke_pieces`]) in order, a later
+    /// store over an earlier one, with the world camera and its live A.
+    pub(crate) fn draw_surface_strokes<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        buffer: &'a wgpu::Buffer,
+        pieces: u32,
+    ) {
+        if pieces == 0 {
+            return;
+        }
+        render_pass.set_pipeline(&self.stroke_pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..STROKE_PIECE_PIXELS, 0..pieces);
     }
 
     /// Draw with depth bypassed AND the UI camera (zoom=1.0, screen-fixed).
@@ -2558,6 +2646,68 @@ fn ui_camera(world: CameraUniform) -> CameraUniform {
         _pad: 0.0,
         ..world
     }
+}
+
+/// The stroke draw: one point per walked pixel, stored over what is there
+/// without reading or writing Z, as the batch's surface stores are.
+fn stroke_pipeline(
+    device: &wgpu::Device,
+    camera_layout: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Surface strokes"),
+        source: wgpu::ShaderSource::Wgsl(
+            crate::render::webgl::camera_source(
+                device,
+                crate::render::tactical_shader::world_source(SURFACE_STROKE_SHADER),
+            )
+            .into(),
+        ),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Surface strokes"),
+        bind_group_layouts: &[Some(camera_layout)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Surface strokes (7BA610/4C0750)"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_stroke"),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<StrokePiece>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &STROKE_PIECE_ATTRIBUTES,
+            })],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_stroke"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::PointList,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 fn camera_group(

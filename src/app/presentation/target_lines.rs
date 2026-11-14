@@ -11,8 +11,7 @@ use crate::app::presentation::frame::ObjectRecord;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::map::resolved_terrain::NativeCellQuery;
-use crate::render::batch::SpriteInstance;
-use crate::render::draw_state::{DrawState, FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
+use crate::render::surface_line::{StoreGate, SurfaceStroke};
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -111,10 +110,10 @@ impl TargetLineState {
     }
 }
 
-/// Build selected unit action-line instances from live simulation state.
-/// The psychic detection line's dashed stores carry their A gate for the GPU.
+/// Build selected unit action-line strokes from live simulation state.
+/// The psychic detection line's dashed stroke carries its A gate for the GPU.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_target_line_instances(
+pub(crate) fn build_target_line_strokes(
     line_state: &TargetLineState,
     planning_active: bool,
     sim: Option<&Simulation>,
@@ -124,8 +123,8 @@ pub(crate) fn build_target_line_instances(
     house_colors: &HouseColorMap,
     wall_ms: u32,
     viewport: TacticalViewport,
-    mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
-) -> Vec<SpriteInstance> {
+    mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SurfaceStroke>)>,
+) -> Vec<SurfaceStroke> {
     let (Some(sim), Some(frame)) = (sim, frame) else {
         return Vec::new();
     };
@@ -141,7 +140,7 @@ pub(crate) fn build_target_line_instances(
             p.y as i32 - viewport.camera[1] + viewport.clip[1],
         ]
     };
-    let psychic_line_for = |entity: &ObjectRecord, instances: &mut Vec<SpriteInstance>| {
+    let psychic_line_for = |entity: &ObjectRecord, strokes: &mut Vec<SurfaceStroke>| {
         let Some(rules) = psychic else {
             return;
         };
@@ -162,38 +161,40 @@ pub(crate) fn build_target_line_instances(
         let color = house_colors.get(owner).copied().unwrap_or(NO_REMAP);
         let rgb = crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, color);
         emit_psychic_detection_line(
+            strokes,
             project(line.start),
             project(line.end),
             rgb,
             wall_ms,
-            viewport.clip,
-            |rect, word, gate| {
-                push_gated_surface_rect(instances, rect, surface_word_tint(word), gate, viewport)
-            },
+            viewport,
         );
     };
     // Tactical6D4729 and6D4793 use the same planning gate; the action-line
     //option/timer gates only Foot4DC060, not CaptureManager relationships.
     if planning_active {
-        let mut instances = Vec::new();
+        let mut strokes = Vec::new();
         if psychic.is_some() {
             for entity in frame.objects() {
-                psychic_line_for(entity, &mut instances);
+                psychic_line_for(entity, &mut strokes);
             }
         }
-        return instances;
+        return strokes;
     }
-    let colors = line_state
-        .is_selected_action_active(sim.session().binary_frame())
+    let [left, top, width, height] = viewport.clip;
+    let clip_usable = width > 0
+        && height > 0
+        && left.checked_add(width).is_some()
+        && top.checked_add(height).is_some();
+    let words = (clip_usable && line_state.is_selected_action_active(sim.session().binary_frame()))
         .then_some(palette)
         .flatten()
-        .map(|palette| [action_line_color(palette, 3), action_line_color(palette, 8)]);
+        .map(|palette| [action_line_word(palette, 3), action_line_word(palette, 8)]);
     let mut control = rules
         .map(|rules| {
             super::control_links::prepare(sim, frame, rules, house_colors, wall_ms, viewport)
         })
         .unwrap_or_default();
-    if colors.is_none() && control.is_empty() && after_entity.is_none() && psychic.is_none() {
+    if words.is_none() && control.is_empty() && after_entity.is_none() && psychic.is_none() {
         return Vec::new();
     }
     let line_for = |entity: &ObjectRecord| {
@@ -206,61 +207,48 @@ pub(crate) fn build_target_line_instances(
     // Tactical6D4750 walks the construction-ordered Techno array, not the
     // CurrentObjects selection vector or the Logic active-object order.
     // EntityStore's monotonic stable IDs retain that represented order.
-    if !control.is_empty() || after_entity.is_some() || psychic.is_some() {
-        //6D4750/6D478E ->6D47BF/6D47F6 ->6D47FB within EACH Techno visit.
-        //Resolving all action lines before relationships would reverse
-        //cross-object overlaps.
-        let mut instances = Vec::new();
-        for entity in frame.objects() {
-            if let Some(colors) = colors
-                && let Some(line) = line_for(entity)
-            {
-                instances.extend(build_selected_action_line_instances(
-                    &[line],
-                    colors,
-                    viewport,
-                ));
-            }
-            psychic_line_for(entity, &mut instances);
-            if let Some(lines) = control.remove(&entity.stable_id()) {
-                instances.extend(lines);
-            }
-            if let Some(callback) = after_entity.as_mut() {
-                callback(entity.stable_id(), &mut instances);
-            }
+    //6D4750/6D478E ->6D47BF/6D47F6 ->6D47FB within EACH Techno visit.
+    //Resolving all action lines before relationships would reverse
+    //cross-object overlaps.
+    let mut strokes = Vec::new();
+    for entity in frame.objects() {
+        if let Some(words) = words
+            && let Some(line) = line_for(entity)
+        {
+            push_selected_action_line(&mut strokes, line, words, viewport);
         }
-        return instances;
+        psychic_line_for(entity, &mut strokes);
+        if let Some(lines) = control.remove(&entity.stable_id()) {
+            strokes.extend(lines);
+        }
+        if let Some(callback) = after_entity.as_mut() {
+            callback(entity.stable_id(), &mut strokes);
+        }
     }
-    let Some(colors) = colors else {
-        return Vec::new();
-    };
-    let lines = frame.objects().filter_map(line_for).collect::<Vec<_>>();
-    build_selected_action_line_instances(&lines, colors, viewport)
+    strokes
 }
 
 /// Foot4DC340, an enemy Foot's psychic detection line: two clipped 3x3 boxes
 /// at point-2 in the owner's colour (House+56F9), then, when 7BC2B0 clips the
 /// line in, DSurface4C0750's dashed walk over pattern822540 (the rally
 /// pattern) at phase `(-time >> 5) & 15`, storing only where the A-buffer is
-/// nonzero: `draw` receives each store with its A gate, which the GPU applies
-/// (`FX_SURFACE_A_NONZERO` on the dashes, none on the boxes). The colour
-/// pulses toward white (6612C0 by `time & 0x3FF`, the low byte mirrored while
-/// bit 8 is set) except while bit 9 is set. `time` is timeGetTime: wall-clock
-/// milliseconds. No RNG, timer or simulation write.
+/// nonzero (the GPU applies the dashes' [`StoreGate::ANonzero`]; the boxes
+/// have none). The colour pulses toward white (6612C0 by `time & 0x3FF`, the
+/// low byte mirrored while bit 8 is set) except while bit 9 is set. `time` is
+/// timeGetTime: wall-clock milliseconds. No RNG, timer or simulation write.
 fn emit_psychic_detection_line(
+    strokes: &mut Vec<SurfaceStroke>,
     start: [i32; 2],
     end: [i32; 2],
     rgb: [u8; 3],
     time: u32,
-    clip: [i32; 4],
-    mut draw: impl FnMut([i32; 4], u16, u32),
+    view: TacticalViewport,
 ) {
     use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
-    use crate::render::surface_line::{clip_line, patterned_line};
-    let base = RGB565.pack_rgb8(rgb);
-    endpoint_boxes([start, end], clip, |rect| draw(rect, base, 0));
+    use crate::render::surface_line::clip_line;
+    push_endpoint_boxes(strokes, [start, end], RGB565.pack_rgb8(rgb), view);
     let (mut start, mut end) = (start, end);
-    if !clip_line(&mut start, &mut end, clip) {
+    if !clip_line(&mut start, &mut end, view.clip) {
         return;
     }
     let mut color = rgb;
@@ -271,197 +259,32 @@ fn emit_psychic_detection_line(
         }
         color = interpolate_rgb8(rgb, [255; 3], amount & 0xFF);
     }
-    let word = RGB565.pack_rgb8(color);
     let phase = ((time.wrapping_neg() as i32) >> 5) & 0xF;
-    patterned_line(start, end, &RALLY_PATTERN, phase, |point| {
-        draw([point[0], point[1], 1, 1], word, FX_SURFACE_A_NONZERO);
-    });
+    strokes.push(SurfaceStroke::patterned(
+        start,
+        end,
+        &RALLY_PATTERN,
+        phase,
+        RGB565.pack_rgb8(color),
+        StoreGate::ANonzero,
+        view.camera,
+    ));
 }
 
-/// One native RGB565 store as presented, through the shared surface rect.
-pub(crate) fn push_surface_word(
-    instances: &mut Vec<SpriteInstance>,
-    rect: [i32; 4],
-    word: u16,
-    view: TacticalViewport,
-) {
-    push_surface_rect(instances, rect, surface_word_tint(word), view);
-}
-
-/// The presented tint of one native RGB565 word.
-fn surface_word_tint(word: u16) -> [f32; 3] {
-    let rgb = crate::render::native_surface_format::RGB565.unpack_rgb8(word);
-    let rgba = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-        .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-    [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
-}
-
-/// Compose this call's already projected lines in Tactical6D4750 Techno order.
-/// Native7049C0 writes a constant opaque color without reading A or Z, so after
-/// resolving overlaps its disjoint final spans may be emitted in row order.
-/// The pixel grid and dirty ranges are derived only from these lines/clip;
-/// the grid's allocation outlives the call (`DENSE_PIXELS`), its contents do
-/// not, and no simulation state is retained. Both routes pass the same logical
-/// pixels through the half-open pixel-center scaling in `push_surface_rect`
-/// after resolving opaque stores.
-/// Native primitive/overlap evidence: tools/procedural_drawing_oracle/action_lines.
-fn build_selected_action_line_instances(
-    lines: &[ProjectedActionLine],
-    colors: [[f32; 3]; 2],
-    viewport: TacticalViewport,
-) -> Vec<SpriteInstance> {
-    let [left, top, width, height] = viewport.clip;
-    let mut instances = Vec::new();
-    // Storage/index safety only; geometry clipping remains in the native raster.
-    if width <= 0
-        || height <= 0
-        || left.checked_add(width).is_none()
-        || top.checked_add(height).is_none()
-    {
-        return instances;
-    }
-    let color_index = action_line_color_index;
-    let width = width as usize;
-    let height = height as usize;
-    // Small selections keep the direct route. Checked/fallible allocations
-    // preserve that same route if a dense viewport cannot be represented.
-    let dense = lines.len() > 32
-        && DENSE_PIXELS.with_borrow_mut(|pixels| {
-            let Some(pixel_count) = width.checked_mul(height) else {
-                return false;
-            };
-            if pixels.len() < pixel_count {
-                if pixels
-                    .try_reserve_exact(pixel_count - pixels.len())
-                    .is_err()
-                {
-                    return false;
-                }
-                pixels.resize(pixel_count, 0_u8); // 0 is untouched, not a black pixel.
-            }
-            let mut dirty_rows = Vec::new();
-            if dirty_rows.try_reserve_exact(height).is_err() {
-                return false;
-            }
-            dirty_rows.resize(height, [width, 0]); // [first, end), empty initially.
-            compose_dense_action_lines(
-                lines,
-                colors,
-                viewport,
-                [width, height],
-                pixels,
-                dirty_rows,
-                &mut instances,
-            );
-            true
-        });
-    if !dense {
-        for line in lines {
-            let tint = colors[usize::from(color_index(line.kind) - 1)];
-            emit_selected_action_line(line.start, line.end, viewport.clip, |rect| {
-                push_surface_rect(&mut instances, rect, tint, viewport);
-            });
-        }
-    }
-    instances
-}
-
-thread_local! {
-    /// The dense route's colour grid, whose allocation is kept between frames
-    /// (a VERA performance cache, not native state). Every byte is 0 between
-    /// calls: each call clears the spans it painted.
-    static DENSE_PIXELS: std::cell::RefCell<Vec<u8>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-fn action_line_color_index(kind: SelectedLineKind) -> u8 {
-    match kind {
-        SelectedLineKind::Move => 1,
-        SelectedLineKind::Attack => 2,
-    }
-}
-
-/// The dense route: resolve every line's opaque stores in `pixels` (zero on
-/// entry, `[width, height]` row-major), emit the final spans in row order and
-/// clear them again.
-fn compose_dense_action_lines(
-    lines: &[ProjectedActionLine],
-    colors: [[f32; 3]; 2],
-    viewport: TacticalViewport,
-    [width, height]: [usize; 2],
-    pixels: &mut [u8],
-    mut dirty_rows: Vec<[usize; 2]>,
-    instances: &mut Vec<SpriteInstance>,
-) {
-    let [left, top, ..] = viewport.clip;
-    for line in lines {
-        let color = action_line_color_index(line.kind);
-        emit_selected_action_line(line.start, line.end, viewport.clip, |rect| {
-            if rect[2] <= 0 || rect[3] <= 0 {
-                return;
-            }
-            // Rectangles are native-clipped. Widened/clamped offsets also
-            // keep signed extreme coordinates from escaping this allocation.
-            let x0 = (i64::from(rect[0]) - i64::from(left)).clamp(0, width as i64) as usize;
-            let x1 = (i64::from(rect[0]) + i64::from(rect[2]) - i64::from(left))
-                .clamp(0, width as i64) as usize;
-            let y0 = (i64::from(rect[1]) - i64::from(top)).clamp(0, height as i64) as usize;
-            let y1 = (i64::from(rect[1]) + i64::from(rect[3]) - i64::from(top))
-                .clamp(0, height as i64) as usize;
-            if x0 >= x1 || y0 >= y1 {
-                return;
-            }
-            for (y, dirty) in dirty_rows.iter_mut().enumerate().take(y1).skip(y0) {
-                let row = y * width;
-                pixels[row + x0..row + x1].fill(color);
-                dirty[0] = dirty[0].min(x0);
-                dirty[1] = dirty[1].max(x1);
-            }
-        });
-    }
-    for (y, [first, end]) in dirty_rows.into_iter().enumerate() {
-        if first >= end {
-            continue;
-        }
-        let row = &mut pixels[y * width..(y + 1) * width];
-        let mut x = first;
-        while x < end {
-            let color = row[x];
-            if color == 0 {
-                x += 1;
-                continue;
-            }
-            let start = x;
-            x += 1;
-            while x < end && row[x] == color {
-                x += 1;
-            }
-            push_surface_rect(
-                instances,
-                [left + start as i32, top + y as i32, (x - start) as i32, 1],
-                colors[usize::from(color - 1)],
-                viewport,
-            );
-        }
-        row[first..end].fill(0);
-    }
-}
-
-/// Integer logical viewport plus VERA's presentation-only zoom. Native rally
-/// 6DA9D0 and action7049C0 operate in unzoomed surface pixels. Scaling happens
-/// after rasterization, independently of their native clipping/projection.
+/// The integer logical viewport the line producers draw on. Native rally
+/// 6DA9D0 and action7049C0 operate in unzoomed surface pixels; wheel zoom
+/// scales the finished world surface (`WorldZoomPass`), never their strokes.
 ///
 /// `camera` is the world point at the battlefield's corner, gamemd's tactical
 /// position, and `clip` the battlefield on its surface. The match's view
 /// (`tactical_world_viewport`) is in the battlefield's own pixels, its clip
 /// at 0, 0: wherever a layout puts the battlefield on the frame is in the
-/// camera, so the owners' native projections and the emitted positions,
+/// camera, so the owners' native projections and the strokes' positions,
 /// surface pixel plus camera, need no offset of their own.
 #[derive(Clone, Copy)]
 pub(crate) struct TacticalViewport {
     pub camera: [i32; 2],
     pub clip: [i32; 4],
-    pub zoom: f32,
 }
 
 /// Tactical6DA9D0: reverse CurrentObjects (the player's selection vector),
@@ -469,7 +292,7 @@ pub(crate) struct TacticalViewport {
 /// owners retain foundation offsets and native ground/slope/bridge semantics.
 /// No RNG draws, timer writes, detach calls, Z reads or Z writes occur here.
 /// Evidence: tools/procedural_drawing_oracle/rally.{py,json,meta.json}.
-pub(crate) fn build_factory_rally_line_instances(
+pub(crate) fn build_factory_rally_line_strokes(
     sim: Option<&Simulation>,
     frame: Option<&crate::app::presentation::frame::PresentationFrame>,
     rules: Option<&RuleSet>,
@@ -477,11 +300,11 @@ pub(crate) fn build_factory_rally_line_instances(
     house_color_map: &HouseColorMap,
     local_owner: Option<&str>,
     viewport: TacticalViewport,
-) -> [Vec<SpriteInstance>; 2] {
-    let mut instances = [Vec::new(), Vec::new()];
+) -> [Vec<SurfaceStroke>; 2] {
+    let mut strokes = [Vec::new(), Vec::new()];
     let (Some(sim), Some(frame), Some(rules), Some(local_owner)) = (sim, frame, rules, local_owner)
     else {
-        return instances;
+        return strokes;
     };
     let project = |coord: crate::sim::components::DriveCoord| {
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
@@ -515,17 +338,17 @@ pub(crate) fn build_factory_rally_line_instances(
         };
         let start = project(start);
         let end = project(target);
-        let tint = rally_tint_for_owner(owner, house_color_map, &rules.house_color_ramps);
+        let word = rally_word_for_owner(owner, house_color_map, &rules.house_color_ramps);
         emit_rally_line(
-            &mut instances,
+            &mut strokes,
             start,
             end,
-            tint,
+            word,
             sim.session().binary_frame(),
             viewport,
         );
     }
-    instances
+    strokes
 }
 
 fn selected_action_line_for_entity(
@@ -642,36 +465,32 @@ fn attack_line_points(
     )
 }
 
-fn rally_tint_for_owner(
+/// The owner's house colour as the rally line's surface word.
+fn rally_word_for_owner(
     owner: &str,
     house_color_map: &HouseColorMap,
     ramps: &HouseColorRamps,
-) -> [f32; 3] {
+) -> u16 {
     // Unknown owner → NO_REMAP, which ramp() resolves to the default scheme
     // (matching the producers' DEFAULT_SCHEME_ENTRY fallback), not entry 0.
     let index = house_color_map.get(owner).copied().unwrap_or(NO_REMAP);
-    crate::render::palette_light::house_color_rgb(ramps, index)
-        .map(|channel| f32::from(channel) / 255.0)
+    crate::render::native_surface_format::RGB565
+        .pack_rgb8(crate::render::palette_light::house_color_rgb(ramps, index))
 }
 
-/// Palette87F6C4's N53 middle row, read by4DC280 (Move index3) and
-/// 4DC0FA (attack index8), unpacked and repacked by7049C0. This is raw
-/// surface color; the action line does not sample A or use cell lighting.
-fn action_line_color(palette: &crate::assets::pal_file::Palette, index: u8) -> [f32; 3] {
+/// The Move action line's colour (Palette87F6C4 index 3) as presented, for
+/// VERA's formation line dots: they mark where a Move will send each unit.
+pub(crate) fn move_action_line_color(palette: &crate::assets::pal_file::Palette) -> [f32; 3] {
     use crate::render::native_surface_format::{ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565};
-    let [r, g, b] = RGB565.unpack_rgb8(action_line_word(palette, index));
+    let [r, g, b] = RGB565.unpack_rgb8(action_line_word(palette, 3));
     let rgba = ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8([r, g, b, 255]);
     [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
 }
 
-/// The Move action line's colour ([`action_line_color`] index 3), for VERA's
-/// formation line dots: they mark where a Move will send each unit.
-pub(crate) fn move_action_line_color(palette: &crate::assets::pal_file::Palette) -> [f32; 3] {
-    action_line_color(palette, 3)
-}
-
 /// The packed surface word of Palette87F6C4's entry `index` (its 16-bit
-/// table at +174, `+0x10` for index 8).
+/// table at +174, `+0x10` for index 8): the N53 middle row, read by 4DC280
+/// (Move index 3) and 4DC0FA (attack index 8), unpacked and repacked by
+/// 7049C0. Raw surface color; the action line samples no A or cell light.
 fn action_line_word(palette: &crate::assets::pal_file::Palette, index: u8) -> u16 {
     let color = palette.color(index);
     crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
@@ -781,19 +600,25 @@ fn emit_target_laser(
 }
 
 /// Ordinary7049C0(source,target,color,0,0): two clipped3x3 fills followed
-/// by the solid line. The native box origin is point-2 on both axes. Its
-/// bottom-right pixel is the endpoint, not the centre of a symmetric box.
-/// No A/Z reads or writes, RNG draws, timer mutations or detach calls.
-fn emit_selected_action_line(
-    mut start: [i32; 2],
-    mut end: [i32; 2],
-    clip: [i32; 4],
-    mut emit: impl FnMut([i32; 4]),
+/// by the solid line, in Palette87F6C4 index 3 (Move) or 8 (Attack). The
+/// native box origin is point-2 on both axes. Its bottom-right pixel is the
+/// endpoint, not the centre of a symmetric box. No A/Z reads or writes, RNG
+/// draws, timer mutations or detach calls. Native primitive and overlap
+/// evidence: tools/procedural_drawing_oracle/action_lines.
+fn push_selected_action_line(
+    strokes: &mut Vec<SurfaceStroke>,
+    line: ProjectedActionLine,
+    words: [u16; 2],
+    view: TacticalViewport,
 ) {
-    use crate::render::surface_line::{clip_line, solid_line};
-    endpoint_boxes([start, end], clip, &mut emit);
-    if clip_line(&mut start, &mut end, clip) {
-        solid_line(start, end, emit);
+    let word = match line.kind {
+        SelectedLineKind::Move => words[0],
+        SelectedLineKind::Attack => words[1],
+    };
+    push_endpoint_boxes(strokes, [line.start, line.end], word, view);
+    let (mut start, mut end) = (line.start, line.end);
+    if crate::render::surface_line::clip_line(&mut start, &mut end, view.clip) {
+        strokes.push(SurfaceStroke::solid(start, end, word, view.camera));
     }
 }
 
@@ -813,104 +638,72 @@ pub(crate) fn endpoint_boxes(
     }
 }
 
+/// [`endpoint_boxes`] as rectangle strokes of `word`.
+pub(crate) fn push_endpoint_boxes(
+    strokes: &mut Vec<SurfaceStroke>,
+    points: [[i32; 2]; 2],
+    word: u16,
+    view: TacticalViewport,
+) {
+    endpoint_boxes(points, view.clip, |rect| {
+        push_rect(strokes, rect, word, view)
+    });
+}
+
+/// A filled surface rectangle of `word`, already clipped; nothing when empty.
+pub(crate) fn push_rect(
+    strokes: &mut Vec<SurfaceStroke>,
+    rect: [i32; 4],
+    word: u16,
+    view: TacticalViewport,
+) {
+    if let Some(stroke) = SurfaceStroke::rect(rect, word, StoreGate::All, view.camera) {
+        SurfaceStroke::push(strokes, stroke);
+    }
+}
+
 /// Original static pattern842930; Foot4DC340's 822540 holds the same
 /// bytes. The rally producer phase has period15 even though
 /// the leaf repeats16 entries; signed subtraction/remainder survive frame wrap.
 const RALLY_PATTERN: [u8; 16] = [1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0];
 
-/// Tactical6D4648 stores the pixels whose A is nonzero and 6D46CF, later,
-/// those whose A is zero: every pixel enters both passes, gated for the GPU.
+/// Three dashed rows, black then the owner's `word` twice. Tactical6D4648
+/// stores the pixels whose A is nonzero and 6D46CF, later, those whose A is
+/// zero: each row's stroke enters both passes, gated for the GPU.
 fn emit_rally_line(
-    instances: &mut [Vec<SpriteInstance>; 2],
+    strokes: &mut [Vec<SurfaceStroke>; 2],
     mut from: [i32; 2],
     mut to: [i32; 2],
-    tint: [f32; 3],
+    word: u16,
     frame: u32,
     viewport: TacticalViewport,
 ) {
-    use crate::render::surface_line::{clip_line, patterned_line};
+    use crate::render::surface_line::clip_line;
     let phase = i32::MAX.wrapping_sub(frame as i32) % 15;
-    let rgb = tint.map(|v| (v * 255.).round() as u8);
-    let rgba = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-        .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-    let tint = [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.);
     from[1] += 2;
     to[1] += 2;
-    for color in [[0.; 3], tint, tint] {
+    for word in [0, word, word] {
         // The original mutates and reuses these clipped points, including when
         // one row misses the clip. Independent offset/clip calls differ at edges.
         if clip_line(&mut from, &mut to, viewport.clip) {
-            patterned_line(from, to, &RALLY_PATTERN, phase, |point| {
-                let rect = [point[0], point[1], 1, 1];
-                for (pass, gate) in [FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO]
-                    .into_iter()
-                    .enumerate()
-                {
-                    push_gated_surface_rect(&mut instances[pass], rect, color, gate, viewport);
-                }
-            });
+            for (pass, gate) in [StoreGate::ANonzero, StoreGate::AZero]
+                .into_iter()
+                .enumerate()
+            {
+                strokes[pass].push(SurfaceStroke::patterned(
+                    from,
+                    to,
+                    &RALLY_PATTERN,
+                    phase,
+                    word,
+                    gate,
+                    viewport.camera,
+                ));
+            }
         }
         from[1] -= 1;
         to[1] -= 1;
     }
-}
-
-/// Nearest sampling of the native logical pixel grid. Use the existing UI
-/// passthrough pipeline so zoom never pads adjacent 1px quads or writes Z.
-/// Adjacent stores of the same row/color become one horizontal span.
-/// WGSL fragment positions sample pixel centers at integer coordinates + 0.5:
-/// https://www.w3.org/TR/WGSL/#builtin-values-position
-/// Thus each half-open scaled edge maps to ceil(edge * zoom - 0.5). Resolving
-/// opaque overlaps in logical pixels before this mapping preserves coverage.
-pub(crate) fn push_surface_rect(
-    instances: &mut Vec<SpriteInstance>,
-    rect: [i32; 4],
-    tint: [f32; 3],
-    view: TacticalViewport,
-) {
-    push_gated_surface_rect(instances, rect, tint, 0, view);
-}
-
-/// [`push_surface_rect`] for a store the GPU keeps or skips by the live A
-/// (`gate`: `FX_SURFACE_A_NONZERO`, `FX_SURFACE_A_ZERO`, or 0 for none).
-/// Spans merge only with spans of the same gate.
-fn push_gated_surface_rect(
-    instances: &mut Vec<SpriteInstance>,
-    [left, top, width, height]: [i32; 4],
-    tint: [f32; 3],
-    gate: u32,
-    view: TacticalViewport,
-) {
-    let edge = |v: i32| (v as f32 * view.zoom - 0.5).ceil();
-    let x = edge(left);
-    let y = edge(top);
-    let size = [edge(left + width) - x, edge(top + height) - y];
-    if size[0] <= 0. || size[1] <= 0. {
-        return;
-    }
-    let position = [x + view.camera[0] as f32, y + view.camera[1] as f32];
-    if let Some(last) = instances.last_mut()
-        && last.tint == tint
-        && last.draw_state.fx_flags == gate
-        && last.position[1] == position[1]
-        && last.size[1] == size[1]
-        && last.position[0] + last.size[0] == position[0]
-    {
-        last.size[0] += size[0];
-        return;
-    }
-    instances.push(SpriteInstance {
-        position,
-        size,
-        uv_size: [1.; 2],
-        tint,
-        alpha: 1.,
-        draw_state: DrawState {
-            fx_flags: gate,
-            ..Default::default()
-        },
-        ..Default::default()
-    });
 }
 
 #[cfg(test)]
@@ -946,7 +739,6 @@ mod tests {
         TacticalViewport {
             camera: [-320, 0],
             clip: [0, 0, 1000, 1000],
-            zoom: 1.,
         }
     }
 
@@ -960,12 +752,12 @@ mod tests {
         let mut state = TargetLineState::default();
         state.set_unit_action_lines_enabled(false);
         let mut visits = Vec::new();
-        let mut callback = |id, instances: &mut Vec<SpriteInstance>| {
-            assert!(instances.is_empty());
+        let mut callback = |id, strokes: &mut Vec<SurfaceStroke>| {
+            assert!(strokes.is_empty());
             visits.push(id);
         };
         assert!(
-            build_target_line_instances(
+            build_target_line_strokes(
                 &state,
                 false,
                 Some(&sim),
@@ -987,9 +779,9 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         visits.clear();
-        let mut callback = |id, _: &mut Vec<SpriteInstance>| visits.push(id);
+        let mut callback = |id, _: &mut Vec<SurfaceStroke>| visits.push(id);
         assert!(
-            build_target_line_instances(
+            build_target_line_strokes(
                 &state,
                 true,
                 Some(&sim),
