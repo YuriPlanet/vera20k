@@ -1484,6 +1484,22 @@ pub enum Command {
     SuspendProduction { category: ProductionCategory },
     /// Cycle the active producer facility of one category.
     CycleProducerFocus { category: ProductionCategory },
+    /// VERA house control (`sim::house_control`): House `house` (index) is
+    /// handed to `control`; with `Players`, `sender` (>= 0) takes it.
+    SetHouseControl {
+        house: u8,
+        control: crate::sim::house_control::HouseControl,
+        sender: i8,
+    },
+    /// VERA house control: a new House of Country `country` joins the
+    /// running match (`Simulation::add_house`), allied with House `ally`
+    /// (index; -1 for none) and handed to `control`.
+    AddHouse {
+        country: u16,
+        ally: i8,
+        control: crate::sim::house_control::HouseControl,
+        sender: i8,
+    },
     /// Place one completed building that is waiting for placement.
     PlaceReadyBuilding {
         type_id: InternedId,
@@ -1716,6 +1732,8 @@ impl Command {
             | Self::Scatter { .. }
             | Self::TogglePrimaryFactory { .. }
             | Self::CycleProducerFocus { .. }
+            | Self::SetHouseControl { .. }
+            | Self::AddHouse { .. }
             | Self::Cheer
             | Self::MegaMission { .. }
             | Self::Destruct

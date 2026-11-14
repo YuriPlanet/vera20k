@@ -221,6 +221,7 @@ pub mod tiberium_germinate;
 
 // --- Per-match settings, per-player state ---
 pub mod game_options;
+pub mod house_control; // VERA: who plays a House, changed mid-match; AddHouse
 pub mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
 pub mod house_state;
 pub(crate) mod house_strategy;

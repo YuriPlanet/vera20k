@@ -868,6 +868,14 @@ pub struct ScenarioSession {
     /// identity, like `current_house`.
     #[serde(default)]
     local_shared_house_source: Option<i8>,
+    /// VERA house control (`sim::house_control`): senders whose House was
+    /// handed to nobody or the computer. Their records still keep the
+    /// lockstep going, but their gameplay commands are dropped.
+    #[serde(default)]
+    muted_senders: Vec<i8>,
+    /// Offline, the local player's House was handed away the same way.
+    #[serde(default)]
+    local_sender_muted: bool,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
     /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
     #[serde(default)]
@@ -1412,6 +1420,70 @@ impl ScenarioSession {
     ) {
         self.shared_house_sources = source_houses;
         self.local_shared_house_source = local_source;
+    }
+
+    /// VERA house control: the identity sender map made explicit, so one
+    /// sender can be moved; `local_index` is the local House's index.
+    fn materialize_sender_map(&mut self, house_count: usize, local_index: Option<usize>) {
+        if self.shared_house_sources.is_empty() {
+            self.shared_house_sources = (0..house_count.min(128)).map(|i| i as u8).collect();
+            if self.local_shared_house_source.is_none() {
+                self.local_shared_house_source = local_index.and_then(|i| i8::try_from(i).ok());
+            }
+        }
+    }
+
+    /// VERA house control: `sender` now commands House `house`.
+    pub(crate) fn assign_sender(
+        &mut self,
+        sender: i8,
+        house: usize,
+        house_count: usize,
+        local_index: Option<usize>,
+    ) {
+        let (Ok(slot), Ok(house_byte)) = (usize::try_from(sender), u8::try_from(house)) else {
+            return;
+        };
+        self.materialize_sender_map(house_count, local_index);
+        if slot >= self.shared_house_sources.len() {
+            return;
+        }
+        self.shared_house_sources[slot] = house_byte;
+        self.muted_senders.retain(|&muted| muted != sender);
+    }
+
+    /// VERA house control: every sender commanding House `house` is muted.
+    pub(crate) fn mute_senders_of(
+        &mut self,
+        house: usize,
+        house_count: usize,
+        local_index: Option<usize>,
+    ) {
+        self.materialize_sender_map(house_count, local_index);
+        for (sender, &mapped) in self.shared_house_sources.iter().enumerate() {
+            let sender = sender as i8;
+            if usize::from(mapped) == house && !self.muted_senders.contains(&sender) {
+                self.muted_senders.push(sender);
+            }
+        }
+    }
+
+    pub fn sender_muted(&self, sender: i8) -> bool {
+        self.muted_senders.contains(&sender)
+    }
+
+    pub fn local_sender_muted(&self) -> bool {
+        self.local_sender_muted
+    }
+
+    pub(crate) fn set_local_sender_muted(&mut self, muted: bool) {
+        self.local_sender_muted = muted;
+    }
+
+    /// VERA house control: the local process now views and commands
+    /// another House (`Simulation::apply_house_control`).
+    pub(crate) fn set_current_house(&mut self, owner: Option<InternedId>) {
+        self.current_house = owner;
     }
 
     /// VERA shared control: whether any players share a House, so that
@@ -2072,6 +2144,8 @@ impl ScenarioSession {
             network_command_timing: None,
             shared_house_sources: Vec::new(),
             local_shared_house_source: None,
+            muted_senders: Vec::new(),
+            local_sender_muted: false,
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             campaign_map_stage: 0,

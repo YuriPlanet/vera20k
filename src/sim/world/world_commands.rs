@@ -318,6 +318,50 @@ impl Simulation {
         .ok()
     }
 
+    /// VERA house control: the ordered record of a control change.
+    pub fn encode_house_control_record(
+        &self,
+        owner: InternedId,
+        house: u8,
+        control: crate::sim::house_control::HouseControl,
+        sender: i8,
+    ) -> Option<CommandRecord> {
+        let header =
+            self.encode_header_event(owner, crate::sim::house_control::VERA_HOUSE_CONTROL_OPCODE)?;
+        crate::sim::house_control::HouseControlRecord {
+            house_id: header.house_id(),
+            frame: header.frame_stamp(),
+            house,
+            control,
+            sender,
+        }
+        .encode()
+        .ok()
+    }
+
+    /// VERA house control: the ordered record of a new House.
+    pub fn encode_add_house_record(
+        &self,
+        owner: InternedId,
+        country: u16,
+        ally: i8,
+        control: crate::sim::house_control::HouseControl,
+        sender: i8,
+    ) -> Option<CommandRecord> {
+        let header =
+            self.encode_header_event(owner, crate::sim::house_control::VERA_ADD_HOUSE_OPCODE)?;
+        crate::sim::house_control::AddHouseRecord {
+            house_id: header.house_id(),
+            frame: header.frame_stamp(),
+            country,
+            ally,
+            control,
+            sender,
+        }
+        .encode()
+        .ok()
+    }
+
     /// VERA sidebar cycles are ordered commands, because the selected primary
     /// affects delivery. Keep the next-candidate decision in production's
     /// existing cycle_active_producer_for_owner_category execution owner.
@@ -961,7 +1005,10 @@ impl Simulation {
         self.session
             .network_sources(self.houses.order().len())
             .any(|(other, other_house)| {
-                other_house == house && other != sender && timing.admits_source(other)
+                other_house == house
+                    && other != sender
+                    && timing.admits_source(other)
+                    && !self.session.sender_muted(other)
             })
     }
 
@@ -1040,6 +1087,33 @@ impl Simulation {
                 .houses
                 .contains_key(&owner)
                 .then(|| CommandEnvelope::new(owner, execute_tick, command));
+        }
+        if let Some(event) = crate::sim::house_control::HouseControlRecord::decode(record) {
+            // Any sender may hand any House over; the issuer needs no House
+            // of its own (a muted player takes its House back this way).
+            let owner = self.houses.order().get(usize::from(event.house)).copied()?;
+            return Some(CommandEnvelope::new(
+                owner,
+                execute_tick,
+                Command::SetHouseControl {
+                    house: event.house,
+                    control: event.control,
+                    sender: event.sender,
+                },
+            ));
+        }
+        if let Some(event) = crate::sim::house_control::AddHouseRecord::decode(record) {
+            let owner = *self.houses.order().first()?;
+            return Some(CommandEnvelope::new(
+                owner,
+                execute_tick,
+                Command::AddHouse {
+                    country: event.country,
+                    ally: event.ally,
+                    control: event.control,
+                    sender: event.sender,
+                },
+            ));
         }
         if let Some(event) = CycleProducerRecord::decode(record) {
             let owner = self.command_sender_owner(event.house_id)?;
@@ -2264,6 +2338,25 @@ impl Simulation {
                 // The issuer adds no ownership/online/limbo/HP admission.
                 production::toggle_factory_primary(self, rules, *entity_id)
             }
+            Command::SetHouseControl {
+                house,
+                control,
+                sender,
+            } => self.apply_house_control(*house, *control, *sender, rules, frame_effects),
+            Command::AddHouse {
+                country,
+                ally,
+                control,
+                sender,
+            } => self.add_house(
+                *country,
+                *ally,
+                *control,
+                *sender,
+                rules,
+                overlay_registry,
+                frame_effects,
+            ),
             Command::CycleProducerFocus { category } => {
                 production::cycle_active_producer_for_owner_category(
                     self,
@@ -2471,8 +2564,10 @@ impl Simulation {
                 let sender = self.executing_sender(owner);
                 // VERA shared control: a House another player still controls
                 // stays in the game; only this sender leaves.
-                let house_left =
-                    !sender.is_some_and(|sender| self.house_keeps_other_sender(owner, sender));
+                // VERA house control: a muted sender commands no House.
+                let muted = sender.is_some_and(|sender| self.session.sender_muted(sender));
+                let house_left = !muted
+                    && !sender.is_some_and(|sender| self.house_keeps_other_sender(owner, sender));
                 // Execute_DoList's EXIT block (0x0064C7BF..0x0064C862), for
                 // every sender: House+0x248, then Flag_To_Die when no other
                 // human House is undefeated (0x005E2BA0).
@@ -2568,8 +2663,11 @@ impl Simulation {
                     return false;
                 }
                 // VERA shared control: a House another player still controls
-                // survives losing one of them.
-                if !self.house_keeps_other_sender(owner, source) {
+                // survives losing one of them. VERA house control: a muted
+                // sender commands nothing.
+                if !self.session.sender_muted(source)
+                    && !self.house_keeps_other_sender(owner, source)
+                {
                     self.flag_house_to_die(owner);
                 }
                 // REMOVEPLAYER is synchronized source loss, distinct from

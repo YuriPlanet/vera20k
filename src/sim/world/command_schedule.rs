@@ -1416,7 +1416,17 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
     type Error = super::NetworkCommandError;
 
     fn house_is_eligible(&self, house: CommandDispatchHouse) -> bool {
+        // VERA house control: a muted sender's House may be the computer's
+        // now; its records are still read on every peer alike (gameplay ones
+        // are dropped in `execute`, control changes pass).
+        // Offline, the player who handed their own House to the computer
+        // still sends as it: its control records (taking it back) are read.
+        let session = &self.sim.session;
         self.sim.houses.is_empty()
+            || session.sender_muted(house.house_id)
+            || (!session.game_mode().is_network()
+                && session.local_sender_muted()
+                && session.current_house() == Some(house.owner))
             || self
                 .sim
                 .houses
@@ -1474,6 +1484,39 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
                 .decode_native_command_record(record, self.execute_tick),
             QueuedCommand::Semantic { envelope, .. } => Some(envelope.clone()),
         };
+        // VERA house control: a muted sender's (or, offline, the muted local
+        // player's) gameplay commands are dropped; control and leaving pass.
+        let command = command.filter(|command| {
+            let control = matches!(
+                command.payload,
+                Command::SetHouseControl { .. }
+                    | Command::AddHouse { .. }
+                    | Command::ExitMatch
+                    | Command::RemovePlayer { .. }
+                    | Command::Destruct
+            ) || entry.record().is_some_and(|record| {
+                matches!(
+                    record.opcode(),
+                    crate::sim::command::EXIT_OPCODE
+                        | crate::sim::command::REMOVE_PLAYER_OPCODE
+                        | crate::sim::command::DESTRUCT_OPCODE
+                )
+            });
+            if control {
+                return true;
+            }
+            let offline_muted = !self.sim.session.game_mode().is_network()
+                && self.sim.session.local_sender_muted()
+                && self.sim.session.current_house() == Some(command.owner);
+            match entry.record() {
+                Some(_) if offline_muted => false,
+                Some(record) => !self.sim.session.sender_muted(record.house_id()),
+                None => {
+                    !(self.sim.session.local_sender_muted()
+                        && self.sim.session.current_house() == Some(command.owner))
+                }
+            }
+        });
         if let Some(command) = command {
             self.sim.executing_record_sender = entry.record().map(|record| record.house_id());
             let (applied, spawned) = self.sim.apply_one_due_command(

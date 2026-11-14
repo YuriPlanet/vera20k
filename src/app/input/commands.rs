@@ -972,6 +972,23 @@ pub(crate) fn encode_ordinary_local_command(
             let record = sim.encode_cycle_producer_record(owner, category)?;
             Some(CommandEnvelope::synchronized(record, execute_tick))
         }
+        Command::SetHouseControl {
+            house,
+            control,
+            sender,
+        } => {
+            let record = sim.encode_house_control_record(owner, house, control, sender)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::AddHouse {
+            country,
+            ally,
+            control,
+            sender,
+        } => {
+            let record = sim.encode_add_house_record(owner, country, ally, control, sender)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
         Command::LiveGameSpeed { speed } => {
             let record = sim.encode_game_speed_record(owner, speed)?;
             Some(CommandEnvelope::synchronized(record, execute_tick))
