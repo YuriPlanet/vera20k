@@ -671,7 +671,7 @@ impl MatchInputState {
 
     /// Explicit House placement/abandon tails clear the type/foundation even
     /// when pointer expiry has already cleared the current product.
-    fn clear_building_placement(&mut self) -> bool {
+    pub(crate) fn clear_building_placement(&mut self) -> bool {
         if self
             .targeting_mode
             .as_ref()
@@ -886,15 +886,6 @@ impl MatchInputState {
         self.touch_mapper.reset();
     }
 
-    /// TAction46 clears the active display modes before Lock684240 cancels
-    /// the tactical drag through6938C0/4AEAD0/6DA160. Selection membership,
-    /// camera requests/focus and physical held-key state survive this call.
-    pub(crate) fn cancel_tactical_gesture_and_targeting(&mut self) {
-        self.targeting_mode = None;
-        self.building_placement_preview = None;
-        self.cancel_tactical_drag();
-    }
-
     /// Follow the pause across window events. While paused (Esc menu, shared
     /// pause, radar movie) gameplay admits no key or modifier change, so a key
     /// let go then would stay held after the pause: scrolling by itself, or
@@ -934,12 +925,20 @@ impl MatchInputState {
         }
     }
 
-    /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
-    /// command latch. Edges are synchronous in this app, so no second ring
-    /// exists; discard only app command latches. Physical key state remains
-    /// owned by ordinary press/release delivery, not this bounded receipt.
+    /// KeyboardClear 0x0054F720 empties the keyboard's queued-event ring.
+    /// Lock_User_Input 0x00684240, Unlock_User_Input 0x00684290 and the page
+    /// dialog (0x0077D861, 0x0077D895) call it; Lock and Unlock also zero the
+    /// timed unlock frame 0x00B07784 (Main_Tick 0x0055DE79). Edges are
+    /// synchronous in this app, so no ring exists; discard only app command
+    /// latches. Physical key state remains owned by ordinary press/release
+    /// delivery, not this bounded receipt.
+    ///
+    /// The held T stays: TypeSelect's latch 0x00B0FE65 is cleared only by
+    /// its release (0x00732CC0), and while input is locked no key but Esc is
+    /// queued (0x0054F212..0x0054F223), so a T let go during a lock still
+    /// holds after it and band boxes select by type until T is pressed and
+    /// released again.
     pub(crate) fn clear_command_latches(&mut self) {
-        self.type_select.clear_held();
         self.formation_line.clear_key();
         self.ferry.disarm();
         // A command-latch clear does not end the local planning mode. Keep
