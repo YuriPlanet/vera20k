@@ -429,6 +429,11 @@ impl Simulation {
         if !rules.general.allies_allowed {
             return;
         }
+        // VERA `[General] AINearestEnemy=` (off by default): the computers
+        // neither band together nor all turn on the humans.
+        if rules.general.ai_nearest_enemy {
+            return;
+        }
         // 0x00501668..0x00501675.
         if self.session.computer_slot_has_team() {
             return;
@@ -597,6 +602,7 @@ impl Simulation {
             anger.wrapping_neg(),
             self.session.game_mode_nonzero(),
             rules.ares_form(),
+            rules.general.ai_nearest_enemy,
         );
         if let Some(house) = self.houses.get_mut(&owner)
             && house.enemy_house() == Some(other)
@@ -745,6 +751,7 @@ impl Simulation {
             1,
             self.session.game_mode_nonzero(),
             rules.ares_form(),
+            rules.general.ai_nearest_enemy,
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
         if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
@@ -780,6 +787,7 @@ impl Simulation {
                     1,
                     self.session.game_mode_nonzero(),
                     rules.ares_form(),
+                    rules.general.ai_nearest_enemy,
                 );
             }
             if !self.object_placement_scope_active() {

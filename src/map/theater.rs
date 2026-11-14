@@ -57,8 +57,9 @@ pub struct TileImage {
 
 /// Static definition for a theater.
 struct TheaterDef {
-    /// Exact active-YR theater INI filename.
-    ini_name: &'static str,
+    /// Theater control-file name. `Read_Theater_TileSets_INI` (`0x00545150`)
+    /// appends the INI suffix to it (`IniRoots::theater_ini`).
+    control_name: &'static str,
     /// File extension for TMP files (e.g., "tem" for temperate).
     extension: &'static str,
     /// Exact isometric, unit, and theater/ore palette filenames.
@@ -74,7 +75,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "TEMPERATE",
         TheaterDef {
-            ini_name: "temperatmd.ini",
+            control_name: "temperat",
             extension: "tem",
             iso_palette_name: "isotem.pal",
             unit_palette_name: "unittem.pal",
@@ -85,7 +86,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "SNOW",
         TheaterDef {
-            ini_name: "snowmd.ini",
+            control_name: "snow",
             extension: "sno",
             iso_palette_name: "isosno.pal",
             unit_palette_name: "unitsno.pal",
@@ -102,7 +103,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "URBAN",
         TheaterDef {
-            ini_name: "urbanmd.ini",
+            control_name: "urban",
             extension: "urb",
             iso_palette_name: "isourb.pal",
             unit_palette_name: "uniturb.pal",
@@ -113,7 +114,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "LUNAR",
         TheaterDef {
-            ini_name: "lunarmd.ini",
+            control_name: "lunar",
             extension: "lun",
             iso_palette_name: "isolun.pal",
             unit_palette_name: "unitlun.pal",
@@ -124,7 +125,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "DESERT",
         TheaterDef {
-            ini_name: "desertmd.ini",
+            control_name: "desert",
             extension: "des",
             iso_palette_name: "isodes.pal",
             unit_palette_name: "unitdes.pal",
@@ -135,7 +136,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
     (
         "NEWURBAN",
         TheaterDef {
-            ini_name: "urbannmd.ini",
+            control_name: "urbann",
             extension: "ubn",
             iso_palette_name: "isoubn.pal",
             unit_palette_name: "unitubn.pal",
@@ -861,8 +862,9 @@ impl BridgeMiddleTiles {
 
 /// Load tileset data for a theater.
 ///
-/// Replaces the active theater MIX group, then loads the exact active-YR INI
-/// and palette filenames.
+/// Replaces the active theater MIX group, then loads the theater INI the
+/// selected INI roots name (`snowmd.ini` for YR, the stock name when the
+/// selected one is absent) and the exact palette filenames.
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
     let def: &TheaterDef = theater_def(theater_name)?;
@@ -876,11 +878,29 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         return None;
     }
 
-    let (ini_data, ini_source) = asset_manager.get_with_source(def.ini_name)?;
+    // VERA: a profile suffix whose file is absent falls back to the stock
+    // `%sMD.INI` name with a warning, so a game folder that loaded the stock
+    // INI before a suffix was selected keeps loading.
+    let mut ini_name = asset_manager.ini_roots().theater_ini(def.control_name);
+    let stock_name = crate::util::ini_roots::IniRoots::default().theater_ini(def.control_name);
+    let found = match asset_manager.get_with_source(&ini_name) {
+        None if ini_name != stock_name => {
+            log::warn!(
+                "Theater {theater_name}: INI '{ini_name}' not found; reading '{stock_name}'"
+            );
+            ini_name = stock_name;
+            asset_manager.get_with_source(&ini_name)
+        }
+        found => found,
+    };
+    let Some((ini_data, ini_source)) = found else {
+        log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
+        return None;
+    };
     log::info!(
         "Theater {}: INI '{}' from {}",
         theater_name,
-        def.ini_name,
+        ini_name,
         ini_source
     );
 
@@ -894,7 +914,7 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         "Theater {}: loaded {} from INI '{}' ({} tile_id slots, {} tilesets)",
         theater_name,
         def.extension,
-        def.ini_name,
+        ini_name,
         lookup.len(),
         lookup.bounds().len()
     );

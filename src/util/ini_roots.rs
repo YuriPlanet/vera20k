@@ -1,5 +1,5 @@
 //! One root-file choice for Rules, fixed Art and standalone AI, plus optional
-//! SOUNDMD/EVAMD roots.
+//! SOUNDMD/EVAMD roots and the theater control-file suffix.
 //!
 //! Adapted from my ra2-mono GameConfig/GameIniLoader file selection. VERA
 //! keeps one root per family and its existing native layer processing; this
@@ -8,7 +8,8 @@
 //! SOUNDMD and EVAMD are unlayered presentation readers, not part of the
 //! rules/art/AI triplet: their overrides are optional for every profile and a
 //! missing file keeps the tolerant empty audio catalog instead of failing the
-//! root selection.
+//! root selection. The theater suffix is optional for every profile too and is
+//! never probed: the theater loader reports its own missing INI.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +49,10 @@ pub struct IniRootConfig {
     /// Optional EVAMD root for any profile. Absent keeps the profile's preset:
     /// `evamd.ini` for YR/custom, `evamo.ini` for MO.
     pub eva: Option<String>,
+    /// Optional theater control-file suffix for any profile, the `MD` of
+    /// `SNOWMD.INI`. Absent keeps the profile's preset: `md` for YR/custom,
+    /// `mo` for MO.
+    pub theater_suffix: Option<String>,
 }
 
 /// Frozen file names, resolved once before any consumer builds game data.
@@ -60,6 +65,7 @@ pub struct IniRoots {
     ai: String,
     sound: String,
     eva: String,
+    theater_suffix: String,
 }
 
 impl Default for IniRoots {
@@ -70,13 +76,14 @@ impl Default for IniRoots {
 
 impl IniRoots {
     fn preset(profile: IniProfile) -> Self {
-        let (rules, art, ai, sound, eva) = match profile {
+        let (rules, art, ai, sound, eva, theater_suffix) = match profile {
             IniProfile::Yr => (
                 "rulesmd.ini",
                 "artmd.ini",
                 "aimd.ini",
                 "soundmd.ini",
                 "evamd.ini",
+                "md",
             ),
             IniProfile::Mo => (
                 "rulesmo.ini",
@@ -84,6 +91,7 @@ impl IniRoots {
                 "aimo.ini",
                 "soundmo.ini",
                 "evamo.ini",
+                "mo",
             ),
             _ => unreachable!("only concrete built-in profiles have presets"),
         };
@@ -94,6 +102,7 @@ impl IniRoots {
             ai: ai.into(),
             sound: sound.into(),
             eva: eva.into(),
+            theater_suffix: theater_suffix.into(),
         }
     }
 
@@ -114,6 +123,14 @@ impl IniRoots {
     }
     pub fn eva(&self) -> &str {
         &self.eva
+    }
+
+    /// The theater INI for a control-file name such as `snow`.
+    /// `Read_Theater_TileSets_INI` (`0x00545150`) formats it with `"%sMD.INI"`
+    /// (pushed at `0x005454FE`); this keeps that format with the selected
+    /// suffix in place of `MD`.
+    pub fn theater_ini(&self, control_name: &str) -> String {
+        format!("{control_name}{}.ini", self.theater_suffix)
     }
 
     pub fn names(&self) -> [&str; 3] {
@@ -151,6 +168,13 @@ impl IniRootConfig {
                 validate_ini_basename(family, name)?;
             }
         }
+        if let Some(suffix) = self.theater_suffix.as_deref()
+            && (suffix.is_empty() || !suffix.bytes().all(|c| c.is_ascii_alphanumeric()))
+        {
+            return Err(format!(
+                "theater_suffix must be letters and digits only: '{suffix}'"
+            ));
+        }
         Ok(())
     }
 
@@ -165,7 +189,7 @@ impl IniRootConfig {
         // must not eagerly require AI in asset-only tools or small fixtures.
         if self.profile == IniProfile::Yr {
             let mut roots = IniRoots::default();
-            self.apply_audio_roots(&mut roots);
+            self.apply_optional_roots(&mut roots);
             return Ok(roots);
         }
         if self.profile == IniProfile::Auto {
@@ -190,14 +214,15 @@ impl IniRootConfig {
                     ));
                 }
             };
-            self.apply_audio_roots(&mut selected);
+            self.apply_optional_roots(&mut selected);
             return Ok(selected);
         }
         let mut selected = if self.profile == IniProfile::Mo {
             IniRoots::preset(IniProfile::Mo)
         } else {
-            // Start from the YR preset so the optional audio roots keep one
-            // default source, then replace the required triplet.
+            // Start from the YR preset so the optional audio roots and the
+            // theater suffix keep one default source, then replace the
+            // required triplet.
             let mut custom = IniRoots::preset(IniProfile::Yr);
             custom.profile = IniProfile::Custom;
             custom.rules = self.rules.clone().unwrap();
@@ -217,16 +242,19 @@ impl IniRootConfig {
                 missing.join(", ")
             ));
         }
-        self.apply_audio_roots(&mut selected);
+        self.apply_optional_roots(&mut selected);
         Ok(selected)
     }
 
-    fn apply_audio_roots(&self, roots: &mut IniRoots) {
+    fn apply_optional_roots(&self, roots: &mut IniRoots) {
         if let Some(sound) = &self.sound {
             roots.sound.clone_from(sound);
         }
         if let Some(eva) = &self.eva {
             roots.eva.clone_from(eva);
+        }
+        if let Some(suffix) = &self.theater_suffix {
+            roots.theater_suffix.clone_from(suffix);
         }
     }
 }
@@ -398,7 +426,10 @@ mod tests {
         .resolve(|name| matches!(name, "rulesmo.ini" | "artmo.ini" | "aimo.ini"))
         .unwrap();
         assert_eq!(auto_mo.profile(), IniProfile::Mo);
-        assert_eq!((auto_mo.sound(), auto_mo.eva()), ("soundmo.ini", "evamo.ini"));
+        assert_eq!(
+            (auto_mo.sound(), auto_mo.eva()),
+            ("soundmo.ini", "evamo.ini")
+        );
 
         let auto = IniRootConfig {
             profile: IniProfile::Auto,
@@ -408,6 +439,37 @@ mod tests {
         .resolve(|name| matches!(name, "rulesmd.ini" | "artmd.ini" | "aimd.ini"))
         .unwrap();
         assert_eq!((auto.sound(), auto.eva()), ("soundmd.ini", "my-eva.ini"));
+    }
+
+    #[test]
+    fn ini_roots_theater_suffix_follows_the_profile_and_its_override() {
+        let yr = IniRootConfig::default()
+            .resolve(|_| panic!("legacy YR must not probe"))
+            .unwrap();
+        assert_eq!(yr.theater_ini("snow"), "snowmd.ini");
+        let mo = IniRootConfig {
+            profile: IniProfile::Mo,
+            ..Default::default()
+        }
+        .resolve(|_| true)
+        .unwrap();
+        assert_eq!(mo.theater_ini("urbann"), "urbannmo.ini");
+
+        let custom = IniRootConfig {
+            theater_suffix: Some("x2".into()),
+            ..Default::default()
+        };
+        let roots = custom
+            .resolve(|_| panic!("legacy YR must not probe"))
+            .unwrap();
+        assert_eq!(roots.theater_ini("temperat"), "temperatx2.ini");
+        for bad in ["", "md.ini", "../md", "m d"] {
+            let request = IniRootConfig {
+                theater_suffix: Some(bad.into()),
+                ..Default::default()
+            };
+            assert!(request.validate().is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -3,9 +3,9 @@
 I adapted configurable root-file selection from my ra2-mono
 `GameConfig.cs` / `GameIniLoader.cs` into VERA's existing source owners.
 This selects one Rules, fixed Art and standalone AI root as a unit, plus
-optional SOUNDMD and EVAMD roots. It does not replace the parser, ordered
-Rules processing, AI registry/map passes, archive mounting or simulation
-authority.
+optional SOUNDMD and EVAMD roots and the theater INI suffix. It does not
+replace the parser, ordered Rules processing, AI registry/map passes, archive
+mounting or simulation authority.
 
 ## Configuration
 
@@ -49,6 +49,23 @@ never part of the preset completeness or ambiguity checks, and not part of the
 multiplayer rules compatibility hash. A named file that is missing keeps the
 audio owner's tolerated empty catalog instead of failing startup, exactly as
 the fixed names did.
+
+The theater INI takes an optional suffix for any profile:
+
+```toml
+[ini]
+theater_suffix = "mo"
+```
+
+`Read_Theater_TileSets_INI` (`0x00545150`) names the file with `"%sMD.INI"`
+from the theater's control name (`TEMPERAT`, `SNOW`, `URBAN`, `URBANN`,
+`DESERT`, `LUNAR`). The suffix replaces `MD`: `md` for `yr` and `custom`, `mo`
+for `mo` (and for `auto` once it selects MO), so a snow map reads
+`snowmd.ini` or `snowmo.ini`. When the selected file is absent the loader warns
+and reads the stock `snowmd.ini`, so a folder that loaded before keeps loading;
+only when neither exists does that theater load fail. Theater MIX names
+(`%sMD.MIX`) are unchanged. Letters and digits only; the suffix is not probed
+at startup.
 
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not

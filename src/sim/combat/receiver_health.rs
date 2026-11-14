@@ -331,6 +331,7 @@ pub(super) fn commit_receiver_health(
                 delta,
                 world.session.game_mode_nonzero(),
                 rules.ares_form(),
+                rules.general.ai_nearest_enemy,
             );
         }
         Some(delta)

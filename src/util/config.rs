@@ -93,6 +93,12 @@ impl PathsConfig {
 
     /// VERA's folder of mods, one subfolder each (docs/modding.md).
     pub fn mods_dir(&self) -> PathBuf {
+        // The browser build keeps mods apart from the saved profile: its page
+        // imports the one a launch plays (web.rs `import_mod_file`) and
+        // never stores it back.
+        if cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")) {
+            return PathBuf::from(WEB_MODS_DIR);
+        }
         self.settings_dir.join("Mods")
     }
 
@@ -118,6 +124,9 @@ impl PathsConfig {
         Ok(())
     }
 }
+
+/// The browser build's Mods folder in its in-memory file system.
+pub const WEB_MODS_DIR: &str = "/mods";
 
 /// Shared by packaged and direct launches. No writable setting defaults to
 /// the retail installation, even when VERA's executable is installed there.
@@ -425,6 +434,9 @@ impl GameConfig {
                 ("ini", "ai") => parse_string(value).map(|name| ini.ai = Some(name)),
                 ("ini", "sound") => parse_string(value).map(|name| ini.sound = Some(name)),
                 ("ini", "eva") => parse_string(value).map(|name| ini.eva = Some(name)),
+                ("ini", "theater_suffix") => {
+                    parse_string(value).map(|suffix| ini.theater_suffix = Some(suffix))
+                }
                 _ => Ok(()),
             };
             read.with_context(|| format!("line {line_number}: [{section}] {key}"))?;
@@ -713,6 +725,9 @@ mod tests {
             (audio_roots.sound(), audio_roots.eva()),
             ("my-sound.ini", "my-eva.ini")
         );
+        let theater = GameConfig::parse(&format!("{base}[ini]\ntheater_suffix='mo'\n")).unwrap();
+        let theater_roots = theater.ini.resolve(|_| true).unwrap();
+        assert_eq!(theater_roots.theater_ini("snow"), "snowmo.ini");
         for bad in [
             "profile='other'",
             "profile='custom'\nrules='r.ini'",
@@ -721,6 +736,7 @@ mod tests {
             "profile='custom'\nrules='../r.ini'\nart='a.ini'\nai='i.ini'",
             "sound='../my-sound.ini'",
             "eva='a.map'",
+            "theater_suffix='../mo'",
         ] {
             assert!(
                 GameConfig::parse(&format!("{base}[ini]\n{bad}\n")).is_err(),
