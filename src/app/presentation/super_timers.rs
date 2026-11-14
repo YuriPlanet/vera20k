@@ -411,13 +411,17 @@ pub(crate) fn build_super_timer_instances(
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
     let supers = crate::sim::superweapon::super_timer_views(sim, rules);
-    // Ares hook 0x6D49D1 (10035A80) asks SW.TimerVisibility at the head of
-    // each Super's line test; a hidden Super takes no line.
-    #[cfg(feature = "ares")]
-    let supers: Vec<_> = supers
-        .into_iter()
-        .filter(|view| crate::sim::superweapon::ares_timer_visible(sim, rules, *view))
-        .collect();
+    // When the Rules were read the Ares way (`RuleSet::ares_form`), Ares hook
+    // 0x6D49D1 (10035A80) asks SW.TimerVisibility at the head of each Super's
+    // line test; a hidden Super takes no line.
+    let supers: Vec<_> = if rules.ares_form() {
+        supers
+            .into_iter()
+            .filter(|view| crate::sim::superweapon::ares_timer_visible(sim, rules, *view))
+            .collect()
+    } else {
+        supers
+    };
     let blackouts = sim.houses().order().iter().map(|&house| {
         let left = sim
             .power_states()

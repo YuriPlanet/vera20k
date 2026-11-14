@@ -2610,13 +2610,14 @@ fn finish_simulation_frame(
                 sim.interner(),
                 local_owner_name.as_deref(),
             );
-            #[cfg(feature = "ares")]
-            hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
-                &frame_sound_events,
-                sim,
-                &resources.rules,
-                local_owner_name.as_deref(),
-            ));
+            if resources.rules.ares_form() {
+                hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
+                    &frame_sound_events,
+                    sim,
+                    &resources.rules,
+                    local_owner_name.as_deref(),
+                ));
+            }
             #[cfg(feature = "ares")]
             hud_messages.extend(super::sound_dispatch::ares_tech_capture_messages(
                 &frame_sound_events,

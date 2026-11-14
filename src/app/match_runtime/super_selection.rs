@@ -24,7 +24,6 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// The `[SuperWeaponTypes]` entry Launch case 3 selects for the player's next
 /// click (`0x006CC46E`, the literal index 4: retail ChronoWarpSpecial).
-#[cfg(not(feature = "ares"))]
 fn chrono_warp_selection(rules: &RuleSet) -> Option<&str> {
     rules
         .super_weapon_order
@@ -33,24 +32,26 @@ fn chrono_warp_selection(rules: &RuleSet) -> Option<&str> {
 }
 
 /// Whether the local selection is the Chrono Warp (`0x008809A0 == 4`). The
-/// Ares hook 6CBCDE (10035870) asks instead whether the selected type's
-/// `Type=` is ChronoWarp.
+/// Ares hook 6CBCDE (10035870), when the Rules were read the Ares way
+/// (`RuleSet::ares_form`), asks instead whether the selected type's `Type=`
+/// is ChronoWarp.
 pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &RuleSet) -> bool {
     let selected = targeting.and_then(TargetingMode::as_super_weapon);
-    #[cfg(feature = "ares")]
-    return selected.is_some_and(|name| {
-        rules
-            .super_weapon(name)
-            .is_some_and(|sw| sw.kind == SuperWeaponKind::ChronoWarp)
-    });
-    #[cfg(not(feature = "ares"))]
-    selected.is_some_and(|name| {
-        chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
-            || rules.super_weapon(name).is_some_and(|warp| {
-                warp.kind == SuperWeaponKind::ChronoWarp
-                    && crate::sim::superweapon::paid_pair_source(rules, warp).is_some()
-            })
-    })
+    if rules.ares_form() {
+        selected.is_some_and(|name| {
+            rules
+                .super_weapon(name)
+                .is_some_and(|sw| sw.kind == SuperWeaponKind::ChronoWarp)
+        })
+    } else {
+        selected.is_some_and(|name| {
+            chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
+                || rules.super_weapon(name).is_some_and(|warp| {
+                    warp.kind == SuperWeaponKind::ChronoWarp
+                        && crate::sim::superweapon::paid_pair_source(rules, warp).is_some()
+                })
+        })
+    }
 }
 
 /// The selection writes of the local player's Supers: Launch case 3 selects
@@ -69,6 +70,7 @@ pub(super) fn follow_selection_writes(
     rules: &RuleSet,
     local_owner_name: Option<&str>,
 ) {
+    let ares = rules.ares_form();
     for event in events {
         let (SimSoundEvent::SuperWeaponLaunched { owner, sw_type, .. }
         | SimSoundEvent::SuperWeaponStatusChanged { owner, sw_type }) = event
@@ -116,20 +118,21 @@ pub(super) fn follow_selection_writes(
             }
             continue;
         }
-        // Installed Ares (SWTypeExt::Launch 10033201) clears a redirected
-        // Nuke's, Dominator's or Genetic Mutator's selection only when it is
-        // the fired type.
-        #[cfg(feature = "ares")]
-        if rules
-            .super_weapon(sim.interner().resolve(*sw_type))
-            .is_some_and(|sw| {
-                matches!(
-                    sw.kind,
-                    SuperWeaponKind::MultiMissile
-                        | SuperWeaponKind::PsychicDominator
-                        | SuperWeaponKind::GeneticConverter
-                )
-            })
+        // When the Rules were read the Ares way (`RuleSet::ares_form`),
+        // Ares (SWTypeExt::Launch 10033201) clears a redirected Nuke's,
+        // Dominator's or Genetic Mutator's selection only when it is the
+        // fired type.
+        if ares
+            && rules
+                .super_weapon(sim.interner().resolve(*sw_type))
+                .is_some_and(|sw| {
+                    matches!(
+                        sw.kind,
+                        SuperWeaponKind::MultiMissile
+                            | SuperWeaponKind::PsychicDominator
+                            | SuperWeaponKind::GeneticConverter
+                    )
+                })
         {
             if selected
                 .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
@@ -142,7 +145,6 @@ pub(super) fn follow_selection_writes(
             .super_weapon(sim.interner().resolve(*sw_type))
             .map(|sw| sw.kind)
         {
-            #[cfg(feature = "ares")]
             Some(
                 SuperWeaponKind::GenericWarhead
                 | SuperWeaponKind::UnitDelivery
@@ -153,7 +155,7 @@ pub(super) fn follow_selection_writes(
                 | SuperWeaponKind::EMPulse
                 | SuperWeaponKind::Firestorm
                 | SuperWeaponKind::DropPod,
-            ) => {
+            ) if ares => {
                 // Ares new-type cleanup only clears the fired selection:
                 // an automatic launch must not disarm a different SW.
                 if selected
@@ -164,14 +166,15 @@ pub(super) fn follow_selection_writes(
             }
             Some(SuperWeaponKind::ChronoSphere) => {
                 // SW_ChronoSphere::Activate (1006ED30) selects its own warp.
-                #[cfg(feature = "ares")]
-                let warp = rules
-                    .super_weapon(sim.interner().resolve(*sw_type))
-                    .and_then(|sphere| {
-                        crate::sim::superweapon::ares_chrono_warp_for(rules, sphere)
-                    });
-                #[cfg(not(feature = "ares"))]
-                let warp = chrono_warp_selection(rules);
+                let warp = if ares {
+                    rules
+                        .super_weapon(sim.interner().resolve(*sw_type))
+                        .and_then(|sphere| {
+                            crate::sim::superweapon::ares_chrono_warp_for(rules, sphere)
+                        })
+                } else {
+                    chrono_warp_selection(rules)
+                };
                 *targeting = warp.map(|name| TargetingMode::SuperWeapon(name.to_string()));
             }
             Some(
@@ -242,9 +245,9 @@ mod tests {
         Some(TargetingMode::SuperWeapon("ChronoWarpSpecial".to_string()))
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn paid_superweapon_selection_tracks_the_ticket_and_never_revives_cancelled_source() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::sim::command::Command;
         let Some((mut rules, mut sim, owner)) = retail_world() else {
             return;
@@ -340,9 +343,9 @@ mod tests {
         assert_eq!(targeting, warp_selected());
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn extensions_only_clear_the_matching_local_selection() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for kind in ["GenericWarhead", "UnitDelivery"] {
             let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
             "[SuperWeaponTypes]\n0=Strike\n1=Other\n[Strike]\nType={kind}\n[Other]\nType=GenericWarhead\n",
@@ -515,16 +518,19 @@ mod tests {
         let oracle: serde_json::Value =
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
-        for (section, name) in [
-            // Installed Ares clears only the fired type's selection for its
-            // redirected Nuke and Genetic Mutator (SWTypeExt::Launch 10033201).
-            #[cfg(not(feature = "ares"))]
-            ("nuke_launch", "NukeSpecial"),
-            ("iron_curtain_launch", "IronCurtainSpecial"),
-            #[cfg(not(feature = "ares"))]
-            ("genetic_launch", "GeneticConverterSpecial"),
-            ("psychic_launch", "PsychicRevealSpecial"),
+        let ares = rules.ares_form();
+        for (section, name, redirected) in [
+            // When the Rules were read the Ares way (`RuleSet::ares_form`),
+            // Ares clears only the fired type's selection for its redirected
+            // Nuke and Genetic Mutator (SWTypeExt::Launch 10033201).
+            ("nuke_launch", "NukeSpecial", true),
+            ("iron_curtain_launch", "IronCurtainSpecial", false),
+            ("genetic_launch", "GeneticConverterSpecial", true),
+            ("psychic_launch", "PsychicRevealSpecial", false),
         ] {
+            if ares && redirected {
+                continue;
+            }
             let sw_type = sim.intern(name);
             let rows = oracle[section].as_array().unwrap();
             assert!(rows.len() > 10);

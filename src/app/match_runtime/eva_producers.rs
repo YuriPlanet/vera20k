@@ -130,22 +130,22 @@ pub(crate) enum SuperWeaponEvaStage {
 }
 
 /// Ares Ready hooks10035070/100350D0, detection100349D0 and common
-/// Launch10032FC3 select the retained EVA ordinal. New handlers suppress
-/// stock fallbacks even for -1; unported stock redirects keep their old owner.
+/// Launch10032FC3 select the retained EVA ordinal, when the Rules were read
+/// the Ares way (`ares`, `RuleSet::ares_form`). New handlers suppress stock
+/// fallbacks even for -1; unported stock redirects keep their old owner.
 pub(crate) fn resolved_superweapon_eva<'a>(
     sw: &'a crate::rules::superweapon_type::SuperWeaponType,
     stage: SuperWeaponEvaStage,
     stock: Option<&'static str>,
+    ares: bool,
 ) -> Option<&'a str> {
-    #[cfg(feature = "ares")]
-    if let Some(eva) = sw.ares_eva() {
+    if ares && let Some(eva) = sw.ares_eva() {
         return match stage {
             SuperWeaponEvaStage::Ready => eva.ready(),
             SuperWeaponEvaStage::Activated => eva.activated(),
             SuperWeaponEvaStage::Detected => eva.detected(),
         };
     }
-    let _ = (sw, stage);
     stock
 }
 
