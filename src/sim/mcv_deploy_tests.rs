@@ -892,6 +892,35 @@ fn yard_cells(sim: &Simulation) -> Vec<(u16, u16)> {
         .collect()
 }
 
+/// CanDeploySlashUnload asks vt+0x37C at `0x00700E47`: EMP or a running death
+/// count refuses it, and a refused pending deploy keeps the original retry
+/// byte (`deploy_admission` in tools/mcv_deploy_oracle.json).
+#[test]
+fn deploy_admission_matches_the_original_rows() {
+    let native = crate::test_fixture::json("tools/mcv_deploy_oracle.json");
+    let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+    for row in native["deploy_admission"].as_array().unwrap() {
+        let (mut sim, rules, id) = fixture("AMCV", 64, 5, 4);
+        let unit = sim.substrate.entities.get_mut(id).unwrap();
+        unit.set_emp_remaining_for_test(int(&row["emp_counter"]));
+        unit.unit_death_counter
+            .set_for_test(int(&row["death_frame"]));
+        let allowed = row["result"]["allowed"].as_bool().unwrap();
+        assert_eq!(sim.can_deploy_slash_unload(id, &rules), allowed, "{row}");
+        if row["entry"] == "unit_deploy" && !allowed {
+            let unit = sim.substrate.entities.get_mut(id).unwrap();
+            unit.mcv_deploy_pending.set_for_test(true);
+            assert!(!sim.deploy_mcv(id, &rules, None, crate::sim::world::FrameEffects::empty()));
+            let pending = sim.substrate.entities.get(id).unwrap().mcv_deploy_pending;
+            assert_eq!(
+                i32::from(pending.is_pending()),
+                int(&row["result"]["deploy_retry"]),
+                "{row}"
+            );
+        }
+    }
+}
+
 #[test]
 fn try_to_deploy_sites_match_the_original_table() {
     let vectors: serde_json::Value =

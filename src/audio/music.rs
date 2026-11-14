@@ -142,7 +142,11 @@ pub struct MusicPlayer {
     /// (`0x00720FE1` -> `0x004080D0`).
     own: VolumeInterp,
     focus_output_scale: f64,
-    paused: bool,
+    /// The movie hold on this stream: `Audio__HoldAllStreamPlayersAgainstStop
+    /// @ 0x00408200` (`+0x88`) with `Audio__PauseAllStreamPlayers @
+    /// 0x00408270` (`+0x80`), released by `0x00408230`/`0x004082F0`. Only
+    /// the hold pauses the Theme stream, so one flag carries both counts.
+    held: bool,
 }
 
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -221,7 +225,7 @@ impl MusicPlayer {
             volume: DEFAULT_SCORE_VOLUME,
             own: VolumeInterp::new(VOLUME_SCALE, 0),
             focus_output_scale: 1.0,
-            paused: false,
+            held: false,
         }
     }
 
@@ -232,6 +236,9 @@ impl MusicPlayer {
     }
 
     pub(crate) fn state(&self) -> MusicOutputState {
+        if self.held {
+            return MusicOutputState::Held;
+        }
         match self.current_player.as_ref() {
             Some(player) if player.empty() || self.track_cut => MusicOutputState::Finished,
             Some(_) if self.own.moving() => MusicOutputState::Ramping,
@@ -240,7 +247,12 @@ impl MusicPlayer {
         }
     }
 
+    /// `StreamPlayer__PlayFile @ 0x00407B60`, which does nothing and fails
+    /// while the stream is held against stops (`+0x88`).
     pub(crate) fn submit(&mut self, prepared: PreparedTrack) -> bool {
+        if self.held {
+            return false;
+        }
         let Some(sample_rate) = NonZero::new(prepared.sample_rate) else {
             return false;
         };
@@ -258,33 +270,32 @@ impl MusicPlayer {
             track: prepared,
             sample_rate,
         });
-        if self.paused {
-            player.pause();
-        }
         self.current_player = Some(player);
         true
     }
 
+    /// `StreamPlayer__Stop @ 0x00407F40`, a no-op while the stream is held
+    /// against stops (`+0x88`).
     pub fn stop(&mut self) {
+        if self.held {
+            return;
+        }
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
     }
 
-    /// Play_Movie `0x005BED40` blocks and pauses every stream player
-    /// (`0x00408270`) and resumes them afterwards (`0x00408230`), so the
-    /// theme continues from where it stopped rather than restarting.
-    pub fn pause_output(&mut self) {
-        self.paused = true;
+    /// Every movie takes the hold (`0x005BF580`, full-screen `0x005BEE0D`)
+    /// and its release resumes the paused song where it stopped
+    /// (`0x004082F0`): Theme's Stops and PlayFiles in between do nothing.
+    pub fn set_movie_hold(&mut self, held: bool) {
+        self.held = held;
         if let Some(player) = self.current_player.as_ref() {
-            player.pause();
-        }
-    }
-
-    pub fn resume_output(&mut self) {
-        self.paused = false;
-        if let Some(player) = self.current_player.as_ref() {
-            player.play();
+            if held {
+                player.pause();
+            } else {
+                player.play();
+            }
         }
     }
 
@@ -407,6 +418,21 @@ mod tests {
         player.cut_track();
         assert_eq!(player.state(), MusicOutputState::Finished);
         assert!(player.submit(silence()));
+        assert_eq!(player.state(), MusicOutputState::Playing);
+    }
+
+    /// A movie holds the stream (`0x00408200`): Stop (`0x00407F40`) and
+    /// PlayFile (`0x00407B60`) do nothing until the release resumes the song.
+    #[test]
+    fn a_held_stream_refuses_stop_and_play_until_released() {
+        let (mut player, _output) = MusicPlayer::offline_for_test();
+        let silence = || PreparedTrack::decoded("Silence".into(), vec![0.0; 44_100], 22_050);
+        assert!(player.submit(silence()));
+        player.set_movie_hold(true);
+        assert_eq!(player.state(), MusicOutputState::Held);
+        player.stop();
+        assert!(!player.submit(silence()));
+        player.set_movie_hold(false);
         assert_eq!(player.state(), MusicOutputState::Playing);
     }
 

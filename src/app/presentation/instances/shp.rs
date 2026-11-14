@@ -170,6 +170,17 @@ pub(crate) fn shp_visitor<'a>(
     let cells = sim
         .resolved_terrain()
         .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    // A building type's bounds, asked by name once per draw: every building
+    // on the map reads them for its cull.
+    // A house's colour, asked by name once per draw and not per object.
+    let mut owner_colours: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        HouseColorIndex,
+    > = Default::default();
+    let mut type_bounds_seen: crate::util::lookup_hash::LookupMap<
+        crate::sim::intern::InternedId,
+        Option<[i32; 4]>,
+    > = Default::default();
     move |ground_objects: &mut Vec<PlannedObjectInstance>,
           entity: &crate::app::presentation::frame::ObjectRecord| {
         let stable_id = entity.stable_id();
@@ -200,9 +211,13 @@ pub(crate) fn shp_visitor<'a>(
         };
         let type_bounds = (entity.category() == EntityCategory::Structure)
             .then(|| {
-                atlas.and_then(|atlas| {
-                    atlas.building_type_bounds(sim.interner().resolve(entity.type_ref()))
-                })
+                *type_bounds_seen
+                    .entry(entity.type_ref())
+                    .or_insert_with(|| {
+                        atlas.and_then(|atlas| {
+                            atlas.building_type_bounds(sim.interner().resolve(entity.type_ref()))
+                        })
+                    })
             })
             .flatten();
         let visible = if let Some([left, top, width, height]) = type_bounds {
@@ -274,11 +289,16 @@ pub(crate) fn shp_visitor<'a>(
             return;
         }
         let pos = &entity.position;
-        let hc: HouseColorIndex = input
-            .house_colors
-            .get(remap_owner)
-            .copied()
-            .unwrap_or(crate::rules::house_colors::NO_REMAP);
+        let remap_owner_id = active_disguise
+            .and_then(|state| state.house())
+            .unwrap_or(entity.owner());
+        let hc: HouseColorIndex = *owner_colours.entry(remap_owner_id).or_insert_with(|| {
+            input
+                .house_colors
+                .get(remap_owner)
+                .copied()
+                .unwrap_or(crate::rules::house_colors::NO_REMAP)
+        });
         let Some(draw_decision) = tactical_entity_admission(
             super::helpers::TacticalEntityPurpose::Drawing,
             entity,
@@ -570,11 +590,15 @@ pub(crate) fn shp_visitor<'a>(
             physical_cell
         };
         let tint = shp_body_tint(input.lighting, light_cell, entity.category(), extra_light);
-        let selected_palette_light = crate::app::presentation::lighting::body_palette_light(
-            input.lighting,
-            light_cell,
-            extra_light,
-        );
+        // Asked only where it is used: a building's body takes its own
+        // light below, so only a voxel turret reads this one.
+        let selected_palette_light = || {
+            crate::app::presentation::lighting::body_palette_light(
+                input.lighting,
+                light_cell,
+                extra_light,
+            )
+        };
         let palette_light = if entity.category() == EntityCategory::Structure {
             let [x, y] = entity.place.center_xy;
             let coords_cell = (
@@ -589,7 +613,7 @@ pub(crate) fn shp_visitor<'a>(
                 gate_open_frame.is_some(),
             )
         } else {
-            selected_palette_light
+            selected_palette_light()
         };
         // The shared DrawSHP curtain intensity and the class caller's colour
         // word have separate owners. Infantry tests the Location cell;
@@ -873,7 +897,7 @@ pub(crate) fn shp_visitor<'a>(
                     crate::app::presentation::lighting::techno_effect_light(
                         entity,
                         tint,
-                        selected_palette_light,
+                        selected_palette_light(),
                         sim,
                         rules,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
@@ -1522,6 +1546,31 @@ fn emit_building_bib(
 /// `camera` and `projection_viewport` are the Display traversal's; only the
 /// slots its encounter can consume ([`super::overlays::slot_anim_admissible`])
 /// are prepared, and a building with none is skipped before its own work.
+/// How far, in pixels, a building's slot Anim or saved picture may reach from
+/// its cell anchor and still be culled with it: past the largest building art
+/// and Anim offsets by a wide margin (about 25 cells across).
+pub(super) const BUILDING_SLOT_WINDOW_SLACK: f32 = 768.0;
+
+/// The cells of the buildings whose slot Anims the slot admission
+/// (`helpers::projection_admitted`: 360 px across, 180 px down past the
+/// view) can pass, widened by [`BUILDING_SLOT_WINDOW_SLACK`].
+fn building_slot_window(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> crate::render::cell_window::CellWindow {
+    let slack = BUILDING_SLOT_WINDOW_SLACK;
+    crate::render::cell_window::CellWindow::covering(
+        crate::render::cell_window::AnchorBounds {
+            left: camera[0] - 360.0 - slack,
+            top: camera[1] - 180.0 - slack,
+            right: camera[0] + viewport[0] + 360.0 + slack,
+            bottom: camera[1] + viewport[1] + 180.0 + slack,
+        },
+        terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
+    )
+}
+
 pub(crate) fn build_building_anim_instances(
     state: &AppState,
     camera: [f32; 2],
@@ -1566,18 +1615,32 @@ pub(crate) fn build_building_anim_instances(
     ];
     let slot_admitted =
         |anim| super::overlays::slot_anim_admissible(sim, frame, anim, camera, projection_viewport);
+    // A slot Anim stands on or beside its building, so a building far off
+    // the view has none to admit: its cell passes it by before any slot is
+    // projected. The window is the slot admission's box
+    // (`helpers::projection_admitted`) widened by the slack.
+    let slot_window = building_slot_window(sim.resolved_terrain(), camera, projection_viewport);
     for building in frame
         .objects()
         .filter(|object| object.category() == EntityCategory::Structure)
     {
-        if slot_anims_hidden_by_sale(building)
-            || !building
-                .building_art
-                .anim_slots()
-                .iter()
-                .flatten()
-                .any(|&anim| slot_admitted(anim))
-        {
+        let admits_a_slot = || {
+            !slot_anims_hidden_by_sale(building)
+                && building
+                    .building_art
+                    .anim_slots()
+                    .iter()
+                    .flatten()
+                    .any(|&anim| slot_admitted(anim))
+        };
+        if !slot_window.contains(building.position.rx(), building.position.ry()) {
+            debug_assert!(
+                !admits_a_slot(),
+                "the slot window left out a building with a slot Anim in view"
+            );
+            continue;
+        }
+        if !admits_a_slot() {
             continue;
         }
         let owner = sim.interner().resolve(building.owner());
@@ -2135,6 +2198,7 @@ fn resolve_object_shp_frame_with_facing(
             facing,
             entity.body_frame_counter.get(),
             entity.unit_firing_counter.get(),
+            entity.unit_death_counter.get(),
             // The draw asks the locomotor's Is_Moving (vt+0x10 at `0x0073C696`).
             entity.place.moving == Some(true),
             entity
@@ -2197,6 +2261,18 @@ fn resolve_object_shp_frame_with_facing(
 
 #[cfg(test)]
 mod tests {
+    /// A building is passed by only when its cell is past the slot
+    /// admission's box and the slack: one whose anchor sits 1,050 px left
+    /// of the view may still hold a slot Anim the admission passes.
+    #[test]
+    fn a_building_near_the_view_stays_in_the_slot_window() {
+        let window = super::building_slot_window(None, [0.0, 0.0], [600.0, 400.0]);
+        // Anchor x = 30 * (10 - 44) - 30 = -1,050.
+        assert!(window.contains(10, 44));
+        // Anchor x = -3,330.
+        assert!(!window.contains(10, 120));
+    }
+
     use crate::app::presentation::frame::ObjectRecord;
 
     #[test]

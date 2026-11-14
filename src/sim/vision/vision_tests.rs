@@ -2201,3 +2201,28 @@ fn a_computer_houses_sight_opens_no_map_of_its_own() {
     assert!(!world.fog.is_cell_revealed(americans, 20, 20));
     assert!(!world.fog.by_owner().contains_key(&soviet));
 }
+
+/// A plane synced into its presentation copy matches a clone of it, from
+/// the first, whole sync through later ones that copy only the chunks the
+/// writes between them touched, far apart on the map.
+#[test]
+fn a_synced_plane_copy_matches_a_clone_after_scattered_writes() {
+    let mut live = OwnerVisibility::new(300, 300);
+    let mut mirror = OwnerVisibility::default();
+    let assert_matches = |live: &OwnerVisibility, mirror: &OwnerVisibility| {
+        let clone = live.clone();
+        assert!(mirror.cells == clone.cells);
+        assert!(mirror.ground_flags == clone.ground_flags);
+        assert!(mirror.shroud_knowledge == clone.shroud_knowledge);
+        assert!(mirror.map_cell_edge_cache == clone.map_cell_edge_cache);
+    };
+    live.sync_presentation_into(&mut mirror);
+    assert_matches(&live, &mirror);
+    for cells in [[(0, 0), (150, 150)], [(299, 299), (3, 290)]] {
+        for (rx, ry) in cells {
+            live.mark_visible(rx, ry);
+        }
+        live.sync_presentation_into(&mut mirror);
+        assert_matches(&live, &mirror);
+    }
+}

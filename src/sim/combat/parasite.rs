@@ -457,7 +457,11 @@ impl Simulation {
                 if clear_archive {
                     entity.set_archive_target(None);
                 }
-                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    entity,
+                    None,
+                    rules.ares_form(),
+                );
             }
             self.assign_null_destination(owner, rules, effects.overlay_registry(), effects);
         }
@@ -835,8 +839,7 @@ impl Simulation {
         // 0x62A2F8): a non-naval Unit or an Infantry owner whose victim is
         // at least two levels up (GetHeight 208) drops from the victim's
         // Location as a bomb (+0x8D, +0x8F).
-        #[cfg(feature = "ares")]
-        let coords = {
+        let coords = if rules.ares() {
             let terrain = self.resolved_terrain.as_ref();
             let falls =
                 self.substrate
@@ -865,6 +868,8 @@ impl Simulation {
                 eater.begin_bomb_fall();
             }
             drop.or(coords)
+        } else {
+            coords
         };
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
@@ -1376,7 +1381,11 @@ impl Simulation {
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);
             if let Some(source) = source.and_then(|id| self.substrate.entities.get_mut(id)) {
-                crate::sim::mission::concrete_effects::represented_assign_target(source, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    source,
+                    None,
+                    rules.ares_form(),
+                );
             }
             return;
         }

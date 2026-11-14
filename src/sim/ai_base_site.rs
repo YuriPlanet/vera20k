@@ -116,7 +116,6 @@ pub(crate) enum SiteKey<'a> {
     /// type takes in place of the caller's key, with the GetCoords (Cell
     /// vt+0x48) of the house's base-or-starting cell (`0x0050DEF0`), or
     /// NullCoord for the empty cell.
-    #[cfg(feature = "ares")]
     InnerBase { base: [i32; 3] },
 }
 
@@ -125,7 +124,6 @@ impl SiteKey<'_> {
         match self {
             Self::Ordinary => ordinary_key(index, cell, center),
             Self::Defense { grid, argument } => grid.key(index, cell, center, argument),
-            #[cfg(feature = "ares")]
             Self::InnerBase { base } => inner_base_key(index, cell, base),
         }
     }
@@ -180,8 +178,7 @@ pub(crate) fn find_base_building_site(
     let (width, height) = foundation_size(ty);
     // Ares 3.0 10023860 (hook 0x506306): `AIInnerBase.Get(CloakGenerator)`
     // replaces the `CloakGenerator=` test.
-    #[cfg(feature = "ares")]
-    let key = if ty.building_type_ext().ai_inner_base(ty.cloak_generator) {
+    let key = if rules.ares_form() && ty.building_type_ext().ai_inner_base(ty.cloak_generator) {
         let origin = house.base_origin();
         let base = if origin == (0, 0) {
             [0, 0, 0]
@@ -350,7 +347,6 @@ fn ordinary_key(index: i32, cell: (i16, i16), center: (i16, i16)) -> i32 {
 /// The inner-base key (`0x00506329..0x0050640D`): `index + 1000 * d`, `d` the
 /// distance from the centre of `cell` at height 0 to `base`, its deltas
 /// summed `(dy² + dz²) + dx²` through `Sqrt_Approx` and `Math__ftol`.
-#[cfg(feature = "ares")]
 fn inner_base_key(index: i32, cell: (i16, i16), base: [i32; 3]) -> i32 {
     let dx = base[0].wrapping_sub(i32::from(cell.0) * 256 + 128);
     let dy = base[1].wrapping_sub(i32::from(cell.1) * 256 + 128);

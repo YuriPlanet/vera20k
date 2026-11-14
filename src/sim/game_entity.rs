@@ -145,6 +145,10 @@ pub struct GameEntity {
     /// LimboLaunch has removed this Unit from Logic; Unlimbo preserves it.
     #[serde(default)]
     pub unit_firing_counter: crate::sim::animation::UnitFiringCounter,
+    /// UnitClass+6D8, owned by sim::animation: the art `DeathFrames=` count
+    /// a lethal hit starts and Unit AI ends.
+    #[serde(default)]
+    pub unit_death_counter: crate::sim::animation::UnitDeathCounter,
     /// The owning house (`TechnoClass+0x21C`), interned.
     /// `TechnoClass::ChangeOwner @ 0x007014A0` moves it; here only the store's
     /// owner-change path does ([`Self::set_owner_from_store`]).
@@ -1107,6 +1111,17 @@ pub(crate) struct AresPart {
     /// [`InitialPayloadState`]: crate::sim::ares_transports::InitialPayloadState
     #[serde(default)]
     pub(crate) ares_initial_payload: crate::sim::ares_transports::InitialPayloadState,
+    /// Ares BuildingExt CashUpgradeTimers (`+0x54`, `+0x60`, `+0x6C`): one
+    /// per upgrade slot, at TimerStruct's default (no anchor, nothing left)
+    /// until Ares' ProduceCash hooks start them (`sim::credit_income`).
+    /// Hashed while started.
+    #[serde(default)]
+    pub(crate) cash_upgrade_timers: [crate::sim::timer::CdTimer; 3],
+    /// The type's Ares `FactoryPlant.Multiplier` when it is not 1.0, retained
+    /// beside the object's tracking facts, whose `Cost_Of` reads it
+    /// (`sim::house_tracking::retained_plant_multiplier`). Hashed while set.
+    #[serde(default)]
+    pub(crate) factory_plant_multiplier: Option<crate::util::native_x87::NativeF64Bits>,
 }
 
 impl crate::util::sparse::SparseDefault for AresPart {
@@ -2321,6 +2336,7 @@ impl GameEntity {
             turret_rotate_latch: Default::default(),
             body_frame_counter: Default::default(),
             unit_firing_counter: Default::default(),
+            unit_death_counter: Default::default(),
             owner,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
@@ -2689,15 +2705,18 @@ impl GameEntity {
 
     /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate. When
     /// Ares plays (`ares`, [`RuleSet::ares`]) it steps a Techno by its type's
-    /// `FallRate.*` (10049BA0, hook 0x5F3FB2).
+    /// `FallRate.*` (10049BA0, hook 0x5F3FB2); any other object takes the
+    /// stock step or Ares' by `ares_form` ([`RuleSet::ares_form`]).
     ///
     /// [`RuleSet::ares`]: crate::rules::ruleset::RuleSet::ares
+    /// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
     pub(crate) fn advance_fall_rate(
         &mut self,
         parachute_cap: i32,
         free_fall_cap: i32,
         object: Option<&crate::rules::object_type::ObjectType>,
         ares: bool,
+        ares_form: bool,
     ) {
         if ares && let Some(object) = object {
             self.fall.advance_techno_rate(
@@ -2706,7 +2725,8 @@ impl GameEntity {
             );
             return;
         }
-        self.fall.advance_rate(parachute_cap, free_fall_cap);
+        self.fall
+            .advance_rate(parachute_cap, free_fall_cap, ares_form);
     }
 
     /// Put a fixture into a fall where it is, with a FallRate of 0.

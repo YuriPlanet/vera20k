@@ -229,8 +229,6 @@ mod tests {
     };
     use std::cell::RefCell;
 
-    // Runs again once combat's kill record moves to the switch.
-    #[cfg(feature = "ares")]
     #[test]
     fn bounty_kill_admission_wallet_and_forced_display_use_existing_owners() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);

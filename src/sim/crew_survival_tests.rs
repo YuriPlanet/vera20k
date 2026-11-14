@@ -2426,7 +2426,6 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
 
 /// Ares 3.0 SideExt reader plus the gameplay consumers. A fourth side with no
 /// keys takes the Allied defaults; explicit keys replace them.
-#[cfg(feature = "ares")]
 fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
     let text = format!("{RULES}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}");
     let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
@@ -2435,9 +2434,9 @@ fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
     RuleSet::from_processed_rules(&processed).expect("fourth-side projection")
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fourth_side_crew_and_survivor_defaults_follow_side_extension() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let defaults = ares_fourth_side_rules("");
     let mut rng = SimRng::new(7);
     assert_eq!(
@@ -2551,9 +2550,9 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
 
 /// Installed Ares100464C0 orders captor, pilots, then existing passengers;
 /// the death hook's final argument is IgnoreDefenses, not PreventCrewEscape.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::passenger::{BoardingArm, board_passenger};
     use crate::util::native_x87::NativeF32Bits;
     let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
@@ -2658,9 +2657,9 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
 
 /// Aircraft41668B ->10048C50 uses the same survivor owner, before its
 /// nullable Crashable override. Negative passenger chance has no Unit fallback.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::passenger::{BoardingArm, board_passenger};
     let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
         "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n[Americans]\nSide=GDI\n\

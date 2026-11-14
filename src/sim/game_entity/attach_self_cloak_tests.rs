@@ -133,14 +133,17 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
     );
 }
 
-// Runs again once the crates' pickup eligibility moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibition() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, actor) = scene(false);
     hit(&mut sim, &rules, actor);
-    assert!(sim.entities().get(actor).unwrap().cloak_ability_active(false));
+    assert!(
+        sim.entities()
+            .get(actor)
+            .unwrap()
+            .cloak_ability_active(false)
+    );
     assert_eq!(
         crate::sim::crates::multiplayer_eligible_slot(&sim, &rules, actor, 0, 3),
         3,

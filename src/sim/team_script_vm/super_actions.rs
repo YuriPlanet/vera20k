@@ -83,11 +83,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        #[cfg(feature = "ares")]
-        self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = argument;
+        if rules.ares_form() {
+            self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
+        } else {
             let checked = self.team_leader(team_id, rules).and_then(|leader| {
                 // The leader's house (`+0x21C`).
                 let owner = self.substrate.entities.get(leader)?.owner();
@@ -230,7 +228,6 @@ impl Simulation {
     /// whose elapsed charge reaches `AIMinorSuperReadyPercent` (x87: both
     /// counts stored as binary32, `jb` skips an unordered compare) makes the
     /// step wait; with neither, it completes, as it does without a leader.
-    #[cfg(feature = "ares")]
     fn team_action_ares_iron_curtain(
         &mut self,
         team_id: u64,

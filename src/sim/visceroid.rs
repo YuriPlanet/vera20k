@@ -220,7 +220,6 @@ impl Simulation {
     /// threat (`TechnoClass::UpdateThreatInCell`) and leaves the game itself
     /// (UnInit, no death or kill); Per_Cell_Process ends there
     /// (`0x0073B0A5`). Answers whether it merged.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_visceroid_merge(
         &mut self,
         id: u64,

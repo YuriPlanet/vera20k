@@ -40,6 +40,7 @@ fn cancel(
 
 #[test]
 fn superweapon_money_two_stage_settles_source_once_not_destination() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let rules = rules(&format!(
             "[Sphere]\nMoney.Amount={amount}\n[Warp]\nMoney.Amount=-9000\n"
@@ -74,6 +75,7 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
 
 #[test]
 fn superweapon_money_two_stage_cancel_reselect_and_old_commands_cannot_replay() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -94,6 +96,7 @@ fn superweapon_money_two_stage_cancel_reselect_and_old_commands_cannot_replay() 
 
 #[test]
 fn superweapon_money_two_stage_unaffordable_final_is_atomic_and_retryable() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=-500\nEVA.InsufficientFunds=CustomFunds\n");
     let (mut sim, owner) = world(&rules, 500, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -117,6 +120,7 @@ fn superweapon_money_two_stage_unaffordable_final_is_atomic_and_retryable() {
 
 #[test]
 fn superweapon_money_two_stage_postclick_fee_uses_even_zero_source_settings() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Warp]\nMoney.Amount=500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -129,6 +133,7 @@ fn superweapon_money_two_stage_postclick_fee_uses_even_zero_source_settings() {
 
 #[test]
 fn superweapon_money_two_stage_wrong_owner_target_type_and_old_ticket_are_inert() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -158,6 +163,7 @@ fn superweapon_money_two_stage_wrong_owner_target_type_and_old_ticket_are_inert(
 
 #[test]
 fn superweapon_money_two_stage_one_time_consumption_waits_for_final_activation() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", true);
@@ -174,6 +180,7 @@ fn superweapon_money_two_stage_one_time_consumption_waits_for_final_activation()
 
 #[test]
 fn superweapon_money_two_stage_reset_and_defeat_invalidate_pending_selection() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for defeat in [false, true] {
         let rules = rules("[Sphere]\nMoney.Amount=500\n");
         let (mut sim, owner) = world(&rules, 1000, true);
@@ -218,6 +225,7 @@ fn restore(sim: &Simulation, rules: &RuleSet) -> Simulation {
 
 #[test]
 fn superweapon_money_two_stage_save_pending_consumed_and_cancelled_keep_identity() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let rules = rules(&format!("[Sphere]\nMoney.Amount={amount}\n"));
         let (mut sim, owner) = world(&rules, 1000, true);
@@ -265,6 +273,7 @@ fn superweapon_money_two_stage_save_pending_consumed_and_cancelled_keep_identity
 
 #[test]
 fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for held in [false, true] {
         let rules = rules(
             "[BuildingTypes]\n0=PROVIDER\n[PROVIDER]\nStrength=200\nSuperWeapon=Sphere\n\
@@ -303,6 +312,7 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
 
 #[test]
 fn superweapon_money_two_stage_general_prepost_and_new_source_replace_pending() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[SuperWeaponTypes]\n5=OtherSource\n6=OtherDestination\n\
         [Sphere]\nMoney.Amount=100\n\
@@ -325,6 +335,7 @@ fn superweapon_money_two_stage_general_prepost_and_new_source_replace_pending() 
 
 #[test]
 fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::command::CommandEnvelope;
     let rules = rules("[Sphere]\nMoney.Amount=500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
@@ -393,6 +404,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
 
 #[test]
 fn superweapon_money_two_stage_retail_tank_warp_uses_existing_payload_once() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut rules, mut sim, owner)) = superweapon::chronosphere_tests::retail_world() else {
         return;
     };
@@ -427,6 +439,7 @@ fn superweapon_money_two_stage_retail_tank_warp_uses_existing_payload_once() {
 
 #[test]
 fn superweapon_money_two_stage_other_power_and_sequence_exhaustion_cannot_reuse_ticket() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -448,6 +461,7 @@ fn superweapon_money_two_stage_other_power_and_sequence_exhaustion_cannot_reuse_
 
 #[test]
 fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("[Sphere]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 499, true);
     let source = ready(&mut sim, &rules, owner, "Sphere", false);
@@ -495,6 +509,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
 
 #[test]
 fn superweapon_money_two_stage_restore_rejects_corrupt_lifecycle_records() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::snapshot::{GameSnapshot, SnapshotRestoreError};
     for corruption in 0..5 {
         let rules = rules("[Sphere]\nMoney.Amount=500\n");
@@ -557,6 +572,7 @@ fn superweapon_money_two_stage_restore_rejects_corrupt_lifecycle_records() {
 
 #[test]
 fn superweapon_money_two_stage_views_and_refusal_settings_use_source_not_destination() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[Sphere]\nMoney.Amount=-500\nEVA.InsufficientFunds=CustomFunds\n\
         [Warp]\nMoney.Amount=-10000\n",

@@ -18,9 +18,9 @@ use crate::util::save_codec;
 
 const NEAREST_PLANT: i32 = 2 << 16;
 
-#[cfg(feature = "ares")]
 #[test]
 fn action56_paid_pair_settles_the_shared_wallet_once_after_destination() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for amount in [-500, 500] {
         let mut scene = scene(NEAREST_PLANT, true);
         scene

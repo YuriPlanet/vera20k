@@ -597,16 +597,16 @@ impl crate::sim::world::Simulation {
         }
         // Ares 3.0 TeleportLocomotionClass_ILocomotion_MoveTo_Deactivated
         // (1005D3E0, hook 0x71810D), first: a deactivated owner, or one whose
-        // locomotor is powered off, refuses too.
-        #[cfg(feature = "ares")]
-        let ares_refuses = actor.deactivated.is_offline()
-            || !actor
-                .locomotor
-                .as_ref()
-                .is_some_and(|locomotor| locomotor.is_powered());
-        #[cfg(not(feature = "ares"))]
-        let ares_refuses = false;
+        // locomotor is powered off, refuses too. Then the owner's vt+0x37C
+        // (`0x0071810D`), its vt+0x380 and the warp bytes.
+        let ares_refuses = rules.ares_form()
+            && (actor.deactivated.is_offline()
+                || !actor
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|locomotor| locomotor.is_powered()));
         if ares_refuses
+            || actor.is_under_emp()
             || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
@@ -647,6 +647,7 @@ impl crate::sim::world::Simulation {
                 id,
                 previous,
                 false,
+                rules.ares_form(),
             );
             Self::object_raw_receiver_at(
                 &mut self.substrate,
@@ -655,6 +656,7 @@ impl crate::sim::world::Simulation {
                 id,
                 marked.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 }),
                 true,
+                rules.ares_form(),
             );
             if let Some(marked) = marked {
                 Self::object_raw_receiver_at(
@@ -664,6 +666,7 @@ impl crate::sim::world::Simulation {
                     id,
                     marked,
                     true,
+                    rules.ares_form(),
                 );
                 if let Some(runtime) = self
                     .substrate
@@ -683,6 +686,7 @@ impl crate::sim::world::Simulation {
                 id,
                 physical,
                 true,
+                rules.ares_form(),
             );
             self.assign_null_destination(id, rules, registry, effects);
             return Ok(false);
@@ -712,6 +716,7 @@ impl crate::sim::world::Simulation {
                 id,
                 previous,
                 false,
+                rules.ares_form(),
             );
             let terrain = self.resolved_terrain.as_ref().unwrap();
             let cells = NativeCellQuery::canonical(terrain);
@@ -836,6 +841,7 @@ impl crate::sim::world::Simulation {
                 id,
                 physical,
                 true,
+                rules.ares_form(),
             );
             self.assign_null_destination(id, rules, registry, effects);
             return Ok(false);
@@ -849,6 +855,7 @@ impl crate::sim::world::Simulation {
             id,
             resolved,
             true,
+            rules.ares_form(),
         );
         Ok(arm_teleport(
             self.substrate.entities.get_mut(id).unwrap(),
@@ -1095,6 +1102,7 @@ impl crate::sim::world::Simulation {
             id,
             marked.unwrap_or(super::foot_coordinate::NULL_COORD),
             false,
+            rules.ares_form(),
         );
         let cells = NativeCellQuery::canonical(
             self.resolved_terrain
@@ -1115,6 +1123,7 @@ impl crate::sim::world::Simulation {
             id,
             resolved,
             true,
+            rules.ares_form(),
         );
         Ok(Some(resolved))
     }
@@ -1157,6 +1166,7 @@ impl crate::sim::world::Simulation {
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
+        ares: bool,
     ) {
         let Some(coord) = substrate.entities.get(id).and_then(|entity| {
             (!entity.lifecycle.in_limbo() && teleport_process_active(entity))
@@ -1164,7 +1174,15 @@ impl crate::sim::world::Simulation {
         }) else {
             return;
         };
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, false);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            coord,
+            false,
+            ares,
+        );
     }
 }
 

@@ -410,11 +410,12 @@ pub(crate) fn update_fly_height(
             has_passenger,
             is_dropship: object.is_some_and(|o| o.is_dropship),
             flight_level,
-            #[cfg(feature = "ares")]
-            hunter_seeker: object.filter(|o| o.hunter_seeker).and_then(|o| {
-                let (rules, _) = rules_context?;
-                Some(o.techno_combat().hunter_seeker_climb(rules.ares_general()))
-            }),
+            hunter_seeker: rules_context
+                .filter(|(rules, _)| rules.ares_form())
+                .and_then(|(rules, _)| {
+                    let o = object.filter(|o| o.hunter_seeker)?;
+                    Some(o.techno_combat().hunter_seeker_climb(rules.ares_general()))
+                }),
         });
     entity.position.put_z(output.world_z);
     entity.on_bridge.store(output.on_bridge);

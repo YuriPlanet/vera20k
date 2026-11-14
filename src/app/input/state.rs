@@ -171,6 +171,8 @@ impl PreparedSavedLocalView {
         // raw but MouseLoad never swizzles it, so no retry survives a load.
         input.building_placement_preview = None;
         input.saved_building_placement = None;
+        // The foundation latch (+0x1174/+0x1181) is in the same Display body.
+        input.foundation_latch = FoundationLatch::from_saved(modes.foundation);
         let (order, pending, follow) = self.saved.into_local_input();
         input.selection_order = order;
         input.selection_order_pending = pending;
@@ -301,7 +303,60 @@ pub(crate) struct MatchInputState {
     pub(crate) targeting_mode: Option<crate::app::types::TargetingMode>,
     /// Current placement preview for the armed building, if any.
     pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
+    pub(crate) foundation_latch: FoundationLatch,
     saved_building_placement: Option<SavedBuildingPlacement>,
+}
+
+/// `DisplayClass +0x1174`, the foundation's top-left Cell, and `+0x1181`,
+/// whether the whole foundation was visible there, which `BandBox_LeftUp`
+/// tests (`0x004ABAB2`). `UpdateFoundationCenter @ 0x004A91B0` keeps both
+/// across placements and writes the visibility only when the Cell moves
+/// (early exit `0x004A9356..0x004A936E`, write `0x004A94DA`). `None` is the
+/// constructor's null Cell (`0x004A873D`, `0x004A875F`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct FoundationLatch(Option<((u16, u16), bool)>);
+
+impl FoundationLatch {
+    /// The latched top-left Cell.
+    pub(crate) fn origin(self) -> Option<(u16, u16)> {
+        self.0.map(|(origin, _)| origin)
+    }
+
+    /// The latch as a save keeps it (`MouseClass::Load @ 0x005BDF70` reads
+    /// the Display body back raw).
+    pub(crate) fn saved(self) -> Option<((u16, u16), bool)> {
+        self.0
+    }
+
+    pub(crate) fn from_saved(saved: Option<((u16, u16), bool)>) -> Self {
+        Self(saved)
+    }
+
+    /// The call with no foundation armed stores the centre Cell alone
+    /// (`0x004A92B5..0x004A92D8`).
+    pub(crate) fn follow(&mut self, cell: (u16, u16)) {
+        let visible = self.0.is_some_and(|(_, visible)| visible);
+        self.0 = Some((cell, visible));
+    }
+
+    /// The armed foundation's call: `origin` is the top-left Cell it takes,
+    /// `None` where it leaves the latched one, and `preview_at` builds the
+    /// preview there. A moved foundation latches the preview's visibility; a
+    /// still one hands the preview the latched value.
+    pub(crate) fn place(
+        &mut self,
+        origin: Option<(u16, u16)>,
+        preview_at: impl FnOnce((u16, u16)) -> Option<crate::sim::production::BuildingPlacementPreview>,
+    ) -> Option<crate::sim::production::BuildingPlacementPreview> {
+        let latched = self.0;
+        let origin = origin.or(self.origin())?;
+        let mut preview = preview_at(origin)?;
+        match latched {
+            Some((at, visible)) if at == origin => preview.foundation_visible = visible,
+            _ => self.0 = Some((origin, preview.foundation_visible)),
+        }
+        Some(preview)
+    }
 }
 
 #[cfg(test)]
@@ -435,6 +490,12 @@ impl MatchInputState {
         self.shown_cursor.set(kind);
     }
 
+    /// The cursor the last drawn frame showed, which stays where nothing
+    /// writes one.
+    pub(crate) fn shown_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
+        self.shown_cursor.get()
+    }
+
     /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
     /// 6A4C12) and SelectClass::Action 6AAD00 (6AAD61) set the normal cursor,
     /// but their masks take LEFTUP and no LEFTHELD: with the left button held
@@ -488,6 +549,7 @@ impl MatchInputState {
             follow_target: None,
             targeting_mode: None,
             building_placement_preview: None,
+            foundation_latch: FoundationLatch::default(),
             saved_building_placement: None,
             camera_x: 0.0,
             camera_y: 0.0,
@@ -907,6 +969,7 @@ impl MatchInputState {
                 planning: false,
                 targeting,
                 command_bar_closed: sidebar.command_bar_closed,
+                foundation: self.foundation_latch.saved(),
             },
         )
     }

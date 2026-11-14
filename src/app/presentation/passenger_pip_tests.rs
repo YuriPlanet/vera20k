@@ -369,11 +369,12 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
 /// GetPassengerPips (10044C90): a hold over GetPipMax clips its pips where
 /// the stock arm draws none, a `Gunner=` type leaves one empty step after
 /// its first pip, and `Passengers.BySize=no` gives a passenger one pip.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
 
     let draws = |carrier_keys: &str| {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(

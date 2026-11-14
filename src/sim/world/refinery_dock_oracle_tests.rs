@@ -1111,8 +1111,6 @@ fn mission_unload_matches_the_original_harvester_branch() {
 /// stock window's low edge turns and waits as the outside row does, and a
 /// mid-swing turret counts as facing it, so the latched west row arms the
 /// unload as the first pass does.
-// Runs again once the miner's dock window moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_mission_unload_faces_the_dock_exactly() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

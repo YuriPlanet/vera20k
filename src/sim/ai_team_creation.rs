@@ -389,14 +389,11 @@ fn draw_ai_trigger(
 ///   `0x005095D0`).
 /// Ares `AITriggerTypeClass_ConditionMet_SideIndex @ 0x1002F2D0` accepts
 /// every registered side: 0 is unrestricted, otherwise token-1 must equal the
-/// house's side index. The stock build keeps its three-token domain.
-fn side_admits(trigger_side: i32, house_side: i32) -> bool {
-    #[cfg(feature = "ares")]
-    {
+/// house's side index. Any other game keeps the stock three-token domain.
+fn side_admits(trigger_side: i32, house_side: i32, ares: bool) -> bool {
+    if ares {
         trigger_side == 0 || house_side == trigger_side - 1
-    }
-    #[cfg(not(feature = "ares"))]
-    {
+    } else {
         match trigger_side {
             1 => house_side == 0,
             2 => house_side == 1,
@@ -470,7 +467,9 @@ fn is_eligible(
             }
         }
     }
-    if !side_admits(trigger.side, house.side_index()) || house.tech_level() < trigger.threshold {
+    if !side_admits(trigger.side, house.side_index(), rules.ares_form())
+        || house.tech_level() < trigger.threshold
+    {
         return false;
     }
     if !condition_holds(sim, rules, trigger, owner, enemy) {
@@ -688,8 +687,8 @@ fn factories_admit(
         );
         // Ares 3.0 HouseClass_CanInstantiateTeam 100240D0 (hook 0x0050965E)
         // fails an entry without a type (0x005096F1).
-        #[cfg(feature = "ares")]
-        if object.is_none() {
+        let ares = rules.ares_form();
+        if ares && object.is_none() {
             return false;
         }
         let factory = object
@@ -698,14 +697,14 @@ fn factories_admit(
         // `BuildLimit=` leaves room for the entry's whole count, unless the
         // house's difficulty has `[GlobalControls] AllowBypassBuildLimit`;
         // otherwise the entry takes the no-factory path (0x00509671).
-        #[cfg(feature = "ares")]
         let factory = factory
-            && object.is_some_and(|obj| {
-                sim.houses.get(&owner).is_some_and(|house| {
-                    rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
-                }) || crate::sim::production::ares_build_limit_remaining(sim, rules, owner, obj)
-                    >= entry.count
-            });
+            && (!ares
+                || object.is_some_and(|obj| {
+                    sim.houses.get(&owner).is_some_and(|house| {
+                        rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
+                    }) || crate::sim::production::ares_build_limit_remaining(sim, rules, owner, obj)
+                        >= entry.count
+                }));
         if factory {
             return true;
         }

@@ -83,7 +83,7 @@ pub(crate) fn fired(
 /// and amplitude40 are shared. Neither endpoint attaches; no RNG, ID or timer.
 ///
 /// `fired_weapon` is FireAt's weapon index and weapon, which Ares's hooks
-/// read from FireAt's frame; default builds ignore it.
+/// read from FireAt's frame; a game without Ares ignores it.
 pub(crate) fn create(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -92,14 +92,13 @@ pub(crate) fn create(
     mode: CopiedBeamMode,
     fired_weapon: Option<(i32, &crate::rules::weapon_type::WeaponType)>,
 ) {
-    #[cfg(not(feature = "ares"))]
-    let _ = fired_weapon;
-    #[cfg(not(feature = "ares"))]
-    let flh_index = 0;
     // Ares TechnoClass_FireRadBeam1 (Ares.dll 10056010, hook 0x6FD64A)
     // replaces the pushed GetFLH index0 with FireAt's weapon index.
-    #[cfg(feature = "ares")]
-    let flh_index = fired_weapon.map_or(0, |(index, _)| index);
+    let flh_index = if rules.ares() {
+        fired_weapon.map_or(0, |(index, _)| index)
+    } else {
+        0
+    };
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
@@ -116,7 +115,6 @@ pub(crate) fn create(
         Default::default(),
     )
     .coord;
-    #[cfg(feature = "ares")]
     let owner = source.owner();
     let z_adjust = super::fire_coord::effect_z_adjust(
         world,
@@ -131,8 +129,9 @@ pub(crate) fn create(
     // skips SetColor: the House colour FireRadBeam1 stored stays only for
     // Beam.IsHouseColor, otherwise GetBeamColor (10055210) supplies it; the
     // period and amplitude come from Beam.Duration and Beam.Amplitude.
-    #[cfg(feature = "ares")]
-    if let Some((_, weapon)) = fired_weapon {
+    if rules.ares()
+        && let Some((_, weapon)) = fired_weapon
+    {
         let visuals = &weapon.ares_visuals;
         let [rad_color, chrono_color] = [
             mode_color(rules, CopiedBeamMode::Radiation),

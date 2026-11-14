@@ -557,8 +557,9 @@ impl Simulation {
         }
         // Ares4409F4 ->10014490/100144CD uses the installed host's retained
         // Country, after the new upgrade pointer has been committed.
-        #[cfg(feature = "ares")]
-        self.grant_factory_plans(host_id, rules);
+        if rules.ares_form() {
+            self.grant_factory_plans(host_id, rules);
+        }
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         self.houses.request_house_tech_tree_recheck(owner);
         // Ordinary power-up path has no satellite flag. The satellite-upgrade

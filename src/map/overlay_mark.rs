@@ -237,7 +237,14 @@ pub(crate) fn mark_overlay<H: OverlayMarkHost>(
         // (`ReadMapOverlayPacks @ 0x005FD2E0`) constructs only identities with
         // an SHP or a CellAnim, which `USELESS` has in no theater (no rules or
         // art section, and neither `USELESS.SHP` nor `UGELESS.SHP` is in a
-        // retail archive). No retail map places 0xA7 either.
+        // retail archive). No retail map places 0xA7 either. 0x7E is dormant
+        // the same way: `DUMMYOLD` has no rules or art section and no image in
+        // any theater, so no retail cell holds it. Every vein path waits on
+        // such a cell or on a unit's `Weeder=` (`+0xE0F`), which no retail
+        // unit sets: ScenarioInit's regrowth (`0x005FDDF0`), the removal
+        // (`0x00486E30`) from Harvest_Ore_Tick (`0x0073D4EC`) and wall
+        // extension (`0x00453006`), and with them their radar marks
+        // (`0x006551C0`).
         return finish(host, anchor);
     }
 

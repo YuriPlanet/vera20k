@@ -1551,10 +1551,13 @@ fn gsi_04_12_common_raw_occupation_structural_deck_unit_tracks_live_collapse_fla
 
     let _ = sim.object_conceal(2);
 
-    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too.
+    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too
+    // (`Simulation::track_raw_mark_at`). Reveal and Conceal ran on the empty
+    // rules.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        if cfg!(feature = "ares") { 0 } else { 0x20 },
+        if ares { 0 } else { 0x20 },
         "height-only clear still targets deck after the collapsed mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1619,10 +1622,13 @@ fn gsi_04_12_common_raw_occupation_high_nonstructural_unit_keeps_native_stale_gr
     let _ = sim.object_conceal(1);
 
     // Ares 3.0 UnitClass_UnmarkOccupationBits 1004C3E0 (hook 0x00744216)
-    // also clears the ground plane UnitClass_MarkOccupationBits recorded.
+    // also clears the ground plane UnitClass_MarkOccupationBits recorded
+    // (`Simulation::track_raw_mark_at`). Reveal and Conceal ran on the empty
+    // rules.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        if cfg!(feature = "ares") { 0 } else { 0x20 },
+        if ares { 0 } else { 0x20 },
         "height-only clear targets deck even though nonstructural mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1745,6 +1751,9 @@ fn teleport_and_grounded_jumpjet_limbo_clear_the_infantrymans_sub_cell() {
 fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_resident() {
     use crate::sim::components::DriveCoord;
 
+    // The fixture's entry points run on the empty rules; the direct raw
+    // receivers take the same answer.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     for (head, cell, deck) in [
         (Some(DriveCoord::cell(3, 3, 0)), (3, 3), false),
         (Some(DriveCoord::cell(3, 3, 416)), (3, 3), true),
@@ -1764,6 +1773,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             1,
             current,
             false,
+            ares,
         );
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         entity.set_foot_occupation_enabled(false);
@@ -1781,6 +1791,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             1,
             head.unwrap_or(current),
             true,
+            ares,
         );
         let bits = |sim: &Simulation| {
             if deck {
@@ -1817,6 +1828,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             2,
             head.unwrap_or(current),
             true,
+            ares,
         );
         let _ = sim.techno_limbo(1);
         assert_eq!(

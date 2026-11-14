@@ -598,6 +598,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
         facing,
         actor.body_frame_counter.get(),
         actor.unit_firing_counter.get(),
+        actor.unit_death_counter.get(),
         crate::sim::movement::motion_query::is_moving(actor) == Some(true),
         false,
     );
@@ -629,6 +630,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
             actor.body_facing_byte(arena.frame()),
             actor.body_frame_counter.get(),
             counter,
+            -1,
             crate::sim::movement::motion_query::is_moving(actor) == Some(true),
             false,
         )
@@ -1418,9 +1420,9 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
 /// Ares FootClass_PointerGotInvalid_Parasite10048280 (hook4D99AA) and
 /// ParasiteClass_PointerGotInvalid_Cloak100482D0 (hook62A283): the host's
 /// cloak Detach_All(false) keeps the drone attached; only a removal ejects.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_cloaking_host_keeps_its_drone() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut arena = Arena::new(&rules);
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));

@@ -233,8 +233,7 @@ fn own_sellable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
 /// the sell cursor takes it: Ares 3.0 DisplayClass_ChooseAction_CanSell
 /// (10057E70, hook 0x6929FC) answers SellUnit once `DetermineAction
 /// 0x006929F2` found the object's owner the player and its CanBeSold
-/// (`production::foot_can_be_sold`) true.
-#[cfg(feature = "ares")]
+/// (`production::foot_can_be_sold`) true, while Ares plays.
 pub(crate) fn own_sellable_unit_under_point(
     state: &AppState,
     world_x: f32,
@@ -243,15 +242,15 @@ pub(crate) fn own_sellable_unit_under_point(
     own_sellable_unit_id(state, visible_object_under_point(state, world_x, world_y)?)
 }
 
-#[cfg(feature = "ares")]
 fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
+    let rules = state.rules().filter(|rules| rules.ares())?;
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = preferred_local_owner(state)?;
     let entity = sim.entities().get(stable_id)?;
     (sim.interner()
         .resolve(entity.owner())
         .eq_ignore_ascii_case(&owner)
-        && crate::sim::production::foot_can_be_sold(sim, state.rules()?, stable_id))
+        && crate::sim::production::foot_can_be_sold(sim, rules, stable_id))
     .then_some(stable_id)
 }
 
@@ -376,7 +375,6 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
     });
     // `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`'s action 0xD (SellUnit)
     // arm: a Unit or Aircraft target queues the same SELL event.
-    #[cfg(feature = "ares")]
     let building = building.or_else(|| {
         object_under_cursor
             .filter(|_| !repair)
@@ -471,12 +469,8 @@ pub(crate) fn place_ready_building_at_cell(
     let (rx, ry) = origin;
     // Visibility1181 is latched by UpdateFoundationCenter4A94DA. LeftUp
     // checks it after the freshly recomputed proximity1180(4ABAA4/4ABAB2).
-    // RESIDUAL: gamemd latches it from the tactical gadget only
-    // (`0x004AAC10` calls `0x004A91B0` at `0x004AAD04`); this preview follows
-    // the cursor's screen point over the sidebar too. Trigger: a radar
-    // placement (`0x00653D58`) in a shrouded game. Effect: it tests the Cell
-    // behind the radar rather than the last tactical one, so it may refuse
-    // or admit differently. Frequency: rare.
+    // Over the radar the centre is the last tactical one
+    // ([`crate::app::match_runtime::sim_tick::FoundationCentre::Tactical`]).
     let visible = state
         .match_state
         .input
@@ -548,9 +542,9 @@ pub(crate) fn place_ready_building_at_cell(
 /// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` queues the SPECIAL_PLACE event
 /// (`0x12`), and keeps the selection: Launch's tail clears or moves it
 /// (`match_runtime::super_selection`). Pointer action admission runs first;
-/// the sim's ClickFire still owns instance admission. The event names the first
-/// type whose `Action=` is the click's action (`SuperWeaponTypeClass::FindFirstOfAction`); retail
-/// types' actions are unique, so that is the selected one.
+/// the sim's ClickFire still owns instance admission. The click's action is
+/// the armed type's `Action=` (`SuperWeaponTypeClass::GetAction @
+/// 0x006CEF80`), which [`special_place_type`] maps to the type it names.
 pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str) {
     // Guard: arming click's RELEASE lands on the cameo. Don't fire the SW
     // at a bogus off-map cell behind the sidebar panel; leave the mode
@@ -574,17 +568,74 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    launch_super_weapon_at_cell(state, section, cell);
+    let Some(action) = state
+        .rules()
+        .and_then(|rules| rules.super_weapon(section))
+        .map(|super_weapon| super_weapon.action.as_deref().unwrap_or("None").to_owned())
+    else {
+        return;
+    };
+    launch_super_weapon_at_cell(state, section, PlaceAction::Stock(&action), cell);
 }
 
-/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `section` at the clicked
-/// `(rx, ry)`: the tactical click's Cell, or the radar release's
-/// (`0x00653D58`), whose action names no pointer target to admit.
+/// The superweapon action a release hands `BandBox_LeftUp`'s SPECIAL_PLACE
+/// (`0x004AC20C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaceAction<'a> {
+    /// A stock action, by its ActionType name (`0x007E4C50`).
+    Stock(&'a str),
+    /// An Ares superweapon action, above `SuperWeaponDisallowed`, which
+    /// only the radar's Ares superweapon answer hands over.
+    Ares,
+}
+
+/// The type `BandBox_LeftUp`'s SPECIAL_PLACE names for `action`, with
+/// `armed` the armed type (`0x004AC20C..0x004AC21A`): the first
+/// `[SuperWeaponTypes]` entry whose `Action=` it is
+/// ([`crate::sim::superweapon::first_super_type_with_action`]), or none, and
+/// none queues no event (`0x004AC294`). Ares replaces that lookup (hook
+/// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0): an Ares action
+/// above `SuperWeaponDisallowed` (0x7E) names its current type, the armed one
+/// (resuming at `0x4AC21C`); a stock action names the armed type when it is
+/// that type's `Action=` (`+0xBC`); anything else names none (`0x4AC294`). It
+/// is superweapon code, so it follows [`RuleSet::ares_form`].
+///
+/// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
+pub(crate) fn special_place_type<'a>(
+    rules: &'a crate::rules::ruleset::RuleSet,
+    armed: &'a str,
+    action: PlaceAction<'_>,
+) -> Option<&'a str> {
+    match action {
+        PlaceAction::Ares => Some(armed),
+        PlaceAction::Stock(action) if rules.ares_form() => rules
+            .super_weapon(armed)
+            .is_some_and(|sw| sw.has_action(action))
+            .then_some(armed),
+        PlaceAction::Stock(action) => {
+            crate::sim::superweapon::first_super_type_with_action(rules, action)
+        }
+    }
+}
+
+/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `action`, with `armed`
+/// the armed type, at the clicked `(rx, ry)`: the tactical click's Cell, or
+/// the radar release's (`0x00653D58`), whose action names no pointer target
+/// to admit.
 pub(crate) fn launch_super_weapon_at_cell(
     state: &mut AppState,
-    section: &str,
+    armed: &str,
+    action: PlaceAction<'_>,
     (rx, ry): (u16, u16),
 ) {
+    let Some(section) = state
+        .rules()
+        .and_then(|rules| special_place_type(rules, armed, action))
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let section = section.as_str();
     let Some(owner) = preferred_local_owner(state) else {
         return;
     };

@@ -272,6 +272,7 @@ impl Simulation {
             id,
             location,
             false,
+            rules.ares_form(),
         );
         let actor = self
             .substrate
@@ -825,6 +826,7 @@ impl Simulation {
                 id,
                 location,
                 true,
+                rules.ares_form(),
             );
         }
 
@@ -1178,6 +1180,7 @@ mod tests {
             1,
             spot,
             true,
+            rules.ares_form(),
         );
         (sim, rules)
     }
@@ -1222,6 +1225,7 @@ mod tests {
             2,
             centre,
             true,
+            rules.ares_form(),
         );
         let exit_bits = |sim: &Simulation| {
             sim.substrate.raw_cell_occupation.bits_at(

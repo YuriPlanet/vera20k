@@ -94,7 +94,11 @@ fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
             sim.mapgen_rng.state(),
         );
 
-        sim.locomotor_mark_all_occupation_bits(1, int(&input["mode"]) != 0);
+        sim.locomotor_mark_all_occupation_bits(
+            1,
+            int(&input["mode"]) != 0,
+            crate::rules::ruleset::RuleSet::empty_for_test().ares_form(),
+        );
 
         let entity = sim.substrate.entities.get(1).unwrap();
         let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();

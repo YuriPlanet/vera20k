@@ -1278,8 +1278,17 @@ pub(super) fn quick_match_join(state: &mut AppState, channel: WolChannel, key: &
 /// RESIDUAL: `DL=0`'s internals are not traced; the Quick Match game has
 /// no key and no resolution bits, so neither popup can follow.
 pub(super) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
-    if admit(&channel, false, admission_context(state)).is_err() {
-        super::quick_match::game_joined(state, false);
+    let context = admission_context(state);
+    if let Err(reason) = admit(&channel, false, context) {
+        // VERA: the log keeps what was compared; gamemd records nothing.
+        log::warn!(
+            "WOL Quick Match: {} refused the join ({}); local rules hash {:?}, host exInfo {:?}",
+            channel.name,
+            reason.unwrap_or("no message"),
+            context.local_hash,
+            channel.ex_info,
+        );
+        super::quick_match::game_refused(state, reason);
         return;
     }
     join_channel(state, channel, "", true, false);

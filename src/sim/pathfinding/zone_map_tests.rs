@@ -1087,3 +1087,47 @@ fn automatic_tube_shells_keep_ground_connectivity_without_bridge_records() {
         "automatic Tube shells do not create high-bridge redirect records"
     );
 }
+
+/// A base rebuild with nothing changed since the last one keeps its result,
+/// and a write between two rebuilds makes the second one run: after a cell
+/// turns to rock the grid matches one that rebuilt only once, after the
+/// change, and the walled-off cell has left its zone.
+#[test]
+fn a_rebuild_after_an_unchanged_one_still_follows_a_class_write() {
+    let classes = vec![zone_class::GROUND; 9];
+    let mut terrain = terrain_from_zone_classes(3, 3, &classes, &[0; 9]);
+    let path_grid = PathGrid::from_resolved_terrain(&terrain);
+    let mut twice = ZoneGrid::build_with_terrain(&path_grid, &terrain, &[], 3, 3);
+    let mut once = twice.clone();
+    // Read-only: a writable borrow would itself clear the rebuild's mark.
+    let snapshot = |zones: &ZoneGrid| {
+        let maps: Vec<Vec<ZoneId>> = MovementZone::all_ground()
+            .iter()
+            .map(|&mz| zones.map_for(mz).unwrap().zone_ids_slice().to_vec())
+            .collect();
+        let base = zones.base_topology();
+        (
+            base.zone_ids.clone(),
+            base.raw_zone_ids_by_row.clone(),
+            maps,
+        )
+    };
+
+    twice.rebuild_base_connectivity_preserving_hierarchy(&path_grid, &terrain, &[]);
+    let first = snapshot(&twice);
+    twice.rebuild_base_connectivity_preserving_hierarchy(&path_grid, &terrain, &[]);
+    assert_eq!(
+        snapshot(&twice),
+        first,
+        "an unchanged rebuild keeps its result"
+    );
+
+    terrain.cells_mut_for_test()[4].zone_type = zone_class::IMPASSABLE;
+    for zones in [&mut twice, &mut once] {
+        assert!(zones.refresh_base_cell_attributes_at(&terrain, 1, 1));
+        zones.rebuild_base_connectivity_preserving_hierarchy(&path_grid, &terrain, &[]);
+    }
+    let after = snapshot(&twice);
+    assert_eq!(after, snapshot(&once));
+    assert_ne!(after.0, first.0, "the rock cell changed the base zones");
+}

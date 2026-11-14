@@ -3,7 +3,6 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::superweapon_type::SuperWeaponKind;
-#[cfg(feature = "ares")]
 use crate::sim::combat::TargetKind;
 
 fn scene() -> (RuleSet, Simulation, InternedId, InternedId) {
@@ -57,9 +56,9 @@ fn scene_with(extra: &str, art: &str) -> (RuleSet, Simulation, InternedId, Inter
     (rules, sim, owner, sw_type)
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw_type) =
         scene_with_late_rules("[Seek]\nSW.InitialReady=yes\nSW.VirtualCharge=yes\n");
     sim.super_weapons
@@ -161,9 +160,9 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
 /// The callback seeds FindNearbyLocation from GetCoords (vt+0x48 at
 /// 100721ED), a building's foundation centre, and queues Area Guard for a
 /// `Harvester=yes` unit (100722F5..1007230C).
-#[cfg(feature = "ares")]
 #[test]
 fn hunter_seeker_seeds_from_the_foundation_centre_and_guards_with_harvesters() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw_type) = scene_with(
         "[Seek]\nHunterSeeker.Type=HARV\n",
         "[LAUNCHER]\nFoundation=4x4\n",
@@ -201,9 +200,9 @@ fn hunter_seeker_seeds_from_the_foundation_centre_and_guards_with_harvesters() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targets() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw_type) = scene();
     assert!(rules.object("IGNORED").unwrap().hunter_seeker_ignored());
     let (allowed, ..) = scene_with_late_rules("[IGNORED]\nHunterSeeker.Ignore=no\n");

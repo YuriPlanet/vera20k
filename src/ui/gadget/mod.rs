@@ -72,14 +72,12 @@ pub const TACTICAL_REGION_FLAGS: u16 = FLAG_LEFT_PRESS
     | FLAG_RIGHT_HELD
     | FLAG_RIGHT_RELEASE; // 0x7F
 
-/// Minimap/radar region mask. gamemd's is 0x9F (study minimap lane §1b: left
-/// press/held/release/up + right-press + right-up; NOT right-held/right-release).
-/// We ADD RIGHT_RELEASE (→ 0xDF) as a Rust-native divergence: with 0x9F a
-/// right-press acquires sticky capture that RIGHT_RELEASE can't clear (it's
-/// masked out), leaving the minimap holding capture until the next left-release
-/// — an input-eating quirk. Including RIGHT_RELEASE lets a minimap right-click
-/// acquire-then-release capture cleanly, producing gamemd's observable output
-/// (right-press centers the tactical view) without the quirk.
+/// Minimap/radar region mask: left press/held/release/up, right press,
+/// right release and right up, not right held. The radar gadget's static
+/// constructor writes 0x9F (`0x00652872`), and `RadarClass::One_Time @
+/// 0x00652CF0` overwrites its flags (`0xB04A30`, the gadget's +0x20) with
+/// 0xDF at `0x00652D79`, so a right release clears the capture a right press
+/// takes.
 pub const MINIMAP_REGION_FLAGS: u16 = FLAG_LEFT_PRESS
     | FLAG_LEFT_HELD
     | FLAG_LEFT_RELEASE

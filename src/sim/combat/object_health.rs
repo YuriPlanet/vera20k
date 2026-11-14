@@ -125,7 +125,6 @@ pub fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8
 /// `-N` needs GetHealthStatus (5F5DD0: Red 0, Yellow 1, Green 2) `<= N`
 /// unsigned. A negative chance always culls; otherwise one
 /// `Scenario.Random.RandomRanged(0, 99) < chance` draw decides.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_can_cull(
     warhead: &crate::rules::warhead_type::WarheadType,
     attacker_veterancy: crate::util::native_x87::NativeF32Bits,
@@ -401,15 +400,16 @@ pub(super) fn commit(
             with_source: true,
         });
     }
-    #[cfg(feature = "ares")]
-    for kind in [84, 83] {
-        if !alive(host) {
-            break;
+    if ares {
+        for kind in [84, 83] {
+            if !alive(host) {
+                break;
+            }
+            host.invoke(HealthCallback::Tag {
+                kind,
+                with_source: true,
+            });
         }
-        host.invoke(HealthCallback::Tag {
-            kind,
-            with_source: true,
-        });
     }
     result
 }

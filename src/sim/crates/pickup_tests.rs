@@ -1226,7 +1226,7 @@ fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
             .state(),
         // Installed Ares702819 ->1004AB50 resumes at 702823 for a zero result,
         // past the Uncloak call.
-        if cfg!(feature = "ares") { 2 } else { 3 }
+        if rules.ares() { 2 } else { 3 }
     );
     assert_eq!(sim.logic_order(), logic);
     assert_eq!(overlay_at(&sim, (21, 22)), None);
@@ -2526,9 +2526,9 @@ fn total_bales(sim: &Simulation, registry: &OverlayTypeRegistry) -> u32 {
 /// Ares 3.0 1002C8A0 (hook 0x48248D): the Money crate pays `base +
 /// RandomRanged(0, [CrateRules] RandomCrateMoney)`; 0 pays the base and
 /// draws nothing.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_random_crate_money_bounds_the_top_up() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules =
         RuleSet::from_ini(&IniFile::from_str("[CrateRules]\nRandomCrateMoney=0\n")).unwrap();
     let mut rng = crate::sim::rng::SimRng::new(7);

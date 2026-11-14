@@ -461,7 +461,15 @@ impl Simulation {
             ),
         };
         let on_bridge = entity.on_bridge();
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, false);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            location,
+            false,
+            rules.ares_form(),
+        );
         let (rx, ry) = ((x / 256) as u16, (y / 256) as u16);
         let building = substrate
             .occupancy
@@ -493,7 +501,15 @@ impl Simulation {
         {
             return false;
         }
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, true);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            location,
+            true,
+            rules.ares_form(),
+        );
         true
     }
 

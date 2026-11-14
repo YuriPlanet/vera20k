@@ -683,12 +683,12 @@ fn retail_repair_click_preserves_native_modifier_and_target_controls() {
             .collect();
         // Ares 1004E5A0 (hook 0x73FDBD): Alt answers Select and Ctrl+Alt's
         // GuardArea keeps its own path, so neither repairs.
-        let expected = if crate::rules::ARES_BUILD && matches!(name, "alt_friend" | "ctrl_alt_friend")
-        {
-            0
-        } else {
-            native_orders.len()
-        };
+        let expected =
+            if crate::rules::ARES_BUILD && matches!(name, "alt_friend" | "ctrl_alt_friend") {
+                0
+            } else {
+                native_orders.len()
+            };
         assert_eq!(dispatch.commands.len(), expected, "{name}");
         if expected != 0 {
             assert_eq!(native_orders[0]["mission"], 1);
@@ -1046,10 +1046,10 @@ fn ares_repair_ifv_selects_a_sound_ally_and_under_alt() {
 /// Infantry and UnitRepair (0x5B) over a vehicle, unless Alt is held. Here two
 /// unarmed civilians carry `Heal` (Organic, which no retail type allocates
 /// before the map pass, so the patch restates it) and `RepairBullet`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_healer_infantry_heal_what_their_warhead_reaches() {
     use crate::sim::world::{AresHeal, HealArmKeys};
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "XMP03T4.MAP",
         &crate::rules::ini_parser::IniFile::from_str(

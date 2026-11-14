@@ -160,7 +160,6 @@ impl Veterancy {
     /// seeded for EVERY house's elite (`0x006FA0D0` is reached from the
     /// non-human branch too); only the sound and EVA are gated, and that gate
     /// belongs to the app layer, which knows the local player.
-    #[cfg_attr(feature = "ares", allow(dead_code))]
     pub(crate) fn sample_promotion(
         &mut self,
         flashing: &mut Flashing,
@@ -231,7 +230,6 @@ impl Veterancy {
     /// above at `VeteranCap` (`ja`, so an equal sum stores itself) and, once
     /// stored as a single, floored at zero. Unlike `VeterancyClass::Add`'s
     /// caller, any nonzero recipient cost counts, so a negative one drains.
-    #[cfg(feature = "ares")]
     pub(crate) fn add_ares_kill_experience(
         &mut self,
         recipient_cost: i32,

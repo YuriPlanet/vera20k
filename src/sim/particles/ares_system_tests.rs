@@ -53,6 +53,7 @@ fn unit(rng: &mut SimRng) -> i32 {
 /// record dies.
 #[test]
 fn spark_burst_takes_ares_draws_and_retires_after_its_records() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[ParticleSystems]\n0=Sparks\n[Sparks]\nBehavesLike=Spark\nHoldsWhat=Spark\n\
          ParticleCap=6\nSparkSpawnFrames=1\n\
@@ -123,6 +124,7 @@ fn spark_burst_takes_ares_draws_and_retires_after_its_records() {
 /// record takes a speed draw and a colour draw.
 #[test]
 fn railgun_lays_ares_records_with_their_draws() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[ParticleSystems]\n0=Rail\n[Rail]\nBehavesLike=Railgun\nHoldsWhat=RailPart\n\
          ParticlesPerCoord=0.03125\nSpiralRadius=10\nPositionPerturbationCoefficient=2\n\
@@ -166,6 +168,7 @@ fn railgun_lays_ares_records_with_their_draws() {
 /// first takes the 1-in-4 drift draws.
 #[test]
 fn smoke_spawns_and_drifts_with_ares_draws() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules(
         "[ParticleSystems]\n0=Smokes\n[Smokes]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
          SpawnFrames=1\nSpawnRadius=8\nSpawnCutoff=100\n\

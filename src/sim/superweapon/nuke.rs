@@ -87,8 +87,9 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     // Ares hook 467E59 (10036960): the superweapon's radar event, then the
     // flash for its duration (the manual FadeIn and ChangeLighting), then
     // the wait on the warhead's PreImpactAnim.
-    #[cfg(feature = "ares")]
-    if let Some(ball) = impact.ares() {
+    if rules.ares_form()
+        && let Some(ball) = impact.ares()
+    {
         if ball.radar {
             sim.sound_events.emit(SimSoundEvent::RadarEvent { radar });
         }
@@ -97,14 +98,16 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
                 .lighting_mut()
                 .start_nuke_flash_for(frame, duration);
             // SWTypeExt::ChangeLighting(NukeSW): the type's Light.* overrides.
-            let light = ball
-                .nuke_sw
-                .and_then(|sw| rules.super_weapon_metadata(sim.interner.resolve(sw)))
-                .map(|metadata| metadata.launch().lighting());
-            sim.session.lighting_mut().select_ares(
-                crate::sim::scenario_session::ScenarioLightingProfile::Nuke,
-                light,
-            );
+            {
+                let light = ball
+                    .nuke_sw
+                    .and_then(|sw| rules.super_weapon_metadata(sim.interner.resolve(sw)))
+                    .map(|metadata| metadata.launch().lighting());
+                sim.session.lighting_mut().select_ares(
+                    crate::sim::scenario_session::ScenarioLightingProfile::Nuke,
+                    light,
+                );
+            }
             sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
                 sim.session.lighting(),
             ));
@@ -328,7 +331,6 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
 /// type's non-null `SW.Warhead` else the payload's warhead, and its
 /// nonnegative `SW.Damage` else the payload's damage. `None` without a
 /// payload.
-#[cfg(feature = "ares")]
 pub(crate) fn ares_payload_hit<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,
@@ -372,7 +374,6 @@ pub(crate) fn ares_payload_hit<'r>(
 ///    owner's tech-tree recheck.
 ///
 /// Returns whether it fired; Launch otherwise runs the stock case.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -451,7 +452,6 @@ pub(super) fn ares_launch(
 
 /// Step 2 of [`ares_launch`]: CreateBullet (`0x0046B050`) over the
 /// payload's BulletType, then SetWeaponType, PsiWarn and MoveTo.
-#[cfg(feature = "ares")]
 #[allow(clippy::too_many_arguments)]
 fn drop_payload(
     sim: &mut Simulation,

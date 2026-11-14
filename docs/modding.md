@@ -37,8 +37,9 @@ here, and a mod that changes the program doesn't.
   tooltips, and add buttons, text and more grids of build pictures. Players can drag
   the parts in a match and keep their own layout. You can't yet add other kinds of
   parts.
-- Ares and Phobos. Only some of their keys work, and only in a build you make yourself.
-  See [More detail](#more-detail).
+- Ares and Phobos. Only some of their keys work. A game with Ares keys turns Ares on by
+  itself, but the downloads hold only part of Ares so far; a build you make yourself has
+  the rest, and Phobos needs one. See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work
   as a whole.
 
@@ -245,8 +246,10 @@ Players who don't have your map are asked whether to download it when they join 
 online room.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
-game. With a mod in use it tells you to pick **No mod** in the Mods menu first. Put `;`
-in front of your changes in `VERARULES.INI` too.
+game. With a mod in use it tells you to pick **No mod** in the Mods menu first, and with
+changes in `VERARULES.INI` or **Terrain Deformation** on, to turn those off. It also names
+any files in the game folder that change the original rules, such as a loose `rulesmd.ini`
+or an `expandmd99.mix` an old mod left there.
 
 ## Sharing your mod
 
@@ -265,8 +268,8 @@ in front of your changes in `VERARULES.INI` too.
 - [INI profiles](ini-roots.md): use your own rules, art and AI files under other names.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to build VERA20k with it. The official downloads don't
-  include them, and no INI file can add them.
+  each extension covers and how to build VERA20k with it. The official downloads hold
+  part of Ares, which a game's Ares keys turn on, and none of the others.
 
 ## Something wrong?
 

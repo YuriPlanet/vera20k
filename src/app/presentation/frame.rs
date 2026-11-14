@@ -76,6 +76,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) body_facing: crate::sim::movement::FacingClass,
     pub(crate) body_frame_counter: crate::sim::animation::BodyFrameCounter,
     pub(crate) unit_firing_counter: crate::sim::animation::UnitFiringCounter,
+    pub(crate) unit_death_counter: crate::sim::animation::UnitDeathCounter,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -586,6 +587,7 @@ impl ObjectRecord {
             body_facing: entity.body_facing.clone(),
             body_frame_counter: entity.body_frame_counter.clone(),
             unit_firing_counter: entity.unit_firing_counter.clone(),
+            unit_death_counter: entity.unit_death_counter,
             turret_anim_frame: entity.turret_anim_frame.clone(),
             health: entity.health.clone(),
             veterancy: entity.veterancy.clone(),
@@ -1141,8 +1143,19 @@ impl Flashing {
 /// Every stored object's record, for one world state and local player.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PresentationFrame {
-    /// In ascending stable-id order, which [`Self::object`] searches.
+    /// In ascending stable-id order.
     objects: Vec<ObjectRecord>,
+    /// Each record's stable id, in the same order: what [`Self::object`]
+    /// searches. A draw asks for every Display member, and a search over the
+    /// records themselves lands on a different large record at each step.
+    ids: Vec<u64>,
+    /// The Display order of the world this frame was captured from, built by
+    /// the first draw that asks ([`Self::display_order`]). The frame is
+    /// dropped before that world can change, so every later draw of it reads
+    /// the same order.
+    display_order: crate::util::sync::OnceLock<
+        crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
+    >,
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
     anim_coords: HashMap<u64, crate::sim::anim_class::AnimWorldCoord>,
@@ -1197,8 +1210,11 @@ impl PresentationFrame {
             .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
             .collect();
         let psychic_detection = at.psychic.is_some();
+        let ids = objects.iter().map(|object| object.id).collect();
         Self {
             objects,
+            ids,
+            display_order: Default::default(),
             anim_coords,
             scene,
             psychic_detection,
@@ -1206,10 +1222,23 @@ impl PresentationFrame {
     }
 
     pub(crate) fn object(&self, id: u64) -> Option<&ObjectRecord> {
-        self.objects
-            .binary_search_by_key(&id, |object| object.id)
+        self.ids
+            .binary_search(&id)
             .ok()
             .map(|slot| &self.objects[slot])
+    }
+
+    /// `display`'s order for this frame's draws. `display` is the Display
+    /// registry of the world the frame was captured from.
+    pub(crate) fn display_order(
+        &self,
+        display: &crate::sim::world::display_layers::DisplayLayers,
+    ) -> &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder {
+        self.display_order.get_or_init(|| {
+            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_display(
+                display,
+            )
+        })
     }
 
     /// `Simulation::anim_absolute_coord` of anim `id`.

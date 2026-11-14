@@ -143,36 +143,25 @@ fn find_cursor_feedback_kind(
     if state.match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
-    // `ScrollClass__UpdateMouseScrolling` 0x00692F30 writes the action cursor
-    // and the edge arrow only inside its `capture == 0` else-arm. With the
-    // capture held, a right-drag pan owns the cursor for as long as it owns the
-    // camera, and any other gesture keeps the band's arrow or the last cursor.
-    if let Some(blocked) = crate::app::input::camera::right_drag_pan_cursor_state(state) {
-        return Some(match blocked {
-            Some(dir) => CursorFeedbackKind::PanBlocked(dir),
-            None => CursorFeedbackKind::Pan,
-        });
-    }
-    if let Some(kind) = state.match_state.input.captured_cursor() {
+    let (x, y) = (
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    if let Some(kind) = scroll_or_arrow_cursor(
+        over_radar_top_button(state) || command_bar_arrow_hit(state.sidebar_frame(), x, y),
+        crate::app::input::camera::right_drag_pan_cursor_state(state),
+        state.match_state.input.captured_cursor(),
+        crate::app::input::camera::edge_scroll_cursor_state(state),
+    ) {
         return kind;
     }
-    // The active band is the outermost pixel of the whole window, including
-    // the sidebar. It wins even when that pixel overlaps a sidebar/minimap hit.
-    if let Some((dir, blocked)) = crate::app::input::camera::edge_scroll_cursor_state(state) {
-        return Some(if blocked {
-            CursorFeedbackKind::ScrollBlocked(dir)
-        } else {
-            CursorFeedbackKind::Scroll(dir)
-        });
-    }
-    if state.match_state.input.minimap_press_active()
-        || crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
-    {
-        // The radar's own action draws its row's mini set
-        // ([`crate::app::input::radar::cursor`]).
-        return Some(CursorFeedbackKind::Minimap(
-            crate::app::input::radar::cursor(state),
-        ));
+    if let Some(radar) = crate::app::input::radar::cursor(state) {
+        use crate::app::input::radar::RadarCursor;
+        return match radar {
+            RadarCursor::Kept => state.match_state.input.shown_cursor(),
+            RadarCursor::Arrow => None,
+            RadarCursor::Mini(id) => Some(CursorFeedbackKind::Minimap(id)),
+        };
     }
     if current_sidebar_view_hit(state) {
         return state.match_state.input.sidebar_cursor();
@@ -212,7 +201,6 @@ fn find_cursor_feedback_kind(
                 .is_ok();
             // Ares SWTypeExt::ExtData::WhatAction 10033EB0 (hook 0x6CEF84):
             // a handled type shows its Cursor or NoCursor.
-            #[cfg(feature = "ares")]
             if let Some(cursor) =
                 super::ares_cursor::super_weapon_cursor(&runtime.resources.rules, section, allowed)
             {
@@ -270,7 +258,6 @@ fn find_cursor_feedback_kind(
         );
         // Ares 3.0 10057E70 (hook 0x6929FC): an own sellable Unit or
         // Aircraft answers SellUnit.
-        #[cfg(feature = "ares")]
         if !repair
             && crate::app::input::commands::own_sellable_unit_under_point(state, wx, wy).is_some()
         {
@@ -343,13 +330,19 @@ fn find_cursor_feedback_kind(
     let query = ActionQuery::new(state, sim, selected, true);
     // Ares DisplayClass_SetAction_CustomCursor 10057F10 (hook 0x4AB35A)
     // draws the What_Action answer with the cursor its hooks chose.
-    #[cfg(feature = "ares")]
     let ares =
         |kind: CursorFeedbackKind| super::ares_cursor::tactical(kind, selected.len(), query.rules);
-    #[cfg(not(feature = "ares"))]
-    let ares = |kind: CursorFeedbackKind| kind;
+    // Over a shrouded or fogged Cell no object is offered, and the Cell's
+    // What_Action answers, drawn through the shrouded switch over shroud.
     if !query.cell_visible(cell) {
-        return Some(ares(query.hidden_cell(cell)));
+        let shrouded = query.cell_shrouded(cell);
+        return query.selection_action(cell, None).map(|kind| {
+            ares(if shrouded {
+                shrouded_cell_feedback(kind, query.lead_moves_to_shroud())
+            } else {
+                kind
+            })
+        });
     }
     let owner = preferred_local_owner_name(state)?;
     let hover_object = targets.hover;
@@ -427,7 +420,7 @@ impl<'a> ActionQuery<'a> {
     }
 
     /// Whether the local player sees `cell`. Over a shrouded or fogged Cell
-    /// no object is offered and [`Self::hidden_cell`] answers.
+    /// no object is offered and the Cell's What_Action answers.
     pub(crate) fn cell_visible(&self, (rx, ry): (u16, u16)) -> bool {
         crate::app::presentation::instances::cell_visibility_for_local_owner(
             self.viewer,
@@ -439,20 +432,44 @@ impl<'a> ActionQuery<'a> {
         ) == CellVisibilityState::Visible
     }
 
-    /// The action over a Cell the local player does not see: the empty-cell
-    /// ladder of the object resolved for its centre, where Foot's shroud
-    /// rung bars a type without MoveToShroud.
-    pub(crate) fn hidden_cell(&self, cell: (u16, u16)) -> CursorFeedbackKind {
-        let best_id = select_best_for_action(
-            self.sim,
-            self.selected,
-            ActionDistanceTarget::CellCentre(cell.0, cell.1),
-            self.rules,
-        );
-        // Ares 1004C920 (hook 0x700600): the Cell What_Action's entry.
-        #[cfg(feature = "ares")]
-        super::ares_cursor::what_action_entry(self, best_id, None);
-        self.empty_cell(best_id, cell)
+    /// Whether the local player's map shrouds `cell`
+    /// (`MapClass::IsShrouded @ 0x00586360`), which the tactical cursor
+    /// (`0x00692480`) and the radar (`0x00653B1E`) hand SetCursorFromAction.
+    /// Nothing is shrouded under the sandbox's full visibility.
+    pub(crate) fn cell_shrouded(&self, cell: (u16, u16)) -> bool {
+        !self.full_visibility
+            && self
+                .viewer
+                .is_some_and(|viewer| self.sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true))
+    }
+
+    /// Whether the first selected object's type has MoveToShroud, which the
+    /// shrouded switch reads for NoMove (`0x004AB3EC..0x004AB42B`).
+    pub(crate) fn lead_moves_to_shroud(&self) -> bool {
+        self.selected.first().is_some_and(|&id| {
+            self.sim.entities().get(id).is_some_and(|entity| {
+                self.rules
+                    .and_then(|rules| self.sim.interner().object_type(entity.type_ref(), rules))
+                    .is_some_and(|object| object.move_to_shroud)
+            })
+        })
+    }
+
+    /// Foot's Cell wrapper (`FootClass::What_Action_OnCell @ 0x004DDDE0`,
+    /// [`Simulation::foot_cell_shroud_action`]) for object `id`'s Cell Attack
+    /// rung answer, as the cursor shows it: Move or NoMove over a Cell its
+    /// player's map shrouds. `None` keeps the answer, as a Building's wrapper
+    /// (`0x00447540`) does, and under the sandbox's full visibility.
+    ///
+    /// [`Simulation::foot_cell_shroud_action`]: crate::sim::world::Simulation::foot_cell_shroud_action
+    fn foot_cell_shroud_feedback(&self, id: u64, cell: (u16, u16)) -> Option<CursorFeedbackKind> {
+        if self.full_visibility {
+            return None;
+        }
+        let action = self
+            .sim
+            .foot_cell_shroud_action(self.viewer?, id, cell, self.rules?)?;
+        Some(move_action_feedback(action, self.modifier, self.order_mode))
     }
 
     /// The best selected object's What_Action on `hover_object`, or on the
@@ -469,30 +486,27 @@ impl<'a> ActionQuery<'a> {
         // Ares writes its cursor overrides while the best object answers
         // ([`super::ares_cursor`]): the Techno entry's (hooks 0x6FFEC0,
         // 0x700600, 0x7000CD, 0x7400F0) before, the Attack ones (0x70055D,
-        // 0x700AA8, 10057F10's range test) after.
-        #[cfg(feature = "ares")]
-        {
-            let best_id = select_best_for_action(
-                self.sim,
-                self.selected,
-                hover_object.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |object| {
-                    ActionDistanceTarget::Object(object.id())
-                }),
-                self.rules,
-            );
-            super::ares_cursor::what_action_entry(self, best_id, hover_object);
-            let kind = self.best_object_action(cell, hover_object);
-            if let Some(kind) = kind {
-                let target = hover_object
-                    .map_or(combat::TargetKind::Cell(cell.0, cell.1), |object| {
-                        combat::TargetKind::Entity(object.id())
-                    });
-                super::ares_cursor::what_action_attack(self, best_id, target, kind);
-            }
-            kind
+        // 0x700AA8, 10057F10's range test) after, while Ares plays.
+        if !self.rules.is_some_and(|rules| rules.ares()) {
+            return self.best_object_action(cell, hover_object);
         }
-        #[cfg(not(feature = "ares"))]
-        self.best_object_action(cell, hover_object)
+        let best_id = select_best_for_action(
+            self.sim,
+            self.selected,
+            hover_object.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |object| {
+                ActionDistanceTarget::Object(object.id())
+            }),
+            self.rules,
+        );
+        super::ares_cursor::what_action_entry(self, best_id, hover_object);
+        let kind = self.best_object_action(cell, hover_object);
+        if let Some(kind) = kind {
+            let target = hover_object.map_or(combat::TargetKind::Cell(cell.0, cell.1), |object| {
+                combat::TargetKind::Entity(object.id())
+            });
+            super::ares_cursor::what_action_attack(self, best_id, target, kind);
+        }
+        kind
     }
 
     fn best_object_action(
@@ -586,27 +600,34 @@ impl<'a> ActionQuery<'a> {
         // every ACTION_ATTACK arm when it fails. It consults ONE weapon slot, so
         // `Primary=`/`Secondary=` is the wrong test for a `TurretCount>0` type —
         // it hid the force-fire cursor for the Prism Tank and the Gattling Cannon.
+        // Over a shrouded Cell a Foot's wrapper turns either rung's nonzero
+        // answer into Move or NoMove; a Building keeps it.
+        let cell = (cell_rx, cell_ry);
         if forced {
             let target = combat::TargetKind::Cell(cell_rx, cell_ry);
-            if let Some(feedback) = best_id.and_then(|id| {
+            if let Some((id, feedback)) = best_id.and_then(|id| {
                 force_fire_feedback(sim, id, &target, selected.len(), self.rules, self.overlays)
+                    .map(|feedback| (id, feedback))
             }) {
-                return feedback;
+                return feedback
+                    .map(|kind| self.foot_cell_shroud_feedback(id, cell).unwrap_or(kind));
             }
         }
-        if let Some(feedback) = unforced_cell_attack_feedback(
-            sim,
-            self.viewer,
-            best_id,
-            (cell_rx, cell_ry),
-            modifier,
-            selected.len(),
-            self.rules,
-            self.overlays,
-        ) {
-            return Some(feedback);
+        if let Some((id, feedback)) = best_id.and_then(|id| {
+            unforced_cell_attack_feedback(
+                sim,
+                id,
+                cell,
+                modifier,
+                selected.len(),
+                self.rules,
+                self.overlays,
+            )
+            .map(|feedback| (id, feedback))
+        }) {
+            return Some(self.foot_cell_shroud_feedback(id, cell).unwrap_or(feedback));
         }
-        Some(self.empty_cell(best_id, (cell_rx, cell_ry)))
+        Some(self.empty_cell(best_id, cell))
     }
 
     /// The cursor over a Cell with no object offered: the resolved object's
@@ -694,16 +715,13 @@ pub(crate) fn terrain_object_feedback(
 /// rungs, so it answers under every chord but Ctrl (the forced rung above)
 /// and Ctrl+Alt. Its tail is the forced shot's; an answer other than Attack
 /// or a healing Unit's AttackSupport (the arrow, `0x007404FD`) falls through
-/// to the Move rungs. Foot's shroud wrapper turns it back into
-/// Move or NoMove over a shrouded Cell (`0x004DDE64..0x004DDEBE`); the
-/// Building wrapper (`0x00447540`) keeps a building's Attack there.
+/// to the Move rungs. Foot's shroud wrapper comes after it
+/// ([`ActionQuery::foot_cell_shroud_feedback`]).
 ///
 /// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
-#[allow(clippy::too_many_arguments)]
 fn unforced_cell_attack_feedback(
     sim: &crate::sim::world::Simulation,
-    viewer: Option<crate::sim::intern::InternedId>,
-    best_id: Option<u64>,
+    id: u64,
     cell: (u16, u16),
     modifier: crate::app::input::context_order::OrderModifier,
     selected_count: usize,
@@ -711,17 +729,10 @@ fn unforced_cell_attack_feedback(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<CursorFeedbackKind> {
     use crate::app::input::context_order::OrderModifier;
-    let id = best_id?;
-    let foot = sim
-        .entities()
-        .get(id)
-        .is_some_and(|entity| entity.category() != crate::map::entities::EntityCategory::Structure);
     if matches!(
         modifier,
         OrderModifier::ForceFire | OrderModifier::GuardArea
-    ) || (foot
-        && viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true)))
-        || !sim.cell_attack_rung_admits(id, cell, rules?, overlay_registry)
+    ) || !sim.cell_attack_rung_admits(id, cell, rules?, overlay_registry)
     {
         return None;
     }
@@ -794,14 +805,29 @@ fn empty_cell_cursor(
     if refinery_harvest {
         return CursorFeedbackKind::Harvest;
     }
-    match order_mode {
-        crate::app::presentation::render::OrderMode::Move
+    move_action_feedback(MoveAction::Move, modifier, order_mode)
+}
+
+/// A Move rung's answer as the cursor shows it: 0 the arrow, NoMove its row,
+/// and Move attack-move while the attack-move chord or mode is active.
+fn move_action_feedback(
+    action: crate::sim::world::MoveAction,
+    modifier: crate::app::input::context_order::OrderModifier,
+    order_mode: crate::app::presentation::render::OrderMode,
+) -> CursorFeedbackKind {
+    use crate::app::presentation::render::OrderMode;
+    use crate::sim::world::MoveAction;
+    match (action, order_mode) {
+        (MoveAction::None, _) => CursorFeedbackKind::Default,
+        (MoveAction::NoMove, _) => CursorFeedbackKind::Invalid,
+        (MoveAction::Harvest, _) => CursorFeedbackKind::Harvest,
+        (MoveAction::Move, OrderMode::Move)
             if modifier == super::context_order::OrderModifier::AttackMove =>
         {
             CursorFeedbackKind::AttackMove
         }
-        crate::app::presentation::render::OrderMode::Move => CursorFeedbackKind::Move,
-        crate::app::presentation::render::OrderMode::AttackMove => CursorFeedbackKind::AttackMove,
+        (MoveAction::Move, OrderMode::Move) => CursorFeedbackKind::Move,
+        (MoveAction::Move, OrderMode::AttackMove) => CursorFeedbackKind::AttackMove,
     }
 }
 
@@ -882,7 +908,6 @@ pub(super) fn capability_cursor_for_hover(
     use crate::map::entities::EntityCategory;
     // Ares hooks at the head of each class What_Action over an object: a
     // Deactivated cursor owner answers GetDeactivatedAction alone.
-    #[cfg(feature = "ares")]
     if let (Some(actor), Some(rules)) = (best_id, rules)
         && let Some(action) = super::context_order::ares_deactivated_action(
             sim,
@@ -902,9 +927,8 @@ pub(super) fn capability_cursor_for_hover(
     // Ares 3.0 100171B0 (hook 0x44725F): Building What_Action answers Enter
     // before Techno What_Action when the building's occupants may traverse
     // into the hovered one (canTraverseTo 10011690).
-    #[cfg(feature = "ares")]
     if let (Some(best_id), Some(rules)) = (best_id, rules)
-        && sim.ares_can_traverse_to(best_id, hover.stable_id, rules)
+        && super::context_order::ares_trench_enter(sim, rules, best_id, hover.stable_id)
     {
         return CursorFeedbackKind::Enter;
     }
@@ -1040,14 +1064,14 @@ pub(super) fn capability_cursor_for_hover(
                 crate::sim::world::EngineerBuildingAction::Repair(valid) => {
                     // Ares 10025420 (hook 0x51E635): a rubble's GRepair
                     // shows RepairTrench (0x5E).
-                    #[cfg(feature = "ares")]
                     if valid
                         && rules.is_some_and(|rules| {
-                            sim.ares_engineer_repairs_rubble(
-                                sel_entity.stable_id(),
-                                hover.stable_id,
-                                rules,
-                            )
+                            rules.ares()
+                                && sim.ares_engineer_repairs_rubble(
+                                    sel_entity.stable_id(),
+                                    hover.stable_id,
+                                    rules,
+                                )
                         })
                     {
                         super::ares_cursor::set_cursor(
@@ -1059,7 +1083,6 @@ pub(super) fn capability_cursor_for_hover(
                 }
                 crate::sim::world::EngineerBuildingAction::Damage => {
                     // Ares 10025550 (hook 0x51E5E1): EngineerDamage (0x57).
-                    #[cfg(feature = "ares")]
                     super::ares_cursor::set_cursor(
                         crate::rules::ares_mouse_cursor::index::ENGINEER_DAMAGE,
                         super::ares_cursor::action::DAMAGE,
@@ -1067,7 +1090,6 @@ pub(super) fn capability_cursor_for_hover(
                     CursorFeedbackKind::EngineerDamage
                 }
                 crate::sim::world::EngineerBuildingAction::Capture => {
-                    #[cfg(feature = "ares")]
                     super::ares_cursor::note_capture();
                     CursorFeedbackKind::Enter
                 }
@@ -1081,7 +1103,6 @@ pub(super) fn capability_cursor_for_hover(
             };
         }
 
-        #[cfg(feature = "ares")]
         if rules.is_some_and(|rules| {
             super::context_order::vehicle_capture_action(
                 sim,
@@ -1152,7 +1173,6 @@ pub(super) fn capability_cursor_for_hover(
             })
         {
             // Infantry51E3B0's occupy arm answers Capture (9).
-            #[cfg(feature = "ares")]
             super::ares_cursor::note_capture();
             return CursorFeedbackKind::Enter;
         }
@@ -1224,7 +1244,6 @@ pub(super) fn capability_cursor_for_hover(
             })
         {
             // Ares 10025FC0 (hook 0x51EE6B): Cursor.Spy or Sabotage.
-            #[cfg(feature = "ares")]
             if let Some(rules) = rules {
                 super::ares_cursor::infiltration(sim, rules, best_id, hover.stable_id);
             }
@@ -1506,7 +1525,6 @@ fn unit_repair_feedback(
         modifier,
         force_move_key,
     );
-    #[cfg(feature = "ares")]
     let heal_cursor = || {
         let organic = sim.entities().get(hover.stable_id).is_some_and(|target| {
             target.category() == crate::map::entities::EntityCategory::Infantry
@@ -1521,9 +1539,6 @@ fn unit_repair_feedback(
             crate::rules::ares_mouse_cursor::index::UNIT_REPAIR
         }
     };
-    // The Ares cursor owner (`ares_cursor`, `AresAction`) is still built
-    // only with the `ares` feature; the switch decides within it.
-    #[cfg(feature = "ares")]
     if rules.ares()
         && sim
             .entities()
@@ -1538,7 +1553,6 @@ fn unit_repair_feedback(
     Some(
         match sim.unit_repair_action(id, hover.stable_id, house, keys, rules)? {
             crate::sim::world::UnitRepairAction::Repair => {
-                #[cfg(feature = "ares")]
                 if rules.ares() {
                     super::ares_cursor::set_cursor(
                         heal_cursor(),
@@ -1702,9 +1716,6 @@ pub(crate) enum ActionDistanceTarget {
 /// (`0x00535532..0x00535557`), from the object's GetCoords (`vt+0x48`) to the
 /// cell centre at height 0 when a cell was supplied, else to the target
 /// object's GetCoords.
-///
-/// RESIDUAL: score 1 comes from the EMP counter (`+0x504`) alone; VERA has no
-/// producer for a Unit's death-frame counter (`+0x6D8`); see `techno_ai_cloak`.
 pub(crate) fn select_best_for_action(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1743,7 +1754,7 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
-        } else if entity.emp_remaining() > 0 {
+        } else if entity.is_under_emp() {
             1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())
@@ -1773,6 +1784,27 @@ pub(crate) fn select_best_for_action(
         }
     }
     best_id
+}
+
+/// `DisplayClass::SetCursorFromAction @ 0x004AAE90`'s shrouded switch (byte
+/// table `0x004AB838`, jump table `0x004AB7D0`, entered at `0x004AB35A`) for
+/// the tactical cursor over a Cell its player's map shrouds, as the answer
+/// whose main row it draws: Attack (5) takes Move's row 18, Enter, Harvest
+/// and Sabotage row 0, and NoMove row 18 when the first selected object's
+/// type has MoveToShroud (`0x004AB3EC..0x004AB42B`). Move, GuardArea and
+/// attack-move keep their rows. The radar draws the same switch with its
+/// mini set ([`crate::app::input::radar::RadarAction::cursor`]).
+pub(crate) fn shrouded_cell_feedback(
+    kind: CursorFeedbackKind,
+    lead_moves_to_shroud: bool,
+) -> CursorFeedbackKind {
+    use CursorFeedbackKind as Kind;
+    match kind {
+        Kind::EnemyUnit | Kind::EnemyStructure | Kind::EnemyOutOfRange => Kind::Move,
+        Kind::Invalid if lead_moves_to_shroud => Kind::Move,
+        Kind::Enter | Kind::Harvest | Kind::Demolish => Kind::Default,
+        other => other,
+    }
 }
 
 /// Map a game-state cursor intent to the visual CursorId to display.
@@ -1852,12 +1884,10 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
             CursorId::NoSell
         }),
         // Action 0xD, the SellUnit row.
-        #[cfg(feature = "ares")]
         CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),
-        #[cfg(feature = "ares")]
         CursorFeedbackKind::AresAction(index) => Some(CursorId::Ares { index, mini: false }),
     }
 }
@@ -2027,6 +2057,88 @@ fn cursor_animation_now_ms() -> u64 {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX)
+}
+
+/// The cursor `ScrollClass::Action @ 0x006922E0` leaves before the later
+/// checks: it runs UpdateMouseScrolling (`0x00692F30`) first, then
+/// `TabClass::Action`, whose arrow over the command bar (`0x006D06FD`) and
+/// whose path to `RadarClass::AI` through `SidebarClass::Action`
+/// (`0x006A7780`) and `PowerClass::AnimationTick` (`0x00640391`) write after
+/// it. UpdateMouseScrolling writes the action cursor and the edge arrow only
+/// inside its `capture == 0` else-arm: with the capture held, a right-drag pan
+/// owns the cursor for as long as it owns the camera, and any other gesture
+/// keeps the band's arrow or the last cursor. The active edge band is the
+/// outermost pixel of the whole window, sidebar included. `None` leaves the
+/// cursor to the later checks.
+fn scroll_or_arrow_cursor(
+    over_arrow_controls: bool,
+    pan: Option<Option<ScrollDir>>,
+    captured: Option<Option<CursorFeedbackKind>>,
+    edge: Option<(ScrollDir, bool)>,
+) -> Option<Option<CursorFeedbackKind>> {
+    if over_arrow_controls {
+        return Some(Some(CursorFeedbackKind::Default));
+    }
+    if let Some(blocked) = pan {
+        return Some(Some(match blocked {
+            Some(dir) => CursorFeedbackKind::PanBlocked(dir),
+            None => CursorFeedbackKind::Pan,
+        }));
+    }
+    if let Some(kind) = captured {
+        return Some(kind);
+    }
+    edge.map(|(dir, blocked)| {
+        Some(if blocked {
+            CursorFeedbackKind::ScrollBlocked(dir)
+        } else {
+            CursorFeedbackKind::Scroll(dir)
+        })
+    })
+}
+
+/// `TabClass::Action @ 0x006D0680` sets the arrow (`0x006D06FD`) while the
+/// mouse is on the command bar, whatever button is held: from the bar's
+/// origin (`0xB0FC58`), the tactical view wide and 0x1E of its 32 rows high
+/// (`0x006D06BD`).
+fn command_bar_arrow_hit(frame: crate::ui::sidebar::SidebarFrame, x: f32, y: f32) -> bool {
+    let (left, top, width, _) = frame.strip();
+    crate::ui::sidebar::Rect {
+        x: left as f32,
+        y: top as f32,
+        w: width as f32,
+        h: (frame.strip_height_in_frame() * 0x1E / 32) as f32,
+    }
+    .contains(x, y)
+}
+
+/// `RadarClass::AI @ 0x00653850` sets the normal arrow (`SetCursor(0)`)
+/// whenever the mouse is over the Diplomacy or Options button
+/// (`0x00653865..0x006538F3`), on every pass and with any button held, after
+/// the radar's own press drew its row: a radar press dragged onto them shows
+/// the arrow too.
+fn over_radar_top_button(state: &AppState) -> bool {
+    crate::app::presentation::sidebar_render::current_sidebar_view(state).is_some_and(|view| {
+        top_button_hit(
+            state.sidebar_frame(),
+            view.top_buttons.iter().map(|button| button.rect),
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        )
+    })
+}
+
+/// Whether (`x`, `y`) lies in one of `rects`, placed by `frame`: left and
+/// top inclusive, right and bottom exclusive (`0x0065388E..0x006538A9`).
+fn top_button_hit(
+    frame: crate::ui::sidebar::SidebarFrame,
+    rects: impl IntoIterator<Item = crate::ui::sidebar::Rect>,
+    x: f32,
+    y: f32,
+) -> bool {
+    rects
+        .into_iter()
+        .any(|rect| frame.rect_to_frame(rect).contains(x, y))
 }
 
 pub(crate) fn current_sidebar_view_hit(state: &AppState) -> bool {
@@ -2448,14 +2560,12 @@ pub(crate) fn toggle_cursor_confinement(state: &mut AppState) {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "ares")]
-    use super::super_weapon_cursor_id;
     use super::{
         ActionDistanceTarget, capability_cursor_for_hover, empty_cell_cursor, force_fire_feedback,
-        select_best_for_action, what_action_on_cell,
+        select_best_for_action, super_weapon_cursor_id, what_action_on_cell,
     };
     use crate::app::input::entity_pick::HoverTargetKindWithId;
-    use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind};
+    use crate::app::types::{CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::world::Simulation;
@@ -2505,6 +2615,65 @@ mod tests {
         input.selection_state.update_drag(105.0, 100.0);
         assert!(input.selection_state.is_band_box_active());
         assert_eq!(input.captured_cursor(), Some(None));
+    }
+
+    /// `RadarClass::AI` tests each top button's rect left/top inclusive and
+    /// right/bottom exclusive (`0x0065388E..0x006538A9`) before it sets the
+    /// arrow.
+    #[test]
+    fn radar_top_buttons_take_the_cursor_inside_their_half_open_rects() {
+        let frame = crate::ui::sidebar::SidebarFrame::native(800, 600);
+        let rect = crate::ui::sidebar::Rect {
+            x: 643.0,
+            y: 20.0,
+            w: 50.0,
+            h: 15.0,
+        };
+        let placed = frame.rect_to_frame(rect);
+        assert!(super::top_button_hit(frame, [rect], placed.x, placed.y));
+        assert!(!super::top_button_hit(
+            frame,
+            [rect],
+            placed.x + placed.w,
+            placed.y
+        ));
+        assert!(!super::top_button_hit(
+            frame,
+            [rect],
+            placed.x,
+            placed.y + placed.h
+        ));
+    }
+
+    /// `TabClass::Action` and `RadarClass::AI` write their arrow after
+    /// UpdateMouseScrolling (`0x006922E0`), so it beats the pan, capture and
+    /// edge cursors; without it those keep their order.
+    #[test]
+    fn the_controls_arrow_is_the_frames_last_cursor_write() {
+        let pan = Some(None);
+        let captured = Some(Some(CursorFeedbackKind::Pan));
+        let edge = Some((ScrollDir::S, false));
+        assert_eq!(
+            super::scroll_or_arrow_cursor(true, pan, captured, edge),
+            Some(Some(CursorFeedbackKind::Default))
+        );
+        assert_eq!(
+            super::scroll_or_arrow_cursor(false, None, Some(None), edge),
+            Some(None)
+        );
+        assert_eq!(super::scroll_or_arrow_cursor(false, None, None, None), None);
+    }
+
+    /// `0x006D06BD`: the command bar's arrow covers the tactical width and
+    /// 0x1E rows from the bar's top, not the bar's last two rows.
+    #[test]
+    fn the_command_bar_arrow_covers_thirty_rows_of_the_tactical_width() {
+        let frame = crate::ui::sidebar::SidebarFrame::native(800, 600);
+        assert!(super::command_bar_arrow_hit(frame, 0.0, 568.0));
+        assert!(super::command_bar_arrow_hit(frame, 631.0, 597.0));
+        assert!(!super::command_bar_arrow_hit(frame, 632.0, 568.0));
+        assert!(!super::command_bar_arrow_hit(frame, 0.0, 598.0));
+        assert!(!super::command_bar_arrow_hit(frame, 0.0, 567.0));
     }
 
     #[test]
@@ -2693,9 +2862,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn unit_delivery_superweapon_custom_action_uses_existing_paradrop_cursor() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
             &crate::rules::ini_parser::IniFile::from_str(
                 "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nAction=Custom\n",
@@ -2881,8 +3050,7 @@ mod tests {
         let feedback = |cell, modifier| {
             super::unforced_cell_attack_feedback(
                 &sim,
-                Some(owner),
-                Some(tank),
+                tank,
                 cell,
                 modifier,
                 1,
