@@ -276,17 +276,20 @@ fn render_cameo(
         .object(type_id)
         .map(|obj| obj.image.clone())
         .unwrap_or_else(|| type_id.to_string());
-    #[cfg(feature = "ares")]
-    if let [Some(name), _] = rules
-        .art()
-        .resolve_declared_pcx_cameos(type_id, &rules_image)
+    let ares = rules.ares();
+    if ares
+        && let [Some(name), _] = rules
+            .art()
+            .resolve_declared_pcx_cameos(type_id, &rules_image)
         && let Some(cameo) = render_pcx_cameo(type_id, name, asset_manager)
     {
         return Some(cameo);
     }
-    #[cfg(feature = "ares")]
-    let custom = techno_cameo_palette(type_id, &rules_image, rules, asset_manager);
-    #[cfg(feature = "ares")]
+    let custom = if ares {
+        techno_cameo_palette(type_id, &rules_image, rules, asset_manager)
+    } else {
+        None
+    };
     let palette = custom.as_ref().unwrap_or(palette);
     let resolved_image = rules
         .art()
@@ -340,8 +343,8 @@ fn render_alt_cameo(
         .unwrap_or_else(|| type_id.to_string());
     // Ares3.0 Cameos1005E430..1005E470: use promoted PCX only if loaded;
     // otherwise the ordinary PCX still takes precedence over an AltCameo SHP.
-    #[cfg(feature = "ares")]
-    {
+    let ares = rules.ares();
+    if ares {
         let [normal, promoted] = rules
             .art()
             .resolve_declared_pcx_cameos(type_id, &rules_image);
@@ -352,9 +355,11 @@ fn render_alt_cameo(
             }
         }
     }
-    #[cfg(feature = "ares")]
-    let custom = techno_cameo_palette(type_id, &rules_image, rules, asset_manager);
-    #[cfg(feature = "ares")]
+    let custom = if ares {
+        techno_cameo_palette(type_id, &rules_image, rules, asset_manager)
+    } else {
+        None
+    };
     let palette = custom.as_ref().unwrap_or(palette);
     let alt_cameo = rules
         .art()
@@ -375,7 +380,6 @@ fn render_alt_cameo(
 /// cameo draws with its art `CameoPalette` when that file loads, else
 /// CAMEO.PAL. The `~~~` theater placeholder is not resolved here (the atlas
 /// is not built per theater), so such a name keeps CAMEO.PAL.
-#[cfg(feature = "ares")]
 fn techno_cameo_palette(
     type_id: &str,
     rules_image: &str,
@@ -400,8 +404,9 @@ fn render_superweapon_cameo(
     rules: &RuleSet,
 ) -> Option<RenderedCameo> {
     let key = &sw.id;
-    #[cfg(feature = "ares")]
-    if let Some(name) = sw.sidebar_pcx()
+    let ares = rules.ares();
+    if ares
+        && let Some(name) = sw.sidebar_pcx()
         && let Some(mut cameo) = render_pcx_cameo(key, name, asset_manager)
     {
         cameo.kind = CameoKind::SuperWeapon;
@@ -409,12 +414,13 @@ fn render_superweapon_cameo(
     }
     // Ares SidebarPalette (hooks 6A9948/6A9A2A): the type's own palette for
     // its SHP cameo when the file loads, else CAMEO.PAL.
-    #[cfg(feature = "ares")]
-    let custom = sw
-        .sidebar_palette()
-        .and_then(|name| asset_manager.get_ref(name))
-        .and_then(|data| Palette::from_bytes(data).ok());
-    #[cfg(feature = "ares")]
+    let custom = if ares {
+        sw.sidebar_palette()
+            .and_then(|name| asset_manager.get_ref(name))
+            .and_then(|data| Palette::from_bytes(data).ok())
+    } else {
+        None
+    };
     let palette = custom.as_ref().unwrap_or(palette);
     if let Some(image_name) = sw.sidebar_image.as_deref() {
         let shp_name = format!("{image_name}.SHP");
@@ -441,7 +447,6 @@ fn render_superweapon_cameo(
 }
 
 /// One PCX as gamemd's PCX blit6BA580 draws it.
-#[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) struct NativePcxImage {
     pub(crate) rgba: Vec<u8>,
     pub(crate) width: u32,
@@ -460,7 +465,6 @@ pub(crate) struct NativePcxImage {
 /// surface. Without Phobos, the load's palette conversion (6B9DA3..6B9EC1)
 /// reads it as one byte per pixel and garbles it; VERA keeps the SHP fallback
 /// instead.
-#[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
     let image = crate::assets::pcx_file::PcxFile::from_bytes(bytes).ok()?;
     #[cfg(not(feature = "phobos"))]
@@ -482,7 +486,6 @@ pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
 /// a60x48 destination canvas;6BA5EF..600 uses source dimensions without scaling.
 /// https://ares-developers.github.io/Ares-docs/new/pcxcameos.html
 /// Phobos `MissingCameo=` reaches the same blit when it names a `.pcx`.
-#[cfg(any(feature = "ares", feature = "phobos"))]
 fn render_pcx_cameo(
     key: &str,
     filename: &str,
@@ -1108,9 +1111,9 @@ mod tests {
         write_pcx(&dir, "normal.pcx", [17, 41, 83]);
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let wrong_palette = Palette::from_rgb(|_| [200, 10, 180]);
-        let cameo = super::render_cameo("TEST", &assets, &cameo_rules(), &wrong_palette).unwrap();
-        #[cfg(feature = "ares")]
-        {
+        let rules = cameo_rules();
+        let cameo = super::render_cameo("TEST", &assets, &rules, &wrong_palette).unwrap();
+        if rules.ares() {
             assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
             assert_eq!(&cameo.rgba[0..4], &[10, 20, 30, 255]);
             assert_eq!(&cameo.rgba[4..8], &[255, 0, 255, 0]);
@@ -1119,15 +1122,12 @@ mod tests {
             // Original6BA580 word control: F81F skips,0000 andF81E write.
             assert_eq!(&cameo.rgba[16..20], &[0, 0, 0, 255]);
             assert_eq!(cameo.rgba[23], 255);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             assert_eq!([cameo.canvas_width, cameo.canvas_height], [2, 2]);
             assert_eq!(&cameo.rgba[0..4], &[200, 10, 180, 255]);
         }
     }
 
-    #[cfg(any(feature = "ares", feature = "phobos"))]
     #[test]
     fn a_24_bit_pcx_loads_only_with_phobos() {
         // 2x1 in three RLE planes: magenta, then a colour. `C1 FF` is a
@@ -1157,9 +1157,9 @@ mod tests {
 
     /// Ares SidebarPalette (hooks 6A9948/6A9A2A): a loadable palette draws the
     /// SW cameo SHP; a missing file keeps CAMEO.PAL.
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_sidebar_palette_draws_its_cameo() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::{
             assets::asset_manager::AssetManager, assets::pal_file::Palette,
             map::source::test_support::TestDirectory, rules::ini_parser::IniFile,
@@ -1189,9 +1189,9 @@ mod tests {
     /// Ares CameoPalette (StripClass_Draw_Main 1005E390, hook 0x6A9A2A): a
     /// loadable art palette draws the type's SHP cameo and its AltCameo; a
     /// missing file keeps CAMEO.PAL.
-    #[cfg(feature = "ares")]
     #[test]
     fn techno_cameo_palette_draws_its_shp_cameos() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::{
             assets::asset_manager::AssetManager,
             assets::pal_file::Palette,
@@ -1233,9 +1233,9 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn promoted_pcx_falls_back_to_plain_pcx_before_legacy_alt_shp() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::{
             assets::asset_manager::AssetManager, assets::pal_file::Palette,
             map::source::test_support::TestDirectory,
@@ -1257,9 +1257,9 @@ mod tests {
         assert_eq!(&promoted.rgba[8..12], &[80, 90, 100, 255]);
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn missing_and_invalid_pcx_keep_the_existing_shp_path() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::{
             assets::asset_manager::AssetManager, assets::pal_file::Palette,
             map::source::test_support::TestDirectory,
@@ -1298,8 +1298,7 @@ mod tests {
         write_pcx(&dir, "normal.pcx", [30, 50, 70]);
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let selected = super::render_superweapon_cameo(&sw, &assets, &palette, &rules).unwrap();
-        #[cfg(feature = "ares")]
-        {
+        if rules.ares() {
             assert_eq!(fallback.type_id, "SW");
             assert_eq!(selected.type_id, "SW");
             assert_eq!([selected.canvas_width, selected.canvas_height], [60, 48]);
@@ -1309,9 +1308,7 @@ mod tests {
             assert!(
                 super::render_superweapon_cameo(&pcx_only, &assets, &palette, &rules).is_some()
             );
-        }
-        #[cfg(not(feature = "ares"))]
-        {
+        } else {
             assert_eq!(selected.type_id, "SW");
             assert_eq!([selected.canvas_width, selected.canvas_height], [2, 2]);
         }
@@ -1370,9 +1367,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn loaded_transparent_pcx_does_not_select_any_shp_fallback() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::{
             assets::{asset_manager::AssetManager, pal_file::Palette},
             map::source::test_support::TestDirectory,
@@ -1399,7 +1396,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn pcx_source_dimensions_do_not_resize_the_native_cameo_canvas() {
         use crate::{
@@ -1420,9 +1416,9 @@ mod tests {
         assert_eq!([cameo.canvas_width, cameo.canvas_height], [60, 48]);
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn original_pcx_surface_selectors_choose_the_same_loaded_art() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::{
             assets::{asset_manager::AssetManager, pal_file::Palette},
             map::source::test_support::TestDirectory,

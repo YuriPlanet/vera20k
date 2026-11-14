@@ -153,6 +153,7 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.combat_lights.clear();
     state.renderer.performance_overlay.clear_simulation_rate();
     state.match_state.match_presentation.lasers.clear_on_load();
+    // Still on the feature: moves with the flying credits (`presentation::flying_credits`).
     #[cfg(feature = "ares")]
     state
         .match_state
@@ -245,9 +246,9 @@ pub(crate) fn install_world_presentation(
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a
     // changed pair drops it and the next paint rebuilds with the side's art;
-    // the process-lifetime slot 0 (`PUDLGBGN`) is not part of the hook.
-    #[cfg(feature = "ares")]
-    {
+    // the process-lifetime slot 0 (`PUDLGBGN`) is not part of the hook, which
+    // runs only when Ares plays in the game (`RuleSet::ares`).
+    if state.rules().is_some_and(|rules| rules.ares()) {
         let side = state
             .match_state
             .sim_runtime
@@ -388,6 +389,7 @@ pub(crate) fn install_world_presentation(
     }
     // Ares `IvanBomb.Image` SHPs, retained once per match like the
     // WeaponTypeExt's SHPStruct pointers.
+    // Still on the feature: moves with the selection overlay's Ares art.
     #[cfg(feature = "ares")]
     if let Some(assets) = state.process_assets.manager()
         && let Some(rules) = state

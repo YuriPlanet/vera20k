@@ -685,9 +685,8 @@ pub(crate) fn finish_presentation_assets(
     // 0x1002ECC0 on every game load, freeing the previous match's surfaces
     // first. Only a side that names one of the two keys differs from the
     // process InitGame art, so the override atlas belongs to this world.
-    // Still on the feature: moves with the callers of `finish_presentation_assets`.
-    #[cfg(feature = "ares")]
-    let outcome_banner_side_art = {
+    // Only when Ares plays in the game (`RuleSet::ares`).
+    let outcome_banner_side_art = if rules.ares() {
         let (image, palette) = rules
             .side_graphical_text(simulation.session().scenario_side())
             .unwrap_or((None, None));
@@ -702,9 +701,9 @@ pub(crate) fn finish_presentation_assets(
         } else {
             None
         }
+    } else {
+        None
     };
-    #[cfg(not(feature = "ares"))]
-    let outcome_banner_side_art = None;
     // `[EndGameScreens]` may name the local player's own country a win/lose
     // card. It takes the retail `GRFXTXT` banner's slot in the tactical
     // viewport, so it is built with the world like the banner art above; the

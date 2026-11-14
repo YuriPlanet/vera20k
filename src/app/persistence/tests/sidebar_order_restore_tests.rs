@@ -110,7 +110,7 @@ fn scrolled_projection(owner: InternedId, candidates: &[Cameo]) -> SidebarProjec
     let mut projection = SidebarProjectionState::default();
     assert!(
         !projection
-            .reconcile_fixture(owner, candidates, 1)
+            .reconcile_fixture(owner, candidates, 1, false)
             .build_inserted()
     );
     for (tab, row) in SidebarTab::all().into_iter().zip(SAVED_SCROLL_ROWS) {
@@ -143,14 +143,14 @@ fn retained_history(owner: InternedId, types: [InternedId; 2]) -> SidebarProject
     let mut projection = SidebarProjectionState::default();
     assert!(
         !projection
-            .reconcile_fixture(owner, &candidates(types, 100), 3)
+            .reconcile_fixture(owner, &candidates(types, 100), 3, false)
             .build_inserted()
     );
     // The current keys would sort LATER first, but native Recalculate retains
     // survivors. This records history through the actual shared strip owner.
     assert!(
         !projection
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
     assert_eq!(
@@ -261,7 +261,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     let mut outgoing = SidebarProjectionState::default();
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
     let before = outgoing.saved_order().unwrap();
@@ -281,7 +281,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
     assert_eq!(outgoing.saved_order(), Some(saved));
@@ -295,7 +295,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     assert!(outgoing.saved_order().is_none());
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates(types, 400), 3)
+            .reconcile_fixture(owner, &candidates(types, 400), 3, false)
             .build_inserted()
     );
 }
@@ -352,7 +352,7 @@ fn load_keeps_every_strip_order_and_shows_its_top_row() {
     assert_eq!(outgoing.saved_order(), Some(saved.clone()));
     assert!(
         !outgoing
-            .reconcile_fixture(owner, &candidates, 1)
+            .reconcile_fixture(owner, &candidates, 1, false)
             .build_inserted()
     );
     assert_eq!(outgoing.saved_order(), Some(saved));

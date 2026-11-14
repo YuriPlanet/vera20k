@@ -12,9 +12,9 @@ build feature area by area. Every build mounts `ares.mix` when the game's folder
 in use holds it, and reads such a game the Ares way: its INIs load with Ares' syntax (`+=`
 keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
 with every Ares key VERA20K reads, Ares' sound bags and string tables are added, and the
-whole simulation and the Country loading screen take their Ares form. A download still
-misses what is behind the feature: most of Ares' own messages, its sidebar, side dialog
-backgrounds and superweapon targeting; in a skirmish, Ares' random country weights (a
+whole simulation, the Country loading screen and the sidebar take their Ares form. A download still
+misses what is behind the feature: most of Ares' own messages, its superweapon
+targeting, the flying credits and `IvanBomb.Image`; in a skirmish, Ares' random country weights (a
 Random player draws as in the original) and the spawn file's larger Country and Side
 limits; and the random map generator's urban areas. A game with Ares keys but no `ares.mix` is
 read the stock way and plays only the world, unit and combat parts, so it can play unlike

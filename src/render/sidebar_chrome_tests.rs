@@ -288,93 +288,95 @@ fn original_n1_tables_drive_sidebar_palette_and_skip_alpha() {
 #[test]
 #[ignore = "requires the configured stock retail RA2/YR install"]
 fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
-    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
     let mut assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    for (theme, mix_index, archive_name, names, palette_name, old_palette_name) in [
-        (
-            SidebarTheme::Allied,
-            1,
-            "sidec01.mix",
-            ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
-            "UIBKGD.PAL",
-            "SIDEBAR.PAL",
-        ),
-        (
-            SidebarTheme::Soviet,
-            2,
-            "sidec02.mix",
-            ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
-            "UIBKGD.PAL",
-            "SIDEBAR.PAL",
-        ),
-        (
-            SidebarTheme::Yuri,
-            2,
-            "sidec02md.mix",
-            ("BKGDLGY.SHP", "BKGDMDY.SHP", "BKGDSMY.SHP"),
-            "UIBKGDY.PAL",
-            "RADARYURI.PAL",
-        ),
-    ] {
-        // An Ares build resolves sidebar palettes through the Side MIX group
-        // that scenario start registers (534FA0); install it as play does.
-        #[cfg(feature = "ares")]
-        assert!(assets.activate_sidebar_archives(mix_index).unwrap());
-        #[cfg(not(feature = "ares"))]
-        let _ = mix_index;
-        let archive = assets.archive(archive_name).unwrap();
-        let (entries, identity) = super::in_game_shell::load_backgrounds(
-            &assets,
-            archive,
-            archive_name,
-            names,
-            super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
-        )
-        .unwrap();
-        assert_eq!(identity.logical_name, palette_name);
-        #[cfg(feature = "ares")]
-        let (raw_palette, palette_source) = {
-            let resolved = assets.resolve_ref(palette_name).unwrap();
-            (resolved.bytes, resolved.source_archive)
-        };
-        #[cfg(not(feature = "ares"))]
-        let (raw_palette, palette_source) =
-            (archive.get_by_name(palette_name).unwrap(), archive_name);
-        assert_eq!(identity.source_archive.as_deref(), Some(palette_source));
-        let old_palette =
-            super::decode_sidebar_palette(archive.get_by_name(old_palette_name).unwrap()).unwrap();
-        for (name, entry) in [names.0, names.1, names.2].into_iter().zip(entries) {
-            let entry = entry.unwrap();
-            let shp = ShpFile::from_bytes(archive.get_by_name(name).unwrap()).unwrap();
-            let frame = &shp.frames[0];
-            assert_eq!((frame.frame_x, frame.frame_y), (0, 0));
-            assert_eq!(
-                (frame.frame_width, frame.frame_height),
-                (shp.width, shp.height)
-            );
-            assert_eq!(entry.rgba.len(), frame.pixels.len() * 4);
-            // Compare every production pixel to the retail palette triplet's
-            // original72ADE0 six-bit expansion and N=1 RGB565 store. The shared
-            // converter arithmetic also has native palette.json coverage above.
-            for (&index, rgba) in frame.pixels.iter().zip(entry.rgba.as_chunks::<4>().0) {
-                assert_eq!(rgba[3], if index == 0 { 0 } else { 255 });
-                if index == 0 {
-                    continue;
-                }
-                let p = &raw_palette[index as usize * 3..][..3];
-                let expected = ((u16::from(p[0]) >> 1) << 11)
-                    | (u16::from(p[1]) << 5)
-                    | (u16::from(p[2]) >> 1);
-                let actual = ((u16::from(rgba[0]) >> 3) << 11)
-                    | ((u16::from(rgba[1]) >> 2) << 5)
-                    | (u16::from(rgba[2]) >> 3);
-                assert_eq!(actual, expected, "{archive_name}/{name}, index{index}");
+    // The stock pass runs first, before any Side MIX group is registered.
+    for ares in [false, true] {
+        for (theme, mix_index, archive_name, names, palette_name, old_palette_name) in [
+            (
+                SidebarTheme::Allied,
+                1,
+                "sidec01.mix",
+                ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
+                "UIBKGD.PAL",
+                "SIDEBAR.PAL",
+            ),
+            (
+                SidebarTheme::Soviet,
+                2,
+                "sidec02.mix",
+                ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
+                "UIBKGD.PAL",
+                "SIDEBAR.PAL",
+            ),
+            (
+                SidebarTheme::Yuri,
+                2,
+                "sidec02md.mix",
+                ("BKGDLGY.SHP", "BKGDMDY.SHP", "BKGDSMY.SHP"),
+                "UIBKGDY.PAL",
+                "RADARYURI.PAL",
+            ),
+        ] {
+            // When Ares plays in the game (`RuleSet::ares`), sidebar palettes
+            // resolve through the Side MIX group that scenario start registers
+            // (534FA0); install it as play does.
+            if ares {
+                assert!(assets.activate_sidebar_archives(mix_index).unwrap());
             }
-            let old = super::render_shp(&shp, &old_palette, 0).unwrap();
-            assert_ne!(
-                entry.rgba, old.rgba,
-                "{archive_name}/{name}: old radar palette must differ"
-            );
+            let archive = assets.archive(archive_name).unwrap();
+            let (entries, identity) = super::in_game_shell::load_backgrounds(
+                &assets,
+                archive,
+                archive_name,
+                names,
+                super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
+                ares,
+            )
+            .unwrap();
+            assert_eq!(identity.logical_name, palette_name);
+            let (raw_palette, palette_source) = if ares {
+                let resolved = assets.resolve_ref(palette_name).unwrap();
+                (resolved.bytes, resolved.source_archive)
+            } else {
+                (archive.get_by_name(palette_name).unwrap(), archive_name)
+            };
+            assert_eq!(identity.source_archive.as_deref(), Some(palette_source));
+            let old_palette =
+                super::decode_sidebar_palette(archive.get_by_name(old_palette_name).unwrap())
+                    .unwrap();
+            for (name, entry) in [names.0, names.1, names.2].into_iter().zip(entries) {
+                let entry = entry.unwrap();
+                let shp = ShpFile::from_bytes(archive.get_by_name(name).unwrap()).unwrap();
+                let frame = &shp.frames[0];
+                assert_eq!((frame.frame_x, frame.frame_y), (0, 0));
+                assert_eq!(
+                    (frame.frame_width, frame.frame_height),
+                    (shp.width, shp.height)
+                );
+                assert_eq!(entry.rgba.len(), frame.pixels.len() * 4);
+                // Compare every production pixel to the retail palette triplet's
+                // original72ADE0 six-bit expansion and N=1 RGB565 store. The shared
+                // converter arithmetic also has native palette.json coverage above.
+                for (&index, rgba) in frame.pixels.iter().zip(entry.rgba.as_chunks::<4>().0) {
+                    assert_eq!(rgba[3], if index == 0 { 0 } else { 255 });
+                    if index == 0 {
+                        continue;
+                    }
+                    let p = &raw_palette[index as usize * 3..][..3];
+                    let expected = ((u16::from(p[0]) >> 1) << 11)
+                        | (u16::from(p[1]) << 5)
+                        | (u16::from(p[2]) >> 1);
+                    let actual = ((u16::from(rgba[0]) >> 3) << 11)
+                        | ((u16::from(rgba[1]) >> 2) << 5)
+                        | (u16::from(rgba[2]) >> 3);
+                    assert_eq!(actual, expected, "{archive_name}/{name}, index{index}");
+                }
+                let old = super::render_shp(&shp, &old_palette, 0).unwrap();
+                assert_ne!(
+                    entry.rgba, old.rgba,
+                    "{archive_name}/{name}: old radar palette must differ"
+                );
+            }
         }
     }
 }
