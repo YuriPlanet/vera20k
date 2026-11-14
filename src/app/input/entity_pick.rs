@@ -548,18 +548,8 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
     // those keep the ordinary add/toggle rather than being forced down the
     // replace path. gamemd equivalent UNCHECKED because the state cannot arise —
     // both production call sites always pass a resolved owner and interner.
-    let owner_is_local = |entity: &crate::sim::game_entity::GameEntity| -> bool {
-        match (local_owner, interner) {
-            (Some(owner), Some(names)) => source
-                .owner_is_human_player(entity.owner())
-                .unwrap_or_else(|| names.resolve(entity.owner()).eq_ignore_ascii_case(owner)),
-            _ => true,
-        }
-    };
-    let selection_is_local = current_selection
-        .first()
-        .and_then(|id| entities.get(*id))
-        .is_some_and(owner_is_local);
+    let selection_is_local =
+        first_selected_is_players(source, current_selection, local_owner, interner);
 
     if !additive || current_selection.is_empty() || !selection_is_local {
         return Some(SelectionMutation {
@@ -579,6 +569,27 @@ pub(crate) fn compute_click_selection_snapshot_with_playfield(
             ..Default::default()
         })
     }
+}
+
+/// BandBox_LeftUp's toggle arm (action 8) runs only while the first selected
+/// object's House passes IsHumanPlayer (`0x004ABD35..0x004ABD57`,
+/// `0x0050B6F0`); otherwise the click becomes action 7, which unselects all
+/// (`0x004ABE4A`) before it selects, with or without T held (`0x004ABE67`).
+fn first_selected_is_players(
+    source: impl PickSource,
+    current_selection: &[u64],
+    local_owner: Option<&str>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> bool {
+    current_selection
+        .first()
+        .and_then(|id| source.entities().get(*id))
+        .is_some_and(|entity| match (local_owner, interner) {
+            (Some(owner), Some(names)) => source
+                .owner_is_human_player(entity.owner())
+                .unwrap_or_else(|| names.resolve(entity.owner()).eq_ignore_ascii_case(owner)),
+            _ => true,
+        })
 }
 
 /// Did the band box catch anything at all?
@@ -1094,6 +1105,9 @@ pub(crate) fn compute_type_select_click_mutation_with_playfield(
         return SelectionMutation::default();
     };
     let clicked_type = (clicked.type_ref(), clicked.category());
+    let additive = additive
+        && (current_selection.is_empty()
+            || first_selected_is_players(source, current_selection, local_owner, interner));
     if additive && current_selection.contains(&clicked_id) {
         return SelectionMutation {
             deselect: matching_type_group(
