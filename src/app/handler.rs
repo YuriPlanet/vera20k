@@ -1952,6 +1952,9 @@ impl ApplicationHandler for App {
                         event_loop.set_control_flow(ControlFlow::Poll);
                         state.platform.window.request_redraw();
                     }
+                    Ok(FrameRenderOutcome::ScreenBusy) => {
+                        state.platform.redraw_gate.hold_busy_draw();
+                    }
                     Ok(_) => {}
                     Err(err) => {
                         log::error!("Render: {:#}", err);
@@ -2267,6 +2270,30 @@ impl ApplicationHandler for App {
                     event_loop.set_control_flow(
                         shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
                     );
+                }
+            } else if state.renderer.gpu.screen_busy() {
+                // The game never waits for the screen: while the hand-off
+                // thread waits for the next picture, the match is serviced,
+                // one frame a turn so the draw is never more than a frame
+                // late, and the thread's wake brings the draw. A completed
+                // frame means more may be due (GameSpeed 0 always is), so go
+                // again at once; otherwise the service wake is a fallback.
+                let pass = Self::service_match_runtime(state, event_loop, true, false, false);
+                if pass.quit_requested {
+                    return;
+                }
+                state
+                    .platform
+                    .frame_pacer
+                    .count_frames_without_present(pass.completed_frames);
+                if pass.completed_frames > 0 {
+                    event_loop.set_control_flow(ControlFlow::Poll);
+                } else {
+                    let fallback =
+                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(
+                        shell_scroll_wake.map_or(fallback, |service| service.min(fallback)),
+                    ));
                 }
             } else if state.platform.redraw_gate.next_pass(Instant::now())
                 == crate::app::match_runtime::redraw_gate::NextPass::Probe
