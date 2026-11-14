@@ -922,8 +922,6 @@ fn unit_delivery_no_base_normal_building_reserves_no_base_space() {
 /// 0x004A8FF5): a `Deliver.BaseNormal=no` building gives its house no
 /// own-base adjacency, but with BuildOffAlly an `EligibileForAllyBuilding`
 /// one still counts as its own ally's base.
-// Runs again once production's build area moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn unit_delivery_no_base_normal_building_still_serves_build_off_ally() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

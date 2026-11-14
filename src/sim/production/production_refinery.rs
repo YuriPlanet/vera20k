@@ -268,20 +268,21 @@ fn try_place_free_unit(
     // FreeUnit. Queue(false), then Commence, after the successful Unlimbo.
     // Ares 3.0 BuildingClass_Place_FreeUnit_Mission 10014390 (hook
     // 0x00446E9F) queues Area_Guard for a type without `Harvester=`.
-    #[cfg(feature = "ares")]
-    let mission = if sim
-        .substrate
-        .entities
-        .get(free_unit_id)
-        .and_then(|unit| sim.object_type(unit.type_ref(), rules))
-        .is_some_and(|object| object.harvester)
-    {
-        MissionType::Harvest
+    let mission = if rules.ares_form() {
+        if sim
+            .substrate
+            .entities
+            .get(free_unit_id)
+            .and_then(|unit| sim.object_type(unit.type_ref(), rules))
+            .is_some_and(|object| object.harvester)
+        {
+            MissionType::Harvest
+        } else {
+            MissionType::AreaGuard
+        }
     } else {
-        MissionType::AreaGuard
+        MissionType::Harvest
     };
-    #[cfg(not(feature = "ares"))]
-    let mission = MissionType::Harvest;
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         free_unit_id,

@@ -11,8 +11,8 @@
 //! - `HouseClass::GiveTiberium @ 0x004F9610` is Ares'
 //!   `HouseClass_GiveTiberium_Storage @ 10024290` (hook `0x4F9610`): it
 //!   fills the House's `Storage=` buildings, or pays cash.
-//! - The stock storage arms Ares relies on, which VERA ports in Ares builds
-//!   only because nothing fills the stores in stock YR: Spend_Money's silo
+//! - The stock storage arms Ares relies on, which run on Ares' stores only
+//!   because nothing fills the stores in stock YR: Spend_Money's silo
 //!   drain (`0x004F97DD..0x004F9925`), Available_Money's storage value
 //!   (`0x004F6990`), the store's merge in Added_To_Game (`0x00502B83`) and
 //!   its withdrawal in Removed_From_Game (`0x00502801..0x00502821`), and the
@@ -202,7 +202,7 @@ struct StoredBuilding {
     store: TiberiumStore,
 }
 
-/// A House's tiberium storage in Ares builds: its store (`+0x2FC`) and the
+/// A House's tiberium storage when Ares fills it: its store (`+0x2FC`) and the
 /// stores of its in-game buildings whose type has `Storage=` (or which
 /// arrived holding tiberium), from Added_To_Game to Removed_From_Game. The
 /// buildings keep House+68's order: both join at Unlimbo and ChangeOwner

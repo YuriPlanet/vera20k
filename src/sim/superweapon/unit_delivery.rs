@@ -155,7 +155,7 @@ pub(crate) fn configured(
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    rules.ares_super_weapons()
+    rules.ares_form()
         && !sw.pre_click
         && !sw.post_click
         && !sw.use_charge_drain

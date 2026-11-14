@@ -282,9 +282,9 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
 /// Ares 3.0 BuildingClass_KickOutUnit_FindAlternateKickout (100415E0, hook
 /// 0x4444E2): a guarding NAWEAP, another type with GAWEAP's `Factory=` and
 /// `Naval=` that MTNK can be built at, takes the busy factory's product.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
         return;
     };

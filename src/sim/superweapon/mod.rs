@@ -135,7 +135,7 @@ pub fn paid_pair_source<'r>(
     rules: &'r RuleSet,
     sw: &SuperWeaponType,
 ) -> Option<(&'r str, &'r SuperWeaponType)> {
-    if !rules.ares_super_weapons() || !sw.post_click {
+    if !rules.ares_form() || !sw.post_click {
         return None;
     }
     // A handler's PostClick type has no PreDependent (LoadFromINIFile
@@ -780,7 +780,7 @@ impl SuperWeaponInstance {
             if sw.use_charge_drain {
                 self.charge_drain_state = 0;
             }
-            if rules.ares_super_weapons()
+            if rules.ares_form()
                 && sw.kind.has_ares_handler()
                 && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
             {
@@ -1450,7 +1450,7 @@ pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerVie
 /// GetChargeToDrainRatio10032690's `SW.ChargeToDrainRatio`, else (and when
 /// Ares doesn't play) `[General] ChargeToDrainRatio=` (Rules+0xEC0).
 pub(crate) fn charge_to_drain_ratio(rules: &RuleSet, sw: &SuperWeaponType) -> NativeF64Bits {
-    if rules.ares_super_weapons()
+    if rules.ares_form()
         && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
     {
         return metadata
@@ -1542,7 +1542,7 @@ pub fn superweapon_views_for_owner(
         return Vec::new();
     };
     let current_frame = sim.session.binary_frame() as i32;
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     let mut views = Vec::new();
     for inst in weapons.values() {
         if !inst.is_active {
@@ -1627,7 +1627,7 @@ pub(crate) fn tick_house_superweapon_instances(
     owner: InternedId,
 ) {
     let current_frame = sim.session.binary_frame();
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     let human = ares
         && sim
             .houses
@@ -1925,7 +1925,7 @@ pub(crate) fn tick_active_superweapon_effects(
     let chrono = sim.session.process_chrono_screen_effect();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
-    if rules.ares_super_weapons() {
+    if rules.ares_form() {
         unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
         chronosphere::ares_tick_chrono_warps(sim, rules, overlay_registry, frame_effects);
     }
@@ -2004,7 +2004,7 @@ pub fn super_weapon_available(
         return false;
     }
 
-    let allowed = if rules.ares_super_weapons() {
+    let allowed = if rules.ares_form() {
         let Some(metadata) = rules.super_weapon_metadata(name) else {
             return false;
         };
@@ -2310,7 +2310,7 @@ fn provider_supers(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Supe
     // one, as the shared hold decision does). Ares reads the client's own
     // Observer pointer; VERA's observer list comes from every start slot, so
     // all peers skip the same Houses.
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     if ares {
         if sim.session.is_observer_house(owner) {
             return providers;
@@ -2370,7 +2370,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         return;
     };
     let defeated = house.is_defeated();
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     let low_power = sim
         .power_states
         .get(&owner)
@@ -2514,7 +2514,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
     if house.is_defeated() {
         return;
     }
-    let ares = rules.ares_super_weapons();
+    let ares = rules.ares_form();
     //50B2C7..50B305 uses the power ratio even for an unpowered Super type.
     let low_power = sim
         .power_states

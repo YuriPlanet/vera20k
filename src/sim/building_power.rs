@@ -28,11 +28,11 @@ impl Default for BuildingOnline {
 impl BuildingOnline {
     /// GoOnline/GoOffline's admitted latch write (`0x00452287`,
     /// `0x00452393`). Ares 3.0 BuildingClass_GoOnline_TogglePower 10014090
-    /// and _GoOffline_TogglePower 10014070 also record it.
-    fn toggle(&mut self, online: bool) {
+    /// and _GoOffline_TogglePower 10014070 also record it when Ares plays
+    /// (`ares`, the game's `RuleSet::ares_form`).
+    fn toggle(&mut self, online: bool, ares: bool) {
         self.online = online;
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             self.toggle_power_has_power = online;
         }
     }
@@ -41,7 +41,8 @@ impl BuildingOnline {
     /// 3.0 BuildingClass_Enable_TogglePower 10013FB0 (hook `0x00452210`)
     /// restores the last toggle on release instead of storing one.
     fn temporal(&mut self, online: bool) {
-        #[cfg(feature = "ares")]
+        // Runs in every game: only `toggle` when Ares plays clears the
+        // recorded toggle, so without Ares this stores `online` unchanged.
         let online = online && self.toggle_power_has_power;
         self.online = online;
     }
@@ -61,7 +62,6 @@ impl GameEntity {
     /// Ares BuildingExt `TogglePower_HasPower` (`+0x51`) clear: the last
     /// GoOffline is still in force. TechnoClass_DrawExtras_PowerOff
     /// (10049FE0, hook `0x6F526C`) draws the power-off marker from it.
-    #[cfg(feature = "ares")]
     pub fn ares_toggled_off(&self) -> bool {
         self.building.building_online.ares_toggled_off()
     }
@@ -117,7 +117,7 @@ impl Simulation {
             .unwrap()
             .building
             .building_online
-            .toggle(false);
+            .toggle(false, rules.ares_form());
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, false, rules);
@@ -162,7 +162,7 @@ impl Simulation {
             .unwrap()
             .building
             .building_online
-            .toggle(true);
+            .toggle(true, rules.ares_form());
         Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, true);
         self.houses.request_house_tech_tree_recheck(owner);
         self.set_building_stuff_enabled(id, true, rules);
@@ -258,6 +258,8 @@ impl crate::sim::world::ObjectSubstrate {
         }
         entity.building.building_online.temporal(online);
         let slots = *entity.building_art.anim_slots();
+        // Still on the feature: moves with the Temporal release
+        // (`Simulation::temporal_let_go` has no RuleSet to ask).
         #[cfg(feature = "ares")]
         self.queue_ares_temporal_factory_refresh(id);
         for slot in slots.into_iter().flatten() {
@@ -268,7 +270,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_tests {
     use crate::rules::ruleset::RuleSet;
     use crate::sim::world::{FrameEffects, Simulation};
@@ -278,6 +280,7 @@ mod ares_tests {
     /// comes back, and GoOnline still powers it up afterwards.
     #[test]
     fn ares_temporal_release_restores_the_power_toggle() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=DRAIN\n[DRAIN]\nStrength=100\nPower=-10\n",
         ))
