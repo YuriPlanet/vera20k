@@ -263,10 +263,21 @@ fn small_timer_lists_keep_native_rows_and_no_control() {
         seconds: 20,
     });
     let mut dock = TimerDock::default();
-    let rows = dock.rows(&lines, Some(house(0)), [800, 600], 12);
+    let rows = dock.rows(&lines, Some(house(0)), [800, 600], 12, true);
     assert_eq!(rows, (0..8).map(DockRow::Line).collect::<Vec<_>>());
     assert!(dock.toggle_rect().is_none());
     assert!(!dock.wheel(790, 590, -1.0));
+}
+
+/// With the option off, as by default, every line stacks as gamemd draws
+/// it (`0x006D4941..0x006D4B25`), with no arrow.
+#[test]
+fn sixty_supers_with_the_option_off_stack_every_line() {
+    let lines = dock_lines(60);
+    let mut dock = TimerDock::default();
+    let rows = dock.rows(&lines, Some(house(29)), [800, 600], 12, false);
+    assert_eq!(rows, (0..60).map(DockRow::Line).collect::<Vec<_>>());
+    assert!(dock.toggle_rect().is_none());
 }
 
 #[test]
@@ -280,7 +291,7 @@ fn sixty_supers_fold_page_and_shrink_without_losing_local_or_mission_rows() {
         },
     );
     let mut dock = TimerDock::default();
-    let rows = dock.rows(&lines, Some(house(29)), [800, 600], 12);
+    let rows = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
     assert_eq!(
         rows,
         vec![
@@ -297,20 +308,20 @@ fn sixty_supers_fold_page_and_shrink_without_losing_local_or_mission_rows() {
     let rect = dock.toggle_rect().unwrap();
     assert!(rect.y >= 0 && rect.y + rect.h <= 600);
     dock.toggle();
-    let expanded = dock.rows(&lines, Some(house(29)), [800, 600], 12);
+    let expanded = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
     assert_eq!(expanded.len(), 12); // mission + arrow + two local + eight others
     assert_eq!(expanded[1], DockRow::Toggle);
     dock.scroll_rows
         .push(crate::ui::gadget::GadgetRect::new(700, 500, 97, 14));
     assert!(!dock.wheel(699, 505, -1.0));
     assert!(dock.wheel(750, 505, -1.0));
-    let scrolled = dock.rows(&lines, Some(house(29)), [800, 600], 12);
+    let scrolled = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
     assert!(!scrolled.contains(&DockRow::Line(1)));
     assert!(scrolled.contains(&DockRow::Line(9)));
     assert!(scrolled.contains(&DockRow::Line(59)) && scrolled.contains(&DockRow::Line(60)));
     dock.offset = usize::MAX;
-    let end = dock.rows(&lines, Some(house(29)), [800, 600], 12);
+    let end = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);
     assert!(end.contains(&DockRow::Line(58)));
-    dock.rows(&lines[..7], Some(house(0)), [800, 600], 12);
+    dock.rows(&lines[..7], Some(house(0)), [800, 600], 12, true);
     assert!(!dock.expanded && dock.offset == 0 && dock.toggle_rect().is_none());
 }

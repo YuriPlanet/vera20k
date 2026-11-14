@@ -295,6 +295,13 @@ pub(crate) struct RetailOptionsProfile {
     /// voice never names it. Client presentation only: no sim, audio, state
     /// hash or network protocol reads it. Off by default.
     pub(crate) detailed_eva_text: bool,
+    /// `[VERA] CompactSuperTimers=`: the battlefield's super weapon timer
+    /// list shows at most six lines, the player's own first, with an arrow
+    /// that opens and scrolls the rest
+    /// (`app::presentation::super_timers::TimerDock`). Off by default, so the
+    /// list stacks every line as gamemd does (`TacticalClass::Draw`
+    /// `0x006D4941..0x006D4B25`). Client presentation only.
+    pub(crate) compact_super_timers: bool,
 }
 
 /// The two process-start products obtained from one physical `VERA.INI`
@@ -380,6 +387,7 @@ impl Default for RetailOptionsProfile {
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             detailed_eva_text: false,
+            compact_super_timers: false,
         }
     }
 }
@@ -396,7 +404,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 32],
 }
 
 impl RetailOptionsLoad {
@@ -630,6 +638,8 @@ impl RetailOptionsProfile {
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
             self.detailed_eva_text = vera.read_bool("DetailedEvaText", self.detailed_eva_text);
+            self.compact_super_timers =
+                vera.read_bool("CompactSuperTimers", self.compact_super_timers);
             // Absent keeps the current value; a value this build does not know
             // reads as the native rule instead of hiding the original strip.
             self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
@@ -814,6 +824,10 @@ impl RetailOptionsProfile {
                 (
                     "DetailedEvaText",
                     format_bool(self.detailed_eva_text).to_string(),
+                ),
+                (
+                    "CompactSuperTimers",
+                    format_bool(self.compact_super_timers).to_string(),
                 ),
                 (
                     "TerrainDeformation",
@@ -2466,6 +2480,18 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 .detailed_eva_text
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn compact_super_timers_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").compact_super_timers);
+        let mut profile = read(b"[VERA]\nCompactSuperTimers=yes\n");
+        assert!(profile.compact_super_timers);
+        profile.compact_super_timers = false;
+        let written = profile.transform_settings(b"[VERA]\nCompactSuperTimers=yes\n");
+        assert!(!read(&written).compact_super_timers);
     }
 
     #[test]
