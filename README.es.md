@@ -94,9 +94,7 @@ motor original, después portan su comportamiento a Rust y lo comprueban con
 
 ## Personalización
 
-La capacidad del mapa se elige automáticamente, sin opción de compilación: la suma del ancho y alto de `Size` puede llegar a 1024.
-
-De forma predeterminada, VERA20K se comporta igual que el juego original. Toda otra función nueva,
+De forma predeterminada, VERA20K se comporta igual que el juego original. Toda función nueva,
 incluidas las extensiones de mods como Ares, debe permanecer desactivada hasta que se active con una
 de estas opciones:
 

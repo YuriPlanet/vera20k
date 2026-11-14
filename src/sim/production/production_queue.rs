@@ -441,8 +441,9 @@ fn exit_naval(
     };
     // Ares BuildingClass_KickOutUnit_Clone_NavalUnit (hook 0x0044441A ->
     // 10041590) clones before the rally, inside the current scope.
-    #[cfg(feature = "ares")]
-    kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
+    if rules.ares_form() {
+        kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
+    }
     // 0x0044441A..0x00444439: with a rally (the producer's ArchiveTarget,
     // `+0x218`) the arm calls the class setter Assign_Destination(rally, 1)
     // (vt+0x480), then Queue_Mission(Move, 0) (vt+0x1E8).
@@ -530,8 +531,7 @@ fn exit_land(
         // hook 0x4444E2) replaces the type match: the receiver's type has
         // the producer's `Factory=` and `Naval=` and the product
         // `CanBeBuiltAt` it.
-        #[cfg(feature = "ares")]
-        let (producer_object, product_object) = {
+        let ares_types = if rules.ares_form() {
             let producer = sim.object_type(producer_type, rules);
             let product = sim
                 .substrate
@@ -541,22 +541,19 @@ fn exit_land(
             let (Some(producer), Some(product)) = (producer, product) else {
                 return BuildingExit::Failed;
             };
-            (producer, product)
+            Some((producer, product))
+        } else {
+            None
         };
-        let admits_type = |candidate: &crate::sim::game_entity::GameEntity| {
-            #[cfg(feature = "ares")]
-            {
-                sim.object_type(candidate.type_ref(), rules)
-                    .is_some_and(|object| {
-                        object.factory_type() == producer_object.factory_type()
-                            && object.naval == producer_object.naval
-                            && super::can_build::ares_can_be_built_at(rules, product_object, object)
-                    })
-            }
-            #[cfg(not(feature = "ares"))]
-            {
-                candidate.type_ref() == producer_type
-            }
+        let admits_type = |candidate: &crate::sim::game_entity::GameEntity| match ares_types {
+            Some((producer_object, product_object)) => sim
+                .object_type(candidate.type_ref(), rules)
+                .is_some_and(|object| {
+                    object.factory_type() == producer_object.factory_type()
+                        && object.naval == producer_object.naval
+                        && super::can_build::ares_can_be_built_at(rules, product_object, object)
+                }),
+            None => candidate.type_ref() == producer_type,
         };
         let Some(house) = sim.houses.get(&producer_owner) else {
             return BuildingExit::Failed;
@@ -667,10 +664,11 @@ fn exit_land(
         // Ares BuildingClass_KickOutUnit_Clone_NonNavalUnit (hook
         // 0x004445F6 -> 100415B0) clones outside the A8E7AC scope, then
         // resumes at the common return 0x00444971.
-        #[cfg(feature = "ares")]
-        sim.without_object_placement_scope(|sim| {
-            kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
-        });
+        if rules.ares_form() {
+            sim.without_object_placement_scope(|sim| {
+                kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
+            });
+        }
         Some(spawned)
     });
     if placed.is_some() {
@@ -726,8 +724,7 @@ fn exit_at_dock(
     // Ares BuildingClass_KickOutUnit_PreventClone (hook 0x004449DF ->
     // 10041690) jumps past this loop to 0x00444A53; its clones come from
     // `kick_out_ares_clones` in the tail.
-    #[cfg(not(feature = "ares"))]
-    if arm == ExitArm::Infantry {
+    if !rules.ares_form() && arm == ExitArm::Infantry {
         // The coordinate and facing `dock_exit` derived read only the
         // producer and the dock Cell (`0x00444A53..0x00444C7C`), which the
         // copies' exits leave unchanged.
@@ -796,7 +793,6 @@ fn exit_at_dock(
 ///   (`0x004555D0`) or warped out; the clone belongs to the PRODUCER's House
 ///   (not the source's, as the stock loop) and is deleted when the source
 ///   does not place it (`KickOutUnit` other than Succeeded).
-#[cfg(feature = "ares")]
 fn kick_out_ares_clones(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -915,7 +911,6 @@ fn kick_out_ares_clones(
 /// through `0x004FB9B0` (`0x004FBB6D`) and ChangeOwner (`0x00448939`), the
 /// same events that move a building through House+68, so House+68 filtered by
 /// `Cloning=` holds the same vats in the same order.
-#[cfg_attr(feature = "ares", allow(dead_code))]
 fn exit_cloning_vat_copies(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1035,10 +1030,11 @@ fn infantry_exit_tail(
     infantry_exit_post(sim, rules, producer_id, spawned, overlay_registry, effects);
     // Ares BuildingClass_KickOutUnit_Infantry (hook 0x00444DBC -> 10041660)
     // clones before the HELLO, with the A8E7AC scope lowered around them.
-    #[cfg(feature = "ares")]
-    sim.without_object_placement_scope(|sim| {
-        kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
-    });
+    if rules.ares_form() {
+        sim.without_object_placement_scope(|sim| {
+            kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
+        });
+    }
     // Shared radio owner supplies HELLO bookkeeping and the
     // literal9 receiver; neither is an invented contact write.
     if crate::sim::radio::transmit(
@@ -1110,10 +1106,11 @@ impl ExitProducer {
             // Ares 3.0 BuildingClass_KickOutUnit_ArmoryExitBug 10014100
             // (hook 0x00444D26) tests `Hospital= || Armory=` here, so an
             // Armory's trainee also takes the post.
-            #[cfg(feature = "ares")]
-            hospital: object.is_some_and(|object| object.hospital || object.armory()),
-            #[cfg(not(feature = "ares"))]
-            hospital: object.is_some_and(|object| object.hospital),
+            hospital: if rules.ares_form() {
+                object.is_some_and(|object| object.hospital || object.armory())
+            } else {
+                object.is_some_and(|object| object.hospital)
+            },
             factory: object.is_some_and(|object| object.has_factory()),
         })
     }

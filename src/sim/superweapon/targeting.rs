@@ -186,7 +186,7 @@ pub(super) fn check(
     cell: (u16, u16),
     automatic: bool,
 ) -> Result<(), TargetReject> {
-    if !rules.ares_super_weapons() {
+    if !rules.ares_form() {
         return if sw.kind.is_extension() {
             Err(TargetReject::InvalidPayload)
         } else {

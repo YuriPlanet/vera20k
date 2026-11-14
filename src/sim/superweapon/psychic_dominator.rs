@@ -129,7 +129,6 @@ pub struct PsychicDominatorState {
 /// hash's stream.
 impl std::hash::Hash for PsychicDominatorState {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        use std::hash::Hash;
         self.status.hash(state);
         self.cell.hash(state);
         self.owner.hash(state);
@@ -250,7 +249,7 @@ pub(super) fn process(
     // Ares hook 53AF40 (10037B40) skips the stock Process; its state
     // machine (10070BA0) runs in its place. On the switch like the Ares
     // launch and AbortFire in `fire.rs` that start this state.
-    if rules.ares_super_weapons() {
+    if rules.ares_form() {
         return ares_process(sim, rules, overlay_registry, frame_effects);
     }
     match sim.psychic_dominator.status {

@@ -482,7 +482,7 @@ fn record_last_built_enforces_map_authored_negative_limit() {
     // house owns none.
     assert_eq!(
         super::can_build::check_build_limit(&sim, rules, owner, e2),
-        crate::rules::ARES_BUILD
+        rules.ares_form()
     );
 
     let product = sim
@@ -3901,5 +3901,5 @@ fn a_yard_going_offline_refreshes_the_defense_queue_with_ares() {
     };
     assert!(!suspended(&sim));
     assert!(sim.go_building_offline(1, &rules, crate::sim::world::FrameEffects::default()));
-    assert_eq!(suspended(&sim), cfg!(feature = "ares"));
+    assert_eq!(suspended(&sim), rules.ares_form());
 }

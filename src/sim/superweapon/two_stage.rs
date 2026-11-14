@@ -124,7 +124,7 @@ impl Simulation {
         owner: InternedId,
         source: InternedId,
     ) -> Option<PaidSuperWeaponSelection> {
-        if !rules.ares_super_weapons() {
+        if !rules.ares_form() {
             return None;
         }
         let sw = rules.super_weapon(self.interner.resolve(source))?;
@@ -150,7 +150,7 @@ impl Simulation {
         owner: InternedId,
         selection: PaidSuperWeaponSelection,
     ) -> bool {
-        if !rules.ares_super_weapons() {
+        if !rules.ares_form() {
             return false;
         }
         let Some(instance) = super_weapons.instance_mut(&owner, &selection.source) else {
@@ -227,7 +227,7 @@ pub(super) fn source_available(
             providers.provided.contains(&source),
             !low_power && providers.online.contains(&source),
             providers.charging.contains(&source),
-            rules.ares_super_weapons(),
+            rules.ares_form(),
         ),
         super::SuperHold::Unchanged | super::SuperHold::Suspend(false)
     )

@@ -531,7 +531,6 @@ pub fn type_base_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
 /// `BuildTime.Speed` (else `[General] BuildSpeed=`) times `BuildTime.Cost`
 /// (else `Cost=`), over 1000.0 (`1009E580`), times 900.0 (`10095ED0`),
 /// truncated by ftol `100772B0` under the process's 53-bit chop word.
-#[cfg(feature = "ares")]
 pub fn ares_type_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X87;
 
@@ -544,20 +543,19 @@ pub fn ares_type_build_time(cost: i32, build_speed: NativeF64Bits) -> i32 {
     ))
 }
 
-/// TechnoType vt+0x88 for `obj`: [`type_base_build_time`], or with Ares
+/// TechnoType vt+0x88 for `obj`: [`type_base_build_time`], or when Ares plays
 /// [`ares_type_build_time`] over its `BuildTime.Cost`/`BuildTime.Speed`.
 pub fn type_build_time(obj: &ObjectType, rules: &RuleSet) -> i32 {
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         let ext = obj.ares_production();
         ares_type_build_time(
             ext.build_time_cost().unwrap_or(obj.cost),
             ext.build_time_speed()
                 .unwrap_or(rules.production.build_speed),
         )
+    } else {
+        type_base_build_time(obj.cost, rules.production.build_speed)
     }
-    #[cfg(not(feature = "ares"))]
-    type_base_build_time(obj.cost, rules.production.build_speed)
 }
 
 /// Resume4C9EEF and GetRate4C9FC0 share the signed total/54 clamp.
@@ -652,7 +650,6 @@ pub fn time_to_build(inputs: &TimeToBuildInputs) -> i32 {
 /// - `BuildTime.MultipleFactory` replaces `MultipleFactory=`;
 /// - the wall coefficient applies only while `BuildTime.Speed` is unset,
 ///   which `inputs.wall` already holds ([`ObjectType::wall_build_speed_applies`]).
-#[cfg(feature = "ares")]
 pub fn ares_time_to_build(
     inputs: &TimeToBuildInputs,
     ext: &crate::rules::ares_production::ProductionTypeRules,
@@ -715,7 +712,7 @@ pub fn ares_time_to_build(
 }
 
 /// `TechnoClass::Time_To_Build @ 0x006F47A0` for `owner` building `obj`:
-/// [`time_to_build`], or with Ares its replacement [`ares_time_to_build`].
+/// [`time_to_build`], or when Ares plays its replacement [`ares_time_to_build`].
 pub(super) fn object_time_to_build(
     sim: &crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -723,12 +720,11 @@ pub(super) fn object_time_to_build(
     obj: &ObjectType,
 ) -> i32 {
     let inputs = time_to_build_inputs(sim, rules, owner, obj);
-    #[cfg(feature = "ares")]
-    {
+    if rules.ares_form() {
         ares_time_to_build(&inputs, obj.ares_production())
+    } else {
+        time_to_build(&inputs)
     }
-    #[cfg(not(feature = "ares"))]
-    time_to_build(&inputs)
 }
 
 /// Resolve [`time_to_build`]'s inputs for `owner` building `obj`: the rules
@@ -1851,7 +1847,7 @@ fn native_e2_head(
 #[path = "factory_system_hold_tests.rs"]
 mod system_hold_tests;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "ares_build_time_tests.rs"]
 mod ares_build_time_tests;
 
