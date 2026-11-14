@@ -234,7 +234,7 @@ struct Resident {
     rendered_index: RenderedIndex,
     /// Each resident sprite's native pool size
     /// ([`crate::render::voxel_image_cache::sprite_pool_bytes`]).
-    pool_bytes: HashMap<UnitSpriteKey, u32>,
+    pool_bytes: LookupMap<UnitSpriteKey, u32>,
     /// Keys an admitted model draws that no draw has asked for yet. A key
     /// leaves when it is drawn, or fails to draw, and never returns.
     undrawn: HashSet<UnitSpriteKey>,

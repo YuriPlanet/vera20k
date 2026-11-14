@@ -539,11 +539,14 @@ fn target_laser_draws_at<'a>(
 ) -> Vec<crate::render::surface_line::SurfaceDraw> {
     use crate::render::surface_line::SurfaceDraw;
     let mut draws = Vec::new();
+    // Every test only reads, so the cheap ones go first: most units have
+    // not fired in the last 15 frames.
     if entity.category() != EntityCategory::Unit
-        || !rules
-            .object(sim.interner().resolve(entity.type_ref()))
-            .is_some_and(|object| object.target_laser)
         || (frame as i32).wrapping_sub(entity.last_fire_frame.frame() as i32) >= 15
+        || !sim
+            .interner()
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| object.target_laser)
         || !sim.house_is_human_player(entity.owner())
     {
         return draws;
