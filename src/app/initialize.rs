@@ -1062,6 +1062,7 @@ impl App {
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
+                    pixel_fx: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
                     super_timer_next_flip_ms: None,

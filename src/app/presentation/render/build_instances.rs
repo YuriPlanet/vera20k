@@ -692,13 +692,22 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     // `[Options] DetailLevel` field (`OptionsClass + 0x18`). The in-game state
     // is the live projection of that retained profile value, so config.toml is
     // not a second interactive authority for the same retail option.
-    let enable_extra_animations = pixel_fx_enabled_for_detail_level(
-        state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .detail_level,
-    );
+    // `DrawPixelFXSparkles @ 0x006D7840` first asks `Game__GetMinFrameRate
+    // @ 0x0055AF60` (`0x006D7847`, the latch Anim and LaserDraw share) and
+    // draws nothing while the published rate is below it (`0x006D784C`).
+    let frame_rate_holds = {
+        let mut detail = state.match_state.match_presentation.detail.borrow_mut();
+        let minimum = detail.minimum_frame_rate();
+        minimum <= detail.frame_rate()
+    };
+    let enable_extra_animations = frame_rate_holds
+        && pixel_fx_enabled_for_detail_level(
+            state
+                .match_state
+                .match_presentation
+                .in_game_options
+                .detail_level,
+        );
 
     let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
     let local_owner_id = match (state.match_state.sandbox_full_visibility, &local_owner_name) {
@@ -707,7 +716,7 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     };
 
     let input = SparkleInput {
-        clock_ms: sim.session().total_sim_ms(),
+        wall_ms: crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
         enable_extra_animations,
         local_owner_id,
         sandbox_full_visibility: state.match_state.sandbox_full_visibility,
@@ -724,7 +733,10 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
         white_uv_origin: [0.0, 0.0],
         white_uv_size: [1.0, 1.0],
     };
-    build_sparkle_instances(&input)
+    build_sparkle_instances(
+        &input,
+        &mut state.match_state.match_presentation.pixel_fx.borrow_mut(),
+    )
 }
 
 /// Build static smudge decal instances for the current frame.

@@ -172,6 +172,12 @@ pub(crate) fn install_world_presentation(
         .electric_bolts
         .clear_on_load();
     state.match_state.match_presentation.airstrike_shades = Default::default();
+    state
+        .match_state
+        .match_presentation
+        .pixel_fx
+        .borrow_mut()
+        .clear_on_load();
     if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         state
             .match_state
