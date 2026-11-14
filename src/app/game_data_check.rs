@@ -38,7 +38,7 @@ fn inspect(game_dir: &Path) -> InstallReport {
         destination.push(format!("{}: {}", issue.name, issue.detail));
     }
 
-    match CsfFile::load_active(|name| assets.get_ref(name)) {
+    match CsfFile::load_active(assets.ares_form(), |name| assets.get_ref(name)) {
         Ok((csf, _)) => report.language = Some(csf.language),
         Err(error) => report.required.push(format!("ra2md.csf: {error}")),
     }

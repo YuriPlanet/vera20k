@@ -1348,7 +1348,6 @@ impl App {
                     && let Some(session) =
                         quickplay_launch_session(quickplay, &state.frontend.skirmish_modes)
                 {
-                    #[cfg(feature = "ares")]
                     crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
                         &mut state.process_assets,
                         &session,

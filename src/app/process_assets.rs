@@ -288,12 +288,13 @@ impl ProcessAssets {
                 "sound_count": definitions.sounds().len(),
                 "eva_count": definitions.eva().len(),
             });
-            #[cfg(feature = "ares")]
-            let source_receipt = {
+            let source_receipt = if assets.ares_form() {
                 let mut receipt = source_receipt;
                 receipt["additional_indexes"] =
                     serde_json::json!(index.as_ref().map(|loaded| &loaded.additional_sources));
                 receipt
+            } else {
+                source_receipt
             };
             log::info!("Process audio catalog selected: {source_receipt}");
             self.audio_catalog = Some(ProcessAudioCatalog { definitions, index });
@@ -439,10 +440,15 @@ impl ProcessAssets {
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
         // the map, which the map agreement covers, and whether `ares.mix`
-        // ships. A build without the `ares` feature never mounts `ares.mix`
-        // and keeps the old bytes.
-        #[cfg(feature = "ares")]
-        bytes.push(u8::from(assets.ships_ares()));
+        // ships. A game without it keeps the old bytes, so its digest is the
+        // one released builds compute; a game with it gets the byte, which no
+        // build from before `ares.mix` was mounted computes, so such a build
+        // is refused over the rules instead of playing the same files the
+        // stock way. Until the `ares` feature is deleted a build with it
+        // writes the byte for every game, as it always has.
+        if cfg!(feature = "ares") || assets.ships_ares() {
+            bytes.push(u8::from(assets.ships_ares()));
+        }
         // VERA: with a mod in use, its other files too (art, maps, archives),
         // so players whose copies of a mod differ never start a match. Without
         // a mod the digest is what it was before mods.
@@ -505,6 +511,12 @@ impl ProcessAssets {
             .push(crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI);
         self.changed_game_files =
             crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
+        // `ares.mix` makes the game an Ares game (`rules::ares_switch`): its
+        // INIs and Rules are read the Ares way even where every compared file
+        // is the retail copy, so it changes the original game too.
+        if assets.ships_ares() {
+            self.changed_game_files.push("ares.mix".to_owned());
+        }
         log::info!(
             "Game files that change the original rules: {}",
             if self.changed_game_files.is_empty() {

@@ -7,15 +7,19 @@ Ares switches on from a game's data, in every build: a game whose rules or map h
 key plays with Ares, and any other game plays as the original (`src/rules/ares_switch.rs`).
 No option or client setting turns it on.
 
-The official downloads hold only part of Ares so far. Its code is moving out of the `ares`
-build feature area by area. In a download, a game with Ares keys plays the parts that have
-moved (the world and unit simulation, and combat) and misses the rest: what the player
-sees and hears, `ares.mix`, the Ares INI syntax, and most Ares rules keys, which are read
-only with `ares.mix` mounted. The rest of the simulation's Ares code (superweapons,
-production, power and money, bombs, triggers and team scripts, animations, movement, the
-AI) is in every build too, but it takes its Ares form only in a game whose rules were read
-the Ares way, so a download keeps the original there. Such a game can play unlike both the
-original and Ares. For all the Ares support VERA20K has, build with the feature:
+The official downloads do not hold all of Ares yet. Its code is moving out of the `ares`
+build feature area by area. Every build mounts `ares.mix` when the game's folder or the mod
+in use holds it, and reads such a game the Ares way: its INIs load with Ares' syntax (`+=`
+keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
+with every Ares key VERA20K reads, Ares' sound bags and string tables are added, and the
+whole simulation and the Country loading screen take their Ares form. A download still
+misses what is behind the feature: most of Ares' own messages, its sidebar, side dialog
+backgrounds and superweapon targeting; in a skirmish, Ares' random country weights (a
+Random player draws as in the original) and the spawn file's larger Country and Side
+limits; and the random map generator's urban areas. A game with Ares keys but no `ares.mix` is
+read the stock way and plays only the world, unit and combat parts, so it can play unlike
+both the original and Ares: a mod that needs Ares ships `ares.mix`, as Ares mods do. For
+all the Ares support VERA20K has, build with the feature:
 
 ```sh
 cargo run --release --bin vera20k --features ares

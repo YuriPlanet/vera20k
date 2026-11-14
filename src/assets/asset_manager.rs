@@ -19,7 +19,7 @@ use crate::assets::error::AssetError;
 use crate::assets::mix_archive::{MixArchive, SharedBytes};
 use crate::assets::mix_hash::mix_hash;
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "asset_manager_ares_sidebar_tests.rs"]
 mod ares_sidebar_tests;
 
@@ -168,7 +168,6 @@ pub struct LoadedAudioIndex {
     pub index: AudioIndex,
     pub sources: AudioIndexSources,
     /// Further admitted pairs in append order. The first remains `sources`.
-    #[cfg(feature = "ares")]
     pub additional_sources: Vec<AudioIndexSources>,
 }
 
@@ -188,7 +187,6 @@ pub fn load_audio_index_pair(
     Ok(LoadedAudioIndex {
         index,
         sources,
-        #[cfg(feature = "ares")]
         additional_sources: Vec::new(),
     })
 }
@@ -292,7 +290,6 @@ pub struct AssetManager {
     /// Currently registered theater identity and its archive names.
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
-    #[cfg(feature = "ares")]
     active_sidebar_archives: Vec<String>,
     /// Path to the RA2 installation directory.
     ra2_dir: PathBuf,
@@ -326,7 +323,6 @@ impl Clone for AssetManager {
             ini_roots: self.ini_roots.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: self.active_sidebar_archives.clone(),
             ra2_dir: self.ra2_dir.clone(),
             mod_dir: self.mod_dir.clone(),
@@ -340,11 +336,9 @@ struct SavedLoadLookupAuthority {
     archives: Vec<NamedArchive>,
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
-    #[cfg(feature = "ares")]
     active_sidebar_archives: Vec<String>,
 }
 
-#[cfg(feature = "ares")]
 const SIDEBAR_RETIRED_PALETTES: [&str; 5] = [
     "YRII.PAL",
     "OBSERVER.PAL",
@@ -469,12 +463,19 @@ impl AssetManager {
     }
 
     /// Whether startup mounted Ares's `ares.mix` from the installation or the
-    /// mod. It makes Ares play in every game (`rules::ares_switch`). A build
-    /// without the `ares` feature does not mount it yet.
+    /// mod. It makes Ares play in every game (`rules::ares_switch`).
     pub fn ships_ares(&self) -> bool {
         self.archives
             .iter()
             .any(|archive| archive_name_matches(&archive.name, "ares.mix"))
+    }
+
+    /// Whether this game's files take the forms an Ares launch gives them:
+    /// the appended audio bags and the supplemental string tables. A game
+    /// that ships `ares.mix` does, and until the `ares` feature is deleted a
+    /// build with it does for every game, as it always has.
+    pub fn ares_form(&self) -> bool {
+        cfg!(feature = "ares") || self.ships_ares()
     }
 
     /// Read-only INI tooling without a complete retail installation. No game
@@ -502,7 +503,6 @@ impl AssetManager {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
             mod_dir: mod_dir.map(Path::to_path_buf),
@@ -529,12 +529,17 @@ impl AssetManager {
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
     ) -> Result<Self, AssetError> {
-        Self::open_startup_archives(
+        let manager = Self::open_startup_archives(
             ra2_dir,
             mod_dir,
             media_mode,
             StartupArchivePolicy::OptionalWarnings,
-        )
+        )?;
+        // This is the game the launch plays: its `ares.mix` answer is the
+        // launch's (`util::ares_launch`), which a thread with no reading scope
+        // loads its INIs by.
+        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
+        Ok(manager)
     }
 
     /// Inspect the ordinary startup stack while retaining readable archives for
@@ -570,11 +575,18 @@ impl AssetManager {
         // call at 0x006BD7EF) runs Init_Base_Mix_Files there instead, and
         // Expand_MIX_Deorg (0x0052BB64) skips Init_Game's call, so expansions
         // and the masters resolve ahead of LANGMD.MIX and LANGUAGE.MIX.
-        #[cfg(not(feature = "ares"))]
-        manager.mount_language_archives(&mut policy)?;
-        manager.mount_base_mix_files(&mut policy)?;
-        #[cfg(feature = "ares")]
-        manager.mount_language_archives(&mut policy)?;
+        // VERA has no Ares.dll to find: a game is an Ares game when its
+        // folder or its mod holds `ares.mix`, which is asked before anything
+        // is mounted since it decides this order. Until the `ares` feature is
+        // deleted, a build with it takes Ares' order in every game.
+        let ares = cfg!(feature = "ares") || manager.loose_path("ares.mix").is_some();
+        if !ares {
+            manager.mount_language_archives(&mut policy)?;
+        }
+        manager.mount_base_mix_files(ares, &mut policy)?;
+        if ares {
+            manager.mount_language_archives(&mut policy)?;
+        }
 
         // AudioSystem__Init uses exactly one archive: the MD archive when
         // present, otherwise the base archive.
@@ -651,16 +663,17 @@ impl AssetManager {
                     .map(|_| name.to_owned()),
             })
         };
-        #[cfg(not(feature = "ares"))]
-        let stems = vec!["audio".to_owned()];
         // Installed hook4011C0 -> Audio_Load1005ADD0: audio, ares, audio01..99.
         // Selection stays before bulk mounts. Executed native loop and merge:
         // tools/rules_oracle/ares_audio_bags.{py,json,md}.
-        #[cfg(feature = "ares")]
-        let stems = ["audio".to_owned(), "ares".to_owned()]
-            .into_iter()
-            .chain((1..100).map(|i| format!("audio{i:02}")))
-            .collect::<Vec<_>>();
+        let stems = if self.ares_form() {
+            ["audio".to_owned(), "ares".to_owned()]
+                .into_iter()
+                .chain((1..100).map(|i| format!("audio{i:02}")))
+                .collect::<Vec<_>>()
+        } else {
+            vec!["audio".to_owned()]
+        };
         self.audio_pairs = stems
             .into_iter()
             .map(|stem| SelectedAudioPair {
@@ -704,8 +717,7 @@ impl AssetManager {
                 source.entry_id, source.source_archive
             ),
         };
-        #[cfg(not(feature = "ares"))]
-        {
+        if !self.ares_form() {
             let Some(pair) = self.audio_pairs.first() else {
                 return Ok(None);
             };
@@ -714,9 +726,8 @@ impl AssetManager {
             };
             let idx_bytes = self.selected_audio_ref(idx).ok_or_else(|| missing(idx))?;
             let bag_bytes = self.selected_audio_ref(bag).ok_or_else(|| missing(bag))?;
-            load_audio_index_pair(idx_bytes, bag_bytes).map(Some)
+            return load_audio_index_pair(idx_bytes, bag_bytes).map(Some);
         }
-        #[cfg(feature = "ares")]
         {
             let mut indexes = Vec::new();
             let mut sources = Vec::new();
@@ -958,7 +969,6 @@ impl AssetManager {
     /// On failure the native caller aborts loading; partial MD registration is
     /// retained until the next attempt. VERA's saved-load transaction may roll
     /// registrations back, but this method does not invent a native rollback.
-    #[cfg(feature = "ares")]
     pub fn activate_sidebar_archives(&mut self, mix_index: i32) -> Result<bool, AssetError> {
         let adjusted = mix_index.wrapping_sub(1);
         if adjusted < 0 {
@@ -1061,10 +1071,8 @@ impl AssetManager {
             archives: self.archives.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: self.active_sidebar_archives.clone(),
         };
-        #[cfg(feature = "ares")]
         let previous_sidebar_cache: Vec<_> = {
             let cache = self
                 .mix_file_cache
@@ -1098,7 +1106,6 @@ impl AssetManager {
             self.archives = previous.archives;
             self.active_theater = previous.active_theater;
             self.active_theater_archives = previous.active_theater_archives;
-            #[cfg(feature = "ares")]
             {
                 self.active_sidebar_archives = previous.active_sidebar_archives;
                 let mut cache = self
@@ -1502,9 +1509,11 @@ impl AssetManager {
     }
 
     /// Init_Base_Mix_Files 0x005301A0: every expansion slot in descending
-    /// order, then the masters and their cache and local archives.
+    /// order, then the masters and their cache and local archives, with
+    /// `ares.mix` between them for an Ares game (`ares`).
     fn mount_base_mix_files(
         &mut self,
+        ares: bool,
         policy: &mut StartupArchivePolicy<'_>,
     ) -> Result<(), AssetError> {
         for index in (0..=99).rev() {
@@ -1514,8 +1523,9 @@ impl AssetManager {
         // constructs ares.mix once the expansion probe ends, before the
         // RA2MD.MIX constructor call at 0x005302AA, so it resolves after every
         // expansion and ahead of the masters. A missing file is skipped.
-        #[cfg(feature = "ares")]
-        self.mount_startup_archive("ares.mix", false, policy)?;
+        if ares {
+            self.mount_startup_archive("ares.mix", false, policy)?;
+        }
         for name in MASTER_ARCHIVES {
             self.mount_startup_archive(name, true, policy)?;
         }
@@ -2050,16 +2060,17 @@ mod tests {
         write_audio_archive(&dir, "audiomd.mix", b"truncated", &[1, 2]);
         write_audio_archive(&dir, "audio.mix", &base, &[3, 4]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        #[cfg(not(feature = "ares"))]
-        assert!(matches!(
-            manager.load_audio_index(),
-            Err(AssetError::ParseError { .. })
-        ));
-        #[cfg(feature = "ares")]
-        assert!(
-            manager.load_audio_index().unwrap().is_none(),
-            "Ares skips the malformed pair without opening another audio archive"
-        );
+        if manager.ares_form() {
+            assert!(
+                manager.load_audio_index().unwrap().is_none(),
+                "Ares skips the malformed pair without opening another audio archive"
+            );
+        } else {
+            assert!(matches!(
+                manager.load_audio_index(),
+                Err(AssetError::ParseError { .. })
+            ));
+        }
     }
 
     #[test]
@@ -2477,7 +2488,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2562,7 +2572,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2637,7 +2646,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2680,7 +2688,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2721,7 +2728,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2763,7 +2769,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2800,7 +2805,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
@@ -2858,7 +2862,6 @@ mod tests {
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
-            #[cfg(feature = "ares")]
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
