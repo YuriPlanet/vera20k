@@ -48,7 +48,9 @@ pub(crate) fn counter_credits(sim: &crate::sim::world::Simulation, owner: &str) 
 /// ([`sidebar_action_visits`](crate::app::presentation::sidebar_gadgets::sidebar_action_visits)):
 /// `CreditsClass::AI @ 0x004A2600`'s only caller is `TabClass::Action @
 /// 0x006D099D`, which GScreen Input reaches. Each visit reads the balance the
-/// pass ends with.
+/// pass ends with. Residual: Input runs before Logic (Main_Tick 0x0055D8AB),
+/// so gamemd counts toward the balance one frame older; the counter starts
+/// moving one frame later there, which a player cannot see.
 pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     if visits == 0 {
         return;
