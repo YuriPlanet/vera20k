@@ -1061,19 +1061,21 @@ impl SidebarProjectionState {
                         i32::from(factory.build_step_rate(sim, rules)) + 1,
                     ))
                 } else {
-                    let busy = sim
-                        .production()
-                        .factories()
-                        .view(owner, category)
-                        .is_some_and(|factory| {
-                            factory.is_running()
-                                || factory.object.is_some()
-                                || !factory.queue.is_empty()
-                        });
+                    let factory = sim.production().factories().view(owner, category);
+                    let busy = factory.as_ref().is_some_and(|factory| {
+                        factory.is_running()
+                            || factory.object.is_some()
+                            || !factory.queue.is_empty()
+                    });
                     if busy || self.prediction_categories.contains(&category) {
                         return;
                     }
-                    self.set_prediction_category(category, object.naval, true, rules.ares());
+                    // Select6AB718..6AB73C marks House5005B0 only when the
+                    // House has no Factory for the category (500510); an idle
+                    // one still gets the early clock (6AB7CC..6AB94D).
+                    if factory.is_none() {
+                        self.set_prediction_category(category, object.naval, true, rules.ares());
+                    }
                     let cost = sim.cost_of(owner, object, rules);
                     let available = crate::sim::production::credits_for_owner(
                         sim,
@@ -1930,6 +1932,61 @@ mod tests {
             assert!(projection.cameo_request(e2).is_none());
             assert!(projection.prediction_categories.is_empty());
         }
+    }
+
+    /// Select6AB718..6AB73C sets House5005B0 only when Fetch_Factory 500510
+    /// finds none; an idle Factory still starts the early clock.
+    #[test]
+    fn an_idle_factory_starts_the_clock_without_the_first_request_mark() {
+        use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=E2\n[E2]\nCost=100\nStrength=100\n",
+            ))
+            .unwrap();
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.intern("Russians");
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 1, None, true, 50_000, 10,
+            ));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let e2 = sim.interner().get("E2").unwrap();
+        let factories = sim.production_mut_for_test().factories_mut_for_test();
+        assert!(factories.test_enqueue_kernel(owner, ProductionCategory::Infantry, e2, 0, 100));
+        let factory = factories
+            .test_factory_mut(owner, ProductionCategory::Infantry)
+            .unwrap();
+        factory.set_object_for_test(None);
+        factory.set_suspended_for_test(true);
+        let mut projection = SidebarProjectionState::default();
+        let cameo = Cameo {
+            id: CameoId::Object(e2),
+            tab: SidebarTab::Infantry,
+            available: true,
+            key: CameoKey::Techno {
+                own_side: true,
+                considered_aircraft: false,
+                naval: false,
+                tech_level: 1,
+                cost: 100,
+                name: "E2".into(),
+            },
+        };
+        projection.reconcile_cameos(owner, &[cameo], 3, &[e2], false);
+        let produce = CameoClick {
+            order: Some(CameoOrder::Produce),
+            ..CameoClick::default()
+        };
+        projection.record_cameo_click(&sim, &rules, owner, e2, produce);
+        assert_eq!(
+            projection.cameo_request(e2),
+            Some(CameoRequestState::Started)
+        );
+        assert!(projection.prediction_categories.is_empty());
     }
 
     /// Original whole Sidebar6ABAD0→Strip6ABB60 clears both retained
