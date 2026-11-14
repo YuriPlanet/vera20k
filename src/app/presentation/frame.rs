@@ -1152,6 +1152,9 @@ pub(crate) struct PresentationFrame {
     /// Each record's screen span, in the same order: what the object loop
     /// culls from without reading the record.
     spans: Vec<crate::app::presentation::display_members::ScreenSpan>,
+    /// The slots of the building records, ascending: what the building
+    /// passes walk without reading every other record ([`Self::structures`]).
+    structures: Vec<usize>,
     /// The Display members of the world this frame was captured from, filed
     /// by the first draw that asks ([`Self::display_members`]).
     display_members:
@@ -1217,19 +1220,23 @@ impl PresentationFrame {
             .filter_map(|(&id, _)| Some((id, sim.anim_absolute_coord(id)?)))
             .collect();
         let psychic_detection = at.psychic.is_some();
-        let (ids, spans) = objects
-            .iter()
-            .map(|object| {
-                (
-                    object.id,
-                    crate::app::presentation::display_members::ScreenSpan::of(object),
-                )
-            })
-            .unzip();
+        let mut ids = Vec::with_capacity(objects.len());
+        let mut spans = Vec::with_capacity(objects.len());
+        let mut structures = Vec::new();
+        for (slot, object) in objects.iter().enumerate() {
+            ids.push(object.id);
+            spans.push(crate::app::presentation::display_members::ScreenSpan::of(
+                object,
+            ));
+            if object.category() == EntityCategory::Structure {
+                structures.push(slot);
+            }
+        }
         Self {
             objects,
             ids,
             spans,
+            structures,
             display_members: Default::default(),
             display_order: Default::default(),
             anim_coords,
@@ -1305,6 +1312,12 @@ impl PresentationFrame {
     /// Every record, in stable-id order.
     pub(crate) fn objects(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
         self.objects.iter()
+    }
+
+    /// Every building's record, in stable-id order: the [`Self::objects`]
+    /// whose category is Structure, found without reading the others.
+    pub(crate) fn structures(&self) -> impl ExactSizeIterator<Item = &ObjectRecord> {
+        self.structures.iter().map(|&slot| &self.objects[slot])
     }
 }
 

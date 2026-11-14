@@ -1622,10 +1622,7 @@ pub(crate) fn build_building_anim_instances(
     // projected. The window is the slot admission's box
     // (`helpers::projection_admitted`) widened by the slack.
     let slot_window = building_slot_window(sim.resolved_terrain(), camera, projection_viewport);
-    for building in frame
-        .objects()
-        .filter(|object| object.category() == EntityCategory::Structure)
-    {
+    for building in frame.structures() {
         let admits_a_slot = || {
             !slot_anims_hidden_by_sale(building)
                 && building
