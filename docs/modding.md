@@ -237,7 +237,8 @@ VERA20k adds two things. Open the map in a text editor to set them:
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. With a mod in use,
+the same `rulesmd.ini`, `artmd.ini`, `aimd.ini`, theater INIs (such as `snowmd.ini`) and
+`VERARULES.INI`. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini` and `veraui.ini`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what

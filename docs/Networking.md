@@ -33,24 +33,28 @@ covers. Every build mounts `ares.mix` when the game or its mod holds it, and
 reads such a game's INIs and rules the Ares way; without it Ares plays only
 from Ares keys in the rules, mode or map, read the stock way ([Ares](ares.md)).
 A game with `ares.mix` adds one byte to the rules digest, so its digest differs
-from the same files read without it; a game without it keeps the digest it had.
+from the same files read without it; a game without it adds nothing.
 Players on one version reach the same answer; a game from before this decides
 differently, is another version and is refused by the build check first, and a
 rollback returns everyone on that build to the earlier reading.
 
 The rules agreement is one digest of the process's rules sources
-(`ProcessAssets::multiplayer_rules_digest`). With a mod in use
+(`ProcessAssets::multiplayer_rules_digest`) and of each theater's INI as the theater
+loader reads it (`map::theater::theater_ini_names`: the file
+[`theater_suffix`](ini-roots.md) selects, else the stock name such as `snowmd.ini`),
+whose tilesets decide each cell's land and height. With a mod in use
 ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The files are read once, starting when the player
-opens Network or Internet. Nothing more is exchanged, and without a mod the digest is the
-same bytes as before. A game from before this is another version and is
+opens Network or Internet, and nothing more is exchanged. A game from before the mod
+files or the theater INIs were compared is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
-turn off: a mod in use; `[ini]` roots in config.toml other than YR's; `ares.mix` in the
+turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
+YR's; `ares.mix` in the
 game folder, which makes it an Ares game; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
-LANGRULE) from the retail copy; a copy from a retail archive (`langmd.mix`,
+LANGRULE, the theater INIs) from the retail copy; a copy from a retail archive (`langmd.mix`,
 `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as the original, and
 another is compared with the retail archives' own entry, else `ra2md.mix`'s `localmd.mix`
 (`retail_sources::files_changing_shipped_inis`, found at startup and named in the

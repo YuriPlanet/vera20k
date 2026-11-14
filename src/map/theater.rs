@@ -860,11 +860,37 @@ impl BridgeMiddleTiles {
     }
 }
 
+/// The theater INI `load_theater` reads for a control name: the one the
+/// selected INI roots name (`IniRoots::theater_ini`), else the stock
+/// `%sMD.INI` name. VERA: falling back keeps a game folder that loaded the
+/// stock INI before a suffix was selected loading.
+fn theater_ini_name(asset_manager: &AssetManager, control_name: &str) -> String {
+    let selected = asset_manager.ini_roots().theater_ini(control_name);
+    if asset_manager.resolve_ref(&selected).is_some() {
+        return selected;
+    }
+    crate::util::ini_roots::IniRoots::default().theater_ini(control_name)
+}
+
+/// VERA: each theater's INI as `load_theater` names it, in table order. Its
+/// tilesets decide every map cell's land and height, so the multiplayer
+/// agreement and Quick Match's check for changed game files compare it.
+/// The lookup sees whichever theater MIX group the last load activated, and a
+/// suffixed INI that only a theater MIX holds is outside this; theater MIXes
+/// search last, and retail theater INIs come from `localmd.mix`.
+pub fn theater_ini_names(asset_manager: &AssetManager) -> Vec<String> {
+    THEATER_DEFS
+        .iter()
+        .map(|(_, def)| theater_ini_name(asset_manager, def.control_name))
+        .collect()
+}
+
 /// Load tileset data for a theater.
 ///
 /// Replaces the active theater MIX group, then loads the theater INI the
 /// selected INI roots name (`snowmd.ini` for YR, the stock name when the
-/// selected one is absent) and the exact palette filenames.
+/// selected one is absent; `theater_ini_name`) and the exact palette
+/// filenames.
 /// The AssetManager is mutable because theater MIX archives are loaded on demand.
 pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Option<TheaterData> {
     let def: &TheaterDef = theater_def(theater_name)?;
@@ -878,22 +904,12 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         return None;
     }
 
-    // VERA: a profile suffix whose file is absent falls back to the stock
-    // `%sMD.INI` name with a warning, so a game folder that loaded the stock
-    // INI before a suffix was selected keeps loading.
-    let mut ini_name = asset_manager.ini_roots().theater_ini(def.control_name);
-    let stock_name = crate::util::ini_roots::IniRoots::default().theater_ini(def.control_name);
-    let found = match asset_manager.get_with_source(&ini_name) {
-        None if ini_name != stock_name => {
-            log::warn!(
-                "Theater {theater_name}: INI '{ini_name}' not found; reading '{stock_name}'"
-            );
-            ini_name = stock_name;
-            asset_manager.get_with_source(&ini_name)
-        }
-        found => found,
-    };
-    let Some((ini_data, ini_source)) = found else {
+    let selected = asset_manager.ini_roots().theater_ini(def.control_name);
+    let ini_name = theater_ini_name(asset_manager, def.control_name);
+    if ini_name != selected {
+        log::warn!("Theater {theater_name}: INI '{selected}' not found; reading '{ini_name}'");
+    }
+    let Some((ini_data, ini_source)) = asset_manager.get_with_source(&ini_name) else {
         log::warn!("Theater {theater_name}: INI '{ini_name}' not found");
         return None;
     };
