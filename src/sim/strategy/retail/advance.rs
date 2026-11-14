@@ -231,6 +231,13 @@ pub(super) fn advance(
             .collect(),
         None => army.members.clone(),
     };
+    // A hero does not march with the fist in the first place. `BuildLimit=1` is
+    // a unit the house cannot buy another of, and a push that spends it for a
+    // structure has traded the whole match for one building — the wishlist's
+    // "保护英雄单位". They hold at home, which is where the defence step already
+    // sends them, and the retreat line walks them out well before the ordinary
+    // one when they are caught.
+    fighters.retain(|unit| !unit.traits.irreplaceable);
     // Which gate holds the army home, for the census line: seven gates that
     // all answer "not this frame" are indistinguishable in a log that only
     // counts what the house has.

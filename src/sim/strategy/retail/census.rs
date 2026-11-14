@@ -247,6 +247,13 @@ pub(super) struct Traits {
     /// which is exactly what the log shows (`fire ParaDropSpecial` repeating
     /// for the rest of the match).
     pub(super) spawned: bool,
+    /// `BuildLimit=1`: the type the rules allow one of, which is what a hero
+    /// is (`[TANY] BuildLimit=1`, `[BORIS] BuildLimit=1`).
+    ///
+    /// The wishlist's "保护英雄单位（限制建造的都是英雄单位）": the rules' own
+    /// statement of "there is one of these and it cannot be replaced" is the
+    /// cap, so no name list is needed and a mod's hero is covered.
+    pub(super) irreplaceable: bool,
     /// `UnitRepair=yes` (`[GADEPT]`, `ini/rulesmd.ini:11895`): a shed that puts a
     /// vehicle back together. What a hurt vehicle walks to instead of walking
     /// home.
@@ -316,6 +323,7 @@ impl Traits {
             explodes: ty.explodes,
             open_topped: ty.open_topped,
             spawned: ty.spawned,
+            irreplaceable: ty.build_limit == 1,
             repairs_units: ty.unit_repair,
         }
     }
@@ -975,6 +983,38 @@ mod tests {
         assert!(transport.carries && !transport.combat, "a carrier");
         let (_, tank) = of("MTNK");
         assert!(tank.combat && !tank.captures, "a tank");
+    }
+
+    /// A hero is the type the rules allow one of, which is `BuildLimit=1` and
+    /// not a name: `[TANY]` and `[BORIS]` both carry it, and a mod's hero is
+    /// covered by the same query.
+    #[test]
+    fn a_type_the_rules_allow_one_of_is_irreplaceable() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let obs = Observation::new(&sim, owner);
+        let of = |name: &str| {
+            let ty = obs
+                .type_id(name)
+                .and_then(|type_id| obs.object_type(&rules, type_id))
+                .unwrap_or_else(|| panic!("{name} is in the rules"));
+            (ty, Traits::of(&rules, ty))
+        };
+
+        let (ty, tanya) = of("TANY");
+        assert_eq!(ty.build_limit, 1, "the retail cap");
+        assert!(tanya.irreplaceable, "and the trait follows it");
+        let (ty, boris) = of("BORIS");
+        assert_eq!(ty.build_limit, 1);
+        assert!(boris.irreplaceable);
+
+        // The ordinary line is not: a rifleman is bought again.
+        let (_, gi) = of("E1");
+        assert!(!gi.irreplaceable, "a G.I. is replaceable");
+        let (_, tank) = of("MTNK");
+        assert!(!tank.irreplaceable, "and so is a Grizzly");
     }
 
     /// A fight is weighed in what the other side can shoot back with, so a

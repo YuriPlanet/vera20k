@@ -1707,6 +1707,28 @@ pub(super) fn walks_into_buildings(rules: &RuleSet, ty: &ObjectType) -> bool {
 /// back as soon as it is healthy again, so the threshold is the whole rule.
 const RETREAT_HEALTH_PERMILLE: u16 = 300;
 
+/// The health a unit pulls out at, which for a hero is most of it.
+///
+/// The wishlist's "保护英雄单位": `BuildLimit=1` means there is one of these and
+/// the house cannot buy another, so the trade that is worth it for a rifleman —
+/// a third of a health bar for a structure — is not worth it for the one unit
+/// the house can never replace. A hero leaves at [`HERO_RETREAT_PERMILLE`], well
+/// before the ordinary line, and the same routine walks it home.
+fn retreat_line(traits: &super::census::Traits) -> u16 {
+    if traits.irreplaceable {
+        HERO_RETREAT_PERMILLE
+    } else {
+        RETREAT_HEALTH_PERMILLE
+    }
+}
+
+/// Where a hero turns back, in permille of its full strength.
+///
+/// Three quarters: a Tanya at 200 strength leaves at 150, which is one rifleman
+/// burst past the point a player would have walked her out. The exchange has to
+/// be very good before a cap of one is worth spending.
+const HERO_RETREAT_PERMILLE: u16 = 750;
+
 /// How much the house's army has to outweigh what stands around a hurt unit
 /// before the unit stays in the fight, in permille.
 ///
@@ -1762,7 +1784,7 @@ pub(super) fn managed(
         .units
         .iter()
         .filter(|unit| unit.traits.combat && !unit.hand && unit.orderable)
-        .filter(|unit| unit.health_permille <= RETREAT_HEALTH_PERMILLE)
+        .filter(|unit| unit.health_permille <= retreat_line(&unit.traits))
         // A hurt unit in a fight the house is winning stays in it. The
         // comparison is the push's own, with a stricter margin: the push may
         // wait for a better moment, this unit cannot, and a third of the
@@ -3035,6 +3057,89 @@ mod tests {
             again.commands.is_empty(),
             "the wrench is already on: {:?}",
             again.commands
+        );
+    }
+
+    /// A hero pulls out early, and an ordinary soldier does not.
+    ///
+    /// `BuildLimit=1` is the rules' own statement of "there is one of these and
+    /// it cannot be bought again". In the retail rules that cap lands on exactly
+    /// two *army* types — `[BORIS]` and `[YURIPR]` — and on nine buildings, none
+    /// of which is ever army; Tanya carries the same cap but is a C4
+    /// infiltrator, which `is_army` already excludes. So the cap is the
+    /// wishlist's own definition of a hero and no name list is needed.
+    ///
+    /// Both units are set to the same fraction of their strength here: above the
+    /// ordinary line, below the hero's. Only Boris is walked home.
+    #[test]
+    fn a_hero_pulls_out_well_before_the_ordinary_line() {
+        let Some((mut sim, rules)) = snapshot(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Russians");
+        // `[BORIS] Strength=200`, `[E1] Strength=125`. The fixture's health
+        // argument also sets `max_health`, so the wound is written after the
+        // spawn against the type's own strength.
+        let boris = sim
+            .spawn_object("BORIS", "Russians", 14, 14, 255, &rules)
+            .expect("Boris");
+        sim.substrate
+            .entities
+            .get_mut(boris)
+            .expect("Boris")
+            .health
+            .set(150);
+        let gi = sim
+            .spawn_object("E1", "Russians", 12, 14, 255, &rules)
+            .expect("a conscript");
+        sim.substrate
+            .entities
+            .get_mut(gi)
+            .expect("the conscript")
+            .health
+            .set(93);
+
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let obs = Observation::new(&sim, owner);
+        let boris_traits = brain
+            .census
+            .units
+            .iter()
+            .find(|unit| unit.entity_id == boris)
+            .map(|unit| unit.traits)
+            .expect("Boris is in the census");
+        assert!(
+            boris_traits.combat && boris_traits.irreplaceable,
+            "Boris is army and irreplaceable"
+        );
+        let gi_traits = brain
+            .census
+            .units
+            .iter()
+            .find(|unit| unit.entity_id == gi)
+            .map(|unit| unit.traits)
+            .expect("the conscript is in the census");
+        assert!(
+            gi_traits.combat && !gi_traits.irreplaceable,
+            "a conscript is army and replaceable"
+        );
+
+        let mut out = Outbox::default();
+        managed(&mut brain, &rules, &obs, 0, &mut out);
+
+        assert!(
+            out.attachments.iter().any(|a| a.actor == boris),
+            "the hero walks out at three quarters: {:?}",
+            out.attachments.iter().map(|a| a.actor).collect::<Vec<_>>()
+        );
+        assert!(
+            !out.attachments.iter().any(|a| a.actor == gi),
+            "the conscript stays: three quarters is not its line"
         );
     }
 
