@@ -59,19 +59,39 @@ width plus height is near 1000 or more, and only for cells along their far edges
 
 `[Basic] MaxPlayers=` is a key the original game already reads for its map list.
 VERA20k reads it the same way, and a value from 9 to 30 also makes a map for that
-many players.
-VERA20k uses it only when the map has a start waypoint for every player, numbered
-from 0: for `MaxPlayers=12`, waypoints 0 to 11. A waypoint missing from that range
-turns the setting off, and the map is treated as an ordinary map with up to eight
-starts. Values below 9 or above 30 don't add players.
+many players. VERA20k uses it only when the map has a start waypoint for every
+player, numbered from 0: for `MaxPlayers=12`, waypoints 0 to 11. A waypoint missing
+from that range turns the setting off, and the map is treated as an ordinary map
+with up to eight starts. Values below 9 or above 30 don't add players.
 
-Without `MaxPlayers=`, VERA20k counts waypoints 0 to 7, as the original does.
-Waypoints 8 and up are then ordinary waypoints for triggers and scripts, as they
-always were. On a map for more players, waypoints 0 to `MaxPlayers - 1` are starts and
-the ones from `MaxPlayers` up are ordinary waypoints.
+Without `MaxPlayers=`, VERA20k counts waypoints 0 to 7 as starts, as the original
+does.
 
 VERA20k's own random maps write both spellings, `MinPlayer`/`MaxPlayer` and
 `MinPlayers`/`MaxPlayers`, with the same numbers.
+
+### Start waypoints are still waypoints
+
+A start is an ordinary waypoint that also marks where a player begins. Triggers,
+team scripts and everything else that takes a waypoint can still use it, as they
+can use waypoints 0 to 7 on any map. On a map for 30 players, waypoint 12 is player
+13's start and can also be where a trigger sends reinforcements.
+
+What a map can't do is put a waypoint below `MaxPlayers` anywhere other than a
+start. On a new map, number other points from `MaxPlayers` up. Keys go to 701,
+and 699 is the home cell unless `[Basic] HomeCell=` names another. An older map
+that uses waypoints 8 and up for its own points needs those points renumbered,
+everywhere they are used, before it can take more players. Editors should warn
+when a trigger, team or script uses a waypoint that more players would turn into
+a start.
+
+### Houses for players 9 to 30
+
+The original names its eight start houses `<Player @ A>` to `<Player @ H>`, with
+the numbers 4475 to 4482. VERA20k carries on to thirty: `<Player @ I>` to
+`<Player @ Z>`, then `<Player @ AA>` to `<Player @ AD>`, with the numbers 4475 to
+4504. A team type's `House=` takes the name, and a trigger event or action that
+takes a house takes the number.
 
 ### The start markers in the map list
 
