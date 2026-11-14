@@ -156,9 +156,12 @@ A guest also needs the host's map in its own map library.
 
 ## Deliberate choices
 
-- **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text
-  entry (player name, chat, passwords) is unusable until P6 chooses: switch winit
-  to `android-game-activity`, or overlay a Java `EditText` and add JNI.
+- **`GameActivity`, not `NativeActivity`.** NativeActivity was the smaller first
+  milestone, but it has no IME, so text entry (player name, chat, passwords) was
+  unusable. GameActivity carries the text input the engine's chat edits need;
+  `VeraActivity` extends it and loads `libvera20k_android.so` itself, since
+  GameActivity has no `android.app.lib_name` metadata. Its build-time glue must
+  match the `androidx.games:games-activity` AAR version (2.0.2 here).
 - **Vulkan only.** The manifest requires `android.hardware.vulkan.level 0`;
   GLES-only devices cannot install. Whether to port the existing `webgl`
   fallback to a runtime capability check is P4's call.
@@ -239,6 +242,29 @@ They have not been independently reproduced for the current code.
   starves the main thread and Android kills the app for an ANR.
 - Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
   NDK 28.2.13676358, AGP 8.11.1, Gradle 8.13, JDK 19.
+
+## Touch chat
+
+The in-match chat opens with a long press on the message lane (the touch mapper's
+own right click) and sends with a tap on the lane; the LAN lobby, the setup room
+and the online login page send on a tap too. Text itself comes from the platform
+input method through `util::android_ime`: winit 0.30's Android backend delivers no
+`WindowEvent::Ime`, so the bridge reads the platform's text state each frame,
+seeds it from the focused edit and turns its changes back into that screen's own
+key path.
+
+Residuals:
+
+- The touch entry is Android-only. The browser build already takes text from the
+  platform through its hidden textarea (`web::ime`), but on a touch browser the
+  in-game chat has no way to open: it still needs the Enter key. Making the entry
+  platform-neutral (Android and wasm) is recorded in the local plan as a separate
+  change.
+- Discoverability: the long press is invisible, so the first network match a
+  profile plays posts one localized line into the lane (`VERA:TouchToChat`, five
+  seconds in, white, expiring) and spends `[Android] ChatHint=no` the way
+  `[Intro] Play` is spent, like `persistence::chat_hint`. Later matches stay
+  silent until a fresh install.
 
 ## Windows local-build gotchas
 

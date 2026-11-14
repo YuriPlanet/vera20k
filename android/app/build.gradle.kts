@@ -11,6 +11,14 @@ kotlin {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // The GameActivity base class the app's activity extends. The version must
+    // match the GameActivity glue `android-activity` 0.6 compiles in
+    // (GAMEACTIVITY_PACKED_VERSION 2.0.2); a mismatch fails at class load or at
+    // the first native call, not at build time.
+    implementation("androidx.games:games-activity:2.0.2")
+    // GameActivity extends AppCompatActivity, so the activity needs an AppCompat
+    // theme and this library on the classpath.
+    implementation("androidx.appcompat:appcompat:1.7.0")
 }
 
 // versionName reads the Cargo package version, so the APK and the binary inside

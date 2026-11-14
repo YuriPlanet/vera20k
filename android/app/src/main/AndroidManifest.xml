@@ -27,8 +27,9 @@
         android:allowBackup="false"
         android:theme="@style/Theme.Vera20k">
 
-        <!-- NativeActivity loads android.app.lib_name and calls android_main in
-             libvera20k_android.so (android/src/lib.rs). configChanges lists
+        <!-- GameActivity calls android_main in libvera20k_android.so through
+             `initializeNativeCode`: VeraActivity's companion loads that library
+             before onCreate (android/src/lib.rs). configChanges lists
              everything winit handles, so a rotation or split-screen resize
              reaches Rust as a resize instead of destroying the activity. -->
         <activity
@@ -38,24 +39,13 @@
             android:screenOrientation="sensorLandscape"
             android:resizeableActivity="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|fontScale|locale|layoutDirection">
-
-            <!-- The .so base name, without lib/ and .so: the crate's output is
-                 libvera20k_android.so. -->
-            <meta-data
-                android:name="android.app.lib_name"
-                android:value="vera20k_android" />
         </activity>
 
         <!-- Two launcher entries, one enabled at a time. A launcher icon is a
              resource compiled into the package, so the VERA Icon box cannot
              change it directly: `VeraActivity.applyAppIcon` enables the chosen
              alias and disables the other through PackageManager. The activity
-             itself carries no LAUNCHER filter, or the app would show twice.
-
-             NativeActivity reads `android.app.lib_name` from the component it
-             was launched through, and an alias does not inherit the target's
-             meta-data: without this copy on each alias the process dies in
-             NativeActivity.onCreate looking for the default `libmain.so`. -->
+             itself carries no LAUNCHER filter, or the app would show twice. -->
         <activity-alias
             android:name="org.vera20k.LauncherRetail"
             android:targetActivity="org.vera20k.VeraActivity"
@@ -69,10 +59,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <meta-data
-                android:name="android.app.lib_name"
-                android:value="vera20k_android" />
         </activity-alias>
 
         <activity-alias
@@ -88,10 +74,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <meta-data
-                android:name="android.app.lib_name"
-                android:value="vera20k_android" />
         </activity-alias>
     </application>
 

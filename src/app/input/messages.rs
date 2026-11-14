@@ -1061,6 +1061,36 @@ fn poll_is_admitted(main_tick_admitted: bool, currently_frozen: bool) -> bool {
     main_tick_admitted || !currently_frozen
 }
 
+/// Android: whether a window-space point lies in the message lane, where a
+/// long press opens the chat instead of the right-click cancel.
+#[cfg(target_os = "android")]
+pub(crate) fn lane_contains_window_px(state: &AppState, px: i32, py: i32) -> bool {
+    let (lx, ly, lw, lh) = state.match_state.match_presentation.message_list.lane_box();
+    let (lx, ly, lw, lh) = match state.tactical_zoom() {
+        Some(zoom) => {
+            let (x, y) = zoom.source_to_window(lx as f32, ly as f32);
+            let scale = zoom.scale();
+            (
+                x.round() as i32,
+                y.round() as i32,
+                (lw as f32 * scale).round() as i32,
+                (lh as f32 * scale).round() as i32,
+            )
+        }
+        None => (lx, ly, lw, lh),
+    };
+    px >= lx && px < lx + lw && py >= ly && py < ly + lh
+}
+
+/// The open chat edit's text and caret, for seeding Android's input method.
+pub(crate) fn ime_edit_state(state: &AppState) -> Option<(String, usize)> {
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .edit_ime_state()
+}
+
 fn sync_view(state: &mut AppState) {
     let typing = state
         .frontend
@@ -1081,11 +1111,91 @@ fn sync_view(state: &mut AppState) {
     );
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     let top = state.renderer.performance_overlay.message_top();
-    state.match_state.match_presentation.message_list.set_view(
-        x,
-        y.max(tactical_y as i32 + top),
-        width,
-    );
+    // Android: the battle view fills the window, so the screen's corner and its
+    // cutout sit over this list's first units. Move it in by what they hide,
+    // converted from screen pixels to the render frame's own units.
+    #[cfg(target_os = "android")]
+    let (x, y) = {
+        let insets = crate::util::display_insets::get();
+        // The frame's own scale, from the chosen zoom: a message posted before
+        // the first zoom pass installs still has to know it.
+        let percent = match state.match_zoom_pass() {
+            Some(pass) => pass.geometry().percent,
+            None => {
+                let window = state.platform.window.inner_size();
+                state
+                    .platform
+                    .capture_presentation
+                    .zoom
+                    .percent(window.width, window.height)
+            }
+        };
+        let scale = (f64::from(percent) / 100.0).max(1.0);
+        (
+            x + (f64::from(insets.left) / scale).round() as i32,
+            y.max(
+                tactical_y as i32
+                    + top
+                    + (f64::from(insets.top) / scale).round() as i32,
+            ),
+        )
+    };
+    #[cfg(not(target_os = "android"))]
+    let y = y.max(tactical_y as i32 + top);
+    state.match_state.match_presentation.message_list.set_view(x, y, width);
+}
+
+/// Android: the one-shot "touch here to chat" line, five seconds into the first
+/// network match a profile plays (`persistence::chat_hint`).
+#[cfg(target_os = "android")]
+fn maybe_post_chat_hint(state: &mut AppState) {
+    use crate::util::time::Duration;
+    if !state.match_state.session_mode().is_network() {
+        return;
+    }
+    let now = crate::util::time::Instant::now();
+    let Some(due) = state.match_state.input.chat_hint_due else {
+        state.match_state.input.chat_hint_due = Some(now + Duration::from_secs(5));
+        return;
+    };
+    if now < due {
+        return;
+    }
+    // One attempt per match: `chat_hint::consume` writes the flag when the line
+    // is posted, and a spent flag keeps later matches silent.
+    state.match_state.input.chat_hint_due = Some(now + Duration::from_secs(3600));
+    let Some(config) = state.platform.game_config.as_ref() else {
+        return;
+    };
+    let settings = config.paths.settings_dir().to_path_buf();
+    if crate::app::persistence::chat_hint::consume(&settings) {
+        post_chat_hint(state);
+    }
+}
+
+/// Android: the hint line itself, in neutral white so it never reads as a
+/// player's chat message, expiring after ten seconds.
+#[cfg(target_os = "android")]
+fn post_chat_hint(state: &mut AppState) {
+    sync_view(state);
+    let text = crate::i18n::tr("VERA:TouchToChat");
+    let now = message_now_ms(state);
+    let font = &state.renderer.bit_font;
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .add_message(
+            &crate::ui::messages::MessagePost {
+                prefix: None,
+                text: &text,
+                rgb: [1.0, 1.0, 1.0],
+                timeout_ms: Some(10_000),
+                silent: true,
+            },
+            now,
+            &|s| font.text_width(s) as i32,
+        );
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -1097,6 +1207,8 @@ pub(crate) fn build_message_instances(
     if state.frontend.screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
+    #[cfg(target_os = "android")]
+    maybe_post_chat_hint(state);
     let wall_ms = crate::app::input::tooltips::now_ms(state) as u32;
     let requests = state
         .match_state

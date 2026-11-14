@@ -257,6 +257,10 @@ pub(crate) struct MatchInputState {
     pub(crate) category_navigation:
         crate::app::input::dispatch::selection_navigation::CategoryNavigation,
     /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
+    /// Android: when this match's one-shot touch-chat hint is due; `None`
+    /// until the first network frame arms it. Presentation only.
+    #[cfg(target_os = "android")]
+    pub(crate) chat_hint_due: Option<crate::util::time::Instant>,
     pub(crate) cursor_coordinates: bool,
     /// One-shot Shift+S request, consumed at the next render submission.
     pub(crate) retail_screenshot_requested: bool,
@@ -580,6 +584,8 @@ impl MatchInputState {
             auto_repair: Default::default(),
             primary_rotation: Default::default(),
             category_navigation: Default::default(),
+            #[cfg(target_os = "android")]
+            chat_hint_due: None,
             cursor_coordinates: false,
             retail_screenshot_requested: false,
         }

@@ -189,11 +189,10 @@ libc = "0.2"
 # The client crate also builds for Android, where winit refuses to compile
 # without a platform backend feature; the desktop features above stay in the
 # unconditional table, and winit gates their crates by target internally, so
-# this only adds the Android backend. `android-game-activity` (winit's other
-# Android backend, which carries text input) replaces this feature if P6 picks
-# GameActivity over NativeActivity.
+# this only adds the Android backend. GameActivity is the backend that carries
+# text input; its glue is what P6 needs (see docs/android.md).
 [target.'cfg(target_os = "android")'.dependencies]
-winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-game-activity"] }
 
 # --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
@@ -336,3 +335,10 @@ opt-level = "s"
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# The android-activity glue starts its game thread on bionic's 1 MiB default
+# stack; our engine overflows it on the first frame. The fork raises it to
+# 8 MiB until the fix lands upstream:
+# https://github.com/hathlife/android-activity/pull/1
+[patch.crates-io]
+android-activity = { git = "https://github.com/hathlife/android-activity", branch = "rust-native-stack-size-v060" }

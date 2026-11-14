@@ -201,6 +201,10 @@ impl App {
         // The name box shows the name as typed; the lobby row shows it as
         // every other player sees it.
         let name = owner.open_lan_name_box();
+        // Android: a request left over from the screen before must not bring a
+        // keyboard up as the room opens.
+        #[cfg(target_os = "android")]
+        crate::util::android_ime::clear_show_request();
         let mut runtime = LanShellRuntime::new(&name, owner.lan_observer());
         runtime
             .lobby
@@ -857,8 +861,64 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
                 && runtime.create.is_none()
                 && runtime.lobby.enabled
                 && runtime.lobby.focused_control == CHAT
+                // Android shows a soft keyboard whenever the window allows an
+                // input method, so wait for a tap on an edit; the desktop keeps
+                // the chat box live as before.
+                && (!cfg!(target_os = "android") || runtime.lobby.ime_armed)
         })
         .map(|_| layout(state).chat)
+}
+
+/// The lobby's name edit as an IME target.
+///
+/// Android has no physical keyboard, so the name box has to take the soft
+/// keyboard too; native keeps name edits on plain key text and drops units at
+/// or above `0x100` (`0x00615226..0x0061527A`), which `LanLobbyState::insert_text`
+/// still filters here. The desktop leaves the name edit without an input method.
+pub(crate) fn ime_name_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
+    if !cfg!(target_os = "android") {
+        return None;
+    }
+    let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && state.frontend.shell_route.lan_lobby()
+        && !shell_transition::blocks_shell_input(state);
+    state
+        .frontend
+        .lan
+        .as_ref()
+        .filter(|runtime| {
+            routed
+                && runtime.modal.is_none()
+                && runtime.create.is_none()
+                && runtime.lobby.enabled
+                && runtime.lobby.focused_control == NAME
+                && runtime.lobby.ime_armed
+        })
+        .map(|_| layout(state).name)
+}
+
+/// The focused edit's text and caret, for seeding Android's input method
+/// (`app::input::ime`).
+pub(crate) fn ime_edit_text(state: &AppState) -> Option<(String, usize)> {
+    let runtime = state.frontend.lan.as_ref()?;
+    let edit = match runtime.lobby.focused_control {
+        NAME => &runtime.lobby.name,
+        CHAT => &runtime.lobby.chat.edit,
+        _ => return None,
+    };
+    Some((String::from_utf16_lossy(&edit.units), edit.caret))
+}
+
+/// Android: send the chat line a tap asked for, through the screen's own Enter
+/// path (`LanEditKey::Enter`). Called once per frame from `app::input::ime`.
+pub(crate) fn take_touch_send(state: &mut AppState) {
+    let Some(runtime) = state.frontend.lan.as_mut() else {
+        return;
+    };
+    if !std::mem::take(&mut runtime.lobby.touch_send) {
+        return;
+    }
+    key_press(state, Some(KeyCode::Enter), None);
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -1037,6 +1097,19 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if !lobby.enabled {
         return;
     }
+    // Android: the chat edit row takes its taps before the log/list gizmos do,
+    // so the keyboard comes up on the first tap and a tap with text sends.
+    #[cfg(target_os = "android")]
+    if pressed && layout.chat.contains(x, y) {
+        let was_chat = lobby.focused_control == CHAT;
+        lobby.focus(CHAT);
+        lobby.ime_armed = true;
+        if was_chat && !lobby.chat.edit.units.is_empty() {
+            lobby.touch_send = true;
+        }
+        crate::util::android_ime::request_show();
+        return;
+    }
     if pressed {
         for (list, rect, count) in [
             (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
@@ -1119,7 +1192,33 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             }
         } else {
             if let Some(control) = control {
+                // Android: a soft keyboard's Enter is an editor action the
+                // platform keeps from the game, so a tap on the focused chat
+                // box with text in it sends, as Enter does native.
+                #[cfg(target_os = "android")]
+                if control == CHAT
+                    && lobby.focused_control == CHAT
+                    && !lobby.chat.edit.units.is_empty()
+                {
+                    lobby.touch_send = true;
+                }
                 lobby.focus(control);
+                // A tap on an edit is what asks Android for the soft keyboard.
+                if matches!(control, NAME | CHAT) {
+                    lobby.ime_armed = true;
+                    // Android: a collapsed keyboard comes back on the next tap.
+                    #[cfg(target_os = "android")]
+                    crate::util::android_ime::request_show();
+                }
+            }
+            // Android: the chat row also takes a tap the control walk misses
+            // (its edit sits under the log), so arm the keyboard from its own
+            // geometry.
+            #[cfg(target_os = "android")]
+            if layout.chat.contains(x, y) {
+                lobby.focus(CHAT);
+                lobby.ime_armed = true;
+                crate::util::android_ime::request_show();
             }
             lobby
                 .buttons

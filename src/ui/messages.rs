@@ -261,6 +261,26 @@ impl MessageList {
         })
     }
 
+    /// The lane's box in the frame: origin, width and the rows it may fill.
+    /// A long press inside it opens the chat on Android.
+    pub fn lane_box(&self) -> (i32, i32, i32, i32) {
+        (
+            self.x,
+            self.y,
+            self.max_width_px,
+            self.max_visible as i32 * MESSAGE_LINE_HEIGHT_PX,
+        )
+    }
+
+    /// The open edit's typed text and caret, for seeding Android's input
+    /// method: the prefix and the caller's name stay the game's own.
+    pub fn edit_ime_state(&self) -> Option<(String, usize)> {
+        self.edit.as_ref().map(|edit| {
+            let typed = edit.buffer.get(edit.start..).unwrap_or(&[]);
+            (String::from_utf16_lossy(typed), typed.len())
+        })
+    }
+
     /// AddEdit `0x005D4210`: refused while an edit is open. Evicts the
     /// oldest row when the list is full, opens the edit with `prefix`,
     /// moves the rows one line down and lowers the row cap by one. The

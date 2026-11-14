@@ -1,8 +1,8 @@
 //! Android entry point for the VERA20k client.
 //!
-//! Android never runs `main`. `android.app.NativeActivity` loads the cdylib and
-//! resolves `android_main` by symbol (the manifest names the library through
-//! `android.app.lib_name`), so the process starts here instead. Everything
+//! Android never runs `main`. `GameActivity` calls into the cdylib through
+//! `initializeNativeCode` (the activity loads `libvera20k_android.so` before
+//! `onCreate`), so the process starts here instead. Everything
 //! platform-specific that has to happen before the first window — the working
 //! directory, logging, panic reporting — runs in this order and then hands over
 //! to `vera20k::entry`, the same start-up the desktop binary uses.
@@ -124,6 +124,75 @@ fn handle_suffix() -> Option<String> {
             .map(|text| text.to_string_lossy().into_owned())
     })?;
     suffix.filter(|text| !text.is_empty())
+}
+
+/// The activity, kept for the soft-keyboard hooks: [`AndroidApp`] is cheap to
+/// clone, and its text-input calls work from any thread.
+static ACTIVITY: std::sync::OnceLock<AndroidApp> = std::sync::OnceLock::new();
+
+/// Show the soft keyboard (`util::android_ime`).
+fn ime_show() {
+    if let Some(app) = ACTIVITY.get() {
+        app.show_soft_input(false);
+    }
+}
+
+/// Hide the soft keyboard.
+fn ime_hide() {
+    if let Some(app) = ACTIVITY.get() {
+        app.hide_soft_input(false);
+    }
+}
+
+/// What the input method currently holds.
+fn ime_state() -> vera20k::util::android_ime::TextState {
+    ACTIVITY
+        .get()
+        .map(|app| {
+            let state = app.text_input_state();
+            vera20k::util::android_ime::TextState {
+                text: state.text,
+                cursor: state.selection.start,
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// Replace the input method's buffer, with the caret at `cursor` characters.
+fn ime_set_state(text: &str, cursor: usize) {
+    use android_activity::input::{TextInputState, TextSpan};
+    if let Some(app) = ACTIVITY.get() {
+        app.set_text_input_state(TextInputState {
+            text: text.to_owned(),
+            selection: TextSpan {
+                start: cursor,
+                end: cursor,
+            },
+            compose_region: None,
+        });
+    }
+}
+
+/// The screen's cutout and corner radius at the window's top-left, in screen
+/// pixels (`util::display_insets`).
+fn display_insets() -> vera20k::util::display_insets::Insets {
+    let left = with_activity(|env, activity| {
+        env.call_method(activity, "displayInsetLeft", "()I", &[])
+            .ok()?
+            .i()
+            .ok()
+    })
+    .flatten()
+    .unwrap_or(0);
+    let top = with_activity(|env, activity| {
+        env.call_method(activity, "displayInsetTop", "()I", &[])
+            .ok()?
+            .i()
+            .ok()
+    })
+    .flatten()
+    .unwrap_or(0);
+    vera20k::util::display_insets::Insets { left, top }
 }
 
 /// The activity's folder-picker answer: the chosen tree as a `content://` URI,
@@ -340,6 +409,20 @@ fn android_main(app: AndroidApp) {
     // for the handle until text input lands on this platform.
     vera20k::util::device_identity::install(vera20k::util::device_identity::Hooks {
         handle_suffix,
+    });
+    // winit's Android backend has no IME text events (winit#4736 adds them), so
+    // the engine reads the activity's GameTextInput buffer through these hooks.
+    let _ = ACTIVITY.set(app.clone());
+    vera20k::util::android_ime::install(vera20k::util::android_ime::Hooks {
+        show: ime_show,
+        hide: ime_hide,
+        state: ime_state,
+        set_state: ime_set_state,
+    });
+    // The battle view fills the window, so its messages need to know what the
+    // screen's corner and cutout hide.
+    vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
+        insets: display_insets,
     });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes

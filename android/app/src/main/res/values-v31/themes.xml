@@ -4,9 +4,12 @@
          and it ignores `windowBackground` for it: the art has to be named as the
          splash icon, over the same colour, with no icon animation. The icon is
          the launcher icon, so the splash agrees with the entry the player
-         tapped: each alias overrides it with its own theme. -->
-    <style name="Theme.Vera20k" parent="android:Theme.Black.NoTitleBar.Fullscreen">
+         tapped: each alias overrides it with its own theme. GameActivity
+         extends AppCompatActivity, so the parent has to be an AppCompat theme. -->
+    <style name="Theme.Vera20k" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_retail_foreground</item>
         <item name="android:windowSplashScreenAnimationDuration">0</item>
