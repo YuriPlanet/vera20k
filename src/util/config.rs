@@ -425,6 +425,9 @@ impl GameConfig {
                 ("ini", "ai") => parse_string(value).map(|name| ini.ai = Some(name)),
                 ("ini", "sound") => parse_string(value).map(|name| ini.sound = Some(name)),
                 ("ini", "eva") => parse_string(value).map(|name| ini.eva = Some(name)),
+                ("ini", "theater_suffix") => {
+                    parse_string(value).map(|suffix| ini.theater_suffix = Some(suffix))
+                }
                 _ => Ok(()),
             };
             read.with_context(|| format!("line {line_number}: [{section}] {key}"))?;
@@ -713,6 +716,9 @@ mod tests {
             (audio_roots.sound(), audio_roots.eva()),
             ("my-sound.ini", "my-eva.ini")
         );
+        let theater = GameConfig::parse(&format!("{base}[ini]\ntheater_suffix='mo'\n")).unwrap();
+        let theater_roots = theater.ini.resolve(|_| true).unwrap();
+        assert_eq!(theater_roots.theater_ini("snow"), "snowmo.ini");
         for bad in [
             "profile='other'",
             "profile='custom'\nrules='r.ini'",
@@ -721,6 +727,7 @@ mod tests {
             "profile='custom'\nrules='../r.ini'\nart='a.ini'\nai='i.ini'",
             "sound='../my-sound.ini'",
             "eva='a.map'",
+            "theater_suffix='../mo'",
         ] {
             assert!(
                 GameConfig::parse(&format!("{base}[ini]\n{bad}\n")).is_err(),

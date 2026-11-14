@@ -24,6 +24,9 @@ profile = "yr" # yr | mo | auto | custom
 # ai = "my-ai.ini"
 # sound = "my-sound.ini"
 # eva = "my-eva.ini"
+# Theater INI suffix for any profile, the MD of SNOWMD.INI: "md" reads
+# snowmd.ini, "xx" reads snowxx.ini. Letters and digits only; no fallback.
+# theater_suffix = "md"
 
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)
