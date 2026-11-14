@@ -445,6 +445,9 @@ pub(super) struct Census {
     pub(super) yard_makers: usize,
     /// Units that fight, harvesters and engineers aside.
     pub(super) fighters: usize,
+    /// Combat units with no order, no destination, no target and no live
+    /// intent: the wishlist's "单位在发呆".
+    pub(super) idle: usize,
     /// Fighting units per price band, per pool.
     pub(super) tiers: [[usize; 3]; 5],
     /// Finished buildings waiting for a cell, in factory order.
@@ -603,6 +606,7 @@ impl Census {
         self.yards = 0;
         self.yard_makers = 0;
         self.fighters = 0;
+        self.idle = 0;
         self.tiers = [[0; 3]; 5];
         self.threat = [0; ROLES.len()];
         self.able = [0; ROLES.len()];
@@ -663,6 +667,15 @@ impl Census {
             };
             if combat {
                 self.fighters += 1;
+                // Idle: nothing to walk to and nothing to shoot at. The census
+                // runs before the frame's orders, so a unit that was given something
+                // last frame and is executing it is not idle — this is the unit that
+                // the ladder has no entry for.
+                let busy = obs.destination(entity.entity_id).is_some()
+                    || obs.attack_target(entity.entity_id).is_some();
+                if !busy {
+                    self.idle += 1;
+                }
                 self.tiers[slot.index()][tier] += 1;
                 let weights = roles.weights(&ty.id);
                 for role in ROLES {
@@ -861,12 +874,13 @@ impl Census {
             .map(|slot| format!("{}={}", slot.label(), self.slot_count(*slot)))
             .collect();
         format!(
-            "{} harv={} ref={} yard={} fighters={} threat=[{}] able=[{}]",
+            "{} harv={} ref={} yard={} fighters={} idle={} threat=[{}] able=[{}]",
             slots.join(" "),
             self.harvesters,
             self.refineries,
             self.yards,
             self.fighters,
+            self.idle,
             self.threat
                 .iter()
                 .map(|count| count.to_string())
