@@ -17,9 +17,10 @@ use crate::sim::world::Simulation;
 use crate::sim::world::display_layers::DisplayLayer;
 use crate::util::lookup_hash::LookupMap;
 
-/// Where a record draws, in world screen pixels: the column from its body
-/// down to anything it draws below it. Only the object loop's pass-by reads
-/// it (`instances::PassByWindow`).
+/// Where a record draws and is picked, in world screen pixels: the column
+/// from its body down to anything it draws below it. The object loop's
+/// pass-by (`instances::PassByWindow`) and the cursor pick's pre-filter
+/// (`entity_pick`) read it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct ScreenSpan {
     pub x: f32,
@@ -30,14 +31,14 @@ pub(crate) struct ScreenSpan {
 impl ScreenSpan {
     pub(crate) fn of(record: &ObjectRecord) -> Self {
         // `RenderPose::read` took this point from
-        // `locomotor_visual::screen_position`, where every visitor culls from.
+        // `locomotor_visual::screen_position`, where every visitor culls
+        // from. An IonBlast lifts the point infantry are drawn at and every
+        // object is picked at by `visual_lift`, which may be negative.
         let [x, y] = record.pose.screen;
+        let lifted = y - record.pose.visual_lift;
+        let (top, bottom) = (y.min(lifted), y.max(lifted));
         if record.category() != EntityCategory::Aircraft {
-            return Self {
-                x,
-                top: y,
-                bottom: y,
-            };
+            return Self { x, top, bottom };
         }
         // An aircraft's shadow lies on the ground straight below it
         // (`aircraft_shadow::pose`), a rocket's lower again by its height:
@@ -47,8 +48,8 @@ impl ScreenSpan {
         let (_, ground) = crate::util::lepton::absolute_leptons_to_screen(world_x, world_y, 0);
         Self {
             x,
-            top: y.min(ground),
-            bottom: y.max(2.0 * ground - y),
+            top: top.min(ground),
+            bottom: bottom.max(2.0 * ground - y),
         }
     }
 }
