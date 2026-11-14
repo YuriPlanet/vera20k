@@ -191,6 +191,15 @@ impl App {
         }
     }
 
+    /// Present by the Options page's VSync box (`[VERA] VSync=`). A sealed
+    /// capture keeps presenting in step with the display, as its profile
+    /// records.
+    pub(crate) fn sync_present_mode(state: &mut AppState) {
+        let vsync =
+            state.persistence.options_profile.vsync || state.platform.capture_client_size.is_some();
+        state.renderer.gpu.set_vsync(vsync);
+    }
+
     /// Where a match frame sits in the window at the Options choices: the
     /// geometry the zoom pass takes, and the battle frame the Options page
     /// offers sidebar sizes for.

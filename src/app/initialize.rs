@@ -1340,6 +1340,7 @@ impl App {
                     }
                 }
                 Self::sync_zoom_pass(&mut state);
+                Self::sync_present_mode(&mut state);
                 #[cfg(feature = "telemetry-dashboard")]
                 attach_dashboard(&mut state);
 

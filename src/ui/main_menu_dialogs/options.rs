@@ -80,6 +80,11 @@ pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
 pub(crate) const SMOOTH_ONLINE_MENUS_LABEL: &str = "VERA:SmoothOnlineMenus";
 pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
+/// The Display page's VSync (`GpuContext::set_vsync`). The browser presents
+/// with the page's own refresh, so its build has no box.
+pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
+pub(crate) const VSYNC_LABEL: &str = "VERA:VSync";
+pub(crate) const VSYNC_HELP: &str = "VERA:VSyncHelp";
 /// The Interface page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -729,6 +734,10 @@ pub(crate) enum LauncherCheckboxId {
     /// smoothed (`BatchRenderer::draw_chrome`). Saved; the next frame follows
     /// it.
     SmoothOnlineMenus,
+    /// VERA's own box: the window presents in step with the display
+    /// (`GpuContext::set_vsync`). On by default; saved, and the next frame
+    /// follows it.
+    VSync,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -815,6 +824,7 @@ pub(crate) enum LauncherOptionsEvent {
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
     SmoothOnlineMenusChanged(bool),
+    VSyncChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
     ShowStringKeysChanged(bool),
@@ -876,6 +886,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
     pub(crate) smooth_online_menus: bool,
+    pub(crate) vsync: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
@@ -933,6 +944,7 @@ impl Default for LauncherOptionsValues {
             hd_radar: false,
             smooth_sidebar: false,
             smooth_online_menus: false,
+            vsync: true,
             hd_map_previews: true,
             shift_queue: false,
             auto_repair: false,
@@ -1396,6 +1408,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
+            LauncherCheckboxId::VSync => &mut self.values.vsync,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
@@ -1450,6 +1463,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothOnlineMenus => self
                 .pending_events
                 .push(LauncherOptionsEvent::SmoothOnlineMenusChanged(checked)),
+            LauncherCheckboxId::VSync => self
+                .pending_events
+                .push(LauncherOptionsEvent::VSyncChanged(checked)),
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
@@ -1668,12 +1684,22 @@ impl Category {
         use LauncherComboId as List;
         use LauncherTrackbarId as Slider;
         match self {
+            Self::Display if !HAS_VSYNC => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::List(List::ColorVision),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::YrOriginalStyle),
+            ],
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
                 Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
             ],
@@ -1773,6 +1799,19 @@ impl Category {
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
+            Self::Display if !HAS_VSYNC => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::List(List::Sidebar),
+                Setting::List(List::ColorVision),
+                Setting::List(List::Language),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::PerformanceStats),
+            ],
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
@@ -1780,6 +1819,7 @@ impl Category {
                 Setting::List(List::ColorVision),
                 Setting::List(List::Language),
                 Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
                 Setting::Checkbox(Check::HdRadar),
@@ -2422,6 +2462,7 @@ mod tests {
                 Check::HdRadar,
                 Check::SmoothSidebar,
                 Check::SmoothOnlineMenus,
+                Check::VSync,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::AutoRepair,

@@ -197,9 +197,8 @@ fn resolved_directory(path: &Path) -> PathBuf {
 ///
 /// Every field has a sensible default so `[graphics]` can be omitted entirely.
 /// Full screen, zoom and the original 4:3 shape are player choices on the
-/// Options page, saved in VERA.INI, not here. The window always presents in
-/// step with the display (`render/gpu.rs`), so an old config's `vsync` line
-/// is ignored.
+/// Options page, saved in VERA.INI, not here. So is VSync
+/// (`[VERA] VSync=`), so an old config's `vsync` line is ignored.
 #[derive(Debug)]
 pub struct GraphicsConfig {
     /// Enable cosmetic per-frame effects: water/ore sparkles. Also intended to

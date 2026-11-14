@@ -425,10 +425,17 @@ impl GpuContext {
             format: surface_format,
             width: window_size.width.max(1), // wgpu panics on 0-sized surfaces
             height: window_size.height.max(1),
+            // `App::sync_present_mode` applies the Options page's VSync box
+            // once the profile is loaded.
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            // One picture queued ahead of the screen, not wgpu's default two:
+            // the cursor and scrolling show a refresh sooner. The cost is that
+            // the CPU and GPU no longer overlap, so a picture whose work takes
+            // longer than one refresh waits for the next one.
+            // https://docs.rs/wgpu/30.0.1/wgpu/struct.SurfaceConfiguration.html#structfield.desired_maximum_frame_latency
+            desired_maximum_frame_latency: 1,
             // wgpu 30 selects an HDR colour space per surface format; Auto keeps
             // the pre-30 sRGB behaviour for every desktop and WebGL2 backend.
             color_space: wgpu::SurfaceColorSpace::Auto,
@@ -609,6 +616,33 @@ impl GpuContext {
             ));
         }
         log::debug!("Surface resized to {}x{}", width, height);
+    }
+
+    /// Present in step with the display (`Fifo`), or as soon as a frame is
+    /// drawn: `AutoNoVsync` takes `Immediate`, else `Mailbox`, else `Fifo`, so
+    /// a surface without the first two keeps syncing. The Options page's
+    /// VSync box (`[VERA] VSync=`).
+    /// https://docs.rs/wgpu/30.0.1/wgpu/enum.PresentMode.html
+    pub fn set_vsync(&mut self, vsync: bool) {
+        let mode = if vsync {
+            wgpu::PresentMode::Fifo
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
+        if self.config.present_mode == mode {
+            return;
+        }
+        // Configuring a surface needs its last frame presented.
+        self.handoff.waiter().wait();
+        self.config.present_mode = mode;
+        if let Some(surface) = self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            surface.configure(&self.device, &self.config);
+        }
+        log::info!("Surface present mode: {mode:?}");
     }
 
     /// Take the window's next frame to draw into, or `None` when there is none
