@@ -862,6 +862,9 @@ fn build_theme_atlas(
     // Pre-render all radar.shp frames for the opening/closing animation.
     let (radar_frames, radar_frame_size, radar_content_insets) =
         render_all_radar_frames(asset_manager, mix, radar_name, &theme_palette, ares);
+    // Residual: with no side1 shape gamemd loads SIDEGDI1..3.SHP instead
+    // (0x006ABD47..0x006ABD7E). No retail archive holds them, so only a mod
+    // that ships them but not side1.shp would see them; VERA skips the theme.
     let side1 = render_side_entry(side_route, "side1.shp", &generic_palette, 0)?;
     let side2 = render_side_entry(side_route, "side2.shp", &generic_palette, 0)?;
     let side3 = render_side_entry(side_route, "side3.shp", &generic_palette, 0)?;
