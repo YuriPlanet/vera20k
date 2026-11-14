@@ -66,6 +66,11 @@ pub(crate) struct CameoClick {
     pub sound: bool,
     pub eva: Option<&'static str>,
     pub order: Option<CameoOrder>,
+    /// After a pending request's SUSPEND, the queued-copy arm also runs
+    /// (`0x006AB18D..0x006AB22A`): a copy of this type queued behind the
+    /// category's build is abandoned too, after a second GUIBuildSound and
+    /// with no line. `Some(all)`: ABANDON, or ABANDON_ALL with Shift.
+    pub then_abandon: Option<bool>,
 }
 
 /// `SelectClass::Action @ 0x006AAD00` for a build cameo of `type_id` in
@@ -96,9 +101,10 @@ pub(crate) struct CameoClick {
 ///   (`0x006AB69D..0x006AB6C9`) and PRODUCE (`0x006AB76E`).
 ///
 /// With no Factory link, pending request1 takes the sound/OnHold/SUSPEND
-/// arm6AB0AC..6AB12B before the queued-copy query. Request2 alone is silent.
-/// Shift does not alter that SUSPEND. The combined pending1+queued-copy arm
-/// and saturated native OutList are outside the ordinary input domain here.
+/// arm6AB0AC..6AB12B, then the queued-copy query as well
+/// ([`CameoClick::then_abandon`]). Request2 alone is silent. Shift does not
+/// alter that SUSPEND. A saturated native OutList stays outside the ordinary
+/// input domain here.
 ///
 /// `own` resolves the retained strip's Factory link, including an older
 /// cameo linked to a rearmed Factory. Right with that link first attempts to
@@ -147,6 +153,7 @@ pub(crate) fn cameo_click_with_queue(
         sound: true,
         eva,
         order: Some(order),
+        then_abandon: None,
     };
     let mut result = match (press, own) {
         (CameoPress::Right { .. }, Some(BuildQueueState::Building)) => {
@@ -159,7 +166,10 @@ pub(crate) fn cameo_click_with_queue(
             let queued = in_category()
                 .any(|item| item.state == BuildQueueState::Queued && Some(item.type_id) == type_id);
             if request == Some(CameoRequestState::Started) {
-                click(Some(EVA_ON_HOLD), CameoOrder::Suspend)
+                CameoClick {
+                    then_abandon: queued.then_some(shift),
+                    ..click(Some(EVA_ON_HOLD), CameoOrder::Suspend)
+                }
             } else if queued {
                 click(None, CameoOrder::Abandon { all: shift })
             } else {
@@ -174,10 +184,9 @@ pub(crate) fn cameo_click_with_queue(
             let busy = in_category().next().is_some();
             if busy && is_structure_strip(category) && !building_production_queue {
                 CameoClick {
-                    clear_building_placement: false,
                     sound: false,
                     eva: Some(EVA_UNABLE_TO_COMPLY),
-                    order: None,
+                    ..CameoClick::default()
                 }
             } else if at_build_limit {
                 CameoClick::default()
@@ -204,6 +213,7 @@ pub(crate) fn shift_right_cancels_running(click: CameoClick, press: CameoPress) 
         CameoClick {
             eva: Some(EVA_CANCELED),
             order: Some(CameoOrder::Abandon { all: true }),
+            then_abandon: None,
             ..click
         }
     } else {
@@ -415,6 +425,36 @@ mod tests {
             assert!(right.sound);
             assert_eq!(right.eva, Some(EVA_ON_HOLD));
             assert!(!right.clear_building_placement);
+            assert_eq!(right.then_abandon, None);
+        }
+
+        // A copy already queued behind the category's build: the same press
+        // abandons it after the SUSPEND (6AB18D..6AB22A), ABANDON_ALL with
+        // Shift.
+        let dog = interner.intern("DOG");
+        let item = |type_id, state| QueueItemView {
+            type_id,
+            display_name: String::new(),
+            queue_category: ProductionCategory::Infantry,
+            state,
+            progress: 0,
+        };
+        let queue = [
+            item(dog, BuildQueueState::Building),
+            item(e2, BuildQueueState::Queued),
+        ];
+        for shift in [false, true] {
+            let right = cameo_click(
+                &queue,
+                ProductionCategory::Infantry,
+                Some(e2),
+                None,
+                Some(CameoRequestState::Started),
+                CameoPress::Right { shift },
+                false,
+            );
+            assert_eq!(right.order, Some(CameoOrder::Suspend));
+            assert_eq!(right.then_abandon, Some(shift));
         }
     }
 
