@@ -240,8 +240,17 @@ pub(crate) struct PreparedSidebarOrder {
     strips: CameoStrips,
     factory_links: HashMap<InternedId, CameoFactoryLink>,
     prediction_categories: HashSet<ProductionCategory>,
+    active_tab: SidebarTab,
     #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
+}
+
+/// The tab a loaded game opens on: Mouse Load 5BDF70 restores the saved
+/// ActiveTab (+0x539C), and Load_Game_From_File's Sidebar Init 6A5310 shows it
+/// again through ToggleSidebar 6A7D70; nothing after the load resets it. A
+/// save without strips opens Init_Clear 6A5030's first tab.
+pub(crate) fn loaded_active_tab(order: Option<&PreparedSidebarOrder>) -> SidebarTab {
+    order.map_or_else(SidebarTab::default_active_tab, |order| order.active_tab)
 }
 
 #[cfg(feature = "phobos")]
@@ -1464,6 +1473,9 @@ pub(crate) fn prepare_saved_order(
     };
     let request_states = saved.requests().clone();
     let saved_factory_links = saved.factory_links().clone();
+    let active_tab = *SidebarTab::all()
+        .get(usize::from(saved.active_tab()))
+        .ok_or("saved sidebar has an invalid active tab")?;
     let prediction_categories: HashSet<_> = saved.prediction_categories().iter().copied().collect();
     if prediction_categories.len() != saved.prediction_categories().len() {
         return Err("saved sidebar has duplicate prediction categories".into());
@@ -1580,6 +1592,7 @@ pub(crate) fn prepare_saved_order(
         strips,
         factory_links,
         prediction_categories,
+        active_tab,
         #[cfg(feature = "phobos")]
         sw_sidebar_expanded,
     }))
