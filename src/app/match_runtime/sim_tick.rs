@@ -2824,6 +2824,29 @@ fn finish_simulation_frame(
                         true,
                     );
                 }
+                // MPlayer_Defeated's local branch deletes PlayerPtr's beacons,
+                // closes the command bar and leaves beacon mode (0x004FC1C6,
+                // 0x004FC1D9, 0x004FC1FA), then sets the chat mask
+                // (0x004FC23E) before the line (0x004FC271) this frame posts.
+                // Any defeat that ends the match reopens the bar (0x004FC591).
+                LifecycleOutput::MultiplayerHouseDefeated {
+                    owner,
+                    match_decided,
+                } => {
+                    if Some(owner) == local_house {
+                        super::beacons::local_player_defeated(state);
+                        let presentation = &mut state.match_state.match_presentation;
+                        presentation
+                            .sidebar_gadget_state
+                            .close_command_bar_at_local_defeat();
+                        presentation.chat.local_player_defeated();
+                    }
+                    state
+                        .match_state
+                        .match_presentation
+                        .sidebar_gadget_state
+                        .reopen_command_bar_at_match_end(match_decided);
+                }
                 LifecycleOutput::SidebarConstructionOption { .. }
                 | LifecycleOutput::SidebarRecalculated { .. }
                 | LifecycleOutput::ProductionBeginAttempted { .. }
@@ -2943,24 +2966,6 @@ fn finish_simulation_frame(
         }
 
         for message in hud_messages {
-            // MPlayer_Defeated's local branch deletes the player's beacons
-            // and leaves beacon mode (0x004FC1C6, 0x004FC1FA), then sets the
-            // chat mask (0x004FC23E) before it posts its line (0x004FC271).
-            if let crate::app::input::messages::HudMessage::PlayerDefeated(house) = message
-                && state
-                    .match_state
-                    .sim_runtime
-                    .runtime()
-                    .and_then(|runtime| runtime.simulation.session().current_house())
-                    == Some(house)
-            {
-                super::beacons::local_player_defeated(state);
-                state
-                    .match_state
-                    .match_presentation
-                    .chat
-                    .local_player_defeated();
-            }
             crate::app::input::messages::post_hud_message(state, message);
         }
 

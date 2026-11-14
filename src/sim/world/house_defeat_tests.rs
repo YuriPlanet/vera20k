@@ -135,6 +135,22 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
             .set_for_test(i32::from(index >= 2), &[], (0, 0, 0), &[]);
     }
     sim.check_defeat(None, None);
+    // MPlayer_Defeated's local branch (0x004FC1B0) runs for an observer's
+    // PlayerPtr too: the app closes its command bar from this output.
+    let defeats = |sim: &mut Simulation| -> Vec<_> {
+        sim.lifecycle_outputs
+            .take()
+            .into_iter()
+            .filter_map(|output| match output {
+                crate::sim::world::LifecycleOutput::MultiplayerHouseDefeated {
+                    owner,
+                    match_decided,
+                } => Some((owner, match_decided)),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(defeats(&mut sim), [(owners[0], false), (owners[1], false)]);
     for observer in &owners[..2] {
         assert!(sim.houses[observer].is_defeated());
         assert!(
@@ -154,6 +170,7 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
         .tracking_mut()
         .set_for_test(0, &[], (0, 0, 0), &[]);
     sim.check_defeat(None, None);
+    assert_eq!(defeats(&mut sim), [(owners[2], true)]);
     assert!(sim.houses[&owners[0]].has_lost());
     assert_eq!(
         sim.houses[&owners[0]].outcome_timer(),

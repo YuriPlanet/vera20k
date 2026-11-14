@@ -733,6 +733,15 @@ pub enum LifecycleOutput {
         owner: InternedId,
         message: super::planning::PlanningAppendMessage,
     },
+    /// MPlayer_Defeated 0x004FC0B0 for `owner`, after its Defeated flag and
+    /// Computer_Paranoid. The app runs PlayerPtr's local branch (beacons,
+    /// command bar, chat mask: 0x004FC1BD..0x004FC23E) and, when
+    /// `match_decided` (the decision at 0x004FC3DE..0x004FC6B7), reopens a
+    /// command bar that branch closed (0x004FC591..0x004FC59F).
+    MultiplayerHouseDefeated {
+        owner: InternedId,
+        match_decided: bool,
+    },
     /// HouseBegin4FA41C clears the category prediction gate before builder
     /// admission, including a refused Begin. The strip's request survives.
     /// Source: tools/sidebar_oracle/pending_production.md.

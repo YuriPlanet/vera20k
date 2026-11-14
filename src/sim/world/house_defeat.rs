@@ -63,15 +63,14 @@
 //!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
 //!   `local_player_defeated` names the ported readers). The borrowed client
 //!   boundary leaves planning (`0x00637A10`), supplies its2B event to the same
-//!   frame's dispatcher and rejects re-entry (`0x00731A50`). The beacons'
-//!   deletion (`0x00431410`) and beacon mode's exit (`0x004AC960`) are the
-//!   app's `match_runtime::beacons` owner, run from the PlayerDefeated line.
-//!   The chat-mask set (`0x00A8D108..0x00A8D10F`, `0x004FC23E`) is the app's
-//!   `input::chat` owner, run from the PlayerDefeated line; dialog 0x73
-//!   reads the mask whenever it draws (`0x004FC239..0x004FC25D` refresh). The command bar is
-//!   saved/closed6D1660 but restored4FC591→6D1610 on the common sole-human
-//!   terminal path, so its retained open state is unchanged. Wider multiplayer
-//!   close/restore paths remain outside this chain. Session+300 already guards
+//!   frame's dispatcher and rejects re-entry (`0x00731A50`). The app runs
+//!   the rest from `LifecycleOutput::MultiplayerHouseDefeated`, observers
+//!   included: the beacons' deletion (`0x00431410`) and beacon mode's exit
+//!   (`0x004AC960`) in `match_runtime::beacons`, the chat-mask set
+//!   (`0x00A8D108..0x00A8D10F`, `0x004FC23E`) in `input::chat`, which dialog
+//!   0x73 reads whenever it draws (`0x004FC239..0x004FC25D` refresh), and the
+//!   command bar's close (6D1660) and its reopening when the match is over
+//!   (4FC591→6D1610) in `ui::sidebar::gadget_flash`. Session+300 already guards
 //!   band-box/type/navigation selection, Cheer input and the command-bar
 //!   opener (`0x006D08F5`). Its F0 close remains allowed. Remaining UI readers
 //!   include taunt (`0x0053636C`),
@@ -517,6 +516,14 @@ impl Simulation {
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
         }
+        // The sidebar part is the app's: PlayerPtr's beacons, command bar and
+        // chat mask (0x004FC1BD..0x004FC23E, an observer's too), and the bar's
+        // reopening by any defeat that ends the match (0x004FC591..0x004FC59F).
+        self.lifecycle_outputs
+            .emit(super::LifecycleOutput::MultiplayerHouseDefeated {
+                owner,
+                match_decided: self.multiplayer_decision().is_some(),
+            });
         let planning_commit = if self.session.current_house() == Some(owner) {
             // Original gamemd:4FC1EE ->637A10, before Session+300/reveal
             // and the loss announcement. Input owns the exit and2B event;
