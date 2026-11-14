@@ -684,14 +684,14 @@ fn edge_scroll_step_with_context(
         .clamp(0, EDGE_SCROLL_SPEED_TABLE.len() as i32 - 1);
     state.coast_level = 8 - base_index;
 
-    if active_direction.is_some() && !movement_allowed {
-        // A blocked active edge returns after the cap but before direction,
-        // timer, or ramp state changes.
-        return (0.0, 0.0);
-    }
-
     if let Some(direction) = active_direction {
+        // 0x00692C19..0x00692D4D store the direction (B0565C) before the
+        // one-pixel preflight at 0x00692DEB, so a blocked active edge still
+        // turns a later coast; it returns before the timer and ramp change.
         state.octant = scroll_dir_octant(direction);
+        if !movement_allowed {
+            return (0.0, 0.0);
+        }
     } else if state.coast_level == 0 {
         // Idle: nothing moves, but the decay timer is still serviced.
         state.decay(now);
@@ -1395,6 +1395,9 @@ fn mouse_scroll_step(state: &mut AppState, now: u32) -> (f32, f32) {
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
 
+    // RESIDUAL: UpdateMouseScrolling (0x00692F30) also returns at 0x00692F7F
+    // while PlanMgr's hover test 0x0063AB60 finds a planning node under the
+    // mouse, so a node in the one-pixel edge band holds the view; VERA scrolls.
     // gamemd's edge scroll early-returns while any tactical mouse button holds
     // the capture, so the map is frozen for the whole of a band-box or
     // right-drag gesture. The minimap-drag inhibit is VERA-internal: gamemd's
@@ -2450,6 +2453,9 @@ pub(crate) fn touch_owns_pointer(input: &crate::app::input::state::MatchInputSta
 
 /// Active edge intent plus whether the tactical clamp removes all requested
 /// components. Cursor feedback and motion both use this exact probe.
+/// RESIDUAL: native also shows the coast direction's arrow while the view
+/// coasts off the edge (0x00692D52 reaches the cursor calls at 0x00692DFF and
+/// 0x00692E0F); VERA shows it only at the edge, a fraction of a second less.
 pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, bool)> {
     // The band is inhibited for motion (`poll_mouse_scroll`), so it must not
     // light its arrow either.
@@ -2858,12 +2864,11 @@ mod tests {
     }
 
     #[test]
-    fn item82_blocked_active_edge_caps_coast_without_changing_direction_or_timer() {
+    fn item82_blocked_active_edge_caps_coast_and_turns_it_without_the_timer() {
         let mut st = state();
         st.coast_level = 5;
         st.octant = 3;
         st.last_coast_change = Some(2);
-        let before = (st.octant, st.last_coast_change);
         assert_eq!(
             edge_scroll_step_with_context(
                 &mut st,
@@ -2879,7 +2884,10 @@ mod tests {
             (0.0, 0.0),
         );
         assert_eq!(st.coast_level, 4, "ScrollRate cap still applies");
-        assert_eq!((st.octant, st.last_coast_change), before);
+        // B0565C is written at 0x00692D4D, before the preflight fails.
+        let west = edge_scroll_intent((0.0, 300.0), VIEW_W, VIEW_H).unwrap();
+        assert_eq!(st.octant, scroll_dir_octant(west));
+        assert_eq!(st.last_coast_change, Some(2));
     }
 
     #[test]
