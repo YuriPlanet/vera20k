@@ -125,11 +125,11 @@ impl PathsConfig {
     }
 }
 
-/// Shared by packaged and direct launches. No writable setting defaults to
-/// the retail installation, even when VERA's executable is installed there.
 /// The browser build's Mods folder in its in-memory file system.
 pub const WEB_MODS_DIR: &str = "/mods";
 
+/// Shared by packaged and direct launches. No writable setting defaults to
+/// the retail installation, even when VERA's executable is installed there.
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub fn default_settings_dir() -> Result<PathBuf> {
     // Browser VFS: keep the profile outside imported retail assets, within the
