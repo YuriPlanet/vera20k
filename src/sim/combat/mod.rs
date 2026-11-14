@@ -52,6 +52,8 @@ pub(crate) mod destruction_effects;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
+#[cfg(feature = "phobos")]
+pub(crate) mod extra_range;
 pub(crate) mod extra_threat;
 pub mod fire_coord;
 pub mod fire_error;

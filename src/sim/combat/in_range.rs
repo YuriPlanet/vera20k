@@ -596,12 +596,13 @@ pub(crate) fn cell_target_in_range(
     terrain: &ResolvedTerrainGrid,
     los: &LineOfFireInputs<'_>,
     entities: Option<&crate::sim::entity_store::EntityStore>,
+    world: Option<&Simulation>,
 ) -> Option<bool> {
     let cells = NativeCellQuery::canonical(terrain);
     let target = RangeTarget::Cell(target);
     let source = fire_source_for_target(attacker, target, weapon, &cells, (rules, interner))?;
     Some(compute_range_target(
-        attacker, source, target, weapon, rules, interner, &cells, los, entities, None,
+        attacker, source, target, weapon, rules, interner, &cells, los, entities, world,
     ))
 }
 
@@ -660,6 +661,22 @@ pub(crate) fn compute_range_target(
         i64::from(crate::sim::attach_effect::weapon_range_with_modifiers(
             rules, interner, entities, attacker, weapon,
         ))
+    };
+
+    // Phobos `TechnoClass_InRange_WeaponRange` (`0x6F7248`,
+    // `Ext/Techno/Hooks.WeaponRange.cpp:145-168`): with no live KeepRange and
+    // no -512 sentinel, the ExtraRange movement/prefire bonuses add to the
+    // modified weapon range before every other InRange term.
+    #[cfg(feature = "phobos")]
+    let weapon_range_lep = if keep_max.is_none()
+        && weapon_range_lep != WEAPON_RANGE_ALWAYS_IN_RANGE_LEPTONS
+        && let Some(world) = world
+    {
+        weapon_range_lep.wrapping_add(crate::sim::combat::extra_range::extra_range_leptons(
+            world, rules, attacker, target, weapon,
+        ))
+    } else {
+        weapon_range_lep
     };
 
     // Sentinel — always-in-range short-circuit (`CMP EDI,0xFFFFFE00` at
@@ -1874,6 +1891,7 @@ mod tests {
                 &interner,
                 &terrain,
                 &LineOfFireInputs::terrain_only(),
+                None,
                 None,
             );
             assert_eq!(actual, row["result"].as_bool(), "row {index}: full range");

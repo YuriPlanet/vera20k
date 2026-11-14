@@ -90,6 +90,7 @@ impl Simulation {
                     buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
                 },
                 Some(&self.substrate.entities),
+                Some(self),
             )
         })()
         .unwrap_or(false);

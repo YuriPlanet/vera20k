@@ -204,6 +204,24 @@ pub struct PhobosGlobals {
     /// (`Ext/Rules/Body.cpp:548`, `Ext/Rules/Body.h:964`): the fallback for
     /// a weapon whose own `Anim.Update=` is unset.
     pub firing_anim_update: bool,
+    /// `[General] ExtraRange.TargetMoving` (`Valueable<Leptons>`, default 0,
+    /// `Ext/Rules/Body.cpp:511`): added to a weapon's range while the target's
+    /// locomotor really moves (`Ext/Techno/Hooks.WeaponRange.cpp:157-162`).
+    pub extra_range_target_moving: i32,
+    /// `ExtraRange.TargetMoving.CloseRangeOnly=` (default false,
+    /// `Ext/Rules/Body.cpp:512`): only a `CloseRange=yes` firer takes the
+    /// target-moving bonus.
+    pub extra_range_target_moving_close_range_only: bool,
+    /// `ExtraRange.FirerMoving=` (default 0, `Ext/Rules/Body.cpp:513`): added
+    /// while the firer's locomotor really moves (`:164-168`).
+    pub extra_range_firer_moving: i32,
+    /// `ExtraRange.Prefiring=` (default 0, `Ext/Rules/Body.cpp:514`): added
+    /// while the firer is pre-firing (`:152-155`).
+    pub extra_range_prefiring: i32,
+    /// `ExtraRange.Prefiring.IncludeBurst=` (`Valueable<bool>` default true,
+    /// `Ext/Rules/Body.cpp:515`): a burst index other than zero also counts
+    /// as pre-firing (`Ext/Techno/Hooks.WeaponRange.cpp:79-80`).
+    pub extra_range_prefiring_include_burst: bool,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1352,6 +1370,11 @@ impl Default for PhobosGlobals {
             warhead_particle_alpha_image_is_light_flash: false,
             light_flash_alpha_image_detail_level: 0,
             firing_anim_update: false,
+            extra_range_target_moving: 0,
+            extra_range_target_moving_close_range_only: false,
+            extra_range_firer_moving: 0,
+            extra_range_prefiring: 0,
+            extra_range_prefiring_include_burst: true,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1764,6 +1787,22 @@ impl PhobosGlobals {
         // `[General]` force-weapon defaults (`Ext/Rules/Body.cpp:230-232`);
         // the three sections share no key, so their order does not matter.
         let general = ini.section_or_empty("General");
+        // `Ext/Rules/Body.cpp:511-515`: `Valueable<Leptons>` keys, parsed as
+        // cells × 256 (`Parser<Leptons>`); a failed read keeps the default.
+        globals.extra_range_target_moving = general
+            .read_phobos_leptons("ExtraRange.TargetMoving", globals.extra_range_target_moving);
+        globals.extra_range_target_moving_close_range_only = general.read_bool(
+            "ExtraRange.TargetMoving.CloseRangeOnly",
+            globals.extra_range_target_moving_close_range_only,
+        );
+        globals.extra_range_firer_moving =
+            general.read_phobos_leptons("ExtraRange.FirerMoving", globals.extra_range_firer_moving);
+        globals.extra_range_prefiring =
+            general.read_phobos_leptons("ExtraRange.Prefiring", globals.extra_range_prefiring);
+        globals.extra_range_prefiring_include_burst = general.read_bool(
+            "ExtraRange.Prefiring.IncludeBurst",
+            globals.extra_range_prefiring_include_burst,
+        );
         // `Ext/Rules/Body.cpp:222`: a `[General]` read, not CombatDamage.
         globals.convert_reset_mind_control = general.read_bool(
             "Convert.ResetMindControl",

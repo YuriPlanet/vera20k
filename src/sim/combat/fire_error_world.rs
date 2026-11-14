@@ -859,6 +859,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                         buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                     Some(&subject.world.substrate.entities),
+                    Some(subject.world),
                 )
                 .unwrap_or(false)
             }
