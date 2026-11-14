@@ -335,11 +335,77 @@ pub(super) fn deploy_yard_maker(
             );
         }
         _ => {
-            let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
-            brain.site_attempts.insert(yard_id, next);
+            // The sweep's candidate is the cell the maker already stands on, or
+            // there is none. Advancing the counter alone is what left a maker
+            // standing for a whole match with nothing issued: measured, an MCV
+            // whose deploy footprint is obstructed reads `admits=false`, stays
+            // in the census, and got `orders=0` for every attempt.
+            //
+            // The origin of a deploy is the foundation's corner, not the unit's
+            // cell (`deploy_origin_from_unit_cell` shifts north-west for a
+            // foundation wider than two), so the cell that has to be free is a
+            // neighbour's. `deploy_admits_at` answers about the cell the unit
+            // would stand on, so the walk out is a ring search for the first
+            // cell the deploy would land on.
+            match nearest_deploy_site(obs, rules, entity_id, yard, cell) {
+                Some(target) => {
+                    super::orders::issue(
+                        brain,
+                        out,
+                        rules,
+                        obs,
+                        entity_id,
+                        Goal::Move { cell: target },
+                    );
+                }
+                None => {
+                    let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
+                    brain.site_attempts.insert(yard_id, next);
+                }
+            }
         }
     }
 }
+
+/// The nearest cell the maker could stand on and deploy, by rings outwards.
+///
+/// Bounded by [`DEPLOY_SITE_RINGS`] so a maker walled in on every side reports
+/// "nowhere" rather than walking the map.
+fn nearest_deploy_site(
+    obs: &Observation<'_>,
+    rules: &RuleSet,
+    entity_id: u64,
+    yard: &ObjectType,
+    from: (u16, u16),
+) -> Option<(u16, u16)> {
+    (1..=DEPLOY_SITE_RINGS).find_map(|ring| {
+        let mut best: Option<(u16, u16)> = None;
+        for dy in -ring..=ring {
+            for dx in -ring..=ring {
+                if dx.abs().max(dy.abs()) != ring {
+                    continue;
+                }
+                let cell = (from.0 as i32 + dx, from.1 as i32 + dy);
+                if cell.0 < 0 || cell.1 < 0 {
+                    continue;
+                }
+                let cell = (cell.0 as u16, cell.1 as u16);
+                if !obs.deploy_admits_at(rules, entity_id, yard, cell) {
+                    continue;
+                }
+                // Fixed ring order, nearest id, so the answer is the same every
+                // frame.
+                if best.is_none_or(|current| cell < current) {
+                    best = Some(cell);
+                }
+            }
+        }
+        best
+    })
+}
+
+/// How far from the maker a deploy site may be searched, in cells.
+const DEPLOY_SITE_RINGS: i32 = 6;
 
 /// Whether the house should be buying a yard maker it does not need yet: one
 /// for a second base.
@@ -748,10 +814,83 @@ fn missing_prerequisite<'r>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::sim::arena_fixture;
     use crate::sim::strategy::retail::RetailBrain;
     use crate::sim::world::Simulation;
+
+    /// A maker whose deploy footprint is obstructed walks to ground it can use.
+    ///
+    /// The wishlist's report: an MCV packs, something arrives over the
+    /// footprint, and the maker never deploys again. Measured before the fix —
+    /// `admits=false`, the maker still in the census, `orders=0`, only the
+    // attempt counter moving — because the placement sweep's first candidate is
+    /// the cell the maker already occupies and the branch that receives that
+    /// answer issued nothing at all.
+    #[test]
+    fn a_maker_whose_footprint_is_blocked_walks_to_a_site_that_takes_it() {
+        let Some((mut sim, rules, owner)) = arena(0xA17) else {
+            return;
+        };
+        let maker = sim
+            .spawn_object("AMCV", "Americans", 20, 20, 255, &rules)
+            .expect("an MCV");
+        let yard = rules.object("GACNST").expect("the yard");
+        // The deploy origin is the foundation's corner, which is not the unit's
+        // cell: a hostile standing on the corner is what blocks the deploy
+        // without standing on the maker.
+        let origin = crate::sim::world::deploy_origin((20, 20), yard);
+        assert_ne!(
+            origin,
+            (20, 20),
+            "the origin is offset for a foundation wider than two"
+        );
+        sim.spawn_object(
+            "E1",
+            "Russians",
+            origin.0.max(0) as u16,
+            origin.1.max(0) as u16,
+            255,
+            &rules,
+        )
+        .expect("a hostile on the footprint");
+
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let obs = Observation::new(&sim, owner);
+        assert!(
+            !obs.deploy_site_admits(&rules, maker, yard),
+            "the footprint is obstructed"
+        );
+
+        let mut out = Outbox::default();
+        deploy_yard_maker(&mut brain, &rules, &obs, &mut out);
+        assert!(
+            out.orders
+                .iter()
+                .any(|order| matches!(order.goal, Goal::Move { cell } if cell != (20, 20))),
+            "the maker is driven to a site that takes it: {:?}",
+            out.orders.iter().map(|o| o.goal).collect::<Vec<_>>()
+        );
+        assert!(
+            obs.deploy_admits_at(
+                &rules,
+                maker,
+                yard,
+                out.orders
+                    .iter()
+                    .find_map(|order| match order.goal {
+                        Goal::Move { cell } => Some(cell),
+                        _ => None,
+                    })
+                    .expect("a walk")
+            ),
+            "and the cell it is sent to is one the deploy would land on"
+        );
+    }
 
     /// The maker belongs to the yard it becomes: an American house's maker
     /// deploys into the Allied yard and a Russian house's into the Soviet
