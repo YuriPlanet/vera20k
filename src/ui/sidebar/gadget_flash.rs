@@ -174,6 +174,10 @@ pub struct SidebarGadgetState {
     pub top_pressed: [bool; 2],
     /// Native constructor6CFE20 starts the bottom bar open.
     pub command_bar_closed: bool,
+    /// The bar was open when the local player lost (global 824410, written
+    /// only at 4FC1DE/4FC1E7): a match that is over reopens it (4FC591). Like
+    /// the global, nothing clears it at a new match.
+    pub command_bar_open_at_defeat: bool,
     pub command_pressed: [bool; 11],
     pub command_thumb_pressed: bool,
 }
@@ -185,6 +189,25 @@ pub(crate) enum SelectionMode {
 }
 
 impl SidebarGadgetState {
+    /// MPlayer_Defeated's local branch closes an open command bar without a
+    /// sound and remembers it (`0x004FC1CB..0x004FC1E7`, CloseCommandBar
+    /// 0x006D1660).
+    pub(crate) fn close_command_bar_at_local_defeat(&mut self) {
+        self.command_bar_open_at_defeat = !self.command_bar_closed;
+        self.command_bar_closed = true;
+    }
+
+    /// Any House's MPlayer_Defeated that finds the match over reopens the bar
+    /// the local loss closed (`0x004FC591..0x004FC59F`, OpenCommandBar
+    /// 0x006D1610). While the match goes on (`0x004FC57C..0x004FC58B`) a
+    /// defeated player watches without it, and SidebarInput refuses to reopen
+    /// it (0x006D08F5).
+    pub(crate) fn reopen_command_bar_at_match_end(&mut self, match_decided: bool) {
+        if match_decided && self.command_bar_open_at_defeat {
+            self.command_bar_closed = false;
+        }
+    }
+
     /// Display SetRepairMode4AC8C0 / SetSellMode4AC660 (-1). A pending
     /// placement TYPE refuses the entire transition. Both toggles clear the
     /// competing mode and the beacon byte (4AC916 / 4AC6BB), and entry needs
@@ -521,4 +544,26 @@ fn tab_flash_catchup_starts_new_ready_state_at_current_frame() {
     assert_eq!(caught_up.tab_flashes[0].countdown, flash.countdown);
     caught_up.update_tab_flashes(201, 201, [false; 4]);
     assert!(!caught_up.tab_flashes[0].is_active());
+}
+
+#[test]
+fn a_local_loss_closes_the_command_bar_until_the_match_is_over() {
+    let mut open = SidebarGadgetState::default();
+    open.close_command_bar_at_local_defeat();
+    assert!(open.command_bar_closed);
+    open.reopen_command_bar_at_match_end(false);
+    assert!(open.command_bar_closed, "the match goes on");
+    open.reopen_command_bar_at_match_end(true);
+    assert!(!open.command_bar_closed);
+
+    let mut closed = SidebarGadgetState {
+        command_bar_closed: true,
+        ..SidebarGadgetState::default()
+    };
+    closed.close_command_bar_at_local_defeat();
+    closed.reopen_command_bar_at_match_end(true);
+    assert!(
+        closed.command_bar_closed,
+        "a bar the player closed stays closed"
+    );
 }
