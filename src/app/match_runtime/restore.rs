@@ -197,8 +197,11 @@ pub(crate) fn commit_prepared_load(
         .match_presentation
         .lighting
         .restore_anim_intensities(committed.details.anim_intensities);
-    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists; their
-    // display keys refresh below against incoming rules/CSF without reordering.
+    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists and the
+    // open tab; their display keys refresh below against incoming rules/CSF
+    // without reordering.
+    state.match_state.match_presentation.active_sidebar_tab =
+        crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
     #[cfg(feature = "phobos")]
     let sw_sidebar_expanded = committed
         .details
