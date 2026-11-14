@@ -1675,6 +1675,40 @@ impl<'a> Observation<'a> {
             .is_some()
     }
 
+    /// Every cell of the map that carries a `Tiberium=yes` overlay, in storage
+    /// order.
+    ///
+    /// The ore field as a map-level fact, which the wishlist's expansion and
+    /// garrison questions both need: "is there ore worth a second base near" and
+    /// "is there a resource worth holding a position for" are the same map read.
+    ///
+    /// The owner is the overlay grid — this walks it and does not keep a second
+    /// copy — and the meaning of an id is the rules' own `Tiberium=yes` on the
+    /// overlay type (`rules::overlay_types::OverlayTypeFlags::tiberium`), so a
+    /// mod's own ore overlay is picked up by the same query.
+    ///
+    /// A whole-map walk, so it belongs on a slow cadence rather than in a
+    /// per-frame path. Cost is the grid's cell count, not its contents.
+    pub fn ore_cells(&self, rules: &RuleSet) -> Vec<(u16, u16)> {
+        let Some(grid) = self.sim.overlay_grid.as_ref() else {
+            return Vec::new();
+        };
+        let registry = rules.overlay_registry();
+        let (width, height) = (grid.width(), grid.height());
+        let mut cells = Vec::new();
+        for y in 0..height {
+            for x in 0..width {
+                let Some(overlay) = grid.cell(x, y).overlay_id else {
+                    continue;
+                };
+                if registry.flags(overlay).is_some_and(|flags| flags.tiberium) {
+                    cells.push((x, y));
+                }
+            }
+        }
+        cells
+    }
+
     /// Whether the navigation projection the connectivity answers come from
     /// stands at all.
     ///
@@ -1788,6 +1822,35 @@ fn isqrt(value: i32) -> i32 {
 mod vision_tests {
     use super::*;
     use crate::sim::intern::InternedId;
+
+    /// The ore field is read off the rules' own `Tiberium=yes`, not a name list.
+    #[test]
+    fn ore_cells_come_from_the_tiberium_overlay_flag() {
+        let Some((mut sim, rules)) = arena() else {
+            return;
+        };
+        let owner: InternedId = sim.intern("Americans");
+        let obs = Observation::new(&sim, owner);
+
+        // The arena's own ground before anything is placed: whatever ore the
+        // fixture carries is what the reader reports, and the assertion is that
+        // the reader and the grid agree rather than that a number is fixed.
+        let cells = obs.ore_cells(&rules);
+        for cell in &cells {
+            let overlay = obs
+                .overlay_id_at(cell.0, cell.1)
+                .expect("a cell the reader returned carries an overlay");
+            assert!(
+                rules
+                    .overlay_registry()
+                    .flags(overlay)
+                    .is_some_and(|flags| flags.tiberium),
+                "every reported ore cell carries a Tiberium overlay: {overlay}"
+            );
+        }
+        // And a cell the grid says has no overlay is never reported.
+        assert!(obs.ore_cells(&rules).len() <= 128 * 128);
+    }
 
     fn arena() -> Option<(Simulation, RuleSet)> {
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules()?;
