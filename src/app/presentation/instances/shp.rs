@@ -373,14 +373,16 @@ pub(crate) fn shp_visitor<'a>(
         let draws_buildup =
             image.is_some_and(|image| image != crate::sim::building_art::BuildingImage::Body);
         let unopened_buildup = draws_buildup && !is_building_up && !is_building_down;
-        // Its ART section, found once for the gate, door, light, Z and
-        // turret below. A building with no rules record reads its own
-        // section for light and Z (`structure_entry`), as with no `Image=`.
-        let art_entry = object_type.and_then(|object| {
+        // A building's ART section, found once for the gate, door, light, Z
+        // and turret below; every reader is a building's, so infantry skip
+        // the search. A building with no rules record reads its own section
+        // for light and Z (`structure_entry`), as with no `Image=`.
+        let is_structure = entity.category() == EntityCategory::Structure;
+        let art_entry = object_type.filter(|_| is_structure).and_then(|object| {
             art_reg.and_then(|registry| registry.resolve_metadata_entry(type_str, &object.image))
         });
         let structure_entry = match object_type {
-            _ if entity.category() != EntityCategory::Structure => None,
+            _ if !is_structure => None,
             Some(_) => art_entry,
             None => {
                 art_reg.and_then(|registry| registry.resolve_metadata_entry(type_str, type_str))
@@ -2172,15 +2174,22 @@ fn resolve_object_shp_frame_with_facing(
     // Pass raw facing (not canonical) to resolve_shp_frame so the
     // facing-to-index division works correctly for any facing count
     // (6, 8, 10, etc.). The absolute frame index encodes the direction.
+    let interner = runtime.map(|runtime| runtime.simulation.interner());
     let type_id = if entity.category() == EntityCategory::Unit {
-        runtime.map_or(type_id, |runtime| {
-            runtime.simulation.interner().resolve(entity.type_ref())
-        })
+        interner.map_or(type_id, |interner| interner.resolve(entity.type_ref()))
     } else {
         type_id
     };
-    let sequence_set = rules
-        .and_then(|rules| rules.animation_sequence_in_category(entity.category().into(), type_id));
+    // The drawn type is mostly the object's own, found by its id; a
+    // disguise or art substitute is found by name.
+    let category = entity.category().into();
+    let own_type = interner.filter(|interner| interner.resolve(entity.type_ref()) == type_id);
+    let sequence_set = rules.and_then(|rules| match own_type {
+        Some(interner) => {
+            interner.animation_sequence_in_category(entity.type_ref(), category, rules)
+        }
+        None => rules.animation_sequence_in_category(category, type_id),
+    });
     if entity.category() == EntityCategory::Unit
         && entity.animation.as_ref().is_none_or(|anim_state| {
             matches!(
