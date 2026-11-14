@@ -562,10 +562,13 @@ jobs:
               || { echo "oldest macOS $minimum, not $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
           done
           # Started from the bundle, it works in its data folder: the usage
-          # switch logs there and exits before the folder chooser or a window.
+          # switch logs there and exits before the folder chooser or a window,
+          # with gamemd's WinMain status 1 (0x006BE161).
           data="$HOME/Library/Application Support/VERA20k"
           rm -rf "$data"
-          (cd / && "$app/Contents/MacOS/VERA20K" -h > /dev/null)
+          status=0
+          (cd / && "$app/Contents/MacOS/VERA20K" -h > /dev/null) || status=$?
+          test "$status" -eq 1 || { echo "-h exited with $status, not 1" >&2; exit 1; }
           grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
           echo 'macOS app: signed, on the disk image, and starting in its data folder.'
       # Linux gets the program as an AppImage: it keeps its files in
@@ -597,11 +600,14 @@ jobs:
           test -f "$root/.DirIcon"
           desktop-file-validate "$root/vera20k.desktop"
           # Started from the image, it works in its data folder: the usage
-          # switch logs there and exits before the folder chooser or a window.
+          # switch logs there and exits before the folder chooser or a window,
+          # with gamemd's WinMain status 1 (0x006BE161).
           # Unpacked rather than mounted, so the test needs no FUSE.
           data="${XDG_DATA_HOME:-$HOME/.local/share}/VERA20k"
           rm -rf "$data"
-          (cd / && APPIMAGE_EXTRACT_AND_RUN=1 "$image" -h > /dev/null)
+          status=0
+          (cd / && APPIMAGE_EXTRACT_AND_RUN=1 "$image" -h > /dev/null) || status=$?
+          test "$status" -eq 1 || { echo "-h exited with $status, not 1" >&2; exit 1; }
           grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
           echo 'Linux AppImage: complete, and starting in its data folder.'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
