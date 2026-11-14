@@ -1953,9 +1953,9 @@ impl FogState {
         })
     }
 
-    /// Aircraft FindFireLocation419986 reads Cell+12C bit16 directly. This is
-    /// independent of bit8.
-    pub(crate) fn is_ground_open(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
+    /// Aircraft FindFireLocation419986 and the PixelFX sparkles (`0x006D7A4F`)
+    /// read Cell+12C bit16 directly. This is independent of bit8.
+    pub fn is_ground_open(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
         self.by_owner.get(&owner).is_some_and(|view| {
             view.index(rx, ry)
                 .and_then(|i| view.ground_flags.get(i))
