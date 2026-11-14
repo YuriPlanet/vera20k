@@ -734,6 +734,18 @@ impl MatchInputState {
         }
     }
 
+    /// The pending grid's foundation: `SetPendingFoundation @ 0x004A8D50`
+    /// marks the saved transaction's cells (flag 4) at the click, and
+    /// HousePlace (`0x004FB328`, `0x004FB48F`) and PointerExpired
+    /// (`0x006DA58C`) unmark them as they drop it.
+    pub(crate) fn pending_building_placement_preview(
+        &self,
+    ) -> Option<&crate::sim::production::BuildingPlacementPreview> {
+        self.saved_building_placement
+            .as_ref()
+            .and_then(|saved| saved.preview.as_ref())
+    }
+
     /// HousePlace4FB395..4FB49A restores the saved transaction, including an
     /// empty one left by an earlier success, and consumes the old backup.
     /// The caller recomputes the active preview from the actual cursor through

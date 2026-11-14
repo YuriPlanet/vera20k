@@ -532,7 +532,9 @@ impl Simulation {
     /// Tactical6D47FB..6D48D4 reads the owning manager and current Building
     /// target, irrespective of active/busy or remaining aircraft. Source is
     /// GetFLH(0,zero); target is GetCoords(+48), without TargetCoordOffset.
-    /// Presentation owns the planning/Health gate and clock-driven wobble.
+    /// Presentation owns the planning gate and clock-driven wobble. A Techno
+    /// with no Health skips only the CaptureManager links (`0x006D47A4`
+    /// jumps to `0x006D47FB`), so its beam still draws.
     /// No RNG draw, timer write or detach; isolate the shared fallback Cell.
     ///
     /// Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` ("Allow airstrike flare

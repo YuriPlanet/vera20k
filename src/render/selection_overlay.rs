@@ -176,14 +176,10 @@ impl CenteredShapeStrip {
     /// without A/Z interaction. Source: placement_render native execution.
     pub(crate) fn building_placement_instance(
         &self,
-        cell: BuildingPlacementCell,
+        draw: PlacementCellDraw,
         alpha: f32,
     ) -> Option<SpriteInstance> {
-        let frame = if cell.valid {
-            0
-        } else {
-            usize::from(cell.slope) + 2
-        };
+        let PlacementCellDraw { cell, frame } = draw;
         // Caller supplies the unraised tile point;47EC90 adds30 to X and
         // subtracts15*signed_level+1 from Y before the centered shape draw.
         // iso_to_screen includes that signed level and VERA's shared row bias.
@@ -285,40 +281,86 @@ impl CenteredShapeStrip {
             frames,
         })
     }
-    /// Active foundation cells in Tactical6D5030's rectangular draw order.
-    /// Admission and current Cell ground fields are recomputed with the preview;
-    /// this consumer never decides buildability or uses the render height cache.
+    /// The PLACE instances of [`placement_cell_draws`], in its order.
     pub fn build_building_preview(
         &self,
-        preview: &BuildingPlacementPreview,
+        draws: &[PlacementCellDraw],
         alpha: f32,
     ) -> Vec<SpriteInstance> {
-        let mut instances = Vec::with_capacity(preview.cells.len());
-        //Ares10015340/100153B0 (hooks 4A8C77/4A8DD7) lift SetActiveFoundation's
-        //120- and SetPendingFoundation's 50-cell copies; previews hold the
-        //whole list.
-        //6D5030 / Ares100155C0 walks actual-list bounds X outer/Y inner;
-        //The ordinary preview contains its bit2 active cells, possibly sparse
-        //or outside declared X/Y. Pending-bit4 drawing is a separate residual.
-        //Preserve draw order independently of stock row-major vs Custom
-        //X-first gameplay list order; never regroup by admitted color.
-        let mut active: Vec<_> = preview.cells.iter().collect();
-        active.sort_by_key(|cell| (cell.coord.0 as i16, cell.coord.1 as i16));
-        for cell in active {
-            if let Some(instance) = self.building_placement_instance(*cell, alpha) {
-                instances.push(instance);
-            }
+        draws
+            .iter()
+            .filter_map(|draw| self.building_placement_instance(*draw, alpha))
+            .collect()
+    }
+}
+
+/// One PLACE.SHP draw of `Tactical6D5030`: the cell and its frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlacementCellDraw {
+    pub cell: BuildingPlacementCell,
+    pub frame: usize,
+}
+
+/// `BuildingPlacement_OverlayRenderer @ 0x006D5030`'s PLACE cells in draw
+/// order. With a building armed, a mouse outside the tactical rect
+/// (`0x006D505B..0x006D50A7`) returns at `0x006D571B` before either grid.
+/// The current grid walks its bounds X outer, Y inner, and wall auto-fill
+/// follows it. The pending grid (`0x006D550C..0x006D56F3`) then walks the
+/// saved foundation that `SetPendingFoundation @ 0x004A8D50` marked with flag
+/// 4 until the PLACE event resolves. `Cell47EC90` draws a flag-4 cell with
+/// frame 1, whichever grid reaches it, instead of its admission frame.
+///
+/// Ares 10015340/100153B0 (hooks 4A8C77/4A8DD7) lift SetActiveFoundation's
+/// 120- and SetPendingFoundation's 50-cell copies; previews hold the whole
+/// list. The ordinary preview holds its bit-2 active cells, possibly sparse
+/// or outside declared X/Y; sorting keeps the draw order independent of stock
+/// row-major or Custom X-first list order, never regrouped by color.
+pub fn placement_cell_draws(
+    current: Option<&BuildingPlacementPreview>,
+    pending: Option<&BuildingPlacementPreview>,
+    cursor_over_battlefield: bool,
+) -> Vec<PlacementCellDraw> {
+    if current.is_some() && !cursor_over_battlefield {
+        return Vec::new();
+    }
+    let pending = pending.map_or(&[][..], |preview| preview.cells.as_slice());
+    let x_outer = |cells: &[BuildingPlacementCell]| {
+        let mut cells = cells.to_vec();
+        cells.sort_by_key(|cell| (cell.coord.0 as i16, cell.coord.1 as i16));
+        cells
+    };
+    let admission_frame = |cell: BuildingPlacementCell| {
+        if cell.valid {
+            0
+        } else {
+            usize::from(cell.slope) + 2
         }
-        // Preserve existing wall auto-fill admission and order; pending marks
-        // and blocked-wall suppression remain explicit separate residuals.
-        instances.extend(
-            preview
+    };
+    let mut draws = Vec::new();
+    if let Some(current) = current {
+        for cell in x_outer(&current.cells) {
+            let marked = pending.iter().any(|mark| mark.coord == cell.coord);
+            let frame = if marked { 1 } else { admission_frame(cell) };
+            draws.push(PlacementCellDraw { cell, frame });
+        }
+        // Preserve existing wall auto-fill admission and order; blocked-wall
+        // suppression remains an explicit separate residual.
+        draws.extend(
+            current
                 .wall_autofill_cells
                 .iter()
-                .filter_map(|cell| self.building_placement_instance(*cell, alpha)),
+                .map(|&cell| PlacementCellDraw {
+                    cell,
+                    frame: admission_frame(cell),
+                }),
         );
-        instances
     }
+    draws.extend(
+        x_outer(pending)
+            .into_iter()
+            .map(|cell| PlacementCellDraw { cell, frame: 1 }),
+    );
+    draws
 }
 
 impl SelectionOverlay {
@@ -864,6 +906,61 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn grid(cells: &[(u16, u16, bool)]) -> BuildingPlacementPreview {
+        BuildingPlacementPreview {
+            rx: 0,
+            ry: 0,
+            width: 1,
+            height: 1,
+            valid: true,
+            in_build_area: true,
+            foundation_visible: true,
+            reason: None,
+            cells: cells
+                .iter()
+                .map(|&(x, y, valid)| BuildingPlacementCell {
+                    coord: (x, y),
+                    valid,
+                    level: 0,
+                    slope: 0,
+                })
+                .collect(),
+            wall_autofill_cells: Vec::new(),
+        }
+    }
+
+    fn drawn(draws: &[PlacementCellDraw]) -> Vec<((u16, u16), usize)> {
+        draws
+            .iter()
+            .map(|draw| (draw.cell.coord, draw.frame))
+            .collect()
+    }
+
+    #[test]
+    fn the_pending_grid_draws_frame_one_after_the_current_grid() {
+        // 0x006D550C..0x006D56F3 follow the current grid; Cell47EC90 draws a
+        // flag-4 cell with frame 1 even when the current grid reaches it.
+        let current = grid(&[(11, 10, true), (10, 10, false)]);
+        let pending = grid(&[(12, 10, true), (11, 10, true)]);
+        assert_eq!(
+            drawn(&placement_cell_draws(Some(&current), Some(&pending), true)),
+            vec![((10, 10), 2), ((11, 10), 1), ((11, 10), 1), ((12, 10), 1)]
+        );
+    }
+
+    #[test]
+    fn an_armed_building_hides_both_grids_off_the_battlefield() {
+        // 0x006D505B..0x006D50A7 return at 0x006D571B; with nothing armed
+        // the pending grid draws wherever the mouse is.
+        let current = grid(&[(10, 10, true)]);
+        let pending = grid(&[(12, 10, true)]);
+        assert!(placement_cell_draws(Some(&current), Some(&pending), false).is_empty());
+        assert_eq!(
+            drawn(&placement_cell_draws(None, Some(&pending), false)),
+            vec![((12, 10), 1)]
+        );
+    }
 
     #[test]
     fn formation_dots_are_placed_in_world_pixels() {
