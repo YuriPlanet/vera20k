@@ -1159,8 +1159,17 @@ impl<'a> Observation<'a> {
     /// that gives a dog an anti-tank jaw, or a tank a warhead that cannot dent
     /// another, is answered without another list here.
     ///
-    /// Aircraft are left to [`Self::can_engage`]: `AA=` is a projectile flag and
-    /// high-flying targets are the fire error's business, not the armour's.
+    /// An aircraft is the same question asked of a different key. It used to be
+    /// answered `true` for every firer, on the grounds that `AA=` is a projectile
+    /// flag and high-flying targets are the fire error's business — but the two
+    /// callers here are the *targeting* gates (`orders::admits` and `micro`'s
+    /// in-reach test), and an unconditional yes is what let a rifleman be told it
+    /// could hurt a Harrier. The wishlist's "一群无法对空的单位追着飞机跑".
+    ///
+    /// The flag read is the projectile's own `AA=`, the same one
+    /// `combat_weapon::weapon_class_bits` reads for the sim's threat scan, so a
+    /// mod that gives a rifle an AA-capable weapon is answered by the same key
+    /// the sim will fire on.
     pub fn can_hurt(&self, rules: &RuleSet, unit: u64, target: u64) -> bool {
         let (Some(unit_entity), Some(target_entity)) = (
             self.sim.entities().get(unit),
@@ -1168,16 +1177,19 @@ impl<'a> Observation<'a> {
         ) else {
             return false;
         };
-        if target_entity.category() == EntityCategory::Aircraft {
-            return true;
-        }
-        let (Some(unit_type), Some(target_type)) = (
+        let air = target_entity.category() == EntityCategory::Aircraft;
+        let (Some(unit_type), target_type) = (
             self.sim.object_type(unit_entity.type_ref(), rules),
-            self.sim.object_type(target_entity.type_ref(), rules),
+            if air {
+                None
+            } else {
+                self.sim.object_type(target_entity.type_ref(), rules)
+            },
         ) else {
             return false;
         };
-        let armour = target_type.armor_id();
+        let armour =
+            target_type.map_or(crate::rules::armor::ArmorId::default(), |ty| ty.armor_id());
         (0..unit_type.weapon_record_count()).any(|slot| {
             let Some(name) = unit_type.weapon_at(slot) else {
                 return false;
@@ -1187,6 +1199,14 @@ impl<'a> Observation<'a> {
             };
             if weapon.never_use {
                 return false;
+            }
+            if air {
+                // A missing projectile answers `AG` in the sim's own reading
+                // (`combat_weapon::weapon_class_bits`), so it does not answer
+                // air here either.
+                return rules
+                    .weapon_projectile(weapon)
+                    .is_some_and(|projectile| projectile.aa);
             }
             let Some(warhead) = weapon
                 .warhead
@@ -1856,6 +1876,46 @@ mod vision_tests {
         assert!(
             obs.is_cell_in_playfield(0, 0),
             "the origin is ground with or without a playfield"
+        );
+    }
+
+    /// A ground unit that cannot answer air is not told it can hurt an aircraft.
+    ///
+    /// The wishlist's "一群无法对空的单位追着飞机跑": the targeting gates ask this
+    /// predicate, and it answered `true` for every firer whenever the target was
+    /// an aircraft — so a rifleman was a valid answer to a Harrier and the layer
+    /// walked it after one. The flag is the projectile's own `AA=`, which is what
+    /// the sim fires on, so a mod that puts an AA weapon on a rifle changes the
+    /// answer with no list here.
+    #[test]
+    fn a_ground_unit_that_cannot_answer_air_is_not_told_it_can() {
+        let Some((mut sim, rules)) = arena() else {
+            return;
+        };
+        let americans: InternedId = sim.intern("Americans");
+        let gi = sim
+            .spawn_object("E1", "Americans", 20, 20, 255, &rules)
+            .expect("a rifleman");
+        let harrier = sim
+            .spawn_object("ORCA", "Russians", 24, 20, 255, &rules)
+            .expect("a Harrier");
+        // The IFV carries `RedEye2` on its passenger slot and `HoverMissile` on
+        // its own, so it is the answer the rifleman is not.
+        let ifv = sim
+            .spawn_object("FV", "Americans", 22, 22, 255, &rules)
+            .expect("an IFV");
+        let obs = Observation::new(&sim, americans);
+        assert!(
+            obs.can_engage(&rules, gi, harrier),
+            "the fire error still admits it: that is the sim's own answer"
+        );
+        assert!(
+            !obs.can_hurt(&rules, gi, harrier),
+            "and the targeting gate refuses it: a rifleman cannot answer air"
+        );
+        assert!(
+            obs.can_hurt(&rules, ifv, harrier),
+            "the IFV's own weapon answers air"
         );
     }
 }
