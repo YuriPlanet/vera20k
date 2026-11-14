@@ -689,11 +689,12 @@ impl Brain for RetailBrain {
                     .take(3)
                 {
                     log::info!(
-                        "auto play: claimed-and-stuck {} kind={:?} dest={:?} target={:?}",
+                        "auto play: claimed-and-stuck {} intent={:?} dest={:?} target={:?} mission={:?}",
                         unit.entity_id,
-                        self.tracked.live_kind(obs.tick(), unit.entity_id),
+                        self.tracked.live_intent(obs.tick(), unit.entity_id),
                         obs.destination(unit.entity_id),
-                        obs.attack_target(unit.entity_id)
+                        obs.attack_target(unit.entity_id),
+                        unit.mission
                     );
                 }
             }

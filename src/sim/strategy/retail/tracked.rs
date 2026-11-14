@@ -397,6 +397,14 @@ impl Tracker {
         (now < tracked.until).then_some(tracked.kind)
     }
 
+    /// The live intent with the target it was recorded against, for the log that
+    /// asks why a claimed unit is standing still: the order was given against
+    /// this object, and the unit is not walking at it.
+    pub(super) fn live_intent(&self, now: u64, unit: u64) -> Option<(TrackedKind, Option<u64>)> {
+        let tracked = self.intents.get(&unit)?;
+        (now < tracked.until).then_some((tracked.kind, tracked.target))
+    }
+
     /// Whether any layer has claimed `unit` inside the current term: a live
     /// intent, or a routine holding it.
     ///
