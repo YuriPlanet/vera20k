@@ -512,9 +512,9 @@ fn free_anim_draw_in(
 
 /// Object5F4B10 admits an Anim out to Tactical6D2140's 360 px past the
 /// view's right edge, inclusive, and the effects loop passes it by on that
-/// same test. An Anim's view is the battlefield and its offset on both sides
-/// (`projection_viewport`), wider than the particles' when the tactical
-/// rect is offset: 1000 px here, against 800.
+/// same test. The view is the battlefield and its offset on both sides
+/// (`projection_viewport`): 1000 px here, where the battlefield is 800 px
+/// wide and set in 100 px.
 #[test]
 fn a_free_anim_is_passed_by_only_past_its_own_views_margin() {
     let drawn = |past_edge: f32| {
