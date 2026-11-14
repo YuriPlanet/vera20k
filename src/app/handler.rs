@@ -2052,6 +2052,10 @@ impl ApplicationHandler for App {
             Self::update_load_saved_game_scroll(state, false);
             [
                 crate::app::input::keyboard::poll_scroll_repeat(state),
+                {
+                    crate::app::persistence::autosave::poll(state);
+                    None
+                },
                 crate::app::shell_lan::poll(state),
                 crate::app::shell_wol::poll(state),
                 crate::app::shell_network_setup::poll(state),

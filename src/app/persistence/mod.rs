@@ -6,6 +6,7 @@
 //! F12 owner tree: options persistence lives here beside the save repository.
 
 pub(crate) mod account;
+pub(crate) mod autosave;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;
@@ -503,6 +504,19 @@ impl SaveRepository {
         let path = self.directory.join(file_name);
         self.create_new_file(&path, bytes)?;
         Ok(path)
+    }
+
+    /// The autosave slot (`autosave::FILE_NAME`): created on the first
+    /// autosave, then replaced through [`Self::overwrite_existing`]'s staged
+    /// rename, so a failed write leaves the previous autosave.
+    pub(crate) fn write_autosave(&self, bytes: &[u8]) -> Result<PathBuf, SaveWriteError> {
+        let path = self.directory.join(autosave::FILE_NAME);
+        if crate::util::file_system::exists(&path) {
+            self.overwrite_existing(&path, bytes)?;
+            Ok(path)
+        } else {
+            self.write_named(autosave::FILE_NAME, bytes)
+        }
     }
 
     /// New saves may not silently replace a timestamp-name collision. Remove

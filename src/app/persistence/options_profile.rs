@@ -219,6 +219,10 @@ pub(crate) struct RetailOptionsProfile {
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] AutosaveMinutes=`: an offline match is saved every this many
+    /// minutes of play (`persistence::autosave`), 0 never. 0 by default;
+    /// read clamped to 0..=60.
+    pub(crate) autosave_minutes: u8,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
     /// service instead of showing `TXT_APIMISSING`. No Options page offers it.
     /// Off by default; no real service exists yet.
@@ -377,6 +381,7 @@ impl Default for RetailOptionsProfile {
             auto_repair: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            autosave_minutes: 0,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
@@ -409,7 +414,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 33],
+    pub(crate) vera: [(&'static str, String); 34],
 }
 
 impl RetailOptionsLoad {
@@ -635,6 +640,9 @@ impl RetailOptionsProfile {
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
+            self.autosave_minutes = vera
+                .read_int("AutosaveMinutes", i32::from(self.autosave_minutes))
+                .clamp(0, 60) as u8;
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
             self.custom_end_game_banner =
@@ -784,6 +792,7 @@ impl RetailOptionsProfile {
                     format_bool(self.wol_test_service).to_string(),
                 ),
                 ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
+                ("AutosaveMinutes", self.autosave_minutes.to_string()),
                 (
                     "CommanderFeedback",
                     format_bool(self.commander_feedback).to_string(),
