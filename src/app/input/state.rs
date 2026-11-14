@@ -915,10 +915,16 @@ impl MatchInputState {
         }
     }
 
-    /// KeyboardClear54F720 drains accepted input and Lock/Unlock clear the
-    /// command latch. Edges are synchronous in this app, so no second ring
-    /// exists; discard only app command latches. Physical key state remains
-    /// owned by ordinary press/release delivery, not this bounded receipt.
+    /// `Lock_User_Input @ 0x00684240` drains accepted input through
+    /// KeyboardClear54F720. Edges are synchronous in this app, so no second
+    /// ring exists; discard only app command latches. Physical key state
+    /// remains owned by ordinary press/release delivery, not this bounded
+    /// receipt.
+    ///
+    /// RESIDUAL: native leaves the T key's held byte B0FE65 alone (only its
+    /// press 0x00732CA9 and release 0x00732CC9 write it), and the lock refuses
+    /// the release, so a T held as a trigger locks input keeps clicks
+    /// type-selecting after the lock until T is tapped again. VERA drops it.
     pub(crate) fn clear_command_latches(&mut self) {
         self.type_select.clear_held();
         self.formation_line.clear_key();

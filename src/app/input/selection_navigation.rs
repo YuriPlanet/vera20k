@@ -107,7 +107,6 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
             select: vec![id],
             ..Default::default()
         },
-        true,
         super::SelectionVoicePolicy::EveryAdded,
     );
     crate::app::input::camera::center_view_on_selection(state);
@@ -124,23 +123,8 @@ struct CombatantSelection {
 /// House4FC1B0..4FC205 sets it only for PlayerPtr; session52DA94 and
 /// cooperative setup5C38A8..5C3ABE clear it. The House defeat owner supplies
 /// this state; input keeps no competing defeat flag.
-fn selection_navigation_allowed(sim: &crate::sim::world::Simulation) -> bool {
+pub(super) fn selection_navigation_allowed(sim: &crate::sim::world::Simulation) -> bool {
     !sim.local_player_defeated()
-}
-
-/// Shared owner arm of the P732580 and Health/Y7335F0 source predicates.
-/// Campaign reads only House+1ED; otherwise use the existing50B6F0 port.
-fn navigation_owner_controlled(
-    sim: &crate::sim::world::Simulation,
-    owner: crate::sim::intern::InternedId,
-) -> bool {
-    if sim.session().game_mode_nonzero() {
-        sim.house_is_human_player(owner)
-    } else {
-        sim.houses()
-            .get(&owner)
-            .is_some_and(|house| house.player_control())
-    }
 }
 
 /// P732280's local/alive collection precedes its combatant/dynamic screen
@@ -159,7 +143,7 @@ fn combatant_selection(
         clear: replace,
         ..Default::default()
     };
-    let player_owned = |owner| navigation_owner_controlled(sim, owner);
+    let player_owned = |owner| sim.house_controls_selection(owner);
     // Tactical6DA770 drops a lone non-player-controlled selection before
     // testing the shared mode. Deselect clears Follow but retains that mode.
     let dropped = selected.first().copied().filter(|id| {
@@ -265,7 +249,6 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
     super::apply_selection_mutation(
         state,
         result.mutation,
-        false,
         super::SelectionVoicePolicy::EveryAdded,
     );
     let selected = super::selected_stable_ids_in_order(
@@ -448,7 +431,7 @@ fn category_selection(
                 sim.entities().get(*id).is_some_and(|entity| {
                     entity.lifecycle.object_alive()
                         && entity.category() != EntityCategory::Structure
-                        && navigation_owner_controlled(sim, entity.owner())
+                        && sim.house_controls_selection(entity.owner())
                 })
             })
             .collect()
@@ -526,7 +509,6 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     super::apply_selection_mutation(
         state,
         result.mutation,
-        false,
         super::SelectionVoicePolicy::EveryAdded,
     );
     // The native direct Select calls do not start the mouse action-line timer.

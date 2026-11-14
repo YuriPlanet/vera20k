@@ -706,7 +706,7 @@ fn tactical_left_up(state: &mut AppState) {
                     );
                     queued_selection = if let Some(clicked_id) = picked {
                         Some(compute_type_select_click_mutation_with_playfield(
-                            sim.entities(),
+                            sim,
                             scope_order,
                             &current_selection,
                             clicked_id,
@@ -810,15 +810,15 @@ fn tactical_left_up(state: &mut AppState) {
     if let Some(mutation) = queued_selection {
         if held_type_select_batch {
             if mutation.select.is_empty() {
-                apply_selection_mutation(state, mutation, false, ORDINARY_SELECTION_VOICE_POLICY);
+                apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
             } else {
                 let prior = state.match_state.input.selection_voice_enabled;
                 state.match_state.input.selection_voice_enabled = false;
-                apply_selection_mutation(state, mutation, false, HELD_TYPE_SELECT_VOICE_POLICY);
+                apply_selection_mutation(state, mutation, HELD_TYPE_SELECT_VOICE_POLICY);
                 state.match_state.input.selection_voice_enabled = prior;
             }
         } else {
-            apply_selection_mutation(state, mutation, true, ORDINARY_SELECTION_VOICE_POLICY);
+            apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
         }
         // Click-select4ABE83 starts separately. A band release
         // already started before its empty-catch decision above.
@@ -1866,6 +1866,16 @@ pub(crate) fn handle_type_select_key_edge(
 }
 
 fn execute_type_select_tap(state: &mut AppState) {
+    // `TypeSelectCommand::ExecuteTap @ 0x00732950` does nothing at all while
+    // A8B538 is set (0x00732961), the defeat guard P, Health and Y share.
+    if state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|rt| !selection_navigation::selection_navigation_allowed(&rt.simulation))
+    {
+        return;
+    }
     state.match_state.input.type_select.prepare_tap_scope();
     let result = {
         let Some(sim) = state
@@ -1892,7 +1902,7 @@ fn execute_type_select_tap(state: &mut AppState) {
         let fog = (!state.match_state.sandbox_full_visibility)
             .then_some((sim.fog(), sim.house_alliances().as_map()));
         compute_type_select_tap_with_playfield(
-            sim.entities(),
+            sim,
             &screen_order,
             &map_order,
             &current,
@@ -1906,7 +1916,7 @@ fn execute_type_select_tap(state: &mut AppState) {
     };
     let outcome = result.outcome;
     let across_map = result.across_map;
-    apply_selection_mutation(state, result.mutation, false, TYPE_SELECT_TAP_VOICE_POLICY);
+    apply_selection_mutation(state, result.mutation, TYPE_SELECT_TAP_VOICE_POLICY);
     state
         .match_state
         .input
@@ -2851,6 +2861,8 @@ pub(crate) fn reconcile_selection_order_after_sim(
         state.match_state.input.selection_order.clear();
         state.match_state.input.selection_order_pending = false;
         state.match_state.input.category_navigation = Default::default();
+        // RESIDUAL: native keeps the scope byte B0FE64 from one scenario
+        // into the next; a new VERA match starts with an on-screen scope.
         state.match_state.input.type_select.reset_scope();
         return;
     };
@@ -2959,7 +2971,6 @@ pub(crate) fn selection_order_for_world(
 fn apply_selection_mutation(
     state: &mut AppState,
     mutation: SelectionMutation,
-    reset_type_select_scope: bool,
     voice_policy: SelectionVoicePolicy,
 ) -> bool {
     if !mutation.clear && mutation.deselect.is_empty() && mutation.select.is_empty() {
@@ -3020,9 +3031,9 @@ fn apply_selection_mutation(
             .clear_selection();
     }
 
-    if reset_type_select_scope {
-        state.match_state.input.type_select.reset_scope();
-    } else if native_selection_mode_reset {
+    // Select and Unselect_All reset only the selection mode (0x00731D00);
+    // nothing but the T and P keys writes the map-scope byte B0FE64.
+    if native_selection_mode_reset {
         state
             .match_state
             .input
@@ -3986,7 +3997,6 @@ fn queue_selection_snapshot_command(state: &mut AppState, selected_ids: Vec<u64>
             select: selected_ids,
             ..Default::default()
         },
-        true,
         ORDINARY_SELECTION_VOICE_POLICY,
     );
 }
@@ -4001,7 +4011,6 @@ fn queue_team_selection(state: &mut AppState, selection: TeamSelection) {
             select: selection.select,
             ..Default::default()
         },
-        true,
         TEAM_SELECTION_VOICE_POLICY,
     );
 }
@@ -4709,7 +4718,7 @@ fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]
         .filter(|id| {
             sim.entities()
                 .get(*id)
-                .is_some_and(|entity| sim.house_is_control_group_eligible(entity.owner()))
+                .is_some_and(|entity| sim.house_controls_selection(entity.owner()))
         })
         .collect()
 }
@@ -5736,7 +5745,7 @@ mod control_group_tests {
             "the campaign IsHumanPlayer predicate admits this owner"
         );
         assert!(
-            !sim.house_is_control_group_eligible(human_only),
+            !sim.house_controls_selection(human_only),
             "TeamAssign's mode-zero PlayerControl gate excludes a human-flag-only house"
         );
 
