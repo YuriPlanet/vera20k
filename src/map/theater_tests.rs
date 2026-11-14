@@ -1396,3 +1396,32 @@ fn atlas_growth_reads_the_published_theater_palettes() {
     let assets = AssetManager::from_loose_root_for_test(generic.path());
     assert!(load_theater_unit_and_iso_palettes(&assets, "TEMPERATE").is_none());
 }
+
+#[test]
+fn mo_profile_loads_the_mo_theater_ini() {
+    let directory = crate::map::source::test_support::TestDirectory::new("mo-theater");
+    for name in ["rulesmo.ini", "artmo.ini", "aimo.ini"] {
+        directory.write(name, b"[General]\n");
+    }
+    for name in ["isotem.pal", "unittem.pal"] {
+        directory.write(name, &[0u8; 768]);
+    }
+    directory.write(
+        "temperatmd.ini",
+        b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
+    );
+    directory.write(
+        "temperatmo.ini",
+        b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n\
+          [TileSet0001]\nFileName=hyte\nTilesInSet=2\n",
+    );
+    let mut assets = AssetManager::from_loose_root_for_test(directory.path())
+        .with_ini_roots(&crate::util::ini_roots::IniRootConfig {
+            profile: crate::util::ini_roots::IniProfile::Mo,
+            ..Default::default()
+        })
+        .unwrap();
+    let theater = load_theater(&mut assets, "TEMPERATE").expect("loose MO theater");
+    assert_eq!(theater.lookup.bounds().len(), 2);
+    assert_eq!(theater.lookup.filename(1), Some("hyte01.tem"));
+}

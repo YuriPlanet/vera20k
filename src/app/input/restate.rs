@@ -39,7 +39,9 @@ pub(crate) fn open(state: &mut AppState) {
     let Some(assets) = state.process_assets.manager() else {
         return;
     };
-    let Ok(selected) = crate::rules::retail_sources::select_ini(assets, "MISSIONMD.INI") else {
+    let Ok(selected) =
+        crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mission())
+    else {
         // The CCINIClass finds no file: no dialog and no redraw.
         return;
     };

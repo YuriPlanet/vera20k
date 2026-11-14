@@ -115,6 +115,32 @@ impl IniRoots {
     pub fn eva(&self) -> &str {
         &self.eva
     }
+    /// Mental Omega's spawner `cncnet5mo.dll` overwrites these gamemd INI
+    /// name literals through its `.patch` table before startup:
+    /// `THEMEMD.INI` `0x825D94`, `BATTLEMD.INI` `0x826198`, `MISSIONMD.INI`
+    /// `0x839724` and `MAPSELMD.INI` `0x830370` take their `MO` spelling.
+    pub fn theme(&self) -> &'static str {
+        self.spawner_name("thememd.ini", "thememo.ini")
+    }
+    pub fn battle(&self) -> &'static str {
+        self.spawner_name("BATTLEMD.INI", "BATTLEMO.INI")
+    }
+    pub fn mission(&self) -> &'static str {
+        self.spawner_name("MISSIONMD.INI", "MISSIONMO.INI")
+    }
+    pub fn mapsel(&self) -> &'static str {
+        self.spawner_name("MAPSELMD.INI", "MAPSELMO.INI")
+    }
+    /// The MD name, or the MO spawner's renamed one under the MO profile.
+    /// The theater format `%sMD.INI` (`0x8295E8`, `map::theater`) is patched
+    /// the same way; YR and custom keep the MD names.
+    pub fn spawner_name(&self, yr: &'static str, mo: &'static str) -> &'static str {
+        if self.profile == IniProfile::Mo {
+            mo
+        } else {
+            yr
+        }
+    }
 
     pub fn names(&self) -> [&str; 3] {
         [self.rules(), self.art(), self.ai()]
@@ -398,7 +424,10 @@ mod tests {
         .resolve(|name| matches!(name, "rulesmo.ini" | "artmo.ini" | "aimo.ini"))
         .unwrap();
         assert_eq!(auto_mo.profile(), IniProfile::Mo);
-        assert_eq!((auto_mo.sound(), auto_mo.eva()), ("soundmo.ini", "evamo.ini"));
+        assert_eq!(
+            (auto_mo.sound(), auto_mo.eva()),
+            ("soundmo.ini", "evamo.ini")
+        );
 
         let auto = IniRootConfig {
             profile: IniProfile::Auto,

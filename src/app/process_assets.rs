@@ -322,7 +322,7 @@ impl ProcessAssets {
     pub(crate) fn reload_campaigns(&mut self, assets: &AssetManager) {
         self.apply_campaign_source(crate::rules::retail_sources::select_ini(
             assets,
-            "BATTLEMD.INI",
+            assets.ini_roots().battle(),
         ));
     }
 
@@ -341,10 +341,9 @@ impl ProcessAssets {
     /// ClearScene685609 re-reads the process-retained Campaign registry on
     /// saved loads too. It never infers campaign identity from a map name.
     pub(crate) fn refresh_campaigns_if_available(&mut self) {
-        let selected = self
-            .manager
-            .as_ref()
-            .map(|assets| crate::rules::retail_sources::select_ini(assets, "BATTLEMD.INI"));
+        let selected = self.manager.as_ref().map(|assets| {
+            crate::rules::retail_sources::select_ini(assets, assets.ini_roots().battle())
+        });
         if let Some(selected) = selected {
             self.apply_campaign_source(selected);
         }
@@ -937,6 +936,39 @@ mod tests {
                 .read_bool("Voxel", false),
             true
         );
+    }
+
+    /// MO's spawner renames BATTLEMD to BATTLEMO with the other MO roots.
+    #[test]
+    fn mo_profile_reads_the_mo_campaign_catalog() {
+        use crate::util::ini_roots::{IniProfile, IniRootConfig};
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("mo-battle");
+        for name in ["rulesmo.ini", "artmo.ini", "aimo.ini"] {
+            std::fs::write(dir.path().join(name), b"[General]\n").unwrap();
+        }
+        std::fs::write(
+            dir.path().join("battlemd.ini"),
+            b"[Battles]\n1=YR\n[YR]\nScenario=YR.MAP\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("battlemo.ini"),
+            b"[Battles]\n1=MO\n[MO]\nScenario=ADEMON.MAP\n",
+        )
+        .unwrap();
+        let config = IniRootConfig {
+            profile: IniProfile::Mo,
+            ..Default::default()
+        };
+        let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
+            .unwrap()
+            .with_ini_roots(&config)
+            .unwrap();
+        let mut process =
+            ProcessAssets::new_with_ini_config(MediaArchiveMode::STOCK_DIGITAL, false, config);
+        process.reload_campaigns(&manager);
+        let campaigns = process.campaigns().unwrap();
+        assert_eq!(campaigns.get(0).unwrap().scenario(), "ADEMON.MAP");
     }
 
     /// The production install over the retail sources against the native

@@ -59,6 +59,11 @@ pub struct TileImage {
 struct TheaterDef {
     /// Exact active-YR theater INI filename.
     ini_name: &'static str,
+    /// The name Mental Omega's spawner retargets it to. MO 3.3.6 ships its
+    /// own theater files under these names (TEMPERATMO.INI's header reads
+    /// "Mental Omega 3.3.6 TEMPERATE THEATER FILE") with tilesets the MD
+    /// files lack, which its maps index.
+    mo_ini_name: &'static str,
     /// File extension for TMP files (e.g., "tem" for temperate).
     extension: &'static str,
     /// Exact isometric, unit, and theater/ore palette filenames.
@@ -75,6 +80,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "TEMPERATE",
         TheaterDef {
             ini_name: "temperatmd.ini",
+            mo_ini_name: "temperatmo.ini",
             extension: "tem",
             iso_palette_name: "isotem.pal",
             unit_palette_name: "unittem.pal",
@@ -86,6 +92,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "SNOW",
         TheaterDef {
             ini_name: "snowmd.ini",
+            mo_ini_name: "snowmo.ini",
             extension: "sno",
             iso_palette_name: "isosno.pal",
             unit_palette_name: "unitsno.pal",
@@ -103,6 +110,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "URBAN",
         TheaterDef {
             ini_name: "urbanmd.ini",
+            mo_ini_name: "urbanmo.ini",
             extension: "urb",
             iso_palette_name: "isourb.pal",
             unit_palette_name: "uniturb.pal",
@@ -114,6 +122,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "LUNAR",
         TheaterDef {
             ini_name: "lunarmd.ini",
+            mo_ini_name: "lunarmo.ini",
             extension: "lun",
             iso_palette_name: "isolun.pal",
             unit_palette_name: "unitlun.pal",
@@ -125,6 +134,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "DESERT",
         TheaterDef {
             ini_name: "desertmd.ini",
+            mo_ini_name: "desertmo.ini",
             extension: "des",
             iso_palette_name: "isodes.pal",
             unit_palette_name: "unitdes.pal",
@@ -136,6 +146,7 @@ const THEATER_DEFS: &[(&str, TheaterDef)] = &[
         "NEWURBAN",
         TheaterDef {
             ini_name: "urbannmd.ini",
+            mo_ini_name: "urbannmo.ini",
             extension: "ubn",
             iso_palette_name: "isoubn.pal",
             unit_palette_name: "unitubn.pal",
@@ -876,13 +887,11 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         return None;
     }
 
-    let (ini_data, ini_source) = asset_manager.get_with_source(def.ini_name)?;
-    log::info!(
-        "Theater {}: INI '{}' from {}",
-        theater_name,
-        def.ini_name,
-        ini_source
-    );
+    let ini_name = asset_manager
+        .ini_roots()
+        .spawner_name(def.ini_name, def.mo_ini_name);
+    let (ini_data, ini_source) = asset_manager.get_with_source(ini_name)?;
+    log::info!("Theater {theater_name}: INI '{ini_name}' from {ini_source}");
 
     // TileSet rows and General metadata share the native INI parser. Original
     // 545535..545C3F uses exact-case General keys and ReadInt5276D0 syntax;
@@ -894,7 +903,7 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         "Theater {}: loaded {} from INI '{}' ({} tile_id slots, {} tilesets)",
         theater_name,
         def.extension,
-        def.ini_name,
+        ini_name,
         lookup.len(),
         lookup.bounds().len()
     );
