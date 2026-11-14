@@ -328,3 +328,30 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     .unwrap();
     assert!(!evaluate(&runtime, &tank));
 }
+
+/// A dug-in Tunnel owner adds `Z_Adjust` (`0x00729E50`) to the Foot draw Z:
+/// 45 rows plus how far its Z (-256 here) projects below the level-0 floor.
+#[test]
+fn a_dug_in_tunnel_owner_adds_its_depth_and_floor_rows_to_the_foot_draw() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::movement::tunnel_movement::{
+        TUNNEL_DIG_Z_ADJUST_ROWS, TunnelRuntime, TunnelState,
+    };
+    use crate::util::native_x87::adjust_for_z_standard;
+
+    let mut runtime = runtime();
+    let mut unit = entity(&mut runtime, "TANK", EntityCategory::Unit);
+    let mut z_adjust = |state| {
+        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Tunnel);
+        locomotor.set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(state, 0, 10));
+        unit.locomotor = Some(locomotor);
+        unit_z_adjust_in_runtime(Some(&runtime), &unit, true, Some(-256))
+    };
+    let settled = z_adjust(TunnelState::Idle);
+    let dug_in = z_adjust(TunnelState::DugIn);
+    assert_eq!(
+        dug_in - settled,
+        TUNNEL_DIG_Z_ADJUST_ROWS + adjust_for_z_standard(0) - adjust_for_z_standard(-256)
+    );
+}

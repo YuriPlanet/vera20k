@@ -314,9 +314,19 @@ fn unit_render_slope_state(
     // `0x007F5024`, `0x007F6A1C`), the level facing matrix on any ramp: a
     // Chrono Miner before the Drive its next move installs, or a vehicle
     // inside a Chronosphere warp's Teleport piggyback.
+    // `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) has no slope
+    // transition. Its dig arm (`0x00729C52..`) composes the facing matrix with
+    // the dig tilt and reads no cell slope. RESIDUAL: its Idle arm
+    // (`0x00729B5D..0x00729BD9`) multiplies the cell's slope matrix
+    // (`0x007559B0`) into the facing at once; VERA draws an Idle Tunnel level.
     if matches!(
         kind,
-        Some(LocomotorKind::Jumpjet | LocomotorKind::Teleport | LocomotorKind::Walk)
+        Some(
+            LocomotorKind::Jumpjet
+                | LocomotorKind::Teleport
+                | LocomotorKind::Walk
+                | LocomotorKind::Tunnel
+        )
     ) || band != EntityDrawBand::Ground
     {
         return UnitRenderSlopeState::Stable(0);
@@ -1501,16 +1511,37 @@ fn ground_pose_with_angles(
     angles: [f32; 2],
 ) -> Option<crate::render::vxl_raster::GroundPose> {
     use crate::rules::locomotor_type::LocomotorKind;
+    let locomotor = entity.locomotor.as_ref()?;
+    let kind = locomotor.active_kind();
     if !matches!(
-        entity.locomotor.as_ref()?.active_kind(),
-        LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
+        kind,
+        LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover | LocomotorKind::Tunnel
     ) {
         return None;
     }
-    (matches!(slope, UnitRenderSlopeState::Transition { .. })
+    // `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) tilts the body about
+    // Y by the dig timer's progress: DiggingIn forward to +pi/2, DugIn held
+    // there, PreDigOut at -pi/2 and DiggingOut/DugOut back toward level (see
+    // `TunnelRuntime::draw_tilt`). That arm rotates the facing matrix by Y
+    // alone (`0x00729E02..0x00729E16`): it reads no cell slope, has no roll
+    // and, unlike Drive/Ship, adds no support offsets, so the body pivots at
+    // its own origin and sinks instead of staying on top of the ground. Idle
+    // answers `None`, which draws the settled atlas shape (see the slope
+    // residual in `unit_render_slope_state`).
+    let (angles, tunnel_tilt) = if kind == LocomotorKind::Tunnel {
+        (
+            [0.0, 0.0],
+            Some(locomotor.tunnel_runtime()?.draw_tilt(binary_frame)?),
+        )
+    } else {
+        (angles, None)
+    };
+    (tunnel_tilt.is_some()
+        || matches!(slope, UnitRenderSlopeState::Transition { .. })
         || crate::map::voxel_pose::voxel_tilt_applies(angles))
     .then_some(crate::render::vxl_raster::GroundPose {
         angles,
+        tunnel_tilt,
         body_facing: crate::render::vxl_raster::voxel_facing_step_u16(
             entity.body_facing_current(binary_frame),
         ) * 8,
@@ -3435,6 +3466,89 @@ mod tests {
                 "release restores ordinary atlas admission"
             );
         }
+    }
+
+    /// `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) tilts the body about
+    /// Y by the dig timer's progress instead of reading a cell slope or adding
+    /// the Drive/Ship support offsets, so the digging states produce a pose
+    /// whose `tunnel_tilt` carries that angle and Idle does not.
+    #[test]
+    fn a_digging_tunnel_body_tilts_the_pose_by_its_dig_progress() {
+        use crate::sim::movement::tunnel_movement::{TunnelRuntime, TunnelState};
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
+
+        let mut entity = GameEntity::test_default(1, "DRIL", "Americans", 0, 0);
+        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Tunnel);
+        locomotor.set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(
+            TunnelState::DiggingIn,
+            0,
+            10,
+        ));
+        entity.locomotor = Some(locomotor);
+        let record = ObjectRecord::of_test(&entity);
+
+        // Halfway through the ten-frame dig-in: progress x pi/2.
+        let pose = ground_pose(&record, UnitRenderSlopeState::Stable(0), 5)
+            .expect("a digging tunnel draws the pose page");
+        assert_eq!(
+            pose.angles,
+            [0.0, 0.0],
+            "the tunnel arm has no roll or slope"
+        );
+        let tilt = pose.tunnel_tilt.expect("DiggingIn tilts by Y");
+        assert!(
+            (tilt - FRAC_PI_4).abs() < 1e-6,
+            "DiggingIn at half progress tips {tilt:.6} rad"
+        );
+        assert!(pose.slope_blend.is_none(), "the tunnel arm takes no slope");
+
+        // DugIn holds the forward tip, DiggingOut unwinds through -pi/2.
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(TunnelState::DugIn, 0, 10));
+        let pose = ground_pose(
+            &ObjectRecord::of_test(&entity),
+            UnitRenderSlopeState::Stable(0),
+            5,
+        )
+        .unwrap();
+        assert!((pose.tunnel_tilt.unwrap() - FRAC_PI_2).abs() < 1e-6);
+
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(
+                TunnelState::DiggingOut,
+                0,
+                10,
+            ));
+        let pose = ground_pose(
+            &ObjectRecord::of_test(&entity),
+            UnitRenderSlopeState::Stable(0),
+            5,
+        )
+        .unwrap();
+        let tilt = pose.tunnel_tilt.unwrap();
+        assert!(
+            (tilt + FRAC_PI_4).abs() < 1e-6,
+            "DiggingOut mirrors the dig-in tilt: {tilt:.6}"
+        );
+
+        // Idle has no tilt at all: the settled atlas shape draws it.
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10));
+        let idle = ObjectRecord::of_test(&entity);
+        assert!(ground_pose(&idle, UnitRenderSlopeState::Stable(0), 5).is_none());
+        assert_eq!(
+            TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10).draw_tilt(5),
+            None
+        );
     }
 
     /// Drive Draw_Matrix `0x004AFFC0..0x004AFFE8` loads each binary32 body

@@ -414,6 +414,13 @@ impl LocomotorState {
         }
     }
 
+    /// Install a Tunnel payload from a draw test in `vera20k`, which cannot
+    /// reach this crate's `pub(crate)` writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tunnel_runtime_for_test(&mut self, runtime: super::tunnel_movement::TunnelRuntime) {
+        self.runtime_payload = LocomotorRuntimePayload::Tunnel(runtime);
+    }
+
     pub(crate) fn teleport_runtime(&self) -> Option<&super::teleport_movement::TeleportRuntime> {
         match (self.kind, &self.runtime_payload) {
             (LocomotorKind::Teleport, LocomotorRuntimePayload::Teleport(runtime)) => Some(runtime),

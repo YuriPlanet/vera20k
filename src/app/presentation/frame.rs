@@ -203,6 +203,10 @@ pub(crate) struct LocomotorView {
     rocket: Option<RocketDraw>,
     /// A Tunnel locomotor's `Is_To_Have_Shadow`.
     tunnel_has_shadow: Option<bool>,
+    /// The dig-timer state `Draw_Matrix` and `Z_Adjust` read. Both take their
+    /// phase from the current binary frame, so the draw snapshot must retain
+    /// the timer itself rather than a pre-baked angle or depth.
+    tunnel_runtime: Option<crate::sim::movement::tunnel_movement::TunnelRuntime>,
     /// A Drive locomotor's track destination and head.
     drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
 }
@@ -234,6 +238,7 @@ impl LocomotorView {
             tunnel_has_shadow: locomotor
                 .tunnel_runtime()
                 .map(crate::sim::movement::tunnel_movement::TunnelRuntime::has_shadow),
+            tunnel_runtime: locomotor.tunnel_runtime().copied(),
             drive_track: (kind == crate::rules::locomotor_type::LocomotorKind::Drive).then(|| {
                 [
                     locomotor.track_destination(TrackFamily::Drive),
@@ -262,6 +267,14 @@ impl LocomotorView {
     /// A Tunnel locomotor's `Is_To_Have_Shadow`; `None` for other kinds.
     pub(crate) fn tunnel_has_shadow(&self) -> Option<bool> {
         self.tunnel_has_shadow
+    }
+
+    /// The Tunnel dig state `Draw_Matrix` and `Z_Adjust` read; `None` for
+    /// every other locomotor.
+    pub(crate) fn tunnel_runtime(
+        &self,
+    ) -> Option<&crate::sim::movement::tunnel_movement::TunnelRuntime> {
+        self.tunnel_runtime.as_ref()
     }
 
     /// A Drive locomotor's track destination and head.

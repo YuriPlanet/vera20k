@@ -54,6 +54,9 @@ pub(crate) const TUNNEL_MOVEMENT_SPEED: i32 = 19;
 /// The owner's Z underground: DugIn sinks to it (`0x00728FB0..0x00728FCB`)
 /// and ProcessDigging aims at it (`0x007295E6`).
 pub(crate) const TUNNEL_DEPTH_Z: i32 = -0x100;
+/// `Z_Adjust`'s dig depth, in native Z-buffer rows: the globals
+/// `[0x00844A98]` and `[0x00844A9C]` it reads are both 45.
+pub const TUNNEL_DIG_Z_ADJUST_ROWS: i32 = 45;
 /// ProcessDigging arrives within this many leptons of Destination
 /// (`Point2D::Length @ 0x004C1B50` at `0x007295C0..0x007295CA`).
 pub(crate) const TUNNEL_ARRIVAL_RADIUS: i32 = 0x14;
@@ -114,7 +117,7 @@ impl DigEffects {
 }
 
 /// One `TunnelLocomotionClass` object's state.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TunnelRuntime {
     /// `+0x18`.
     state: TunnelState,
@@ -199,6 +202,47 @@ impl TunnelRuntime {
         (self.dig_timer_rate - left) as f32 / self.dig_timer_rate as f32
     }
 
+    /// `Z_Adjust` (`0x00729E50`, vtable slot `+0x38`): the locomotor's term
+    /// of the owner's draw Z, in native screen rows.
+    ///
+    /// `floor_rows` is what the two `Coord_To_Pixel` calls at
+    /// `0x00729E86`/`0x00729EAE` give: the owner's Location projected at its
+    /// own Z minus at the floor height Map `0x00578080` reads under it, i.e.
+    /// `AdjustForZ(floor) - AdjustForZ(Z)`. By State (table `0x0072A000`):
+    /// DiggingIn adds `45 * progress`, or the full 45 when the body facing
+    /// byte (`+0x388`, `((raw >> 7) + 1) >> 1`) is in 71..139
+    /// (`0x00729F90..0x00729FA3`); DugIn, Digging and PreDigOut add 45;
+    /// DiggingOut `(1 - progress) * 45`. `_ftol` (`0x007C5F00`) truncates.
+    /// Idle, PreDigIn and DugOut return the base `0x0055ABA0` (zero). The
+    /// DiggingIn arm's `+0x38` byte write (`0x00729F8C`) changes nothing.
+    pub fn draw_z_adjust(&self, binary_frame: u32, body_facing: u16, floor_rows: i32) -> i32 {
+        let depth = TUNNEL_DIG_Z_ADJUST_ROWS;
+        // Stored as a double (`0x00729F05`): `(rate - left) / rate`, 1.0 at
+        // a zero rate.
+        let progress = if self.dig_timer_rate == 0 {
+            1.0
+        } else {
+            let left = self.dig_timer.remaining(binary_frame as i32);
+            f64::from(self.dig_timer_rate - left) / f64::from(self.dig_timer_rate)
+        };
+        let ramp = |scale: f64| (f64::from(depth) * scale + f64::from(floor_rows)) as i32;
+        match self.state {
+            TunnelState::DiggingIn => {
+                let facing = ((u32::from(body_facing) >> 7) + 1) >> 1 & 0xFF;
+                if (71..=139).contains(&facing) {
+                    floor_rows.wrapping_add(depth)
+                } else {
+                    ramp(progress)
+                }
+            }
+            TunnelState::DugIn | TunnelState::Digging | TunnelState::PreDigOut => {
+                floor_rows.wrapping_add(depth)
+            }
+            TunnelState::DiggingOut => ramp(1.0 - progress),
+            TunnelState::Idle | TunnelState::PreDigIn | TunnelState::DugOut => 0,
+        }
+    }
+
     /// `In_Which_Layer` (`0x0072A1A0`): underground in State 4, else ground.
     pub fn underground(&self) -> bool {
         self.state == TunnelState::Digging
@@ -274,6 +318,17 @@ impl TunnelRuntime {
             destination,
             ..Self::constructed(0)
         }
+    }
+
+    /// A phase with a running dig timer, for the presentation tests in
+    /// `vera20k`, which cannot reach this crate's `pub(crate)` writers.
+    /// `progress(frame)` is `(frames - (frame - start)) / frames`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_test_dig(state: TunnelState, start_frame: u32, frames: i32) -> Self {
+        let mut runtime = Self::constructed(start_frame);
+        runtime.set_state(state);
+        runtime.start_dig_timer(start_frame, frames);
+        runtime
     }
 }
 

@@ -348,7 +348,19 @@ fn unit_z_adjust_in(
         world_z_leptons: world_z,
         // Drive 0x4B4870, Ship 0x6A3EA0, and the shared 0x55ABA0 inherited
         // by Walk/Hover/Fly/Jumpjet/Teleport all return zero at loco slot +0x38.
-        locomotor_z: 0,
+        // Tunnel overrides it with Z_Adjust 0x00729E50, which also adds how
+        // far the owner's Z projects below the floor Map 0x00578080 reads.
+        locomotor_z: entity
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.tunnel_runtime())
+            .map_or(0, |tunnel| {
+                let floor_rows = floor_probe(terrain, xy[0], xy[1]).map_or(0, |(floor, _)| {
+                    adjust_for_z_standard(floor).wrapping_sub(adjust_for_z_standard(world_z))
+                });
+                let frame = view.session().binary_frame();
+                tunnel.draw_z_adjust(frame, entity.body_facing_current(frame), floor_rows)
+            }),
         bridge_set_base: terrain.concrete_bridge_set_base(),
         unit_special_adjustment: special,
     };

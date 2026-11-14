@@ -105,6 +105,7 @@ enum PoseTiltKey {
     Rocket(u32),
     Ground {
         angles: [u32; 2],
+        tunnel_tilt: Option<u32>,
         body_facing: u8,
         slope_blend: Option<crate::map::voxel_pose::VxlSlopeBlend>,
         turret_offset: i32,
@@ -131,6 +132,7 @@ impl From<PoseTilt> for PoseTiltKey {
             PoseTilt::Rocket(pitch) => Self::Rocket(pitch.to_bits()),
             PoseTilt::Ground(pose) => Self::Ground {
                 angles: pose.angles.map(f32::to_bits),
+                tunnel_tilt: pose.tunnel_tilt.map(f32::to_bits),
                 body_facing: pose.body_facing,
                 slope_blend: pose.slope_blend,
                 turret_offset: pose.turret_offset,
@@ -795,6 +797,7 @@ mod tests {
     fn ground_pose(roll: f32) -> PoseTilt {
         PoseTilt::Ground(crate::render::vxl_raster::GroundPose {
             angles: [roll, 0.],
+            tunnel_tilt: None,
             body_facing: 64,
             slope_blend: None,
             turret_offset: 0,
