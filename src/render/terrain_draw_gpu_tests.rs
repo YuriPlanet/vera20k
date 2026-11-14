@@ -480,6 +480,55 @@ pub(crate) fn clear(
         multiview_mask: None,
     });
 }
+/// Draw `strokes` through the production stroke draw over the loaded
+/// `color` and `depth`.
+pub(crate) fn draw_strokes(
+    gpu: &Gpu,
+    batch: &crate::render::batch::BatchRenderer,
+    encoder: &mut wgpu::CommandEncoder,
+    color: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    strokes: &[crate::render::surface_line::SurfaceStroke],
+) {
+    use wgpu::util::DeviceExt;
+    let mut pieces = Vec::new();
+    crate::render::batch::stroke_pieces(strokes, &mut pieces);
+    if pieces.is_empty() {
+        return;
+    }
+    let buffer = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Surface stroke pieces"),
+            contents: bytemuck::cast_slice(&pieces),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("Surface strokes"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: color,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    batch.draw_surface_strokes(&mut pass, &buffer, pieces.len() as u32);
+}
+
 pub(crate) fn sprite(position: [f32; 2], size: [f32; 2], z_adjust: f32) -> SpriteInstance {
     SpriteInstance {
         position,

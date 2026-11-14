@@ -871,6 +871,22 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
             .display_particles()
             .any(|(system, particle)| { system.is_none() && particle.stable_id() == child_id })
     );
+    // Each Display particle, in a system or detached, is found again at its
+    // place, in the same order.
+    let store = sim.particle_systems();
+    let listed = |found: Option<(Option<&ParticleSystem>, &crate::sim::particles::Particle)>| {
+        found.map(|(system, particle)| (system.is_some(), particle.stable_id()))
+    };
+    assert_eq!(
+        store
+            .display_particle_places()
+            .map(|(id, place)| listed(store.display_particle_at(id, place)))
+            .collect::<Vec<_>>(),
+        store
+            .display_particles()
+            .map(|found| listed(Some(found)))
+            .collect::<Vec<_>>()
+    );
     sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "welding-detached", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)

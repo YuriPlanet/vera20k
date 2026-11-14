@@ -8,7 +8,7 @@ use super::planning_lines::{
 };
 use crate::app::AppState;
 use crate::app::presentation::target_lines::TacticalViewport;
-use crate::render::batch::SpriteInstance;
+use crate::render::surface_line::SurfaceStroke;
 use crate::sim::components::DriveCoord;
 
 /// Where a transport loads, where it unloads, and an armed click that would
@@ -18,9 +18,9 @@ const UNLOAD_RGB: [u8; 3] = [255, 230, 38];
 const REFUSED_RGB: [u8; 3] = [255, 64, 51];
 
 /// The pick-up and drop circles, each a closed one-pixel solid stroke. They
-/// are for the ground pass (`draw_passes`, "ground_marks"): drawn on the
+/// are for the ground pass (`draw_passes`, "ground_strokes"): drawn on the
 /// finished ground and before the buildings and objects, which cover them.
-pub(super) fn build_rings(state: &AppState, view: TacticalViewport) -> Vec<SpriteInstance> {
+pub(super) fn build_rings(state: &AppState, view: TacticalViewport) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
     for ring in crate::app::input::ferry::marks(state) {
         let rgb = if ring.refused {
@@ -88,7 +88,7 @@ pub(super) fn build_paths(
     state: &AppState,
     view: TacticalViewport,
     wall_ms: u32,
-) -> Vec<SpriteInstance> {
+) -> Vec<SurfaceStroke> {
     let mut out = Vec::new();
     let paths = crate::app::input::ferry::waypoint_paths(state);
     if paths.is_empty() {

@@ -239,12 +239,29 @@ pub(crate) fn clip_line(a: &mut [i32; 2], b: &mut [i32; 2], clip: [i32; 4]) -> b
 /// ABuffer predicate selects pass zero for nonzero samples, pass one for zero.
 /// Neither pass reads or writes Z; the caller partitions these same stores.
 pub(crate) fn patterned_line(
-    mut from: [i32; 2],
-    mut to: [i32; 2],
+    from: [i32; 2],
+    to: [i32; 2],
     pattern: &[u8; 16],
-    mut phase: i32,
+    phase: i32,
     mut emit: impl FnMut([i32; 2]),
 ) {
+    let (from, to, mut phase, direction) = arrange_pattern(from, to, phase);
+    walk_line(from, to, |point| {
+        if pattern[phase as usize] != 0 {
+            emit(point);
+        }
+        phase = (phase + direction).rem_euclid(16);
+    });
+}
+
+/// DSurface4C0750's prologue: a line drawn right to left is walked left to
+/// right, its pattern starting `length` on and stepping backwards. Returns
+/// the walk's endpoints, its first pattern index (0..16) and its step.
+fn arrange_pattern(
+    mut from: [i32; 2],
+    mut to: [i32; 2],
+    mut phase: i32,
+) -> ([i32; 2], [i32; 2], i32, i32) {
     let mut direction = 1;
     if from[0] > to[0] {
         let length = (from[0] - to[0]).max((from[1] - to[1]).abs() + 1);
@@ -252,13 +269,186 @@ pub(crate) fn patterned_line(
         direction = -1;
         std::mem::swap(&mut from, &mut to);
     }
-    walk_line(from, to, |point| {
-        phase = phase.rem_euclid(16);
-        if pattern[phase as usize] != 0 {
-            emit(point);
+    (from, to, phase.rem_euclid(16), direction)
+}
+
+/// Which pixels of a stroke store, by the live tactical A under them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StoreGate {
+    /// Every pixel stores (XSurface7BA610, FillRect).
+    All,
+    /// DSurface4C0750's first pass: only where A is nonzero.
+    ANonzero,
+    /// Its second pass (the rally's 6D46CF): only where A is zero.
+    AZero,
+}
+
+/// A clipped line or rectangle of opaque one-pixel surface stores: what
+/// XSurface7BA610 (solid), DSurface4C0750 / XSurface7BA8C0 (patterned) and
+/// FillRect store, for the GPU to draw (`surface_strokes.wgsl`, the walk
+/// below in closed form). Positions are world pixels: surface pixel plus the
+/// view's camera. Built by the presentation producers each picture.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct SurfaceStroke {
+    /// A line's left endpoint (the walk's start); a rectangle's corner.
+    a: [i32; 2],
+    /// A line's right endpoint; a rectangle's width and height.
+    b: [i32; 2],
+    /// The RGB565 word each stored pixel takes.
+    word: u32,
+    /// Pattern mask (bits 0..16, bit i lit when pattern entry i is), first
+    /// pattern index (16..20), walked backwards (20), gate (21..23: 1 A
+    /// nonzero, 2 A zero), rectangle (23).
+    style: u32,
+}
+
+const STROKE_SOLID: u32 = 0xFFFF;
+const STROKE_BACKWARDS: u32 = 1 << 20;
+const STROKE_GATE_SHIFT: u32 = 21;
+const STROKE_RECT: u32 = 1 << 23;
+
+impl SurfaceStroke {
+    /// XSurface7BA610 between already clipped surface points.
+    pub(crate) fn solid(from: [i32; 2], to: [i32; 2], word: u16, camera: [i32; 2]) -> Self {
+        let (from, to) = if from[0] > to[0] {
+            (to, from)
+        } else {
+            (from, to)
+        };
+        Self::line(from, to, word, STROKE_SOLID, camera)
+    }
+
+    /// [`patterned_line`] between already clipped surface points, its
+    /// pixels kept or skipped by `gate`.
+    pub(crate) fn patterned(
+        from: [i32; 2],
+        to: [i32; 2],
+        pattern: &[u8; 16],
+        phase: i32,
+        word: u16,
+        gate: StoreGate,
+        camera: [i32; 2],
+    ) -> Self {
+        let (from, to, phase, direction) = arrange_pattern(from, to, phase);
+        let mask = pattern
+            .iter()
+            .enumerate()
+            .filter(|(_, lit)| **lit != 0)
+            .fold(0, |mask, (index, _)| mask | 1 << index);
+        let style = mask
+            | (phase as u32) << 16
+            | if direction < 0 { STROKE_BACKWARDS } else { 0 }
+            | gate_bits(gate);
+        Self::line(from, to, word, style, camera)
+    }
+
+    fn line(from: [i32; 2], to: [i32; 2], word: u16, style: u32, camera: [i32; 2]) -> Self {
+        let world = |p: [i32; 2]| [p[0].wrapping_add(camera[0]), p[1].wrapping_add(camera[1])];
+        Self {
+            a: world(from),
+            b: world(to),
+            word: u32::from(word),
+            style,
         }
-        phase += direction;
-    });
+    }
+
+    /// A filled surface rectangle `[left, top, width, height]`; none when
+    /// it is empty.
+    pub(crate) fn rect(
+        rect: [i32; 4],
+        word: u16,
+        gate: StoreGate,
+        camera: [i32; 2],
+    ) -> Option<Self> {
+        let [left, top, width, height] = rect;
+        (width > 0 && height > 0).then(|| Self {
+            a: [left.wrapping_add(camera[0]), top.wrapping_add(camera[1])],
+            b: [width, height],
+            word: u32::from(word),
+            style: STROKE_RECT | gate_bits(gate),
+        })
+    }
+
+    /// Append `stroke`, widening the last rectangle instead when `stroke` is
+    /// a rectangle of the same row, height, word and gate that starts where
+    /// it ends: the two store the same pixels.
+    pub(crate) fn push(strokes: &mut Vec<Self>, stroke: Self) {
+        if stroke.style & STROKE_RECT != 0
+            && let Some(last) = strokes.last_mut()
+            && last.style == stroke.style
+            && last.word == stroke.word
+            && last.a[1] == stroke.a[1]
+            && last.b[1] == stroke.b[1]
+            && last.a[0].wrapping_add(last.b[0]) == stroke.a[0]
+        {
+            last.b[0] = last.b[0].wrapping_add(stroke.b[0]);
+            return;
+        }
+        strokes.push(stroke);
+    }
+
+    pub(crate) fn word(&self) -> u16 {
+        self.word as u16
+    }
+
+    /// The same stroke storing `word`.
+    #[cfg(test)]
+    pub(crate) fn with_word(self, word: u16) -> Self {
+        Self {
+            word: u32::from(word),
+            ..self
+        }
+    }
+
+    pub(crate) fn gate(&self) -> StoreGate {
+        match (self.style >> STROKE_GATE_SHIFT) & 3 {
+            1 => StoreGate::ANonzero,
+            2 => StoreGate::AZero,
+            _ => StoreGate::All,
+        }
+    }
+
+    /// How many pixels the walk visits, lit or not: the GPU's vertex count.
+    pub(crate) fn pixel_count(&self) -> u32 {
+        if self.style & STROKE_RECT != 0 {
+            return (self.b[0] as u32).saturating_mul(self.b[1] as u32);
+        }
+        let dx = self.b[0].wrapping_sub(self.a[0]) as u32;
+        let dy = self.b[1].wrapping_sub(self.a[1]).unsigned_abs();
+        dx.max(dy).saturating_add(u32::from(dx == 0 || dy == 0))
+    }
+
+    /// The stored pixels as world rectangles, in store order: the walks
+    /// above, for the CPU surface stream and tests.
+    pub(crate) fn for_each_rect(&self, mut emit: impl FnMut([i32; 4])) {
+        if self.style & STROKE_RECT != 0 {
+            emit([self.a[0], self.a[1], self.b[0], self.b[1]]);
+        } else if self.style & 0xFFFF == STROKE_SOLID {
+            solid_line(self.a, self.b, emit);
+        } else {
+            let mut phase = ((self.style >> 16) & 15) as i32;
+            let direction = if self.style & STROKE_BACKWARDS != 0 {
+                -1
+            } else {
+                1
+            };
+            walk_line(self.a, self.b, |[x, y]| {
+                if self.style & 1 << phase != 0 {
+                    emit([x, y, 1, 1]);
+                }
+                phase = (phase + direction).rem_euclid(16);
+            });
+        }
+    }
+}
+
+fn gate_bits(gate: StoreGate) -> u32 {
+    (match gate {
+        StoreGate::All => 0,
+        StoreGate::ANonzero => 1,
+        StoreGate::AZero => 2,
+    }) << STROKE_GATE_SHIFT
 }
 
 /// XSurface7BA610's clipped solid raster, emitted as disjoint rectangles.

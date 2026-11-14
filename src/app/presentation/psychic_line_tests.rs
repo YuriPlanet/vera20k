@@ -6,12 +6,11 @@ fn view() -> TacticalViewport {
     TacticalViewport {
         camera: [-2000, -2000],
         clip: [0, 0, 4000, 4000],
-        zoom: 1.,
     }
 }
 
-fn lines(sim: &Simulation, rules: &RuleSet, planning: bool, time: u32) -> Vec<SpriteInstance> {
-    build_target_line_instances(
+fn lines(sim: &Simulation, rules: &RuleSet, planning: bool, time: u32) -> Vec<SurfaceStroke> {
+    build_target_line_strokes(
         &TargetLineState::default(),
         planning,
         Some(sim),
@@ -27,8 +26,8 @@ fn lines(sim: &Simulation, rules: &RuleSet, planning: bool, time: u32) -> Vec<Sp
 
 /// An enemy tank aiming inside the local player's Psychic Sensor radius
 /// draws its line, in planning mode too: two 3x3 owner-colour boxes and the
-/// dashed walk, whose stores carry the A-buffer gate the GPU applies
-/// (`FX_SURFACE_A_NONZERO`). With bit 9 of the clock
+/// dashed walk, whose stroke carries the A-buffer gate the GPU applies
+/// (`StoreGate::ANonzero`). With bit 9 of the clock
 /// set the dash keeps the owner colour; otherwise it pulses toward white.
 /// An undetected tank draws none, nor one whose owner IsHumanPlayer
 /// (50B6F0) admits though the sensor still senses it.
@@ -39,33 +38,24 @@ fn an_enemy_tank_sensed_by_a_psychic_sensor_draws_its_detection_line() {
     };
     let (mut sim, tank, _) = crate::sim::psychic_detection::psychic_sensor_watch_fixture(&rules);
     let lit = lines(&sim, &rules, false, 0x200);
-    let spans = |instances: &[SpriteInstance]| {
-        instances
-            .iter()
-            .map(|span| (span.position, span.size, span.tint))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        spans(&lines(&sim, &rules, true, 0x200)),
-        spans(&lit),
-        "planning"
-    );
+    assert_eq!(lines(&sim, &rules, true, 0x200), lit, "planning");
     // Shroud leaves only the two boxes: they store everywhere, the dashes
     // only where A is nonzero.
-    let (boxes, dashes): (Vec<&SpriteInstance>, Vec<_>) =
-        lit.iter().partition(|span| span.draw_state.fx_flags == 0);
+    let (boxes, dashes): (Vec<&SurfaceStroke>, Vec<_>) = lit
+        .iter()
+        .partition(|stroke| stroke.gate() == StoreGate::All);
     assert_eq!(boxes.len(), 2);
-    assert!(boxes.iter().all(|span| span.size == [3., 3.]));
-    assert!(!dashes.is_empty());
+    assert!(boxes.iter().all(|stroke| stroke.pixel_count() == 9));
+    assert_eq!(dashes.len(), 1);
     assert!(
         dashes
             .iter()
-            .all(|span| span.draw_state.fx_flags == crate::render::draw_state::FX_SURFACE_A_NONZERO)
+            .all(|stroke| stroke.gate() == StoreGate::ANonzero)
     );
-    let box_tint = boxes[0].tint;
-    assert!(lit.iter().all(|span| span.tint == box_tint));
+    let word = boxes[0].word();
+    assert!(lit.iter().all(|stroke| stroke.word() == word));
     let pulsed = lines(&sim, &rules, false, 0x80);
-    assert!(pulsed.iter().any(|span| span.tint != box_tint));
+    assert!(pulsed.iter().any(|stroke| stroke.word() != word));
 
     // Mode zero: a human-controlled owner other than the local player.
     let russians = sim.interner().get("Russians").unwrap();
