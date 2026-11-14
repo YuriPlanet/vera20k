@@ -256,6 +256,8 @@ pub mod radiation;
 #[cfg(feature = "phobos")]
 pub mod digital_display;
 #[cfg(feature = "phobos")]
+pub mod self_heal;
+#[cfg(feature = "phobos")]
 pub mod shield;
 
 // --- Passengers, transport, slaves ---

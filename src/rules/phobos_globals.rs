@@ -260,6 +260,36 @@ pub struct PhobosGlobals {
     /// (`Ext/Rules/Body.cpp:168`, constructor 0 `Body.h:628`).
     #[serde(default)]
     pub pips_tiberiums_weed_empty_frame: i32,
+    /// `[AudioVisual] Pips.SelfHeal.Infantry=`, `Valueable<Point2D>`
+    /// (`Ext/Rules/Body.cpp:154`, constructor `{13,20}` `Body.h:614`): the
+    /// Infantry class's self-heal marker pair, used for either arm; the
+    /// hospital arm reads X and the units arm Y
+    /// (`Ext/Techno/Body.Visuals.cpp:97-98,114`).
+    #[serde(default = "thirteen_twenty")]
+    pub pips_self_heal_infantry: [i32; 2],
+    /// `[AudioVisual] Pips.SelfHeal.Units=` (`Ext/Rules/Body.cpp:155`,
+    /// constructor `Body.h:615`): the Unit/Aircraft class's pair, with the
+    /// same arm-component rule.
+    #[serde(default = "thirteen_twenty")]
+    pub pips_self_heal_units: [i32; 2],
+    /// `[AudioVisual] Pips.SelfHeal.Buildings=` (`Ext/Rules/Body.cpp:156`,
+    /// constructor `Body.h:616`): the Building arm's frame pair.
+    #[serde(default = "thirteen_twenty")]
+    pub pips_self_heal_buildings: [i32; 2],
+    /// `[AudioVisual] Pips.SelfHeal.Infantry.Offset=`
+    /// (`Ext/Rules/Body.cpp:157`, constructor `{25,-35}` `Body.h:617`): the
+    /// infantry marker's native draw offset.
+    #[serde(default = "self_heal_infantry_offset")]
+    pub pips_self_heal_infantry_offset: [i32; 2],
+    /// `[AudioVisual] Pips.SelfHeal.Units.Offset=` (`Ext/Rules/Body.cpp:158`,
+    /// constructor `{33,-32}` `Body.h:618`): the Unit/Aircraft offset.
+    #[serde(default = "self_heal_units_offset")]
+    pub pips_self_heal_units_offset: [i32; 2],
+    /// `[AudioVisual] Pips.SelfHeal.Buildings.Offset=`
+    /// (`Ext/Rules/Body.cpp:159`, constructor `{15,10}` `Body.h:619`): the
+    /// Building offset, before the foundation geometry.
+    #[serde(default = "self_heal_buildings_offset")]
+    pub pips_self_heal_buildings_offset: [i32; 2],
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1363,6 +1393,27 @@ fn one_i32() -> i32 {
     1
 }
 
+/// The `Pips.SelfHeal.*` frame pairs' constructor value
+/// (`Ext/Rules/Body.h:614-616`).
+fn thirteen_twenty() -> [i32; 2] {
+    [13, 20]
+}
+
+/// `Pips.SelfHeal.Infantry.Offset=`'s constructor value (`Body.h:617`).
+fn self_heal_infantry_offset() -> [i32; 2] {
+    [25, -35]
+}
+
+/// `Pips.SelfHeal.Units.Offset=`'s constructor value (`Body.h:618`).
+fn self_heal_units_offset() -> [i32; 2] {
+    [33, -32]
+}
+
+/// `Pips.SelfHeal.Buildings.Offset=`'s constructor value (`Body.h:619`).
+fn self_heal_buildings_offset() -> [i32; 2] {
+    [15, 10]
+}
+
 /// `1.0`, the constructor value of the three plain `[CombatDamage]` damage
 /// multipliers (`Ext/Rules/Body.h:770-772`) and `[General] VeteranReload=`
 /// (`Ext/Rules/Body.h:808`), stored as bits so `PhobosGlobals` keeps `Eq`.
@@ -1469,6 +1520,12 @@ impl Default for PhobosGlobals {
             pips_tiberiums_display_order: Vec::new(),
             pips_tiberiums_weed_frame: 1,
             pips_tiberiums_weed_empty_frame: 0,
+            pips_self_heal_infantry: [13, 20],
+            pips_self_heal_units: [13, 20],
+            pips_self_heal_buildings: [13, 20],
+            pips_self_heal_infantry_offset: [25, -35],
+            pips_self_heal_units_offset: [33, -32],
+            pips_self_heal_buildings_offset: [15, 10],
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1750,6 +1807,26 @@ impl PhobosGlobals {
         globals.pips_tiberiums_weed_empty_frame = audio_visual.read_int(
             "Pips.Tiberiums.WeedEmptyFrame",
             globals.pips_tiberiums_weed_empty_frame,
+        );
+        // `Ext/Rules/Body.cpp:154-159`: the self-heal marker frame pairs and
+        // native draw offsets.
+        globals.pips_self_heal_infantry = audio_visual
+            .read_phobos_int_pair("Pips.SelfHeal.Infantry", globals.pips_self_heal_infantry);
+        globals.pips_self_heal_units =
+            audio_visual.read_phobos_int_pair("Pips.SelfHeal.Units", globals.pips_self_heal_units);
+        globals.pips_self_heal_buildings = audio_visual
+            .read_phobos_int_pair("Pips.SelfHeal.Buildings", globals.pips_self_heal_buildings);
+        globals.pips_self_heal_infantry_offset = audio_visual.read_phobos_int_pair(
+            "Pips.SelfHeal.Infantry.Offset",
+            globals.pips_self_heal_infantry_offset,
+        );
+        globals.pips_self_heal_units_offset = audio_visual.read_phobos_int_pair(
+            "Pips.SelfHeal.Units.Offset",
+            globals.pips_self_heal_units_offset,
+        );
+        globals.pips_self_heal_buildings_offset = audio_visual.read_phobos_int_pair(
+            "Pips.SelfHeal.Buildings.Offset",
+            globals.pips_self_heal_buildings_offset,
         );
         globals.firing_anim_update =
             audio_visual.read_bool("FiringAnim.Update", globals.firing_anim_update);

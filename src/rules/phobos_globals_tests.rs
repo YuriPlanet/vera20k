@@ -1018,3 +1018,29 @@ fn the_keep_alive_globals_default_and_read_from_general() {
     assert!(!set.keep_alive_buildings);
     assert!(!set.keep_alive_defenses);
 }
+
+/// `[AudioVisual] Pips.SelfHeal.*` (`Ext/Rules/Body.cpp:154-159`,
+/// constructors `Body.h:614-619`): three frame pairs and three native draw
+/// offsets.
+#[test]
+fn the_self_heal_pip_globals_default_and_read_from_audio_visual() {
+    let defaults = PhobosGlobals::default();
+    assert_eq!(defaults.pips_self_heal_infantry, [13, 20]);
+    assert_eq!(defaults.pips_self_heal_units, [13, 20]);
+    assert_eq!(defaults.pips_self_heal_buildings, [13, 20]);
+    assert_eq!(defaults.pips_self_heal_infantry_offset, [25, -35]);
+    assert_eq!(defaults.pips_self_heal_units_offset, [33, -32]);
+    assert_eq!(defaults.pips_self_heal_buildings_offset, [15, 10]);
+
+    let set = read(
+        "[AudioVisual]\nPips.SelfHeal.Infantry=1,2\nPips.SelfHeal.Units=3,4\n\
+         Pips.SelfHeal.Buildings=5,6\nPips.SelfHeal.Infantry.Offset=7,8\n\
+         Pips.SelfHeal.Units.Offset=9,10\nPips.SelfHeal.Buildings.Offset=11,12\n",
+    );
+    assert_eq!(set.pips_self_heal_infantry, [1, 2]);
+    assert_eq!(set.pips_self_heal_units, [3, 4]);
+    assert_eq!(set.pips_self_heal_buildings, [5, 6]);
+    assert_eq!(set.pips_self_heal_infantry_offset, [7, 8]);
+    assert_eq!(set.pips_self_heal_units_offset, [9, 10]);
+    assert_eq!(set.pips_self_heal_buildings_offset, [11, 12]);
+}

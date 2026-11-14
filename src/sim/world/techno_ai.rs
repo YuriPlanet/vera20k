@@ -1586,11 +1586,11 @@ fn phobos_apply_gained_self_heal(
         return;
     };
     let owner = entity.owner();
-    if !globals.gain_self_heal_allow_multiplay_passive
-        && houses
-            .get(&owner)
-            .is_some_and(|house| house.multiplay_passive())
-    {
+    if !crate::sim::self_heal::multiplay_passive_allowed(
+        houses,
+        owner,
+        globals.gain_self_heal_allow_multiplay_passive,
+    ) {
         return;
     }
     let health = entity.health.current();
@@ -1598,18 +1598,11 @@ fn phobos_apply_gained_self_heal(
     if health == 0 || deficit <= 0 {
         return;
     }
-    let default_kind = match entity.category() {
-        crate::map::entities::EntityCategory::Infantry => SelfHealGainType::Infantry,
-        crate::map::entities::EntityCategory::Unit => {
-            if object.organic {
-                SelfHealGainType::Infantry
-            } else {
-                SelfHealGainType::Units
-            }
-        }
-        _ => SelfHealGainType::NoHeal,
-    };
-    let kind = object.phobos_self_heal_gain_type.unwrap_or(default_kind);
+    let kind = crate::sim::self_heal::gain_kind(
+        entity.category(),
+        object.organic,
+        object.phobos_self_heal_gain_type,
+    );
     if kind == SelfHealGainType::NoHeal {
         return;
     }
@@ -1638,51 +1631,17 @@ fn phobos_apply_gained_self_heal(
     } else {
         globals.units_gain_self_heal_cap
     };
-    let count = {
-        let heal_count = |house: &crate::sim::house_state::HouseState| {
-            if infantry {
-                house.self_heal_infantry()
-            } else {
-                house.self_heal_units()
-            }
-        };
-        let mut count = houses.get(&owner).map_or(0, heal_count);
-        let cap_active = cap.is_some();
-        let cap = cap.unwrap_or(0).max(1);
-        if cap_active && count >= cap {
-            cap
-        } else {
-            let is_campaign = session.game_mode() == ScenarioGameMode::Campaign;
-            let from_player = globals.gain_self_heal_from_player_control
-                && is_campaign
-                && houses
-                    .get(&owner)
-                    .is_some_and(|house| house.is_human() || house.player_control());
-            let from_allies = globals.gain_self_heal_from_allies;
-            if from_player || from_allies {
-                for &house_id in houses.order() {
-                    if house_id == owner {
-                        continue;
-                    }
-                    let Some(house) = houses.get(&house_id) else {
-                        continue;
-                    };
-                    let eligible = (from_player && (house.is_human() || house.player_control()))
-                        || (from_allies
-                            && (!is_campaign || (!house.is_human() && !house.player_control()))
-                            && house_alliances.is_allied(interner, house_id, owner));
-                    if eligible {
-                        count = count.wrapping_add(heal_count(house));
-                        if cap_active && count >= cap {
-                            count = cap;
-                            break;
-                        }
-                    }
-                }
-            }
-            count
-        }
-    };
+    let count = phobos_self_heal_source_count(
+        interner,
+        session,
+        houses,
+        house_alliances,
+        owner,
+        infantry,
+        cap,
+        globals.gain_self_heal_from_player_control,
+        globals.gain_self_heal_from_allies,
+    );
     let amount = amount_key.wrapping_mul(count);
     if amount == 0 {
         return;
@@ -1707,6 +1666,101 @@ fn phobos_apply_gained_self_heal(
             id,
             rules,
         );
+    }
+}
+
+/// The healed house count `ApplyGainedSelfHeal` multiplies the amount by: the
+/// owner's counter plus, under `GainSelfHealFromPlayerControl` (campaign) and
+/// `GainSelfHealFromAllies`, other eligible houses. A set Phobos cap clamps
+/// the sum with its `.max(1)` lower bound, as the native clamp does. The
+/// self-heal marker's `hasSelfHeal` display query asks this same scan, so a
+/// drawn marker always corresponds to a heal source.
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn phobos_self_heal_source_count(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
+    owner: crate::sim::intern::InternedId,
+    infantry: bool,
+    cap: Option<i32>,
+    from_player_control: bool,
+    from_allies: bool,
+) -> i32 {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    let heal_count = |house: &crate::sim::house_state::HouseState| {
+        if infantry {
+            house.self_heal_infantry()
+        } else {
+            house.self_heal_units()
+        }
+    };
+    let mut count = houses.get(&owner).map_or(0, heal_count);
+    let cap_active = cap.is_some();
+    let cap = cap.unwrap_or(0).max(1);
+    if cap_active && count >= cap {
+        return cap;
+    }
+    let is_campaign = session.game_mode() == ScenarioGameMode::Campaign;
+    let from_player = from_player_control
+        && is_campaign
+        && houses
+            .get(&owner)
+            .is_some_and(|house| house.is_human() || house.player_control());
+    if from_player || from_allies {
+        for &house_id in houses.order() {
+            if house_id == owner {
+                continue;
+            }
+            let Some(house) = houses.get(&house_id) else {
+                continue;
+            };
+            let eligible = (from_player && (house.is_human() || house.player_control()))
+                || (from_allies
+                    && (!is_campaign || (!house.is_human() && !house.player_control()))
+                    && house_alliances.is_allied(interner, house_id, owner));
+            if eligible {
+                count = count.wrapping_add(heal_count(house));
+                if cap_active && count >= cap {
+                    count = cap;
+                    break;
+                }
+            }
+        }
+    }
+    count
+}
+
+#[cfg(feature = "phobos")]
+impl Simulation {
+    /// `TechnoExt::DrawSelfHealPips`' `hasSelfHeal` display query
+    /// (`Ext/Techno/Body.Visuals.cpp:31-63`): whether any house source would
+    /// heal this owner at all. It runs the heal owner's own scan, so a drawn
+    /// self-heal marker always has a matching source. Read-only.
+    pub fn phobos_self_heal_sources_active(
+        &self,
+        owner: crate::sim::intern::InternedId,
+        infantry: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        let globals = &rules.phobos_globals;
+        let cap = if infantry {
+            globals.infantry_gain_self_heal_cap
+        } else {
+            globals.units_gain_self_heal_cap
+        };
+        phobos_self_heal_source_count(
+            &self.interner,
+            &self.session,
+            &self.houses,
+            &self.house_alliances,
+            owner,
+            infantry,
+            cap,
+            globals.gain_self_heal_from_player_control,
+            globals.gain_self_heal_from_allies,
+        ) > 0
     }
 }
 

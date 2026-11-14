@@ -934,6 +934,7 @@ pub(crate) fn build_building_status_instances(
 }
 
 /// Which PIPS.SHP frame a self-healing non-building's health strip carries.
+#[cfg(any(not(feature = "phobos"), test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SelfHealPip {
     /// Frame `0x0D`, the red cross: an Infantry, or a Unit whose type is
@@ -943,6 +944,7 @@ pub(crate) enum SelfHealPip {
     Units,
 }
 
+#[cfg(any(not(feature = "phobos"), test))]
 impl SelfHealPip {
     /// The PIPS.SHP frame index this arm draws (`ebx` at `0x0070A573` /
     /// `0x0070A5DF`).
@@ -958,6 +960,7 @@ impl SelfHealPip {
 /// Health6F6A8E supplies(-10,+10),709B14 subtracts5 X and adds11 for
 /// Infantry.70A5F1 adds(38,-32) for every Unit, even Organic, while
 ///70A60A adds(19,-35) for Infantry. Type+3E0 bracket delta is not passed.
+#[cfg(any(not(feature = "phobos"), test))]
 fn self_heal_pip_offset(category: EntityCategory) -> (f32, f32) {
     if category == EntityCategory::Unit {
         (23.0, -22.0)
@@ -975,6 +978,7 @@ fn self_heal_pip_offset(category: EntityCategory) -> (f32, f32) {
 /// every other class passes both tests and draws nothing. Each arm first
 /// requires its owner house's counter — `HasInfSelfHeal @ 0x0050D9C0` on
 /// `House+0x164`, `HasUnitSelfHeal @ 0x0050D9D0` on `House+0x168`.
+#[cfg(any(not(feature = "phobos"), test))]
 pub(crate) fn self_heal_pip(
     category: EntityCategory,
     organic: bool,
@@ -1467,6 +1471,123 @@ fn repair_wrench_admitted(
     repairing
 }
 
+/// One parent's self-heal status marker: the PIPS.SHP frame, its screen
+/// position and the Darken selector (601 while the pulse is on).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SelfHealMarker {
+    pub frame: usize,
+    pub position: (f32, f32),
+    pub selector: u8,
+}
+
+/// The self-heal marker a parent draws, or `None`.
+///
+/// Stock `DrawPipScalePips` (`0x0070A50C..0x0070A6BB`): an Infantry or an
+/// organic Unit takes the red-cross arm, a non-organic Unit the wrench arm,
+/// each gated on its owner house counter. The damaged pulse divides the
+/// session frame by the arm's `SelfHeal*Frames` period and darkens the icon
+/// while the remainder is at most 5 and Health is below Strength.
+///
+/// Phobos replaces the whole function (`0x70A4FB`,
+/// `Ext/Techno/Hooks.Pips.cpp:426-433` -> `TechnoExt::DrawSelfHealPips`,
+/// `Ext/Techno/Body.Visuals.cpp:7-120`): the type's `SelfHealGainType` picks
+/// the arm (`NoHeal` draws nothing), the house sources include the
+/// player-control and ally scans, the `Pips.SelfHeal.*` pair, offset and
+/// pLocation anchor follow the drawn class (`Body.Visuals.cpp:91-111`) while
+/// the arm picks the pair's X or Y (`:114`), and the type bracket delta
+/// shifts Y. A Building's arm needs the building strip material and rules
+/// Height anchor VERA does not own yet, so it stays a recorded residual.
+pub(crate) fn self_heal_marker(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
+    sx: f32,
+    sy: f32,
+) -> Option<SelfHealMarker> {
+    #[cfg(feature = "phobos")]
+    let (frame, offset_x, offset_y, period) = {
+        use crate::rules::phobos_self_heal::SelfHealGainType;
+        let globals = &rules.phobos_globals;
+        if !crate::sim::self_heal::multiplay_passive_allowed(
+            sim.houses(),
+            entity.owner(),
+            globals.gain_self_heal_allow_multiplay_passive,
+        ) {
+            return None;
+        }
+        let kind = crate::sim::self_heal::gain_kind(
+            entity.category(),
+            object.organic,
+            object.phobos_self_heal_gain_type,
+        );
+        if kind == SelfHealGainType::NoHeal || entity.category() == EntityCategory::Structure {
+            return None;
+        }
+        let infantry = kind == SelfHealGainType::Infantry;
+        if !sim.phobos_self_heal_sources_active(entity.owner(), infantry, rules) {
+            return None;
+        }
+        // The pair, offset and native pLocation anchor follow the drawn
+        // class (`Body.Visuals.cpp:91-111`); the arm only picks the pair's
+        // component (`:114`). `0x709B14` adds the Infantry-only +11 X to the
+        // (-15,+10) health anchor.
+        let (pair, offset, anchor_x) = match entity.category() {
+            EntityCategory::Infantry => (
+                globals.pips_self_heal_infantry,
+                globals.pips_self_heal_infantry_offset,
+                -4.0,
+            ),
+            _ => (
+                globals.pips_self_heal_units,
+                globals.pips_self_heal_units_offset,
+                -15.0,
+            ),
+        };
+        let frame = if infantry { pair[0] } else { pair[1] }.max(0) as usize;
+        let delta = object.pixel_selection_bracket_delta as f32;
+        (
+            frame,
+            offset[0] as f32 + anchor_x,
+            offset[1] as f32 + 10.0 + delta,
+            if infantry {
+                rules.general.self_heal_infantry_frames
+            } else {
+                rules.general.self_heal_unit_frames
+            },
+        )
+    };
+    #[cfg(not(feature = "phobos"))]
+    let (frame, offset_x, offset_y, period) = {
+        let (infantry_heal, unit_heal) =
+            sim.houses().get(&entity.owner()).map_or((0, 0), |house| {
+                (house.self_heal_infantry(), house.self_heal_units())
+            });
+        let arm = self_heal_pip(entity.category(), object.organic, infantry_heal, unit_heal)?;
+        let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
+        let period = match arm {
+            SelfHealPip::Organic => rules.general.self_heal_infantry_frames,
+            SelfHealPip::Units => rules.general.self_heal_unit_frames,
+        };
+        (arm.frame(), offset_x, offset_y, period)
+    };
+    let session_frame = sim.session().binary_frame() as i32;
+    let remainder = session_frame.checked_rem(period).unwrap_or_else(|| {
+        panic!(
+            "native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={session_frame} period={period}"
+        )
+    });
+    // `70A4FB..6BB`: damaged remainder<=5 uses the601 destination-halving
+    // material; otherwise the same icon/frame uses ordinary600. Native
+    // controls: procedural_drawing_oracle/self_heal_status.
+    let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
+    Some(SelfHealMarker {
+        frame,
+        position: (sx + offset_x, sy + offset_y),
+        selector,
+    })
+}
+
 /// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
 /// Rank70A990 precedes the selected/hovered health gate at6F5388. It uses
 /// the shared cloak/disguise and raw Veterancy owners, with opaque status art.
@@ -1904,31 +2025,15 @@ pub(crate) fn techno_extras_for_parent(
     //a healthy object. Damaged remainder<=5 uses601 destination-halving;
     //otherwise the same icon/frame uses ordinary600. Native controls:
     //procedural_drawing_oracle/self_heal_status. No render timer is retained.
-    if entity_status_pips_drawable(sim, entity, hovered_id, observer_id, Some(rules)) {
-        let (infantry_heal, unit_heal) =
-            sim.houses().get(&entity.owner()).map_or((0, 0), |house| {
-                (house.self_heal_infantry(), house.self_heal_units())
+    if entity_status_pips_drawable(sim, entity, hovered_id, observer_id, Some(rules))
+        && let Some(marker) = self_heal_marker(sim, entity, object, rules, sx, sy)
+    {
+        strip.self_heal =
+            instance(shape, marker.frame, marker.position, 0.0004).map(|mut instance| {
+                instance.draw_state =
+                    crate::render::draw_state::DrawState::from_native_selector(0, marker.selector);
+                instance
             });
-        if let Some(arm) =
-            self_heal_pip(entity.category(), object.organic, infantry_heal, unit_heal)
-        {
-            let period = match arm {
-                SelfHealPip::Organic => rules.general.self_heal_infantry_frames,
-                SelfHealPip::Units => rules.general.self_heal_unit_frames,
-            };
-            let frame = sim.session().binary_frame() as i32;
-            let remainder = frame.checked_rem(period).unwrap_or_else(|| {
-                panic!("native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={frame} period={period}")
-            });
-            let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
-            let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
-            strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)
-                .map(|mut instance| {
-                    instance.draw_state =
-                        crate::render::draw_state::DrawState::from_native_selector(0, selector);
-                    instance
-                });
-        }
     }
     // Only health is deferred to the final frame. PIPS2 scale and both
     // self-heal materials (including destination-halving601) rasterize on
