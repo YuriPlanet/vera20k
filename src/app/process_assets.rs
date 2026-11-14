@@ -201,8 +201,10 @@ impl ProcessAssets {
         &self.personal_rules
     }
 
-    /// The Rules, Art and AI roots are the stock YR files; config.toml's
-    /// `[ini]` profiles and names can pick others.
+    /// The Rules, Art and AI roots and the theater INI suffix are the stock YR
+    /// ones; config.toml's `[ini]` profiles, names and `theater_suffix` can
+    /// pick others. Any other suffix counts, even one that picks a shipped
+    /// theater INI under another theater's name.
     pub(crate) fn stock_ini_roots(&self) -> bool {
         let stock = crate::util::ini_roots::IniRoots::default();
         self.selected_ini_roots.as_ref().is_none_or(|roots| {
@@ -210,6 +212,7 @@ impl ProcessAssets {
                 (roots.rules(), stock.rules()),
                 (roots.art(), stock.art()),
                 (roots.ai(), stock.ai()),
+                (roots.theater_suffix(), stock.theater_suffix()),
             ]
             .iter()
             .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
@@ -413,9 +416,11 @@ impl ProcessAssets {
     }
 
     /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
-    /// plus the selected mode and AIMD snapshots used by scenario loading.
+    /// plus the selected mode and AIMD snapshots used by scenario loading, and
+    /// each theater's INI as `map::theater::load_theater` reads it.
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
+        use crate::rules::ini_parser::IniFile;
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
         let rules = self
             .native_rules
@@ -426,10 +431,18 @@ impl ProcessAssets {
         let selected_mode = select_mode_ini(assets, Some(mode))?;
         let mut digests = rules.multiplayer_source_digests().to_vec();
         digests.push(Some(ai.ini.multiplayer_digest()));
-        digests.push(
-            selected_mode
-                .as_ref()
-                .map(crate::rules::ini_parser::IniFile::multiplayer_digest),
+        digests.push(selected_mode.as_ref().map(IniFile::multiplayer_digest));
+        // VERA: a theater INI's tilesets decide every cell's land and height.
+        // One that is absent or does not parse fails that theater's load.
+        digests.extend(
+            crate::map::theater::theater_ini_names(assets)
+                .iter()
+                .map(|name| {
+                    let (bytes, _) = assets.get_with_source_ref(name)?;
+                    IniFile::from_bytes(bytes)
+                        .ok()
+                        .map(|ini| ini.multiplayer_digest())
+                }),
         );
         let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
         for digest in digests {
@@ -440,18 +453,16 @@ impl ProcessAssets {
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
         // the map, which the map agreement covers, and whether `ares.mix`
-        // ships. A game without it keeps the old bytes, so its digest is the
-        // one released builds compute; a game with it gets the byte, which no
-        // build from before `ares.mix` was mounted computes, so such a build
-        // is refused over the rules instead of playing the same files the
-        // stock way. Until the `ares` feature is deleted a build with it
-        // writes the byte for every game, as it always has.
+        // ships. A game with it adds the byte, so the same files read with
+        // and without `ares.mix` never agree; a game without it adds nothing.
+        // Until the `ares` feature is deleted a build with it writes the byte
+        // for every game, as it always has.
         if cfg!(feature = "ares") || assets.ships_ares() {
             bytes.push(u8::from(assets.ships_ares()));
         }
         // VERA: with a mod in use, its other files too (art, maps, archives),
         // so players whose copies of a mod differ never start a match. Without
-        // a mod the digest is what it was before mods.
+        // a mod this adds nothing.
         if let Some(files) = self.mod_files() {
             bytes.extend_from_slice(b"mod files\0");
             bytes.extend_from_slice(files.as_ref().map_err(String::clone)?);
@@ -487,9 +498,9 @@ impl ProcessAssets {
     /// Hash the process sources once (`crate::rules::native_ini_hash`):
     /// the selected rules root and ART, AIMD, each mode's INI by id
     /// `1..=count` and CoopCampMD.
-    /// VERA: also finds the game-folder files that change those sources or
-    /// LANGRULE.INI (VERA's own agreement compares it) from the retail
-    /// copies ([`Self::changed_game_files`]).
+    /// VERA: also finds the game-folder files that change those sources,
+    /// LANGRULE.INI or a theater INI (VERA's own agreement compares both)
+    /// from the retail copies ([`Self::changed_game_files`]).
     pub(crate) fn install_native_ini_hashes(
         &mut self,
         assets: &AssetManager,
@@ -498,6 +509,7 @@ impl ProcessAssets {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::retail_sources::{select_ini, select_mode_ini};
         let roots = assets.ini_roots();
+        let theater_inis = crate::map::theater::theater_ini_names(assets);
         // MPModesMD.ini is the mode roster: which mode INIs the hash adds.
         let mut compared = vec![
             roots.rules(),
@@ -509,6 +521,7 @@ impl ProcessAssets {
         compared.extend(modes.iter().map(|mode| mode.override_file.as_str()));
         compared
             .push(crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI);
+        compared.extend(theater_inis.iter().map(String::as_str));
         self.changed_game_files =
             crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
         // `ares.mix` makes the game an Ares game (`rules::ares_switch`): its
@@ -865,6 +878,66 @@ mod tests {
         assert_eq!(digest(Some("one")), digest(Some("same")));
         assert_ne!(digest(Some("one")), digest(Some("other")));
         assert_ne!(digest(Some("one")), digest(None));
+    }
+
+    /// VERA: a theater INI's tilesets decide each cell's land and height, so
+    /// players whose theater INIs differ never agree, and Quick Match, which
+    /// pairs without the agreement, names the changed file. The agreement reads
+    /// the file a theater suffix selects, else the stock one, as the loader does.
+    #[test]
+    fn theater_inis_take_part_in_the_agreement() {
+        use crate::util::ini_roots::IniRootConfig;
+        let dir =
+            crate::assets::asset_manager::test_support::audio_test_install("theater-agreement");
+        for (name, bytes) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        let started = |theater_suffix: Option<&str>| {
+            let roots = IniRootConfig {
+                theater_suffix: theater_suffix.map(str::to_owned),
+                ..IniRootConfig::default()
+            };
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
+                .unwrap()
+                .with_ini_roots(&roots)
+                .unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.install_native_ini_hashes(&assets, &[]);
+            process.return_from_loading(assets);
+            process
+        };
+        let digest = |theater_suffix| started(theater_suffix).multiplayer_rules_digest("");
+        let original = digest(None).unwrap();
+        std::fs::write(
+            dir.path().join("snowmd.ini"),
+            "[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
+        )
+        .unwrap();
+        let changed = started(None);
+        let snow = changed.multiplayer_rules_digest("").unwrap();
+        assert_ne!(original, snow);
+        assert!(
+            changed
+                .changed_game_files()
+                .iter()
+                .any(|file| file == "snowmd.ini")
+        );
+        assert_eq!(
+            digest(Some("mo")).unwrap(),
+            snow,
+            "no snowmo.ini: snowmd.ini"
+        );
+        std::fs::write(dir.path().join("snowmo.ini"), "[General]\n").unwrap();
+        assert_ne!(digest(Some("mo")).unwrap(), snow);
+        // Quick Match refuses any other suffix, even one that picks a shipped
+        // file, as `nmd` picks New Urban's `urbannmd.ini` for Urban.
+        assert!(changed.stock_ini_roots());
+        assert!(!started(Some("nmd")).stock_ini_roots());
     }
 
     #[test]

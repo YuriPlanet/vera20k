@@ -65,7 +65,10 @@ for `mo` (and for `auto` once it selects MO), so a snow map reads
 and reads the stock `snowmd.ini`, so a folder that loaded before keeps loading;
 only when neither exists does that theater load fail. Theater MIX names
 (`%sMD.MIX`) are unchanged. Letters and digits only; the suffix is not probed
-at startup.
+at startup. Online, the rules agreement compares the theater INI each theater
+reads, so players whose theater INIs differ are refused before a match, and
+Quick Match names a theater INI that changes the retail one
+([Networking](Networking.md)).
 
 Custom mode requires all three logical Rules/Art/AI basenames. Paths and
 wildcards are rejected; these names are resolved through the existing VFS, not
