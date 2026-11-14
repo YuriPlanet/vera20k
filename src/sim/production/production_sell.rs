@@ -57,9 +57,9 @@
 //!   saved games can retain nonempty stores; their sale payout remains open.
 //! - A unit's sale on a repair depot (the SELL event's unit arm,
 //!   `0x004C6F5A..0x004C6F96`, `foot_can_be_sold`, [`foot_on_sold`]) runs
-//!   only with Ares, whose SellUnit cursor reaches it; stock DetermineAction
-//!   answers NoSell for every Foot, so default builds keep the receiver
-//!   building-only.
+//!   only while Ares plays (`RuleSet::ares`), whose SellUnit cursor reaches
+//!   it; stock DetermineAction answers NoSell for every Foot, so a game
+//!   without Ares keeps the receiver building-only.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -253,8 +253,8 @@ pub(crate) fn foot_on_sold(
 /// 10048FD0, hook 0x4D9EBD), and measures to the building's dock coordinate
 /// for this object (GetDockCoords vt+0xA8) in place of its centre
 /// (FootClass_CanBeSold_Dock 1005CA30, hook 0x4D9EE1). Only Ares asks it:
-/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`).
-#[cfg(feature = "ares")]
+/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`), so
+/// its callers ask it only while Ares plays.
 pub fn foot_can_be_sold(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;

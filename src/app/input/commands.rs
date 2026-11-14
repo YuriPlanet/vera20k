@@ -233,8 +233,7 @@ fn own_sellable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
 /// the sell cursor takes it: Ares 3.0 DisplayClass_ChooseAction_CanSell
 /// (10057E70, hook 0x6929FC) answers SellUnit once `DetermineAction
 /// 0x006929F2` found the object's owner the player and its CanBeSold
-/// (`production::foot_can_be_sold`) true.
-#[cfg(feature = "ares")]
+/// (`production::foot_can_be_sold`) true, while Ares plays.
 pub(crate) fn own_sellable_unit_under_point(
     state: &AppState,
     world_x: f32,
@@ -243,15 +242,15 @@ pub(crate) fn own_sellable_unit_under_point(
     own_sellable_unit_id(state, visible_object_under_point(state, world_x, world_y)?)
 }
 
-#[cfg(feature = "ares")]
 fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
+    let rules = state.rules().filter(|rules| rules.ares())?;
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let owner = preferred_local_owner(state)?;
     let entity = sim.entities().get(stable_id)?;
     (sim.interner()
         .resolve(entity.owner())
         .eq_ignore_ascii_case(&owner)
-        && crate::sim::production::foot_can_be_sold(sim, state.rules()?, stable_id))
+        && crate::sim::production::foot_can_be_sold(sim, rules, stable_id))
     .then_some(stable_id)
 }
 
@@ -376,7 +375,6 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
     });
     // `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`'s action 0xD (SellUnit)
     // arm: a Unit or Aircraft target queues the same SELL event.
-    #[cfg(feature = "ares")]
     let building = building.or_else(|| {
         object_under_cursor
             .filter(|_| !repair)
@@ -588,7 +586,6 @@ pub(crate) enum PlaceAction<'a> {
     Stock(&'a str),
     /// An Ares superweapon action, above `SuperWeaponDisallowed`, which
     /// only the radar's Ares superweapon answer hands over.
-    #[cfg(feature = "ares")]
     Ares,
 }
 
@@ -597,20 +594,11 @@ pub(crate) enum PlaceAction<'a> {
 /// `[SuperWeaponTypes]` entry whose `Action=` it is
 /// ([`crate::sim::superweapon::first_super_type_with_action`]), or none, and
 /// none queues no event (`0x004AC294`). Ares replaces that lookup (hook
-/// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0, resuming at
-/// `0x4AC21C` or `0x4AC294`): its own actions name the armed type, and so
-/// does a stock one that is the armed type's `Action=`. It is superweapon
-/// code, so it follows [`RuleSet::ares_super_weapons`].
-///
-/// RESIDUAL: with the Ares superweapons on, a stock action that is not the
-/// armed type's `Action=` names the armed type here, where Ares names none.
-/// The radar's Ares hooks (`0x653B3A`, `0x653CA6`) sit on the Ares cursor
-/// code (`ares_cursor`, `CursorId::Ares`), which only the `ares` build
-/// compiles; a build without it that reads an Ares mod's Rules the Ares way
-/// hands over the radar index map's stock action for an Ares-handled type.
-/// Trigger: such a game whose armed type sits at a kept radar index with
-/// another `Action=`, released on the radar. Effect: it launches where Ares
-/// launches nothing. Frequency: Ares mods only.
+/// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0): an Ares action
+/// above `SuperWeaponDisallowed` (0x7E) names its current type, the armed one
+/// (resuming at `0x4AC21C`); a stock action names the armed type when it is
+/// that type's `Action=` (`+0xBC`); anything else names none (`0x4AC294`). It
+/// is superweapon code, so it follows [`RuleSet::ares_super_weapons`].
 ///
 /// [`RuleSet::ares_super_weapons`]: crate::rules::ruleset::RuleSet::ares_super_weapons
 pub(crate) fn special_place_type<'a>(
@@ -619,9 +607,11 @@ pub(crate) fn special_place_type<'a>(
     action: PlaceAction<'_>,
 ) -> Option<&'a str> {
     match action {
-        _ if rules.ares_super_weapons() => Some(armed),
-        #[cfg(feature = "ares")]
         PlaceAction::Ares => Some(armed),
+        PlaceAction::Stock(action) if rules.ares_super_weapons() => rules
+            .super_weapon(armed)
+            .is_some_and(|sw| sw.has_action(action))
+            .then_some(armed),
         PlaceAction::Stock(action) => {
             crate::sim::superweapon::first_super_type_with_action(rules, action)
         }

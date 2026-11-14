@@ -361,7 +361,7 @@ DLL removed are not listed.
 | `451132` | BuildingClass_ProcessAnims_SuperWeaponsB | `10034B60` | equivalent: skips the stock second pass |
 | `457630` | BuildingClass_SWAvailable | `10034BB0` | ported earlier |
 | `457690` | BuildingClass_SW2Available | `10034B70` | ported earlier |
-| `4AC20C` | DisplayClass_LeftMouseButtonUp | `10034BF0` | ported in part: with Ares on, the armed type launches (`commands::special_place_type`); residual: a stock action that is not its `Action=` launches it, where Ares launches none |
+| `4AC20C` | DisplayClass_LeftMouseButtonUp | `10034BF0` | ported: with the Ares superweapons on, an Ares action names the armed type, a stock action names it only when it is the armed type's `Action=`, and anything else names none (`commands::special_place_type`) |
 | `4F9004` | HouseClass_Update_TrySWFire | `10034CD0` | ported earlier |
 | `4FAE72` | HouseClass_SWFire_PreDependent | `10034C90` | ported earlier |
 | `4FAF2A` | HouseClass_SWDefendAgainst_Aborted | `10034C70` | ported: a still-charged Super alerts no house (`superweapon::fire`) |

@@ -782,6 +782,15 @@ pub struct SuperWeaponType {
 }
 
 impl SuperWeaponType {
+    /// Whether this type's `Action=` (`+0xBC`) is the ActionType named
+    /// `action`. An absent `Action=` keeps the constructor's action 0, `None`.
+    pub fn has_action(&self, action: &str) -> bool {
+        self.action
+            .as_deref()
+            .unwrap_or("None")
+            .eq_ignore_ascii_case(action)
+    }
+
     pub fn ares_messages(&self) -> &AresSuperWeaponMessages {
         &self.presentation.messages
     }

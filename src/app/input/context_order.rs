@@ -2381,7 +2381,6 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
-        #[cfg(feature = "ares")]
         if let Some(release) = ares_deactivated_selection_click(
             sim,
             &resources.rules,
@@ -2530,7 +2529,6 @@ pub(crate) fn try_queue_context_order(
             }
         }
 
-        #[cfg(feature = "ares")]
         if let Some(target) = hover.as_ref() {
             let mut consumed = false;
             selected_units.retain(|&id| {
@@ -3735,7 +3733,6 @@ pub(super) fn self_detonates(
 }
 
 /// What a Deactivated (`+0x1C8`) object answers over an object.
-#[cfg(feature = "ares")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AresDeactivatedAction {
     Detonate,
@@ -3750,8 +3747,7 @@ pub(super) enum AresDeactivatedAction {
 /// 10044AD0` alone, None when it is not Deactivated. Detonate over itself as
 /// the lone selection when its bomb may be set off ([`self_detonates`]),
 /// Select over an allied (`HouseClass::IsAlliedWith`) selectable object,
-/// else 0.
-#[cfg(feature = "ares")]
+/// else 0. None without Ares.
 pub(super) fn ares_deactivated_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -3759,6 +3755,9 @@ pub(super) fn ares_deactivated_action(
     actor: u64,
     target: u64,
 ) -> Option<AresDeactivatedAction> {
+    if !rules.ares() {
+        return None;
+    }
     let actor = sim
         .entities()
         .get(actor)
@@ -3782,7 +3781,7 @@ pub(super) fn ares_deactivated_action(
 /// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
 /// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
 /// the other two reach [`left_release`], so no object receives an order.
-#[cfg(feature = "ares")]
+/// None without Ares.
 fn ares_deactivated_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -3791,6 +3790,9 @@ fn ares_deactivated_selection_click(
     cell: (u16, u16),
 ) -> Option<Result<LeftRelease, u64>> {
     use crate::app::input::cursor::ActionDistanceTarget;
+    if !rules.ares() {
+        return None;
+    }
     let target = hover.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |target| {
         ActionDistanceTarget::Object(target.stable_id)
     });
@@ -3871,11 +3873,11 @@ pub(super) fn self_click_command(
     // Deactivated object's What_Action over itself with GetDeactivatedAction
     // 10044AD0 (Detonate or Select), never Self, so it neither deploys nor
     // repacks.
-    #[cfg(feature = "ares")]
-    if sim
-        .entities()
-        .get(target.stable_id)
-        .is_some_and(|entity| entity.deactivated.is_offline())
+    if rules.ares()
+        && sim
+            .entities()
+            .get(target.stable_id)
+            .is_some_and(|entity| entity.deactivated.is_offline())
     {
         return None;
     }
@@ -4381,7 +4383,8 @@ fn entry_orders(
     consumed.then_some(orders)
 }
 
-#[cfg(feature = "ares")]
+/// Ares 3.0 `10049690` (hook `0x51E7BF`): whether `actor` captures the
+/// vehicle `target`, for the cursor and the click alike, while Ares plays.
 pub(super) fn vehicle_capture_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -4391,18 +4394,20 @@ pub(super) fn vehicle_capture_action(
     force_move_key: bool,
 ) -> bool {
     // Shift and the admitted Ctrl+Alt GuardArea return before51E7A6.
-    !matches!(
-        object_key_action(
-            sim,
-            rules,
-            actor,
-            target,
-            Some(target),
-            modifier,
-            force_move_key
-        ),
-        Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
-    ) && sim.ares_vehicle_capture_action(actor, target, rules)
+    rules.ares()
+        && !matches!(
+            object_key_action(
+                sim,
+                rules,
+                actor,
+                target,
+                Some(target),
+                modifier,
+                force_move_key
+            ),
+            Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
+        )
+        && sim.ares_vehicle_capture_action(actor, target, rules)
 }
 
 /// Engineer object actions before event enqueue. No duplicate geometry query.
@@ -4945,14 +4950,10 @@ fn shot_is_illegal(
         .is_some_and(|(infantry, building)| {
             // Ares 3.0 100261F0 (hook 0x007004AD): any action of the shared
             // classification keeps the rung.
-            #[cfg(feature = "ares")]
-            {
-                let _ = (infantry, building);
+            if rules.ares() {
                 sim.infiltrate_action(actor_id, target_id, rules)
                     != crate::sim::world::InfiltrateAction::None
-            }
-            #[cfg(not(feature = "ares"))]
-            {
+            } else {
                 (if infantry.agent {
                     building.spyable
                 } else {
@@ -5278,7 +5279,6 @@ fn building_object_orders(
         // the building is the trench Enter (100171B0, hook 0x44725F) raises
         // TrenchRedirectClick (0x60, RaiseTrenchRedirectClick 1006A170)
         // with that building's Cell, and sends nothing else.
-        #[cfg(feature = "ares")]
         if ares_trench_enter(sim, rules, id, target) {
             if let Some(record) = sim.encode_ares_trench_redirect_record(id, cell) {
                 orders.push(Command::SynchronizedRecord { record });
@@ -5328,22 +5328,14 @@ fn building_object_orders(
 /// Ares 3.0 BuildingClass_GetActionOnObject_TargetABuilding (`100171B0`,
 /// hook `0x44725F`): the building `id` answers Enter over the building
 /// `target` when its occupants may traverse there (canTraverseTo
-/// `10011690`). Default builds have no such action.
-fn ares_trench_enter(
+/// `10011690`), while Ares plays. The cursor asks it too.
+pub(super) fn ares_trench_enter(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
     target: u64,
 ) -> bool {
-    #[cfg(feature = "ares")]
-    {
-        sim.ares_can_traverse_to(id, target, rules)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = (sim, rules, id, target);
-        false
-    }
+    rules.ares() && sim.ares_can_traverse_to(id, target, rules)
 }
 
 fn selected_rally_producer_ids(

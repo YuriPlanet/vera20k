@@ -63,7 +63,6 @@ pub use self::production_repair::{buildings_wanting_repair, can_repair_building}
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
-#[cfg(feature = "ares")]
 pub use self::production_sell::foot_can_be_sold;
 pub(crate) use self::production_sell::foot_on_sold;
 pub(crate) use self::production_sell::sell_back;
