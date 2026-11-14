@@ -21,8 +21,9 @@ pub(crate) fn prepare(
     // Opaque repeated draws at this frame's fixed clock are idempotent: keep
     // each manager's last visit, preserving overlap order without quadratic
     // work for a manager with many captives. This temporary index has no state.
+    // Only managers and captives can be visited; ranks keep stable-id order.
     let mut last_visit = std::collections::HashMap::new();
-    for (rank, entity) in frame.objects().enumerate() {
+    for (rank, entity) in frame.line_sources().enumerate() {
         let id = entity.stable_id();
         if entity.health.current() == 0 {
             continue;
