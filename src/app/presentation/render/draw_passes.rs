@@ -698,8 +698,9 @@ pub(super) fn dispatch_draw_passes(
     );
     // Original6D4656 IonBlast DrawAll moves terrain pixels after the first
     // rally pass and before the object loop at 6D465F (render::terrain_draw).
-    // Native draws the placement overlay (6D5030) before it; VERA draws the
-    // placement cells after the objects, so a ripple does not shift them.
+    // Native draws the placement cells (6D5030) at 0x006D4651, before it, and
+    // again at 0x006D46D8 after the objects; VERA draws only the second, which
+    // covers the first, so a ripple does not shift them.
     if state.renderer.terrain_draw_renderer.has_ion_blasts() {
         drop(pass);
         state
@@ -1024,28 +1025,9 @@ pub(super) fn dispatch_draw_passes(
         pool,
         "factory_rally_second",
     );
-    // Original6D4750 and6D47BF/6D47F6 interleave action/control lines.
-    // The selected Techno's vt+438 (Foot4DC060) runs
-    // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
-    // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
-    draw_pooled_surface_strokes(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        "target_lines",
-    );
-    //6D4750..6D48F1: when Airstrike beams exist, the same ordered surface
-    // batch contains action rectangles and the beams between object visits.
-    if !data.tactical_lines.is_empty() {
-        drop(pass);
-        state.renderer.terrain_draw_renderer.draw_surface_lines(
-            encoder,
-            view,
-            &[data.tactical_lines],
-        );
-        pass = begin_main_load_pass(encoder, view, &world_depth);
-        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-    }
+    // BuildingPlacement_OverlayRenderer 0x006D5030(1) at 0x006D46D8 draws
+    // the PLACE cells after the second rally pass and before PlanMgr
+    // (0x006D46DD) and the line walk (0x006D4750), so lines cross over them.
     // Cell47EC90 flags20600 -> plain Convert/RLE4960A0: opaque stores,
     // world camera, neither A nor Z reads/writes. The shared neutral-A surface
     // binding and passthrough pipeline implement that material directly.
@@ -1096,6 +1078,28 @@ pub(super) fn dispatch_draw_passes(
         }
     }
 
+    // Original6D4750 and6D47BF/6D47F6 interleave action/control lines.
+    // The selected Techno's vt+438 (Foot4DC060) runs
+    // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
+    // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
+    draw_pooled_surface_strokes(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        "target_lines",
+    );
+    //6D4750..6D48F1: when Airstrike beams exist, the same ordered surface
+    // batch contains action rectangles and the beams between object visits.
+    if !data.tactical_lines.is_empty() {
+        drop(pass);
+        state.renderer.terrain_draw_renderer.draw_surface_lines(
+            encoder,
+            view,
+            &[data.tactical_lines],
+        );
+        pass = begin_main_load_pass(encoder, view, &world_depth);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
     // --- Step 10.5: PixelFX water/ore sparkles ---
     // gamemd writes these opaque one-pixel effects at the tactical tail, after
     // object/effect/status/action/placement drawing and before screen-fixed
@@ -1814,9 +1818,10 @@ mod tests {
         // each world blitter, so there is no final framebuffer multiply.
         assert!(first_rally < combat_lights);
         assert!(combat_lights < second_rally);
-        assert!(second_rally < target_lines);
+        // 0x006D46D8 draws the PLACE cells before the lines at 0x006D4750.
+        assert!(second_rally < placement);
+        assert!(placement < target_lines);
         assert!(target_lines < tactical_lines);
-        assert!(tactical_lines < placement);
         // Unit vt110 DrawExtras completes inside6D8DB0, before6D4664.
         assert!(status < combat_lights);
         assert!(status < placement);

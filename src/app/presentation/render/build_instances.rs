@@ -1008,10 +1008,10 @@ pub(super) fn build_ui_instances(
             state.match_state.sim_runtime.frame(),
         )
     {
+        // Health 0 skips only the CaptureManager links (`0x006D47A4` jumps
+        // to the airstrike check at `0x006D47FB`).
         for entity in frame.line_sources() {
-            if entity.health.current() != 0
-                && let Some(designation) = entity.place.airstrike_designation
-            {
+            if let Some(designation) = entity.place.airstrike_designation {
                 let _ = runtime;
                 let style = crate::app::presentation::airstrike_lines::FlareStyle {
                     #[cfg(feature = "phobos")]
@@ -1149,18 +1149,23 @@ struct PlacementPreviewInstances {
     ghost: Vec<SpriteInstance>,
 }
 
-/// Active PLACE cells. Tactical6D5030 suppresses the building ghost outside
-/// the map editor; Cell47EC90 supplies frame0 or slope+2. Keep one ordered
-/// stream rather than regrouping overlapping cells by admitted color.
+/// The current and pending PLACE cells. Tactical6D5030 suppresses the
+/// building ghost outside the map editor; Cell47EC90 supplies frame0, slope+2
+/// or the pending frame1. Keep one ordered stream rather than regrouping
+/// overlapping cells by admitted color.
 fn build_placement_preview(state: &AppState) -> PlacementPreviewInstances {
     let mut out = PlacementPreviewInstances {
         cells: Vec::new(),
         #[cfg(feature = "phobos")]
         ghost: Vec::new(),
     };
-    let Some(preview) = &state.match_state.input.building_placement_preview else {
-        return out;
-    };
+    let current = state.match_state.input.building_placement_preview.as_ref();
+    let cursor_in = crate::app::input::camera::cursor_over_battlefield(state);
+    let draws = crate::render::selection_overlay::placement_cell_draws(
+        current,
+        state.match_state.input.pending_building_placement_preview(),
+        cursor_in,
+    );
     let shape = state
         .match_state
         .match_presentation
@@ -1184,10 +1189,12 @@ fn build_placement_preview(state: &AppState) -> PlacementPreviewInstances {
     #[cfg(not(feature = "phobos"))]
     let alpha = 1.0;
     if let Some(shape) = shape {
-        out.cells = shape.build_building_preview(preview, alpha);
+        out.cells = shape.build_building_preview(&draws, alpha);
     }
+    // The ghost (`0x6D528A`) follows the current grid, inside the same
+    // tactical-rect gate.
     #[cfg(feature = "phobos")]
-    {
+    if let Some(preview) = current.filter(|_| cursor_in) {
         out.ghost = build_placement_ghost(state, preview);
     }
     out
