@@ -82,7 +82,9 @@
 //! (`0x004FF8C0`, `0x004FF6C8`). TEvent55 reads this scalar; TEvent56 reads
 //! vehicles minus navy, then tracked infantry (`0x0071F159..0x0071F187`).
 //! Limbo does not remove tracking, so transports and constructed limbo objects
-//! must not be inferred from the on-map sets. `+0x2F8` is not kept.
+//! must not be inferred from the on-map sets. `+0x2F8`, the tracked aircraft,
+//! moves with `+0x553C` in the aircraft arms (`0x004FF7C8`, `0x004FF607`), so
+//! it is that counter's total; only the observer strip reads it.
 //!
 //! Factory counters (`+0x5378` aircraft, `+0x537C` infantry, `+0x5380`
 //! vehicle, `+0x5384` building, `+0x5388` naval): a building whose type has
@@ -1047,6 +1049,16 @@ impl HouseTracking {
     /// `+0x2F0`, the tracked buildings.
     pub fn buildings(&self) -> i32 {
         self.buildings
+    }
+
+    /// The observer strip's Units line: `+0x2F8 + +0x2F4 + +0x2F0 + +0x2E8`
+    /// (`StripClass::AI @ 0x006A8B30`, `0x006A9108..0x006A9127`). The
+    /// buildings tracked as vehicles count once, in `+0x2E8`.
+    pub fn observer_units(&self) -> i32 {
+        wrapping_total(&self.aircraft_types)
+            .wrapping_add(self.infantry)
+            .wrapping_add(self.buildings)
+            .wrapping_add(self.vehicles)
     }
 
     /// TEvent9 / DestroyedUnitsAll (`71F12F..71F187`, Steam

@@ -223,6 +223,11 @@ pub(crate) struct CameoStrips {
     /// StripClass PendingScroll: rows the scroll arrows queued, negative up.
     /// Presentation only, and not saved: a load starts with none queued.
     pending_scroll: [i32; 4],
+    /// The observer strip's House count (`Sidebar+0x5510`) while the local
+    /// player is an observer: the scroll rules then count Houses, two rows
+    /// each, and every strip's TopRow is a House index. From the sidebar's
+    /// inputs on every refresh, not saved.
+    observer_entries: Option<usize>,
     /// Strip entry +88 survives key refresh and Mouse save/no-init. Entries
     /// removed by Recalculate discard their deadline with their identity.
     flash_deadlines: HashMap<CameoId, i32>,
@@ -532,7 +537,9 @@ impl CameoStrips {
     /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch,
     /// queues one page (the visible row count) and plays ScoldSound on false;
     /// SidebarClass::Scroll `0x006A6A00` (SidebarUp/SidebarDown, the wheel)
-    /// queues one row. The observer branches have no VERA strip.
+    /// queues one row. For the observer both queue one House while one is
+    /// left below the screen's `rows / 2` (Action `0x006A7BA2..0x006A7C42`
+    /// and `0x006A7CD9..0x006A7D0F`, Scroll `0x006A6AA6..0x006A6AC4`).
     pub(crate) fn queue_scroll(
         &mut self,
         tab: SidebarTab,
@@ -542,8 +549,13 @@ impl CameoStrips {
     ) -> bool {
         let index = tab.tab_index();
         let top = self.scroll_rows[index];
-        let rows = rows as i32;
-        if down && (top + visible_rows) * self.columns.0 < self.strips[index].len() {
+        let (shown, per_row, len) = self.scroll_span(index, visible_rows);
+        let rows = if self.observer_entries.is_some() {
+            1
+        } else {
+            rows as i32
+        };
+        if down && (top + shown) * per_row < len {
             self.pending_scroll[index] += rows;
         } else if !down && top != 0 {
             self.pending_scroll[index] -= rows;
@@ -558,19 +570,19 @@ impl CameoStrips {
     /// row: the step `0x32` (`0x006A5287`) equals the 50-pixel row stride,
     /// so the partial offset begins and ends inside the same visit and Draw
     /// never shows it. A strip that fits on screen, or has no row left in
-    /// the queued direction, drops its queue.
+    /// the queued direction, drops its queue. The observer's moves one House
+    /// a visit, against the House count (`0x006A8BA7..0x006A8C25`).
     pub(crate) fn step_pending_scroll(&mut self, visible_rows: usize) {
-        let columns = self.columns.0;
-        for ((strip, top), pending) in self
-            .strips
-            .iter()
-            .zip(&mut self.scroll_rows)
-            .zip(&mut self.pending_scroll)
-        {
+        for index in 0..self.strips.len() {
+            let (shown, per_row, len) = self.scroll_span(index, visible_rows);
+            let (top, pending) = (
+                &mut self.scroll_rows[index],
+                &mut self.pending_scroll[index],
+            );
             if *pending == 0 {
                 continue;
             }
-            if visible_rows * columns >= strip.len() {
+            if shown * per_row >= len {
                 *pending = 0;
             } else if *pending < 0 {
                 if *top == 0 {
@@ -579,13 +591,28 @@ impl CameoStrips {
                     *pending += 1;
                     *top -= 1;
                 }
-            } else if (*top + visible_rows) * columns < strip.len() {
+            } else if (*top + shown) * per_row < len {
                 *pending -= 1;
                 *top += 1;
             } else {
                 *pending = 0;
             }
         }
+    }
+
+    /// What the scroll rules count on strip `index`: the rows a screen
+    /// shows, the entries a row holds and the entries the strip has. The
+    /// observer's screen shows `rows / 2` Houses, one a row of its own.
+    fn scroll_span(&self, index: usize, visible_rows: usize) -> (usize, usize, usize) {
+        match self.observer_entries {
+            Some(houses) => (visible_rows / 2, 1, houses),
+            None => (visible_rows, self.columns.0, self.strips[index].len()),
+        }
+    }
+
+    /// Take the observer strip's House count, or `None` for a player.
+    pub(crate) fn set_observer_entries(&mut self, houses: Option<usize>) {
+        self.observer_entries = houses;
     }
 
     /// Take the layout's row width for the scroll rules. A top row past the

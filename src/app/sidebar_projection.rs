@@ -139,6 +139,9 @@ pub(crate) struct SidebarSimInputs {
     pub(crate) power_produced: i32,
     pub(crate) power_drained: i32,
     pub(crate) sw_views: Vec<SuperWeaponView>,
+    /// The observer strip's Houses while the local player is an observer
+    /// ([`crate::app::presentation::observer_strip::observer_houses`]).
+    pub(crate) observers: Option<Vec<crate::app::presentation::observer_strip::ObserverHouse>>,
 }
 
 impl SidebarSimInputs {
@@ -163,6 +166,9 @@ impl SidebarSimInputs {
                 rules,
                 &sim.interner().get(owner).unwrap_or_default(),
             ),
+            observers: sim.interner().get(owner).and_then(|owner| {
+                crate::app::presentation::observer_strip::observer_houses(sim, owner)
+            }),
         }
     }
 }
@@ -1202,6 +1208,14 @@ impl SidebarProjectionState {
         self.cameo_columns = crate::ui::sidebar::cameo_order::StripColumns::new(columns);
     }
 
+    /// The observer strip's House count for the strips' scroll rules
+    /// ([`CameoStrips::set_observer_entries`]), after the reconcile.
+    pub(crate) fn set_observer_entries(&mut self, houses: Option<usize>) {
+        if let Some((_, strips)) = self.cameos.as_mut() {
+            strips.set_observer_entries(houses);
+        }
+    }
+
     pub(crate) fn set_cameo_frame(&mut self, frame: i32) {
         if let Some((_, strips)) = self.cameos.as_mut() {
             strips.set_frame(frame);
@@ -1345,6 +1359,13 @@ impl SidebarProjectionState {
             *displayed = displayed.saturating_sub(step).max(actual);
         }
         (*displayed != before).then_some(CreditTick { counting_up })
+    }
+
+    /// `CreditsClass::AI @ 0x004A2600` for the observer
+    /// (`0x004A2614..0x004A2678`): the counter is set to the scenario's
+    /// elapsed seconds, with no counting step and no `CreditTicks` cue.
+    pub(crate) fn set_observer_clock(&mut self, owner: &str, seconds: i32) {
+        self.displayed_credits.insert(owner.to_owned(), seconds);
     }
 
     #[cfg(test)]

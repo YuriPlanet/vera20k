@@ -66,6 +66,25 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     else {
         return;
     };
+    if sim
+        .interner()
+        .get(&owner_name)
+        .is_some_and(|owner| sim.session().is_observer_house(owner))
+    {
+        // The observer's counter shows the time the match has run
+        // (`0x004A2614..0x004A2678`): Scenario +0x61C plus the running span
+        // since +0x614, over 60, set at once and silent.
+        let seconds = state
+            .match_state
+            .scenario_elapsed_clock
+            .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .set_observer_clock(&owner_name, seconds);
+        return;
+    }
     let credits = counter_credits(sim, &owner_name);
     let projection = &mut state.match_state.match_presentation.sidebar_projection;
     let mut last_step = None;
@@ -383,6 +402,11 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
+        .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
         .set_cameo_frame(sim.session().binary_frame() as i32);
     state
         .match_state
@@ -577,6 +601,25 @@ fn build_view(
             }
             scroll[grid.part] = grid.scroll_rows;
         }
+    }
+    // While the local player observes, the strip lists the players over the
+    // grid, and its TopRow counts them.
+    if let Some(houses) = inputs.sim.observers.as_deref()
+        && let Some(sim) = state
+            .match_state
+            .sim_runtime
+            .presentation()
+            .map(|rt| &rt.simulation)
+    {
+        let entries =
+            crate::app::presentation::observer_strip::observer_entries(state, sim, houses);
+        let top = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_strips()
+            .scroll_row(inputs.tab);
+        sidebar::apply_observer_strip(&mut view, inputs.spec, entries, top, &inputs.gadgets);
     }
     // The view never substitutes another tab, so the retained active tab needs
     // no write-back: `apply_cameo_transitions` (and the switch itself) is the

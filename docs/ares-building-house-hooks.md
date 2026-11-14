@@ -288,7 +288,7 @@ DLL removed are not listed.
 | `553D06` | LoadProgressMgr_Draw_LSBrief | `1001DF70` | ported earlier |
 | `69B670` | HTExt_PickRandom_AI | `1001DD30` | equivalent: weighted AI random country |
 | `69B774` | HTExt_PickRandom_Human | `1001DD50` | equivalent: weighted human random country (`skirmish_session`) |
-| `6AA0CA` | StripClass_Draw_DrawObserverBackground | `1001E160` | residual: observer strip art (ares-country-presentation.md: no observer strip) |
+| `6AA0CA` | StripClass_Draw_DrawObserverBackground | `1001E160` | residual: observer strip art (ares-country-presentation.md: stock pictures only) |
 | `6AA164` | StripClass_Draw_DrawObserverFlag | `1001E1E0` | residual: observer strip flag (same) |
 | `72B690` | LoadScreenPal_Load | `1001E0E0` | ported earlier |
 | `752B70` | PlayTaunt | `1001E130` | ported earlier (File.Taunt) |

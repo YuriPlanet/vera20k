@@ -25,6 +25,7 @@ pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
 pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::append_added_grids;
+pub(crate) use sidebar_view::apply_observer_strip;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
@@ -303,11 +304,34 @@ pub struct AddedGridView {
     pub max_scroll_rows: usize,
 }
 
+/// One House on the observer's strip (`StripClass::Draw @ 0x006A9540`,
+/// `0x006AA043..0x006AA59B`), two cameo rows tall.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObserverEntry {
+    /// Its background's top left, in the sidebar's layout pixels: the cameo
+    /// grid's origin, two rows a House.
+    pub origin: [f32; 2],
+    /// The country's side (`HouseType+0xBC`): 0, 1 and 2 draw `OBSALLI`,
+    /// `OBSSOVI` and `OBSYURI`, any other none.
+    pub side: i32,
+    /// The country's index (`HouseType+0xB8`), which picks the flag.
+    pub country: i32,
+    pub name: String,
+    pub rgb: [u8; 3],
+    /// Rank (online only), then kills, units and credits, a line each.
+    pub lines: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarView {
     pub panel_rect: Rect,
     pub layout: SidebarLayout,
+    /// The credits counter's value; the observer's elapsed seconds while
+    /// [`Self::observer`] is set (`CreditsClass::AI @ 0x004A2600`).
     pub credits: i32,
+    /// The observer's strip, drawn over the cameo grid while the local
+    /// player is an observer: the Houses its rows show.
+    pub observer: Option<Vec<ObserverEntry>>,
     pub power_produced: i32,
     pub power_drained: i32,
     pub low_power: bool,

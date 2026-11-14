@@ -175,11 +175,33 @@ pub const CREDITS_DEPTH: f32 = 0.00042;
 /// credits draw does: the wide `"%ld"` literal applied to the *displayed*
 /// (animated) value, so a negative total keeps its leading minus sign. `%ld`
 /// and `%d` produce identical text for the 32-bit credit value.
-///
-/// The observer branch formats CSF `TXT_TIME_FORMAT_HOURS` instead; VERA has
-/// no observer view yet, so only the player branch is modelled here.
 pub fn format_credits(credits: i32) -> String {
     credits.to_string()
+}
+
+/// The observer branch of `CreditsClass::Draw @ 0x004A2370`
+/// (`0x004A23B0..0x004A24A4`): the counter's seconds as hours, minutes and
+/// seconds through CSF `TXT_TIME_FORMAT_HOURS`, with anything past 99 hours
+/// shown as 359,999 seconds (`0x004A2437..0x004A243C`). Native divides
+/// signed, truncating toward zero.
+pub fn format_observer_clock(seconds: i32, format: &str) -> String {
+    use crate::assets::csf_file::{CsfArg, format_csf};
+    let seconds = if seconds / 3600 > 99 {
+        359_999
+    } else {
+        seconds
+    };
+    let hours = seconds / 3600;
+    let rest = seconds - hours * 3600;
+    let minutes = rest / 60;
+    format_csf(
+        format,
+        &[
+            CsfArg::Int(hours.into()),
+            CsfArg::Int(minutes.into()),
+            CsfArg::Int((rest - minutes * 60).into()),
+        ],
+    )
 }
 
 /// Colour the credits counter is drawn in: the side-dependent sidebar text
@@ -198,13 +220,12 @@ pub fn credits_tint(theme: crate::render::sidebar_chrome::SidebarTheme) -> [f32;
 /// (unscaled) pixels: the layout table's, stock `[0, 2]`.
 pub fn build_credits_instances(
     font: &BitFont,
-    credits: i32,
+    text: &str,
     panel_rect: Rect,
     offset: [f32; 2],
     tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
-    let text = format_credits(credits);
     // Horizontal centre: gamemd's anchor is the surface midpoint and the
     // h-centre flag pulls the *measured* string half its width to the left.
     // `BitFont::text_width` is that same measurement (trailing inter-character
@@ -218,11 +239,11 @@ pub fn build_credits_instances(
     // is on screen the whole match. The camera offset is added *after* the
     // rounding, so panning never feeds back into the fixed UI geometry (the
     // same convention `place_canvas_crop_in_slot` uses for cameo art).
-    let text_w = font.text_width(&text) as i32;
+    let text_w = font.text_width(text) as i32;
     let surface_w = panel_rect.w.round() as i32;
     let x = panel_rect.x.round() + (surface_w / 2 - text_w / 2) as f32 + offset[0];
     let y = panel_rect.y.round() + offset[1];
-    font.build_text(&text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
+    font.build_text(text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
 }
 
 #[cfg(test)]
