@@ -64,8 +64,6 @@ fn health(sim: &Simulation, id: u64) -> i32 {
 
 /// A cell arrival on ore hurts infantry by the mineral's `Damage` with its
 /// `Warhead`; `TiberiumProof=yes` (and the default for vehicles) spares it.
-// Runs again once movement's per-cell step moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn per_cell_arrival_on_tiberium_applies_the_mineral_damage() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

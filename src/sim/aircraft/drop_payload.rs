@@ -32,7 +32,7 @@
 //! word, the ±0x3FFF wrap and the truncation after adding the table
 //! displacement to world XY (`native_trig` owns that math).
 //!
-//! In an Ares build, AircraftClass_Paradrop_Units (Ares.dll `10048BA0`,
+//! When Ares plays, AircraftClass_Paradrop_Units (Ares.dll `10048BA0`,
 //! hook `0x415CA6`) sends a passenger that is not Infantry straight to
 //! SpawnParachuted (`0x00415DE3`) at the centre of the cell under the plane's
 //! coordinate, one lepton below it: no side step, Can_Enter_Cell or
@@ -233,12 +233,12 @@ fn drop_passenger(
     }
     // Ares 10048BA0 (hook 0x415CA6): `(X & ~0x7F) | 0x80` and the same for
     // Y over GetCoords, Z - 1, then 0x415DE3.
-    #[cfg(feature = "ares")]
-    if sim
-        .substrate
-        .entities
-        .get(passenger)
-        .is_some_and(|rider| rider.category() != EntityCategory::Infantry)
+    if rules.ares_form()
+        && sim
+            .substrate
+            .entities
+            .get(passenger)
+            .is_some_and(|rider| rider.category() != EntityCategory::Infantry)
     {
         let Some(plane_entity) = sim.substrate.entities.get(plane) else {
             return Err(DepartureFailure::Placement);
@@ -513,8 +513,9 @@ fn land_tail(
     // Ares 3.0 AircraftClass_Paradrop_Carryall (10048B80, hook 0x415DF6):
     // the paradropped passenger's Transporter (`+0x11C`) and IsOnCarryall
     // (`+0x424`) are cleared.
-    #[cfg(feature = "ares")]
-    if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
+    if rules.ares_form()
+        && let Some(entity) = sim.substrate.entities.get_mut(passenger)
+    {
         entity.passenger_role.clear_transporter();
         entity.on_carryall.set(false);
     }
@@ -1353,11 +1354,11 @@ mod tests {
     /// PlaceInfantryInCell and drops from the centre of the cell under the
     /// plane, one lepton below it. Its SpawnParachuted is ObjectClass::Paradrop
     /// (UnitClass vtable 0x007F5C70 +0xE8), so it gets no mission or action.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_a_unit_passenger_drops_from_the_centre_of_the_planes_cell() {
         use crate::rules::locomotor_type::LocomotorKind;
         use crate::sim::movement::locomotor::LocomotorState;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(
                 "[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n[AircraftTypes]\n0=PDPLANE\n\

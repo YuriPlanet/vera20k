@@ -2556,12 +2556,15 @@ impl HouseState {
         self.spatial_threat.at_padded_index(index)
     }
 
+    /// `ares` is the caller's `rules.ares_form()`, for the index the writers
+    /// take (`HouseSpatialThreat::caller_index`).
     pub(crate) fn adjust_spatial_threat(
         &mut self,
         cell: (i16, i16),
         delta: i32,
+        ares: bool,
     ) -> Result<(), String> {
-        self.spatial_threat.adjust(cell, delta)
+        self.spatial_threat.adjust(cell, delta, ares)
     }
 
     pub(crate) fn clear_spatial_threat(&mut self) {

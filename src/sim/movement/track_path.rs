@@ -975,8 +975,7 @@ impl Simulation {
                 .get(building)
                 .and_then(|building| self.entity_object_type(building, rules))
                 .is_some_and(|object| {
-                    #[cfg(feature = "ares")]
-                    if object.building_type_ext().tunnel.is_some() {
+                    if rules.ares_form() && object.building_type_ext().tunnel.is_some() {
                         return true;
                     }
                     object.unit_absorb

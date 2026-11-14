@@ -246,10 +246,10 @@ impl crate::sim::world::ObjectSubstrate {
     /// `Factory=` type. VERA-only: the building is queued for the next
     /// factory sweep ([`Simulation::ares_refresh_temporal_factories`]), as
     /// TemporalClass::LetGo's callers hold the substrate apart from the
-    /// Simulation.
+    /// Simulation, so they pass `ares`, the game's `RuleSet::ares_form`.
     ///
     /// [`AnimObject::set_temporal_erase`]: crate::sim::anim_class::AnimObject::set_temporal_erase
-    pub(crate) fn set_building_online_for_temporal(&mut self, id: u64, online: bool) {
+    pub(crate) fn set_building_online_for_temporal(&mut self, id: u64, online: bool, ares: bool) {
         let Some(entity) = self.entities.get_mut(id) else {
             return;
         };
@@ -258,10 +258,9 @@ impl crate::sim::world::ObjectSubstrate {
         }
         entity.building.building_online.temporal(online);
         let slots = *entity.building_art.anim_slots();
-        // Still on the feature: moves with the Temporal release
-        // (`Simulation::temporal_let_go` has no RuleSet to ask).
-        #[cfg(feature = "ares")]
-        self.queue_ares_temporal_factory_refresh(id);
+        if ares {
+            self.queue_ares_temporal_factory_refresh(id);
+        }
         for slot in slots.into_iter().flatten() {
             if let Some(anim) = self.anims.get_mut(slot) {
                 anim.set_temporal_erase(!online);
@@ -296,15 +295,19 @@ mod ares_tests {
         let on = sim.spawn_object("DRAIN", "A", 14, 10, 0, &rules).unwrap();
         assert!(sim.go_building_offline(off, &rules, FrameEffects::default()));
         for id in [off, on] {
-            sim.substrate.set_building_online_for_temporal(id, false);
-            sim.substrate.set_building_online_for_temporal(id, true);
+            sim.substrate
+                .set_building_online_for_temporal(id, false, rules.ares_form());
+            sim.substrate
+                .set_building_online_for_temporal(id, true, rules.ares_form());
         }
         let online = |sim: &Simulation, id| sim.entities().get(id).unwrap().building_online();
         assert!(!online(&sim, off));
         assert!(online(&sim, on));
         assert!(sim.go_building_online(off, &rules, FrameEffects::default()));
-        sim.substrate.set_building_online_for_temporal(off, false);
-        sim.substrate.set_building_online_for_temporal(off, true);
+        sim.substrate
+            .set_building_online_for_temporal(off, false, rules.ares_form());
+        sim.substrate
+            .set_building_online_for_temporal(off, true, rules.ares_form());
         assert!(online(&sim, off));
     }
 }

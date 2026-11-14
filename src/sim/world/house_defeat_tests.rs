@@ -703,8 +703,6 @@ fn explicit_keep_alive_false_reaches_both_production_mode_arms() {
 /// Rebuild only the native gate's supplied counter/object boundary, then use
 /// the real World presence query and House rung. Parasite input is an allocated
 /// class, not a victim/eater link; this is not a whole parasite lifecycle test.
-// Runs again once house tracking's `game_alive` moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_normal_defeat_gate_matches_executed_object_array_controls() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

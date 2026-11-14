@@ -11,10 +11,11 @@ The official downloads hold only part of Ares so far. Its code is moving out of 
 build feature area by area. In a download, a game with Ares keys plays the parts that have
 moved (the world and unit simulation, and combat) and misses the rest: what the player
 sees and hears, `ares.mix`, the Ares INI syntax, and most Ares rules keys, which are read
-only with `ares.mix` mounted. The superweapon, production, power and money code is in
-every build, but it takes its Ares form only in a game whose rules were read the Ares way,
-so a download keeps the original superweapons, build rules, power and income. Such a game
-can play unlike both the original and Ares. For all the Ares support VERA20K has, build with the feature:
+only with `ares.mix` mounted. The rest of the simulation's Ares code (superweapons,
+production, power and money, bombs, triggers and team scripts, animations, movement, the
+AI) is in every build too, but it takes its Ares form only in a game whose rules were read
+the Ares way, so a download keeps the original there. Such a game can play unlike both the
+original and Ares. For all the Ares support VERA20K has, build with the feature:
 
 ```sh
 cargo run --release --bin vera20k --features ares

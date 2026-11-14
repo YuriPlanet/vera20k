@@ -282,12 +282,13 @@ impl Simulation {
         };
         // Ares SensorArrayActivate10016D60 (hook455828) replaces the array's
         // Is_Operational gate with its own, counted one.
-        #[cfg(feature = "ares")]
-        let sight = {
+        let sight = if rules.ares_form() {
             if sight.is_some() {
                 self.ares_sensor_array_activate(stable_id, rules, registry);
             }
-            None::<u16>
+            None
+        } else {
+            sight
         };
         if (sight.is_none() && detect_radius.is_none())
             || self.building_operational_state(stable_id, rules) != Some(true)
@@ -350,12 +351,13 @@ impl Simulation {
         };
         // Ares SensorArrayDeactivate10016DB0 (hook4556E1) removes only an
         // active array, with the SensorsSight its add used.
-        #[cfg(feature = "ares")]
-        let cloak_radius = {
+        let cloak_radius = if rules.ares_form() {
             if cloak_radius.is_some() {
                 self.ares_sensor_array_deactivate(stable_id, rules, registry);
             }
-            None::<i8>
+            None
+        } else {
+            cloak_radius
         };
         if let Some(radius) = cloak_radius {
             self.apply_building_sensor_remove(owner, center, radius.max(0) as u16, rules, registry);
@@ -760,9 +762,9 @@ mod tests {
     /// AI (hook43FE69) and Limbo: the array follows its power, removes the
     /// SensorsSight circle it added (hook4556E1), and an inactive array's
     /// Limbo debits nothing.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_sensor_array_follows_power_and_removes_what_it_added() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules();
         let mut sim = sim_with_map_authority();
         let id = map_placed_napsis(&mut sim, &rules);

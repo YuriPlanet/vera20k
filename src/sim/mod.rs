@@ -255,13 +255,13 @@ pub mod particles;
 #[path = "deploy_tests.rs"]
 mod deploy_tests;
 // Ares 3.0 Misc/Bugfixes.cpp gameplay fixes through their owners.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_bugfixes_tests;
 // Ares 3.0 Misc/Bugfixes.Buffer.cpp list reads.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_bugfixes_buffer_tests;
 // Ares 3.0 AnimTypeExt damage.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 mod ares_anim_type_tests;
 
 pub(crate) mod airstrike;

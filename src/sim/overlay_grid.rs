@@ -1767,6 +1767,9 @@ fn recompute_wall_connectivity_target(
             neighbor_id.map_or(-1, i32::from),
             i32::from(overlay_id),
             Some(registry),
+            // Never read here: the Ares answer decides only the
+            // `requested == -1` query, and this one names its own overlay.
+            false,
         ) {
             crate::sim::cell_kernel::WallConnectionStep::Return(connected) => connected,
             // Existing residual: this cleanup view does not implement native

@@ -165,6 +165,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
         return 0;
     };
     let now = sim.session.binary_frame();
+    let ares = rules.ares_form();
     if !object.gate {
         //44E77C..44E794: non-Gate Open queues Guard without commencing.
         let readiness = LiveReadyInputProvider { rules };
@@ -218,14 +219,11 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
                 .get_or_insert_with(Default::default)
                 .hold_timer
                 .arm(now, hold_ticks);
-            //44E550 plays GateDown after starting the door; default builds
-            // leave that stock sound and its redraw a residual.
-            #[cfg(feature = "ares")]
-            if opened {
+            //44E550 plays GateDown after starting the door; a game without
+            // Ares leaves that stock sound and its redraw a residual.
+            if ares && opened {
                 play_gate_sound(sim, id, object, false, rules);
             }
-            #[cfg(not(feature = "ares"))]
-            let _ = opened;
             0
         }
         1 | 4 => {
@@ -275,8 +273,9 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.close_door(deploy_ticks, now);
             entity.mission.set_handler_state(4);
-            #[cfg(feature = "ares")]
-            play_gate_sound(sim, id, object, true, rules);
+            if ares {
+                play_gate_sound(sim, id, object, true, rules);
+            }
             0
         }
         //44E464: states above4 share the cadence exit44E4BA.
@@ -294,7 +293,6 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
 /// closes (`up`) or GateDown as it opens. Ares BuildingClass_Mi_Open_GateUp
 /// (100156B0, hook 0x44E61E) and _GateDown (10015670, hook 0x44E550) take
 /// the type's `GateUpSound`/`GateDownSound` before `[AudioVisual]`'s.
-#[cfg(feature = "ares")]
 fn play_gate_sound(
     sim: &mut Simulation,
     id: u64,
@@ -872,9 +870,9 @@ mod tests {
     /// _GateUp (100156B0, hook 0x44E61E): starting to open plays the type's
     /// GateDownSound, else `[AudioVisual] GateDown`; state 3's close plays
     /// GateUpSound, else GateUp.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_gate_sounds_take_the_type_sound_before_the_rules_one() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
             "[AudioVisual]\nGateDown=Rules\nGateUp=Rules\n[BuildingTypes]\n0=GATE\n\
              [GATE]\nStrength=1000\nFoundation=2x2\nGate=yes\nDeployTime=.044\n\

@@ -331,6 +331,7 @@ impl ProjectileCollisionWorld<'_> {
                             self.overlay(&cell).0.map_or(-1, i32::from),
                             -1,
                             self.overlay_registry,
+                            self.rules.ares_form(),
                         ),
                         crate::sim::cell_kernel::WallConnectionStep::Return(true)
                     );

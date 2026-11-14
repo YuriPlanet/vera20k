@@ -117,8 +117,7 @@ impl Simulation {
             .ok_or("Scatter lost its infantryman")?;
         // Ares InfantryClass_Scatter1004CC60 (hook51D0DD): a Deactivated
         // infantryman returns before the Doing test.
-        #[cfg(feature = "ares")]
-        if infantry.deactivated.is_offline() {
+        if rules.ares_form() && infantry.deactivated.is_offline() {
             return Ok(false);
         }
         let doing = infantry

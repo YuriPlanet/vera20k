@@ -195,16 +195,15 @@ impl Simulation {
             rules.general.dig_sound.clone(),
             rules.general.dig_anim.clone(),
         );
-        #[cfg(feature = "ares")]
-        if let Some(object) = self.object_type(entity.type_ref(), rules) {
+        if rules.ares_form()
+            && let Some(object) = self.object_type(entity.type_ref(), rules)
+        {
             let [sound, anim] = object.techno_combat().dig_effects(effects.dig_in);
             return (
                 sound.map_or(stock.0, |sound| sound.map(str::to_owned)),
                 anim.map_or(stock.1, |anim| anim.map(str::to_owned)),
             );
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = (entity, effects);
         stock
     }
 
@@ -509,8 +508,7 @@ impl Simulation {
         // Ares 3.0 TunnelLocomotionClass_Turning (Ares.dll 1005D500, hook
         // 0x0072920C): a null Destination ends the dig (State 7) instead of
         // turning toward the map origin.
-        #[cfg(feature = "ares")]
-        if destination == NULL_COORD {
+        if rules.ares_form() && destination == NULL_COORD {
             self.tunnel_set_state(id, TunnelState::DugOut);
             return;
         }

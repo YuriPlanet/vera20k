@@ -214,9 +214,9 @@ pub(crate) fn foot_on_sold(
     // RESIDUAL: a blast that destroys the unit ends the sale here; native
     // runs the rest of On_Sold on the destroyed unit. Only Ares sells a
     // Foot, so this whole function runs only while Ares plays.
-    // Still on the feature: moves with the bomb's Ares settings (combat).
-    #[cfg(feature = "ares")]
-    if !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects()) {
+    if rules.ares_form()
+        && !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects())
+    {
         return true;
     }
     let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
@@ -450,9 +450,10 @@ pub(crate) fn sell_back(
     if !buildup {
         // Ares BuildingClass_Sell_DetonateNoBuildup (hook 0x4471D5) before
         // the wall's removal; a wall its blast destroys is not removed twice.
-        // Still on the feature: moves with the bomb's Ares settings (combat).
-        #[cfg(feature = "ares")]
-        if firestorm_wall && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
+        if rules.ares_form()
+            && firestorm_wall
+            && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects)
+        {
             return true;
         }
         if firestorm_wall {
@@ -945,9 +946,7 @@ pub(crate) fn sell_complete(
     // Ares BuildingClass_Mi_Selling_DetonatePostBuildup (hook 0x44A1FF),
     // after vt+0xE0. RESIDUAL: a blast that destroys the building ends the
     // sale with no refund; native runs the refund and UnInit on it.
-    // Still on the feature: moves with the bomb's Ares settings (combat).
-    #[cfg(feature = "ares")]
-    if !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
+    if rules.ares_form() && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
         return false;
     }
     sim.lighting_sources.set_building_light_active(id, false);

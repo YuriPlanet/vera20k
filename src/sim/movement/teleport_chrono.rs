@@ -138,7 +138,7 @@ impl Simulation {
         // skips Limbo. His Limbo cleared it already, so this only matters if
         // another infantryman took that spot: a later placement may stack.
         if infantry {
-            self.locomotor_mark_all_occupation_bits(id, false);
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
             Self::object_raw_receiver_at(
                 &mut self.substrate,
                 &self.path_grid,
@@ -146,6 +146,7 @@ impl Simulation {
                 id,
                 coord,
                 false,
+                rules.ares_form(),
             );
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return Ok(false);
@@ -175,7 +176,7 @@ impl Simulation {
                 .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
         }
         if category == EntityCategory::Unit {
-            self.locomotor_mark_all_occupation_bits(id, false);
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
             self.force_track(id, -1, coord, rules, registry, effects);
             Self::object_raw_receiver_at(
                 &mut self.substrate,
@@ -184,6 +185,7 @@ impl Simulation {
                 id,
                 coord,
                 false,
+                rules.ares_form(),
             );
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return Ok(false);
@@ -229,7 +231,7 @@ impl Simulation {
         )
         .map_err(|error| error.to_string())?;
         if infantry {
-            self.locomotor_mark_all_occupation_bits(id, false);
+            self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
         }
         Ok(true)
     }
@@ -535,6 +537,7 @@ impl Simulation {
                 id,
                 marked,
                 false,
+                rules.ares_form(),
             );
             let (ground, bridge) = self
                 .resolved_terrain
@@ -574,6 +577,7 @@ impl Simulation {
                 id,
                 marked,
                 true,
+                rules.ares_form(),
             );
             Self::object_raw_receiver_at(
                 &mut self.substrate,
@@ -582,6 +586,7 @@ impl Simulation {
                 id,
                 marked,
                 true,
+                rules.ares_form(),
             );
             return true;
         }
@@ -641,6 +646,7 @@ impl Simulation {
             id,
             marked,
             true,
+            rules.ares_form(),
         );
         true
     }

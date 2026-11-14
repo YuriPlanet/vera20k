@@ -591,6 +591,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
             overlay(&hit, los).0.map_or(-1, i32::from),
             -1,
             los.overlay_registry,
+            rules.ares_form(),
         ),
         crate::sim::cell_kernel::WallConnectionStep::Return(true)
     ) {

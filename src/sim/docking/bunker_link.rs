@@ -1379,7 +1379,10 @@ mod tests {
             let held = stored(&sim, 3, &rules);
             let receiver = sim.substrate.entities.get_mut(3).unwrap();
             crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                receiver, tank, held,
+                receiver,
+                tank,
+                held,
+                rules.ares_form(),
             );
             assert_eq!(receiver.attack_target.target(), Some(TargetKind::Entity(2)));
         }

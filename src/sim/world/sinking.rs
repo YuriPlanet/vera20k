@@ -101,6 +101,7 @@ impl Simulation {
                     entity.position.rx(),
                     entity.position.ry(),
                     entity.owner(),
+                    rules.ares_form(),
                 )
             });
             if let Some(event) = announcement {

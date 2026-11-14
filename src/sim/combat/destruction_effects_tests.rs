@@ -573,14 +573,15 @@ fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
             "death weapon: {case}"
         );
         // The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            sim.substrate
-                .entities
-                .get(rider)
-                .is_none_or(|rider| !rider.lifecycle.object_alive()),
-            "passenger: {case}"
-        );
+        if !rules.ares() {
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(rider)
+                    .is_none_or(|rider| !rider.lifecycle.object_alive()),
+                "passenger: {case}"
+            );
+        }
     }
 }
 

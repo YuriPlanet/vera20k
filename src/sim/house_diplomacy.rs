@@ -601,6 +601,7 @@ impl Simulation {
             other,
             anger.wrapping_neg(),
             self.session.game_mode_nonzero(),
+            rules.ares_form(),
             rules.general.ai_nearest_enemy,
         );
         if let Some(house) = self.houses.get_mut(&owner)
@@ -749,6 +750,7 @@ impl Simulation {
             other,
             1,
             self.session.game_mode_nonzero(),
+            rules.ares_form(),
             rules.general.ai_nearest_enemy,
         );
         // 0x004F9FE7..0x004FA01A: only an alliance is broken.
@@ -784,6 +786,7 @@ impl Simulation {
                     other,
                     1,
                     self.session.game_mode_nonzero(),
+                    rules.ares_form(),
                     rules.general.ai_nearest_enemy,
                 );
             }

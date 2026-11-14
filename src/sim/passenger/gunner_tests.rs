@@ -762,11 +762,7 @@ fn retail_empty_ifv_departure_resets_selection_without_a_passenger() {
             .entities
             .get_mut(ifv)
             .unwrap()
-            .set_gunner_weapon(
-                initial.0,
-                rules.object("FV").unwrap(),
-                crate::rules::ARES_BUILD,
-            );
+            .set_gunner_weapon(initial.0, rules.object("FV").unwrap(), rules.ares());
         assert_selection(&sim, ifv, initial);
         assert_eq!(
             depart_cargo_head(

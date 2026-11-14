@@ -135,10 +135,9 @@ impl Simulation {
             object: true,
             // Ares UnitClass_ApproachTarget_OmniCrusher (Ares.dll 1004BC10,
             // hook 0x741613): `OmniCrusher.Aggressive=no` skips the arm.
-            #[cfg(feature = "ares")]
-            omni: object.omni_crusher && object.techno_combat().combat().omni_crusher_aggressive(),
-            #[cfg(not(feature = "ares"))]
-            omni: object.omni_crusher,
+            omni: object.omni_crusher
+                && (!rules.ares_form()
+                    || object.techno_combat().combat().omni_crusher_aggressive()),
             is_human: self
                 .houses
                 .get(&actor.owner())
@@ -568,10 +567,7 @@ impl Simulation {
         // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
         // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
         // either.
-        #[cfg(feature = "ares")]
-        let passive_target = actor.passive_scan.acquired();
-        #[cfg(not(feature = "ares"))]
-        let passive_target = false;
+        let passive_target = rules.ares_form() && actor.passive_scan.acquired();
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()

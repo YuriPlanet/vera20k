@@ -2024,15 +2024,16 @@ pub(super) fn emit_admitted_fire(
             .with_damage_multiplier(damage_multiplier);
             // Ares TechnoClass_Fire_CreateBullet (1001ADE0, hook 0x6FE53F):
             // the bullet's Range is the weapon's ProjectileRange, which only
-            // a `Ranged=` type spends. Still behind the feature: the bullet's
-            // Range field and the Update_Ranged spender that reads it move
-            // with `sim::projectile`.
-            #[cfg(feature = "ares")]
-            let payload = payload.with_ares_range(
-                projectile_type
-                    .filter(|kind| kind.ranged)
-                    .map(|_| weapon.ares_projectile_range),
-            );
+            // a `Ranged=` type spends, in a game read the Ares way.
+            let payload = if rules.ares_form() {
+                payload.with_ares_range(
+                    projectile_type
+                        .filter(|kind| kind.ranged)
+                        .map(|_| weapon.ares_projectile_range),
+                )
+            } else {
+                payload
+            };
             #[cfg(feature = "phobos")]
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
@@ -2689,7 +2690,7 @@ fn commit_fire_bookkeeping(
             world.leave_team(drainer_id, true, rules, effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
-            represented_assign_target(drainer, None);
+            represented_assign_target(drainer, None, rules.ares_form());
         }
     }
 }

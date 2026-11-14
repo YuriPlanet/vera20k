@@ -22,8 +22,7 @@ pub(crate) fn apply_speed_crate(
     radius: i32,
     multiplier: NativeF64Bits,
 ) -> bool {
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
+    let ares = rules.ares_form();
     let mut announce = false;
     // This arm has no callback that changes the display vector. Coordinate
     // getters are retained XYZ; Ares writes the permanent Ext+90 and its
@@ -56,8 +55,9 @@ pub(crate) fn apply_speed_crate(
         if entity.foot_speed.accept_speed_crate(multiplier) {
             // Installed Speed2 hook1005FA00 stores Ext+90, then calls
             //100460A0 before returning to the ordinary recipient loop.
-            #[cfg(feature = "ares")]
-            entity.recompute_ares_attached_stats(rules, interner);
+            if ares {
+                entity.recompute_ares_attached_stats(rules, interner);
+            }
             announce |= houses
                 .get(&entity.owner())
                 .is_some_and(|house| house.player_control());
@@ -197,8 +197,8 @@ mod tests {
                     Some(crate::sim::world::display_layers::DisplayLayer::GROUND),
                     &|_| 0,
                 );
-                let expected = !already_upgraded
-                    && (crate::rules::ARES_BUILD || category != EntityCategory::Aircraft);
+                let expected =
+                    !already_upgraded && (rules.ares() || category != EntityCategory::Aircraft);
                 let slot = super::super::pickup::multiplayer_eligible_slot(
                     &sim,
                     &rules,

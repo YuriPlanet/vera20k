@@ -417,6 +417,7 @@ pub(super) fn ares_spark_dies(
             overlay.map_or(-1, i32::from),
             -1,
             Some(rules.overlay_registry()),
+            rules.ares_form(),
         ),
         crate::sim::cell_kernel::WallConnectionStep::Return(true)
     ))

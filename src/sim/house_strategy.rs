@@ -118,6 +118,7 @@ fn building_strategy(
         &sim.house_alliances,
         &mut sim.houses,
         owner,
+        rules.ares_form(),
         rules.general.ai_nearest_enemy,
     );
     forget_defeated_enemy(
@@ -126,6 +127,7 @@ fn building_strategy(
         &mut sim.houses,
         owner,
         sim.session.game_mode_nonzero(),
+        rules.ares_form(),
         rules.general.ai_nearest_enemy,
     );
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
@@ -262,6 +264,7 @@ fn pick_enemy(
     house_alliances: &HouseAlliances,
     houses: &mut Houses,
     owner: InternedId,
+    ares: bool,
     nearest_enemy: bool,
 ) {
     if !session.game_mode_nonzero() {
@@ -314,6 +317,7 @@ fn pick_enemy(
             peer,
             1,
             session.game_mode_nonzero(),
+            ares,
             nearest_enemy,
         );
     }
@@ -327,6 +331,7 @@ fn forget_defeated_enemy(
     houses: &mut Houses,
     owner: InternedId,
     game_mode_nonzero: bool,
+    ares: bool,
     nearest_enemy: bool,
 ) {
     let Some(enemy) = houses.get(&owner).and_then(|house| house.enemy_house()) else {
@@ -348,6 +353,7 @@ fn forget_defeated_enemy(
         enemy,
         anger.wrapping_neg(),
         game_mode_nonzero,
+        ares,
         nearest_enemy,
     );
     if let Some(house) = houses.get_mut(&owner) {
@@ -506,7 +512,7 @@ pub(crate) fn all_to_hunt(
 /// Ares 3.0 HouseClass_AddAnger_MultiplayPassive 10023FB0 (hook
 /// `0x00504796`): outside a campaign (`game_mode_nonzero`) the node update
 /// loop runs zero times for a `MultiplayPassive` peer; the enemy rescan
-/// still runs.
+/// still runs. `ares` is the caller's `rules.ares_form()`.
 ///
 /// VERA `[General] AINearestEnemy=` (`nearest_enemy`, off by default): among
 /// peers of equal anger the one whose base centre is nearer wins, instead of
@@ -520,16 +526,11 @@ pub(crate) fn update_anger_nodes(
     peer: InternedId,
     delta: i32,
     game_mode_nonzero: bool,
+    ares: bool,
     nearest_enemy: bool,
 ) {
-    #[cfg(feature = "ares")]
     let passive_peer =
-        game_mode_nonzero && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
-    #[cfg(not(feature = "ares"))]
-    let passive_peer = {
-        let _ = game_mode_nonzero;
-        false
-    };
+        ares && game_mode_nonzero && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
     let peer_is_registered = peer != owner && houses.contains_key(&peer);
     if peer_is_registered
         && !passive_peer

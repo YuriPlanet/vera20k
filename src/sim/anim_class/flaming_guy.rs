@@ -311,6 +311,7 @@ impl Simulation {
             state.fall.advance_rate(
                 rules.general.parachute_max_fall_rate,
                 rules.general.no_parachute_max_fall_rate,
+                rules.ares_form(),
             );
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.world_coord = coord;

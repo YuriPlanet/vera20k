@@ -918,6 +918,7 @@ impl Simulation {
                 id,
                 call.family,
                 true,
+                call.rules.ares_form(),
             );
             return Ok(false);
         }

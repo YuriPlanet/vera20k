@@ -278,9 +278,18 @@ impl Simulation {
         path_grid: &Option<Arc<PathGrid>>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
+        ares: bool,
     ) {
         if let Some(head) = substrate.hover_mut(id).and_then(|hover| hover.head.take()) {
-            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, head, false);
+            Self::track_raw_mark_at(
+                substrate,
+                path_grid,
+                resolved_terrain,
+                id,
+                head,
+                false,
+                ares,
+            );
         }
     }
 
@@ -297,6 +306,7 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         put: bool,
+        ares: bool,
     ) {
         if put {
             return;
@@ -311,7 +321,15 @@ impl Simulation {
             super::super::foot_coordinate::stored_head(entity),
             super::super::foot_coordinate::current_coordinate(entity),
         );
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, coord, false);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            coord,
+            false,
+            ares,
+        );
     }
 
     /// The Foot's current speed (vt+0x538, GetCurrentSpeed 0x004DB1A0).
@@ -497,6 +515,7 @@ impl Simulation {
                     id,
                     location,
                     true,
+                    rules.ares_form(),
                 );
             }
             out.bridge_state_changed |= self.per_cell_process(
@@ -532,6 +551,7 @@ impl Simulation {
                 &self.path_grid,
                 &self.resolved_terrain,
                 id,
+                rules.ares_form(),
             );
             return Ok(Arrival::Tail);
         }
@@ -565,6 +585,7 @@ impl Simulation {
                 id,
                 location,
                 false,
+                rules.ares_form(),
             );
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.foot_occupation_enabled.suspend();
@@ -1100,6 +1121,7 @@ impl Simulation {
             &self.path_grid,
             &self.resolved_terrain,
             id,
+            rules.ares_form(),
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             hover_stop_moving(entity);
@@ -1164,6 +1186,7 @@ impl Simulation {
             &self.path_grid,
             &self.resolved_terrain,
             id,
+            rules.ares_form(),
         );
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(7);
@@ -1279,6 +1302,7 @@ impl Simulation {
                         id,
                         head,
                         true,
+                        rules.ares_form(),
                     );
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -1299,6 +1323,7 @@ impl Simulation {
                         &self.path_grid,
                         &self.resolved_terrain,
                         id,
+                        rules.ares_form(),
                     );
                     Self::hover_restart_path(&self.session, &mut self.substrate, id);
                     self.hover_path_and_arrival(id, 0, rules, registry, effects)?;

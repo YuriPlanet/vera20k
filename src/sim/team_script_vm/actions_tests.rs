@@ -1671,8 +1671,12 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
         let house = sim.houses.get_mut(&russians).unwrap();
         house.clear_spatial_threat();
         if threat {
-            house.adjust_spatial_threat((5, 21), 1000).unwrap();
-            house.adjust_spatial_threat((29, 21), 400).unwrap();
+            house
+                .adjust_spatial_threat((5, 21), 1000, rules.ares_form())
+                .unwrap();
+            house
+                .adjust_spatial_threat((29, 21), 400, rules.ares_form())
+                .unwrap();
         }
         let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
         assert_eq!(
@@ -1708,7 +1712,7 @@ fn ares_threat_index_moves_a_pillbox_s_threat_off_its_cell() {
     let russians = sim.interner.get("Russians").unwrap();
     assert!(sim.house_threat_at_cell(russians, (20, 12)).unwrap() > 0);
     let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
-    let pick = if cfg!(feature = "ares") { 1 } else { 0 };
+    let pick = if rules.ares_form() { 1 } else { 0 };
     assert_eq!(target, Some(TeamTarget::Object(pillboxes[pick])));
 }
 

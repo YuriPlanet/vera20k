@@ -457,7 +457,11 @@ impl Simulation {
                 if clear_archive {
                     entity.set_archive_target(None);
                 }
-                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    entity,
+                    None,
+                    rules.ares_form(),
+                );
             }
             self.assign_null_destination(owner, rules, effects.overlay_registry(), effects);
         }
@@ -1377,7 +1381,11 @@ impl Simulation {
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);
             if let Some(source) = source.and_then(|id| self.substrate.entities.get_mut(id)) {
-                crate::sim::mission::concrete_effects::represented_assign_target(source, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    source,
+                    None,
+                    rules.ares_form(),
+                );
             }
             return;
         }
