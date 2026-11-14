@@ -87,16 +87,13 @@ fn draw_type<'a>(
     entity: &ObjectRecord,
     unloading_body: bool,
 ) -> Option<&'a ObjectType> {
-    let view = runtime.view();
-    let actual = runtime
-        .resources
-        .rules
-        .object(view.interner().resolve(entity.type_ref()));
+    let (interner, rules) = (runtime.view().interner(), &runtime.resources.rules);
+    let actual = interner.object_type(entity.type_ref(), rules);
     if unloading_body && actual.is_some_and(|o| o.harvester) {
         entity
             .display_type_override
             .image()
-            .and_then(|id| runtime.resources.rules.object(view.interner().resolve(id)))
+            .and_then(|id| interner.object_type(id, rules))
             .or(actual)
     } else {
         actual
