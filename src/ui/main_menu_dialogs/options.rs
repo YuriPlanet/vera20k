@@ -113,6 +113,9 @@ pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp
 /// VERA's accessibility box: retail's string table has nothing for it.
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
+/// VERA's timer box: retail's string table has nothing for it.
+pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
+pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
 /// VERA's terrain deformation box (`docs/terrain-deformation.md`).
@@ -758,6 +761,9 @@ pub(crate) enum LauncherCheckboxId {
     CustomEndGameMovie,
     /// VERA-only accessibility box: detailed EVA text rows, default off.
     DetailedEvaText,
+    /// VERA's box: the super weapon timer list shows six lines and pages the
+    /// rest. Default off; the next timer draw reads it.
+    CompactSuperTimers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -817,6 +823,7 @@ pub(crate) enum LauncherOptionsEvent {
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
     DetailedEvaTextChanged(bool),
+    CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -889,6 +896,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) custom_end_game_movie: bool,
     /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
     pub(crate) detailed_eva_text: bool,
+    /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
+    pub(crate) compact_super_timers: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
@@ -935,6 +944,7 @@ impl Default for LauncherOptionsValues {
             custom_end_game_score: false,
             custom_end_game_movie: false,
             detailed_eva_text: false,
+            compact_super_timers: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
             color_vision: ColorVisionMode::Off,
@@ -1394,6 +1404,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
             LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
+            LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1463,6 +1474,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::DetailedEvaText => self
                 .pending_events
                 .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
+            LauncherCheckboxId::CompactSuperTimers => self
+                .pending_events
+                .push(LauncherOptionsEvent::CompactSuperTimersChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1680,6 +1694,7 @@ impl Category {
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
@@ -1691,6 +1706,7 @@ impl Category {
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
@@ -1750,6 +1766,7 @@ impl Category {
             Self::Gameplay => &[
                 Setting::Slider(Slider::Detail),
                 Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::RightClickOrders),
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
@@ -2416,6 +2433,7 @@ mod tests {
                 Check::CustomEndGameScore,
                 Check::CustomEndGameMovie,
                 Check::DetailedEvaText,
+                Check::CompactSuperTimers,
             ]
             .map(Setting::Checkbox),
         )

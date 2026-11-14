@@ -198,8 +198,10 @@ impl TimerBlink {
 /// The Supers' timer blinks, by owner and type.
 pub(crate) type TimerBlinks = HashMap<(InternedId, InternedId), TimerBlink>;
 
-/// VERA presentation extension. No timer, grant, visibility or command state
-/// belongs here: this only chooses which existing DrawTimer rows are shown.
+/// VERA presentation extension, on with `[VERA] CompactSuperTimers=`
+/// (Options). No timer, grant, visibility or command state belongs here: this
+/// only chooses which existing DrawTimer rows are shown. Off, every line
+/// stacks up from the bottom as `0x006D4941..0x006D4B25` draws it.
 #[derive(Debug, Default)]
 pub(crate) struct TimerDock {
     expanded: bool,
@@ -254,15 +256,17 @@ impl TimerDock {
         true
     }
 
-    /// Native line order and placement remain untouched through six Supers.
-    /// Beyond that, keep local Supers first and page the remaining ready-first
-    /// rows. Scenario/blackout lines retain their original relative order.
+    /// Native line order and placement remain untouched while `compact` is
+    /// off, and through six Supers. Beyond that, keep local Supers first and
+    /// page the remaining ready-first rows. Scenario/blackout lines retain
+    /// their original relative order.
     fn rows(
         &mut self,
         lines: &[TimerLine],
         local: Option<InternedId>,
         view: [i32; 2],
         font_height: i32,
+        compact: bool,
     ) -> Vec<DockRow> {
         self.clear_hits();
         let supers: Vec<_> = lines
@@ -270,7 +274,7 @@ impl TimerDock {
             .enumerate()
             .filter_map(|(i, line)| matches!(line.source, TimerSource::Super(_)).then_some(i))
             .collect();
-        if supers.len() <= 6 {
+        if !compact || supers.len() <= 6 {
             self.expanded = false;
             self.offset = 0;
             self.max_offset = 0;
@@ -491,12 +495,14 @@ pub(crate) fn build_super_timer_instances(
     let font = &state.renderer.bit_font;
     let local = sim.session().current_house();
     let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
+    let compact = state.persistence.options_profile.compact_super_timers;
     let dock = &mut state.match_state.match_presentation.super_timer_dock;
     let rows = dock.rows(
         &timer_lines,
         local,
         [view_w as i32, view_h as i32],
         font.cell_height() as i32,
+        compact,
     );
     let mut positions = vec![None; lines.len()];
     for (position, row) in rows.iter().enumerate() {

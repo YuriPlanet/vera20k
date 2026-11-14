@@ -184,6 +184,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
     }
+    fn store_compact_super_timers(&mut self, enabled: bool) {
+        // Presentation only: the next timer draw reads it.
+        self.persistence.options_profile.compact_super_timers = enabled;
+    }
     fn store_lock_cursor(&mut self, locked: bool) {
         // Saved, and applied at once: the window holds or frees the pointer.
         self.persistence.options_profile.lock_cursor = locked;
