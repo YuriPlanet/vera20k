@@ -16,6 +16,41 @@ use crate::render::sidebar_chrome::SidebarTheme;
 use crate::ui::sidebar::Rect;
 use crate::util::config::GameConfig;
 
+/// A game Ares plays in by its keys alone, read the stock way, has no Side
+/// extensions, so its sides draw the stock sidebar instead of stopping the
+/// match load; a game that ships `ares.mix` keeps each side's own MIX group
+/// (Ares1002FA00). A fourth side takes the nonzero geometry (6A5090) only on
+/// the Ares arm, as it did in each build before.
+#[test]
+fn only_a_side_with_a_retained_configuration_draws_the_ares_sidebar() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch;
+    let keys = IniFile::from_str("[HTNK]\nImmuneToAbduction=yes\n");
+    let Some(keys_only) = retail_battle_rules_for_map_with_patch("Hills.mmx", &keys) else {
+        return;
+    };
+    assert!(keys_only.rules.ares());
+    assert_eq!(
+        super::ares_sidebar_config(&keys_only.rules, 0).is_some(),
+        keys_only.rules.reads_ares_way()
+    );
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(ares_mix) = retail_battle_rules_for_map_with_patch("Hills.mmx", &IniFile::empty())
+    else {
+        return;
+    };
+    let config = |side| super::ares_sidebar_config(&ares_mix.rules, side);
+    assert_eq!(
+        [config(0), config(1), config(2)],
+        [Some((1, false)), Some((2, false)), Some((2, true))]
+    );
+    assert_eq!(
+        super::sidebar_theme_for_side(3, false),
+        SidebarTheme::Allied
+    );
+    assert_eq!(super::sidebar_theme_for_side(3, true), SidebarTheme::Soviet);
+}
+
 fn retail_ra2_dir() -> PathBuf {
     std::env::var_os("RA2_DIR")
         .map(PathBuf::from)

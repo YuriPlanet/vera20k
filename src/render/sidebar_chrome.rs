@@ -536,6 +536,25 @@ impl SidebarArtNames {
     }
 }
 
+/// The scenario side's retained Side sidebar configuration (its MIX index and
+/// Yuri filename switch) when Ares plays in the game (`RuleSet::ares`), which
+/// selects the side's MIX group (Ares1002FA00). A side without one draws the
+/// stock sidebar: a game whose Rules were not read the Ares way has no Side
+/// extensions.
+pub(crate) fn ares_sidebar_config(
+    rules: &crate::rules::ruleset::RuleSet,
+    side_index: i32,
+) -> Option<(i32, bool)> {
+    let side = crate::rules::ruleset::SideIdx(u8::try_from(side_index).ok()?);
+    if !rules.ares() {
+        return None;
+    }
+    Some((
+        rules.side_sidebar_mix_file_index(side)?,
+        rules.side_sidebar_yuri_file_names(side)?,
+    ))
+}
+
 pub fn build_sidebar_chrome_set(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -543,20 +562,7 @@ pub fn build_sidebar_chrome_set(
     rules: &crate::rules::ruleset::RuleSet,
     side_index: i32,
 ) -> Result<Option<SidebarChromeSet>, crate::assets::error::AssetError> {
-    // When Ares plays in the game (`RuleSet::ares`), the scenario side's
-    // retained Side sidebar configuration selects its MIX group. A side
-    // without one draws the stock sidebar: a game whose Rules were not read
-    // the Ares way has no Side extensions.
-    let side = u8::try_from(side_index)
-        .ok()
-        .map(crate::rules::ruleset::SideIdx);
-    let config = side.filter(|_| rules.ares()).and_then(|side| {
-        Some((
-            rules.side_sidebar_mix_file_index(side)?,
-            rules.side_sidebar_yuri_file_names(side)?,
-        ))
-    });
-    if let Some((mix_index, yuri_names)) = config {
+    if let Some((mix_index, yuri_names)) = ares_sidebar_config(rules, side_index) {
         if !asset_manager.activate_sidebar_archives(mix_index)? {
             // Full_Init687824 and saved Load67E766 abort when534FA0 fails.
             return Err(crate::assets::error::AssetError::ParseError {

@@ -17,8 +17,9 @@ misses what is behind the feature: most of Ares' own messages, its superweapon
 targeting, the flying credits and `IvanBomb.Image`; in a skirmish, Ares' random country weights (a
 Random player draws as in the original) and the spawn file's larger Country and Side
 limits; and the random map generator's urban areas. A game with Ares keys but no `ares.mix` is
-read the stock way and plays only the world, unit and combat parts, so it can play unlike
-both the original and Ares: a mod that needs Ares ships `ares.mix`, as Ares mods do. For
+read the stock way and plays only the world, unit and combat parts and the sidebar's Ares
+behaviour (no cameo limit, Ares' cameo order, Shift-click queuing five, `EnemyUIName`) with
+the original sidebar art, so it can play unlike both the original and Ares: a mod that needs Ares ships `ares.mix`, as Ares mods do. For
 all the Ares support VERA20K has, build with the feature:
 
 ```sh

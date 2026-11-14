@@ -1100,8 +1100,18 @@ mod tests {
         dir.write(name, &bytes);
     }
 
+    /// Runs for a game Ares plays in and one it does not, in every build (a
+    /// build with the `ares` feature reads every fixture the Ares way).
     #[test]
     fn cameo_pcx_feature_gate_embedded_palette_and_packed_key() {
+        for ares in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares);
+            assert_eq!(cameo_rules().ares(), ares || cfg!(feature = "ares"));
+            cameo_pcx_case();
+        }
+    }
+
+    fn cameo_pcx_case() {
         use crate::{
             assets::asset_manager::AssetManager, assets::pal_file::Palette,
             map::source::test_support::TestDirectory,
@@ -1276,8 +1286,17 @@ mod tests {
         assert_eq!([promoted.canvas_width, promoted.canvas_height], [2, 2]);
     }
 
+    /// Runs for a game Ares plays in and one it does not, in every build (a
+    /// build with the `ares` feature reads every fixture the Ares way).
     #[test]
     fn superweapon_pcx_key_and_shp_fallback_share_the_projected_identity() {
+        for ares in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares);
+            superweapon_pcx_case();
+        }
+    }
+
+    fn superweapon_pcx_case() {
         use crate::{
             assets::asset_manager::AssetManager,
             assets::pal_file::Palette,
