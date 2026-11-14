@@ -1344,6 +1344,23 @@ pub(super) fn sell_hard_to_hold(
         if ty.category != ObjectCategory::Building || buildable.contains(&unit.type_id) {
             continue;
         }
+        // A sale the world did not show is not a sale that is about to happen.
+        // The refund path has no answer for a type the house's own yards cannot
+        // produce, so the same captured building qualified again every
+        // `SALE_GAP_FRAMES` for the whole match. Written off after
+        // [`SALE_ATTEMPTS`], and said once.
+        match brain.sale_attempts.get(&unit.entity_id).copied() {
+            Some(attempts) if attempts >= SALE_ATTEMPTS => continue,
+            Some(attempts) => {
+                log::info!(
+                    "auto play: {} at {:?} did not sell (attempt {})",
+                    ty.id,
+                    unit.cell,
+                    attempts + 1
+                );
+            }
+            None => {}
+        }
         // The yard: the house, not a hostage. And a maker building is worth
         // packing and driving home, which is a different errand.
         if super::expand::makes_a_yard(rules, ty) {
@@ -1392,6 +1409,7 @@ pub(super) fn sell_hard_to_hold(
         out.intent(Intent::SellBuilding {
             entity_id: unit.entity_id,
         });
+        *brain.sale_attempts.entry(unit.entity_id).or_default() += 1;
         // One at a time: a dozen refunds in a frame is a windfall, and the next
         // one is a frame away.
         brain.sale_at = tick.saturating_add(SALE_GAP_FRAMES);
@@ -1401,6 +1419,14 @@ pub(super) fn sell_hard_to_hold(
 
 /// How many frames between two sales.
 const SALE_GAP_FRAMES: u64 = 60;
+
+/// How many times one building may be sold before it is written off.
+///
+/// Three, because the refund is not instant: a sale the world accepts takes the
+/// building down over a few frames, and a step that gave up on the first frame
+/// would write off a sale that was already working. Three gaps is a sale that
+/// plainly did not take.
+const SALE_ATTEMPTS: u32 = 3;
 
 /// Whether a type's weapon carries a mind-control warhead.
 ///
@@ -3140,6 +3166,79 @@ mod tests {
         assert!(
             !out.attachments.iter().any(|a| a.actor == gi),
             "the conscript stays: three quarters is not its line"
+        );
+    }
+
+    /// A sale that does not take is written off, not retried for the match.
+    ///
+    /// Measured: a captured `CAFRMB` at (110, 63) qualified for sale every
+    /// `SALE_GAP_FRAMES` for a whole twenty-thousand-tick match and was still
+    /// standing at the end. The step had no feedback at all — it read "still
+    /// there" as "not tried yet" and spent a sale slot every few seconds for the
+    /// rest of the game.
+    #[test]
+    fn a_building_that_does_not_sell_is_written_off() {
+        let Some((mut sim, rules)) = snapshot(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        sim.spawn_object("GACNST", "Americans", 16, 16, 255, &rules)
+            .expect("the house's own yard");
+        let captured = sim
+            .spawn_object("CAFRMB", "Americans", 110, 63, 255, &rules)
+            .expect("a captured French structure");
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let obs = Observation::new(&sim, owner);
+
+        let attempts = |brain: &mut RetailBrain, out: &mut Outbox| {
+            brain.sale_at = 0;
+            sell_hard_to_hold(brain, &rules, &obs, out);
+        };
+
+        let mut out = Outbox::default();
+        attempts(&mut brain, &mut out);
+        assert!(
+            out.intents.iter().any(|intent| matches!(
+                intent,
+                Intent::SellBuilding { entity_id } if *entity_id == captured
+            )),
+            "the first attempt sells it: {:?}",
+            out.intents
+        );
+
+        // The sale does not take — the object is still standing — so the step
+        // tries again, and again, and then stops.
+        let mut spent = 0;
+        for _ in 0..SALE_ATTEMPTS {
+            let mut out = Outbox::default();
+            attempts(&mut brain, &mut out);
+            spent += out
+                .intents
+                .iter()
+                .filter(|intent| {
+                    matches!(intent, Intent::SellBuilding { entity_id } if *entity_id == captured)
+                })
+                .count();
+        }
+        assert!(
+            spent > 0,
+            "the retries happen before the write-off: {spent}"
+        );
+
+        let mut after = Outbox::default();
+        attempts(&mut brain, &mut after);
+        assert!(
+            !after.intents.iter().any(|intent| matches!(
+                intent,
+                Intent::SellBuilding { entity_id } if *entity_id == captured
+            )),
+            "and then it is written off, not retried for the match: {:?}",
+            after.intents
         );
     }
 

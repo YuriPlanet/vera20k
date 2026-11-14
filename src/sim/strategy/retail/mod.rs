@@ -338,6 +338,16 @@ pub struct RetailBrain {
     /// base that lost its ground can qualify a dozen buildings in one frame and
     /// a dozen refunds at once is a windfall the wishlist did not ask for.
     pub(super) sale_at: u64,
+    /// Sales tried per building, and the ones written off after
+    /// [`super::orders::SALE_ATTEMPTS`].
+    ///
+    /// The comment on `sale_at` assumes a sale that qualifies is a sale that
+    /// takes. Measured, one did not: `CAFRMB` at (110, 63) was sold every
+    /// `SALE_GAP_FRAMES` for a whole match and was still standing at the end —
+    /// a captured type the house's own yards cannot produce, which the refund
+    /// path has no answer for. Without this the step has no feedback at all and
+    /// spends a sale slot every four seconds for the rest of the match.
+    pub(super) sale_attempts: std::collections::BTreeMap<u64, u32>,
     /// Makers that must come home before anything else: a captured MCV, or one out
     /// of a crate. Sticky — see [`expand::deploy_yard_maker`].
     pub(super) retrieve_makers: std::collections::BTreeSet<u64>,
@@ -440,6 +450,7 @@ impl RetailBrain {
             capturable_last: BTreeSet::new(),
             push_gate: "none",
             sale_at: 0,
+            sale_attempts: std::collections::BTreeMap::new(),
             retrieve_makers: std::collections::BTreeSet::new(),
             seen_makers: std::collections::BTreeSet::new(),
             infiltrated: std::collections::BTreeSet::new(),
