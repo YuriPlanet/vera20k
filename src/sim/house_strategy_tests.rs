@@ -1082,7 +1082,7 @@ fn ai_nearest_enemy_breaks_equal_anger_by_distance_and_keeps_higher_anger() {
         anger.insert(names[0], 1);
         anger.insert(names[2], 1);
     }
-    let mut rescan = |sim: &mut Simulation, peer, delta, nearest| {
+    let rescan = |sim: &mut Simulation, peer, delta, nearest| {
         update_anger_nodes(
             &mut sim.houses,
             &sim.house_alliances,
