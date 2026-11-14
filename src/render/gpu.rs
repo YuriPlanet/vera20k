@@ -15,7 +15,8 @@
 //! ## Dependency rules
 //! - gpu.rs is part of render/ — see render/mod.rs for dependency rules.
 
-use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::task::{Context as TaskContext, Poll, Wake, Waker};
 
 use anyhow::{Context, Result, bail};
@@ -161,6 +162,105 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
     }
 }
 
+/// The window's surface and the picture taken from it ahead of the next draw.
+struct WindowSurface {
+    surface: Option<wgpu::Surface<'static>>,
+    /// Taken by the hand-off thread once it presented the last picture
+    /// ([`GpuContext::hand_off_frame`]). Dropped before every configure, as
+    /// wgpu asks of an acquired texture.
+    next: Option<wgpu::SurfaceTexture>,
+}
+
+impl WindowSurface {
+    /// Configure the surface, dropping the picture taken from it first.
+    fn configure(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) {
+        self.next = None;
+        if let Some(surface) = &self.surface {
+            surface.configure(device, config);
+        }
+    }
+}
+
+/// The surface, shared with the hand-off thread.
+struct SharedSurface {
+    slot: Mutex<WindowSurface>,
+    /// True from a hand-off until its tail has the next picture or gave up:
+    /// a draw then would wait for the screen ([`GpuContext::screen_busy`]).
+    taking: AtomicBool,
+    /// Signalled, under `slot`, when `taking` ends.
+    taken: Condvar,
+    /// Wakes the event loop when `taking` ends.
+    wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl SharedSurface {
+    fn new(surface: wgpu::Surface<'static>) -> Self {
+        Self {
+            slot: Mutex::new(WindowSurface {
+                surface: Some(surface),
+                next: None,
+            }),
+            taking: AtomicBool::new(false),
+            taken: Condvar::new(),
+            wake: Mutex::new(None),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, WindowSurface> {
+        self.slot.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Lock the slot once no tail is taking a picture, so an acquire never
+    /// takes a second one beside it.
+    fn lock_taken(&self) -> MutexGuard<'_, WindowSurface> {
+        let mut slot = self.lock();
+        while self.taking.load(Ordering::Acquire) {
+            slot = self
+                .taken
+                .wait(slot)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        slot
+    }
+
+    /// The hand-off's tail: take the next picture now, so the wait for a
+    /// free one (the screen's refresh, with VSync on) is spent here and not
+    /// in the next draw. Anything but a plain success is left to that draw's
+    /// own acquire and its recovery.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    fn take_next(&self) {
+        /// Ends `taking` and wakes the loop even if the acquire panics.
+        struct Taken<'a>(&'a SharedSurface);
+        impl Drop for Taken<'_> {
+            fn drop(&mut self) {
+                // Under the lock, so `lock_taken` cannot miss the signal.
+                let slot = self.0.lock();
+                self.0.taking.store(false, Ordering::Release);
+                drop(slot);
+                self.0.taken.notify_all();
+                let wake = self
+                    .0
+                    .wake
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone();
+                if let Some(wake) = wake {
+                    wake();
+                }
+            }
+        }
+        // Dropped after `slot`, so its drop can lock again.
+        let _taken = Taken(self);
+        let mut slot = self.lock();
+        if slot.next.is_none()
+            && let Some(surface) = &slot.surface
+            && let wgpu::CurrentSurfaceTexture::Success(texture) = surface.get_current_texture()
+        {
+            slot.next = Some(texture);
+        }
+    }
+}
+
 /// Holds all wgpu state needed for rendering.
 ///
 /// Created once during app initialization when the window becomes available.
@@ -171,9 +271,10 @@ pub struct GpuContext {
     handoff: super::frame_handoff::FrameHandoff,
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
-    // owner locks the surface, briefly, to acquire or replace a lost swapchain.
+    // owner and the hand-off thread's tail lock the surface, briefly, to
+    // acquire or replace a lost swapchain.
     // Android suspension drops it while retaining the device and game resources.
-    surface: Mutex<Option<wgpu::Surface<'static>>>,
+    surface: Arc<SharedSurface>,
     instance: wgpu::Instance,
     window: Arc<Window>,
     /// The logical GPU device — used to create buffers, textures, pipelines.
@@ -462,7 +563,7 @@ impl GpuContext {
         let queue = super::frame_handoff::HandoffQueue::new(queue, handoff.waiter());
         Ok(Self {
             handoff,
-            surface: Mutex::new(Some(surface)),
+            surface: Arc::new(SharedSurface::new(surface)),
             instance,
             window,
             device,
@@ -506,11 +607,47 @@ impl GpuContext {
         let queue = (*self.queue).clone();
         let index = Arc::new(std::sync::OnceLock::new());
         let submitted = Arc::clone(&index);
-        self.handoff.send(move || {
+        let job = move || {
             let _ = submitted.set(queue.submit(std::iter::once(encoder.finish())));
             frame.present(&queue);
-        });
+        };
+        // The thread then takes the next picture (`SharedSurface::take_next`).
+        // Captures draw into their own target and take none.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if self.capture_target.is_none() {
+            let surface = Arc::clone(&self.surface);
+            surface.taking.store(true, Ordering::Release);
+            self.handoff
+                .send_with_tail(job, move || surface.take_next());
+            return super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter());
+        }
+        self.handoff.send(job);
         super::frame_handoff::FrameSubmission::new(index, self.handoff.waiter())
+    }
+
+    /// Whether the hand-off thread is still taking the next picture, so a draw
+    /// now would wait for the screen. The frame loop services the match
+    /// instead and draws when the wake set here comes.
+    pub(crate) fn screen_busy(&self) -> bool {
+        self.surface.taking.load(Ordering::Acquire)
+    }
+
+    /// Have the hand-off thread call `wake` when it has the next picture.
+    pub(crate) fn set_present_wake(&self, wake: Arc<dyn Fn() + Send + Sync>) {
+        *self
+            .surface
+            .wake
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(wake);
+    }
+
+    /// Whether a present wake is set.
+    pub(crate) fn has_present_wake(&self) -> bool {
+        self.surface
+            .wake
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
     }
 
     /// The time this thread spent blocked on a frame on its way to the driver
@@ -527,10 +664,7 @@ impl GpuContext {
     /// Whether the window currently owns a render surface.
     #[cfg(target_os = "android")]
     pub(crate) fn has_surface(&self) -> bool {
-        self.surface
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_some()
+        self.surface.lock().surface.is_some()
     }
 
     /// Release Android's native surface before the suspended callback returns.
@@ -540,12 +674,9 @@ impl GpuContext {
     #[cfg(target_os = "android")]
     pub(crate) fn suspend_surface(&mut self) {
         self.handoff.waiter().wait();
-        drop(
-            self.surface
-                .get_mut()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take(),
-        );
+        let mut slot = self.surface.lock();
+        slot.next = None;
+        drop(slot.surface.take());
     }
 
     /// Rebuild the swapchain against the window's current native surface.
@@ -560,19 +691,17 @@ impl GpuContext {
     #[cfg(target_os = "android")]
     pub(crate) fn restore_surface(&mut self) -> anyhow::Result<()> {
         self.handoff.waiter().wait();
-        let slot = self
-            .surface
-            .get_mut()
-            .unwrap_or_else(PoisonError::into_inner);
-        if slot.is_some() {
+        let mut slot = self.surface.lock();
+        if slot.surface.is_some() {
             return Ok(());
         }
         let surface = self
             .instance
             .create_surface(self.window.clone())
             .context("recreate the wgpu surface after a resume")?;
-        surface.configure(&self.device, &self.config);
-        *slot = Some(surface);
+        slot.surface = Some(surface);
+        slot.configure(&self.device, &self.config);
+        drop(slot);
         log::info!(
             "Surface restored at {}x{}",
             self.config.width,
@@ -593,13 +722,7 @@ impl GpuContext {
         self.handoff.waiter().wait();
         self.config.width = width;
         self.config.height = height;
-        if let Some(surface) = self
-            .surface
-            .get_mut()
-            .unwrap_or_else(PoisonError::into_inner)
-        {
-            surface.configure(&self.device, &self.config);
-        }
+        self.surface.lock().configure(&self.device, &self.config);
         if let Some(target) = &mut self.capture_target {
             target.resize(&self.device, &self.config);
         }
@@ -629,13 +752,7 @@ impl GpuContext {
         self.handoff.waiter().wait();
         self.config.present_mode = mode;
         self.config.desired_maximum_frame_latency = latency;
-        if let Some(surface) = self
-            .surface
-            .get_mut()
-            .unwrap_or_else(PoisonError::into_inner)
-        {
-            surface.configure(&self.device, &self.config);
-        }
+        self.surface.lock().configure(&self.device, &self.config);
         log::info!("Surface present mode: {mode:?}");
     }
 
@@ -644,48 +761,55 @@ impl GpuContext {
     ///
     /// A stale or suboptimal swapchain is reconfigured once and asked again;
     /// a lost surface is recreated first, as wgpu requires. Timeout and
-    /// occlusion skip this redraw. Validation failures remain errors.
+    /// occlusion skip this redraw. Validation failures remain errors. The
+    /// picture the hand-off thread took ahead is used first; while it is
+    /// still taking one, this waits for it ([`Self::screen_busy`]).
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
         // A surface gives out one frame at a time, and drawing keeps plain
         // queue clones that do not wait for themselves (`HandoffQueue`).
         self.handoff.waiter().wait();
-        let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut slot = self.surface.lock_taken();
+        let WindowSurface { surface, next } = &mut *slot;
         let Some(surface) = surface.as_mut() else {
             return Ok(None);
         };
         if let Some(target) = &self.capture_target {
             return Ok(Some(target.frame()));
         }
-        acquire_with_recovery(|recovery| {
-            if let Some(recovery) = recovery {
-                log::warn!(
-                    "Surface texture: {recovery:?}; recovering the surface at {}x{}",
-                    self.config.width,
-                    self.config.height
-                );
-                if recovery == SurfaceRecovery::Recreate {
-                    *surface = self
-                        .instance
-                        .create_surface(self.window.clone())
-                        .context("recreate lost wgpu surface")?;
-                }
-                surface.configure(&self.device, &self.config);
-            }
-            Ok(surface.get_current_texture())
-        })
-        .map(|frame| {
-            frame.map(|surface| {
-                let frame = GpuFrame::from_surface(surface);
-                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-                let frame = GpuFrame {
-                    texture: self.web_present.texture.clone(),
-                    web_present: Some(self.web_present.clone()),
-                    ..frame
-                };
-                frame
+        let taken = next.take().map(|texture| Ok(Some(texture)));
+        taken
+            .unwrap_or_else(|| {
+                acquire_with_recovery(|recovery| {
+                    if let Some(recovery) = recovery {
+                        log::warn!(
+                            "Surface texture: {recovery:?}; recovering the surface at {}x{}",
+                            self.config.width,
+                            self.config.height
+                        );
+                        if recovery == SurfaceRecovery::Recreate {
+                            *surface = self
+                                .instance
+                                .create_surface(self.window.clone())
+                                .context("recreate lost wgpu surface")?;
+                        }
+                        surface.configure(&self.device, &self.config);
+                    }
+                    Ok(surface.get_current_texture())
+                })
             })
-        })
+            .map(|frame| {
+                frame.map(|surface| {
+                    let frame = GpuFrame::from_surface(surface);
+                    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                    let frame = GpuFrame {
+                        texture: self.web_present.texture.clone(),
+                        web_present: Some(self.web_present.clone()),
+                        ..frame
+                    };
+                    frame
+                })
+            })
     }
 
     /// Create a depth texture matching the current surface dimensions.
