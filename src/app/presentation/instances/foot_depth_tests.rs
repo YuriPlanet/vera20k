@@ -329,38 +329,29 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     assert!(!evaluate(&runtime, &tank));
 }
 
-/// A digging Tunnel owner adds `Z_Adjust` (`0x00729E50`) to the Foot draw Z.
-/// That is the term the Z-tested body compares against the cell tiles: without
-/// it the half of the hull that has sunk below the surface still draws over the
-/// ground. The rest of the arithmetic is identical for both owners, so the
-/// difference is exactly the dig depth.
+/// A dug-in Tunnel owner adds `Z_Adjust` (`0x00729E50`) to the Foot draw Z:
+/// 45 rows plus how far its Z (-256 here) projects below the level-0 floor.
 #[test]
-fn a_digging_tunnel_owner_adds_its_z_adjust_to_the_foot_draw() {
+fn a_dug_in_tunnel_owner_adds_its_depth_and_floor_rows_to_the_foot_draw() {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::movement::tunnel_movement::{
         TUNNEL_DIG_Z_ADJUST_ROWS, TunnelRuntime, TunnelState,
     };
+    use crate::util::native_x87::adjust_for_z_standard;
 
     let mut runtime = runtime();
     let mut unit = entity(&mut runtime, "TANK", EntityCategory::Unit);
-    unit.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Tunnel));
-    runtime
-        .simulation
-        .session_mut_for_test()
-        .set_binary_frame_for_test(10);
-
-    unit.locomotor
-        .as_mut()
-        .unwrap()
-        .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10));
-    let settled = unit_z_adjust_in_runtime(Some(&runtime), &unit, true, None);
-
-    unit.locomotor
-        .as_mut()
-        .unwrap()
-        .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(TunnelState::DiggingIn, 0, 10));
-    let submerged = unit_z_adjust_in_runtime(Some(&runtime), &unit, true, None);
-
-    assert_eq!(submerged - settled, TUNNEL_DIG_Z_ADJUST_ROWS);
+    let mut z_adjust = |state| {
+        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Tunnel);
+        locomotor.set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(state, 0, 10));
+        unit.locomotor = Some(locomotor);
+        unit_z_adjust_in_runtime(Some(&runtime), &unit, true, Some(-256))
+    };
+    let settled = z_adjust(TunnelState::Idle);
+    let dug_in = z_adjust(TunnelState::DugIn);
+    assert_eq!(
+        dug_in - settled,
+        TUNNEL_DIG_Z_ADJUST_ROWS + adjust_for_z_standard(0) - adjust_for_z_standard(-256)
+    );
 }

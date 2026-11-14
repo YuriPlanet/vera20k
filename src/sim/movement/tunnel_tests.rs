@@ -113,59 +113,6 @@ fn long_trip_digs_travels_underground_and_surfaces() {
     assert!(entity.lifecycle.cell_marked());
 }
 
-/// The Display registration follows the owner's `In_Which_Layer` answer
-/// (`0x0072A1A0`) through Object Turn's Process (`0x004DA8B0`): Unlimbo's
-/// submit puts the Idle digger in the Ground vector, the underground leg
-/// leaves that vector for layer 0, and surfacing returns it. Tactical6D8F19
-/// draws the retained vectors, so the underground leg draws no body while the
-/// Extras sweep still reaches the member (the health bar a sensor admits).
-#[test]
-fn a_dig_moves_the_owners_display_registration_underground_and_back() {
-    use crate::sim::world::display_layers::DisplayLayer;
-    let (mut sim, rules) = fixture();
-    // Object Unlimbo's Display submit (4A9720) of the Idle owner.
-    sim.submit_object_display_for_test(DIGGER, DisplayLayer::GROUND, Some(&rules));
-    assert_eq!(
-        sim.display_layers().layer_of(DIGGER),
-        Some(DisplayLayer::GROUND)
-    );
-    order(&mut sim, &rules, (30, 10));
-    let mut underground_frames = 0;
-    for frame in 1..3000 {
-        sim.session.set_binary_frame_for_test(frame);
-        sim.process_active_locomotor(
-            DIGGER,
-            &rules,
-            crate::sim::world::ObjectAiCtx::default(),
-        )
-        .expect("tunnel Process");
-        let registered = sim.display_layers().layer_of(DIGGER);
-        if tunnel_state(&sim) == Some(TunnelState::Digging) {
-            underground_frames += 1;
-            assert_eq!(
-                registered,
-                Some(DisplayLayer::UNDERGROUND),
-                "frame {frame} travels below the cells"
-            );
-        } else {
-            assert_ne!(
-                registered,
-                Some(DisplayLayer::UNDERGROUND),
-                "frame {frame} is not underground"
-            );
-        }
-        if tunnel_state(&sim) == Some(TunnelState::Idle) {
-            break;
-        }
-    }
-    assert!(underground_frames > 0, "the trip ran below the cells");
-    assert_eq!(
-        sim.display_layers().layer_of(DIGGER),
-        Some(DisplayLayer::GROUND),
-        "a surfaced owner is back in the Ground vector"
-    );
-}
-
 /// A destination that stops allowing burrowing while the digger travels:
 /// ProcessDigging's own cell refuses it (Tunnel Can_Enter_Cell `0x0072A090`),
 /// and its nearby-cell search keeps only burrowable cells (FNPC `0x0056DE5F`),
@@ -313,55 +260,31 @@ fn ares_null_destination_ends_the_dig() {
     assert_eq!(tunnel_state(&sim), Some(TunnelState::DugOut));
 }
 
-/// `Z_Adjust` (`0x00729E50`) is the draw Z that puts the submerged half of a
-/// digging body behind the terrain's Z-buffer rows. The dig timer ramps the
-/// depth in, holds it while the owner is below the cells, and ramps it back
-/// out; a settled owner adds nothing.
+/// `Z_Adjust` (`0x00729E50`): `_ftol` truncates DiggingIn's ramp, a body
+/// facing byte in 71..139 takes the full depth at once, the held states add
+/// the floor term to 45, and the base states return zero whatever it is.
 #[test]
-fn z_adjust_sinks_the_digging_body_behind_the_surface() {
+fn z_adjust_truncates_its_ramp_and_adds_the_floor_rows() {
     use crate::sim::movement::tunnel_movement::{TUNNEL_DIG_Z_ADJUST_ROWS, TunnelRuntime};
-
-    for state in [
-        TunnelState::Idle,
-        TunnelState::PreDigIn,
-        TunnelState::DugOut,
-    ] {
-        let runtime = TunnelRuntime::for_test_dig(state, 0, 10);
-        assert_eq!(runtime.draw_z_adjust(5), 0, "{state:?} adds no depth");
-    }
-
     let digging_in = TunnelRuntime::for_test_dig(TunnelState::DiggingIn, 0, 10);
-    assert_eq!(digging_in.draw_z_adjust(0), 0, "the first frame is level");
-    let half = digging_in.draw_z_adjust(4);
-    assert!((half - 18).abs() <= 1, "40% of 45 rows is 18, got {half}");
+    assert_eq!(digging_in.draw_z_adjust(3, 0, 0), 13, "45 * 0.3 truncates");
+    assert_eq!(digging_in.draw_z_adjust(3, 70 << 8, 0), 13, "byte 70 ramps");
     assert_eq!(
-        digging_in.draw_z_adjust(10),
+        digging_in.draw_z_adjust(3, 71 << 8, 0),
         TUNNEL_DIG_Z_ADJUST_ROWS,
-        "a finished dig is fully behind the surface"
+        "byte 71 takes the full depth"
     );
-
-    for state in [
-        TunnelState::DugIn,
-        TunnelState::Digging,
-        TunnelState::PreDigOut,
-    ] {
-        let runtime = TunnelRuntime::for_test_dig(state, 0, 10);
-        assert_eq!(
-            runtime.draw_z_adjust(5),
-            TUNNEL_DIG_Z_ADJUST_ROWS,
-            "{state:?} holds the full depth"
-        );
-    }
-
+    let dug_in = TunnelRuntime::for_test_dig(TunnelState::DugIn, 0, 10);
+    assert_eq!(
+        dug_in.draw_z_adjust(5, 0, 36),
+        TUNNEL_DIG_Z_ADJUST_ROWS + 36
+    );
     let digging_out = TunnelRuntime::for_test_dig(TunnelState::DiggingOut, 0, 10);
     assert_eq!(
-        digging_out.draw_z_adjust(0),
-        TUNNEL_DIG_Z_ADJUST_ROWS,
-        "surfacing starts fully submerged"
+        digging_out.draw_z_adjust(10, 0, 7),
+        7,
+        "surfaced: the floor term"
     );
-    assert_eq!(
-        digging_out.draw_z_adjust(10),
-        0,
-        "surfacing ends on the ground plane"
-    );
+    let idle = TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10);
+    assert_eq!(idle.draw_z_adjust(5, 0, 36), 0);
 }

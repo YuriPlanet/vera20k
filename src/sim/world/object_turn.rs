@@ -311,27 +311,9 @@ impl Simulation {
                 Ok(self.process_rocket_locomotor(stable_id, rules, overlay_registry, ctx.effects))
             }
             LocomotorKind::Tunnel => {
-                // The Tunnel answers `In_Which_Layer` from its State, so this
-                // frame's Move_To or Process can move the owner between the
-                // Ground and Underground Display vectors. Capture the answer
-                // before either runs and resubmit the registration when it
-                // changed: Tactical draws the retained vectors, so the
-                // underground leg draws no body.
-                let layer_before = self.entity_display_layer(stable_id, rules);
                 self.complete_pending_order(stable_id, rules, overlay_registry, ctx.effects);
                 let tunnel =
                     self.process_tunnel_locomotor(stable_id, rules, overlay_registry, ctx.effects);
-                if let Some(before) = layer_before {
-                    Self::complete_tunnel_display_process(
-                        &self.interner,
-                        &self.terrain_objects,
-                        &mut self.substrate,
-                        &self.resolved_terrain,
-                        stable_id,
-                        before,
-                        rules,
-                    );
-                }
                 Ok(LocomotorProcess {
                     admitted: true,
                     bridge_state_changed: tunnel.bridge_state_changed,

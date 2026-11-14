@@ -412,30 +412,6 @@ pub(crate) fn drawn_display_entities<'a>(
         .filter_map(|(layer, id)| Some((frame.object(id)?, layer_draw_band(layer)?)))
 }
 
-/// A Display member in `DisplayLayer::UNDERGROUND` keeps its slot with no
-/// sprites: native layer 0 draws below the surface, so the terrain owns those
-/// pixels and a Tunnel unit travelling below the cells shows no hull, wheel or
-/// shadow. Tactical6D907E/6D9111 marks every visited Display member for the
-/// later Extras sweep before drawing its body, and that sweep still runs here:
-/// a sensor over the dive admits the health bar
-/// (Ares TechnoClass_DrawExtras_Submerged 10048350, hook 6F5388) and nothing
-/// else, which is how MO plays a dug-in drill from a detector's view.
-pub(crate) fn underground_extras_parent(
-    display_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-    id: u64,
-) -> Option<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
-    let parent = display_order.object_draw(
-        id,
-        crate::render::tactical_draw_plan::SpriteEncoding::Voxel,
-    )?;
-    Some(
-        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
-            parent,
-            Vec::new(),
-        ),
-    )
-}
-
 /// Convert the screen row an entity is *drawn* at into the row it *sorts* at.
 ///
 /// gamemd's sort key is `renderCoords.X + renderCoords.Y` — the object's world
@@ -1449,60 +1425,6 @@ mod tests {
                 .object_draw(1, crate::render::tactical_draw_plan::SpriteEncoding::Voxel)
                 .is_some()
         );
-    }
-
-    /// A Display member in layer 0 draws no body, but the Extras sweep still
-    /// reaches it: that is the health bar a sensor shows over a dig, and the
-    /// only thing an underground Tunnel unit puts on screen.
-    #[test]
-    fn an_underground_member_keeps_only_its_extras_slot() {
-        use crate::render::tactical_draw_plan::{SpriteEncoding, TacticalLayer};
-        use crate::sim::world::Simulation;
-        use crate::sim::world::display_layers::DisplayLayer;
-
-        let mut sim = Simulation::new();
-        let owner = sim.intern("Americans");
-        let type_ref = sim.intern("DRIL");
-        let mut unit = GameEntity::new_at_frame_zero_for_test(
-            1,
-            12,
-            12,
-            0,
-            0,
-            owner,
-            crate::sim::combat::Health::new(200),
-            type_ref,
-            EntityCategory::Unit,
-            0,
-            5,
-            true,
-        );
-        unit.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Tunnel));
-        unit.lifecycle.set_in_limbo_for_test(false);
-        sim.entities_mut_for_test().insert(unit);
-        sim.submit_object_display_for_test(1, DisplayLayer::UNDERGROUND, None);
-
-        assert_eq!(
-            sim.display_layers().layer_of(1).and_then(layer_draw_band),
-            None,
-            "layer 0 emits no entity body stream"
-        );
-        let order =
-            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_display(
-                sim.display_layers(),
-            );
-        let parent = underground_extras_parent(&order, 1).expect("the slot survives");
-        assert_eq!(parent.parent.layer, TacticalLayer(0));
-        assert!(
-            parent.pieces.is_empty() && parent.body_draw.is_none(),
-            "no hull, wheel, turret or shadow reaches the terrain above"
-        );
-        assert_eq!(
-            order.object_draw(2, SpriteEncoding::Voxel).map(|_| ()),
-            None,
-            "an unregistered id has no slot at all"
-        );
-        assert!(underground_extras_parent(&order, 2).is_none());
     }
 
     /// A parachute canopy takes its body's key rather than deriving one, and

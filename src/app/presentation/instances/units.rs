@@ -314,10 +314,11 @@ fn unit_render_slope_state(
     // `0x007F5024`, `0x007F6A1C`), the level facing matrix on any ramp: a
     // Chrono Miner before the Drive its next move installs, or a vehicle
     // inside a Chronosphere warp's Teleport piggyback.
-    // `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) composes the facing
-    // matrix with its own dig tilt and never reads a cell slope: a digger
-    // below or entering the ground sits on no ramp, and its three-frame slope
-    // transition would otherwise fight the dig tilt for the same axis.
+    // `TunnelLocomotionClass::Draw_Matrix` (`0x00729B40`) has no slope
+    // transition. Its dig arm (`0x00729C52..`) composes the facing matrix with
+    // the dig tilt and reads no cell slope. RESIDUAL: its Idle arm
+    // (`0x00729B5D..0x00729BD9`) multiplies the cell's slope matrix
+    // (`0x007559B0`) into the facing at once; VERA draws an Idle Tunnel level.
     if matches!(
         kind,
         Some(
@@ -1534,9 +1535,13 @@ fn ground_pose_with_angles(
     // alone (`0x00729E02..0x00729E16`): it reads no cell slope, has no roll
     // and, unlike Drive/Ship, adds no support offsets, so the body pivots at
     // its own origin and sinks instead of staying on top of the ground. Idle
-    // answers `None`, which draws the settled atlas shape.
+    // answers `None`, which draws the settled atlas shape (see the slope
+    // residual in `unit_render_slope_state`).
     let (angles, tunnel_tilt) = if kind == LocomotorKind::Tunnel {
-        ([0.0, 0.0], Some(locomotor.tunnel_runtime()?.draw_tilt(binary_frame)?))
+        (
+            [0.0, 0.0],
+            Some(locomotor.tunnel_runtime()?.draw_tilt(binary_frame)?),
+        )
     } else {
         (angles, None)
     };
@@ -3499,7 +3504,11 @@ mod tests {
         // Halfway through the ten-frame dig-in: progress x pi/2.
         let pose = ground_pose(&record, UnitRenderSlopeState::Stable(0), 5)
             .expect("a digging tunnel draws the pose page");
-        assert_eq!(pose.angles, [0.0, 0.0], "the tunnel arm has no roll or slope");
+        assert_eq!(
+            pose.angles,
+            [0.0, 0.0],
+            "the tunnel arm has no roll or slope"
+        );
         let tilt = pose.tunnel_tilt.expect("DiggingIn tilts by Y");
         assert!(
             (tilt - FRAC_PI_4).abs() < 1e-6,
@@ -3512,11 +3521,7 @@ mod tests {
             .locomotor
             .as_mut()
             .unwrap()
-            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(
-                TunnelState::DugIn,
-                0,
-                10,
-            ));
+            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(TunnelState::DugIn, 0, 10));
         let pose = ground_pose(
             &ObjectRecord::of_test(&entity),
             UnitRenderSlopeState::Stable(0),
@@ -3551,46 +3556,12 @@ mod tests {
             .locomotor
             .as_mut()
             .unwrap()
-            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(
-                TunnelState::Idle,
-                0,
-                10,
-            ));
+            .set_tunnel_runtime_for_test(TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10));
         let idle = ObjectRecord::of_test(&entity);
         assert!(ground_pose(&idle, UnitRenderSlopeState::Stable(0), 5).is_none());
-        assert_eq!(TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10).draw_tilt(5), None);
-    }
-
-    /// A Tunnel body sits on no ramp: `In_Which_Layer` puts it below the cells
-    /// (or on them while it digs), and Draw_Matrix reads only facing and the
-    /// dig tilt, so the cell slope never enters the pose or a transition.
-    #[test]
-    fn a_tunnel_body_never_takes_the_cell_slope() {
-        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
-        terrain
-            .cell_mut_for_test(1, 1)
-            .unwrap()
-            .slope_type = 5;
-        let mut entity = GameEntity::test_default(1, "DRIL", "Americans", 1, 1);
-        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Tunnel));
-        let record = ObjectRecord::of_test_in(
-            &entity,
-            Some(&terrain),
-            crate::rules::ruleset::RuleSet::empty_for_test(),
-        );
         assert_eq!(
-            unit_render_slope_state(
-                Some(&terrain),
-                Some(&crate::map::resolved_terrain::NativeCellQuery::isolated(
-                    &terrain
-                )),
-                &record,
-                0,
-                EntityDrawBand::Ground,
-                [0.0, 0.0],
-                true,
-            ),
-            UnitRenderSlopeState::Stable(0)
+            TunnelRuntime::for_test_dig(TunnelState::Idle, 0, 10).draw_tilt(5),
+            None
         );
     }
 

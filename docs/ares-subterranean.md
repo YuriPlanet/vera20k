@@ -69,7 +69,8 @@ origin.
   `map/theater.rs`: `AllowBurrowing` (`0x00546177`).
 - `sim/movement/tunnel_movement.rs`: the class state, its timers, arithmetic
   and the two draw queries — `Draw_Matrix 0x00729B40` (`draw_tilt`) and
-  `Z_Adjust 0x00729E50` (`draw_z_adjust`, 45 native Z rows at full depth).
+  `Z_Adjust 0x00729E50` (`draw_z_adjust`: 45 native Z rows at full depth
+  plus the owner's depth below the floor in screen rows).
   `app/presentation/instances/foot_depth.rs` feeds the latter into
   `FootClass::GetZAdjustment`'s locomotor term, and
   `app/presentation/instances/units.rs` feeds the former into `GroundPose`.
@@ -93,9 +94,8 @@ origin.
 
 - Reinforcements that arrive underground (`0x0065E010`, an all-Tunnel team)
   and a Tunnel infantryman's move orders.
-- `Z_Adjust 0x00729E50`'s State 2 facing-gated full-depth arm
-  (`0x729F90..0x729FAD` returns the full 45 rows when the owner's primary
-  facing byte is in 71..139); VERA always ramps by DigTimer progress. The new
-  Drive's `Force_New_Slope` (`0x00742BE3`).
+- `Draw_Matrix 0x00729B40`'s Idle arm multiplies the cell's slope matrix
+  (`0x007559B0`) into the facing; VERA draws an Idle Tunnel unit level on a
+  ramp. The new Drive's `Force_New_Slope` (`0x00742BE3`).
 - A save during a timed dig phase resumes that phase where native's Load
   restarts it (`0x0072A150`).
