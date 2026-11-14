@@ -458,6 +458,27 @@ pub(super) fn wants_a_maker(
     budget.free >= expansion_price(rules, obs)
 }
 
+/// The most yards a house may stand without a reason for another.
+const MAX_YARDS: usize = 2;
+
+/// How far ore has to stand from the base before it justifies a base of its own,
+/// in cells: past the ring the first base already covers.
+const FAR_ORE_CELLS: i32 = 24;
+
+/// How many frames a far-ore answer stands before it is looked up again.
+const FAR_ORE_FRAMES: u64 = 600;
+
+/// Whether ore stands beyond [`FAR_ORE_CELLS`] of the house's base.
+///
+/// A whole-map walk, so it is only reached when the yard cap is already met —
+/// that is, on the frames a house with two bases is deciding whether a third is
+/// worth 2500 credits. Not a per-frame question.
+fn far_ore(rules: &RuleSet, obs: &Observation<'_>, home: (u16, u16)) -> bool {
+    obs.ore_cells(rules)
+        .into_iter()
+        .any(|cell| super::squared_distance(cell, home) > FAR_ORE_CELLS * FAR_ORE_CELLS)
+}
+
 /// Whether a second base is wanted at all, ignoring the wallet.
 ///
 /// The half of [`wants_a_maker`] that answers "would the house buy a maker if
@@ -474,8 +495,24 @@ pub(super) fn expansion_is_worth_saving_for(
     if !yard_stands(&brain.census) || owns_yard_maker(&brain.census) {
         return false;
     }
-    if brain.census.yards > 1 {
+    // A second base is the ordinary case; a third needs a reason, and the reason
+    // is the wishlist's "矿点距离": ore worth a base of its own, standing beyond
+    // the ring the first base covers. A house that opens bases with no ore in
+    // them has bought 2500 credits of ground it cannot use.
+    //
+    // The ore walk is a whole-map scan, so it is cached and refreshed on a slow
+    // cadence rather than asked per frame.
+    if brain.census.yards > MAX_YARDS {
         return false;
+    }
+    let too_many = brain.census.yards >= MAX_YARDS;
+    if too_many {
+        let Some(home) = brain.census.base_cell else {
+            return false;
+        };
+        if !far_ore(rules, obs, home) {
+            return false;
+        }
     }
     // The first base has to exist, and that is the whole test.
     //
