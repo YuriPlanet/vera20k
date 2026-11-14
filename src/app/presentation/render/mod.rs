@@ -1076,13 +1076,14 @@ fn upload_to_gpu(
     }
     pool.upload("drag", &ui.drag);
     pool.upload("ground_marks", &ui.ground_marks);
+    pool.upload_strokes("ground_strokes", &ui.ground_strokes);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]
     pool.upload("placement_ghost", &ui.placement_ghost);
-    pool.upload("factory_rally_first", &ui.factory_rally_first);
-    pool.upload("target_lines", &ui.target_line);
-    pool.upload("factory_rally_second", &ui.factory_rally_second);
+    pool.upload_strokes("factory_rally_first", &ui.factory_rally_first);
+    pool.upload_strokes("target_lines", &ui.target_line);
+    pool.upload_strokes("factory_rally_second", &ui.factory_rally_second);
 
     // Sidebar + minimap
     pool.upload_following("minimap", &sidebar.minimap, ui_camera);

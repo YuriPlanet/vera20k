@@ -1928,6 +1928,10 @@ mod webgl_shader_tests {
                 "voxel sprite",
                 pad_camera_structs(&tactical_shader::world_source(batch::VOXEL_SPRITE_SHADER)),
             ),
+            (
+                "surface strokes",
+                pad_camera_structs(&tactical_shader::world_source(batch::SURFACE_STROKE_SHADER)),
+            ),
             ("terrain snapshot", super::snapshot_source(true)),
             (
                 "terrain edit",

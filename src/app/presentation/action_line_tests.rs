@@ -69,13 +69,12 @@ fn attack_rows() -> impl Iterator<Item = &'static Value> {
     native()["attack_cases"].as_array().unwrap().iter()
 }
 
-fn viewport(input: &Value, zoom: f32) -> TacticalViewport {
+fn viewport(input: &Value) -> TacticalViewport {
     let mut camera = point(&input["camera"]);
     camera[1] += 15; // Shared VERA world projection bias, not a line adjustment.
     TacticalViewport {
         camera,
         clip: input.get("clip").map_or([0, 0, 160, 120], point),
-        zoom,
     }
 }
 
@@ -170,7 +169,7 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
     let mut state = TargetLineState::default();
     state.start_timer(input["timer_start"].as_u64().unwrap_or(100) as u32);
     state.set_unit_action_lines_enabled(input["option"].as_bool().unwrap_or(true));
-    (sim, state, viewport(input, 1.))
+    (sim, state, viewport(input))
 }
 
 /// Prepare the original raster inputs through existing rules/state owners.
@@ -326,27 +325,27 @@ fn drawing_fixture(
     (sim, Some(rules), state, view)
 }
 
-fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
+fn built(row: &Value) -> (Vec<SurfaceStroke>, TacticalViewport) {
     if row.get("draws").is_some() && row["input"].get("wall_ms").is_some() {
         let input = &row["input"];
-        let view = viewport(input, zoom);
+        let view = viewport(input);
         let coord = |value: &Value| {
             let [x, y, z] = point(value);
             DriveCoord { x, y, z }
         };
-        let mut instances = Vec::new();
-        crate::app::presentation::control_links::append_line_instances(
-            &mut instances,
+        let mut strokes = Vec::new();
+        crate::app::presentation::control_links::append_line_strokes(
+            &mut strokes,
             coord(&input["source"]),
             coord(&input["target"]),
             point(&input["rgb"]).map(|v| v as u8),
             input["wall_ms"].as_u64().unwrap() as u32,
             view,
         );
-        return (instances, view);
+        return (strokes, view);
     }
     if let Some(primitives) = row["input"]["primitives"].as_array() {
-        let view = viewport(&row["input"], zoom);
+        let view = viewport(&row["input"]);
         let project = |value: &Value| {
             let [x, y, z] = point(value);
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
@@ -377,21 +376,15 @@ fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
             .collect();
         let palette = crate::assets::pal_file::Palette::from_bytes(&palette_bytes()).unwrap();
         // Original7049C0 primitive color/order, not an Attack coordinate claim.
-        return (
-            build_selected_action_line_instances(
-                &lines,
-                [
-                    action_line_color(&palette, 3),
-                    action_line_color(&palette, 8),
-                ],
-                view,
-            ),
-            view,
-        );
+        let words = [action_line_word(&palette, 3), action_line_word(&palette, 8)];
+        let mut strokes = Vec::new();
+        for line in lines {
+            push_selected_action_line(&mut strokes, line, words, view);
+        }
+        return (strokes, view);
     }
-    let (sim, rules, state, mut view) = drawing_fixture(row);
-    view.zoom = zoom;
-    let instances = build_target_line_instances(
+    let (sim, rules, state, view) = drawing_fixture(row);
+    let strokes = build_target_line_strokes(
         &state,
         row["input"]["planning"].as_bool().unwrap_or(false),
         Some(&sim),
@@ -403,50 +396,7 @@ fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
         view,
         None,
     );
-    (instances, view)
-}
-
-/// Prepared native input for the existing shared CPU/GPU workload harness.
-/// The harness disperses raw source locations; it never generates goldens.
-pub(super) fn workload_fixture(
-    kind: SelectedLineKind,
-) -> (
-    Simulation,
-    Option<RuleSet>,
-    TargetLineState,
-    TacticalViewport,
-    crate::assets::pal_file::Palette,
-) {
-    let row = match kind {
-        SelectedLineKind::Move => baseline_rows().find(|row| {
-            row["input"]["source"] == serde_json::json!([2688, 5248, 0])
-                && row["input"]["target_cell"] == serde_json::json!([14, 20])
-                && row["input"]["timer_start"] == 100
-                && row["input"]["frame"] == 100
-        }),
-        SelectedLineKind::Attack => attack_rows().find(|row| {
-            row["input"]["target_present"] == true
-                && row["input"]["target_moving"] == true
-                && row["input"]["turret_offset"] == 0
-                && row["input"]["frame"] == 100
-        }),
-    }
-    .unwrap();
-    let (mut sim, rules, state, view) = drawing_fixture(row);
-    if kind == SelectedLineKind::Attack {
-        // Keep the one unselected moving target outside the20k source IDs.
-        // This is synthetic load setup, before measurement; no gameplay tick
-        // or identity-lifecycle equivalence is claimed for it.
-        let mut target = sim.entities_mut_for_test().remove(2).unwrap();
-        target.set_stable_id_for_test(20_001);
-        sim.entities_mut_for_test().insert(target);
-        sim.entities_mut_for_test()
-            .get_mut(1)
-            .unwrap()
-            .attack_target
-            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(20_001)));
-    }
-    (sim, rules, state, view, palette())
+    (strokes, view)
 }
 
 fn words(row: &Value) -> Vec<u16> {
@@ -509,19 +459,18 @@ fn assert_native_pixels<T: PartialEq>(
     }
 }
 
-fn raster(instances: &[SpriteInstance], view: TacticalViewport) -> Vec<u16> {
+fn raster(strokes: &[SurfaceStroke], view: TacticalViewport) -> Vec<u16> {
     let mut result = vec![0x39E7; 160 * 120];
-    for instance in instances {
-        let [r, g, b] = instance.tint.map(|c| (c * 255.).round() as u16);
-        let word = (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3);
-        let x = instance.position[0] as i32 - view.camera[0];
-        let y = instance.position[1] as i32 - view.camera[1];
-        for dy in 0..instance.size[1] as i32 {
-            for dx in 0..instance.size[0] as i32 {
-                assert!((0..160).contains(&(x + dx)) && (0..120).contains(&(y + dy)));
-                result[((y + dy) * 160 + x + dx) as usize] = word;
+    for stroke in strokes {
+        stroke.for_each_rect(|[x, y, width, height]| {
+            let [x, y] = [x - view.camera[0], y - view.camera[1]];
+            for y in y..y + height {
+                for x in x..x + width {
+                    assert!((0..160).contains(&x) && (0..120).contains(&y));
+                    result[(y * 160 + x) as usize] = stroke.word();
+                }
             }
-        }
+        });
     }
     result
 }
@@ -530,8 +479,8 @@ fn raster(instances: &[SpriteInstance], view: TacticalViewport) -> Vec<u16> {
 fn original_foot_move_line_pixels_through_production_builder() {
     let mut count = 0;
     for row in drawing_rows() {
-        let (instances, view) = built(row, 1.);
-        let actual = raster(&instances, view);
+        let (strokes, view) = built(row);
+        let actual = raster(&strokes, view);
         let expected = words(row);
         assert_native_pixels(
             &actual,
@@ -558,7 +507,7 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
         );
         let query = NativeCellQuery::canonical(sim.resolved_terrain().unwrap());
         let dummy = query.dummy().snapshot();
-        let instances = build_target_line_instances(
+        let strokes = build_target_line_strokes(
             &state,
             false,
             Some(&sim),
@@ -570,7 +519,7 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
             view,
             None,
         );
-        assert_native_pixels(&raster(&instances, view), &words(row), [160, 120], 0, row);
+        assert_native_pixels(&raster(&strokes, view), &words(row), [160, 120], 0, row);
         assert_eq!(sim.state_hash(), hash, "{}", row["input"]);
         assert_eq!(
             (
@@ -661,8 +610,8 @@ fn original_opaque_overlap_order_across_batch_cutover() {
     let rows = native()["compositing_cases"].as_array().unwrap();
     assert_eq!(rows.len(), 6);
     for row in rows {
-        let (instances, view) = built(row, 1.);
-        assert_native_pixels(&raster(&instances, view), &words(row), [160, 120], 0, row);
+        let (strokes, view) = built(row);
+        assert_native_pixels(&raster(&strokes, view), &words(row), [160, 120], 0, row);
     }
 }
 
@@ -831,7 +780,7 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
     let terrain = sim.resolved_terrain().unwrap();
     let query = NativeCellQuery::canonical(terrain);
     let before = query.dummy().snapshot().coord;
-    let _ = build_target_line_instances(
+    let _ = build_target_line_strokes(
         &state,
         false,
         Some(&sim),
@@ -847,11 +796,11 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
 }
 
 #[test]
-#[ignore = "requires GPU; production action-line pixels, zoom and unchanged depth"]
+#[ignore = "requires GPU; production action-line strokes and XSurface7BA610 leaves, unchanged depth"]
 fn production_action_line_gpu_matches_original_surface() {
     use crate::render::batch::BatchRenderer;
-    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
-    use wgpu::util::DeviceExt;
+    use crate::render::surface_line::clip_line;
+    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, draw_strokes, encoded};
     let gpu = Gpu::new();
     static CONTROL_LINKS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
     let control_links = CONTROL_LINKS.get_or_init(|| {
@@ -860,149 +809,93 @@ fn production_action_line_gpu_matches_original_surface() {
         ))
         .unwrap()
     });
+    let size = [160, 120];
+    let mut cases: Vec<(&Value, Vec<SurfaceStroke>, [i32; 2])> = drawing_rows()
+        .chain(attack_rows())
+        .chain(native()["compositing_cases"].as_array().unwrap().iter())
+        .chain(control_links["cases"].as_array().unwrap().iter())
+        .map(|row| {
+            let (strokes, view) = built(row);
+            (row, strokes, view.camera)
+        })
+        .collect();
+    // XSurface7BA610's own leaf rows, as the CPU leaf test draws them.
+    for row in native()["leaf_cases"].as_array().unwrap() {
+        let input = &row["input"];
+        let mut from = point(&input["from_point"]);
+        let mut to = point(&input["to_point"]);
+        let clip = crate::util::rect::clip_rect([0, 0, 160, 120], point(&input["clip"]));
+        for point in [&mut from, &mut to] {
+            point[0] += input["clip"][0].as_i64().unwrap() as i32;
+            point[1] += input["clip"][1].as_i64().unwrap() as i32;
+        }
+        let strokes = if clip_line(&mut from, &mut to, clip) {
+            vec![SurfaceStroke::solid(from, to, 0x0540, [0, 0])]
+        } else {
+            Vec::new()
+        };
+        cases.push((row, strokes, [0, 0]));
+    }
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-        let white = batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255; 4], 1, 1, None);
-        for zoom in [0.75, 1., 1.5, 2.] {
-            let size = [(160. * zoom) as u32, (120. * zoom) as u32];
-            let color = gpu.target(size, format);
-            let cv = color.create_view(&Default::default());
-            let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-            let dv = depth.create_view(&Default::default());
-            for row in drawing_rows()
-                .chain(attack_rows())
-                .chain(native()["compositing_cases"].as_array().unwrap().iter())
-                .chain(control_links["cases"].as_array().unwrap().iter())
-            {
-                let (mut instances, view) = built(row, zoom);
-                batch.write_camera(
-                    &gpu.queue,
-                    crate::render::batch::CameraUniform {
-                        camera_pos: view.camera.map(|v| v as f32),
-                        zoom,
-                        ..camera(size)
+        let color = gpu.target(size, format);
+        let cv = color.create_view(&Default::default());
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let dv = depth.create_view(&Default::default());
+        for (row, strokes, camera_pos) in &cases {
+            batch.write_camera(
+                &gpu.queue,
+                crate::render::batch::CameraUniform {
+                    camera_pos: camera_pos.map(|v| v as f32),
+                    ..camera(size)
+                },
+            );
+            gpu.queue.write_texture(
+                color.as_image_copy(),
+                &encoded(0x39E7, format).repeat((size[0] * size[1]) as usize),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(size[0] * 4),
+                    rows_per_image: Some(size[1]),
+                },
+                color.size(),
+            );
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            clear(&mut encoder, &cv, &dv, 12345, wgpu::LoadOp::Load);
+            draw_strokes(&gpu, &batch, &mut encoder, &cv, &dv, strokes);
+            let reads = [
+                gpu.read(&mut encoder, &color),
+                gpu.read(&mut encoder, &depth),
+            ];
+            let output = gpu.finish(encoder, &reads, size);
+            // Saved clip controls retain the documented1px CPU rounding
+            // residual. For those only, the CPU test bounds the native
+            // difference, and this GPU check verifies that the GPU draws
+            // exactly the CPU walk. All other inputs take their expected
+            // pixels directly from native.
+            let native_words = if has_clip_rounding_residual(row) {
+                raster(
+                    strokes,
+                    TacticalViewport {
+                        camera: *camera_pos,
+                        clip: [0, 0, 160, 120],
                     },
-                );
-                for instance in &mut instances {
-                    instance.depth = 0.9;
-                }
-                gpu.queue.write_texture(
-                    color.as_image_copy(),
-                    &encoded(0x39E7, format).repeat((size[0] * size[1]) as usize),
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(size[0] * 4),
-                        rows_per_image: Some(size[1]),
-                    },
-                    color.size(),
-                );
-                let buffer = (!instances.is_empty()).then(|| {
-                    gpu.device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Native action-line rectangles"),
-                            contents: bytemuck::cast_slice(&instances),
-                            usage: wgpu::BufferUsages::VERTEX,
-                        })
-                });
-                let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                clear(&mut encoder, &cv, &dv, 12345, wgpu::LoadOp::Load);
-                if let Some(buffer) = &buffer {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Production action-line comparison"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &cv,
-                            depth_slice: None,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &dv,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                        multiview_mask: None,
-                    });
-                    batch.draw_with_buffer_ui_passthrough(
-                        &mut pass,
-                        &white,
-                        buffer,
-                        instances.len() as u32,
-                    );
-                }
-                let reads = [
-                    gpu.read(&mut encoder, &color),
-                    gpu.read(&mut encoder, &depth),
-                ];
-                let output = gpu.finish(encoder, &reads, size);
-                // Saved clip controls retain the documented1px CPU
-                // rounding residual. For those only, the earlier CPU test
-                // bounds the native difference, and this GPU check verifies
-                // exact nearest presentation of that CPU raster. It is not
-                // an exact native pixel claim for those controls. All other
-                //other inputs take their expected pixels directly from native.
-                let native_words = if has_clip_rounding_residual(row) {
-                    let (logical, logical_view) = built(row, 1.);
-                    raster(&logical, logical_view)
-                } else {
-                    words(row)
-                };
-                let expected: Vec<_> = (0..size[1])
-                    .flat_map(|y| {
-                        let native_words = &native_words;
-                        (0..size[0]).flat_map(move |x| {
-                            let sx = ((x as f32 + 0.5) / zoom).floor() as usize;
-                            let sy = ((y as f32 + 0.5) / zoom).floor() as usize;
-                            encoded(native_words[sy * 160 + sx], format)
-                        })
-                    })
-                    .collect();
-                let actual: Vec<[u8; 4]> = output[0].as_chunks::<4>().0.to_vec();
-                let expected: Vec<[u8; 4]> = expected.as_chunks::<4>().0.to_vec();
-                assert_native_pixels(&actual, &expected, size.map(|n| n as usize), 0, row);
-                assert!(output[1].as_chunks::<4>().0.iter().all(|bytes| {
-                    crate::render::native_z::stored_z(f32::from_le_bytes(*bytes)) == 12345
-                }));
-            }
+                )
+            } else {
+                words(row)
+            };
+            let expected: Vec<[u8; 4]> = native_words
+                .iter()
+                .map(|&word| encoded(word, format))
+                .collect();
+            let actual: Vec<[u8; 4]> = output[0].as_chunks::<4>().0.to_vec();
+            assert_native_pixels(&actual, &expected, [160, 120], 0, row);
+            assert!(output[1].as_chunks::<4>().0.iter().all(|bytes| {
+                crate::render::native_z::stored_z(f32::from_le_bytes(*bytes)) == 12345
+            }));
         }
     }
-}
-
-#[test]
-fn dense_action_lines_leave_no_pixels_for_the_next_frame() {
-    let view = TacticalViewport {
-        camera: [0, 0],
-        clip: [0, 0, 640, 400],
-        zoom: 1.0,
-    };
-    let colors = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-    let rows = |x0, x1, kind| {
-        (0..40).map(move |row| ProjectedActionLine {
-            start: [x0, 10 + row],
-            end: [x1, 10 + row],
-            kind,
-        })
-    };
-    // The later frame's spans on each row reach across the earlier frame's.
-    let wide: Vec<_> = rows(100, 300, SelectedLineKind::Attack).collect();
-    let ends: Vec<_> = rows(50, 60, SelectedLineKind::Move)
-        .chain(rows(400, 410, SelectedLineKind::Move))
-        .collect();
-    let bytes = |instances: Vec<SpriteInstance>| bytemuck::cast_slice::<_, u8>(&instances).to_vec();
-    let alone = bytes(build_selected_action_line_instances(&ends, colors, view));
-    assert!(!bytes(build_selected_action_line_instances(&wide, colors, view)).is_empty());
-    assert_eq!(
-        bytes(build_selected_action_line_instances(&ends, colors, view)),
-        alone
-    );
 }

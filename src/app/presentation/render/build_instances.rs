@@ -22,6 +22,7 @@ use crate::app::presentation::ui_overlays::{
 use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
+use crate::render::surface_line::SurfaceStroke;
 use crate::ui::sidebar::SidebarView;
 #[path = "ferry_lines.rs"]
 mod ferry_lines;
@@ -74,17 +75,18 @@ pub(super) struct UiInstances {
     pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
     /// World-surface stores that lie on the ground: drawn before the
-    /// buildings and objects, which cover them (the VERA formation line's
-    /// dots and ferry's circles).
+    /// buildings and objects, which cover them. The VERA formation line's
+    /// dots, then the ferry's circles.
     pub ground_marks: Vec<SpriteInstance>,
+    pub ground_strokes: Vec<SurfaceStroke>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
     #[cfg(feature = "phobos")]
     pub placement_ghost: Vec<SpriteInstance>,
-    pub target_line: Vec<SpriteInstance>,
+    pub target_line: Vec<SurfaceStroke>,
     pub tactical_line_calls: Vec<crate::app::presentation::airstrike_lines::TacticalLineCall>,
-    pub factory_rally_first: Vec<SpriteInstance>,
-    pub factory_rally_second: Vec<SpriteInstance>,
+    pub factory_rally_first: Vec<SurfaceStroke>,
+    pub factory_rally_second: Vec<SurfaceStroke>,
     /// One stream per beacon row: each row has its own House Convert strip.
     pub beacons: Vec<Vec<SpriteInstance>>,
 }
@@ -1030,17 +1032,17 @@ pub(super) fn build_ui_instances(
         camera[1] - input.camera_y.floor() as i32,
     ];
     let mut tactical_line_calls = Vec::new();
-    let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
+    let mut after_entity = |id, strokes: &mut Vec<SurfaceStroke>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
-        drain_opaque(&mut tactical_line_calls, instances, camera, a_offset);
+        drain_opaque(&mut tactical_line_calls, strokes, camera, a_offset);
         if let Some((coords, style)) = designations.remove(&id) {
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
     };
-    ground_marks.extend(ferry_lines::build_rings(state, view));
+    let ground_strokes = ferry_lines::build_rings(state, view);
     let (mut target_line, planning_highlights) = planning_lines::build(state, view, wall_ms);
     target_line.extend(ferry_lines::build_paths(state, view, wall_ms));
-    let action_lines = crate::app::presentation::target_lines::build_target_line_instances(
+    let action_lines = crate::app::presentation::target_lines::build_target_line_strokes(
         &state.match_state.match_presentation.target_lines,
         state.match_state.input.planning.active(),
         state
@@ -1066,7 +1068,7 @@ pub(super) fn build_ui_instances(
     target_line.extend(action_lines);
     target_line.extend(planning_highlights);
     let [factory_rally_first, factory_rally_second] =
-        crate::app::presentation::target_lines::build_factory_rally_line_instances(
+        crate::app::presentation::target_lines::build_factory_rally_line_strokes(
             state
                 .match_state
                 .sim_runtime
@@ -1085,6 +1087,7 @@ pub(super) fn build_ui_instances(
         software_cursor_draw,
         drag,
         ground_marks,
+        ground_strokes,
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]
         placement_ghost: placement_preview.ghost,
@@ -1115,7 +1118,6 @@ pub(crate) fn tactical_world_viewport(
             camera[1].round() as i32 + clip[1],
         ],
         clip: [0, 0, clip[2], clip[3]],
-        zoom: 1.,
     }
 }
 

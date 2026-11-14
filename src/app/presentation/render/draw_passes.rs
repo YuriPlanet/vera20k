@@ -552,6 +552,12 @@ pub(super) fn dispatch_draw_passes(
         bracket_tex,
         "ground_marks",
     );
+    draw_pooled_surface_strokes(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        "ground_strokes",
+    );
 
     // Cell::DrawOverlay_Shadow0047F510 uses native destination halving and
     // read/write Z after all overlay bodies. End the ordinary pass before the
@@ -684,11 +690,10 @@ pub(super) fn dispatch_draw_passes(
     // 6D465F. Building bases have already primed Z; mobile bodies and Anim
     // slots can cover the line. The second pass follows effects and BandBox.
     // Both rally leaves bypass Z.
-    draw_pooled_surface_lines(
+    draw_pooled_surface_strokes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        bracket_tex,
         "factory_rally_first",
     );
     // Original6D4656 IonBlast DrawAll moves terrain pixels after the first
@@ -1013,22 +1018,20 @@ pub(super) fn dispatch_draw_passes(
         );
     }
     // Tactical6D46CF redraws rally pixels whose ABuffer sample is zero.
-    draw_pooled_surface_lines(
+    draw_pooled_surface_strokes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        bracket_tex,
         "factory_rally_second",
     );
     // Original6D4750 and6D47BF/6D47F6 interleave action/control lines.
     // The selected Techno's vt+438 (Foot4DC060) runs
     // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
     // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
-    draw_pooled_surface_lines(
+    draw_pooled_surface_strokes(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        bracket_tex,
         "target_lines",
     );
     //6D4750..6D48F1: when Airstrike beams exist, the same ordered surface
@@ -1577,8 +1580,7 @@ fn composite_world_with_drag_rect(
     }
 }
 
-/// Native path/rally pixels belong to the world surface, before wheel zoom.
-/// Their dashed stores keep or skip each pixel by the live A on the GPU.
+/// VERA's ground marks: world-surface stores at neutral A, before wheel zoom.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -1588,6 +1590,20 @@ pub(super) fn draw_pooled_surface_lines<'a>(
 ) {
     if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
         batch.draw_surface_stores(pass, t, buf, count);
+    }
+}
+
+/// Native path, rally and planning strokes belong to the world surface,
+/// before wheel zoom. Their dashed stores keep or skip each pixel by the
+/// live A on the GPU.
+pub(super) fn draw_pooled_surface_strokes<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    pool: &'a InstanceBufferPool,
+    key: &'static str,
+) {
+    if let Some((buf, count)) = pool.get(key) {
+        batch.draw_surface_strokes(pass, buf, count);
     }
 }
 
@@ -1746,11 +1762,16 @@ mod tests {
     fn ground_marks_follow_the_kept_ground_and_precede_buildings_and_objects() {
         let kept = source_offset(".keep(&state.renderer.gpu.device, encoder)");
         let marks = source_offset("\"ground_marks\"");
+        let rings = source_offset("\"ground_strokes\"");
         let fogged = source_offset("pool.get(\"fogged_objects\")");
         let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
         let objects = source_offset("for layer in 0..=3 {");
         assert!(kept < marks, "the kept ground must not store the marks");
-        assert!(marks < fogged && marks < building_bases && marks < objects);
+        assert!(
+            marks < rings,
+            "the ferry's circles follow the formation dots"
+        );
+        assert!(rings < fogged && rings < building_bases && rings < objects);
     }
 
     #[test]
