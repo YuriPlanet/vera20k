@@ -2288,6 +2288,9 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
 /// `LaunchSuper` without the `GUIBuildSound` its button's `Action` plays, so
 /// they pass `gui_sound: false`.
 fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_sound: bool) {
+    let ares = state
+        .rules()
+        .is_some_and(crate::rules::ruleset::RuleSet::ares_form);
     let selection = (|| {
         let runtime = state.match_state.sim_runtime.runtime()?;
         let sim = &runtime.simulation;
@@ -2315,13 +2318,10 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
     match click {
         super::superweapon_cameo::SuperWeaponClick::Refused
             if selection.as_ref().is_some_and(|(view, _)| {
-                #[cfg(feature = "ares")]
-                {
+                if ares {
                     view.ares_refusal
                         == Some(crate::sim::superweapon::AresCameoRefusal::InsufficientFunds)
-                }
-                #[cfg(not(feature = "ares"))]
-                {
+                } else {
                     view.can_fire && !view.can_afford
                 }
             }) =>
@@ -2340,15 +2340,17 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
         }
         super::superweapon_cameo::SuperWeaponClick::Target => {
             queue_selection_snapshot_command(state, Vec::new(), false);
+            // When the Rules were read the Ares way (`RuleSet::ares_form`),
             // Ares 10034D60 (hook 6AAF9D) plays the type's EVA.SelectTarget,
             // whose constructor default is the stock literal.
-            #[cfg(feature = "ares")]
-            let cue = state
-                .rules()
-                .and_then(|rules| rules.super_weapon(section))
-                .and_then(|sw| sw.select_target_eva.clone());
-            #[cfg(not(feature = "ares"))]
-            let cue = Some(sidebar_eva::EVA_SELECT_TARGET.to_owned());
+            let cue = if ares {
+                state
+                    .rules()
+                    .and_then(|rules| rules.super_weapon(section))
+                    .and_then(|sw| sw.select_target_eva.clone())
+            } else {
+                Some(sidebar_eva::EVA_SELECT_TARGET.to_owned())
+            };
             if let Some(cue) = cue {
                 push_local_eva(state, &cue);
             }
@@ -2364,8 +2366,8 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
         }
         _ => {}
     }
-    #[cfg(feature = "ares")]
-    if click == super::superweapon_cameo::SuperWeaponClick::Refused
+    if ares
+        && click == super::superweapon_cameo::SuperWeaponClick::Refused
         && let Some(refusal) = selection.as_ref().and_then(|(view, _)| view.ares_refusal)
     {
         // 10034DA0: CanFire's refusal plays EVA.Impatient (default -1).

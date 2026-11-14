@@ -136,6 +136,8 @@ pub(super) fn dispatch_sim_sound_events(
     output: &mut SoundEventQueue,
     mut hud_text: Option<&mut Vec<crate::app::input::messages::HudMessage>>,
 ) {
+    // The superweapons' Ares arms follow how the Rules were read.
+    let ares = rules.ares_form();
     // Convert sim sound events to app-layer sound events for playback.
     for sim_event in events {
         let app_event: GameSoundEvent = match sim_event {
@@ -408,8 +410,8 @@ pub(super) fn dispatch_sim_sound_events(
                     }
                 }
                 // Ares SW_Protect::Activate10074750: StartSound at the cell.
-                #[cfg(feature = "ares")]
-                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
+                if ares
+                    && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
                     && let Some(sound_id) = sw.start_sound.clone()
                 {
                     output.push(GameSoundEvent::VocAt {
@@ -439,10 +441,7 @@ pub(super) fn dispatch_sim_sound_events(
                 // A handler's launch (hook 6CC390) skips the stock case: its
                 // EVA and cleanup are the common Launch's own facts, its
                 // sounds the handler's.
-                #[cfg(feature = "ares")]
-                let ares_handler = sw.ares_eva().is_some();
-                #[cfg(not(feature = "ares"))]
-                let ares_handler = false;
+                let ares_handler = ares && sw.ares_eva().is_some();
                 let mut cue = if ares_handler
                     || sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
                 {
@@ -480,6 +479,7 @@ pub(super) fn dispatch_sim_sound_events(
                             sw,
                             eva_producers::SuperWeaponEvaStage::Activated,
                             cue.eva_event,
+                            ares,
                         )
                     })
                     .flatten()
@@ -832,8 +832,7 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            #[cfg(not(feature = "ares"))]
-            SimSoundEvent::SuperWeaponInsufficientFunds { .. } => continue,
+            SimSoundEvent::SuperWeaponInsufficientFunds { .. } if !ares => continue,
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
             SimSoundEvent::AresSuperWeaponActivated { .. }
             | SimSoundEvent::AresLightningStormApproaching { .. }
@@ -888,7 +887,8 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            #[cfg(feature = "ares")]
+            // Reached only when the Rules were read the Ares way
+            // (`RuleSet::ares_form`): the stock arm above takes the rest.
             SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -1061,6 +1061,7 @@ pub(super) fn dispatch_sim_sound_events(
                         sw,
                         eva_producers::SuperWeaponEvaStage::Ready,
                         eva_producers::super_weapon_ready_event(sw.kind),
+                        ares,
                     )
                 }) else {
                     continue;
@@ -1112,6 +1113,7 @@ pub(super) fn dispatch_sim_sound_events(
                             sw,
                             eva_producers::SuperWeaponEvaStage::Detected,
                             eva_producers::super_weapon_detected_event(sw.kind, index),
+                            ares,
                         )
                     })
                 else {
@@ -1167,14 +1169,15 @@ fn super_weapon_detection_admitted(
     let type_name = sim.interner().resolve(sw_type).to_string();
     // `0x004468FA..0x00446935`: `AuxBuilding=` absent, or the building's own
     // house owns one (`CountOwnedInstances` on `Owner+0x5550`). Optional Ares
-    // lists use the same grant availability owner.
-    #[cfg(not(feature = "ares"))]
-    let aux_satisfied = rules.super_weapon(&type_name).is_none_or(|sw| {
-        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
-    });
-    #[cfg(feature = "ares")]
-    let aux_satisfied =
-        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
+    // lists, when the Rules were read the Ares way (`RuleSet::ares_form`), use
+    // the same grant availability owner.
+    let aux_satisfied = if rules.ares_form() {
+        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name)
+    } else {
+        rules.super_weapon(&type_name).is_none_or(|sw| {
+            crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
+        })
+    };
     eva_producers::super_weapon_detected_allowed(
         sim.house_alliances().as_map(),
         &owner_name,
@@ -1230,8 +1233,8 @@ pub(super) fn ares_tech_capture_messages(
 /// refusal on a human-controlled House (100358A0, firer the player),
 /// `Message.Launch` on every client after a new type's launch (Launch
 /// 10032ED0, firer the owner) and `Message.Activate` when UnitDelivery's
-/// deferment ends (10075DE0, firer the owner).
-#[cfg(feature = "ares")]
+/// deferment ends (10075DE0, firer the owner). The caller asks for them only
+/// when the Rules were read the Ares way (`RuleSet::ares_form`).
 pub(super) fn ares_superweapon_messages(
     events: &[SimSoundEvent],
     sim: &crate::sim::world::Simulation,
@@ -1636,9 +1639,9 @@ mod tests {
             })
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn hunter_seeker_eva_runs_after_payload_and_cleans_ready_after_sound() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
@@ -1773,9 +1776,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn superweapon_money_refusal_eva_is_owner_local_configurable_and_silenceable() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         for (setting, expected) in [
             ("", Some("EVA_InsufficientFunds")),
             ("EVA.InsufficientFunds=CustomFunds\n", Some("CustomFunds")),
@@ -2606,9 +2609,9 @@ mod tests {
     /// case's line and Ready drop stay out of the launch fact; the
     /// activation line is the data type's (the ChronoSphere's), heard on
     /// every client, and its Ready leaves the launching player's queue.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
@@ -2778,26 +2781,31 @@ mod tests {
         let oracle: serde_json::Value =
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
-        for (section, name, sound, expected) in [
-            // Installed Ares hands MultiMissile to SW_NuclearMissile, whose
-            // cue and line are its own facts (`ares_stock_types_tests`).
-            #[cfg(not(feature = "ares"))]
-            ("nuke_launch", "NukeSpecial", "NukeSiren", 12),
-            ("iron_curtain_launch", "IronCurtainSpecial", "", 18),
-            #[cfg(not(feature = "ares"))]
+        let ares = rules.ares_form();
+        for (section, name, sound, expected, redirected) in [
+            // When the Rules were read the Ares way (`RuleSet::ares_form`),
+            // Ares hands MultiMissile to SW_NuclearMissile, whose cue and line
+            // are its own facts (`ares_stock_types_tests`).
+            ("nuke_launch", "NukeSpecial", "NukeSiren", 12, true),
+            ("iron_curtain_launch", "IronCurtainSpecial", "", 18, false),
             (
                 "genetic_launch",
                 "GeneticConverterSpecial",
                 "GeneticMutatorActivate",
                 18,
+                true,
             ),
             (
                 "psychic_launch",
                 "PsychicRevealSpecial",
                 "PsychicRevealActivate",
                 11,
+                false,
             ),
         ] {
+            if ares && redirected {
+                continue;
+            }
             let mut compared = 0;
             for row in oracle[section].as_array().unwrap() {
                 let events = row["events"].as_array().unwrap();
@@ -2894,13 +2902,22 @@ mod tests {
     }
 
     /// Cases 5, 6 and 8 play nothing, but their player's launch still drops
-    /// the queued Ready line through the shared tail `0x006CD51E`. Installed
-    /// Ares hands SpyPlane to SW_SpyPlane (`HandlesType @ 100757F0`, hook
-    /// 6CC390): its launch skips case 8, and the Ready line it drops is the
-    /// common Launch's (`AresSuperWeaponFinished`), so the launch fact plays
-    /// and drops nothing.
+    /// the queued Ready line through the shared tail `0x006CD51E`. When the
+    /// Rules were read the Ares way (`RuleSet::ares_form`), Ares hands
+    /// SpyPlane to SW_SpyPlane (`HandlesType @ 100757F0`) and both paradrops
+    /// to SW_ParaDrop (`10073DA0`), hook 6CC390: their launch skips the
+    /// stock case, and the Ready line it drops is the common Launch's
+    /// (`AresSuperWeaponFinished`), so the launch fact plays and drops
+    /// nothing.
     #[test]
     fn silent_launches_drop_their_ready_line_for_their_player_only() {
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            silent_launches_drop_their_ready_line(ares_way);
+        }
+    }
+
+    fn silent_launches_drop_their_ready_line(ares_way: bool) {
         let rules =
             crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
                 "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
@@ -2910,6 +2927,8 @@ mod tests {
                  [SpyPlaneSpecial]\nType=SpyPlane\n",
             ))
             .unwrap();
+        let ares = rules.ares_form();
+        assert_eq!(ares, ares_way || cfg!(feature = "ares"));
         for (name, ready) in [
             ("ParaDropSpecial", "EVA_ReinforcementsReady"),
             ("AmericanParaDropSpecial", "EVA_ReinforcementsReady"),
@@ -2935,7 +2954,7 @@ mod tests {
                 None,
             );
             let emitted = output.drain();
-            if cfg!(feature = "ares") && name == "SpyPlaneSpecial" {
+            if ares {
                 assert!(emitted.is_empty(), "{name}: {emitted:?}");
                 continue;
             }
@@ -3144,9 +3163,9 @@ mod tests {
     /// refusal only for the local owner, Launch (10032ED0) on every client
     /// with the owner as firer, a drain refusal (100358A0) in the player's
     /// colour wherever the sim announced it.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_superweapon_message_lines_follow_their_printing_hooks() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::app::input::messages::HudMessage;
         use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
@@ -3505,9 +3524,9 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn construction_detection_uses_the_shared_extension_building_gate() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         let ini = crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=AUX\n1=VETO\n[AUX]\nStrength=100\n[VETO]\nStrength=100\n[SuperWeaponTypes]\n0=Gate\n[Gate]\nType=PsychicReveal\nSW.AuxBuildings=AUX\nSW.NegBuildings=VETO\n",

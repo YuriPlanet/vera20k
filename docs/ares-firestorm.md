@@ -1,9 +1,11 @@
 # Optional Ares firestorm walls
 
-Build with `--features ares`. Ares 3.0 brings back Tiberian Sun's firestorm
+Ares 3.0 brings back Tiberian Sun's firestorm
 wall as a superweapon (`Type=Firestorm`, SW_Firewall) that powers a House's
-`Firestorm.Wall=` building sections while it drains. Default builds read none
-of the keys below and keep the stock `FirestormWall=` paths.
+`Firestorm.Wall=` building sections while it drains. A game that ships `ares.mix`
+reads the keys below in every build ([Ares](ares.md)); other games keep the stock
+`FirestormWall=` paths. Hiding a wall section's health bar is still behind the
+`ares` build feature.
 
 ```ini
 [SuperWeaponTypes]
