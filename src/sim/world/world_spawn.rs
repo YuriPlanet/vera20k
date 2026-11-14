@@ -2940,7 +2940,16 @@ impl Simulation {
             let gather = rules.general.gather_when_mcv_deploy;
             #[cfg(not(feature = "phobos"))]
             let gather = true;
-            if gather {
+            // A command-layer-driven house manages its own forces: the
+            // regroup overwrites every own ground unit's NavCom, which the
+            // external controller only observes a tick later. Every write
+            // above this gate stays.
+            if gather
+                && !self
+                    .houses
+                    .get(&owner_id)
+                    .is_some_and(|house| house.command_driven())
+            {
                 self.move_ground_forces_to_base(owner_id, rules, registry, frame_effects);
             }
         }
