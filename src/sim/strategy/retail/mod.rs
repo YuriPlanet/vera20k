@@ -661,9 +661,22 @@ impl Brain for RetailBrain {
                 })
                 .collect();
             let crates: Vec<(u16, u16)> = obs.crate_cells(rules);
+            // Unclaimed, not merely unordered: a unit with no live intent is one
+            // no layer has spoken for inside the intent term. The census's own
+            // `idle=` counts "no destination and no target right now", which also
+            // catches units whose order is in flight, so it over-reports. This is
+            // the question "has anything claimed this unit recently".
+            let unclaimed = self
+                .census
+                .units
+                .iter()
+                .filter(|unit| unit.traits.combat && unit.orderable)
+                .filter(|unit| !self.tracked.is_claimed(obs.tick(), unit.entity_id))
+                .count();
             log::info!(
-                "auto play: {} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{}",
+                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{}",
                 self.census.describe(),
+                unclaimed,
                 roster.join(","),
                 crates.len(),
                 crates,

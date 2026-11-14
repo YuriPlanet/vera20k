@@ -390,6 +390,19 @@ impl Tracker {
             .is_some_and(|tracked| kinds.contains(&tracked.kind) && now < tracked.until)
     }
 
+    /// Whether any layer has claimed `unit` inside the current term: a live
+    /// intent, or a routine holding it.
+    ///
+    /// The question "does anything speak for this unit" rather than "is it
+    // moving right now" — the census's idle count answers the second and also
+    /// catches an order that is in flight.
+    pub(super) fn is_claimed(&self, now: u64, unit: u64) -> bool {
+        self.intents
+            .get(&unit)
+            .is_some_and(|tracked| now < tracked.until)
+            || self.held.get(&unit).is_some_and(|until| now < *until)
+    }
+
     /// Hand `unit` to a routine until `until`: the routine is its only issuer
     /// for those frames.
     pub(super) fn hold(&mut self, unit: u64, until: u64) {
