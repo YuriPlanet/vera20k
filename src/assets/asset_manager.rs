@@ -9,6 +9,7 @@
 //! `thememd.mix`; native YR otherwise selects only the latter when present.
 //! Audio selection and lifetime: [process audio owner](../../tools/audio_catalog_owner.md).
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -129,6 +130,37 @@ fn check_asset_read_limit(actual: u64, maximum: usize) -> Result<(), AssetError>
 struct AssetLocation {
     archive_index: usize,
     entry_id: i32,
+}
+
+/// Where a named archive comes from (`AssetManager::locate_named_archive`).
+enum NamedArchiveLocation {
+    Registered,
+    Loose(PathBuf),
+    /// Index into `archive_catalog`.
+    Catalogued(usize),
+    /// An entry of a registered archive.
+    Nested {
+        parent_index: usize,
+        entry_id: i32,
+    },
+}
+
+/// One archive [`AssetManager::theater_archives_unmounted`] finds.
+pub struct UnmountedArchive<'a> {
+    /// The name mounting would register it under (`ra2md.mix -> isosnomd.mix`).
+    pub source: String,
+    /// `None` when it does not open, so mounting skips it; a loose one still
+    /// takes the place of the copy it is named after.
+    pub archive: Option<Cow<'a, MixArchive>>,
+}
+
+/// A copy of the archive `parent` holds as `id`, owned, so it outlives `parent`.
+fn nested_archive<'a>(parent: &MixArchive, id: i32) -> Option<Cow<'a, MixArchive>> {
+    parent
+        .nested_archive_by_id(id)
+        .ok()
+        .flatten()
+        .map(Cow::Owned)
 }
 
 #[derive(Default)]
@@ -1236,6 +1268,89 @@ impl AssetManager {
             .collect()
     }
 
+    /// The archives name lookups search, in search order, with their names.
+    pub fn registered_archives(&self) -> impl Iterator<Item = (&str, &MixArchive)> {
+        self.archives
+            .iter()
+            .map(|archive| (archive.name.as_str(), &archive.archive))
+    }
+
+    /// VERA: the archives [`Self::activate_theater_archives`] would add for
+    /// `archive_names`, without adding them: in its order, each found as
+    /// mounting finds it once the ones before it are added. One already
+    /// registered searches where it is and is left out. Lets a theater's files
+    /// be compared with no theater active ([`Self::resolve_ref_with_unmounted`]).
+    pub fn theater_archives_unmounted(&self, archive_names: &[&str]) -> Vec<UnmountedArchive<'_>> {
+        let mut found: Vec<UnmountedArchive<'_>> = Vec::new();
+        for &name in archive_names {
+            let (source, archive) = match self.locate_named_archive(name) {
+                Some(NamedArchiveLocation::Registered) => continue,
+                Some(NamedArchiveLocation::Loose(path)) => (
+                    name.to_string(),
+                    MixArchive::load(&path).ok().map(Cow::Owned),
+                ),
+                Some(NamedArchiveLocation::Catalogued(position)) => {
+                    let archive = &self.archive_catalog[position];
+                    (archive.name.clone(), Some(Cow::Borrowed(&archive.archive)))
+                }
+                Some(NamedArchiveLocation::Nested {
+                    parent_index,
+                    entry_id,
+                }) => {
+                    let parent = &self.archives[parent_index];
+                    (
+                        format!("{} -> {name}", parent.name),
+                        nested_archive(&parent.archive, entry_id),
+                    )
+                }
+                // Mounted, the first earlier one holding it would hold it.
+                None => {
+                    let id = mix_hash(name);
+                    let Some((parent, archive)) = found.iter().find_map(|earlier| {
+                        let archive = earlier.archive.as_deref()?;
+                        archive
+                            .contains_id(id)
+                            .then_some((&earlier.source, archive))
+                    }) else {
+                        continue;
+                    };
+                    (format!("{parent} -> {name}"), nested_archive(archive, id))
+                }
+            };
+            found.push(UnmountedArchive { source, archive });
+        }
+        found
+    }
+
+    /// VERA: what [`Self::resolve_ref`] would read for `name` with `unmounted`
+    /// (from [`Self::theater_archives_unmounted`]) mounted after the registered
+    /// archives: a loose file, else the first archive whose index lists the
+    /// name, even one that cannot read it, as `lookup_index` decides.
+    pub fn resolve_ref_with_unmounted<'a>(
+        &'a self,
+        name: &str,
+        unmounted: &'a [UnmountedArchive<'a>],
+    ) -> Option<(&'a str, &'a [u8])> {
+        if let Some((loose, bytes)) = self.loose_bytes(name) {
+            return Some((loose.source_name.as_str(), bytes));
+        }
+        if let Some((named, entry_id)) = self.lookup_asset_entry(name) {
+            return named
+                .archive
+                .get_by_id(entry_id)
+                .map(|bytes| (named.name.as_str(), bytes));
+        }
+        let id = mix_hash(name);
+        unmounted.iter().find_map(|unmounted| {
+            let archive = unmounted.archive.as_deref()?;
+            archive.contains_id(id).then(|| {
+                archive
+                    .get_by_id(id)
+                    .map(|bytes| (unmounted.source.as_str(), bytes))
+            })
+        })?
+    }
+
     /// Return the RA2 installation directory.
     pub fn ra2_dir(&self) -> &Path {
         &self.ra2_dir
@@ -1569,66 +1684,81 @@ impl AssetManager {
         }
     }
 
-    fn mount_named_archive(&mut self, name: &str, required: bool) -> Result<bool, AssetError> {
+    /// Where [`Self::mount_named_archive`] finds `name`, in its order: already
+    /// registered, a loose file, the catalogued nested copy, else the first
+    /// registered archive whose entry of that name it parses as a MIX.
+    fn locate_named_archive(&self, name: &str) -> Option<NamedArchiveLocation> {
         if self
             .archives
             .iter()
             .any(|archive| archive_name_matches(&archive.name, name))
         {
-            return Ok(true);
+            return Some(NamedArchiveLocation::Registered);
         }
-
-        if let Some(disk_path) = self.loose_path(name).map(Path::to_path_buf) {
-            let archive = MixArchive::load(&disk_path)?;
-            if let Some(position) = self
-                .archive_catalog
-                .iter()
-                .position(|catalogued| archive_name_matches(&catalogued.name, name))
-            {
-                self.archive_catalog.remove(position);
-            }
-            self.append_registered_archive(NamedArchive {
-                name: name.to_string(),
-                archive,
-            });
-            return Ok(true);
+        if let Some(path) = self.loose_path(name) {
+            return Some(NamedArchiveLocation::Loose(path.to_path_buf()));
         }
-
         if let Some(position) = self
             .archive_catalog
             .iter()
             .position(|archive| archive_name_matches(&archive.name, name))
         {
-            let archive = self.archive_catalog.remove(position);
-            self.append_registered_archive(archive);
-            return Ok(true);
+            return Some(NamedArchiveLocation::Catalogued(position));
         }
-
-        if let Some((parent_index, entry_id)) = self
-            .lookup_location_for_name(name)
-            .map(|location| (location.archive_index, location.entry_id))
-        {
-            let parent_name = self.archives[parent_index].name.clone();
-            let archive = self.archives[parent_index]
-                .archive
-                .nested_archive_by_id(entry_id)?
-                .ok_or_else(|| AssetError::AssetNotFound {
-                    name: name.to_string(),
-                })?;
-            self.append_registered_archive(NamedArchive {
-                name: format!("{parent_name} -> {name}"),
-                archive,
-            });
-            return Ok(true);
-        }
-
-        if required {
-            Err(AssetError::AssetNotFound {
-                name: name.to_string(),
+        self.lookup_location_for_name(name)
+            .map(|location| NamedArchiveLocation::Nested {
+                parent_index: location.archive_index,
+                entry_id: location.entry_id,
             })
-        } else {
-            log::debug!("{name} not found (optional, skipping)");
-            Ok(false)
+    }
+
+    fn mount_named_archive(&mut self, name: &str, required: bool) -> Result<bool, AssetError> {
+        match self.locate_named_archive(name) {
+            Some(NamedArchiveLocation::Registered) => Ok(true),
+            Some(NamedArchiveLocation::Loose(disk_path)) => {
+                let archive = MixArchive::load(&disk_path)?;
+                if let Some(position) = self
+                    .archive_catalog
+                    .iter()
+                    .position(|catalogued| archive_name_matches(&catalogued.name, name))
+                {
+                    self.archive_catalog.remove(position);
+                }
+                self.append_registered_archive(NamedArchive {
+                    name: name.to_string(),
+                    archive,
+                });
+                Ok(true)
+            }
+            Some(NamedArchiveLocation::Catalogued(position)) => {
+                let archive = self.archive_catalog.remove(position);
+                self.append_registered_archive(archive);
+                Ok(true)
+            }
+            Some(NamedArchiveLocation::Nested {
+                parent_index,
+                entry_id,
+            }) => {
+                let parent_name = self.archives[parent_index].name.clone();
+                let archive = self.archives[parent_index]
+                    .archive
+                    .nested_archive_by_id(entry_id)?
+                    .ok_or_else(|| AssetError::AssetNotFound {
+                        name: name.to_string(),
+                    })?;
+                self.append_registered_archive(NamedArchive {
+                    name: format!("{parent_name} -> {name}"),
+                    archive,
+                });
+                Ok(true)
+            }
+            None if required => Err(AssetError::AssetNotFound {
+                name: name.to_string(),
+            }),
+            None => {
+                log::debug!("{name} not found (optional, skipping)");
+                Ok(false)
+            }
         }
     }
 
