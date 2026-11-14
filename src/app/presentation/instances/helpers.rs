@@ -322,10 +322,11 @@ fn compose_tactical_screen_entity_encounter_order(
     // Band-box preflight has a separate native bulk Building registration
     // path. Ordinary picking/rendering never scans the unregistered store.
     if bulk_register_live_buildings {
-        candidates.extend(frame.objects().filter_map(|entity| {
-            (entity.category() == EntityCategory::Structure
-                && sim.display_layers().layer_of(entity.stable_id()).is_none())
-            .then_some(entity.stable_id())
+        candidates.extend(frame.structures().filter_map(|entity| {
+            sim.display_layers()
+                .layer_of(entity.stable_id())
+                .is_none()
+                .then_some(entity.stable_id())
         }));
     }
     candidates

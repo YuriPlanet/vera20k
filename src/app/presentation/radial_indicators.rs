@@ -425,8 +425,7 @@ fn push_placement_rings(
     };
     let center = (cell_x as i16, cell_y as i16);
     let nearby: Vec<_> = frame
-        .objects()
-        .filter(|entity| entity.category() == EntityCategory::Structure)
+        .structures()
         .filter_map(|entity| {
             if entity.owner() != player || !entity.lifecycle.object_alive() {
                 return None;

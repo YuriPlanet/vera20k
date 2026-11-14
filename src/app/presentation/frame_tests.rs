@@ -57,3 +57,44 @@ fn a_frame_finds_records_by_id_and_keeps_one_display_order() {
         frame.display_order(sim.display_layers())
     ));
 }
+
+/// The building walk lists exactly the Structure records, in stable-id
+/// order, between and after other objects.
+#[test]
+fn a_frame_lists_its_buildings_in_id_order() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::{combat::Health, game_entity::GameEntity};
+
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let tank = sim.intern("MTNK");
+    let yard = sim.intern("GACNST");
+    for (id, kind, category) in [
+        (3, tank, EntityCategory::Unit),
+        (7, yard, EntityCategory::Structure),
+        (20, tank, EntityCategory::Unit),
+        (25, yard, EntityCategory::Structure),
+    ] {
+        sim.entities_mut_for_test()
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                id,
+                10 + id as u16,
+                10,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                kind,
+                category,
+                0,
+                5,
+                false,
+            ));
+    }
+    let frame = PresentationFrame::of_test(&sim, crate::rules::ruleset::RuleSet::empty_for_test());
+    let buildings: Vec<u64> = frame
+        .structures()
+        .map(|record| record.stable_id())
+        .collect();
+    assert_eq!(buildings, [7, 25]);
+}
