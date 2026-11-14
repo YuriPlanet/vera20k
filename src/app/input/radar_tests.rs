@@ -481,13 +481,13 @@ fn special_place_names_the_first_type_of_the_release_action() {
     // (`ares_switch::reading_mode`).
     if !cfg!(feature = "ares") {
         let stock = read("");
-        assert!(!stock.ares_super_weapons());
+        assert!(!stock.ares_form());
         assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
         assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
     }
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ares = read("SW.Deferment=1\n");
-    assert!(ares.ares_super_weapons());
+    assert!(ares.ares_form());
     assert_eq!(special_place_type(&ares, "Bomb2", nuke), Some("Bomb2"));
 }

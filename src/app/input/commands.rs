@@ -600,7 +600,7 @@ pub(crate) enum PlaceAction<'a> {
 /// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0, resuming at
 /// `0x4AC21C` or `0x4AC294`): its own actions name the armed type, and so
 /// does a stock one that is the armed type's `Action=`. It is superweapon
-/// code, so it follows [`RuleSet::ares_super_weapons`].
+/// code, so it follows [`RuleSet::ares_form`].
 ///
 /// RESIDUAL: with the Ares superweapons on, a stock action that is not the
 /// armed type's `Action=` names the armed type here, where Ares names none.
@@ -612,14 +612,14 @@ pub(crate) enum PlaceAction<'a> {
 /// another `Action=`, released on the radar. Effect: it launches where Ares
 /// launches nothing. Frequency: Ares mods only.
 ///
-/// [`RuleSet::ares_super_weapons`]: crate::rules::ruleset::RuleSet::ares_super_weapons
+/// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
 pub(crate) fn special_place_type<'a>(
     rules: &'a crate::rules::ruleset::RuleSet,
     armed: &'a str,
     action: PlaceAction<'_>,
 ) -> Option<&'a str> {
     match action {
-        _ if rules.ares_super_weapons() => Some(armed),
+        _ if rules.ares_form() => Some(armed),
         #[cfg(feature = "ares")]
         PlaceAction::Ares => Some(armed),
         PlaceAction::Stock(action) => {
