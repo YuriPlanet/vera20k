@@ -163,9 +163,16 @@ impl ShroudKnowledge {
         if self.counter < 0 {
             return false;
         }
+        self.clear_mapped();
+        true
+    }
+
+    /// Cell `+0x12C &= ~0x18`, the store 577C90's receiver makes when its
+    /// counter is not negative and 577BB0's makes on every cell. Counters,
+    /// pending and the sources stay.
+    pub(super) fn clear_mapped(&mut self) {
         self.open = false;
         self.transient_visible = false;
-        true
     }
 
     /// The bulk577D90/577AB0 store: shrouded (`reset`) or mapped, with no

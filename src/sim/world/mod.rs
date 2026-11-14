@@ -5082,12 +5082,7 @@ impl Simulation {
     }
 
     /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
-    /// amount. Map57B790..57B860 tests121 offsets with sqrtApprox/ftol and
-    /// always reduces the unchanged centre pointer, never the candidate.
-    /// Seven original executions (Steam gamemd, real and Dummy,
-    /// signed extremes) each observed109 ordered calls480A80(receiver,1).
-    /// Packed subtraction leaves offsets independent of the centre, so reuse
-    /// that constant count without adding another floating distance kernel.
+    /// amount, and reduces around it ([`Self::reduce_tiberium_in_radius`]).
     pub(crate) fn trigger_reduce_tiberium_at_waypoint(
         terrain_objects: &TerrainObjectStore,
         ore_growth_config: &OreGrowthConfig,
@@ -5108,10 +5103,53 @@ impl Simulation {
         if resolved_terrain.is_none() || overlay_grid.is_none() {
             return false;
         }
-        // Keep every call, including after depletion. The shared owner
-        // performs each native lookup and owns RNG/queues/radar/cleanup.
+        if let Err(error) = Self::reduce_tiberium_in_radius(
+            terrain_objects,
+            ore_growth_config,
+            ore_growth_state,
+            session,
+            scenario_rng,
+            substrate,
+            resolved_terrain,
+            overlay_grid,
+            dirty_cells,
+            (cell.0 as u16, cell.1 as u16),
+            rules,
+            Some(overlay_registry),
+        ) {
+            log::error!("Tiberium trigger action failed: {error}");
+            return false;
+        }
+        true
+    }
+
+    /// `MapClass::Reduce_Tiberium_In_Radius @ 0x0057B790`, called by trigger
+    /// action 59 and team script action 28. Map57B790..57B860 tests121
+    /// offsets with sqrtApprox/ftol and always reduces the unchanged centre
+    /// pointer, never the candidate. Seven original executions (Steam
+    /// gamemd, real and Dummy, signed extremes) each observed109 ordered
+    /// calls480A80(receiver,1). Packed subtraction leaves offsets
+    /// independent of the centre, so reuse that constant count without
+    /// adding another floating distance kernel. Every call is kept, even
+    /// after depletion; the shared owner performs each native lookup and
+    /// owns RNG/queues/radar/cleanup. A malformed native Image stops the
+    /// remaining calls: prior reductions stay, no later RNG is replayed.
+    pub(crate) fn reduce_tiberium_in_radius(
+        terrain_objects: &TerrainObjectStore,
+        ore_growth_config: &OreGrowthConfig,
+        ore_growth_state: &mut OreGrowthState,
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
+        resolved_terrain: &mut Option<ResolvedTerrainGrid>,
+        overlay_grid: &mut Option<OverlayGrid>,
+        dirty_cells: &mut DirtyCells,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> Result<(), crate::rules::overlay_types::TiberiumImageError> {
         for _ in 0..109 {
-            if let Err(error) = Self::reduce_tiberium_at_with_native_context(
+            Self::reduce_tiberium_at_with_native_context(
                 terrain_objects,
                 ore_growth_config,
                 ore_growth_state,
@@ -5121,18 +5159,13 @@ impl Simulation {
                 resolved_terrain,
                 overlay_grid,
                 dirty_cells,
-                (cell.0 as u16, cell.1 as u16),
+                cell,
                 1,
                 rules,
-                Some(overlay_registry),
-            ) {
-                // A malformed native Image stops this trigger action. Prior
-                // reductions remain; no later reduction or RNG is replayed.
-                log::error!("Tiberium trigger action failed: {error}");
-                return false;
-            }
+                overlay_registry,
+            )?;
         }
-        true
+        Ok(())
     }
 
     pub(crate) fn reduce_tiberium_at_with_native_context<A: Into<i32>>(

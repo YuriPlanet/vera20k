@@ -960,6 +960,12 @@ impl PartialEq for TriggerRuntime {
 impl Eq for TriggerRuntime {}
 
 impl TriggerRuntime {
+    /// `TeamTypeClass::Array[index]` (`0x00A8ECA4`) by ID, in constructor
+    /// order. None past its end, where native reads out of bounds.
+    pub(crate) fn team_type_at(&self, index: usize) -> Option<&str> {
+        self.definitions.team_types.get(index).map(String::as_str)
+    }
+
     /// Trigger deleting destructor726950 selected by the common725C70 owner.
     /// Pointer expiry splices this identity out of every live Tag chain.
     pub(crate) fn delete_live_trigger(&mut self, index: usize) {

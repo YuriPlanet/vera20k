@@ -470,11 +470,19 @@ pub struct TeamScriptMember {
     pub member_type: TeamMemberTypeIdentity,
 }
 
-/// The first unported action a team's script reached, kept for diagnostics.
-/// The team stays on it, running everything else `TeamClass::AI` does.
+/// The first action a team's script reached that VERA cannot run, kept for
+/// diagnostics. The team stays on it, running everything else
+/// `TeamClass::AI` does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TeamScriptRefusal {
-    UnsupportedAction { action_id: i32 },
+    UnsupportedAction {
+        action_id: i32,
+    },
+    /// An argument naming no type, which native indexes out of bounds.
+    InvalidArgument {
+        action_id: i32,
+        argument: i32,
+    },
 }
 
 /// One entry of a team's member list (`TeamClass+0x54`, linked through
