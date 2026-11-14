@@ -123,6 +123,11 @@ pub struct SavedLocalView {
 /// body at 5BE083 and swizzles the placement product and type at
 /// 5BE101/5BE112, so Repair +11B0, Sell +11B1, the selected Super +11B8 and
 /// the placement +11A4/+11A8/+11AC all survive a load.
+///
+/// RESIDUAL (kept by the maintainer): beacon mode (+11B4, owned by
+/// `app::input::beacon`) is in the same body and survives a native load too;
+/// VERA saves no beacon field, so a save made while placing a beacon loads with
+/// the mode off. Saving it would change this layout and refuse older saves.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SavedCursorModes {
     pub repair: bool,
