@@ -263,7 +263,14 @@ pub(crate) struct DisplayEffectInputs<'a> {
 impl DisplayEffectInputs<'_> {
     /// Tactical6D2140's view, in world pixels, for draw admission measured
     /// from the camera, the frame's corner: the battlefield and its offset on
-    /// both sides (`camera::tactical_centring_size`).
+    /// both sides (`camera::tactical_centring_size`). Every Display member
+    /// is admitted in it, as gamemd admits them all in one rect (0xB0CE28).
+    ///
+    /// Residual: gamemd measures from the battlefield's own corner, so with
+    /// a sidebar on the left or a bar on top this view also admits members
+    /// up to that inset past the left and top edges. They are drawn under
+    /// the battlefield's scissor, so nothing shows; only the frame-rate
+    /// latch (`0x55AF60`) is asked for those extra Anims and particles.
     pub(crate) fn projection_viewport(&self) -> [f32; 2] {
         [
             (self.tactical[2] + 2 * self.tactical[0]) as f32 / self.zoom,
@@ -437,12 +444,7 @@ pub(crate) fn build_display_effect_instances(
 ) -> Option<Vec<super::particles::ParticleDrawObservation>> {
     let mut observations = input.observe_particles.then(Vec::new);
     let sim = input.sim;
-    let context = super::particles::ParticleDrawContext::new(
-        input.camera,
-        input.zoom,
-        input.tactical,
-        input.axis,
-    );
+    let context = super::particles::ParticleDrawContext::new(input);
     let z2 = input.zoom;
     let (cam_x, cam_y, sw, sh) = (
         input.camera[0],
@@ -485,11 +487,10 @@ pub(crate) fn build_display_effect_instances(
         // Tactical6D2140's bounds, before DrawIt's mutative55AF60 query, and
         // the particle builders test their point first too. So a member off
         // the view is passed by on the point its frame keeps, before any
-        // store is asked. Each kind keeps the viewport it is tested in.
-        let admitted = member.point().is_some_and(|point| match member.kind {
-            EffectKind::Anim(_) => projection_admitted(point, input.camera, projection_viewport),
-            _ => context.admits(point),
-        });
+        // store is asked.
+        let admitted = member
+            .point()
+            .is_some_and(|point| projection_admitted(point, input.camera, projection_viewport));
         if !admitted {
             debug_assert!(
                 passed_by_effect_plans_nothing(input, member, &context, ground_order),
