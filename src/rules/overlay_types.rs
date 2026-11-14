@@ -1102,26 +1102,34 @@ NoUseTileLandType=no
     #[test]
     fn allow_ramps_projects_slope_capacity_and_overlay_flags() {
         let build = |key: &str| {
-            let mut text = format!("[Tiberiums]
+            let mut text = format!(
+                "[Tiberiums]
 0=RIP
 [RIP]
 Image=2
 {key}[OverlayTypes]
-");
+"
+            );
             for slot in 0..60 {
-                text.push_str(&format!("{slot}=O{slot}
-"));
+                text.push_str(&format!(
+                    "{slot}=O{slot}
+"
+                ));
             }
-            text.push_str("[O39]
+            text.push_str(
+                "[O39]
 Tiberium=yes
-");
-            crate::rules::ruleset::RuleSet::from_ini(
-                &crate::rules::ini_parser::IniFile::from_str(&text),
-            )
+",
+            );
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                &text,
+            ))
             .expect("ramp rules")
         };
-        let rules = build("AllowRamps=yes
-");
+        let rules = build(
+            "AllowRamps=yes
+",
+        );
         let ty = &rules.tiberium_types.types()[0];
         assert!(ty.allow_ramps);
         assert_eq!(ty.image().slope_count(), 8, "NumSlopes raised to 8");
@@ -1135,7 +1143,13 @@ Tiberium=yes
         let ty = &plain.tiberium_types.types()[0];
         assert!(!ty.allow_ramps);
         assert_eq!(ty.image().slope_count(), 0, "Image=2 keeps zero slopes");
-        assert!(!plain.overlay_registry().flags(39).unwrap().tiberium_allows_ramps);
+        assert!(
+            !plain
+                .overlay_registry()
+                .flags(39)
+                .unwrap()
+                .tiberium_allows_ramps
+        );
         assert!(!plain.overlay_registry().allows_ramp(ty, 4));
     }
 
@@ -1183,10 +1197,7 @@ Tiberium=yes
                 tiberium_allows_ramps: true,
                 ..resource
             };
-            assert_eq!(
-                retained_overlay_land(&allowed, 4),
-                Some(LandType::Tiberium)
-            );
+            assert_eq!(retained_overlay_land(&allowed, 4), Some(LandType::Tiberium));
             assert_eq!(retained_overlay_land(&allowed, 5), None);
         }
 
