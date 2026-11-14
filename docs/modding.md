@@ -224,6 +224,8 @@ VERA20k adds two things. Open the map in a text editor to set them:
 - **More players:** under `[Basic]`, add `MaxPlayers=` with a number from 9 to 30. The
   map needs a start waypoint for every player, numbered from 0.
 
+If you write a map editor or tool, the [map format](map-format.md) has the details.
+
 ### If a change doesn't work
 
 - Restart the game and start a new match. A loaded save keeps the rules it was saved with.
