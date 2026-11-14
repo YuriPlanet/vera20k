@@ -49,7 +49,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::touch_log::{TouchLogs, Touched};
 use crate::sim::world::ObjectSubstrate;
-use crate::sim::world::{LifecycleOutput, SimSoundEvent, Simulation};
+use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::lookup_hash::LookupMap;
@@ -931,6 +931,11 @@ pub struct AnimStore {
     /// Which anims may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Transient: never saved, compared or hashed.
     touched: TouchLogs<{ AnimTouchReader::COUNT }>,
+    /// Which anims may draw differently since the presentation last took the
+    /// log ([`Self::take_looks`]): stored, or given a new colour remap or, by
+    /// [`Self::note_look`], a new type. The simulation never reads it; never
+    /// saved, compared or hashed.
+    looks: TouchLogs<1>,
 }
 
 /// A product derived from the anims that re-derives from the touch log.
@@ -977,6 +982,7 @@ impl AnimStore {
             return false;
         };
         anim.remap = Some(remap);
+        self.looks.note(id, self.anims.len());
         true
     }
 
@@ -992,6 +998,7 @@ impl AnimStore {
 
     pub(crate) fn insert(&mut self, object: AnimObject) -> Option<AnimObject> {
         self.touched.note(object.stable_id, self.anims.len());
+        self.looks.note(object.stable_id, self.anims.len());
         count_owner(&mut self.owner_counts, object.owner_entity);
         let replaced = self.anims.insert(object.stable_id, object);
         if let Some(replaced) = &replaced {
@@ -1121,6 +1128,7 @@ impl AnimStore {
             anims,
             owner_counts,
             touched: TouchLogs::everything(),
+            looks: TouchLogs::everything(),
         }
     }
 
@@ -1130,6 +1138,7 @@ impl AnimStore {
 
     pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut AnimObject> {
         self.touched.note_all();
+        self.looks.note_all();
         self.anims.values_mut()
     }
 
@@ -1148,6 +1157,16 @@ impl AnimStore {
     /// Take `reader`'s touch log, leaving it empty.
     pub(crate) fn take_touched(&mut self, reader: AnimTouchReader) -> Touched {
         self.touched.take(reader as usize)
+    }
+
+    /// Take the look log, leaving it empty.
+    pub(crate) fn take_looks(&mut self) -> Touched {
+        self.looks.take(0)
+    }
+
+    /// Note that an in-place write gave `id` a new type.
+    pub(crate) fn note_look(&mut self, id: AnimId) {
+        self.looks.note(id, self.anims.len());
     }
 }
 
@@ -3087,6 +3106,17 @@ impl Simulation {
         ))
     }
 
+    /// Every Anim's [`Self::anim_absolute_coord`], in one walk of the store.
+    pub fn anim_absolute_coords(&self) -> impl Iterator<Item = (AnimId, AnimWorldCoord)> + '_ {
+        let terrain = self.resolved_terrain.as_ref();
+        self.substrate.anims.iter().map(move |(&id, anim)| {
+            (
+                id,
+                anim_world_coords(anim, &self.substrate.entities, terrain),
+            )
+        })
+    }
+
     pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
         // A terrain owner's centre is its GetCoords (Terrain VT+48 ->
         // Object5F65A0), for the Ares terrain fire.
@@ -3141,8 +3171,6 @@ impl Simulation {
             .anim(id)
             .and_then(|anim| anim.owner_entity.or(anim.owner_terrain));
         if owner == Some(expired_id) {
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::DisplayRemove { stable_id: id });
             self.substrate.display.remove(id);
             if let Some(entity) = self.substrate.entities.get_mut(expired_id) {
                 entity.attached_anim_expired(id);
@@ -4257,6 +4285,8 @@ impl Simulation {
             .anim(id)
             .is_some_and(|anim| anim.runtime.constructor_reverse);
         let reverse = constructor_reverse || config.reverse;
+        // A remapped anim's new type is a new atlas key.
+        self.substrate.anims.note_look(id);
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.type_id = type_id;
             anim.damage_accumulator = NativeF64Bits::POSITIVE_ZERO;

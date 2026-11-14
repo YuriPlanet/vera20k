@@ -1264,8 +1264,8 @@ pub(crate) fn push_local_eva(state: &mut AppState, event: &str) {
 /// gamemd reads the modifier for the right button only (`0x006AAD66`), so an
 /// unshifted or right-button press is byte-for-byte the ported decision. The
 /// sound and the EVA line are spoken once per click regardless of the repeat.
-/// An `ares` build repeats on Shift without the option, five copies
-/// ([`sidebar_eva::produce_copies`]).
+/// When Ares plays in the game (`RuleSet::ares`) Shift repeats without the
+/// option, five copies ([`sidebar_eva::produce_copies`]).
 fn sidebar_cameo_press(
     state: &mut AppState,
     type_id: &str,
@@ -1411,7 +1411,9 @@ fn sidebar_cameo_press(
             // issue order; the sound and EVA above were spoken once. Shift
             // repeats while the Options page's Shift-Click Batch Queue
             // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times,
-            // and in an `ares` build always (Ares.dll 10064520, hook 0x6AB773).
+            // and always when Ares plays in the game (`RuleSet::ares`; Ares.dll
+            // 10064520, hook 0x6AB773).
+            let ares = state.rules().is_some_and(|rules| rules.ares());
             let profile = &state.persistence.options_profile;
             let repeat = sidebar_eva::produce_copies(
                 category,
@@ -1420,6 +1422,7 @@ fn sidebar_cameo_press(
                 profile.shift_queue,
                 profile.shift_queue_count,
                 building_production_queue,
+                ares,
             );
             // VERA's Alt + left click (same option): the new copies jump the
             // waiting builds of other types, through ordinary ABANDON and

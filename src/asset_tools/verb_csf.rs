@@ -186,11 +186,13 @@ fn query_report(
     }
     // Same owner/candidate admission as app/loading/init::load_csf; --source
     // deliberately bypasses composition so individual files remain inspectable.
-    let (csf, admitted) =
-        CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(|error| ErrorReport {
-            error: error.to_string(),
-            hint: None,
-        })?;
+    let (csf, admitted) = CsfFile::load_active(asset_manager.ares_form(), |name| {
+        asset_manager.get_ref(name)
+    })
+    .map_err(|error| ErrorReport {
+        error: error.to_string(),
+        hint: None,
+    })?;
     // CsfFile owns slot selection, including Ares duplicates created by an
     // unsorted in-file append. Carry raw text from that SAME selected slot.
     let scan = RawScan {

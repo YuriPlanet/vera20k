@@ -27,7 +27,24 @@ fn add_pair(files: &mut Vec<(String, Vec<u8>)>, stem: &str, value: i16, rate: u3
 
 #[test]
 fn audio_bags_catalog_uses_native_order_and_correct_backing_pcm() {
-    let dir = audio_test_install("multi-audio-order");
+    audio_bags_catalog(false);
+}
+
+/// A game that ships `ares.mix` appends Ares' bags in every build.
+#[test]
+fn a_game_with_ares_mix_appends_the_ares_audio_bags() {
+    audio_bags_catalog(true);
+}
+
+fn audio_bags_catalog(ships_ares: bool) {
+    let dir = audio_test_install(if ships_ares {
+        "multi-audio-order-ares"
+    } else {
+        "multi-audio-order"
+    });
+    if ships_ares {
+        dir.write_mix("ares.mix", "ares.txt", b"ares");
+    }
     let mut files = Vec::new();
     for (i, stem) in ["audio", "ares", "audio01", "audio99"].iter().enumerate() {
         add_pair(&mut files, stem, 1000 + i as i16, 22050 + i as u32);
@@ -39,14 +56,15 @@ fn audio_bags_catalog_uses_native_order_and_correct_backing_pcm() {
     files.push(("audio02.bag".into(), 2000i16.to_le_bytes().to_vec()));
     write_archive(&dir, "expandmd20.mix", &files);
     let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    assert_eq!(manager.ares_form(), ships_ares || cfg!(feature = "ares"));
     let loaded = manager.load_audio_index().unwrap().unwrap();
     let (entry, bytes) = loaded.index.get("VoIcE").unwrap();
-    let expected = if cfg!(feature = "ares") { 1003 } else { 1000 };
+    // Ares' appended bags belong to a game that ships `ares.mix` (and to a
+    // build with the `ares` feature in every game).
+    let ares = manager.ares_form();
+    let expected = if ares { 1003 } else { 1000 };
     assert_eq!(entry.offset, 2, "never rebased into a concatenated file");
-    assert_eq!(
-        entry.sample_rate,
-        if cfg!(feature = "ares") { 22053 } else { 22050 }
-    );
+    assert_eq!(entry.sample_rate, if ares { 22053 } else { 22050 });
     assert_eq!(
         decode_bag_audio(entry, bytes).unwrap().samples_i16,
         [expected, -expected]
@@ -60,11 +78,10 @@ fn audio_bags_catalog_uses_native_order_and_correct_backing_pcm() {
         let sample = &registry.get(cue).unwrap().sounds[0];
         assert_eq!(
             loaded.index.get(sample).is_some(),
-            cue == "SpeechCue" || cfg!(feature = "ares")
+            cue == "SpeechCue" || ares
         );
     }
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         let vectors = crate::test_fixture::json("tools/rules_oracle/ares_audio_bags.json");
         let stems = vectors["order"]["stems"].as_array().unwrap();
         assert_eq!(manager.audio_pairs.len(), stems.len());
@@ -83,9 +100,9 @@ fn audio_bags_catalog_uses_native_order_and_correct_backing_pcm() {
         );
         let (entry, bytes) = loaded.index.get("place").unwrap();
         assert_eq!(decode_bag_audio(entry, bytes).unwrap().samples_i16, [2000]);
+    } else {
+        assert_eq!(manager.audio_pairs.len(), 1);
     }
-    #[cfg(not(feature = "ares"))]
-    assert_eq!(manager.audio_pairs.len(), 1);
 }
 
 #[test]
@@ -108,8 +125,7 @@ fn audio_bags_missing_base_partial_bad_and_late_pairs_do_not_block_valid_extra()
         "bulk mount exists later"
     );
     let loaded = manager.load_audio_index().unwrap();
-    #[cfg(feature = "ares")]
-    {
+    if manager.ares_form() {
         let loaded = loaded.unwrap();
         assert_eq!(loaded.sources.idx.entry_id, mix_hash("audio02.idx"));
         assert!(loaded.additional_sources.is_empty());
@@ -122,10 +138,7 @@ fn audio_bags_missing_base_partial_bad_and_late_pairs_do_not_block_valid_extra()
             decode_bag_audio(entry, bytes).unwrap().samples_i16,
             [1234, -1234]
         );
+    } else {
+        assert!(loaded.is_none(), "extra bags are absent from a stock game");
     }
-    #[cfg(not(feature = "ares"))]
-    assert!(
-        loaded.is_none(),
-        "extra bags are absent from a stock binary"
-    );
 }

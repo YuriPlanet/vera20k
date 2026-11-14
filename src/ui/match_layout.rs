@@ -1506,9 +1506,11 @@ mod tests {
         assert_eq!((view.tabs[0].rect.x, view.tabs[0].rect.y), (652.0, 209.0));
         assert_eq!(view.tabs[1].rect.x, 692.0);
         let radar = radar_minimap_rect_with_spec(800.0, spec);
+        // MapX and MapWidth are the file's; y keeps every side's MapAreaY 49
+        // (`RadarClass::One_Time @ 0x00652CF0`).
         assert_eq!(
             (radar.x, radar.y, radar.w, radar.h),
-            (642.0, 50.0, 120.0, 108.0)
+            (642.0, 49.0, 120.0, 108.0)
         );
         // (600 - 227 - 25) / 60 rows of 60.
         assert_eq!(view.layout.side2_tile_count, 5);

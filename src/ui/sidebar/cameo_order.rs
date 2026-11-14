@@ -19,17 +19,10 @@ use super::SidebarTab;
 /// per tab and drops both limits (`SidebarClass_AddCameo_SkipSizeCheck`
 /// Ares.dll 1002C160, hook 0x6A63B7; `StripClass_AddCameo_ReplaceItAll`
 /// Ares.dll 1002C2D0, hook 0x6A8710; every `TabCameos` loop runs to the vector's
-/// count), so an `ares` build never rejects a cameo for its strip's size.
-pub(crate) fn strip_rejects_entry(len: usize) -> bool {
-    #[cfg(not(feature = "ares"))]
-    {
-        len > 75
-    }
-    #[cfg(feature = "ares")]
-    {
-        let _ = len;
-        false
-    }
+/// count), so when Ares plays in the game (`RuleSet::ares`, `ares`) a cameo is
+/// never rejected for its strip's size.
+pub(crate) fn strip_rejects_entry(len: usize, ares: bool) -> bool {
+    if ares { false } else { len > 75 }
 }
 
 /// Leading strip entries `SidebarClass::FlashCameo` 6AC5F0 scans: its 75
@@ -325,7 +318,6 @@ impl CameoReconcile {
 /// `before(entry)` is false, found by the same halving walk Ares.dll runs
 /// (1002C2D0 and 1002C660). It is not a plain `partition_point`, because
 /// `SortsBefore` is true on an equal key and so is not a strict ordering.
-#[cfg(feature = "ares")]
 fn cameo_lower_bound(strip: &[Cameo], mut before: impl FnMut(&Cameo) -> bool) -> usize {
     let (mut first, mut count) = (0, strip.len());
     while count > 0 {
@@ -629,25 +621,29 @@ impl CameoStrips {
     /// enter before the existing item. Returns whether insertion succeeded.
     /// Native allocates only 75 records, so its accepted 76th entry can
     /// overwrite adjacent storage. Vec preserves that admission boundary
-    /// safely; it does not reproduce the overwrite.
-    pub(crate) fn insert(&mut self, candidate: &Cameo) -> bool {
+    /// safely; it does not reproduce the overwrite. `ares`: whether Ares
+    /// plays in the game (`RuleSet::ares`).
+    pub(crate) fn insert(&mut self, candidate: &Cameo, ares: bool) -> bool {
         let strip = &mut self.strips[candidate.tab.tab_index()];
-        if strip_rejects_entry(strip.len()) || strip.iter().any(|entry| entry.id == candidate.id) {
+        if strip_rejects_entry(strip.len(), ares)
+            || strip.iter().any(|entry| entry.id == candidate.id)
+        {
             return false;
         }
-        #[cfg(not(feature = "ares"))]
-        let at = strip
-            .iter()
-            .position(|entry| candidate.key.inserts_before(&entry.key))
-            .unwrap_or(strip.len());
         // Ares 3.0 `StripClass_AddCameo_ReplaceItAll` (Ares.dll 1002C2D0, hook
         // 0x6A8710) inserts at `std::lower_bound` with `CameoDataStruct::operator<`
         // (SortsBefore 0x6A8420, true on an equal name): an equal key enters
         // after the existing item, not before it.
-        #[cfg(feature = "ares")]
-        let at = cameo_lower_bound(strip.as_slice(), |entry| {
-            entry.key.inserts_before(&candidate.key)
-        });
+        let at = if ares {
+            cameo_lower_bound(strip.as_slice(), |entry| {
+                entry.key.inserts_before(&candidate.key)
+            })
+        } else {
+            strip
+                .iter()
+                .position(|entry| candidate.key.inserts_before(&entry.key))
+                .unwrap_or(strip.len())
+        };
         strip.insert(at, candidate.clone());
         true
     }
@@ -658,19 +654,28 @@ impl CameoStrips {
     /// preserves the native adjustment even when only a later item disappears.
     /// Original-executed controls: tools/sidebar_oracle/cameo_order.json.
     ///
-    /// An `ares` build replaces the TopRow rule with Ares 3.0
-    /// `StripClass_RecheckCameos` (Ares.dll 1002C660, hook 0x6AA600): the cameo
+    /// When Ares plays in the game (`RuleSet::ares`, `ares`), Ares 3.0
+    /// `StripClass_RecheckCameos` (Ares.dll 1002C660, hook 0x6AA600) replaces
+    /// the TopRow rule: the cameo
     /// that topped the strip is looked up again in the survivors with
     /// `std::lower_bound` (SortsBefore 0x6A8420) and the row is
     /// `min(position / 2, max(count - slots, 0) / 2)`; an unchanged count
     /// leaves the row alone.
-    pub(crate) fn retain(&mut self, visible_rows: usize, mut keep: impl FnMut(CameoId) -> bool) {
+    pub(crate) fn retain(
+        &mut self,
+        visible_rows: usize,
+        mut keep: impl FnMut(CameoId) -> bool,
+        ares: bool,
+    ) {
         let columns = self.columns.0;
         let visible_slots = visible_rows * columns;
         for (strip, row) in self.strips.iter_mut().zip(&mut self.scroll_rows) {
             let old_count = strip.len();
-            #[cfg(feature = "ares")]
-            let top = strip.get(*row * columns).map(|entry| entry.key.clone());
+            let top = if ares {
+                strip.get(*row * columns).map(|entry| entry.key.clone())
+            } else {
+                None
+            };
             let start = *row * columns;
             let mut old_index = 0;
             let mut new_index = 0;
@@ -689,30 +694,28 @@ impl CameoStrips {
                 old_index += 1;
                 retained
             });
-            #[cfg(feature = "ares")]
             if strip.len() != old_count {
-                let last = strip.len().saturating_sub(visible_slots) / columns;
-                *row = match &top {
-                    Some(top) => {
-                        cameo_lower_bound(strip.as_slice(), |entry| entry.key.inserts_before(top))
-                            / columns
+                if ares {
+                    let last = strip.len().saturating_sub(visible_slots) / columns;
+                    *row = match &top {
+                        Some(top) => {
+                            cameo_lower_bound(strip.as_slice(), |entry| {
+                                entry.key.inserts_before(top)
+                            }) / columns
+                        }
+                        None => *row,
                     }
-                    None => *row,
+                    .min(last);
+                } else {
+                    *row = first_visible.map_or(0, |(snapshot_index, retained_index)| {
+                        let columns = columns as i64;
+                        let shifted =
+                            *row as i64 - (snapshot_index as i64 - retained_index as i64) / columns;
+                        let last = (strip.len() as i64 - visible_slots as i64) / columns;
+                        shifted.min(last).max(0) as usize
+                    });
                 }
-                .min(last);
             }
-            #[cfg(not(feature = "ares"))]
-            if strip.len() != old_count {
-                *row = first_visible.map_or(0, |(snapshot_index, retained_index)| {
-                    let columns = columns as i64;
-                    let shifted =
-                        *row as i64 - (snapshot_index as i64 - retained_index as i64) / columns;
-                    let last = (strip.len() as i64 - visible_slots as i64) / columns;
-                    shifted.min(last).max(0) as usize
-                });
-            }
-            #[cfg(feature = "ares")]
-            let _ = first_visible;
         }
         self.flash_deadlines
             .retain(|id, _| self.strips.iter().flatten().any(|entry| entry.id == *id));
@@ -731,12 +734,14 @@ impl CameoStrips {
     /// run first, `retain` prunes (Recalculate 6AA600), and only then do newly
     /// granted supers enter — so a super granted into a sidebar the prune had
     /// just emptied still counts as an insertion into an empty sidebar.
+    /// `ares`: whether Ares plays in the game (`RuleSet::ares`).
     pub(crate) fn reconcile(
         &mut self,
         candidates: &[Cameo],
         visible_rows: usize,
         recalculate_builds: bool,
         additions: &[InternedId],
+        ares: bool,
     ) -> CameoReconcile {
         self.refresh_keys(candidates);
         let mut build_entered = [false; 4];
@@ -752,7 +757,7 @@ impl CameoStrips {
                 })
                 .flatten()
         }) {
-            let accepted = self.insert(candidate);
+            let accepted = self.insert(candidate, ares);
             build_entered[candidate.tab.tab_index()] |= accepted;
             build_inserted |= accepted;
             if empty_before_builds && accepted && active_tab_destination.is_none() {
@@ -770,9 +775,13 @@ impl CameoStrips {
             .collect();
         // Super grant/revoke already has its own current projection. Preserve
         // that route; an ordinary presentation refresh may not prune builds.
-        self.retain(visible_rows, |id| {
-            (!recalculate_builds && matches!(id, CameoId::Object(_))) || available.contains(&id)
-        });
+        self.retain(
+            visible_rows,
+            |id| {
+                (!recalculate_builds && matches!(id, CameoId::Object(_))) || available.contains(&id)
+            },
+            ares,
+        );
         let emptied =
             std::array::from_fn(|index| counted[index] > 0 && self.strips[index].is_empty());
         if emptied.iter().any(|was_emptied| *was_emptied)
@@ -789,7 +798,7 @@ impl CameoStrips {
             .iter()
             .filter(|item| item.available && matches!(item.id, CameoId::SuperWeapon(_)))
         {
-            let accepted = self.insert(candidate);
+            let accepted = self.insert(candidate, ares);
             super_entered[candidate.tab.tab_index()] |= accepted;
             if empty_before_supers && accepted && !super_inserted {
                 // Supers are added after Recalculate. If that pass left no

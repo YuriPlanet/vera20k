@@ -124,6 +124,9 @@ impl IniRoots {
     pub fn eva(&self) -> &str {
         &self.eva
     }
+    pub fn theater_suffix(&self) -> &str {
+        &self.theater_suffix
+    }
 
     /// The theater INI for a control-file name such as `snow`.
     /// `Read_Theater_TileSets_INI` (`0x00545150`) formats it with `"%sMD.INI"`

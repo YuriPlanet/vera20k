@@ -373,6 +373,18 @@ pub(super) fn run(state: &mut AppState) {
 /// The refusal that names the changed game files (`{files}`).
 const CHANGED_FILES: &str = "VERA:QuickMatchChangedFiles";
 
+/// `{files}` for [`CHANGED_FILES`]: the box body is a few lines, so it names
+/// the first three files and counts the rest, which the startup log lists, as
+/// `(+2)`, which needs no translation.
+fn changed_files_text(files: &[String]) -> String {
+    const NAMED: usize = 3;
+    let named = files[..files.len().min(NAMED)].join(", ");
+    match files.len().saturating_sub(NAMED) {
+        0 => named,
+        more => format!("{named} (+{more})"),
+    }
+}
+
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
 /// original game. A mod fails the pre-match check; other INI roots, changed
 /// game files, personal rules or an Options switch fail the join's rules
@@ -412,7 +424,7 @@ pub(super) fn lobbies_listed(state: &mut AppState, lobbies: &[WolChannel]) {
     {
         lobby::quick_match_box(state, key, lobby::QuickMatchBoxThen::Return);
         if key == CHANGED_FILES {
-            let files = state.process_assets.changed_game_files().join(", ");
+            let files = changed_files_text(state.process_assets.changed_game_files());
             lobby::replace_box_body(state, &crate::i18n::tr_fill(key, &[("files", &files)]));
         }
         return;
@@ -1593,6 +1605,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_changed_files_box_names_three_and_counts_the_rest() {
+        let files = [
+            "rulesmd.ini",
+            "clear01.sno",
+            "clear02.sno",
+            "clear03.sno",
+            "clear04.sno",
+        ]
+        .map(String::from);
+        assert_eq!(
+            changed_files_text(&files[..3]),
+            "rulesmd.ini, clear01.sno, clear02.sno"
+        );
+        assert_eq!(
+            changed_files_text(&files),
+            "rulesmd.ini, clear01.sno, clear02.sno (+2)"
+        );
+    }
+
+    #[test]
     fn the_request_names_its_fields_and_omits_an_unknown_locale() {
         let request = MatchRequest {
             country: -2,
@@ -1793,6 +1825,16 @@ mod tests {
         changes.install_native_ini_hashes(&game, &[]);
         assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
         assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
+        // `ares.mix` makes the same folder an Ares game, which Quick Match
+        // does not play either.
+        dir.write_mix("ares.mix", "ares.txt", b"ares");
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini", "ares.mix"]);
         assert_eq!(
             original_game_refusal(true, &changes),
             Some("VERA:QuickMatchNoMod")

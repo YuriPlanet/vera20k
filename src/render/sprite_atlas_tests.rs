@@ -4,6 +4,25 @@ use super::*;
 use crate::assets::asset_manager::MediaArchiveMode;
 use crate::util::save_codec;
 
+/// Whether `atlas` covers every live anim's colour remap, asked as the atlas
+/// check asks it of the anims whose look changed.
+fn atlas_covers_anim_remaps(
+    atlas: Option<&SpriteAtlas>,
+    sim: &crate::sim::world::Simulation,
+    colors: &HouseColorMap,
+) -> bool {
+    let anims: Vec<_> = sim.anims().map(|(_, anim)| anim).collect();
+    atlas_covers_changes(
+        atlas,
+        &[],
+        &anims,
+        std::iter::empty(),
+        sim.interner(),
+        None,
+        colors,
+    )
+}
+
 #[test]
 #[ignore = "requires a wgpu adapter; asynchronous loading uploads"]
 fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
@@ -447,6 +466,76 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
                         );
                     }
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_turreted_shp_unit_registers_the_turret_frames_after_its_body_blocks() {
+    let directory = StoredFrameTestDirectory::new();
+    // Two walk frames over eight facings (0..15), then the thirty-two turret
+    // heading frames (16..47), then the embedded shadow half repeats it all.
+    std::fs::write(
+        directory.0.join("SHPWALKER.SHP"),
+        raw_shp(&[([2, 2], 1); 96]),
+    )
+    .expect("write the walker body");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let art_ini = crate::rules::ini_parser::IniFile::from_str(
+        "[SHPWALKER]\nVoxel=no\nFacings=8\nWalkFrames=2\n\
+         [SHPPREFIX]\nVoxel=no\nFacings=8\nWalkFrames=2\n",
+    );
+    let art = ArtRegistry::from_ini(&art_ini);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=SHPWALKER\n1=SHPPREFIX\n\n\
+             [SHPWALKER]\nTurret=yes\n\n[SHPPREFIX]\nTurret=no\n",
+        ),
+        &art_ini,
+    )
+    .expect("rules");
+    rules.install_art_data(art);
+    assert_eq!(
+        rules
+            .animation_sequence("SHPWALKER")
+            .and_then(|set| set.shp_vehicle_turret())
+            .map(|turret| turret.start_frame),
+        Some(16),
+        "the turret block follows the two-by-eight walk block"
+    );
+    let color = HouseColorIndex(2);
+    for (type_id, draws_turret) in [("SHPWALKER", true), ("SHPPREFIX", false)] {
+        let (world, interner) = one_object_world(type_id, EntityCategory::Unit);
+        let pairs: HashSet<(String, HouseColorIndex)> =
+            std::iter::once((type_id.to_string(), color)).collect();
+        let mut needed = HashSet::new();
+        insert_new_object_keys(
+            &mut needed,
+            &pairs,
+            &world,
+            Some(&interner),
+            &assets,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        for frame in 0..48u16 {
+            let key = ShpSpriteKey {
+                palette_context: ShpPaletteContext::Legacy,
+                type_id: type_id.into(),
+                facing: 0,
+                frame,
+                house_color: color,
+            };
+            if draws_turret || frame < 16 {
+                assert!(needed.contains(&key), "{type_id} is missing frame {frame}");
+            } else {
+                assert!(
+                    !needed.contains(&key),
+                    "{type_id} drew turret frame {frame} without Turret=yes"
+                );
             }
         }
     }
@@ -2181,6 +2270,10 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
     let cell = spawn(&mut sim);
     let wreck = spawn(&mut sim);
     assert!(atlas_covers_anim_remaps(Some(&atlas), &sim, &colors));
+    // The tick's atlas check has seen the anims before their palettes.
+    let mut check = crate::render::entity_atlas_growth::EntityAtlasCheck::default();
+    check.note(sim.take_looks());
+    check.checked(&sim, &colors);
     assert!(
         sim.anims_mut_for_test()
             .set_anim_house_remap(deployed, house)
@@ -2193,8 +2286,9 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         sim.anims_mut_for_test()
             .set_anim_remap(wreck, AnimRemap::ExtraBuildingScheme { house, palette })
     );
+    check.note(sim.take_looks());
     assert!(
-        !atlas_covers_anim_remaps(Some(&atlas), &sim, &colors),
+        check.finds_miss(&sim, Some(&rules), Some(&atlas), None, &colors),
         "producer palette assignment must request a refresh without an entity change"
     );
     assert!(!atlas_covers_anim_remaps(None, &sim, &colors));
@@ -2323,7 +2417,7 @@ fn object_and_remap_coverage_are_separate_and_follow_the_world() {
 fn a_collected_pair_is_covered_even_when_nothing_of_it_is_drawable() {
     // A type whose frame 0 is empty or whose SHP is missing has no atlas entry
     // at all. Coverage by collected pairs keeps it from forcing a refresh on
-    // every spawn, death or Limbo, as a frame-0 entry probe would.
+    // every check, as a frame-0 entry probe would.
     let (world, interner) = one_object_world("NOSHAPE", EntityCategory::Structure);
     let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(1))]);
     let mut atlas = SpriteAtlas::new(Vec::new(), HashMap::new(), ShpPalettes::default());
@@ -3604,8 +3698,8 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     assert_eq!(extended.building_type_bounds.len(), 2);
 }
 
-/// The coverage check runs on every spawn and death, so objects of one type
-/// and owner give one pair between them; another owner's keeps its own.
+/// Objects of one type and owner give one coverage pair between them;
+/// another owner's keeps its own.
 #[test]
 fn object_pairs_give_each_type_and_owner_once() {
     let colors = HouseColorMap::from([
@@ -3767,6 +3861,67 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
         covered(&atlas, &world),
         "inactive disguises must not request growth"
     );
+}
+
+/// The atlas check reads what a tick changed, not the world: another object of
+/// a covered type and a death ask for no full check, a new owner's colour
+/// does, and so do new colours.
+#[test]
+fn the_atlas_check_asks_for_the_full_check_only_for_an_uncovered_look() {
+    use crate::render::entity_atlas_growth::EntityAtlasCheck;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::{house_state::HouseState, world::Simulation};
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let [_, russians] = ["Americans", "Russians"].map(|name| {
+        let house = sim.intern(name);
+        sim.register_house(HouseState::new(house, 0, None, false, 0, 10));
+        house
+    });
+    let spawn = |sim: &mut Simulation, x| {
+        sim.spawn_object_at_height("E1", "Americans", x, 10, 0, 0, &rules)
+            .unwrap()
+    };
+    let rifleman = spawn(&mut sim, 10);
+    let colors = HouseColorMap::from([
+        ("Americans".to_owned(), HouseColorIndex(2)),
+        ("Russians".to_owned(), HouseColorIndex(5)),
+    ]);
+    let mut atlas = SpriteAtlas::from_test_entries(Default::default());
+    atlas
+        .covered_objects
+        .entry("E1".to_owned())
+        .or_default()
+        .insert(HouseColorIndex(2));
+    let finds_miss = |check: &EntityAtlasCheck, sim: &Simulation, colors: &HouseColorMap| {
+        check.finds_miss(sim, Some(&rules), Some(&atlas), None, colors)
+    };
+    let mut check = EntityAtlasCheck::default();
+    check.note(sim.take_looks());
+    assert!(
+        finds_miss(&check, &sim, &colors),
+        "a new world is checked whole"
+    );
+    check.checked(&sim, &colors);
+
+    let second = spawn(&mut sim, 11);
+    assert!(sim.entities_mut_for_test().remove(second).is_some());
+    check.note(sim.take_looks());
+    assert!(!finds_miss(&check, &sim, &colors));
+    check.checked(&sim, &colors);
+    let mut relation = colors.clone();
+    relation.insert("Russians".to_owned(), HouseColorIndex(2));
+    assert!(
+        finds_miss(&check, &sim, &relation),
+        "new colours are checked whole"
+    );
+
+    sim.change_owner(rifleman, russians);
+    check.note(sim.take_looks());
+    assert!(finds_miss(&check, &sim, &colors));
 }
 
 /// A type's SHP frame count is found whatever the case of the name asked,

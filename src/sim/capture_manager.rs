@@ -218,7 +218,7 @@ impl CaptureManagerState {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+    pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -427,7 +427,7 @@ impl MindControlLink {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn controlled_by_for_test(controller: u64) -> Self {
+    pub fn controlled_by_for_test(controller: u64) -> Self {
         Self {
             controller: Some(controller),
             ..Self::default()

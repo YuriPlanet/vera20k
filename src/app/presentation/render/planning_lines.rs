@@ -5,12 +5,9 @@
 //! unproven. No presentation result feeds back into synchronized state.
 
 use crate::app::AppState;
-use crate::app::presentation::target_lines::{TacticalViewport, push_surface_rect};
-use crate::render::batch::SpriteInstance;
-use crate::render::native_surface_format::{
-    ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565, interpolate_rgb8,
-};
-use crate::render::surface_line::{clip_line, patterned_line, solid_line};
+use crate::app::presentation::target_lines::{TacticalViewport, push_rect};
+use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
+use crate::render::surface_line::{StoreGate, SurfaceStroke, clip_line};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
@@ -24,7 +21,7 @@ pub(super) fn build(
     state: &AppState,
     view: TacticalViewport,
     wall_ms: u32,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+) -> (Vec<SurfaceStroke>, Vec<SurfaceStroke>) {
     let mut out = Vec::new();
     let mut highlights = Vec::new();
     // Tactical6D46DD calls both PlanMgr drawing passes only while active.
@@ -303,18 +300,13 @@ pub(super) fn project(coord: DriveCoord, view: TacticalViewport) -> [i32; 2] {
     ]
 }
 
-fn tint(rgb: [u8; 3]) -> [f32; 3] {
-    let rgba = ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-    [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
-}
-
-fn emit_rect(out: &mut Vec<SpriteInstance>, rect: [i32; 4], rgb: [u8; 3], view: TacticalViewport) {
+fn emit_rect(out: &mut Vec<SurfaceStroke>, rect: [i32; 4], rgb: [u8; 3], view: TacticalViewport) {
     let rect = crate::util::rect::clip_rect(rect, view.clip);
-    push_surface_rect(out, rect, tint(rgb), view);
+    push_rect(out, rect, RGB565.pack_rgb8(rgb), view);
 }
 
 pub(super) fn emit_marker(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     at: [i32; 2],
     size: i32,
     rgb: [u8; 3],
@@ -331,7 +323,7 @@ pub(super) fn emit_marker(
 }
 
 fn emit_outline(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     [x, y, w, h]: [i32; 4],
     rgb: [u8; 3],
     view: TacticalViewport,
@@ -343,7 +335,7 @@ fn emit_outline(
 }
 
 pub(super) fn emit_marker_outer(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     at: [i32; 2],
     size: i32,
     rgb: [u8; 3],
@@ -359,7 +351,7 @@ pub(super) fn emit_marker_outer(
 }
 
 fn emit_badge_outer(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     kind: Option<PlanningBadgeKind>,
     [from, to]: [[i32; 2]; 2],
     rgb: [u8; 3],
@@ -375,7 +367,7 @@ fn emit_badge_outer(
 }
 
 fn emit_badge(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     state: &AppState,
     kind: Option<PlanningBadgeKind>,
     [from, to]: [[i32; 2]; 2],
@@ -433,7 +425,7 @@ fn emit_badge(
 }
 
 pub(super) fn emit_segment(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     from: [i32; 2],
     to: [i32; 2],
     rgb: [u8; 3],
@@ -445,22 +437,28 @@ pub(super) fn emit_segment(
     //has already drawn their selected-white/unselected-black outer pass.
     //The strict minor-axis comparison gives45-degree ties the X offset.
     let minor = usize::from((to[1] - from[1]).abs() < (to[0] - from[0]).abs());
-    let tint = tint(rgb);
+    let word = RGB565.pack_rgb8(rgb);
     for offset in 0..strokes {
         let mut start = from;
         let mut end = to;
         start[minor] += offset;
         end[minor] += offset;
         if clip_line(&mut start, &mut end, view.clip) {
-            patterned_line(start, end, &PATTERN, phase, |point| {
-                push_surface_rect(out, [point[0], point[1], 1, 1], tint, view)
-            });
+            out.push(SurfaceStroke::patterned(
+                start,
+                end,
+                &PATTERN,
+                phase,
+                word,
+                StoreGate::All,
+                view.camera,
+            ));
         }
     }
 }
 
 pub(super) fn emit_solid_segment(
-    out: &mut Vec<SpriteInstance>,
+    out: &mut Vec<SurfaceStroke>,
     from: [i32; 2],
     to: [i32; 2],
     rgb: [u8; 3],
@@ -470,14 +468,14 @@ pub(super) fn emit_solid_segment(
     //63D910 centers width rows with offsets1-ceil(width/2)..floor(width/2).
     //63D810 uses strict abs(dx)>abs(dy), including X-offset diagonal ties.
     let minor = usize::from((to[1] - from[1]).abs() < (to[0] - from[0]).abs());
-    let tint = tint(rgb);
+    let word = RGB565.pack_rgb8(rgb);
     for offset in width / 2 - width + 1..=width / 2 {
         let mut start = from;
         let mut end = to;
         start[minor] += offset;
         end[minor] += offset;
         if clip_line(&mut start, &mut end, view.clip) {
-            solid_line(start, end, |rect| push_surface_rect(out, rect, tint, view));
+            out.push(SurfaceStroke::solid(start, end, word, view.camera));
         }
     }
 }
@@ -497,7 +495,6 @@ mod tests {
         let view = TacticalViewport {
             camera: [0; 2],
             clip: [0, 0, 160, 120],
-            zoom: 1.,
         };
         for row in corpus["render"]["stroke_controls"].as_array().unwrap() {
             let from = point(&row["start"]);
@@ -515,10 +512,10 @@ mod tests {
                 ((word & 31) as u8) << 3,
             ];
             let ms = row["ms"].as_i64().unwrap() as i32;
-            let mut instances = Vec::new();
-            emit_solid_segment(&mut instances, from, to, outer, width, view);
+            let mut strokes = Vec::new();
+            emit_solid_segment(&mut strokes, from, to, outer, width, view);
             emit_segment(
-                &mut instances,
+                &mut strokes,
                 from,
                 to,
                 inner,
@@ -526,19 +523,17 @@ mod tests {
                 width - 2,
                 view,
             );
-            emit_outline(&mut instances, [to[0] - 3, to[1] - 3, 6, 6], outer, view);
-            emit_marker(&mut instances, to, 4, inner, view);
+            emit_outline(&mut strokes, [to[0] - 3, to[1] - 3, 6, 6], outer, view);
+            emit_marker(&mut strokes, to, 4, inner, view);
             let mut actual = vec![0x39E7u16; 160 * 120];
-            for instance in instances {
-                let x = instance.position[0] as i32;
-                let y = instance.position[1] as i32;
-                let rgb = instance.tint.map(|v| (v * 255.).round() as u8);
-                let word = RGB565.pack_rgb8([rgb[0], rgb[1], rgb[2]]);
-                for dy in 0..instance.size[1] as i32 {
-                    for dx in 0..instance.size[0] as i32 {
-                        actual[((y + dy) * 160 + x + dx) as usize] = word;
+            for stroke in strokes {
+                stroke.for_each_rect(|[x, y, width, height]| {
+                    for y in y..y + height {
+                        for x in x..x + width {
+                            actual[(y * 160 + x) as usize] = stroke.word();
+                        }
                     }
-                }
+                });
             }
             let mut expected = vec![0x39E7u16; actual.len()];
             for pixel in row["pixels"].as_array().unwrap() {

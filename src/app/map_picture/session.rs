@@ -124,7 +124,6 @@ impl MapPictureSession {
         .context("the game has no Battle mode")?;
         session.options.shroud = false;
         session.options.fog_of_war = false;
-        #[cfg(feature = "ares")]
         crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
             &mut state.process_assets,
             &session,

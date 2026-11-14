@@ -20,9 +20,7 @@ use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::read_helpers::read_u32_le;
 
-#[cfg(feature = "ares")]
 mod ares_labels;
-#[cfg(feature = "ares")]
 use ares_labels::{native_label_search, sort_labels as ares_sort_labels};
 
 /// Magic bytes for the file header: " FSC".
@@ -61,7 +59,6 @@ pub struct CsfFile {
 #[derive(Debug, Clone)]
 enum CsfEntries {
     Raw(LookupMap<String, Option<CsfText>>),
-    #[cfg(feature = "ares")]
     Ares(Vec<(String, Option<CsfText>)>),
 }
 
@@ -154,27 +151,28 @@ impl CsfFile {
 
     /// The process string table used by both the game and asset diagnostics.
     /// Stock YR loads the md table alone. Installed Ares6BD886->10060DF0
-    /// appends its fixed candidates; native controls: tools/rules_oracle/ares_csf.
+    /// appends its fixed candidates, for a game whose files take Ares' forms
+    /// (`ares`, `AssetManager::ares_form`); native controls:
+    /// tools/rules_oracle/ares_csf.
     pub fn load_active<'a>(
+        ares: bool,
         mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
         let bytes = lookup("ra2md.csf").ok_or_else(|| AssetError::AssetNotFound {
             name: "ra2md.csf".to_string(),
         })?;
         let mut table = Self::from_bytes(bytes)?;
-        #[cfg(feature = "ares")]
-        {
-            let CsfEntries::Raw(entries) = table.entries else {
-                unreachable!("from_bytes returns a raw table")
-            };
+        let mut admitted = Vec::new();
+        if !ares {
+            return Ok((table, admitted));
+        }
+        if let CsfEntries::Raw(entries) = table.entries {
             let mut labels: Vec<_> = entries.into_iter().collect();
             // Base unique labels are sorted before the supplemental loader runs.
             // Their map iteration order cannot affect this unique-key order.
             ares_sort_labels(&mut labels);
             table.entries = CsfEntries::Ares(labels);
         }
-        let mut admitted = Vec::new();
-        #[cfg(feature = "ares")]
         for (name, ignore_language) in table.ares_candidates() {
             if let Some(bytes) = lookup(&name)
                 && table.append_ares(bytes, ignore_language)
@@ -182,13 +180,9 @@ impl CsfFile {
                 admitted.push(name);
             }
         }
-        // Keep the feature-OFF load route unchanged.
-        #[cfg(not(feature = "ares"))]
-        let _ = (&mut table, &mut admitted);
         Ok((table, admitted))
     }
 
-    #[cfg(feature = "ares")]
     fn ares_candidates(&self) -> impl Iterator<Item = (String, bool)> + use<> {
         // Original GetLanguage734640 table845678, descriptor+8. Ares
         //10060E13 uses "us" for an unknown language, not a host locale.
@@ -214,7 +208,6 @@ impl CsfFile {
 
     ///100608C0's admission is distinct from LoadFile's base-header checks:
     /// supplemental zero counts are valid, and the base language never changes.
-    #[cfg(feature = "ares")]
     fn append_ares(&mut self, data: &[u8], ignore_language: bool) -> bool {
         if data.len() < MIN_FILE_SIZE
             || read_u32_le(data, 0) != HEADER_MAGIC
@@ -294,7 +287,6 @@ impl CsfFile {
         with_ascii_uppercase(key, |key| {
             let loaded = match &self.entries {
                 CsfEntries::Raw(entries) => entries.get(key).and_then(Option::as_ref),
-                #[cfg(feature = "ares")]
                 CsfEntries::Ares(labels) => {
                     native_label_search(labels, key).and_then(|slot| labels[slot].1.as_ref())
                 }
@@ -318,7 +310,6 @@ impl CsfFile {
     pub fn len(&self) -> usize {
         match &self.entries {
             CsfEntries::Raw(entries) => entries.len(),
-            #[cfg(feature = "ares")]
             CsfEntries::Ares(labels) => labels.len(),
         }
     }
@@ -336,7 +327,6 @@ impl CsfFile {
                     .iter()
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k.as_str(), v.value.as_str()))),
             ),
-            #[cfg(feature = "ares")]
             CsfEntries::Ares(labels) => Box::new(
                 labels
                     .iter()
@@ -665,7 +655,6 @@ pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "ares")]
     use std::collections::HashMap;
 
     #[test]
@@ -683,12 +672,10 @@ mod tests {
         let parsed = CsfFile::from_bytes(&data).expect("parse walks until reads fail");
         match parsed.entries {
             CsfEntries::Raw(entries) => assert!(entries.is_empty()),
-            #[cfg(feature = "ares")]
             CsfEntries::Ares(entries) => assert!(entries.is_empty()),
         }
     }
 
-    #[cfg(feature = "ares")]
     fn supplemental_fixture(
         entries: &[(&str, &str)],
         language: u32,
@@ -710,36 +697,27 @@ mod tests {
     fn active_csf_profile_uses_shared_base_and_optional_supplements() {
         let base = build_test_csf("A", "base");
         let extra = build_test_csf("A", "extra");
-        let mut requested = Vec::new();
-        let (table, admitted) = CsfFile::load_active(|name| {
-            requested.push(name.to_string());
-            match name {
-                "ra2md.csf" => Some(base.as_slice()),
-                "stringtable00.csf" => Some(extra.as_slice()),
-                _ => None,
-            }
-        })
-        .unwrap();
-        assert_eq!(
-            table.get("a"),
-            Some(if cfg!(feature = "ares") {
-                "extra"
-            } else {
-                "base"
+        for ares in [false, true] {
+            let mut requested = Vec::new();
+            let (table, admitted) = CsfFile::load_active(ares, |name| {
+                requested.push(name.to_string());
+                match name {
+                    "ra2md.csf" => Some(base.as_slice()),
+                    "stringtable00.csf" => Some(extra.as_slice()),
+                    _ => None,
+                }
             })
-        );
-        assert_eq!(admitted.len(), usize::from(cfg!(feature = "ares")));
-        assert_eq!(
-            requested.len(),
-            if cfg!(feature = "ares") { 103 } else { 1 }
-        );
-        assert!(
-            CsfFile::load_active(|_| None).is_err(),
-            "base table is required in both profiles"
-        );
+            .unwrap();
+            assert_eq!(table.get("a"), Some(if ares { "extra" } else { "base" }));
+            assert_eq!(admitted.len(), usize::from(ares));
+            assert_eq!(requested.len(), if ares { 103 } else { 1 });
+            assert!(
+                CsfFile::load_active(ares, |_| None).is_err(),
+                "base table is required in both profiles"
+            );
+        }
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn supplemental_csf_three_native_histories_preserve_order_gates_and_partial_writes() {
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -789,7 +767,7 @@ mod tests {
                 supplemental_fixture(&[("A", "base"), ("KEEP", "keep")], 0, 3, 2),
             );
             let mut requested = Vec::new();
-            let (table, admitted) = CsfFile::load_active(|name| {
+            let (table, admitted) = CsfFile::load_active(true, |name| {
                 if name != "ra2md.csf" {
                     requested.push(name.to_string());
                 }
@@ -807,7 +785,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn supplemental_unique_records_match_native_ordered_slots_and_lookup() {
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -826,7 +803,7 @@ mod tests {
             };
             let base = fixture(&row["base"]);
             let extra = fixture(&row["supplemental"]);
-            let (table, _) = CsfFile::load_active(|name| match name {
+            let (table, _) = CsfFile::load_active(true, |name| match name {
                 "ra2md.csf" => Some(base.as_slice()),
                 "stringtable00.csf" => Some(extra.as_slice()),
                 _ => None,

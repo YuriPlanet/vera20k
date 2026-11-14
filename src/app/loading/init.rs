@@ -2443,7 +2443,10 @@ pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
-        crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
+        crate::assets::csf_file::CsfFile::load_active(asset_manager.ares_form(), |name| {
+            asset_manager.get_ref(name)
+        })
+        .map_err(
             // The startup error card shows these, before any string table.
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
@@ -2929,7 +2932,7 @@ pub(crate) fn load_map_from_initial(
     runtime_color_scheme_count: usize,
     the_team_enabled: bool,
     native_rules_owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
-    #[cfg(feature = "ares")] prepared_noncampaign_prefix: &mut Option<
+    prepared_noncampaign_prefix: &mut Option<
         crate::rules::process_owner::NativeNonCampaignPrefixPreparation,
     >,
     audio: Option<&crate::app::process_assets::ProcessAudioCatalog>,
@@ -2953,7 +2956,6 @@ pub(crate) fn load_map_from_initial(
             asset_manager,
             native_rules_owner,
             the_team_enabled,
-            #[cfg(feature = "ares")]
             prepared_noncampaign_prefix,
             audio,
             themes,
@@ -3080,14 +3082,13 @@ fn load_map_first_step(
             // is missing keeps an empty layer (0x005D67B0) instead of aborting.
             let asset_manager = &mut *services.asset_manager;
             let native_rules_owner = &mut *services.native_rules_owner;
-            #[cfg(feature = "ares")]
+            // Only the Ares Country loading path binds this prefix; `None` is the stock prefix.
             let prepared_prefix = services.prepared_noncampaign_prefix.take();
             let prepared_rules = if let Some(generated_rules) = generated_rules {
                 anyhow::ensure!(
                     materialization == FreshMapMaterialization::AcceptedGenerated,
                     "authored map carried generated Full_Init Rules"
                 );
-                #[cfg(feature = "ares")]
                 assert!(
                     prepared_prefix.is_none(),
                     "generated loading cannot consume an ordinary prefix"
@@ -3114,7 +3115,6 @@ fn load_map_first_step(
                     services.the_team_enabled,
                 )?;
                 let rules_prefix = if game_mode_nonzero {
-                    #[cfg(feature = "ares")]
                     if let Some(preparation) = prepared_prefix {
                         crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
                             preparation,
@@ -3125,12 +3125,7 @@ fn load_map_first_step(
                             mode_override_ini.as_ref(),
                         )
                     }
-                    #[cfg(not(feature = "ares"))]
-                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                        mode_override_ini.as_ref(),
-                    )
                 } else {
-                    #[cfg(feature = "ares")]
                     assert!(
                         prepared_prefix.is_none(),
                         "campaign loading cannot consume an ordinary prefix"
@@ -3737,11 +3732,12 @@ fn load_map_first_step(
                                                         // resolution must happen before any combat tick.
                                                         staged_simulation
                                                             .resolve_type_handles(&rules);
-                                                        staged_simulation
-        .install_team_ai_registry(
-            &team_ai_registry,
-            team_ai_rules_at_read.as_ref().unwrap_or(&rules),
-        );
+                                                        staged_simulation.install_team_ai_registry(
+                                                            &team_ai_registry,
+                                                            team_ai_rules_at_read
+                                                                .as_ref()
+                                                                .unwrap_or(&rules),
+                                                        );
 
                                                         if let (Some(launch), Some(projection)) = (
                                                             match_launch_descriptor.as_ref(),

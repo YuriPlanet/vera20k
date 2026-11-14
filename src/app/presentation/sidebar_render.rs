@@ -348,7 +348,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions);
+        .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
     state
         .match_state
         .match_presentation
@@ -697,27 +697,14 @@ fn shows_alt_cameo(
         // Ares 3.0 1003D89A/1003D8DE/1003D911: a naval unit asks the
         // house's SpyEffect NavalVeterancy instead of the war factory's,
         // aircraft and non-undeploying buildings their own.
-        #[cfg(feature = "ares")]
-        {
-            return obj.trainable
-                && match obj.category {
-                    ObjectCategory::Infantry => !obj.naval && house.veteran_infantry(),
-                    ObjectCategory::Vehicle if obj.naval => house.naval_veterancy(),
-                    ObjectCategory::Vehicle => house.veteran_units(),
-                    ObjectCategory::Aircraft => house.aircraft_veterancy(),
-                    ObjectCategory::Building => house.building_veterancy(),
-                };
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            return obj.trainable
-                && !obj.naval
-                && match obj.category {
-                    ObjectCategory::Infantry => house.veteran_infantry(),
-                    ObjectCategory::Vehicle => house.veteran_units(),
-                    ObjectCategory::Aircraft | ObjectCategory::Building => false,
-                };
-        }
+        return obj.trainable
+            && match obj.category {
+                ObjectCategory::Infantry => !obj.naval && house.veteran_infantry(),
+                ObjectCategory::Vehicle if obj.naval => house.naval_veterancy(),
+                ObjectCategory::Vehicle => house.veteran_units(),
+                ObjectCategory::Aircraft => house.aircraft_veterancy(),
+                ObjectCategory::Building => house.building_veterancy(),
+            };
     }
     obj.trainable
         && match obj.category {
@@ -963,36 +950,48 @@ pub(crate) fn prepare_smooth_sidebar(state: &mut AppState) {
     }
 }
 
+/// The theme follows the arm the chrome set was built by, so it names the art
+/// the sidebar draws: a side without a retained Side sidebar configuration
+/// draws the stock sidebar. Before a set exists, the game's Ares switch
+/// (`RuleSet::ares`) decides.
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {
-    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state))
+    let ares = match state.match_state.match_presentation.sidebar_chrome.as_ref() {
+        Some(set) => set.ares(),
+        None => state.rules().is_some_and(|rules| rules.ares()),
+    };
+    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state), ares)
 }
 
-/// The active native Scenario.Side owns Ares MIX selection. The retail sandbox
-/// retains its development owner switch. Neither path rewrites House identity.
+/// When Ares plays in the game (`RuleSet::ares`), the active native
+/// Scenario.Side owns Ares MIX selection. Otherwise the retail sandbox retains
+/// its development owner switch. Neither path rewrites House identity.
 pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
+    let ares = state.rules().is_some_and(|rules| rules.ares());
     let sim = state
         .match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation);
-    #[cfg(feature = "ares")]
-    let owner = None::<String>;
-    #[cfg(not(feature = "ares"))]
-    let owner = preferred_local_owner_name(state);
-    project_sidebar_side(sim, owner.as_deref())
+    let owner = if ares {
+        None
+    } else {
+        preferred_local_owner_name(state)
+    };
+    project_sidebar_side(sim, owner.as_deref(), ares)
 }
 
 /// The production chrome and radar adapters share this side-index decision.
-/// Original68781F/534FA0 and Ares1002FA00 consume the installed Scenario.Side;
-/// the ordinary sandbox retains its existing live-owner development switch.
+/// Original68781F/534FA0 and Ares1002FA00 consume the installed Scenario.Side
+/// when Ares plays in the game (`ares`, `RuleSet::ares`); the ordinary sandbox
+/// retains its existing live-owner development switch.
 pub(crate) fn project_sidebar_side(
     simulation: Option<&crate::sim::world::Simulation>,
     owner: Option<&str>,
+    ares: bool,
 ) -> i32 {
-    #[cfg(feature = "ares")]
-    if let Some(sim) = simulation {
+    if ares && let Some(sim) = simulation {
         return sim.session().scenario_side();
     }
     owner
@@ -1185,7 +1184,7 @@ mod tests {
                 gadgets.set_tab_disabled(index, before.as_bool().unwrap());
             }
             let mut projection = crate::app::sidebar_projection::SidebarProjectionState::default();
-            let reconciled = projection.reconcile_cameos(Default::default(), &[], 3, &[]);
+            let reconciled = projection.reconcile_cameos(Default::default(), &[], 3, &[], false);
             super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
             for (index, after) in control["disabled_after"]
                 .as_array()
@@ -1235,7 +1234,7 @@ mod tests {
             },
         };
         let mut saved = crate::app::sidebar_projection::SidebarProjectionState::default();
-        saved.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry]);
+        saved.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry], false);
         let order = saved.saved_order().unwrap();
         let mut outgoing = crate::app::sidebar_projection::SidebarProjectionState::default();
         let mut active = SidebarTab::Building;
@@ -1245,7 +1244,7 @@ mod tests {
             crate::app::sidebar_projection::prepare_saved_order(Some(order.clone()), &sim, &rules)
                 .unwrap();
         outgoing.restore_order(prepared);
-        let reconciled = outgoing.reconcile_cameos(owner, &[cameo], 3, &[]);
+        let reconciled = outgoing.reconcile_cameos(owner, &[cameo], 3, &[], false);
         super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
         assert_eq!(gadgets.tab_disabled, [true, true, false, true]);
         assert_eq!(outgoing.saved_order().unwrap().strips(), order.strips());
@@ -1286,7 +1285,7 @@ mod tests {
                          candidates: &[Cameo],
                          active: &mut SidebarTab,
                          gadgets: &mut SidebarGadgetState| {
-            let reconciled = strips.reconcile_fixture(candidates, 3, true);
+            let reconciled = strips.reconcile_fixture(candidates, 3, true, false);
             super::apply_cameo_transitions(reconciled.transitions(), active, gadgets);
         };
 
@@ -1360,7 +1359,7 @@ mod tests {
         assert!(shows(&war_factory, "MTNK"));
         assert_eq!(
             shows(&war_factory, "DEST"),
-            !crate::rules::ARES_BUILD,
+            !rules.ares(),
             "stock GetCameo uses the ground spy flag for ships; Ares separates naval gains"
         );
         assert!(!shows(&war_factory, "ORCA"));
@@ -1379,11 +1378,11 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_country_alternate_cameos_match_native_category_and_art_gates() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::ruleset::RuleSet;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let corpus = crate::test_fixture::json("tools/rules_oracle/ares_country_veterancy.json");
         for row in corpus["cameo_country"].as_array().unwrap() {
             if row["unit_list_self"].as_bool().unwrap() {

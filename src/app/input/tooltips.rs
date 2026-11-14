@@ -298,6 +298,7 @@ fn tactical_world_tip_text_for_viewer(
     if !entity.discovery.owned_by_current_house() && object.invisible {
         return String::new();
     }
+    let ares = rules.ares();
     match entity.category() {
         // InfantryClass::GetUIName @0x0051F2C0: the shared crew marker
         // takes precedence over disguise. Type.Nominal alone does not.
@@ -327,13 +328,13 @@ fn tactical_world_tip_text_for_viewer(
                     crate::assets::csf_file::type_ui_name(disguise.ui_name.as_deref(), csf)
                 });
         }
-        // BuildingClass::GetUIName @459ED0 returns actual Type+60. Ares
-        // BuildingClass_GetUIName (10015DA0, hook 0x459ED0) shows a player
-        // its owner does not count as an ally the type's EnemyUIName, unless
-        // the building's DisplayProductionTo holds that player.
-        #[cfg(feature = "ares")]
+        // BuildingClass::GetUIName @459ED0 returns actual Type+60. When Ares
+        // plays in the game (`RuleSet::ares`), Ares BuildingClass_GetUIName
+        // (10015DA0, hook 0x459ED0) shows a player its owner does not count as
+        // an ally the type's EnemyUIName, unless the building's
+        // DisplayProductionTo holds that player.
         EntityCategory::Structure
-            if let Some(label) = ares_enemy_ui_name(sim, entity, object, viewer) =>
+            if ares && let Some(label) = ares_enemy_ui_name(sim, entity, object, viewer) =>
         {
             return crate::assets::csf_file::type_ui_name(Some(label), csf);
         }
@@ -379,7 +380,6 @@ fn tactical_world_tip_text_for_viewer(
 /// `EnemyUIName` for a `viewer` the building's owner does not count as an
 /// ally, unless its DisplayProductionTo holds the viewer; `None` keeps the
 /// type's own name.
-#[cfg(feature = "ares")]
 fn ares_enemy_ui_name<'r>(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -411,12 +411,14 @@ fn unit_turret_tip_text(
     object: &crate::rules::object_type::ObjectType,
     csf: Option<&crate::assets::csf_file::CsfFile>,
 ) -> String {
-    // Ares UnitGetUIName746B89 ->1004BF20 returns the configured full
-    // weapon-mode name before the original passenger/turret formatter.
-    #[cfg(feature = "ares")]
-    if let Some(label) = object
-        .gunner_turrets
-        .weapon_ui_name(entity.current_weapon_number())
+    // When Ares plays in the game (`RuleSet::ares`), Ares
+    // UnitGetUIName746B89 ->1004BF20 returns the configured full weapon-mode
+    // name before the original passenger/turret formatter.
+    let ares = rules.ares();
+    if ares
+        && let Some(label) = object
+            .gunner_turrets
+            .weapon_ui_name(entity.current_weapon_number())
     {
         return crate::assets::csf_file::type_ui_name(Some(label), csf);
     }
@@ -441,8 +443,7 @@ fn unit_turret_tip_text(
         None => tip("Tip:Rocket"),
     };
     let own = crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf);
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         // Ares spacing hook746C55 ->1004BF90 separates nonempty pieces only.
         if word.is_empty() {
             return own;
@@ -996,10 +997,10 @@ mod tests {
     /// Ares BuildingClass_GetUIName (10015DA0, hook 0x459ED0): the owner
     /// reads the type's name, a player it does not count as an ally the
     /// type's `EnemyUIName`.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_enemy_ui_name_shows_to_a_non_allied_player() {
         use crate::rules::ruleset::RuleSet;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
             "[BuildingTypes]\n0=POWR\n1=PLAIN\n[POWR]\nStrength=1\nEnemyUIName=NAME:Fake\n\
              [PLAIN]\nStrength=1\n",

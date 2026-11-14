@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::assets::asset_manager::{AssetManager, AssetResolutionRef};
 use crate::assets::error::AssetError;
+use crate::assets::mix_archive::MixArchive;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::directives::{
     DirectiveDiagnostic, DirectiveOptions, include_identity, process_directives,
@@ -50,7 +51,12 @@ enum OptionalIniSelection {
 }
 
 pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
-    if crate::rules::ARES_BUILD || crate::rules::PHOBOS_ENABLED {
+    // A game that ships `ares.mix` loads its INIs with Ares' syntax and
+    // `[#include]` (`ares_switch::ares_way`), as its launch does.
+    let _ares_way = crate::rules::ares_switch::read_ares_way(
+        crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
+    );
+    if crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED {
         select_ini_with_options(assets, name, DirectiveOptions::production())
     } else {
         select_physical_ini(assets, name)
@@ -333,6 +339,45 @@ const SHIPPED_ARCHIVES: [&str; 5] = [
 const SHIPPED_MASTER: &str = "ra2md.mix";
 const SHIPPED_LOCAL: &str = "localmd.mix";
 
+/// Whether a source (`AssetResolutionRef::source_archive`, an archive's name)
+/// is a shipped archive or nested in one. A loose file never is.
+pub(crate) fn shipped_source(source: &str) -> bool {
+    !source.starts_with("loose:")
+        && SHIPPED_ARCHIVES
+            .iter()
+            .any(|shipped| outermost_archive(source).eq_ignore_ascii_case(shipped))
+}
+
+/// The game-folder file a source comes from: a loose file's name, else the
+/// archive's outermost name (`expandmd99.mix`).
+pub(crate) fn game_folder_file(source: &str) -> String {
+    match source.strip_prefix("loose:") {
+        Some(path) => std::path::Path::new(path).file_name().map_or_else(
+            || path.to_owned(),
+            |file| file.to_string_lossy().into_owned(),
+        ),
+        None => outermost_archive(source).to_owned(),
+    }
+}
+
+fn outermost_archive(source: &str) -> &str {
+    source.split(" -> ").next().unwrap_or(source).trim()
+}
+
+/// The shipped copy of the nested archive `name` (`isosnomd.mix`): the
+/// first shipped archive, in lookup order, that holds one.
+pub(crate) fn shipped_nested_archive(assets: &AssetManager, name: &str) -> Option<MixArchive> {
+    let id = crate::assets::mix_hash::mix_hash(name);
+    SHIPPED_ARCHIVES.iter().find_map(|archive| {
+        assets
+            .archive_with_source(archive)?
+            .1
+            .nested_archive_by_id(id)
+            .ok()
+            .flatten()
+    })
+}
+
 /// VERA: the game-folder files that change any of `names` from the copy the
 /// retail game ships, for Quick Match, which plays the original game. Each
 /// is a loose file's name or an archive's outermost name (`expandmd99.mix`),
@@ -344,11 +389,6 @@ const SHIPPED_LOCAL: &str = "localmd.mix";
 /// (`IniFile::multiplayer_digest`) are unchanged, and so is a name nothing
 /// supplies.
 pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec<String> {
-    let shipped_archive = |archive: &str| {
-        SHIPPED_ARCHIVES
-            .iter()
-            .any(|shipped| archive.eq_ignore_ascii_case(shipped))
-    };
     let mut local = None;
     let mut files = Vec::new();
     for name in names.iter().map(|name| name.trim()) {
@@ -358,14 +398,7 @@ pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec
         else {
             continue;
         };
-        let loose = used.source_archive.strip_prefix("loose:");
-        let outermost = used
-            .source_archive
-            .split(" -> ")
-            .next()
-            .unwrap_or(used.source_archive)
-            .trim();
-        if loose.is_none() && shipped_archive(outermost) {
+        if shipped_source(used.source_archive) {
             continue;
         }
         let local = local.get_or_insert_with(|| {
@@ -389,13 +422,7 @@ pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec
         if shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
             continue;
         }
-        let file = match loose {
-            Some(path) => std::path::Path::new(path).file_name().map_or_else(
-                || name.to_owned(),
-                |file| file.to_string_lossy().into_owned(),
-            ),
-            None => outermost.to_owned(),
-        };
+        let file = game_folder_file(used.source_archive);
         if !files.contains(&file) {
             files.push(file);
         }
@@ -570,9 +597,49 @@ mod tests {
         assert!(selected.ini.section("Digest").is_some());
     }
 
-    #[cfg(feature = "ares")]
+    /// A game that ships `ares.mix` (Load_Bootstrap_AresMIX, hook
+    /// `0x0053029E`) selects its INIs with Ares' syntax in every build: a `+=`
+    /// list key is numbered as Ares numbers it. Without `ares.mix`, a build
+    /// without the `ares` feature keeps gamemd's syntax.
+    #[test]
+    fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        let directory =
+            crate::assets::asset_manager::test_support::audio_test_install("ares-mix-rules-syntax");
+        std::fs::write(
+            directory.path().join("rulesmd.ini"),
+            b"[BuildingTypes]\n+=GAPOWR\n",
+        )
+        .unwrap();
+        std::fs::write(
+            directory.path().join("artmd.ini"),
+            b"[GAPOWR]\nFoundation=2x2\n",
+        )
+        .unwrap();
+        let keys = || {
+            let assets =
+                AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            let sources = RetailRulesSources::select(&assets).unwrap();
+            let keys: Vec<String> = sources
+                .rulesmd
+                .ini
+                .section_or_empty("BuildingTypes")
+                .keys()
+                .map(str::to_owned)
+                .collect();
+            (assets.ships_ares(), sources.ships_ares, keys)
+        };
+        // A build with the `ares` feature reads every game the Ares way.
+        let feature = cfg!(feature = "ares");
+        let stock_key = if feature { "var_0" } else { "+" };
+        assert_eq!(keys(), (false, feature, vec![stock_key.to_owned()]));
+        directory.write_mix("ares.mix", "ares.txt", b"ares");
+        assert_eq!(keys(), (true, true, vec!["var_0".to_owned()]));
+    }
+
     #[test]
     fn langrule_selection_expands_ares_includes_and_keeps_physical_root_for_digest() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let directory = TestDirectory::new("langrule-ares-include");
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");

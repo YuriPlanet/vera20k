@@ -839,7 +839,9 @@ impl Default for DisguiseRuntime {
 impl crate::sim::game_entity::GameEntity {
     /// The disguise runtime, created at `frame` when the object has none yet.
     /// Native keeps the disguise fields inline; sparse Rust storage creates
-    /// them on the first disguise write, stamped with that frame.
+    /// them on the first disguise write, stamped with that frame. A stored
+    /// object's writer that puts a disguise on also calls
+    /// `EntityStore::note_look`, which the atlas check reads.
     pub(crate) fn disguise_mut(&mut self, frame: u32) -> &mut DisguiseRuntime {
         self.disguise
             .get_or_insert_with(|| DisguiseRuntime::new(frame))
@@ -1092,6 +1094,8 @@ impl crate::sim::world::Simulation {
             }
         };
         let frame = self.session.binary_frame();
+        // A worn type and house are a new look for the atlas check.
+        self.substrate.entities.note_look(firer);
         let disguise = self
             .substrate
             .entities
@@ -1233,6 +1237,7 @@ impl crate::sim::world::Simulation {
                 let disguise_type = self
                     .interner
                     .intern(&rules.general.default_mirage_disguises[picked]);
+                self.substrate.entities.note_look(id);
                 self.substrate
                     .entities
                     .get_mut(id)

@@ -234,6 +234,12 @@ impl NativeDisplayOrder {
         }
     }
 
+    /// `id`'s place in the Display walk, `None` for an id no layer holds:
+    /// ordering by it is the order of `DisplayLayers::ordered_ids`.
+    pub(crate) fn position(&self, id: DrawId) -> Option<(TacticalLayer, u64)> {
+        self.positions.get(&id).copied()
+    }
+
     pub(crate) fn object_draw(&self, id: DrawId, encoding: SpriteEncoding) -> Option<ObjectDraw> {
         let policy = match encoding {
             SpriteEncoding::Terrain => BlitPolicy::z_none(encoding),

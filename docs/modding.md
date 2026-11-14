@@ -98,8 +98,8 @@ run it.
 | What you can put in a mod's folder | What it does |
 | --- | --- |
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
-| An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. An Ares build reads the `expandmd` archives before those two as well, as Ares does. The number can be 00 to 99, and higher numbers win. An archive with the same name as one in the game folder takes that archive's place, so pick a number the game doesn't use unless you mean that. |
-| `ares.mix` (Ares builds) | Read after the `expandmd` archives and before the game's own, as Ares reads it. The string tables `ares.csf` and `ares_<language>.csf` in it add to the game's text. |
+| An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. A game with `ares.mix` reads the `expandmd` archives before those two as well, as Ares does. The number can be 00 to 99, and higher numbers win. An archive with the same name as one in the game folder takes that archive's place, so pick a number the game doesn't use unless you mean that. |
+| `ares.mix` | Makes the game an [Ares](ares.md) game: its INIs load with Ares' syntax and `[#include]`, and its rules are read the Ares way. Read after the `expandmd` archives and before the game's own, as Ares reads it. The string tables `ares.csf` and `ares_<language>.csf` in it add to the game's text. |
 | An archive whose name starts with `ecache` or `elocal`, such as `ecachemd01.mix` | Adds the files inside it, as the original game does. All `ecache` archives load before all `elocal` ones, each group by name. They load after the `expandmd` archives and the game's main, cache and local archives, which keep a file name they share, and before the game's art, cameo and theater archives, whose copies they replace. |
 | Maps | Adds them to the map list while the mod is in use. |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
@@ -237,19 +237,22 @@ VERA20k adds two things. Open the map in a text editor to set them:
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. With a mod in use,
+the same `rulesmd.ini`, `artmd.ini`, `aimd.ini`, theater INIs (such as `snowmd.ini`),
+terrain tiles and `VERARULES.INI`. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini` and `veraui.ini`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
-the file holds. Pictures and sounds you put in the game folder itself aren't compared.
+the file holds. Terrain tiles you put in the game folder itself, such as `clear01.sno` or
+an `isosnomd.mix`, are compared with the original game's, because they decide how high the
+ground is and where units can go. Other pictures and sounds there aren't compared.
 Players who don't have your map are asked whether to download it when they join your
 online room.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
 game. With a mod in use it tells you to pick **No mod** in the Mods menu first, and with
 changes in `VERARULES.INI` or **Terrain Deformation** on, to turn those off. It also names
-any files in the game folder that change the original rules, such as a loose `rulesmd.ini`
-or an `expandmd99.mix` an old mod left there.
+any files in the game folder that change the original rules or terrain tiles, such as a
+loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.
 
 ## Sharing your mod
 

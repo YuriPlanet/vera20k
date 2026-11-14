@@ -43,6 +43,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
+    /// The changed looks the tick's tail checks the atlases against.
+    pub(crate) atlas_check: crate::render::entity_atlas_growth::EntityAtlasCheck,
     /// An atlas refresh asked beside a lent tick, which the tick's tail runs
     /// (`sim_tick::refresh_entity_atlases`).
     pub(crate) atlas_refresh_owed: bool,
@@ -55,6 +57,11 @@ pub(crate) struct MatchPresentationState {
     /// process InitGame GRFXTXT art.
     pub(crate) outcome_banner_side_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
+    /// This match's Ares `Text.*` superweapon status labels (hook 6CC2B0),
+    /// resolved once with the incoming world: its Rules and the process
+    /// string table stay fixed for the match. `None` unless Ares plays in
+    /// the game (`RuleSet::ares`).
+    pub(crate) ares_status_texts: Option<crate::app::presentation::sidebar_build::AresStatusTexts>,
     /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.

@@ -41,39 +41,39 @@ fn point<const N: usize>(value: &Value) -> [i32; N] {
     std::array::from_fn(|i| value[i].as_i64().unwrap() as i32)
 }
 
-fn packed(tint: [f32; 3]) -> u16 {
-    let [r, g, b] = tint.map(|c| (c * 255.).round() as u16);
-    (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)
-}
+/// The house colour the native rally rows store, RGB 248,40,8.
+const NATIVE_RALLY_WORD: u16 = 0xF941;
 
-/// Store each pass's spans as the GPU does, keeping or skipping each pixel by
-/// its A gate against `a` (`fs_surface_store`).
+/// Store each pass's strokes as the GPU does, keeping or skipping each pixel
+/// by its A gate against `a` (`surface_strokes.wgsl`).
 fn composite(
     canvas: &mut [u16],
-    instances: &[SpriteInstance],
+    strokes: &[SurfaceStroke],
     view: TacticalViewport,
     a: &impl Fn([i32; 2]) -> u8,
 ) {
-    use crate::render::draw_state::{FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
-    for instance in instances {
-        let x = instance.position[0] as i32 - view.camera[0];
-        let y = instance.position[1] as i32 - view.camera[1];
-        for dy in 0..instance.size[1] as i32 {
-            for dx in 0..instance.size[0] as i32 {
-                let zero = a([x + dx, y + dy]) == 0;
-                if (instance.draw_state.fx_flags & FX_SURFACE_A_NONZERO != 0 && zero)
-                    || (instance.draw_state.fx_flags & FX_SURFACE_A_ZERO != 0 && !zero)
-                {
-                    continue;
+    for stroke in strokes {
+        stroke.for_each_rect(|[x, y, width, height]| {
+            let [x, y] = [x - view.camera[0], y - view.camera[1]];
+            for y in y..y + height {
+                for x in x..x + width {
+                    let zero = a([x, y]) == 0;
+                    let stored = match stroke.gate() {
+                        StoreGate::All => true,
+                        StoreGate::ANonzero => !zero,
+                        StoreGate::AZero => zero,
+                    };
+                    if stored {
+                        canvas[(y * 160 + x) as usize] = stroke.word();
+                    }
                 }
-                canvas[((y + dy) * 160 + x + dx) as usize] = packed(instance.tint);
             }
-        }
+        });
     }
 }
 
 pub(super) fn assert_native_passes(
-    actual: &[Vec<SpriteInstance>; 2],
+    actual: &[Vec<SurfaceStroke>; 2],
     row: &Value,
     view: TacticalViewport,
     a: impl Fn([i32; 2]) -> u8,
@@ -136,15 +136,10 @@ fn native_patterned_leaf_all_octants_ties_endpoints_and_phases() {
     }
 }
 
-pub(super) fn projected_fixture(
-    row: &Value,
-    zoom: f32,
-    camera: [i32; 2],
-) -> ([Vec<SpriteInstance>; 2], TacticalViewport) {
+fn projected_fixture(row: &Value, camera: [i32; 2]) -> ([Vec<SurfaceStroke>; 2], TacticalViewport) {
     let view = TacticalViewport {
         camera,
         clip: point(&row["clip"]),
-        zoom,
     };
     let mut actual = [Vec::new(), Vec::new()];
     for rows in row["passes"][0]["clips"].as_array().unwrap().chunks(3) {
@@ -158,7 +153,7 @@ pub(super) fn projected_fixture(
             &mut actual,
             from,
             to,
-            [248. / 255., 40. / 255., 8. / 255.],
+            NATIVE_RALLY_WORD,
             input["frame"].as_u64().unwrap_or(0) as u32,
             view,
         );
@@ -185,7 +180,7 @@ fn native_rally_producer_clipped_rows_phase_and_abuffer_passes() {
         4
     );
     for row in producer_rows() {
-        let (actual, view) = projected_fixture(row, 1., [0, 0]);
+        let (actual, view) = projected_fixture(row, [0, 0]);
         assert_native_passes(&actual, row, view, row_alpha(row));
     }
 }
@@ -216,7 +211,6 @@ fn rally_crossing_stock_shroud_frontier_matches_the_original_combined_draw() {
     let view = TacticalViewport {
         camera: [0; 2],
         clip: [0, 0, 160, 120],
-        zoom: 1.,
     };
     let clip = &row["passes"][0]["clips"][0];
     let mut from: [i32; 2] = point(&clip["from_point"]);
@@ -224,14 +218,7 @@ fn rally_crossing_stock_shroud_frontier_matches_the_original_combined_draw() {
     from[1] -= 2;
     to[1] -= 2;
     let mut actual = [Vec::new(), Vec::new()];
-    emit_rally_line(
-        &mut actual,
-        from,
-        to,
-        [248. / 255., 40. / 255., 8. / 255.],
-        0,
-        view,
-    );
+    emit_rally_line(&mut actual, from, to, NATIVE_RALLY_WORD, 0, view);
     assert_native_passes(&actual, &row, view, |[x, y]| alpha[(y * 160 + x) as usize]);
 }
 
@@ -349,9 +336,8 @@ fn native_rally_gates_foundation_ground_bridge_and_object_target_through_product
         let view = TacticalViewport {
             camera,
             clip: point(&row["clip"]),
-            zoom: 1.,
         };
-        let mut actual = build_factory_rally_line_instances(
+        let mut actual = build_factory_rally_line_strokes(
             Some(&sim),
             Some(&PresentationFrame::of_test(&sim, &rules)),
             Some(&rules),
@@ -366,9 +352,9 @@ fn native_rally_gates_foundation_ground_bridge_and_object_target_through_product
         );
         // House RGB is a supplied native boundary. Its RGB565 conversion is
         // checked by the separate native producer + GPU comparisons.
-        for instance in actual.iter_mut().flatten() {
-            if instance.tint != [0.; 3] {
-                instance.tint = [248. / 255., 40. / 255., 8. / 255.];
+        for stroke in actual.iter_mut().flatten() {
+            if stroke.word() != 0 {
+                *stroke = stroke.with_word(NATIVE_RALLY_WORD);
             }
         }
         assert_native_passes(&actual, row, view, row_alpha(row));
@@ -470,9 +456,8 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
         let view = TacticalViewport {
             camera,
             clip: point(&row["clip"]),
-            zoom: 1.,
         };
-        let actual = build_factory_rally_line_instances(
+        let actual = build_factory_rally_line_strokes(
             Some(&sim),
             Some(&PresentationFrame::of_test(&sim, rules)),
             Some(rules),
@@ -501,7 +486,7 @@ fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
     let terrain = sim.resolved_terrain().unwrap();
     let canonical = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
     let before = canonical.dummy().snapshot().coord;
-    let _ = build_factory_rally_line_instances(
+    let _ = build_factory_rally_line_strokes(
         Some(&sim),
         Some(&PresentationFrame::of_test(&sim, &rules)),
         Some(&rules),
@@ -511,489 +496,137 @@ fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
         TacticalViewport {
             camera: [0, 0],
             clip: [0, 0, 160, 120],
-            zoom: 1.,
         },
     );
     assert_eq!(canonical.dummy().snapshot().coord, before);
 }
 
+/// One GPU comparison: each pass's strokes and the native pixels after it.
+struct GpuCase {
+    strokes: [Vec<SurfaceStroke>; 2],
+    passes: Vec<(usize, Vec<[i32; 3]>)>,
+    alpha: &'static str,
+    input: &'static Value,
+}
+
 #[test]
-#[ignore = "requires GPU; compares original complete rally pixels, their A passes and unchanged depth"]
+#[ignore = "requires GPU; compares original rally and leaf pixels, their A passes and unchanged depth"]
 fn production_rally_gpu_matches_native_pixels_and_preserves_depth() {
     use crate::render::batch::BatchRenderer;
-    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
-    use wgpu::util::DeviceExt;
+    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, draw_strokes, encoded};
     let gpu = Gpu::new();
+    let size = [160, 120];
+    let camera_pos = [-17, 73];
+    let pixels =
+        |value: &Value| -> Vec<[i32; 3]> { value.as_array().unwrap().iter().map(point).collect() };
+    // DSurface4C0750's own leaf rows: one pass of one walk over the mixed A,
+    // at every octant, tie, endpoint and phase.
+    let leaves = rally_native()["leaf_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let input = &row["input"];
+            let pass = input["pass_id"].as_u64().unwrap() as usize;
+            let mut strokes = [Vec::new(), Vec::new()];
+            strokes[pass].push(SurfaceStroke::patterned(
+                point(&input["from_point"]),
+                point(&input["to_point"]),
+                &RALLY_PATTERN,
+                input["phase"].as_i64().unwrap() as i32,
+                NATIVE_RALLY_WORD,
+                [StoreGate::ANonzero, StoreGate::AZero][pass],
+                camera_pos,
+            ));
+            GpuCase {
+                strokes,
+                passes: vec![(pass, pixels(&row["pixels"]))],
+                alpha: "mixed",
+                input,
+            }
+        });
+    // The producer rows: both passes, each after the last.
+    let producers = producer_rows().map(|row| GpuCase {
+        strokes: projected_fixture(row, camera_pos).0,
+        passes: (0..2)
+            .map(|pass| (pass, pixels(&row["passes"][pass]["pixels"])))
+            .collect(),
+        alpha: row["input"]["alpha"].as_str().unwrap_or("clear"),
+        input: &row["input"],
+    });
+    let cases: Vec<_> = leaves.chain(producers).collect();
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
     ] {
-        for zoom in [0.75, 1., 1.5, 2.] {
-            let size = [(160. * zoom) as u32, (120. * zoom) as u32];
-            let camera_pos = [-17, 73];
-            let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-            // The production world pass draws these at zoom 1; the spans
-            // carry the wheel-zoom scaling themselves.
-            batch.write_camera(
-                &gpu.queue,
-                crate::render::batch::CameraUniform {
-                    camera_pos: camera_pos.map(|v| v as f32),
-                    ..camera(size)
-                },
-            );
-            let texture =
-                batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255; 4], 1, 1, None);
-            let color = gpu.target(size, format);
-            let cv = color.create_view(&Default::default());
-            let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-            let dv = depth.create_view(&Default::default());
-            for row in producer_rows() {
-                let (mut actual, _) = projected_fixture(row, zoom, camera_pos);
-                // The live A under each stored pixel, from its logical pixel.
-                let alpha = row_alpha(row);
-                let plane: Vec<u8> = (0..size[1])
-                    .flat_map(|y| (0..size[0]).map(move |x| [x, y]))
-                    .map(|p| alpha(p.map(|v| ((v as f32 + 0.5) / zoom).floor() as i32)))
-                    .collect();
-                let a = crate::render::shroud_buffer::ShroudBuffer::fixture(
-                    &gpu.device,
-                    &gpu.queue,
-                    size,
-                    camera_pos.map(|v| v as f32),
-                    &plane,
-                );
-                batch.bind_shroud(&gpu.device, Some(&a));
-                // Poison unused hardware depth: both reads and writes must be bypassed.
-                for instance in actual.iter_mut().flatten() {
-                    instance.depth = 0.9;
-                }
-                let background = encoded(0x39E7, format).repeat((size[0] * size[1]) as usize);
-                gpu.queue.write_texture(
-                    color.as_image_copy(),
-                    &background,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(size[0] * 4),
-                        rows_per_image: Some(size[1]),
-                    },
-                    color.size(),
-                );
-                for (pass_id, instances) in actual.iter().enumerate() {
-                    let buffer = (!instances.is_empty()).then(|| {
-                        gpu.device
-                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                                label: Some("Production rally spans"),
-                                contents: bytemuck::cast_slice(instances),
-                                usage: wgpu::BufferUsages::VERTEX,
-                            })
-                    });
-                    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    clear(&mut encoder, &cv, &dv, 12345, wgpu::LoadOp::Load);
-                    if let Some(buffer) = &buffer {
-                        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("Native rally ABuffer pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &cv,
-                                depth_slice: None,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: Some(
-                                wgpu::RenderPassDepthStencilAttachment {
-                                    view: &dv,
-                                    depth_ops: Some(wgpu::Operations {
-                                        load: wgpu::LoadOp::Load,
-                                        store: wgpu::StoreOp::Store,
-                                    }),
-                                    stencil_ops: None,
-                                },
-                            ),
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                            multiview_mask: None,
-                        });
-                        batch.draw_surface_stores(
-                            &mut pass,
-                            &texture,
-                            buffer,
-                            instances.len() as u32,
-                        );
-                    }
-                    let reads = [
-                        gpu.read(&mut encoder, &color),
-                        gpu.read(&mut encoder, &depth),
-                    ];
-                    let output = gpu.finish(encoder, &reads, size);
-                    let mut native_words = vec![0x39E7_u16; 160 * 120];
-                    for pixel in row["passes"][pass_id]["pixels"].as_array().unwrap() {
-                        let [x, y, word] = point(pixel);
-                        native_words[y as usize * 160 + x as usize] = word as u16;
-                    }
-                    let expected: Vec<u8> = (0..size[1])
-                        .flat_map(|y| {
-                            let native_words = &native_words;
-                            (0..size[0]).flat_map(move |x| {
-                                let sx = ((x as f32 + 0.5) / zoom).floor() as usize;
-                                let sy = ((y as f32 + 0.5) / zoom).floor() as usize;
-                                encoded(native_words[sy * 160 + sx], format)
-                            })
-                        })
-                        .collect();
-                    assert_eq!(
-                        output[0], expected,
-                        "{format:?} zoom{zoom}, {} pass{pass_id}",
-                        row["input"]
-                    );
-                    assert!(
-                        output[1].as_chunks::<4>().0.iter().all(|bytes| {
-                            crate::render::native_z::stored_z(f32::from_le_bytes(*bytes)) == 12345
-                        }),
-                        "rally changed Z: {format:?}, {} pass{pass_id}",
-                        row["input"]
-                    );
-                }
-            }
-        }
-    }
-}
-
-#[test]
-#[ignore = "bounded CPU/GPU timing for rally/Move/Attack builders, pooled upload and draw"]
-fn production_rally_workload_timing() {
-    use crate::render::batch::{BatchRenderer, InstanceBufferPool};
-    use crate::render::terrain_draw_gpu_tests::{Gpu, camera};
-    use crate::sim::components::DriveCoord;
-    use crate::sim::movement::ground_pose;
-    use std::time::{Duration, Instant};
-    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
-    let size = [800, 600];
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    let view = TacticalViewport {
-        camera: [-400, 350],
-        clip: [0, 0, 632, 568],
-        zoom: 1.,
-    };
-    batch.write_camera(
-        &gpu.queue,
-        crate::render::batch::CameraUniform {
-            camera_pos: view.camera.map(|v| v as f32),
-            ..camera(size)
-        },
-    );
-    let texture = batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255; 4], 1, 1, None);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    let queries = gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: Some("Rally timing"),
-        ty: wgpu::QueryType::Timestamp,
-        count: 2,
-    });
-    let resolved = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Rally timestamp resolve"),
-        size: 256,
-        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-    let mapped = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Rally timestamp read"),
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let colors = HouseColorMap::new();
-    let mut pool = InstanceBufferPool::new();
-    // Both production builders use this one upload/encode/query/readback owner.
-    // A single action-line batch must not draw a retained second rally buffer.
-    let mut measure_draw = |batches: &[&[SpriteInstance]], clip: [i32; 4]| {
-        const KEYS: [&str; 2] = ["procedural_first", "procedural_second"];
-        assert!(batches.len() <= KEYS.len());
-        let upload_started = Instant::now();
-        for (&key, instances) in KEYS.iter().zip(batches) {
-            pool.upload_on_device(&gpu.device, &gpu.queue, key, instances);
-        }
-        let upload_ms = upload_started.elapsed().as_secs_f64() * 1000.;
-        let encode_started = Instant::now();
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        let mut draw_calls = 0;
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Procedural line workload"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &cv,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &dv,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(0.2),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                // wgpu-hal27.0.4 Metal attaches these to vertex-start and
-                // fragment-end; empty encoder samples returned zero on M4.
-                // Upstream af91efa9, metal/command.rs:630..651.
-                timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
-                    query_set: &queries,
-                    beginning_of_pass_write_index: Some(0),
-                    end_of_pass_write_index: Some(1),
-                }),
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_scissor_rect(
-                clip[0] as u32,
-                clip[1] as u32,
-                clip[2] as u32,
-                clip[3] as u32,
-            );
-            for &key in KEYS.iter().take(batches.len()) {
-                if let Some((buffer, count)) = pool.get(key) {
-                    batch.draw_with_buffer_ui_passthrough(&mut pass, &texture, buffer, count);
-                    draw_calls += 1;
-                }
-            }
-        }
-        encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
-        encoder.copy_buffer_to_buffer(&resolved, 0, &mapped, 0, 16);
-        let command = encoder.finish();
-        let encode_ms = encode_started.elapsed().as_secs_f64() * 1000.;
-        let submitted = Instant::now();
-        let submission = gpu.queue.submit([command]);
-        let submit_ms = submitted.elapsed().as_secs_f64() * 1000.;
-        let (tx, rx) = std::sync::mpsc::channel();
-        mapped
-            .slice(..)
-            .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-        // wgpu27 PollType::Wait(Some(submission)) waits for execution and
-        // callbacks on native backends. This is completion wall time including
-        // submission, queued uploads, pass work, query copy and mapping, not
-        // a render-only GPU interval. API: wgpu-types27.0.1 PollType::Wait;
-        // https://docs.rs/wgpu/27.0.1/wgpu/type.PollType.html
-        gpu.device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(Duration::from_secs(60)),
-            })
-            .unwrap();
-        rx.recv().unwrap().unwrap();
-        let completed_ms = submitted.elapsed().as_secs_f64() * 1000.;
-        let data = mapped
-            .slice(..)
-            .get_mapped_range()
-            .expect("map the GPU timestamp buffer");
-        let first = u64::from_le_bytes(data[..8].try_into().unwrap());
-        let last = u64::from_le_bytes(data[8..].try_into().unwrap());
-        // Retain unsupported samples explicitly, never report zero as a
-        // measured GPU cost. The completion clock above is independent.
-        let gpu_ms = (first != 0 && last != u64::MAX && last > first).then(|| {
-            (last - first) as f64 * f64::from(gpu.queue.get_timestamp_period()) / 1_000_000.
-        });
-        drop(data);
-        mapped.unmap();
-        let spans_per_batch: Vec<_> = batches.iter().map(|instances| instances.len()).collect();
-        let spans = spans_per_batch.iter().sum::<usize>();
-        serde_json::json!({
-            "upload_ms":upload_ms, "encode_ms":encode_ms,
-            "encode_upload_ms":upload_ms + encode_ms,
-            "submit_ms":submit_ms, "completed_ms":completed_ms, "gpu_ms":gpu_ms,
-            "timestamp_first":first, "timestamp_last":last,
-            "timestamp_period_ns":gpu.queue.get_timestamp_period(),
-            "spans_per_batch":spans_per_batch, "spans":spans,
-            "upload_calls":batches.iter().filter(|instances| !instances.is_empty()).count(),
-            "draw_calls":draw_calls,
-            "upload_bytes":spans * std::mem::size_of::<SpriteInstance>(),
-        })
-    };
-    let mut results = Vec::new();
-    for (count, mobile, missing, pending) in [
-        (1, false, false, false),
-        (64, false, false, false),
-        (1024, false, false, false),
-        (20_000, true, false, false),
-        (20_000, true, true, false),
-        (20_000, true, false, true),
-    ] {
-        let (mut sim, rules) = simulation_fixture(&rally_native()["producer_cases"][0]);
-        let rules = if mobile {
-            RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[VehicleTypes]\n0=MTNK\n[MTNK]\nPrimary=TankGun\n[TankGun]\nDamage=10\n",
-            ))
-            .unwrap()
-        } else {
-            rules
-        };
-        let mut template = sim.entities().get(10).unwrap().clone();
-        if mobile {
-            template.set_category_for_test(EntityCategory::Unit);
-            template.set_type_ref_for_test(sim.intern("MTNK"));
-        }
-        template.selection.set_selected_for_test(!pending);
-        let ledger: Vec<_> = (10..10 + count as u64).collect();
-        for &id in &ledger {
-            let mut entity = template.clone();
-            entity.set_stable_id_for_test(id);
-            entity
-                .position
-                .set_rx_for_test(entity.position.rx() + (id % 8) as u16);
-            entity
-                .position
-                .set_ry_for_test(entity.position.ry() + (id % 5) as u16);
-            sim.entities_mut_for_test().insert(entity);
-        }
-        let mut samples = Vec::new();
-        for sample in 0..22 {
-            sim.session_mut_for_test().set_binary_frame_for_test(sample);
-            let presentation = PresentationFrame::of_test(&sim, &rules);
-            let begin = Instant::now();
-            let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
-                Some(&sim),
-                Some(&rules),
-                if missing { &[] } else { &ledger },
-                pending,
-            );
-            let selection_ms = begin.elapsed().as_secs_f64() * 1000.;
-            let actual = build_factory_rally_line_instances(
-                Some(&sim),
-                Some(&presentation),
-                Some(&rules),
-                &selected,
-                &colors,
-                Some("Americans"),
-                view,
-            );
-            let build_ms = begin.elapsed().as_secs_f64() * 1000.;
-            if mobile {
-                assert!(actual.iter().all(Vec::is_empty));
-                assert_eq!(selected.len(), count);
-                if missing {
-                    assert!(selected.iter().eq(ledger.iter().rev()));
-                } else {
-                    assert_eq!(selected, ledger);
-                }
-            }
-            let mut timing = measure_draw(&[&actual[0], &actual[1]], view.clip);
-            if sample >= 2 {
-                timing["selection_ms"] = serde_json::json!(selection_ms);
-                timing["build_ms"] = serde_json::json!(build_ms);
-                timing["line_builder_ms"] = serde_json::json!(build_ms - selection_ms);
-                samples.push(timing);
-            }
-        }
-        results.push(
-            serde_json::json!({ "family":"rally", "selected_count": count, "mobile":mobile,
-            "missing_ledger":missing, "pending_selection":pending, "samples": samples }),
-        );
-    }
-    for (kind, (count, selected, active)) in [SelectedLineKind::Move, SelectedLineKind::Attack]
-        .into_iter()
-        .flat_map(|kind| {
-            [
-                (1, true, true),
-                (64, true, true),
-                (1024, true, true),
-                (20_000, true, true),
-                (20_000, true, false),
-                (20_000, false, true),
-            ]
-            .into_iter()
-            .map(move |workload| (kind, workload))
-        })
-    {
-        let (mut sim, rules, mut line_state, mut view, palette) =
-            super::action_tests::workload_fixture(kind);
-        view.clip = [0, 0, 632, 568];
+        let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         batch.write_camera(
             &gpu.queue,
             crate::render::batch::CameraUniform {
-                camera_pos: view.camera.map(|v| v as f32),
+                camera_pos: camera_pos.map(|v| v as f32),
                 ..camera(size)
             },
         );
-        let template = sim.entities().get(1).unwrap().clone();
-        let source = ground_pose::position_world_coord(&template.position);
-        // An overlapping synthetic stress field: disperse raw source XY by
-        // 8-lepton increments within one cell, retain source Z and the shared
-        // Cell NavCom or live Unit TarCom. All sources remain visible; line
-        // lengths vary slightly. The Attack target retains its native fixture
-        // motion/speed/facing inputs without advancing a gameplay tick.
-        for id in 1..=count as u64 {
-            let mut entity = template.clone();
-            entity.set_stable_id_for_test(id);
-            entity.selection.set_selected_for_test(selected);
-            entity.position.put_location(DriveCoord {
-                x: source.x + 8 * ((id - 1) % 32) as i32,
-                y: source.y + 8 * (((id - 1) / 32) % 32) as i32,
-                z: source.z,
-            });
-            sim.entities_mut_for_test().insert(entity);
-        }
-        let mut samples = Vec::new();
-        for sample in 0..22 {
-            let frame = 100 + sample;
-            sim.session_mut_for_test().set_binary_frame_for_test(frame);
-            line_state.start_timer(if active {
-                frame
-            } else {
-                frame.wrapping_sub(DURATION_TICKS as u32)
-            });
-            assert_eq!(line_state.is_selected_action_active(frame), active);
-            let presentation = rules
-                .as_ref()
-                .map(|rules| PresentationFrame::of_test(&sim, rules));
-            let begin = Instant::now();
-            let actual = build_target_line_instances(
-                &line_state,
-                false,
-                Some(&sim),
-                presentation.as_ref(),
-                rules.as_ref(),
-                Some(&palette),
-                &HouseColorMap::new(),
-                0,
-                view,
-                None,
+        let color = gpu.target(size, format);
+        let cv = color.create_view(&Default::default());
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let dv = depth.create_view(&Default::default());
+        for case in &cases {
+            // The live A under each stored pixel.
+            let plane: Vec<u8> = (0..size[1] as i32)
+                .flat_map(|y| (0..size[0] as i32).map(move |x| [x, y]))
+                .map(|p| alpha_fixture(p, case.alpha))
+                .collect();
+            let a = crate::render::shroud_buffer::ShroudBuffer::fixture(
+                &gpu.device,
+                &gpu.queue,
+                size,
+                camera_pos.map(|v| v as f32),
+                &plane,
             );
-            let build_ms = begin.elapsed().as_secs_f64() * 1000.;
-            assert_eq!(!actual.is_empty(), active && selected);
-            let mut timing = measure_draw(&[&actual], view.clip);
-            if sample >= 2 {
-                // This production builder scans Techno entities itself; it
-                // does not acquire the rally CurrentObjects selection ledger.
-                timing["selection_ms"] = serde_json::Value::Null;
-                timing["build_ms"] = serde_json::json!(build_ms);
-                timing["line_builder_ms"] = serde_json::json!(build_ms);
-                samples.push(timing);
+            batch.bind_shroud(&gpu.device, Some(&a));
+            let background = encoded(0x39E7, format).repeat((size[0] * size[1]) as usize);
+            gpu.queue.write_texture(
+                color.as_image_copy(),
+                &background,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(size[0] * 4),
+                    rows_per_image: Some(size[1]),
+                },
+                color.size(),
+            );
+            for (pass, pixels) in &case.passes {
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                clear(&mut encoder, &cv, &dv, 12345, wgpu::LoadOp::Load);
+                draw_strokes(&gpu, &batch, &mut encoder, &cv, &dv, &case.strokes[*pass]);
+                let reads = [
+                    gpu.read(&mut encoder, &color),
+                    gpu.read(&mut encoder, &depth),
+                ];
+                let output = gpu.finish(encoder, &reads, size);
+                // A row's pixels are the whole surface after its pass.
+                let mut native_words = vec![0x39E7_u16; 160 * 120];
+                for &[x, y, word] in pixels {
+                    native_words[y as usize * 160 + x as usize] = word as u16;
+                }
+                let expected: Vec<u8> = native_words
+                    .iter()
+                    .flat_map(|&word| encoded(word, format))
+                    .collect();
+                assert!(
+                    output[0] == expected,
+                    "{format:?}, {} pass{pass}",
+                    case.input
+                );
+                assert!(
+                    output[1].as_chunks::<4>().0.iter().all(|bytes| {
+                        crate::render::native_z::stored_z(f32::from_le_bytes(*bytes)) == 12345
+                    }),
+                    "rally changed Z: {format:?}, {} pass{pass}",
+                    case.input
+                );
             }
         }
-        results.push(serde_json::json!({
-            "family":match kind { SelectedLineKind::Move => "move", SelectedLineKind::Attack => "attack" },
-            "actor_count":count + usize::from(kind == SelectedLineKind::Attack),
-            "selected_count":if selected { count } else { 0 }, "timer_active":active,
-            "camera":view.camera, "clip":view.clip,
-            "source_xy_stride_leptons":8, "source_xy_grid_side":32,
-            "samples":samples,
-        }));
-    }
-    let report = serde_json::json!({ "schema":"vera20k.procedural-line-workload.v2",
-        "target": size, "format": "Bgra8UnormSrgb", "zoom":1,
-        "interval":"CPU build_ms includes the actual selection owner for rally (selection_ms subset) and the production builder. Move/Attack build_ms includes the full entity scan, live coordinate queries and palette conversion; selection_ms is null. upload_ms measures pooled CPU staging; encode_ms includes pass/query-copy encoding and finish, and encode_upload_ms is their sum. submit_ms is the included CPU queue-submit subset of completed_ms. gpu_ms is the backend-reported render-pass timestamp interval (including attachment clears), excludes uploads; unavailable timestamps stay null. completed_ms independently measures submit through upload, GPU, query-copy and map completion and is not render-only GPU time. Two warmups, twenty measured frames; timer preparation and source construction occur before timing. Synthetic overlapping stress; not whole-game FPS or native timing parity.",
-        "workloads":results });
-    eprintln!("{}", serde_json::to_string_pretty(&report).unwrap());
-    if let Some(path) = std::env::var_os("VERA20K_PROCEDURAL_LINE_PERF_OUTPUT")
-        .or_else(|| std::env::var_os("VERA20K_RALLY_PERF_OUTPUT"))
-    {
-        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
 }

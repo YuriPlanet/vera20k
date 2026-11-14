@@ -16,7 +16,6 @@ use crate::app::match_runtime::session::SessionMode;
 
 use crate::app::types::SIM_TICK_MS;
 use crate::map::terrain;
-use crate::render::sprite_atlas;
 use crate::sim::production;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
@@ -2383,7 +2382,6 @@ fn finish_simulation_frame(
         prefix_eva_text,
         deferred,
     } = finish;
-    let mut refresh_atlases_after_tick = false;
     let mut frame_committed = false;
     let mut drained_lifecycle_outputs: Vec<LifecycleOutput> = Vec::new();
     let mut drained_combat_lights = Vec::new();
@@ -2547,6 +2545,13 @@ fn finish_simulation_frame(
                     .apply_events(terrain, &lighting_events);
             }
             let sim = &mut rt.simulation;
+            // The objects whose look the tick changed, for the atlas check at
+            // the tail.
+            state
+                .match_state
+                .match_presentation
+                .atlas_check
+                .note(sim.take_looks());
             trigger_effects = frame_trigger_effects;
             frame_overlay_updates = overlay_updates;
             frame_overlay_removals = overlay_removals;
@@ -2668,18 +2673,6 @@ fn finish_simulation_frame(
                 local_owner_name.as_deref(),
                 &mut state.match_state.match_audio.sound_events,
             );
-            if tick_result.destroyed_structure {
-                refresh_atlases_after_tick = true;
-            }
-            if tick_result.bridge_state_changed {
-                refresh_atlases_after_tick = true;
-            }
-            if tick_result.ownership_changed {
-                refresh_atlases_after_tick = true;
-            }
-            if tick_result.spawned_entities {
-                refresh_atlases_after_tick = true;
-            }
             // Both terminal routes belong to the deterministic stream even
             // though Main_Tick skips its frame commit. EventClass EXIT carries
             // a command; natural win/loss carries the one-shot score/RNG latch.
@@ -2891,17 +2884,6 @@ fn finish_simulation_frame(
                 // Attached anims are simulation objects; the store detaches
                 // them itself.
                 LifecycleOutput::DetachAttachedAnims { .. } => {}
-                // Unlimbo's Display admission can introduce a model without
-                // TickResult::spawned_entities (e.g. Action7's ALL01 ORCA
-                // teams). Resolve it before their first ordinary body draw;
-                // crash-pose rendering must not be the first path to load it.
-                // In-place conversion keeps its ID and Display membership,
-                // so its new model needs the same coverage/growth check.
-                LifecycleOutput::RevealDisplay { .. }
-                | LifecycleOutput::DisplayRemove { .. }
-                | LifecycleOutput::ObjectTypeChanged { .. } => {
-                    refresh_atlases_after_tick = true;
-                }
                 LifecycleOutput::DirtyTacticalRect { .. }
                 | LifecycleOutput::ClearDrawnState { .. }
                 | LifecycleOutput::ClearRedraw { .. } => {}
@@ -2978,43 +2960,47 @@ fn finish_simulation_frame(
     if frame_committed && state.match_state.match_presentation.relation_colors {
         state.match_state.refresh_relation_colors();
     }
-    // AnimClass producers can install a new palette after construction without
-    // changing any entity identity. Unit deploy Anim+D4 (739C1A/739DFE) is one
-    // such producer: its first ordinary draw needs the selected-scheme atlas
-    // frames even when the tick reports no entity spawn or ownership change.
-    // A refresh asked beside the tick (`refresh_entity_atlases`) runs here.
-    if refresh_atlases_after_tick
-        || state.match_state.match_presentation.atlas_refresh_owed
-        || (frame_committed
-            && state
-                .match_state
-                .sim_runtime
-                .runtime()
-                .is_some_and(|runtime| {
-                    !sprite_atlas::atlas_covers_anim_remaps(
-                        state.match_state.match_presentation.sprite_atlas.as_ref(),
-                        &runtime.simulation,
-                        state
-                            .match_state
-                            .match_presentation
-                            .effective_house_color_map(),
-                    ) || !sprite_atlas::atlas_covers_sprite_keys(
-                        state.match_state.match_presentation.sprite_atlas.as_ref(),
-                        &sprite_atlas::collect_fogged_sprite_keys(
-                            &runtime.simulation,
-                            &runtime.resources.rules,
-                            state
-                                .match_state
-                                .match_presentation
-                                .effective_house_color_map(),
-                        ),
-                        Some(&runtime.resources.rules),
-                    )
-                }))
-    {
+    // The atlases are checked against what the tick changed, before its first
+    // draw: a new object, owner, type or disguise, an anim's new colour remap
+    // (Unit deploy Anim+D4, 739C1A/739DFE, installs one after construction),
+    // a new FoggedObject record. A miss, or a refresh asked beside a lent
+    // tick (`refresh_entity_atlases`), runs the full refresh here.
+    if state.match_state.match_presentation.atlas_refresh_owed || atlas_check_finds_miss(state) {
         refresh_entity_atlases(state);
     }
     frame_committed
+}
+
+/// Check the entity atlases against the looks changed since the last check
+/// ([`EntityAtlasCheck`]): whether they may lack something the world draws.
+/// A world away on the simulation thread is checked once it is back.
+///
+/// [`EntityAtlasCheck`]: crate::render::entity_atlas_growth::EntityAtlasCheck
+fn atlas_check_finds_miss(state: &mut AppState) -> bool {
+    if state.match_state.sim_runtime.is_lent() {
+        return false;
+    }
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        return false;
+    };
+    let presentation = &mut state.match_state.match_presentation;
+    let house_colors = presentation
+        .relation_color_map
+        .as_ref()
+        .unwrap_or(&presentation.house_color_map);
+    let miss = presentation.atlas_check.finds_miss(
+        &runtime.simulation,
+        Some(&runtime.resources.rules),
+        presentation.sprite_atlas.as_ref(),
+        presentation.unit_atlas.as_ref(),
+        house_colors,
+    );
+    if !miss {
+        presentation
+            .atlas_check
+            .checked(&runtime.simulation, house_colors);
+    }
+    miss
 }
 
 /// Refresh the presentation-owned light transaction from the committed runtime.
@@ -3291,9 +3277,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState, centre: Fo
     state.match_state.input.building_placement_preview = preview;
 }
 
-/// Admit the voxel models and grow the SHP atlas after entities spawn, die,
-/// change type or owner, or leave the display. A new voxel model's pictures
-/// are drawn the first time a frame shows them
+/// Admit the voxel models and grow the SHP atlas when the atlas check finds a
+/// changed look they lack, and again after a growth publishes. A new voxel
+/// model's pictures are drawn the first time a frame shows them
 /// ([`crate::render::unit_atlas::admit_world_models`]); the SHP raster runs on
 /// a worker ([`EntityAtlasGrowth::start`]) and [`publish_entity_atlas_growth`]
 /// completes it. Reuses the process asset manager instead of creating a new
@@ -3325,21 +3311,27 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         Some(rt.simulation.interner()),
         state.renderer.gpu.device.limits().max_texture_dimension_2d,
     );
+    let house_colors = presentation
+        .relation_color_map
+        .as_ref()
+        .unwrap_or(&presentation.house_color_map);
     presentation.atlas_growth.start(
         &crate::render::entity_atlas_growth::GrowthSource {
             sim: &rt.simulation,
             rules: Some(&rt.resources.rules),
             asset_manager,
-            house_colors: presentation
-                .relation_color_map
-                .as_ref()
-                .unwrap_or(&presentation.house_color_map),
+            house_colors,
             theater_name: &presentation.theater_name,
             theater_ext: &presentation.theater_ext,
             max_texture_dimension_2d: state.renderer.gpu.device.limits().max_texture_dimension_2d,
         },
         presentation.sprite_atlas.as_ref(),
     );
+    // A growth this found running checks the whole world again once it
+    // publishes (`publish_entity_atlas_growth`).
+    presentation
+        .atlas_check
+        .checked(&rt.simulation, house_colors);
 }
 
 /// Publish the finished atlas growths before a picture is judged, then start

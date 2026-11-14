@@ -187,9 +187,8 @@ fn emit(
         &frame,
         local_owner,
         record,
-        &|anim| {
-            super::super::overlays::slot_anim_admissible(sim, &frame, anim, camera, [800.0, 600.0])
-        },
+        &super::admitted_slot_anims(sim, &frame, record, camera, [800.0, 600.0]),
+        &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
         &|_| 0,
         crate::render::batch::DepthAxis::NONE.origin_y,
         crate::render::batch::DepthAxis::NONE.world_height,

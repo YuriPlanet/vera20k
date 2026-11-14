@@ -30,6 +30,25 @@ use crate::rules::house_colors::HouseColorIndex;
 use crate::sim::animation;
 use smol_str::StrExt;
 
+/// Frame offset between a turret heading bucket and the SHP turret frame an
+/// SHP Unit draws for it: UnitClass SHP draw `0x0073CCF4` adds 4 to the
+/// 32-step turret heading and masks it to the ring (`0x0073CCFE`).
+const SHP_TURRET_FRAME_BIAS: u16 = 4;
+
+/// The body-SHP frame a `Turret=yes` SHP Unit draws for one turret heading
+/// (`0x0073CCB2..0x0073CD03`): `((step + 4) & 31) + WalkFrames * 8`, with the
+/// turret facing (`+0x3A0`) rounded to 32 steps as the voxel turret does.
+fn shp_turret_frame(
+    turret: crate::rules::animation_sequence::ShpVehicleTurret,
+    heading: u16,
+) -> u16 {
+    let facings = turret.facings.max(1);
+    let step = u16::from(canonical_turret_facing(heading)) >> 3;
+    turret
+        .start_frame
+        .saturating_add((step + SHP_TURRET_FRAME_BIAS) % facings)
+}
+
 /// Borrowed live inputs for the SHP body emitter. The application and offscreen
 /// comparisons use the same admission, frame, light, depth and piece owners.
 pub(crate) struct ShpInputs<'a> {
@@ -373,14 +392,16 @@ pub(crate) fn shp_visitor<'a>(
         let draws_buildup =
             image.is_some_and(|image| image != crate::sim::building_art::BuildingImage::Body);
         let unopened_buildup = draws_buildup && !is_building_up && !is_building_down;
-        // Its ART section, found once for the gate, door, light, Z and
-        // turret below. A building with no rules record reads its own
-        // section for light and Z (`structure_entry`), as with no `Image=`.
-        let art_entry = object_type.and_then(|object| {
+        // A building's ART section, found once for the gate, door, light, Z
+        // and turret below; every reader is a building's, so infantry skip
+        // the search. A building with no rules record reads its own section
+        // for light and Z (`structure_entry`), as with no `Image=`.
+        let is_structure = entity.category() == EntityCategory::Structure;
+        let art_entry = object_type.filter(|_| is_structure).and_then(|object| {
             art_reg.and_then(|registry| registry.resolve_metadata_entry(type_str, &object.image))
         });
         let structure_entry = match object_type {
-            _ if entity.category() != EntityCategory::Structure => None,
+            _ if !is_structure => None,
             Some(_) => art_entry,
             None => {
                 art_reg.and_then(|registry| registry.resolve_metadata_entry(type_str, type_str))
@@ -818,6 +839,56 @@ pub(crate) fn shp_visitor<'a>(
                 )
             {
                 pieces.push(shadow);
+            }
+            // A `Turret=yes` SHP Unit (`+0xCA1`, gate `0x0073C725`) draws its
+            // turret from the same SHP after the body (`0x0073CD08`), at the
+            // body's draw point; no `TurretOffset` applies. Residual: the
+            // native turret branch draws body and turret with flags
+            // 0x2800/0x2820 and no -16 Z (unlike the no-turret branch used
+            // here), lifts the point 14 px when `+0x424` is set (`0x0073C753`)
+            // and draws a voxel barrel (`type+0xC0`) around the turret; none
+            // is ported. Retail ships no such unit; MO's `CYCL` does.
+            if entity.category() == EntityCategory::Unit
+                && let Some(turret) = rules
+                    .and_then(|rules| {
+                        rules.animation_sequence_in_category(
+                            entity.category().into(),
+                            &body_key.type_id,
+                        )
+                    })
+                    .and_then(|set| set.shp_vehicle_turret())
+            {
+                let turret_key = ShpSpriteKey {
+                    frame: shp_turret_frame(turret, render_pose.turret),
+                    ..body_key.clone()
+                };
+                if let Some(turret_entry) = atlas.get(&turret_key) {
+                    pieces.push(ObjectPieceInstance {
+                        target: ObjectTexture::ShpPage(turret_entry.page as usize),
+                        render_z: parent.policy.render_z,
+                        instance: SpriteInstance {
+                            position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
+                            size: turret_entry.pixel_size,
+                            uv_origin: turret_entry.uv_origin,
+                            uv_size: turret_entry.uv_size,
+                            source_palette: turret_entry.source_palette,
+                            depth,
+                            tint: body_tint,
+                            palette_light: palette_light.with_colour_word(
+                                if parent.policy.ors_colour_word(turret_entry.extended) {
+                                    colour_word
+                                } else {
+                                    0
+                                },
+                            ),
+                            alpha: 1.0,
+                            draw_state,
+                            z_adjust,
+                            z_gradient,
+                            zshape_origin,
+                        },
+                    });
+                }
             }
             ground_objects.push(PlannedObjectInstance::object(parent, pieces));
         }
@@ -1544,8 +1615,8 @@ fn emit_building_bib(
 /// The existing slot palette/frame/light owner is shared by every building.
 ///
 /// `camera` and `projection_viewport` are the Display traversal's; only the
-/// slots its encounter can consume ([`super::overlays::slot_anim_admissible`])
-/// are prepared, and a building with none is skipped before its own work.
+/// slots its encounter can consume ([`admitted_slot_anims`]) are prepared,
+/// and a building with none is skipped before its own work.
 /// How far, in pixels, a building's slot Anim or saved picture may reach from
 /// its cell anchor and still be culled with it: past the largest building art
 /// and Anim offsets by a wide margin (about 25 cells across).
@@ -1613,34 +1684,24 @@ pub(crate) fn build_building_anim_instances(
         state.render_width() as f32 / zoom,
         state.render_height() as f32 / zoom,
     ];
-    let slot_admitted =
-        |anim| super::overlays::slot_anim_admissible(sim, frame, anim, camera, projection_viewport);
+    let admitted_slots =
+        |building| admitted_slot_anims(sim, frame, building, camera, projection_viewport);
     // A slot Anim stands on or beside its building, so a building far off
     // the view has none to admit: its cell passes it by before any slot is
     // projected. The window is the slot admission's box
     // (`helpers::projection_admitted`) widened by the slack.
     let slot_window = building_slot_window(sim.resolved_terrain(), camera, projection_viewport);
-    for building in frame
-        .objects()
-        .filter(|object| object.category() == EntityCategory::Structure)
-    {
-        let admits_a_slot = || {
-            !slot_anims_hidden_by_sale(building)
-                && building
-                    .building_art
-                    .anim_slots()
-                    .iter()
-                    .flatten()
-                    .any(|&anim| slot_admitted(anim))
-        };
+    let mut anim_types = super::overlays::AnimTypeArts::new(rules, atlas);
+    for building in frame.structures() {
         if !slot_window.contains(building.position.rx(), building.position.ry()) {
             debug_assert!(
-                !admits_a_slot(),
+                admitted_slots(building).iter().all(Option::is_none),
                 "the slot window left out a building with a slot Anim in view"
             );
             continue;
         }
-        if !admits_a_slot() {
+        let slot_anims = admitted_slots(building);
+        if slot_anims.iter().all(Option::is_none) {
             continue;
         }
         let owner = sim.interner().resolve(building.owner());
@@ -1696,7 +1757,8 @@ pub(crate) fn build_building_anim_instances(
             frame,
             local_owner_id,
             building,
-            &slot_admitted,
+            &slot_anims,
+            &mut anim_types,
             &|id| anim_colour_word(state, sim, frame, cells.as_ref(), &shrouded, id),
             axis.origin_y,
             axis.world_height,
@@ -1734,6 +1796,38 @@ fn slot_anims_hidden_by_sale(building: &crate::app::presentation::frame::ObjectR
     building.building_down() && building.in_construction_bstate()
 }
 
+/// Building `building`'s slot Anims whose Display encounter can reach a
+/// prepared parent ([`super::overlays::admitted_slot_anim`]), by slot; none
+/// while a sale hides them.
+fn admitted_slot_anims<'a>(
+    sim: &'a crate::sim::world::Simulation,
+    frame: &crate::app::presentation::frame::PresentationFrame,
+    building: &crate::app::presentation::frame::ObjectRecord,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> [Option<&'a crate::sim::anim_class::AnimObject>; 21] {
+    if slot_anims_hidden_by_sale(building) {
+        return [None; 21];
+    }
+    building.building_art.anim_slots().map(|slot| {
+        slot.and_then(|anim| {
+            super::overlays::admitted_slot_anim(sim, frame, anim, camera, viewport)
+        })
+    })
+}
+
+/// Every one of `building`'s slot Anims, admitted or not.
+#[cfg(test)]
+fn every_slot_anim<'a>(
+    sim: &'a crate::sim::world::Simulation,
+    building: &crate::app::presentation::frame::ObjectRecord,
+) -> [Option<&'a crate::sim::anim_class::AnimObject>; 21] {
+    building
+        .building_art
+        .anim_slots()
+        .map(|slot| slot.and_then(|anim| sim.anim(anim)))
+}
+
 fn emit_building_anims(
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
@@ -1750,7 +1844,8 @@ fn emit_building_anims(
     presented: &crate::app::presentation::frame::PresentationFrame,
     local_owner_id: Option<crate::sim::intern::InternedId>,
     building: &crate::app::presentation::frame::ObjectRecord,
-    slot_admitted: &dyn Fn(u64) -> bool,
+    slot_anims: &[Option<&crate::sim::anim_class::AnimObject>; 21],
+    anim_types: &mut super::overlays::AnimTypeArts<'_>,
     anim_word: &dyn Fn(u64) -> u16,
     origin_y: f32,
     world_height: f32,
@@ -1775,13 +1870,10 @@ fn emit_building_anims(
         .map(|anim| anim.native_slot)
         .chain(std::iter::once(9))
     {
-        let Some(anim_id) = building.building_art.anim_slots()[usize::from(slot)] else {
-            continue;
-        };
-        if !slot_admitted(anim_id) {
-            continue;
-        }
-        let Some(instance) = sim.anim(anim_id) else {
+        let slot = usize::from(slot);
+        let (Some(anim_id), Some(instance)) =
+            (building.building_art.anim_slots()[slot], slot_anims[slot])
+        else {
             continue;
         };
         let Some(parent) = order.object_draw(anim_id, SpriteEncoding::Plain) else {
@@ -1793,7 +1885,8 @@ fn emit_building_anims(
             continue;
         }
         let anim_name = sim.interner().resolve(instance.type_id());
-        let Some(runtime_config) = art_reg.anim_runtime_config(anim_name) else {
+        let art = anim_types.of(instance.type_id(), anim_name);
+        let Some(runtime_config) = art.config else {
             continue;
         };
         if !runtime_config.art_body_read && runtime_config.raw_shp_frame_count.is_none() {
@@ -1810,13 +1903,7 @@ fn emit_building_anims(
             Some(runtime_config),
             instance.draw_flags(),
             instance.runtime().current_frame,
-            i32::from(
-                super::overlays::presentation_anim_frame_count(
-                    &atlas.active_anim_frame_counts,
-                    anim_name,
-                )
-                .unwrap_or(0),
-            ),
+            i32::from(art.frame_count.unwrap_or(0)),
             detail_level,
             draw_runtime,
         ) else {
@@ -2172,15 +2259,22 @@ fn resolve_object_shp_frame_with_facing(
     // Pass raw facing (not canonical) to resolve_shp_frame so the
     // facing-to-index division works correctly for any facing count
     // (6, 8, 10, etc.). The absolute frame index encodes the direction.
+    let interner = runtime.map(|runtime| runtime.simulation.interner());
     let type_id = if entity.category() == EntityCategory::Unit {
-        runtime.map_or(type_id, |runtime| {
-            runtime.simulation.interner().resolve(entity.type_ref())
-        })
+        interner.map_or(type_id, |interner| interner.resolve(entity.type_ref()))
     } else {
         type_id
     };
-    let sequence_set = rules
-        .and_then(|rules| rules.animation_sequence_in_category(entity.category().into(), type_id));
+    // The drawn type is mostly the object's own, found by its id; a
+    // disguise or art substitute is found by name.
+    let category = entity.category().into();
+    let own_type = interner.filter(|interner| interner.resolve(entity.type_ref()) == type_id);
+    let sequence_set = rules.and_then(|rules| match own_type {
+        Some(interner) => {
+            interner.animation_sequence_in_category(entity.type_ref(), category, rules)
+        }
+        None => rules.animation_sequence_in_category(category, type_id),
+    });
     if entity.category() == EntityCategory::Unit
         && entity.animation.as_ref().is_none_or(|anim_state| {
             matches!(
@@ -2261,6 +2355,29 @@ fn resolve_object_shp_frame_with_facing(
 
 #[cfg(test)]
 mod tests {
+    /// `0x0073CCF4` draws the frame four steps past the heading's bucket and
+    /// wraps inside the ring.
+    #[test]
+    fn an_shp_unit_turret_draws_four_frames_clockwise_of_its_bucket() {
+        use crate::rules::animation_sequence::ShpVehicleTurret;
+        use crate::rules::art_data::SHP_TURRET_FACING_FRAMES;
+        let turret = ShpVehicleTurret {
+            start_frame: 176,
+            facings: SHP_TURRET_FACING_FRAMES,
+        };
+        assert_eq!(super::shp_turret_frame(turret, 0), 180, "heading 0");
+        assert_eq!(
+            super::shp_turret_frame(turret, 128 * 256),
+            196,
+            "heading 180"
+        );
+        assert_eq!(
+            super::shp_turret_frame(turret, 248 * 256),
+            179,
+            "the last bucket wraps to the ring's fourth frame"
+        );
+    }
+
     /// A building is passed by only when its cell is past the slot
     /// admission's box and the slack: one whose anchor sits 1,050 px left
     /// of the view may still hold a slot Anim the admission passes.

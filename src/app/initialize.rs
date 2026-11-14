@@ -1122,12 +1122,14 @@ impl App {
                     surface_palette: Default::default(),
                     sprite_atlas: None,
                     atlas_growth: Default::default(),
+                    atlas_check: Default::default(),
                     atlas_refresh_owed: false,
                     overlay_atlas: None,
                     bridge_atlas: None,
                     sidebar_cameo_atlas: None,
                     sidebar_chrome: None,
                     outcome_banner_side_art: None,
+                    ares_status_texts: None,
                     end_game_banner: None,
                     software_cursor: startup_software_cursor,
                 },
@@ -1348,7 +1350,6 @@ impl App {
                     && let Some(session) =
                         quickplay_launch_session(quickplay, &state.frontend.skirmish_modes)
                 {
-                    #[cfg(feature = "ares")]
                     crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
                         &mut state.process_assets,
                         &session,
