@@ -284,6 +284,7 @@ impl<'a> FireSubject<'a> {
                     != crate::sim::timer::PAUSED_START_FRAME
                 && firer.ares.ares_disable_weapons.remaining(frame as i32) > 0,
             emp_remaining: firer.emp_remaining(),
+            death_frame_counter: firer.unit_death_counter.get(),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))

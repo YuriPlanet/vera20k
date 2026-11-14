@@ -922,6 +922,12 @@ fn techno_ai_shell(
     if temporal_frozen {
         return;
     }
+    // Unit73635B..7363A3: the art `DeathFrames=` count, which may end it.
+    if category == EntityCategory::Unit
+        && sim.unit_death_count(id, rules, ctx.overlay_registry, ctx.effects)
+    {
+        return;
+    }
     // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
     // Tube, death and Temporal entry gates. Limboed Units have no Logic visit.
     if category == EntityCategory::Unit

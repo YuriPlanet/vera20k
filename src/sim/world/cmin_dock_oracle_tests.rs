@@ -49,9 +49,7 @@ use serde_json::Value;
 /// Rows whose native prestate or path VERA does not represent:
 /// - `lifted_2b0`: +0x2B0 (a lifted owner) has no Rust producer and reads
 ///   clear.
-/// - `move_to_guard_deploying`: Move_To's `vt+0x37C` (the EMP lock or the
-///   Unit death-frame counter +0x6D8), unrepresented as for the Drive.
-const UNREPRESENTED: [&str; 2] = ["lifted_2b0", "move_to_guard_deploying"];
+const UNREPRESENTED: [&str; 1] = ["lifted_2b0"];
 
 pub(super) const CMIN: &str = "[CMIN]\nStrength=400\nSpeed=4\nROT=5\nHarvester=yes\nTeleporter=yes\n\
     Dock=GAREFN\nStorage=20\nMovementZone=Crusher\nUnloadingClass=CMON\n\
@@ -228,6 +226,9 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
     entity
         .lift
         .set_swap_active_for_test(input["swap_6ad"] == true);
+    if let Some(counter) = input["deploy_6d8"].as_i64() {
+        entity.unit_death_counter.set_for_test(counter as i32);
+    }
     if input["locked"] == true {
         entity
             .parasite

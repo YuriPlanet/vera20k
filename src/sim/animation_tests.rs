@@ -431,7 +431,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, false, false),
+        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, -1, false, false),
         Some(7),
         "idle Dolphin uses walk/swim slot 1 and counter 7 % 6"
     );
@@ -445,23 +445,47 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, false, false),
+        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, -1, false, false),
         Some(23),
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
     let dron = gsi_13_06_shp_set(6, 48, FootBodyCadence::native_defaults());
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, false, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, -1, false, false),
         Some(49),
         "idle Terror Drone with IdleRate=0 uses standing slot 1"
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, true, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, -1, true, false),
         Some(7),
         "moving Terror Drone uses counter 7 % 6"
     );
 }
+
+/// Unit73C6AD..73C6D3: a still body with a running death counter draws
+/// StartDeathFrame plus the counter over DeathFrameRate, held on the last of
+/// DeathFrames; a moving body keeps walking.
+#[test]
+fn a_counting_shp_unit_draws_its_death_frames_when_still() {
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=DTH\n[DTH]\nStrength=100\n",
+        ),
+        &crate::rules::ini_parser::IniFile::from_str(ART_DTH),
+    )
+    .unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(ART_DTH),
+    ));
+    let set = rules.animation_sequence("DTH").expect("SHP unit layout");
+    let frame = |death, moving| resolve_shp_vehicle_body_frame(set, 0, 4, -1, death, moving, false);
+    assert_eq!(frame(3, false), Some(41));
+    assert_eq!(frame(9, false), Some(42), "held on the last death frame");
+    assert_eq!(frame(3, true), frame(-1, true), "a moving body walks");
+}
+
+const ART_DTH: &str = "[DTH]\nWalkFrames=6\nDeathFrames=3\nDeathFrameRate=2\nStartDeathFrame=40\n";
 
 #[test]
 fn retail_drone_firing_counter_and_frames_match_original() {
@@ -508,7 +532,7 @@ fn retail_drone_firing_counter_and_frames_match_original() {
         .enumerate()
     {
         assert_eq!(
-            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, false, false),
+            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, -1, false, false),
             Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
             "native DRON first firing image, facing {facing}"
         );
@@ -517,7 +541,7 @@ fn retail_drone_firing_counter_and_frames_match_original() {
         let facing = u8::try_from(row["facing"].as_u64().unwrap()).unwrap();
         for (step, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
             assert_eq!(
-                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, true, false),
+                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, -1, true, false),
                 Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
                 "firing precedes moving body: facing {facing}, step {step}"
             );

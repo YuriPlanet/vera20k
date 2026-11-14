@@ -821,7 +821,8 @@ fn drive_set_destination(
 ) -> bool {
     // Drive4AFD5E calls FootIsParalyzed4DE770 before destination/map access,
     // including a zero Move_To. Refusal retains Foot's NavCom/timer writes.
-    // Owner warp bytes follow at4AFD71/80; EMP/Unit+6D8 is still unported.
+    // Owner warp bytes follow at4AFD71/80; vt+0x37C (4AFD4B, EMP or a Unit's
+    // death counter) is still unported, as for Process_Movement (track_fresh).
     // Original whole-call comparisons: tools/spatial_oracle/track_destination.
     if entity.parasite.is_paralyzed(binary_frame)
         || super::locomotor_owner::owner_is_warping(entity)

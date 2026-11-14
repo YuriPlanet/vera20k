@@ -27,6 +27,14 @@ impl GameEntity {
     pub fn emp_remaining(&self) -> i32 {
         self.emp.remaining
     }
+    /// vt+0x37C IsUnderEMP: Techno `0x0070EFD0` reads `+0x504 > 0`, and the
+    /// Unit override `0x00746C90` also answers yes while the Unit's death
+    /// counter (`+0x6D8`) runs.
+    pub fn is_under_emp(&self) -> bool {
+        self.emp.remaining > 0
+            || (self.category() == crate::map::entities::EntityCategory::Unit
+                && self.unit_death_counter.running())
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_emp_remaining_for_test(&mut self, remaining: i32) {
         self.emp.remaining = remaining;
@@ -2408,18 +2416,11 @@ mod receiver {
             };
             let native = crate::test_fixture::json("tools/mcv_deploy_oracle.json");
             for row in native["deploy_admission"].as_array().unwrap() {
-                // Unit DeathFrame's independent virtual override is not a
-                // represented runtime state of this ordinary live MCV fixture.
-                if int(&row["death_frame"]) != -1 {
-                    continue;
-                }
                 let (mut sim, rules, target, _) = mcv_emp_scene();
-                sim.substrate
-                    .entities
-                    .get_mut(target)
-                    .unwrap()
-                    .emp
-                    .remaining = int(&row["emp_counter"]);
+                let unit = sim.substrate.entities.get_mut(target).unwrap();
+                unit.emp.remaining = int(&row["emp_counter"]);
+                unit.unit_death_counter
+                    .set_for_test(int(&row["death_frame"]));
                 assert_eq!(
                     sim.can_deploy_slash_unload(target, &rules),
                     row["result"]["allowed"].as_bool().unwrap(),

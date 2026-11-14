@@ -25,9 +25,12 @@
 //! RESIDUAL rows: each is ported and fires on its field, but VERA has no
 //! producer for that field yet, so it holds the constructor value:
 //! - T20: EMP. Only the Ares EMP chain writes it; without Ares it holds 0.
-//! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
+//! - Dormant in retail: T44 (FiringSyncFrame),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy),
 //!   B3 (`EMPulseCannon=`, read live; no retail building sets it).
+//!
+//! U1 and T20's Unit arm read the live death counter (`+0x6D8`), which only
+//! an art `DeathFrames=` type starts; no retail type sets it.
 //! - B7: Building HasTurret (`0x004527D0`), read through the installed-type owner.
 //! - A1: a paradrop plane's payload (`+0x6C9`, `paradrop_payload`).
 //!

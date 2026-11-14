@@ -29,6 +29,7 @@ mod building_upgrade_art;
 mod camera_home;
 mod cell_content;
 mod crash;
+mod death_frames;
 mod disk_laser;
 pub use disk_laser::DiskLaserObservation;
 #[cfg(test)]

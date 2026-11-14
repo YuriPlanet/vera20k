@@ -286,9 +286,9 @@ impl Simulation {
     /// `vt+0x310` (`0x00700D10`), the deploy key's other test, refuses only a
     /// Unit in a tube or under EMP, which this already refuses.
     ///
-    /// The feature-gated Ares producer reaches the existing Unit EMP refusal.
-    /// Aircraft EMP and Unit DeathFrame's separate virtual override remain
-    /// outside the ordinary live ground-victim chain.
+    /// A Unit is refused under vt+0x37C (`GameEntity::is_under_emp`): EMP or
+    /// its running `DeathFrames=` counter. Aircraft EMP remains outside the
+    /// ordinary live ground-victim chain.
     pub fn can_deploy_slash_unload(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -306,16 +306,17 @@ impl Simulation {
         match entity.category() {
             EntityCategory::Unit => {
                 //700E47..700E53 invokes Unit746C90 -> Techno70EFD0 before
-                // admission. For the live Drive victim, positive+504 vetoes
-                // both AI Hunt deploy and Guard→Unload through this owner.
-                // Active-retail EMP producer reachability is not established;
-                // default builds retain their current constructor-zero path.
+                // admission (tools/mcv_deploy_oracle.json). For the live
+                // Drive victim it vetoes both AI Hunt deploy and Guard→Unload
+                // through this owner.
+                if entity.is_under_emp() {
+                    return false;
+                }
                 // Ares 3.0 TechnoClass_CanDeploySlashUnload_Immobile
                 // (1005D1C0, hook 0x700E47) also refuses a falling or
-                // warping-in unit, falling first.
+                // warping-in unit.
                 #[cfg(feature = "ares")]
-                if entity.is_falling_down() || entity.emp_remaining() > 0 || entity.is_warping_in()
-                {
+                if entity.is_falling_down() || entity.is_warping_in() {
                     return false;
                 }
                 if entity.low_bridge_tube_state.is_some() {

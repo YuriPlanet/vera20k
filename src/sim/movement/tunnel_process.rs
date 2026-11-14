@@ -15,9 +15,6 @@
 //! never runs.
 //!
 //! Residuals:
-//! - Move_To asks the owner's vt+0x37C, Unit `0x00746C90`: the EMP counter
-//!   (Techno `+0x504`) or the Unit's death-frame counter (`+0x6D8`). VERA has
-//!   no producer of the second, so only the EMP counter refuses.
 //! - Move_To's type adjustment is UnitType's (`0x00747EB0`, the Z raised to
 //!   the ground). The Foot setter reaches this Move_To only for a Unit; an
 //!   Infantry Tunnel owner (InfantryType `0x005247D0`) has no represented
@@ -231,7 +228,7 @@ impl Simulation {
             return;
         };
         if self.tunnel_runtime(id).is_none()
-            || actor.emp_remaining() > 0
+            || actor.is_under_emp()
             || actor.parasite.is_paralyzed(frame)
             || actor.is_warped_out()
             || actor.is_warping_in()

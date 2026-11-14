@@ -41,9 +41,10 @@
 //!     `world::sinking` retains Health 1/Alive/+3CD through its second Stun,
 //!     then the receiver unmarks the cell. Unit AI lowers the retained hull
 //!     and finally calls RecordKill/UnInit; cell removal is immediate in both.
-//!   - `DeathFrames=` (`+0xE20` > 0) defers the explosion to `UnitClass::AI`
-//!     (`0x00736381`) when the death frames end. No stock type sets it and
-//!     VERA does not parse it.
+//!   - Art `DeathFrames=` (`+0xE20` > 0) skips them all (`0x00737DDD`): the
+//!     receiver UnInits the unit, or a `Crashable=` one crashes and
+//!     `UnitClass::AI` calls `Death_Explosion` when its death count ends
+//!     (`0x00736381`, `world::death_frames`). No stock type sets it.
 //! - A `Crashable=` (`+0xD95`) unit's crash impact calls `Death_Explosion`
 //!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
 //!   receiver transaction: [`Simulation::unit_death_explosion`] builds
@@ -51,8 +52,6 @@
 //! - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` = `0x00746D60`)
 //!   calls it too, from `Simulation::per_cell_process`: the Battle Fortress,
 //!   stock's only `OmniCrusher=`, crushing a vehicle.
-//! - The `DeathFrames=` completion (`0x00736381`), dead on stock, is not
-//!   wired.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
 //!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
 //!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
