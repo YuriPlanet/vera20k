@@ -22,16 +22,13 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_options::GameOptions;
 use crate::sim::intern::InternedId;
-#[cfg(feature = "ares")]
-use crate::sim::world::FrameEffects;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// `evamd.ini` section played at `0x004F8BA0`.
 pub const EVA_INSUFFICIENT_FUNDS: &str = "EVA_InsufficientFunds";
 /// `evamd.ini` section played at `0x004F8D14`.
 pub const EVA_LOW_POWER: &str = "EVA_LowPower";
 /// Ares `HouseClass_Update_SilosNeededEVA @ 10024AE0` (hook `0x4F8C23`).
-#[cfg(feature = "ares")]
 pub const EVA_SILOS_NEEDED: &str = "EVA_SilosNeeded";
 
 /// `0x004F8B6F CMP EAX,0x64`: the nag runs while available money is below
@@ -63,10 +60,11 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    #[cfg(feature = "ares")]
-    let entries = rules.build_const_types.len();
-    #[cfg(not(feature = "ares"))]
-    let entries = 3;
+    let entries = if rules.ares_form() {
+        rules.build_const_types.len()
+    } else {
+        3
+    };
     rules.build_const_types.iter().take(entries).any(|name| {
         sim.interner.get(name).is_some_and(|type_id| {
             house
@@ -80,6 +78,7 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 /// Advice inside the reached House body, after team creation and before
 /// defeat. The deterministic per-human projection is documented above.
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    let ares = rules.ares_form();
     let now = sim.session.binary_frame() as i32;
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     let delay = speak_delay_frames(rules, sim.session.game_options());
@@ -93,10 +92,11 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     let factories = house.tracking().funds_nag_factories();
     // `0x004F8BFF..0x004F8C21`: capacity `+0x310` and `ftol(+0x2FC total)`.
     let capacity = house.tracking().storage_capacity();
-    #[cfg(feature = "ares")]
-    let stored = house.economy().ares_storage().house_store().total_amount();
-    #[cfg(not(feature = "ares"))]
-    let stored = 0;
+    let stored = if ares {
+        house.economy().ares_storage().house_store().total_amount()
+    } else {
+        0
+    };
     let mut timer = *house.eva_funds_timer();
     let mut guard = house.eva_low_power_guard();
 
@@ -123,16 +123,17 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // minus `ftol(+0x2FC)` below 30, capacity above 50) re-arms it without a
     // line. The store stays empty in YR (`crate::sim::economy`), so capacity
     // would have to be both below 30 and above 50: it never re-arms.
-    // Ares builds fill the store (`sim::ares_tiberium_storage`), and Ares
+    // When Ares plays the store fills (`sim::ares_tiberium_storage`), and Ares
     // 3.0 HouseClass_Update_SilosNeededEVA (10024AE0, hook 0x4F8C23) speaks
     // `EVA_SilosNeeded` before the re-arm. RESIDUAL (client): it also prints
     // `[General] Message.SilosNeeded` for MessageDelay in the House's colour.
     if timer.expired(now) && capacity.wrapping_sub(stored) < 30 && capacity > 50 {
-        #[cfg(feature = "ares")]
-        sim.sound_events.emit(SimSoundEvent::HouseEva {
-            owner,
-            event: EVA_SILOS_NEEDED,
-        });
+        if ares {
+            sim.sound_events.emit(SimSoundEvent::HouseEva {
+                owner,
+                event: EVA_SILOS_NEEDED,
+            });
+        }
         timer.start(now, delay);
     }
 
@@ -149,8 +150,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     // drops the House's firestorm when it is short (SetFirestormState
     // false). Native runs it for the local player's House only; VERA for
     // each human-controlled one, as this whole body.
-    #[cfg(feature = "ares")]
-    if short {
+    if ares && short {
         sim.ares_set_firestorm_state(owner, false, rules, None, FrameEffects::default());
     }
     if !short {
@@ -446,10 +446,10 @@ mod tests {
     /// silo bank within 30 of its capacity (above 50) speaks
     /// `EVA_SilosNeeded` once the speak timer expires, then re-arms it; 40
     /// short stays silent.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_silo_nag_speaks_when_storage_is_nearly_full() {
         use crate::util::native_x87::NativeF32Bits;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = rules();
         let (mut sim, owner) = sim_with_house(5_000, true);
         structure(&mut sim, &rules, "GASILO", 3);

@@ -2735,18 +2735,19 @@ fn finish_concrete_death(
     // Ares TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020, hook
     // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
     // FootClass_Destroyed (10049080) and BuildingClass_Destroyed_UnitLost
-    // (10013F10) then stay silent.
-    // Still on the feature: it moves with the unit-lost event, whose Ares
-    // fields (`UnitLostEvent`, `SimSoundEvent::UnitLost`) the app reads.
-    #[cfg(feature = "ares")]
-    let unit_lost_suppressed = damage_events
-        .iter()
-        .rfind(|event| event.target_id == dead_id)
-        .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
-        .and_then(WarheadType::ares_combat)
-        .is_some_and(|combat| combat.unit_lost_suppress());
-    #[cfg(not(feature = "ares"))]
-    let unit_lost_suppressed = false;
+    // (10013F10) then stay silent. The unit-lost announcement takes its Ares
+    // form when the Rules were read the Ares way.
+    let ares_form = rules.ares_form();
+    let unit_lost_suppressed = if ares_form {
+        damage_events
+            .iter()
+            .rfind(|event| event.target_id == dead_id)
+            .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
+            .and_then(WarheadType::ares_combat)
+            .is_some_and(|combat| combat.unit_lost_suppress())
+    } else {
+        false
+    };
     if let Some(obj) = world.interner.object_type(type_id, rules) {
         // `TechnoClass::Death_Announcement @ 0x004D98C0` runs at the
         // Aircraft/Infantry/Unit `ReceiveDamage` kill sites (vtable
@@ -2755,7 +2756,8 @@ fn finish_concrete_death(
         // (`0x0050B6F0`) and the `CreateRadarEvent(7)` dedupe (`0x004D98FE`)
         // need the house table and radar queue, which the world owns.
         if !unit_lost_suppressed
-            && let Some(event) = death_announcement_event(obj, type_id, category, rx, ry, owner)
+            && let Some(event) =
+                death_announcement_event(obj, type_id, category, rx, ry, owner, ares_form)
         {
             effects.unit_lost_events.push(event);
         }
@@ -3127,9 +3129,7 @@ fn finish_concrete_death(
                 // Ares 3.0 10014520 (hook 0x44266B): after DestructionEffects
                 // the building runs Destroyed(Attacker) (vt+0x3B8, Death_
                 // Announcement 0x0044D760), which stock ReceiveDamage skips.
-                // Still on the feature with the unit-lost event above.
-                #[cfg(feature = "ares")]
-                {
+                if ares_form {
                     let attacker = killing_attacker(world, damage_events, dead_id);
                     world.building_death_announcement(
                         dead_id,
@@ -3756,6 +3756,7 @@ fn ares_damage_occupants(
                 entity.position.rx(),
                 entity.position.ry(),
                 entity.owner(),
+                rules.ares_form(),
             )
         }) {
             world.dispatch_unit_lost_events(&[event]);

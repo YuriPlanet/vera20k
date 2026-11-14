@@ -2827,9 +2827,9 @@ mod tests {
         };
         let grid = &mut sim.substrate.hidden_occupation;
         if enter {
-            grid.enter_building(cell, &"1x1".into(), profile, Some((32, 32)));
+            grid.enter_building(cell, &"1x1".into(), profile, Some((32, 32)), false);
         } else {
-            grid.exit_building(cell, &"1x1".into(), profile, Some((32, 32)));
+            grid.exit_building(cell, &"1x1".into(), profile, Some((32, 32)), false);
         }
     }
 
@@ -4993,8 +4993,8 @@ mod tests {
                 .set_for_test(Some(TargetKind::Entity(2)));
             sim
         };
-        #[cfg(not(feature = "ares"))]
-        {
+        // The step itself, which the visit runs only without Ares.
+        if !RuleSet::empty_for_test().ares() {
             let kept = |altitude: i32| {
                 let mut sim = pair(altitude);
                 let dropped = drop_airborne_target_step(

@@ -977,7 +977,8 @@ fn a_fourth_infantryman_at_a_full_cells_centre_mutates() {
         &sim.resolved_terrain,
         fourth,
         DriveCoord { x, y, z: 0 },
-        false
+        false,
+        rules.ares_form()
     ));
     let occupancy = &mut sim.substrate.occupancy;
     occupancy.move_entity(
@@ -1019,7 +1020,8 @@ fn a_fourth_infantryman_at_a_full_cells_centre_mutates() {
         &sim.resolved_terrain,
         fourth,
         centre,
-        true
+        true,
+        rules.ares_form()
     ));
     let listed: Vec<u64> = sim
         .substrate

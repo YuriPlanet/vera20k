@@ -73,7 +73,6 @@ pub enum CarryallTote {
     /// 0: the arrow, and a click that orders nothing.
     Nothing,
     /// Ares: the base action, without its cell rung.
-    #[cfg(feature = "ares")]
     Kept,
 }
 
@@ -284,8 +283,7 @@ impl Simulation {
         {
             return None;
         }
-        #[cfg(feature = "ares")]
-        if !self.ares_carryall_can_lift(aircraft, target, rules) {
+        if rules.ares_form() && !self.ares_carryall_can_lift(aircraft, target, rules) {
             return Some(CarryallTote::Kept);
         }
         let factory = self
@@ -310,7 +308,6 @@ impl Simulation {
     /// neither `Organic=` (`+0xD97`) nor `NonVehicle=` (`+0xE1B`); and with
     /// the Carryall's `Carryall.SizeLimit` (+0x2FC) set and not negative, the
     /// target's `Size=` (`+0x380`, a double) not above it.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_carryall_can_lift(
         &self,
         aircraft: u64,
@@ -396,12 +393,9 @@ impl Simulation {
         // Ares 3.0 AircraftClass_Mi_MoveCarryall_CanTote (10048B00, hook
         // 0x416E37): a Unit it cannot lift is flown to without the radio
         // exchange (0x416EC9).
-        #[cfg(feature = "ares")]
-        if !self.ares_carryall_can_lift(aircraft, target, rules) {
+        if rules.ares_form() && !self.ares_carryall_can_lift(aircraft, target, rules) {
             return None;
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = rules;
         Some(target)
     }
 
@@ -538,16 +532,18 @@ impl Simulation {
         }
         let requested = carrier.position.at_location_with_level(coord);
         let frame = self.session.binary_frame();
+        let ares = rules.ares_form();
         // Ares 3.0 AircraftClass_Carryall_Unload_Facing (10048920, hook
         // 0x416C3A) Unlimbos the cargo facing the Carryall's turret (its
         // vt+0x2A8, SecondaryFacing's current value, `0x0041C1E0`) to the
         // nearest 1/256 turn, where stock gamemd passes 0.
-        #[cfg(feature = "ares")]
-        let facing = carrier
-            .barrel_facing
-            .map_or(0, |turret| (((turret.current(frame) >> 7) + 1) >> 1) as u8);
-        #[cfg(not(feature = "ares"))]
-        let facing = 0;
+        let facing = if ares {
+            carrier
+                .barrel_facing
+                .map_or(0, |turret| (((turret.current(frame) >> 7) + 1) >> 1) as u8)
+        } else {
+            0
+        };
         let mut dropped = None;
         let _ = depart_cargo_head(
             self,
@@ -592,8 +588,7 @@ impl Simulation {
                 // 10048920's success arm: the rates the AI copy brought from
                 // the Carryall go back to the cargo type's `ROT=` and
                 // `TurretROT=` (else `ROT=`).
-                #[cfg(feature = "ares")]
-                if let Some(entity) = sim.substrate.entities.get_mut(cargo) {
+                if ares && let Some(entity) = sim.substrate.entities.get_mut(cargo) {
                     entity.body_facing.set_rot(object.turret_rot);
                     if let Some(turret) = entity.barrel_facing.as_mut() {
                         turret.set_rot(object.secondary_turn_rate());
@@ -608,8 +603,9 @@ impl Simulation {
             // Ares 3.0 AircraftClass_Carryall_Unload_DestroyCargo (100488C0,
             // hook 0x416C4D) destroys a cargo the ground refused, and the
             // Carryall, each with `C4Warhead=` for its Health.
-            #[cfg(feature = "ares")]
-            self.ares_destroy_refused_carryall(aircraft, rules, registry, effects);
+            if ares {
+                self.ares_destroy_refused_carryall(aircraft, rules, registry, effects);
+            }
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(cargo) {
@@ -619,8 +615,7 @@ impl Simulation {
         // Ares 3.0 AircraftClass_Carryall_Unload_UpdateCargo (10048A10, hook
         // 0x416C94): the cargo's UpdatePosition(2) (vt+0x18C, its arrival
         // Per_Cell_Process), then a Deactivated one powers its locomotor off.
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             if let Err(cause) = self.per_cell_process(
                 cargo,
                 crate::sim::movement::PerCellReason::Arrival,
@@ -668,8 +663,7 @@ impl Simulation {
         // Ares 3.0 AircraftClass_Carryall_Unload_Guard (100489D0, hook
         // 0x416CF4): the cargo's Transporter (`+0x11C`) cleared, Guard queued
         // to start (vt+0x1E8(5, 1)) and its team takes it again.
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             if let Some(entity) = self.substrate.entities.get_mut(cargo) {
                 entity.passenger_role.clear_transporter();
             }
@@ -700,7 +694,6 @@ impl Simulation {
     /// death animation or survivors. The damage receiver is not established
     /// for a Limbo victim. Trigger: an Ares Carryall dropping its cargo where
     /// the cargo cannot stand (a deep-water cell, a building).
-    #[cfg(feature = "ares")]
     fn ares_destroy_refused_carryall(
         &mut self,
         aircraft: u64,

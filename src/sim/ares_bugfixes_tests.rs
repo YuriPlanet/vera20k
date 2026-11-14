@@ -104,12 +104,13 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, rx: u16
 /// an aircraft's `Cloakable=` seed their stealth ability as a unit's does.
 #[test]
 fn a_cloakable_building_or_aircraft_type_seeds_its_stealth() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let seeds = |category, kind: &str| {
         crate::sim::cloak_disguise::type_seeds_stealth(
             category,
             rules.object(kind).unwrap(),
-            crate::rules::ARES_BUILD,
+            rules.ares(),
         )
     };
     assert!(seeds(EntityCategory::Structure, "CLKB"));
@@ -122,6 +123,7 @@ fn a_cloakable_building_or_aircraft_type_seeds_its_stealth() {
 /// of left in limbo for the next try.
 #[test]
 fn a_refused_make_infantry_anim_ends_with_its_infantryman() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut rules = rules();
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
         "[GENDEATH]\nRate=900\nMakeInfantry=0\n",
@@ -168,6 +170,7 @@ fn a_refused_make_infantry_anim_ends_with_its_infantryman() {
 /// out after nine more picks each, where the original picks forever.
 #[test]
 fn a_sale_that_only_picks_engineers_lets_one_out() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x44A5F0);
     let shed = spawn(&mut sim, &rules, "SHED", "Russians", 10, 10);
@@ -196,6 +199,7 @@ fn a_sale_that_only_picks_engineers_lets_one_out() {
 /// survivors are out the building has none left for a death in the pack-up.
 #[test]
 fn a_sale_past_its_survivors_leaves_none_for_its_death() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x44A8A2);
     let shed = spawn(&mut sim, &rules, "SHED", "Russians", 10, 10);
@@ -218,12 +222,13 @@ fn a_sale_past_its_survivors_leaves_none_for_its_death() {
 /// ElectricAssault shot charges an Overpowerable building too.
 #[test]
 fn a_vehicle_charges_a_coil() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4693B0);
     let coil = spawn(&mut sim, &rules, "COIL", "Russians", 10, 10);
     let tank = spawn(&mut sim, &rules, "TANK", "Russians", 13, 10);
     sim.substrate
-        .electric_assault_detonation(tank, Some(coil), crate::rules::ARES_BUILD);
+        .electric_assault_detonation(tank, Some(coil), rules.ares());
     assert_eq!(
         sim.substrate
             .entities
@@ -240,6 +245,7 @@ fn a_vehicle_charges_a_coil() {
 /// already on Selling with no archive keeps none.
 #[test]
 fn a_selling_building_takes_no_new_archive() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6DDB);
     let shed = spawn(&mut sim, &rules, "SHED", "Americans", 10, 10);
@@ -266,6 +272,7 @@ fn a_selling_building_takes_no_new_archive() {
 /// eating a Foot takes the Foot's new Location.
 #[test]
 fn a_parasite_moves_with_its_victim() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4DB87E);
     let victim = spawn(&mut sim, &rules, "TANK", "Americans", 10, 10);
@@ -299,6 +306,7 @@ fn a_parasite_moves_with_its_victim() {
 /// Limbo clears its Teleport locomotor's Marked coordinate (`+0x28`).
 #[test]
 fn a_teleporter_forgets_its_marked_cell_in_limbo() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x51DF27);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 10);
@@ -333,6 +341,7 @@ fn a_teleporter_forgets_its_marked_cell_in_limbo() {
 /// man's Unload returns after one frame instead of Foot Unload's 450.
 #[test]
 fn a_deployed_man_undeploys_with_a_one_frame_delay() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x51F716);
     let gi = spawn(&mut sim, &rules, "GI", "Americans", 10, 10);
@@ -353,6 +362,7 @@ fn a_deployed_man_undeploys_with_a_one_frame_delay() {
 /// falling unit cannot deploy.
 #[test]
 fn a_falling_unit_cannot_deploy() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x700E47);
     let unit = spawn(&mut sim, &rules, "SIMPLE", "Americans", 10, 10);
@@ -370,21 +380,18 @@ fn a_falling_unit_cannot_deploy() {
 /// of wrapping.
 #[test]
 fn a_far_squared_distance_clamps() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::util::native_coord::squared_xy_distance;
-    assert_eq!(
-        squared_xy_distance([0, 0], [3, 4], crate::rules::ARES_BUILD),
-        25
-    );
-    assert_eq!(
-        squared_xy_distance([0, 0], [50_000, 0], crate::rules::ARES_BUILD),
-        i32::MAX
-    );
+    let ares = rules().ares();
+    assert_eq!(squared_xy_distance([0, 0], [3, 4], ares), 25);
+    assert_eq!(squared_xy_distance([0, 0], [50_000, 0], ares), i32::MAX);
 }
 
 /// SelectDamageAnimation_FixNegatives (1005D070, hook 0x48A4F9): a negative
 /// packet selects its explosion by its magnitude.
 #[test]
 fn a_negative_packet_selects_an_explosion() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x48A4F9);
     let warhead = rules.warhead("HE").unwrap();
@@ -405,6 +412,7 @@ fn a_negative_packet_selects_an_explosion() {
 /// from any height.
 #[test]
 fn an_aircraft_measures_its_reach_in_the_plane() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut jet = crate::sim::game_entity::GameEntity::test_default(1, "JET", "Americans", 10, 10);
     jet.set_category_for_test(EntityCategory::Aircraft);
@@ -431,6 +439,7 @@ fn an_aircraft_measures_its_reach_in_the_plane() {
 /// loses its NavCom.
 #[test]
 fn an_unpowered_teleporter_refuses_a_move() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x71810D);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 10);

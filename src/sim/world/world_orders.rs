@@ -804,7 +804,6 @@ impl Simulation {
                     return match tote {
                         CarryallTote::Tote => Some(EntryClickAction::Tote),
                         CarryallTote::Nothing => Some(EntryClickAction::Nothing),
-                        #[cfg(feature = "ares")]
                         CarryallTote::Kept => None,
                     };
                 }

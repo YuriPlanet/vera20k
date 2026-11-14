@@ -141,9 +141,9 @@ fn retail_rules_offer_no_detonate() {
 /// Ares `TechnoExt::CanDetonateAttachedBomb @ 100433A0` (hook `0x006FFEC0`):
 /// the planting weapon's `IvanBomb.CanDetonateTimeBomb=yes` offers Detonate
 /// over retail's Rules `no`.
-#[cfg(feature = "ares")]
 #[test]
 fn the_planting_weapons_key_offers_detonate() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut scene) = own_bombed_tank("[IvanBomber]\nIvanBomb.CanDetonateTimeBomb=yes\n")
     else {
         return;

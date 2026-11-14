@@ -47,13 +47,10 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::production::{CanBuild, can_build};
 use crate::sim::world::Simulation;
-#[cfg(not(feature = "ares"))]
 use crate::util::native_random::unit_draw_threshold;
-#[cfg(not(feature = "ares"))]
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 /// `0.01` (`[0x007E3808]`).
-#[cfg(not(feature = "ares"))]
 const PERCENT_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3F84_7AE1_47AE_147B);
 
 /// One of the house's mobile production choices.
@@ -204,9 +201,12 @@ pub(crate) fn choose(
         .then_some(index),
         None => {
             let candidates = candidates(sim, rules, owner, kind);
-            pick(&candidates, fill_earliest_percent, |low, high| {
-                sim.scenario_rng.next_range_i32_inclusive(low, high)
-            })
+            pick(
+                &candidates,
+                fill_earliest_percent,
+                rules.ares_form(),
+                |low, high| sim.scenario_rng.next_range_i32_inclusive(low, high),
+            )
         }
     };
     if let Some(index) = choice
@@ -231,21 +231,25 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
         sim.session.game_options().super_weapons,
     );
     let harvester = crate::sim::ai_buildable::first_owner_compatible_harvester(rules, country_bit);
-    harvester_decision(&HarvesterFacts {
-        harvester: harvester.and_then(|harvester| {
-            Some((unit_index(&harvester.id)?, sim.object_tech_level(harvester)))
-        }),
-        refinery: refinery.map(|refinery| refinery.undeploys_into.as_deref().and_then(unit_index)),
-        gatherers: house.tracking().resource_gatherers(),
-        destinations: house.tracking().resource_destinations(),
-        harvesters_per_refinery: house.difficulty_value(&rules.general.harvesters_per_refinery),
-        slave_miners: house.difficulty_value(&rules.ai_slave_miner_number),
-        current_iq: house.current_iq(),
-        iq_harvester: rules.general.iq_harvester,
-        no_ore: house.harvester_no_ore(),
-        human: house.is_controlled_by_human(sim.session.game_mode_nonzero()),
-        tech_level: house.tech_level(),
-    })
+    harvester_decision(
+        &HarvesterFacts {
+            harvester: harvester.and_then(|harvester| {
+                Some((unit_index(&harvester.id)?, sim.object_tech_level(harvester)))
+            }),
+            refinery: refinery
+                .map(|refinery| refinery.undeploys_into.as_deref().and_then(unit_index)),
+            gatherers: house.tracking().resource_gatherers(),
+            destinations: house.tracking().resource_destinations(),
+            harvesters_per_refinery: house.difficulty_value(&rules.general.harvesters_per_refinery),
+            slave_miners: house.difficulty_value(&rules.ai_slave_miner_number),
+            current_iq: house.current_iq(),
+            iq_harvester: rules.general.iq_harvester,
+            no_ore: house.harvester_no_ore(),
+            human: house.is_controlled_by_human(sim.session.game_mode_nonzero()),
+            tech_level: house.tech_level(),
+        },
+        rules.ares_form(),
+    )
 }
 
 /// What the Unit chooser's harvester branch reads.
@@ -285,8 +289,9 @@ struct HarvesterFacts {
 /// Harvester=`, no harvester found no ore, no human controls the house, its
 /// gatherers are below the limit and the harvester's TechLevel is within the
 /// house's (unsigned). Without one: the refinery's `UndeploysInto=` while
-/// the gatherers are below `AISlaveMinerNumber`.
-fn harvester_decision(facts: &HarvesterFacts) -> Option<i32> {
+/// the gatherers are below `AISlaveMinerNumber`. `ares`: the game's Rules
+/// were read the Ares way (`RuleSet::ares_form`).
+fn harvester_decision(facts: &HarvesterFacts, ares: bool) -> Option<i32> {
     let Some((harvester, harvester_tech)) = facts.harvester else {
         return (facts.gatherers < facts.slave_miners)
             .then_some(facts.refinery)
@@ -304,18 +309,17 @@ fn harvester_decision(facts: &HarvesterFacts) -> Option<i32> {
         && !facts.no_ore
         && !facts.human
         && facts.gatherers < limit
-        && tech_admits(harvester_tech, facts.tech_level);
+        && tech_admits(harvester_tech, facts.tech_level, ares);
     admitted.then_some(harvester)
 }
 
 /// The harvester's TechLevel against the house's: unsigned in gamemd's
 /// harvester branch (`0x004FEA7D..0x004FEBD7`), signed in Ares 3.0
 /// HouseClass_AI_UnitProduction 10023410 (hook `0x004FEA60`).
-fn tech_admits(harvester_tech: i32, house_tech: i32) -> bool {
-    #[cfg(feature = "ares")]
-    return harvester_tech <= house_tech;
-    #[cfg(not(feature = "ares"))]
-    {
+fn tech_admits(harvester_tech: i32, house_tech: i32, ares: bool) -> bool {
+    if ares {
+        harvester_tech <= house_tech
+    } else {
         (harvester_tech as u32) <= (house_tech as u32)
     }
 }
@@ -490,13 +494,14 @@ fn is_recruitable(
 /// against the chopped `fill% * 0.01` (`0x004FEE63..0x004FEE89`: FCOMPP,
 /// `TEST AH,0x41`), the earliest team's type is taken (none without
 /// candidates) with no second draw; otherwise a non-empty list takes
-/// `list[RandomRanged(0, len - 1)]`.
+/// `list[RandomRanged(0, len - 1)]`. `ares`: the game's Rules were read the
+/// Ares way (`RuleSet::ares_form`), which replaces the first draw (below).
 fn pick(
     candidates: &[Candidate],
     fill_earliest_percent: i32,
+    ares: bool,
     mut draw: impl FnMut(i32, i32) -> i32,
 ) -> Option<i32> {
-    #[cfg(not(feature = "ares"))]
     type X = X87Chop53;
     let mut most_needed: Vec<i32> = Vec::new();
     let mut best_need = -1;
@@ -515,10 +520,9 @@ fn pick(
     // replacement behind hooks 0x004FEA60 10023410, 0x004FEEE0 100233B0 and
     // 0x004FF210 10023350) draws `RandomRanged(0, 99)` and takes the
     // earliest team's type below `FillEarliestTeamProbability`.
-    #[cfg(feature = "ares")]
-    let earliest_wins = draw(0, 99) < fill_earliest_percent;
-    #[cfg(not(feature = "ares"))]
-    let earliest_wins = {
+    let earliest_wins = if ares {
+        draw(0, 99) < fill_earliest_percent
+    } else {
         let roll = draw(0, 0x7FFF_FFFE) as u32;
         let fill = X::store_f64(X::mul(
             X::load_i32(fill_earliest_percent),

@@ -861,12 +861,8 @@ mod house_damage_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
-    fn receive(
-        extra: &str,
-        live_attacker: bool,
-        explicit_house: bool,
-        ae_armor: Option<f64>,
-    ) -> i32 {
+    /// The fixture: a light vehicle and a warhead `HIT` with `extra` keys.
+    fn fixture_rules(extra: &str) -> RuleSet {
         let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
             "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
              [TARGET]\nStrength=1000\nArmor=light\n[Warheads]\n0=HIT\n\
@@ -875,7 +871,16 @@ mod house_damage_tests {
         let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
             .process_with_fixed_art(&IniFile::from_str(""))
             .unwrap();
-        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        RuleSet::from_processed_rules(&processed).unwrap()
+    }
+
+    fn receive(
+        extra: &str,
+        live_attacker: bool,
+        explicit_house: bool,
+        ae_armor: Option<f64>,
+    ) -> i32 {
+        let rules = fixture_rules(extra);
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
         let target = sim
             .spawn_object("TARGET", "Russians", 20, 20, 0, &rules)
@@ -917,15 +922,19 @@ mod house_damage_tests {
 
     #[test]
     fn house_only_animation_damage_obeys_allies_and_owner_override() {
-        let blocked = if cfg!(feature = "ares") { 0 } else { 10 };
-        assert_eq!(receive("AffectsAllies=no\n", false, true, None), blocked);
+        // The Ares admission (`rules.ares()`) blocks what stock lets through.
+        let blocked = |extra: &str| if fixture_rules(extra).ares() { 0 } else { 10 };
+        assert_eq!(
+            receive("AffectsAllies=no\n", false, true, None),
+            blocked("AffectsAllies=no\n")
+        );
         assert_eq!(
             receive("AffectsAllies=no\nAffectsOwner=yes\n", false, true, None),
             10
         );
         assert_eq!(
             receive("AffectsAllies=yes\nAffectsOwner=no\n", false, true, None),
-            blocked
+            blocked("AffectsAllies=yes\nAffectsOwner=no\n")
         );
         assert_eq!(
             receive("AffectsAllies=no\nAffectsEnemies=no\n", false, false, None),

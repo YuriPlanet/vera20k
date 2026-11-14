@@ -158,13 +158,20 @@ pub struct UnitLostEvent {
     /// The dead techno's interned type, for the optional detailed EVA text;
     /// a transient fact, never a state input.
     pub type_id: InternedId,
-    /// Ares: the victim type's `EVA.Lost`, spoken whether or not the client
-    /// admits the radar event.
-    #[cfg(feature = "ares")]
+    /// The Ares announcement, when Ares plays; `None` is the stock event.
+    pub ares: Option<AresUnitLost>,
+}
+
+/// What Ares' announcement adds to a [`UnitLostEvent`] (FootClass_Destroyed
+/// 10049080, hook 0x4D98C0; BuildingClass_Destroyed_UnitLost 10013F10, hook
+/// 0x44D760).
+#[derive(Debug, Clone)]
+pub struct AresUnitLost {
+    /// The victim type's `EVA.Lost`, spoken whether or not the client admits
+    /// the radar event.
     pub eva: String,
-    /// Ares: a Foot creates the radar event (FootClass_Destroyed 10049080);
-    /// a building does not (BuildingClass_Destroyed_UnitLost 10013F10).
-    #[cfg(feature = "ares")]
+    /// A Foot creates the radar event (FootClass_Destroyed 10049080); a
+    /// building does not (BuildingClass_Destroyed_UnitLost 10013F10).
     pub radar_event: bool,
 }
 

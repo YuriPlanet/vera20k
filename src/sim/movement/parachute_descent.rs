@@ -96,6 +96,7 @@ impl crate::sim::world::Simulation {
                         .try_resolve(entity.type_ref())
                         .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
                     rules.ares(),
+                    rules.ares_form(),
                 );
             }
         }
@@ -192,8 +193,8 @@ impl crate::sim::world::Simulation {
     ) -> Option<crate::sim::anim_class::AnimId> {
         // Ares 3.0 10047C60 (hook 0x5F5ADD), before the canopy type: an
         // `IsBomb` Foot sets IsABomb (+8F), so it lands as a bomb.
-        #[cfg(feature = "ares")]
-        if let Some(owner) = self.substrate.entities.get(owner_id)
+        if rules.ares_form()
+            && let Some(owner) = self.substrate.entities.get(owner_id)
             && owner.category().is_foot()
             && self
                 .interner
@@ -412,6 +413,7 @@ impl crate::sim::world::Simulation {
                         .try_resolve(entity.type_ref())
                         .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
                     rules.ares(),
+                    rules.ares_form(),
                 );
             }
             return false;
@@ -601,9 +603,9 @@ mod canopy_tests {
 
     /// Ares `HouseTypeExt::GetParachuteAnim @ 0x1001BBC0`: a Side's explicit
     /// `Parachute.Anim=none` falls back to `PARACH`, not to no canopy.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_side_parachute_none_falls_back_to_parach() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(
             "[General]\nParachute=OTHER\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
              [Fourth]\nParachute.Anim=none\n",

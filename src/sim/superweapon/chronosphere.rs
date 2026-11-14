@@ -397,7 +397,7 @@ fn arm_chrono_warp(
     let [x, y, z] = deck_coords(sim, (cx as u16, cy as u16));
     let mut destination = DriveCoord { x, y, z };
     if category == EntityCategory::Unit {
-        sim.locomotor_mark_all_occupation_bits(id, false);
+        sim.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
         let _ = sim.force_track(id, -1, destination, rules, overlay_registry, frame_effects);
         Simulation::object_raw_receiver_at(
             &mut sim.substrate,
@@ -406,6 +406,7 @@ fn arm_chrono_warp(
             id,
             destination,
             false,
+            rules.ares_form(),
         );
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.foot_occupation_enabled.resume();
@@ -947,7 +948,8 @@ fn ares_begin_building_chronoshift(
     let (rx, ry) = (entity.position.rx() as i16, entity.position.ry() as i16);
     sim.houses.request_house_tech_tree_recheck(owner);
     Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, false);
-    sim.substrate.set_building_online_for_temporal(id, false);
+    sim.substrate
+        .set_building_online_for_temporal(id, false, rules.ares_form());
     let entity = sim.substrate.entities.get(id)?;
     let origin =
         crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
@@ -1152,7 +1154,8 @@ fn ares_chrono_warp_put_back(
     let building_owner = entity.owner();
     Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, building_owner, false);
     sim.houses.request_house_tech_tree_recheck(building_owner);
-    sim.substrate.set_building_online_for_temporal(id, true);
+    sim.substrate
+        .set_building_online_for_temporal(id, true, rules.ares_form());
     if !success && (item.is_vehicle || blow_unplaceable) {
         let Some(strength) = sim
             .substrate
@@ -1232,7 +1235,7 @@ fn ares_arm_chrono_warp(
             .z
             .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
     }
-    sim.locomotor_mark_all_occupation_bits(id, false);
+    sim.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
     let _ = sim.force_track(id, -1, here, rules, overlay_registry, frame_effects);
     Simulation::object_raw_receiver_at(
         &mut sim.substrate,
@@ -1241,6 +1244,7 @@ fn ares_arm_chrono_warp(
         id,
         here,
         false,
+        rules.ares_form(),
     );
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.foot_occupation_enabled.resume();

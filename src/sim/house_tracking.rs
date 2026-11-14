@@ -989,17 +989,16 @@ impl HouseTracking {
     /// nonzero BaseUnit count, or class-total-gated Foot presence.
     /// `foot_present` reads the authoritative object registry only when needed;
     /// it must test owner and (!InLimbo || ParasiteImUsing), without health gates.
+    /// `ares`: the game's Rules were read the Ares way (`RuleSet::ares_form`).
     pub(crate) fn game_alive(
         &self,
+        ares: bool,
         short_game: bool,
         base_units: impl IntoIterator<Item = Option<InternedId>>,
-        _build_refinery_2: Option<InternedId>,
-        _foot_present: impl Fn(EntityCategory) -> bool,
+        build_refinery_2: Option<InternedId>,
+        foot_present: impl Fn(EntityCategory) -> bool,
     ) -> bool {
-        // Still on the feature: the House counters hold no rules; moves when
-        // the gate's callers (`world::house_defeat`) pass the answer.
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             if self.keep_alive != 0 {
                 return true;
             }
@@ -1015,37 +1014,33 @@ impl HouseTracking {
                 (EntityCategory::Aircraft, self.active_aircraft()),
             ]
             .into_iter()
-            .any(|(category, total)| total != 0 && _foot_present(category))
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            if short_game {
-                let mut units = base_units.into_iter();
-                let mut tracked = || {
-                    units
-                        .next()
-                        .flatten()
-                        .map_or(0, |unit| self.unit_types.get(&unit).copied().unwrap_or(0))
-                };
-                let first = tracked();
-                let second = tracked();
-                let third = tracked();
-                let base = second.wrapping_add(third).wrapping_add(first);
-                self.buildings > 0 || base > 0
-            } else {
-                let refinery = _build_refinery_2.map_or(0, |refinery| {
-                    self.active_building_types
-                        .get(&refinery)
-                        .copied()
-                        .unwrap_or(0)
-                });
-                self.buildings
-                    .wrapping_add(self.active_units())
-                    .wrapping_add(self.active_infantry())
-                    .wrapping_add(self.active_aircraft())
-                    .wrapping_add(refinery)
-                    != 0
-            }
+            .any(|(category, total)| total != 0 && foot_present(category))
+        } else if short_game {
+            let mut units = base_units.into_iter();
+            let mut tracked = || {
+                units
+                    .next()
+                    .flatten()
+                    .map_or(0, |unit| self.unit_types.get(&unit).copied().unwrap_or(0))
+            };
+            let first = tracked();
+            let second = tracked();
+            let third = tracked();
+            let base = second.wrapping_add(third).wrapping_add(first);
+            self.buildings > 0 || base > 0
+        } else {
+            let refinery = build_refinery_2.map_or(0, |refinery| {
+                self.active_building_types
+                    .get(&refinery)
+                    .copied()
+                    .unwrap_or(0)
+            });
+            self.buildings
+                .wrapping_add(self.active_units())
+                .wrapping_add(self.active_infantry())
+                .wrapping_add(self.active_aircraft())
+                .wrapping_add(refinery)
+                != 0
         }
     }
 

@@ -114,7 +114,8 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        self.force_track_observed(id, selector, supplied, &mut |sim, id, coord| {
+        let ares = rules.ares_form();
+        self.force_track_observed(id, selector, supplied, ares, &mut |sim, id, coord| {
             sim.pickup_crate_at(
                 id,
                 super::foot_path::coord_cell(coord),
@@ -153,6 +154,7 @@ impl Simulation {
         id: u64,
         selector: i32,
         supplied: DriveCoord,
+        ares: bool,
         receive: &mut impl FnMut(&mut Simulation, u64, DriveCoord) -> bool,
     ) -> bool {
         use crate::rules::locomotor_type::LocomotorKind;
@@ -207,6 +209,7 @@ impl Simulation {
             family,
             supplied,
             true,
+            ares,
         );
         let Some(loco) = self
             .substrate
@@ -476,6 +479,7 @@ impl Simulation {
                     &self.resolved_terrain,
                     id,
                     false,
+                    rules.ares_form(),
                 );
                 // The first paid point drops the enable (Drive `0x004B161A`,
                 // Ship `0x006A0CDA`).
@@ -569,6 +573,7 @@ impl Simulation {
                     &self.resolved_terrain,
                     id,
                     false,
+                    rules.ares_form(),
                 );
             }
             let Some((live, _, _)) = Self::track_state(&self.substrate, id, family) else {
@@ -669,12 +674,13 @@ impl Simulation {
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
         put: bool,
+        ares: bool,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
             return;
         };
         let coord = position_world_coord(&entity.position);
-        Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
+        Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put, ares);
     }
 
     /// The Unit `id`'s vt+0xF0 (PUT, `0x007441B0`) or vt+0xF4 (REMOVE,
@@ -688,6 +694,8 @@ impl Simulation {
     /// that plane as well, once, in REMOVE's Cell. PUT needs the structural
     /// bridge bit and REMOVE only the height, so without it a deck-high Unit
     /// over a Cell without that bit marks the ground and clears the deck.
+    /// `ares` is the game's `RuleSet::ares_form`; without it the Unit's Ares
+    /// part is not touched.
     pub(super) fn track_raw_mark_at(
         substrate: &mut ObjectSubstrate,
         path_grid: &Option<Arc<PathGrid>>,
@@ -695,6 +703,7 @@ impl Simulation {
         id: u64,
         coord: DriveCoord,
         put: bool,
+        ares: bool,
     ) {
         use crate::sim::occupancy::VEHICLE_OCCUPATION_BIT;
         let (at, layer) = super::foot_mark::raw_occupation_plane(
@@ -705,8 +714,7 @@ impl Simulation {
         );
         let on_deck = layer == MovementLayer::Bridge;
         if put {
-            #[cfg(feature = "ares")]
-            if let Some(entity) = substrate.entities.get_mut(id) {
+            if ares && let Some(entity) = substrate.entities.get_mut(id) {
                 entity.mark_ares_alt_occupation(on_deck);
             }
             let raw = &mut substrate.raw_cell_occupation;
@@ -717,19 +725,16 @@ impl Simulation {
             }
             return;
         }
-        #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
         let (mut deck, mut ground) = (on_deck, !on_deck);
-        #[cfg(feature = "ares")]
-        if let Some(last) = substrate
-            .entities
-            .get_mut(id)
-            .and_then(|entity| entity.take_ares_alt_occupation())
+        if ares
+            && let Some(last) = substrate
+                .entities
+                .get_mut(id)
+                .and_then(|entity| entity.take_ares_alt_occupation())
         {
             deck |= last;
             ground |= !last;
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = id;
         let raw = &mut substrate.raw_cell_occupation;
         if deck {
             raw.clear_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT);
@@ -1045,6 +1050,7 @@ impl Simulation {
         id: u64,
         family: TrackFamily,
         put: bool,
+        ares: bool,
     ) {
         let supplied = head_or_null(substrate.entities.get(id), family);
         Self::track_apply_occupation_at(
@@ -1055,6 +1061,7 @@ impl Simulation {
             family,
             supplied,
             put,
+            ares,
         );
     }
 
@@ -1066,9 +1073,10 @@ impl Simulation {
         family: TrackFamily,
         supplied: DriveCoord,
         put: bool,
+        ares: bool,
     ) {
         for coord in Self::track_occupation_coords(substrate, id, family, supplied) {
-            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put);
+            Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put, ares);
         }
     }
 
@@ -1308,6 +1316,7 @@ impl Simulation {
             id,
             family,
             true,
+            rules.ares_form(),
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity
@@ -1397,6 +1406,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             id,
+            rules.ares_form(),
         );
         if !self.foot_refresh_mega_mission(id, rules, registry, effects) {
             self.planning_enter_idle(id, rules, planning_arrival);

@@ -2700,15 +2700,18 @@ impl GameEntity {
 
     /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate. When
     /// Ares plays (`ares`, [`RuleSet::ares`]) it steps a Techno by its type's
-    /// `FallRate.*` (10049BA0, hook 0x5F3FB2).
+    /// `FallRate.*` (10049BA0, hook 0x5F3FB2); any other object takes the
+    /// stock step or Ares' by `ares_form` ([`RuleSet::ares_form`]).
     ///
     /// [`RuleSet::ares`]: crate::rules::ruleset::RuleSet::ares
+    /// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
     pub(crate) fn advance_fall_rate(
         &mut self,
         parachute_cap: i32,
         free_fall_cap: i32,
         object: Option<&crate::rules::object_type::ObjectType>,
         ares: bool,
+        ares_form: bool,
     ) {
         if ares && let Some(object) = object {
             self.fall.advance_techno_rate(
@@ -2717,7 +2720,8 @@ impl GameEntity {
             );
             return;
         }
-        self.fall.advance_rate(parachute_cap, free_fall_cap);
+        self.fall
+            .advance_rate(parachute_cap, free_fall_cap, ares_form);
     }
 
     /// Put a fixture into a fall where it is, with a FallRate of 0.

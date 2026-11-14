@@ -1082,7 +1082,6 @@ fn greater(lhs: MaskedX87Value, rhs: MaskedX87Value) -> bool {
     X::compare(lhs, rhs) == MaskedX87Ordering::Greater
 }
 
-// The switch is always off without the feature.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(test)]
 #[path = "ares_system_tests.rs"]
 mod tests;

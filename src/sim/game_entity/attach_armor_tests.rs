@@ -123,8 +123,6 @@ fn attached_armor_parent_hit_changes_received_damage_then_expires() {
     );
 }
 
-// Runs again once the crates' stat recompute moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_armor_refresh_stack_and_crates_keep_the_permanent_baseline() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

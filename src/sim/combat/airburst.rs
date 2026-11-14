@@ -298,11 +298,13 @@ fn spawn_ares_child(
         weapon.bright,
     );
     // CreateBullet sets Range to the weapon's ProjectileRange, which only a
-    // `Ranged=` type spends (as Fire_CreateBullet 1001ADE0 does). Still
-    // behind the feature: the bullet's Range field and the Update_Ranged
-    // spender that reads it move with `sim::projectile`.
-    #[cfg(feature = "ares")]
-    let payload = payload.with_ares_range(child.ranged.then_some(weapon.ares_projectile_range));
+    // `Ranged=` type spends (as Fire_CreateBullet 1001ADE0 does), in a game
+    // read the Ares way.
+    let payload = if rules.ares_form() {
+        payload.with_ares_range(child.ranged.then_some(weapon.ares_projectile_range))
+    } else {
+        payload
+    };
     // 1001A6B0: one Scenario draw after the constructor.
     let velocity = crate::sim::projectile::launch::ares_airburst_launch_velocity(
         weapon.speed,

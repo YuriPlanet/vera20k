@@ -498,6 +498,7 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
             self.id,
             destination,
             false,
+            self.rules.ares_form(),
         );
     }
     fn owner_kind(&self) -> FlightOwnerKind {
@@ -615,7 +616,7 @@ impl Simulation {
     /// Jumpjet's [`JumpjetRuntime::mark_all_occupation_bits_remove`]. For an
     /// infantryman that is what clears his sub-cell: Infantry Mark clears none
     /// (`0x0047EAFE`).
-    pub(crate) fn release_jumpjet_occupation_before_foot_limbo(&mut self, id: u64) {
+    pub(crate) fn release_jumpjet_occupation_before_foot_limbo(&mut self, id: u64, ares: bool) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -638,6 +639,7 @@ impl Simulation {
                     id,
                     head,
                     false,
+                    ares,
                 );
             });
         });

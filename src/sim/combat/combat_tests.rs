@@ -11983,7 +11983,7 @@ fn phobos_radiation_color_ignores_the_theater() {
 /// green, so the theater decides which channels the field uses. Ares's
 /// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
 /// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
-/// covers that build.
+/// covers a game where Ares plays.
 #[cfg(not(any(feature = "phobos", feature = "ares")))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {

@@ -362,7 +362,6 @@ pub(crate) fn infiltration_eva_events(
         InfiltrationEffect::None => {}
         // Ares 3.0 10012000 (hook 0x004571E0): each arm's lines in its
         // order, every one behind the radar event.
-        #[cfg(feature = "ares")]
         InfiltrationEffect::Ares(arms) => {
             let either = owner || infiltrator;
             if let Some(owner_spy_sat) = arms.radar_reset

@@ -286,7 +286,7 @@ impl Simulation {
     /// `vt+0x310` (`0x00700D10`), the deploy key's other test, refuses only a
     /// Unit in a tube or under EMP, which this already refuses.
     ///
-    /// The feature-gated Ares producer reaches the existing Unit EMP refusal.
+    /// When Ares plays, its EMP producer reaches the Unit EMP refusal.
     /// Aircraft EMP and Unit DeathFrame's separate virtual override remain
     /// outside the ordinary live ground-victim chain.
     pub fn can_deploy_slash_unload(&self, id: u64, rules: &RuleSet) -> bool {
@@ -296,6 +296,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
+        let ares = rules.ares_form();
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
         let terrain = self.resolved_terrain.as_ref();
         if terrain
@@ -309,12 +310,14 @@ impl Simulation {
                 // admission. For the live Drive victim, positive+504 vetoes
                 // both AI Hunt deploy and Guard→Unload through this owner.
                 // Active-retail EMP producer reachability is not established;
-                // default builds retain their current constructor-zero path.
+                // a game without Ares retains its constructor-zero path.
                 // Ares 3.0 TechnoClass_CanDeploySlashUnload_Immobile
                 // (1005D1C0, hook 0x700E47) also refuses a falling or
                 // warping-in unit, falling first.
-                #[cfg(feature = "ares")]
-                if entity.is_falling_down() || entity.emp_remaining() > 0 || entity.is_warping_in()
+                if ares
+                    && (entity.is_falling_down()
+                        || entity.emp_remaining() > 0
+                        || entity.is_warping_in())
                 {
                     return false;
                 }
@@ -343,8 +346,7 @@ impl Simulation {
                 }
                 // Ares 3.0 10049E70 (hook 0x700EEC): a `NoManualUnload`
                 // transport outside a tank bunker refuses (0x700DCE).
-                #[cfg(feature = "ares")]
-                if object.techno_combat().movement().no_manual_unload() && !bunkered {
+                if ares && object.techno_combat().movement().no_manual_unload() && !bunkered {
                     return false;
                 }
                 if entity.on_bridge() {
@@ -579,10 +581,11 @@ impl Simulation {
             if area_fire {
                 //5F3E50→410A40 compares native literal82557C "DESO";
                 // Ares 3.0 10049790 (hook 0x51F76D) tests `IsDesolator`.
-                #[cfg(feature = "ares")]
-                let desolator = object.techno_combat().roles().is_desolator();
-                #[cfg(not(feature = "ares"))]
-                let desolator = object.id.eq_ignore_ascii_case("DESO");
+                let desolator = if rules.ares_form() {
+                    object.techno_combat().roles().is_desolator()
+                } else {
+                    object.id.eq_ignore_ascii_case("DESO")
+                };
                 if desolator {
                     delay = rules
                         .animation_sequence_in_category(
