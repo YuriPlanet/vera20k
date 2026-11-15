@@ -50,8 +50,10 @@ translucent draw.
 
 - `rules::phobos_shields::ShieldIdleAnimSet` owns the Damageable reads and
   selection; `ShieldType` gains both sets and the two action flags. The base
-  reads as `Valueable<AnimTypeClass*>` (`none` clears, `<default>` retains);
-  the two bands read as `Nullable<AnimTypeClass*>::Read<false, false>`, where
+  reads as `Valueable<AnimTypeClass*>` (`none`/`<none>` clear through
+  `INIClass::IsBlank @ 0x40F4D0`, which compares those two exact sentinels;
+  `<default>` retains); the two bands read as
+  `Nullable<AnimTypeClass*>::Read<false, false>`, where
   `none`/`<none>`/`<default>` reset the band rather than installing a present
   null.
 - `sim::shield` owns the live anim id in `ShieldState::idle_anim` and
@@ -73,9 +75,9 @@ translucent draw.
 
 - `AreAnimsHidden` (`ShieldClass.h:82..86`, the `ShowShield`/`Attached`
   visibility chain) is not ported; the create/update gates treat it false.
-- A retype caused by shield damage happens on the next shield AI visit rather
-  than synchronously inside `ReceiveDamage`; the object's AI runs every frame,
-  so the visible state converges within a tick.
+- A retype caused by shield damage or self-healing happens on the next shield
+  AI visit rather than synchronously inside `ReceiveDamage`/`SelfHealing`; the
+  object's AI runs every frame, so the visible state converges within a tick.
 - An idle-anim name no anim type answers is retained by the reader and
   treated as null at the use site. Native's read-time lookup instead keeps
   the value a previous layer set; the two differ only for a misspelt band in

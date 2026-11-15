@@ -181,8 +181,9 @@ stays open:
 - `IdleAnim*`: no idle animation is spawned.
 - `SelfHealing.EnabledBy` and `AllowTransfer`/`AllowTransfer.Convert` are read
   but not consumed.
-- Type conversion/deploy transfer (`SyncShieldToAnother`, `ConvertCheck`) is
-  not ported.
+- Type conversion/deploy/sell shield transfer (`SyncShieldToAnother`,
+  `ConvertCheck`) is not ported; the deploy/sell hooks carry only
+  `SyncInvulnerability`.
 - Ares EMP does not yet offline a shield (`IsUnderEMP` in native); only the
   building power and warp paths gate it.
 - The shield-armour substitution in targeting/threat (`CanBeTargeted`,
