@@ -88,6 +88,11 @@ fn radial_indicator_visibility_default() -> crate::rules::phobos_shields::Affect
     crate::rules::phobos_shields::AffectedHouse::ALLIES
 }
 
+/// `[AI] PowerSurplus=`'s native RulesClass value, `50`.
+fn power_surplus_default() -> i32 {
+    50
+}
+
 /// `[General] ChronoSparkleDisplayDelay=`'s constructor value
 /// (`Ext/Rules/Body.h:577`).
 fn chrono_sparkle_delay_default() -> i32 {
@@ -1722,10 +1727,15 @@ pub struct PhobosGlobals {
     #[serde(default = "true_bool")]
     pub display_income_allow_ai: bool,
     /// `[AI] EnablePowerSurplus=`, default `no`
-    /// (`Ext/Rules/Body.cpp:243`, constructor `Ext/Rules/Body.h:687`): a
-    /// house's surplus power is tracked and shown (`Ext/House/Body.cpp`).
+    /// (`Ext/Rules/Body.cpp:243`, constructor `Ext/Rules/Body.h:687`): the
+    /// house's power-surplus target is recomputed on every power update and
+    /// consumed by the AI's power-plant splice (`Ext/House/Body.cpp:655-674`).
     #[serde(default)]
     pub enable_power_surplus: bool,
+    /// `[AI] PowerSurplus=`, native RulesClass default **50** (the otherwise
+    /// unused stock key Phobos re-enables): the surplus the AI tries to keep.
+    #[serde(default = "power_surplus_default")]
+    pub power_surplus: i32,
     /// `[AI] PowerSurplus.ScaleToDrainAmount=`, default **0**
     /// (`Ext/Rules/Body.cpp:244`, constructor `Ext/Rules/Body.h:688`): the
     /// drain amount the surplus bar scales against; 0 uses the fixed scale.
@@ -2231,6 +2241,7 @@ impl Default for PhobosGlobals {
             extended_player_repair: false,
             display_income_allow_ai: true,
             enable_power_surplus: false,
+            power_surplus: 50,
             power_surplus_scale_to_drain_amount: 0,
             aircraft_level_light_multiplier: NativeF64Bits::from_bits(1.0f64.to_bits()),
             jumpjet_level_light_multiplier: NativeF64Bits::POSITIVE_ZERO,
@@ -2620,6 +2631,9 @@ impl PhobosGlobals {
             "PowerSurplus.ScaleToDrainAmount",
             globals.power_surplus_scale_to_drain_amount,
         );
+        // Stock `[AI] PowerSurplus=`, read by RulesClass and re-enabled by the
+        // switch above.
+        globals.power_surplus = ai.read_int("PowerSurplus", globals.power_surplus);
         // `Ext/Rules/Body.cpp:246,299,307,336-337,401,549,619-625,646,658`:
         // the remaining `[General]` reads of this batch.
         globals.allow_deploy_controlled_mcv = general.read_bool(

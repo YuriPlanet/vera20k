@@ -1470,6 +1470,7 @@ fn the_remaining_general_ai_and_combatdamage_globals() {
     assert!(!defaults.fix_repair_step_cost);
     assert!(!defaults.extended_player_repair);
     assert!(!defaults.enable_power_surplus);
+    assert_eq!(defaults.power_surplus, 50, "stock [AI] PowerSurplus");
     assert_eq!(defaults.power_surplus_scale_to_drain_amount, 0);
     assert!(defaults.display_income_allow_ai, "AllowAI constructs yes");
     assert!(
@@ -1502,6 +1503,7 @@ ChronoSparkleDisplayDelay=7
 ChronoSparkleBuildingDisplayPositions=Building, Occupants
 [AI]
 EnablePowerSurplus=yes
+PowerSurplus=40
 PowerSurplus.ScaleToDrainAmount=40
 [AudioVisual]
 DisplayIncome.AllowAI=no
@@ -1527,6 +1529,7 @@ VeinholeWarhead=WH_VEIN
         0x1 | 0x2
     );
     assert!(set.enable_power_surplus);
+    assert_eq!(set.power_surplus, 40);
     assert_eq!(set.power_surplus_scale_to_drain_amount, 40);
     assert!(!set.display_income_allow_ai);
     assert!(!set.auto_target_insignificant_when_mind_controlled);

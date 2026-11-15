@@ -807,6 +807,17 @@ fn append_perimeter_run(
 /// house's `GDIPowerPlant=`, the side 2 house's `ThirdPowerPlant=`, any other
 /// side's `NodAdvancedPower=` when `0x00505360` admits it, else
 /// `NodRegularPower=`. With `ares`, [`ares_power_plant`] chooses instead.
+/// The surplus left after the candidate building's drain, compared against a
+/// target floor. Native holds both power totals in signed DWORDs and subtracts
+/// with wrapping arithmetic; the stock floor is `0`, Phobos raises it to
+/// `HouseClass::PowerSurplus`.
+fn power_surplus_short(output: i32, total_drain: i32, new_drain: i32, floor: i32) -> bool {
+    output
+        .wrapping_sub(total_drain)
+        .wrapping_sub(new_drain)
+        < floor
+}
+
 fn power_plant_to_splice(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -816,7 +827,33 @@ fn power_plant_to_splice(
     let side = sim.houses.get(&owner)?.side_index();
     let power = sim.power_states.get(&owner).cloned().unwrap_or_default();
     let drain = crate::sim::power_system::native_building_power_drain(ty.power);
-    let short = power.total_drain().wrapping_add(drain) > power.total_output();
+    // Phobos `HouseExt::CalculatePowerSurplus` (`Ext/House/Body.cpp:655-674`,
+    // recomputed by `HouseClass_UpdatePower_AfterBuildings` at `0x508D8D`):
+    // with `EnablePowerSurplus` the plant splice wants the post-drain surplus
+    // to stay at or above the house's `PowerSurplus` target instead of merely
+    // non-negative. `ScaleToDrainAmount > 0` scales that target by
+    // `PowerDrain / scale`.
+    #[cfg(feature = "phobos")]
+    let surplus_floor = if rules.phobos_globals.enable_power_surplus {
+        let scale = rules.phobos_globals.power_surplus_scale_to_drain_amount;
+        if scale > 0 {
+            (f64::from(rules.phobos_globals.power_surplus)
+                * f64::from(power.total_drain())
+                / f64::from(scale)) as i32
+        } else {
+            rules.phobos_globals.power_surplus
+        }
+    } else {
+        0
+    };
+    #[cfg(not(feature = "phobos"))]
+    let surplus_floor = 0;
+    let short = power_surplus_short(
+        power.total_output(),
+        power.total_drain(),
+        drain,
+        surplus_floor,
+    );
     if !short
         || ty.build_const_eligible
         || drain <= 0
