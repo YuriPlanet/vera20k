@@ -8257,9 +8257,15 @@ impl RulesPassProcessor {
                         .super_weapon_phobos_availability = availability;
                     // Phobos `SWTypeExt::LoadFromINIFile` then reads
                     // `SW.Next`, its flags/rolls/weights, and the `SW.Link`
-                    // group (`Ext/SWType/Body.cpp:170-243`).
+                    // group (`Ext/SWType/Body.cpp:170-243`) into the retained
+                    // extension, so keys this pass omits keep the earlier
+                    // pass's values (and the weight vectors keep their native
+                    // replace/append growth).
                     let chaining =
                         crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining::from_section(
+                            self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                                .super_weapon_phobos_chaining
+                                .clone(),
                             &raw,
                             |token| self.find_existing_super_weapon_name(token),
                         );
@@ -8270,6 +8276,9 @@ impl RulesPassProcessor {
                     // the `Detonate.*` group (`:274-278`); absent Detonate
                     // keys keep the earlier pass's values.
                     let limbo = crate::rules::phobos_limbo::PhobosSuperWeaponLimbo::from_section(
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_phobos_limbo
+                            .clone(),
                         &raw,
                         |token| self.find_existing_building_name(token),
                     );

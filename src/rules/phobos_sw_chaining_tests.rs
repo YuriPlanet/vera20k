@@ -14,8 +14,17 @@ fn resolve(token: &str) -> Option<String> {
 }
 
 fn read(ini: &str, section: &str) -> PhobosSuperWeaponChaining {
+    read_pass(PhobosSuperWeaponChaining::default(), ini, section)
+}
+
+/// One later rules pass into the same retained extension.
+fn read_pass(
+    previous: PhobosSuperWeaponChaining,
+    ini: &str,
+    section: &str,
+) -> PhobosSuperWeaponChaining {
     let file = IniFile::from_str(ini);
-    PhobosSuperWeaponChaining::from_section(file.section_or_empty(section), resolve)
+    PhobosSuperWeaponChaining::from_section(previous, file.section_or_empty(section), resolve)
 }
 
 #[test]
@@ -117,5 +126,93 @@ fn numbered_weights_stop_at_the_first_empty_and_the_alias_rewrites_slot_zero() {
             .link_random_weights()
             .len()
             == 1
+    );
+}
+
+/// `SWTypeExt` is one retained object across rules passes (`Body.cpp:170-243`
+/// reads into `this`), so a key the later pass does not reach keeps the
+/// earlier pass's value instead of falling back to the constructor default.
+#[test]
+fn a_later_pass_retains_keys_it_does_not_reach() {
+    let first = read(
+        "[S]\nSW.Next=Alpha\nSW.Next.RealLaunch=no\nSW.Next.RollChances=0.5\n\
+         SW.Link=Gamma\nSW.Link.Grant=yes\n",
+        "S",
+    );
+    let second = read_pass(first, "[S]\nSW.Next.IgnoreInhibitors=yes\n", "S");
+    assert_eq!(second.next(), ["Alpha".to_owned()]);
+    assert!(!second.next_real_launch());
+    assert!(second.next_ignore_inhibitors());
+    assert_eq!(second.next_roll_chances(), vec![0.5]);
+    assert_eq!(second.link(), ["Gamma".to_owned()]);
+    assert!(second.link_grant());
+}
+
+/// `Body.cpp:184-235`: a numbered list below the retained length replaces its
+/// slot, a longer run appends, and the loop stops without touching the tail.
+#[test]
+fn numbered_weights_update_the_retained_list_across_passes() {
+    let first = read(
+        "[S]\nSW.Next.RandomWeights0=1,2\nSW.Next.RandomWeights1=3,4\n\
+         SW.Next.RandomWeights2=5\n",
+        "S",
+    );
+    let shorter = read_pass(first.clone(), "[S]\nSW.Next.RandomWeights0=9\n", "S");
+    assert_eq!(
+        shorter.next_random_weights(),
+        [vec![9], vec![3, 4], vec![5]],
+        "the later pass replaces slot 0 and keeps the retained tail"
+    );
+    let longer = read_pass(
+        first,
+        "[S]\nSW.Next.RandomWeights0=9\nSW.Next.RandomWeights1=3,4\n\
+         SW.Next.RandomWeights2=5\nSW.Next.RandomWeights3=7\n",
+        "S",
+    );
+    assert_eq!(
+        longer.next_random_weights(),
+        [vec![9], vec![3, 4], vec![5], vec![7]],
+        "the reached slots are replaced and slot 3 appends"
+    );
+}
+
+/// The alias is read after the numbered loop in every pass (`:201-209`), so a
+/// later pass that only writes `SW.Next.RandomWeights` does not re-apply the
+/// earlier pass's numbered slot 0, and a later numbered list wins over an
+/// earlier alias.
+#[test]
+fn the_alias_only_patches_slot_zero_within_its_own_pass() {
+    let numbered = read_pass(
+        read("[S]\nSW.Next.RandomWeights=7,8\n", "S"),
+        "[S]\nSW.Next.RandomWeights0=1,2\n",
+        "S",
+    );
+    assert_eq!(numbered.next_random_weights(), [vec![1, 2]]);
+}
+
+/// `Body.cpp:253-263` has no replace arm: `SW.Link.RandomWeightsN` appends to
+/// the retained vector on every pass (Phobos' own behavior, kept as written),
+/// and the alias still patches slot 0 of the grown vector.
+#[test]
+fn link_numbered_weights_accumulate_across_passes() {
+    let first = read(
+        "[S]\nSW.Link.RandomWeights0=1\nSW.Link.RandomWeights1=2\n",
+        "S",
+    );
+    let second = read_pass(first.clone(), "[S]\nSW.Link.RandomWeights0=3\n", "S");
+    assert_eq!(
+        second.link_random_weights(),
+        [vec![1], vec![2], vec![3]],
+        "the reread appends instead of replacing slot 0"
+    );
+    let with_alias = read_pass(
+        first,
+        "[S]\nSW.Link.RandomWeights0=3\nSW.Link.RandomWeights=9\n",
+        "S",
+    );
+    assert_eq!(
+        with_alias.link_random_weights(),
+        [vec![9], vec![2], vec![3]],
+        "the alias patches slot 0 of the accumulated vector"
     );
 }

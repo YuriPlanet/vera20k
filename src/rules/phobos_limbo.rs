@@ -17,7 +17,11 @@
 //! `ValueableVector<BuildingTypeClass*>` resolves each token through
 //! `BuildingTypeClass::Find`; an unknown name is dropped at read time and a
 //! reached list replaces the field. The int and float vectors keep their
-//! tokens in order; an unconvertible token is skipped.
+//! tokens in order; an unconvertible token is skipped. The native fields live
+//! on the retained `SWTypeExt`, so a later rules layer that omits a key keeps
+//! the earlier layer's value and the numbered weight lists grow through the
+//! whole load instead of being rebuilt per layer (`Body.cpp:159-169`,
+//! `:184-209`).
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependency on sim/, render/, ui/, etc.
@@ -62,40 +66,50 @@ impl Default for PhobosSuperWeaponLimbo {
 }
 
 impl PhobosSuperWeaponLimbo {
-    /// `SWTypeExt::LoadFromINIFile`'s limbo reads. `resolve_building` answers
-    /// the canonical registered building name (`BuildingTypeClass::Find`).
+    /// `SWTypeExt::LoadFromINIFile`'s limbo reads into the retained
+    /// extension. Native calls this once per reached rules layer on the same
+    /// `SWTypeExt`, so a key this layer does not reach keeps the earlier
+    /// layer's value, and the numbered weight lists keep the native
+    /// replacement rules (`Body.cpp:184-209`). `resolve_building` answers the
+    /// canonical registered building name (`BuildingTypeClass::Find`).
     pub(crate) fn from_section(
+        previous: Self,
         section: &IniSection,
         resolve_building: impl Fn(&str) -> Option<String>,
     ) -> Self {
-        let defaults = Self::default();
-        let types = section
-            .read_list("LimboDelivery.Types", 2048)
-            .map(|tokens| {
-                tokens
-                    .into_iter()
-                    .filter_map(|token| resolve_building(token.trim()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        // `LimboKill.Affected` is the deprecated spelling and is read first;
-        // the canonical key then overrides it when both are present.
-        let affects =
-            read_affected_house(section, "LimboKill.Affected", defaults.kill_affects_house);
-        let kill_affects_house = read_affected_house(section, "LimboKill.AffectsHouse", affects);
-        Self {
-            types,
-            ids: read_int_vector(section, "LimboDelivery.IDs"),
-            roll_chances: read_roll_chances(section, "LimboDelivery.RollChances"),
-            random_weights: read_random_weights(
-                section,
-                "LimboDelivery",
-                "LimboDelivery.RandomWeights",
-            ),
-            kill_ids: read_int_vector(section, "LimboKill.IDs"),
-            kill_counts: read_int_vector(section, "LimboKill.Counts"),
-            kill_affects_house,
+        let mut out = previous;
+        if let Some(types) = section.read_list("LimboDelivery.Types", 2048) {
+            out.types = types
+                .into_iter()
+                .filter_map(|token| resolve_building(token.trim()))
+                .collect();
         }
+        // `LimboKill.Affected` is the deprecated spelling and is read first;
+        // the canonical key then overrides it when both are present. Both
+        // keep the retained value when absent.
+        out.kill_affects_house =
+            read_affected_house(section, "LimboKill.Affected", out.kill_affects_house);
+        out.kill_affects_house =
+            read_affected_house(section, "LimboKill.AffectsHouse", out.kill_affects_house);
+        if let Some(ids) = section.read_int_list("LimboDelivery.IDs") {
+            out.ids = ids;
+        }
+        if let Some(chances) = read_roll_chances(section, "LimboDelivery.RollChances") {
+            out.roll_chances = chances;
+        }
+        crate::rules::phobos_sw_chaining::read_numbered_weights(
+            section,
+            "LimboDelivery",
+            "LimboDelivery.RandomWeights",
+            &mut out.random_weights,
+        );
+        if let Some(ids) = section.read_int_list("LimboKill.IDs") {
+            out.kill_ids = ids;
+        }
+        if let Some(counts) = section.read_int_list("LimboKill.Counts") {
+            out.kill_counts = counts;
+        }
+        out
     }
 
     pub(crate) fn types(&self) -> &[String] {
@@ -130,48 +144,15 @@ impl PhobosSuperWeaponLimbo {
     }
 }
 
-fn read_int_vector(section: &IniSection, key: &str) -> Vec<i32> {
-    section.read_int_list(key).unwrap_or_default()
-}
-
 /// `ValueableVector<float>`: a present list replaces the field; a token that
 /// does not convert is skipped.
-fn read_roll_chances(section: &IniSection, key: &str) -> Vec<NativeF32Bits> {
-    section
-        .read_phobos_double_list(key)
-        .map(|chances| {
-            chances
-                .into_iter()
-                .map(|chance| NativeF32Bits::from_bits((chance as f32).to_bits()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The numbered weight lists, then the unnumbered alias for slot 0; the loop
-/// stops at the first empty list (`Body.cpp:222-256`).
-fn read_random_weights(section: &IniSection, prefix: &str, alias: &str) -> Vec<Vec<i32>> {
-    let mut lists = Vec::new();
-    for index in 0.. {
-        let key = format!("{prefix}.RandomWeights{index}");
-        let Some(weights) = section.read_int_list(&key) else {
-            break;
-        };
-        if weights.is_empty() {
-            break;
-        }
-        lists.push(weights);
-    }
-    if let Some(weights) = section.read_int_list(alias)
-        && !weights.is_empty()
-    {
-        if lists.is_empty() {
-            lists.push(weights);
-        } else {
-            lists[0] = weights;
-        }
-    }
-    lists
+fn read_roll_chances(section: &IniSection, key: &str) -> Option<Vec<NativeF32Bits>> {
+    section.read_phobos_double_list(key).map(|chances| {
+        chances
+            .into_iter()
+            .map(|chance| NativeF32Bits::from_bits((chance as f32).to_bits()))
+            .collect()
+    })
 }
 
 #[cfg(test)]
