@@ -310,8 +310,7 @@ impl crate::sim::world::Simulation {
 /// (`ObjectClass::Paradrop`'s hook `0x5F5ADD` -> cave `0xC2B0E4`:
 /// `0xC2FA75..0xC2FA8A`). The cave's first arm sends an object whose type
 /// has NPSE's `IsBomb=` flag to `BombParachute=` (`0xC2B0FC..0xC2B103`);
-/// VERA has no parachuted bombs and no `IsBomb=` type flag yet, so that arm
-/// stays native-only.
+/// The NPSE-specific `BombParachute=` selection remains a residual.
 fn parachute_anim_name<'r>(
     rules: &'r crate::rules::ruleset::RuleSet,
     entity: &crate::sim::game_entity::GameEntity,
