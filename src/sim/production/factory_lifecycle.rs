@@ -301,6 +301,24 @@ pub(crate) fn enqueue_selected(
     if outcome == EnqueueOutcome::AppendRefused {
         sim.sound_events
             .emit(SimSoundEvent::ProductionRefused { owner: owner_id });
+        // Same clear the aircraft refusal above makes, for the same reason.
+        //
+        // This is the other half of the wishlist's "生产飞机（入侵者战机）UI
+        // 还是会出BUG". The aircraft type refuses two ways: at BeginProduction
+        // when the airfield's pads are full and nothing is held, and here when
+        // the append is refused — the queue is at `[General]
+        // MaximumQueuedObjects=` or the type is at its build limit. Only the
+        // first cleared the cameo's request record. The second returned `false`
+        // with the record still set, and the button draws its clock from that
+        // record: a "building" state that never finishes and never clears.
+        //
+        // Measured with the record's own reader: without this line the refused
+        // append leaves the cameo's request unset-cleared, so the client redraws
+        // the clock on every frame it is asked.
+        //
+        // Native clears the request on the refused PRODUCE whichever arm
+        // refused it; the client turns this into the same clear.
+        effects.clear_production_request(type_interned);
         return false;
     }
     sim.production.spend_enqueue_order();

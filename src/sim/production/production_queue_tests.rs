@@ -2665,6 +2665,54 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
     assert_eq!(factory.queue.len(), 2);
 }
 
+/// A refused PRODUCE clears the cameo's request record, on every arm that
+/// refuses it.
+///
+/// The wishlist's "生产飞机（入侵者战机）UI还是会出BUG". The aircraft type refuses
+/// two ways: at BeginProduction when the airfield's pads are full and nothing is
+/// held, and at the append when the queue is at `[General]
+/// MaximumQueuedObjects=` or the type is at its build limit. Only the first
+/// cleared the record. The second returned `false` with the record still set,
+/// and the button draws its clock from that record — a build that never
+/// finishes and never clears.
+#[test]
+fn a_refused_append_clears_the_cameo_request() {
+    use std::cell::RefCell;
+
+    let (mut sim, rules, owner) = hold_world();
+    assert_eq!(rules.general.maximum_queued_objects, 2);
+    // Fill the queue: one active, two waiting.
+    for _ in 0..3 {
+        assert!(enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "MTNK",
+            crate::sim::world::FrameEffects::default(),
+            false,
+        ));
+    }
+    let cleared: RefCell<Vec<crate::sim::intern::InternedId>> = RefCell::new(Vec::new());
+    let clear = |id: crate::sim::intern::InternedId| cleared.borrow_mut().push(id);
+    let effects = crate::sim::world::FrameEffects::default().with_production_strip(&[], &clear);
+    // The fourth is refused at the append.
+    assert!(!enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "MTNK",
+        effects,
+        false
+    ));
+    let mtnk = sim.interner.get("MTNK").expect("the type is interned");
+    assert_eq!(
+        cleared.borrow().as_slice(),
+        &[mtnk],
+        "the refused append clears its own cameo's request"
+    );
+    let _ = owner;
+}
+
 /// ExitObject's generic arm (`0x00444638..0x00444984`), here for retail
 /// GAWEAP without its `WeaponsFactory=` key. The object leaves inside the
 /// producer at its dock Cell, queues Move and takes that Cell as its
