@@ -613,3 +613,38 @@ fn curtain_extra_tint_reads_the_audio_visual_globals() {
     );
     assert_eq!(super::curtain_extra_tint(Some(&rules), None), 0);
 }
+
+/// Phobos `UseRetintFix` (`Ext/TAction/Hooks.cpp:68-107`): a normal retint
+/// deactivates and reactivates every active light source, so their cells
+/// re-sample with the new normal RGB instead of keeping the old Convert.
+#[test]
+fn use_retint_fix_relights_active_light_sources_after_a_normal_retint() {
+    let terrain =
+        crate::map::resolved_terrain::test_grid(3, 1, crate::map::resolved_terrain::test_flat_cell);
+    let mut lights = MatchLighting::default();
+    lights.dimensions = [3, 1];
+    lights.detail_level = 2;
+    for x in 0..3 {
+        lights.heights.insert((x, 0), 0);
+    }
+    lights.set_use_retint_fix(true);
+    let lamp = crate::map::lighting::radiation_point_light(1, 0, 512, 200, [0; 3]);
+    lights.apply_events(
+        &terrain,
+        &[LightingEvent::Building {
+            id: 42,
+            source: Some(lamp),
+        }],
+    );
+    let before = lights.grid.cell_light_at((1, 0)).unwrap().profile_id;
+    assert_eq!(lights.grid.palette_rgb(before), [1000; 3]);
+    lights.apply_events(
+        &terrain,
+        &[global(
+            PaletteUpdate::Normal([1200, 800, 600]),
+            ScenarioLightingState::default(),
+        )],
+    );
+    let after = lights.grid.cell_light_at((1, 0)).unwrap().profile_id;
+    assert_eq!(lights.grid.palette_rgb(after), [1200, 800, 600]);
+}

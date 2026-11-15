@@ -338,6 +338,12 @@ pub(crate) fn install_world_presentation(
             .resolved_terrain()
             .map(|terrain| (terrain, &runtime.simulation))
     });
+    #[cfg(feature = "phobos")]
+    let use_retint_fix = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.resources.rules.phobos_globals.use_retint_fix);
     let presentation = &mut state.match_state.match_presentation;
     presentation.lighting.install(
         assets.lighting_grid,
@@ -346,6 +352,8 @@ pub(crate) fn install_world_presentation(
         live,
         map.lighting_events.as_deref(),
     );
+    #[cfg(feature = "phobos")]
+    presentation.lighting.set_use_retint_fix(use_retint_fix);
     // Current MapClass authority, including restored/triggered LocalSize,
     // reaches camera and minimap before either route positions its view.
     let (playfield_bounds, playfield_revision) =
