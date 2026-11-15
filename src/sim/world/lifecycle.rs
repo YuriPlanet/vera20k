@@ -3576,6 +3576,9 @@ impl Simulation {
         }
         // ParticleSystem VT7EFB9C+78 ->62FE80: always Ground. Rules resolve
         // the existing Building peers' GetYSort adjustments during insertion.
+        // RESIDUAL: ObjectUnlimbo refuses the empty coordinate
+        // (`0x005F4ECD..0x005F4EEF`), so gamemd leaves a system built at
+        // 0,0,0 in Limbo; VERA reveals it. No producer builds one there.
         Self::submit_object_display(
             &self.interner,
             &self.terrain_objects,
@@ -6054,6 +6057,11 @@ impl Simulation {
         // control and touches no other listener's state, so its place among
         // the listeners changes nothing.
         self.alpha_shapes.pointer_expired(expired_id);
+        // `0x0072590E..0x0072591F`: whatever the control, an expiring
+        // ParticleSystem that is the gas cloud clears that global first.
+        self.substrate
+            .particle_systems
+            .expire_gas_cloud_system(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses

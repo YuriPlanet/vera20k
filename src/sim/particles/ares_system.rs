@@ -928,6 +928,11 @@ fn smoke_movement(ext: &mut AresParticleSystemExt, sim: &mut Simulation, rules: 
     }
     for smoke in &mut ext.smoke {
         let kind = rules.particle_type(smoke.type_id);
+        // RESIDUAL: stock code reads StartStateAI=, StateAIAdvance= and
+        // EndStateAI= as signed bytes (MOVSX); whether these Ares reads sign-
+        // extend (Ares.dll `0x100280D0`) is unchecked, and VERA takes them
+        // unsigned. Only values of 128 and up differ, which no retail type
+        // sets.
         let end = i32::from(kind.end_state_ai);
         if smoke.state < end {
             // The phase offsets the start and makes the period

@@ -45,6 +45,13 @@ impl Simulation {
 
     /// ParticleSystem62E430: construct the explicit ParticleType and append.
     /// +C4 is DynamicVector capacity, not ParticleSystemType.ParticleCap.
+    ///
+    /// RESIDUAL: gamemd's gas spawners (`0x00425034`, `0x00518418`,
+    /// `0x005185AD`, `0x0074D0EF`) pass the cloud global `0x00A8ED78` to
+    /// `0x0062E430` with no null test, so once the cloud has retired the next
+    /// gas particle crashes gamemd at `0x0062E462`. VERA builds a new cloud
+    /// instead. The cloud retires only if a mod or map gives `[GasCloudSys]` a
+    /// `Lifetime=`; retail leaves it at -1, so stock play never gets here.
     pub(crate) fn spawn_gas_particle(
         &mut self,
         kind: ParticleTypeId,
@@ -156,9 +163,13 @@ pub(super) fn tick_particle(
     context: UninitContext<'_>,
 ) -> Result<(), SparkSystemTickError> {
     if sim.session.binary_frame() & 1 == 0 {
-        if sim.particle_rng().next_raw_abs_modulo(8) == 0 {
-            let x_axis = sim.particle_rng().next_raw_abs_modulo(2) == 0;
-            let delta = sim.particle_rng().next_raw_abs_modulo(3) as i32 - 1;
+        // 0x0062BD93..0x0062BE05: each draw takes its absolute value before
+        // the bit test or the IDIV, so a raw i32::MIN gives a delta of -3.
+        let mut draw =
+            |divisor| crate::sim::rng::abs_before_modulo(sim.particle_rng().next_u32(), divisor);
+        if draw(8) == 0 {
+            let x_axis = draw(2) == 0;
+            let delta = draw(3) - 1;
             if x_axis {
                 p.drift_x = p.drift_x.wrapping_add(delta);
             } else {
