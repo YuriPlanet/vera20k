@@ -434,6 +434,22 @@ impl SimRng {
         }
     }
 
+    /// A stream whose next draws are `draws`, in order: the lead cursor starts
+    /// at word 0 and the lagged one at word 125, over zeros. For a test that
+    /// needs a draw no seed reaches, such as `i32::MIN`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_next_draws_for_test(draws: &[u32]) -> Self {
+        assert!(draws.len() <= 125, "the lagged words must stay zero");
+        let mut state = vec![0; RNG_TABLE_LEN];
+        state[..draws.len()].copy_from_slice(draws);
+        Self {
+            disabled: 0,
+            index_a: 0,
+            index_b: 125,
+            state,
+        }
+    }
+
     /// Copy every logical field into immutable boundary evidence.
     pub fn logical_state(&self) -> SimRngLogicalState {
         let mut words = [0; RNG_TABLE_LEN];
@@ -611,11 +627,10 @@ impl SimRng {
     /// A raw `i32::MIN` over `n == u32::MAX` (a divisor of -1, as `MaxEC=-1`
     /// gives) overflows gamemd's IDIV; this returns the true remainder, 0.
     ///
-    /// RESIDUAL: Gas drift (`0x0062BDD3..0x0062BE05`) and the Spark burst
-    /// size (`0x0062E8C2..0x0062E8CC`) take the absolute value first
-    /// (`CDQ; XOR; SUB; CDQ; IDIV`). That differs only for a raw `i32::MIN`,
-    /// whose `NEG` overflows and leaves the remainder negative; this method
-    /// returns its positive twin there. One raw draw in 2^32.
+    /// Draws that take the absolute value first (`CDQ; XOR; SUB; CDQ; IDIV`),
+    /// such as Gas drift and the Spark burst size and Z velocity, use
+    /// [`abs_before_modulo`] instead: for a raw `i32::MIN` its remainder stays
+    /// negative.
     pub fn next_raw_abs_modulo(&mut self, n: u32) -> u32 {
         if n == 0 {
             return 0;

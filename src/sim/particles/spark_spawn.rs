@@ -109,7 +109,9 @@ pub(super) fn spark_spawn_pass(
             sim.particle_rng().next_u32();
             0
         } else {
-            sim.particle_rng().next_raw_abs_modulo(half as u32) as i32 + half
+            // `0x0062E8C2..0x0062E8CC`: a raw i32::MIN keeps its sign through
+            // the absolute value, so its remainder is negative.
+            crate::sim::rng::abs_before_modulo(sim.particle_rng().next_u32(), half) + half
         };
 
         // AI_Spark62E840 dispatches the held particle's own behavior; the
@@ -159,8 +161,9 @@ pub(super) fn spark_spawn_pass(
                     sim.particle_rng().next_u32() as i32,
                     particle_type.y_velocity,
                 );
-                let velocity_z = abs_modulo(
-                    sim.particle_rng().next_u32() as i32,
+                // `0x0062EA62..0x0062EA6B`: absolute value first, then IDIV.
+                let velocity_z = crate::sim::rng::abs_before_modulo(
+                    sim.particle_rng().next_u32(),
                     particle_type.z_velocity_range,
                 )
                 .wrapping_add(particle_type.min_z_velocity);
@@ -391,23 +394,6 @@ fn scaled_unit_draw(rng: &mut SimRng) -> Result<X87Value, SparkSpawnError> {
 /// all author non-zero `XVelocity`/`YVelocity`/`ZVelocityRange`.
 fn signed_modulo(raw: i32, divisor: i32) -> i32 {
     if divisor == 0 { 0 } else { raw % divisor }
-}
-
-/// `CDQ; XOR EAX,EDX; SUB EAX,EDX; CDQ; IDIV` — absolute value first, then the
-/// remainder (Z velocity, `0x0062EA62..0x0062EA6B`).
-///
-/// RESIDUAL: for a raw `i32::MIN` native's absolute value overflows and stays
-/// negative, so its remainder is `-(2^31 mod |divisor|)`; this takes
-/// `unsigned_abs` and returns the positive value. One raw draw in 2^32.
-///
-/// VERA-internal, gamemd equivalent UNCHECKED: a zero divisor returns 0 where
-/// native raises `#DE`.
-fn abs_modulo(raw: i32, divisor: i32) -> i32 {
-    if divisor == 0 {
-        0
-    } else {
-        (raw.unsigned_abs() % divisor.unsigned_abs()) as i32
-    }
 }
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -698,6 +684,20 @@ mod tests {
         }
         expected.next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
         assert_eq!(sim.rng_views().scenario, expected.logical_view());
+    }
+
+    /// `0x0062E8C2..0x0062E8CC` takes the absolute value before the IDIV: a
+    /// raw i32::MIN stays negative, so ParticleCap=6 bursts -2 + 3 = 1 spark.
+    #[test]
+    fn an_int_min_burst_draw_keeps_its_sign() {
+        let rules = spark_rules(1, 6, "1");
+        let mut sim = Simulation::with_seed(1);
+        sim.scenario_rng = SimRng::with_next_draws_for_test(&[0x8000_0000]);
+        let mut sys = spark_system(1);
+
+        spark_spawn_pass(&mut sys, &mut sim, &rules).expect("spark spawn");
+
+        assert_eq!(sys.particles.len(), 1);
     }
 
     #[test]
