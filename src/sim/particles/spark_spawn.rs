@@ -75,7 +75,7 @@ pub(super) fn spark_spawn_pass(
     }
 
     let pst = rules.particle_system_type(sys.type_id);
-    let particle_cap = pst.particle_cap as i32;
+    let particle_cap = pst.particle_cap;
     let holds_what = pst.holds_what;
     let spawn_spark_percentage = pst.spawn_spark_percentage;
     let spawn_direction = pst.spawn_direction;
@@ -97,13 +97,16 @@ pub(super) fn spark_spawn_pass(
 
     if bursts {
         // (2) Burst size: `|Next()| % (cap / 2) + (cap / 2)`, the halving being
-        // `CDQ; SUB EAX,EDX; SAR ECX,1` — truncation toward zero.
-        // VERA-internal, gamemd equivalent UNCHECKED: `half <= 0` short-circuits
-        // where native would `IDIV` by zero and raise `#DE`. Every stock Spark
-        // system authors `ParticleCap` (6, 7, 15, 20), so the branch is
-        // unreachable in stock; it exists because a mod could author 0 or 1.
+        // `CDQ; SUB EAX,EDX; SAR ECX,1` — truncation toward zero. A negative
+        // half still takes its draw (`0x0062E8AA`) and gives a count below
+        // one, so nothing spawns. RESIDUAL: `half == 0` (a `ParticleCap` of
+        // -1..=1, mod data only) skips the draw where native's `IDIV` by zero
+        // raises `#DE`. Every stock Spark system authors 6, 7, 15 or 20.
         let half = particle_cap / 2;
-        let burst = if half <= 0 {
+        let burst = if half == 0 {
+            0
+        } else if half < 0 {
+            sim.particle_rng().next_u32();
             0
         } else {
             sim.particle_rng().next_raw_abs_modulo(half as u32) as i32 + half
@@ -175,12 +178,13 @@ pub(super) fn spark_spawn_pass(
                 // type's `SpawnDirection` (`psType+0x2BC`/`+0x2C0`/`+0x2C4`,
                 // written by `ParticleSystemTypeClass::ReadINI @ 0x006442D0`),
                 // because the `ParticleSystem+0xF9` arm that would take the
-                // shared draws instead is unreachable — see (3). No stock Spark
-                // system authors `SpawnDirection`, so in practice this folds
-                // zero and each particle keeps its own three velocity draws.
-                vx = add_i32(vx, spawn_direction.x)?;
-                vy = add_i32(vy, spawn_direction.y)?;
-                vz = add_i32(vz, spawn_direction.z)?;
+                // shared draws instead is unreachable — see (3). Each float is
+                // `FLD`ed and `FADD`ed to the velocity (`0x0062EAFD..0x0062EB37`).
+                // No stock Spark system authors `SpawnDirection`, so in practice
+                // this folds zero and each particle keeps its own draws.
+                vx = add_f32(vx, spawn_direction[0])?;
+                vy = add_f32(vy, spawn_direction[1])?;
+                vz = add_f32(vz, spawn_direction[2])?;
 
                 // (4d) Renormalise, then rescale by the ORIGINAL magnitude, so
                 // the offset changes direction without changing speed. The
@@ -362,9 +366,12 @@ pub(super) fn magnitude(
     sqrt_approx_f32(sum)
 }
 
-fn add_i32(value: NativeF32Bits, addend: i32) -> Result<NativeF32Bits, SparkSpawnError> {
+/// RESIDUAL: an infinite `SpawnDirection=` (mod data such as `1e400`) fails
+/// this load and ends the system's spawning; native's masked `FADD` keeps
+/// spawning sparks with non-finite velocities.
+fn add_f32(value: NativeF32Bits, addend: NativeF32Bits) -> Result<NativeF32Bits, SparkSpawnError> {
     Ok(X87Chop53::store_f32(X87Chop53::add(
-        X87Chop53::load_i32(addend),
+        X87Chop53::load_f32(addend)?,
         X87Chop53::load_f32(value)?,
     ))?)
 }
@@ -412,7 +419,7 @@ mod tests {
     use crate::sim::rng::SimRng;
 
     /// A stock-shaped Spark system: `[SparkSys]` holding `[Spark]`.
-    fn spark_rules(spawn_frames: u32, cap: u32, percentage: &str) -> RuleSet {
+    fn spark_rules(spawn_frames: u32, cap: i32, percentage: &str) -> RuleSet {
         let ini = IniFile::from_str(&format!(
             "[General]\nFixtureOnly=1\n\
              [ParticleSystems]\n1=SparkSys\n\
@@ -671,6 +678,26 @@ mod tests {
             SimRng::new(5).logical_view(),
             "a finished system consumes no RNG at all"
         );
+    }
+
+    /// A negative `ParticleCap` halves to a negative divisor: native still
+    /// draws the burst size (`0x0062E8AA`), which comes out below one, so no
+    /// spark spawns but the shared draws and the facing draw follow.
+    #[test]
+    fn a_negative_particle_cap_takes_the_burst_draw_and_spawns_nothing() {
+        let rules = spark_rules(1, -4, "1");
+        let mut sim = Simulation::with_seed(4242);
+        let mut sys = spark_system(1);
+
+        spark_spawn_pass(&mut sys, &mut sim, &rules).expect("spark spawn");
+
+        assert!(sys.particles.is_empty());
+        let mut expected = SimRng::new(4242);
+        for _ in 0..4 {
+            expected.next_u32();
+        }
+        expected.next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
+        assert_eq!(sim.rng_views().scenario, expected.logical_view());
     }
 
     #[test]

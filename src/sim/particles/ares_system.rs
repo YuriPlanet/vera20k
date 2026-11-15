@@ -370,7 +370,7 @@ fn update_spark(
             )
         {
             let held = rules.particle_type(ext.held_type);
-            let half = (pst.particle_cap as i32).max(0) / 2;
+            let half = pst.particle_cap.max(0) / 2;
             let count = sim
                 .particle_rng()
                 .next_range_i32_inclusive(0, half)
@@ -418,11 +418,10 @@ fn spawn_spark(
     let draws = [x, y, z].map(|draw| X::store_f32_masked_chop(X::load_i32(draw)));
     let [x, y, z] = draws.map(X::load_f32);
     let speed = crt_sqrt(X::add(X::add(X::mul(y, y), X::mul(x, x)), X::mul(z, z)));
-    // VERA keeps SpawnDirection as whole leptons; the DLL adds its floats.
-    let spawn_direction = pst.spawn_direction.to_array();
+    // The DLL adds the type's SpawnDirection floats.
     let mut direction = [0, 1, 2].map(|axis| {
         X::store_f32_masked_chop(X::add(
-            X::load_f32(X::store_f32_masked_chop(X::load_i32(spawn_direction[axis]))),
+            X::load_f32(pst.spawn_direction[axis]),
             X::load_f32(draws[axis]),
         ))
     });
