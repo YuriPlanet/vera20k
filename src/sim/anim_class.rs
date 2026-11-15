@@ -946,6 +946,32 @@ pub struct AnimStore {
     /// [`Self::note_look`], a new type. The simulation never reads it; never
     /// saved, compared or hashed.
     looks: TouchLogs<1>,
+    /// The local anims, which only this game runs and draws: a LAN or online
+    /// MoveFlash, which `FootClass::ClickedAction_Cell` moves out of
+    /// AnimClass::Array (`0x00A8E9A8`) into its own list (`0x00A83E00`,
+    /// `0x004D7FD7..0x004D8062`). They take ids from their own range
+    /// ([`is_local_anim_id`]). The by-id reads and writes find them; the
+    /// Anim array's readers ([`Self::iter`], [`Self::len`], [`Self::key_at`],
+    /// [`Self::values_mut`]), comparison, saves and the world hash leave them
+    /// out. They have no owner: the owner writers refuse them.
+    local: BTreeMap<AnimId, AnimObject>,
+    /// The id the next local anim takes.
+    next_local: AnimId,
+    /// Local anims Destroy has retired, which the end-of-frame drain removes
+    /// ([`Self::drain_local_deletes`]): the shared pending-delete queue is
+    /// hashed, so they stay out of it.
+    local_deletes: Vec<AnimId>,
+}
+
+/// The first local anim id ([`AnimStore`]'s `local`). Shared ids count up
+/// from 1 ([`crate::sim::world::ObjectSubstrate::allocate_stable_id`]) and
+/// never reach it, and it sits below the sound-handle owner tags
+/// (`1 << 57` to `1 << 62`), so a local anim's sound owner stays its own.
+const LOCAL_ANIM_ID_BASE: AnimId = 1 << 56;
+
+/// Whether `id` names a local anim, one only this game runs and draws.
+pub(crate) fn is_local_anim_id(id: u64) -> bool {
+    id >= LOCAL_ANIM_ID_BASE
 }
 
 /// A product derived from the anims that re-derives from the touch log.
@@ -964,12 +990,19 @@ impl AnimTouchReader {
 
 impl AnimStore {
     pub fn get(&self, id: AnimId) -> Option<&AnimObject> {
+        if is_local_anim_id(id) {
+            return self.local.get(&id);
+        }
         self.anims.get(&id)
     }
 
     pub fn get_mut(&mut self, id: AnimId) -> Option<&mut AnimObject> {
         let stored = self.anims.len();
-        let anim = self.anims.get_mut(&id)?;
+        let anim = if is_local_anim_id(id) {
+            self.local.get_mut(&id)?
+        } else {
+            self.anims.get_mut(&id)?
+        };
         self.touched.note(id, stored);
         Some(anim)
     }
@@ -1009,6 +1042,10 @@ impl AnimStore {
     pub(crate) fn insert(&mut self, object: AnimObject) -> Option<AnimObject> {
         self.touched.note(object.stable_id, self.anims.len());
         self.looks.note(object.stable_id, self.anims.len());
+        if is_local_anim_id(object.stable_id) {
+            debug_assert!(object.owner_entity.is_none());
+            return self.local.insert(object.stable_id, object);
+        }
         count_owner(&mut self.owner_counts, object.owner_entity);
         let replaced = self.anims.insert(object.stable_id, object);
         if let Some(replaced) = &replaced {
@@ -1018,6 +1055,13 @@ impl AnimStore {
     }
 
     pub(crate) fn remove(&mut self, id: AnimId) -> Option<AnimObject> {
+        if is_local_anim_id(id) {
+            let removed = self.local.remove(&id);
+            if removed.is_some() {
+                self.touched.note(id, self.anims.len());
+            }
+            return removed;
+        }
         let removed = self.anims.remove(&id);
         if let Some(removed) = &removed {
             uncount_owner(&mut self.owner_counts, removed.owner_entity);
@@ -1139,6 +1183,47 @@ impl AnimStore {
             owner_counts,
             touched: TouchLogs::everything(),
             looks: TouchLogs::everything(),
+            local: BTreeMap::new(),
+            next_local: LOCAL_ANIM_ID_BASE,
+            local_deletes: Vec::new(),
+        }
+    }
+
+    /// The id for a new local anim.
+    pub(crate) fn allocate_local_id(&mut self) -> AnimId {
+        let id = self.next_local;
+        self.next_local += 1;
+        id
+    }
+
+    /// The local anims, in the order they were made (the local list's).
+    pub(crate) fn local_ids(&self) -> Vec<AnimId> {
+        self.local.keys().copied().collect()
+    }
+
+    /// The local anims and their ids, in the local list's order.
+    pub(crate) fn local_iter(&self) -> impl Iterator<Item = (&AnimId, &AnimObject)> {
+        self.local.iter()
+    }
+
+    /// Retire the local anim `id` for the end-of-frame drain.
+    pub(crate) fn queue_local_delete(&mut self, id: AnimId) {
+        if !self.local_deletes.contains(&id) {
+            self.local_deletes.push(id);
+        }
+    }
+
+    /// Whether Destroy has retired the local anim `id`.
+    pub(crate) fn local_delete_queued(&self, id: AnimId) -> bool {
+        self.local_deletes.contains(&id)
+    }
+
+    /// Remove the retired local anims. Their Destroy already released the
+    /// sound and left Display; the destructor's `0x00422A69` takes each out
+    /// of the local list.
+    pub(crate) fn drain_local_deletes(&mut self) {
+        for id in std::mem::take(&mut self.local_deletes) {
+            self.remove(id);
         }
     }
 
@@ -1153,6 +1238,9 @@ impl AnimStore {
     }
 
     pub fn contains_key(&self, id: AnimId) -> bool {
+        if is_local_anim_id(id) {
+            return self.local.contains_key(&id);
+        }
         self.anims.contains_key(&id)
     }
 
@@ -1188,12 +1276,19 @@ impl Default for AnimStore {
 
 impl Clone for AnimStore {
     /// A clone starts with an everything-touched log: whatever was derived
-    /// from the original says nothing certain about the copy's future.
+    /// from the original says nothing certain about the copy's future. The
+    /// local anims come along, so the presentation copy draws them.
     fn clone(&self) -> Self {
-        Self::from_anims(self.anims.clone())
+        Self {
+            local: self.local.clone(),
+            next_local: self.next_local,
+            local_deletes: self.local_deletes.clone(),
+            ..Self::from_anims(self.anims.clone())
+        }
     }
 }
 
+/// The local anims are left out, as they are from saves and the hash.
 impl PartialEq for AnimStore {
     fn eq(&self, other: &Self) -> bool {
         self.anims == other.anims
@@ -1208,7 +1303,8 @@ impl std::fmt::Debug for AnimStore {
     }
 }
 
-/// The saved form is the former newtype `AnimStore(map)`; the log is not saved.
+/// The saved form is the former newtype `AnimStore(map)`; the log and the
+/// local anims are not saved.
 impl Serialize for AnimStore {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_newtype_struct("AnimStore", &self.anims)
@@ -1691,13 +1787,19 @@ impl Simulation {
     /// 0x600, 0, false)` at the clicked Cell's centre, on the ground
     /// (`0x00578080`) and raised by the bridge deck when the Cell at that
     /// coordinate (`0x00565730`) has flag 0x100. Campaign and skirmish
-    /// (GameMode 0 and 5) keep it an ordinary anim. LAN and WOL instead move
-    /// it to the local unsynced list (`0x004D7F28..0x004D7F57`,
-    /// `0x004D7FA6..0x004D8062`), which VERA does not model, so it spawns
-    /// nothing there. False when nothing is constructed.
+    /// (GameMode 0 and 5) keep it an ordinary anim. LAN and online games make
+    /// it a local anim instead (`0x004D7F28..0x004D7F57`,
+    /// `0x004D7FA6..0x004D8062`), which only the clicking game runs and
+    /// draws. False when nothing is constructed.
+    ///
+    /// RESIDUAL: a local anim runs the whole AnimClass::AI, as gamemd's does.
+    /// A MoveFlash type that damages, leaves a scorch or crater, spawns
+    /// particles, a `TrailerAnim=` or a `Next=` anim, marks `MakeInfantry=`
+    /// cells or sits in `Layer=Ground` (whose sorted order is shared state)
+    /// would change the clicking game alone, as in gamemd. Retail RING does
+    /// none of these.
     pub(crate) fn spawn_move_flash(&mut self, rules: &RuleSet, cell: (u16, u16)) -> bool {
-        if !self.session.game_mode().is_single_player() || rules.general.move_flash.name.is_empty()
-        {
+        if rules.general.move_flash.name.is_empty() {
             return false;
         }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
@@ -1730,13 +1832,36 @@ impl Simulation {
             y: centre.y,
             z,
         };
-        let type_id = self.interner.intern(&rules.general.move_flash.name);
+        let local = !self.session.game_mode().is_single_player();
+        let name = &rules.general.move_flash.name;
+        // `resolve_type_handles` interned it; a local flash never adds a
+        // name, which the other games would lack.
+        let type_id = if local {
+            let Some(type_id) = self.interner.get(name) else {
+                log::debug!("MoveFlash [{name}] was not interned with the type handles");
+                return false;
+            };
+            type_id
+        } else {
+            self.interner.intern(name)
+        };
         let (rx, ry, sub_x, sub_y, level) = world_coord.to_cell_sub_z();
         let descriptor = AnimClassSpawnDescriptor {
             draw_flags: 0x600,
             ..AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, level)
         };
-        match self.spawn_anim_at_world(rules, descriptor, world_coord) {
+        let constructor = if local {
+            AnimConstructorInput::Local
+        } else {
+            AnimConstructorInput::Runtime
+        };
+        match self.spawn_anim_at_world_with_constructor(
+            rules,
+            descriptor,
+            world_coord,
+            constructor,
+            FrameEffects::default(),
+        ) {
             Ok(_) => true,
             Err(AnimSpawnError::Tiberium(error)) => {
                 log::warn!("MoveFlash refused an invalid Tiberium Image start: {error}");
@@ -1899,7 +2024,13 @@ impl Simulation {
                 .native_unique_id
                 .unwrap_or_else(|| self.next_native_runtime_id()),
             AnimConstructorInput::Runtime => self.next_native_runtime_id(),
+            // ClickedAction_Cell sets Scenario+0x214 to -3 around the
+            // constructor (0x004D7F42) and restores it after (0x004D7FCB), so
+            // NextUniqueID's pre-increment (0x0068BCB0) gives the flash -2,
+            // the id the sync checksum skips, and the counter stays put.
+            AnimConstructorInput::Local => crate::sim::multiplayer_checksum::SYNC_EXEMPT_ANIM_ID,
         };
+        let local = matches!(constructor, AnimConstructorInput::Local);
         let type_name = self
             .interner
             .resolve(descriptor.type_name)
@@ -1912,11 +2043,20 @@ impl Simulation {
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
         let (effective_end, effective_loop_end) = effective_bounds(&type_name, config)?;
         let reverse = descriptor.reverse || config.reverse;
-        let stop_sound_id = config
-            .stop_sound
-            .as_deref()
-            .map(|sound| self.interner.intern(sound));
-        let stable_id = self.substrate.allocate_stable_id();
+        // VERA-only: a local anim never adds a name to the interner, which the
+        // other games would lack; a StopSound name not yet interned is left out.
+        let stop_sound_id = config.stop_sound.as_deref().and_then(|sound| {
+            if local {
+                self.interner.get(sound)
+            } else {
+                Some(self.interner.intern(sound))
+            }
+        });
+        let stable_id = if local {
+            self.substrate.anims.allocate_local_id()
+        } else {
+            self.substrate.allocate_stable_id()
+        };
         if self.substrate.anims.contains_key(stable_id)
             || self.substrate.entities.contains(stable_id)
         {
@@ -1971,7 +2111,12 @@ impl Simulation {
             stop_sound_id,
             display: AnimDisplayState {
                 marked_on_map: false,
-                y_sort_adjust: config.y_sort_adjust,
+                // 0x004D7F57 writes -5000 to the MoveFlash type's YSortAdjust
+                // (+0x340) before a local flash's constructor. RESIDUAL: gamemd
+                // keeps that write on the type, so later anims of the type
+                // sort with it too; VERA gives it to the flash alone. Retail
+                // MoveFlash is RING, which nothing else makes, in Air.
+                y_sort_adjust: if local { -5000 } else { config.y_sort_adjust },
             },
             bounce: None,
             flaming_guy: None,
@@ -1986,8 +2131,20 @@ impl Simulation {
         debug_assert!(previous.is_none());
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
-            AnimConstructorInput::Runtime | AnimConstructorInput::AssignedIdentity(_) => {
-                match anim_constructor_draws(config, world_coord, &mut self.scenario_rng) {
+            AnimConstructorInput::Runtime
+            | AnimConstructorInput::AssignedIdentity(_)
+            | AnimConstructorInput::Local => {
+                // VERA-only: a local anim draws from a copy, so the other
+                // games' Scenario RNG stays in step. gamemd draws from the
+                // shared one; retail RING has no draw (no `RandomRate=`).
+                let mut copy;
+                let rng = if local {
+                    copy = self.scenario_rng.clone();
+                    &mut copy
+                } else {
+                    &mut self.scenario_rng
+                };
+                match anim_constructor_draws(config, world_coord, rng) {
                     Ok(draws) => draws,
                     Err(error) => {
                         // VERA's explicit unsupported-arithmetic failure precedes
@@ -2887,7 +3044,9 @@ impl Simulation {
     }
 
     pub(crate) fn destroy_anim_with_context(&mut self, id: AnimId, rules: &RuleSet) {
-        if self.substrate.pending_delete.contains_object(&id) {
+        if self.substrate.pending_delete.contains_object(&id)
+            || self.substrate.anims.local_delete_queued(id)
+        {
             return;
         }
         // `AnimClass::GetCoords @ 0x00422BE0` — the sound plays at the anim's
@@ -2942,7 +3101,13 @@ impl Simulation {
         self.notify_anim_pointer_expired(id);
         self.building_anim_pointer_expired(id, rules);
         self.conceal_anim(id);
-        self.substrate.pending_delete.queue_object(id);
+        // VERA-only: a local anim waits for the drain outside the shared,
+        // hashed queue gamemd puts it in.
+        if is_local_anim_id(id) {
+            self.substrate.anims.queue_local_delete(id);
+        } else {
+            self.substrate.pending_delete.queue_object(id);
+        }
     }
 
     /// Building451A2C, ClearAnimSlot451E40 and Infantry5185C3 use scalar
@@ -3117,15 +3282,20 @@ impl Simulation {
         ))
     }
 
-    /// Every Anim's [`Self::anim_absolute_coord`], in one walk of the store.
+    /// Every Anim's [`Self::anim_absolute_coord`], in one walk of the store,
+    /// the local anims last: the presentation places what it draws by these.
     pub fn anim_absolute_coords(&self) -> impl Iterator<Item = (AnimId, AnimWorldCoord)> + '_ {
         let terrain = self.resolved_terrain.as_ref();
-        self.substrate.anims.iter().map(move |(&id, anim)| {
-            (
-                id,
-                anim_world_coords(anim, &self.substrate.entities, terrain),
-            )
-        })
+        let anims = &self.substrate.anims;
+        anims
+            .iter()
+            .chain(anims.local_iter())
+            .map(move |(&id, anim)| {
+                (
+                    id,
+                    anim_world_coords(anim, &self.substrate.entities, terrain),
+                )
+            })
     }
 
     pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
@@ -4510,6 +4680,9 @@ pub(crate) enum AnimConstructorInput {
     Runtime,
     AssignedIdentity(i32),
     Preconsumed(AnimConstructorDraws),
+    /// A local anim ([`AnimStore`]'s `local`): the LAN and online MoveFlash
+    /// of [`Simulation::spawn_move_flash`].
+    Local,
 }
 
 /// Take the constructor's draws for an anim of `config` at `coord`.

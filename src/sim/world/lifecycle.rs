@@ -3506,6 +3506,7 @@ impl Simulation {
         // and Display. Its independent19B byte can still be zero, so it cannot
         // be resurrected through Reveal before the common deferred drain.
         if self.substrate.pending_delete.contains_object(&stable_id)
+            || self.substrate.anims.local_delete_queued(stable_id)
             || !self
                 .substrate
                 .anims
@@ -3517,6 +3518,12 @@ impl Simulation {
         self.substrate.mark_anim_display(stable_id, true);
         if submit {
             self.submit_anim_display(stable_id, rules);
+        }
+        // `ObjectClass::Unlimbo @ 0x005F4EC0` leaves an object with id -2 out
+        // of Logic in LAN and online games: the local list runs it instead
+        // (`FrameStep::LocalAnims`).
+        if crate::sim::anim_class::is_local_anim_id(stable_id) {
+            return false;
         }
         self.register_logic_object(stable_id)
     }
@@ -7483,6 +7490,7 @@ impl Simulation {
             }
         }
         self.substrate.pending_delete.finish_drain();
+        self.substrate.anims.drain_local_deletes();
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.
