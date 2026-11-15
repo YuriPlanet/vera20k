@@ -85,15 +85,22 @@ pub(crate) fn game_time_text(seconds: i32) -> String {
     }
 }
 
-/// `Ext/Sidebar/Hooks.cpp:39-42`: the four progress strips start at
+/// `Ext/Sidebar/Hooks.cpp:39-42,68`: the four progress strips start at
 /// `XBase = (Sidebar_GDIPositions ? 26 : 20) + offset.X` and
-/// `YBase = 197 + offset.Y`. VERA's indicator lane anchors against the
-/// sidebar surface centre, so this returns the native absolute base plus the
-/// authored offset for the lane to place.
-pub(crate) fn producing_progress_anchor(offset: [i32; 2], gdi_positions: bool) -> (i32, i32) {
-    let x_base: i32 = if gdi_positions { 26 } else { 20 };
+/// `YBase = 197 + offset.Y`, one column every `XOffset`
+/// (`Sidebar_GDIPositions ? 29 : 32`). VERA's indicator lane anchors against
+/// the sidebar surface centre, so this returns the native absolute base plus
+/// the authored offset for the lane to place.
+pub(crate) fn producing_progress_anchor(
+    offset: [i32; 2],
+    gdi_positions: bool,
+    column: usize,
+) -> (i32, i32) {
+    let (x_base, x_offset): (i32, i32) = if gdi_positions { (26, 29) } else { (20, 32) };
     (
-        x_base.wrapping_add(offset[0]),
+        x_base
+            .wrapping_add((column as i32).wrapping_mul(x_offset))
+            .wrapping_add(offset[0]),
         197i32.wrapping_add(offset[1]),
     )
 }
@@ -151,10 +158,13 @@ mod tests {
     }
 
     #[test]
-    fn producing_progress_uses_the_gdi_base_and_the_side_offset() {
-        assert_eq!(producing_progress_anchor([0, 0], false), (20, 197));
-        assert_eq!(producing_progress_anchor([0, 0], true), (26, 197));
-        assert_eq!(producing_progress_anchor([12, -7], true), (38, 190));
+    fn producing_progress_uses_the_gdi_base_pitch_and_side_offset() {
+        assert_eq!(producing_progress_anchor([0, 0], false, 0), (20, 197));
+        assert_eq!(producing_progress_anchor([0, 0], true, 0), (26, 197));
+        assert_eq!(producing_progress_anchor([12, -7], true, 0), (38, 190));
+        // The columns are 32 apart non-GDI and 29 apart GDI.
+        assert_eq!(producing_progress_anchor([0, 0], false, 3), (20 + 96, 197));
+        assert_eq!(producing_progress_anchor([0, 0], true, 3), (26 + 87, 197));
     }
 
     #[test]
