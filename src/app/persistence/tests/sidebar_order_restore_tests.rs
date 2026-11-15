@@ -96,6 +96,8 @@ fn scrolling_fixture() -> (Simulation, RuleSet, InternedId, Vec<Cameo>) {
                             naval: false,
                             tech_level: kind.tech_level,
                             cost: sim.cost_of(owner, kind, &rules),
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             name: kind.ui_name.clone().unwrap(),
                         },
                     }
@@ -133,6 +135,8 @@ fn candidates(types: [InternedId; 2], first_cost: i32) -> Vec<Cameo> {
                 naval: false,
                 tech_level: 1,
                 cost,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: String::new(),
             },
         })

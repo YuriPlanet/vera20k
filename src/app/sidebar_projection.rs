@@ -1375,6 +1375,10 @@ fn object_cameo(
         object.category,
         ObjectCategory::Vehicle | ObjectCategory::Aircraft
     );
+    #[cfg(feature = "phobos")]
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
+    #[cfg(not(feature = "phobos"))]
+    let sort_by_internal_name = false;
     Some(Cameo {
         id: CameoId::Object(id),
         tab: SidebarTab::for_category(crate::sim::production::category_for_object(object)),
@@ -1385,6 +1389,8 @@ fn object_cameo(
             naval: vehicle && object.naval,
             tech_level: sim.object_tech_level(object),
             cost,
+            internal_name: object.id.clone(),
+            sort_by_internal_name,
             name: crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf),
         },
     })
@@ -1403,11 +1409,15 @@ fn super_cameo(
     let tab = crate::ui::sidebar::SidebarTab::for_sw_tab_index(kind.phobos_tab_index.index());
     #[cfg(not(feature = "phobos"))]
     let tab = crate::ui::sidebar::SidebarTab::Defense;
+    #[cfg(feature = "phobos")]
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
+    #[cfg(not(feature = "phobos"))]
+    let sort_by_internal_name = false;
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
         tab,
         available: true,
-        key: super_weapon_cameo_key(kind, csf),
+        key: super_weapon_cameo_key(kind, csf, sort_by_internal_name),
     })
 }
 
@@ -1416,9 +1426,12 @@ fn super_cameo(
 pub(crate) fn super_weapon_cameo_key(
     kind: &crate::rules::superweapon_type::SuperWeaponType,
     csf: Option<&crate::assets::csf_file::CsfFile>,
+    sort_by_internal_name: bool,
 ) -> CameoKey {
     CameoKey::SuperWeapon {
         recharge_frames: kind.recharge_time_frames,
+        internal_name: kind.id.clone(),
+        sort_by_internal_name,
         name: crate::assets::csf_file::type_ui_name(kind.ui_name.as_deref(), csf),
     }
 }
@@ -1768,6 +1781,8 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
@@ -1857,6 +1872,8 @@ mod tests {
             naval: false,
             tech_level: 1,
             cost: 300,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "changed comparison key".into(),
         };
         projection.reconcile_cameos(owner, &[repriced], 3, &[]);
@@ -1936,6 +1953,8 @@ mod tests {
                         naval: false,
                         tech_level: 0,
                         cost: 0,
+                        internal_name: String::new(),
+                        sort_by_internal_name: false,
                         name: String::new(),
                     },
                 })
@@ -2020,6 +2039,8 @@ mod tests {
                     naval: false,
                     tech_level: 0,
                     cost: 100,
+                    internal_name: String::new(),
+                    sort_by_internal_name: false,
                     name: String::new(),
                 },
             })
@@ -2076,6 +2097,8 @@ mod tests {
                 naval: false,
                 tech_level: 0,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: String::new(),
             },
         };
@@ -2263,8 +2286,14 @@ mod tests {
             display.unwrap()
         );
         let next_tick = saved.advance_credits("Americans", 1000, 143, true);
-        assert_eq!(warm.advance_credits("Americans", 1000, 143, true), next_tick);
-        assert_eq!(cold.advance_credits("Americans", 1000, 143, true), next_tick);
+        assert_eq!(
+            warm.advance_credits("Americans", 1000, 143, true),
+            next_tick
+        );
+        assert_eq!(
+            cold.advance_credits("Americans", 1000, 143, true),
+            next_tick
+        );
         assert_eq!(
             warm.saved_credits_counter("Americans"),
             saved.saved_credits_counter("Americans")

@@ -1452,6 +1452,8 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E1".into(),
             },
         };
@@ -1497,6 +1499,8 @@ mod tests {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "Test Type".to_string(),
             },
         };
