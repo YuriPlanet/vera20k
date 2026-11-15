@@ -203,7 +203,7 @@ struct SharedSurface<S = wgpu::Surface<'static>, T = wgpu::SurfaceTexture> {
     wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
-impl<S: Send + 'static, T: Send + 'static> SharedSurface<S, T> {
+impl<S, T> SharedSurface<S, T> {
     fn new(surface: S) -> Self {
         Self {
             slot: Mutex::new(WindowSurface {
@@ -243,14 +243,19 @@ impl<S: Send + 'static, T: Send + 'static> SharedSurface<S, T> {
 
     /// Run `job` (submit and present) on the hand-off thread, then take the
     /// next picture with `acquire` as its tail: waits and queue users go on
-    /// once `job` ended, while the tail may still wait for the screen.
+    /// once `job` ended, while the tail may still wait for the screen. Only
+    /// this crosses threads, so only it needs a surface that may: the
+    /// browser's is not, and has no hand-off thread.
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn hand_off(
         self: &Arc<Self>,
         handoff: &super::frame_handoff::FrameHandoff,
         job: impl FnOnce() + Send + 'static,
         acquire: impl FnOnce(&S) -> Option<T> + Send + 'static,
-    ) {
+    ) where
+        S: Send + 'static,
+        T: Send + 'static,
+    {
         self.taking.store(true, Ordering::Release);
         let surface = Arc::clone(self);
         handoff.send_with_tail(job, move || surface.take_next(acquire));
