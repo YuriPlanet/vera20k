@@ -100,15 +100,21 @@ impl ColorAddTable {
     /// the RGB565 arm, so unlike [`Self::rgb565_word`] the word is only
     /// `R<<11 | G<<5 | B`. An index outside the table answers 0.
     ///
-    /// RESIDUAL: Phobos `[AudioVisual] ColorAddUse8BitRGB=yes` (default no)
-    /// reads the entry as 8-bit RGB instead; VERA does not read that key.
+    /// `use_8bit` is `[AudioVisual] ColorAddUse8BitRGB=`
+    /// (`Ext/Rules/Body.cpp:260`): the entries are then 8-bit channels and
+    /// `Drawing::RGB_To_Int` narrows them to RGB565 before packing.
     #[cfg(feature = "phobos")]
-    pub fn phobos_word(&self, index: i32) -> u16 {
+    pub fn phobos_word(&self, index: i32, use_8bit: bool) -> u16 {
         let Some(entry) = usize::try_from(index).ok().and_then(|i| self.slots.get(i)) else {
             return 0;
         };
         let [r, g, b] = entry.rgb.map(u32::from);
-        (r << 11 | g << 5 | b) as u16
+        let word = if use_8bit {
+            (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)
+        } else {
+            r << 11 | g << 5 | b
+        };
+        word as u16
     }
 }
 
@@ -438,5 +444,26 @@ mod tests {
         assert_eq!(rules.color_add.slots[0].rgb, [0, 0, 24]);
         assert_eq!(rules.color_add.slots[1].rgb, [4, 5, 6]);
         assert_eq!(rules.color_add.slots[2].rgb, [7, 8, 9]);
+    }
+
+    /// `[AudioVisual] ColorAddUse8BitRGB=yes` feeds `Drawing::RGB_To_Int`
+    /// (`Ext/Rules/Body.cpp:260`, `Utilities/GeneralUtils.cpp`), which narrows
+    /// the 8-bit channels to RGB565 before the `R<<11 | G<<5 | B` pack.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_word_narrows_8bit_channels() {
+        let table = ColorAddTable {
+            slots: std::array::from_fn(|i| ColorAddEntry {
+                name: None,
+                rgb: if i == 0 { [128, 128, 128] } else { [5, 5, 5] },
+            }),
+        };
+        // 128 -> 16 red/blue, 128 -> 32 green.
+        assert_eq!(table.phobos_word(0, true), (16 << 11 | 32 << 5 | 16) as u16);
+        assert_eq!(table.phobos_word(1, true), 32, "5 >> 3 is 0, 5 >> 2 is 1");
+        assert_eq!(
+            table.phobos_word(0, false),
+            (128 << 11 | 128 << 5 | 128) as u16
+        );
     }
 }
