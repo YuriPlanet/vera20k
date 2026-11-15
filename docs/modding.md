@@ -163,8 +163,8 @@ your game, compare codes to see whether your copies differ.
 
 A mod can carry a list of its files, `mod-files.txt`. With one, Check Files also says
 whether your copy is the mod as its maker listed it. If it isn't, it says how many files
-are changed, missing or not in the list, and `logs/ra2.log` names each one. Get the mod
-again to fix your copy.
+are changed, missing or not in the list. The log file, `logs/ra2.log` in the VERA20k
+folder, names each one. Get the mod again to fix your copy.
 
 If you made the mod, press **Make File List** in that box before you share it, and
 **Update File List** after you change the mod. The list has one line for each file: the

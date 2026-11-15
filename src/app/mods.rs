@@ -187,11 +187,12 @@ impl Mods {
             .is_some_and(|row| row.folder.is_some())
     }
 
-    /// That mod: the name its row shows, and its folder.
-    pub(crate) fn picked_mod(&self, paths: &PathsConfig) -> Option<(String, PathBuf)> {
+    /// That mod: the name its row shows, and its folder while it is still
+    /// in `Mods`.
+    pub(crate) fn picked_mod(&self, paths: &PathsConfig) -> Option<(String, Option<PathBuf>)> {
         let page = self.page.as_ref()?;
         let row = page.rows.get(page.selected?)?;
-        let (_, dir) = find_folder(&paths.mods_dir(), row.folder.as_deref()?)?;
+        let dir = find_folder(&paths.mods_dir(), row.folder.as_deref()?).map(|(_, dir)| dir);
         Some((row.title().into_owned(), dir))
     }
 }

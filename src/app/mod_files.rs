@@ -199,12 +199,17 @@ impl FileList {
     }
 
     /// Write the list as `dir`'s `mod-files.txt`, over the one that is there.
+    /// A link or a folder of that name is left alone: a mod from elsewhere
+    /// must not aim the write at a file outside its folder.
     pub(crate) fn write(&self, dir: &Path) -> std::io::Result<PathBuf> {
         let text = self
             .text()
             .ok_or_else(|| std::io::Error::other("a file's name cannot be written in the list"))?;
         let path = crate::util::case_insensitive_path::find(dir, LIST_NAME)
             .unwrap_or_else(|| dir.join(LIST_NAME));
+        if std::fs::symlink_metadata(&path).is_ok_and(|there| !there.is_file()) {
+            return Err(std::io::Error::other("mod-files.txt is not a plain file"));
+        }
         file_system::write(&path, text)?;
         Ok(path)
     }
@@ -587,6 +592,18 @@ mod tests {
         }
         write(LIST_NAME, &[0xff, 0xfe, 0x00]);
         assert_eq!(checked(&root).against, Against::BadList);
+        // A list that is a link is never written through.
+        #[cfg(unix)]
+        {
+            let (outside, list) = (root.join("Art").join("kept.txt"), root.join(LIST_NAME));
+            write("Art/kept.txt", b"kept");
+            std::fs::remove_file(&list).unwrap();
+            std::os::unix::fs::symlink(&outside, &list).unwrap();
+            assert!(checked(&root).found.write(&root).is_err());
+            assert_eq!(std::fs::read(&outside).unwrap(), b"kept");
+            std::fs::remove_file(&list).unwrap();
+            std::fs::remove_file(&outside).unwrap();
+        }
         // Notepad's form of a good list reads: a mark first, CR LF ends.
         let good = FileList::scan(&root, &AtomicBool::new(false)).unwrap();
         let text = good.text().unwrap().replace('\n', "\r\n");

@@ -257,7 +257,11 @@ impl App {
         let Some((title, dir)) = picked else {
             return;
         };
-        match crate::app::mod_files::start(title.clone(), dir) {
+        // The folder went while the page was open.
+        let started = dir
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))
+            .and_then(|dir| crate::app::mod_files::start(title.clone(), dir));
+        match started {
             Ok(check) => {
                 state.frontend.mods.files_check = Some(check);
                 Self::open_mod_files_box(
@@ -269,7 +273,7 @@ impl App {
                 );
             }
             Err(error) => {
-                log::warn!("Mods: no thread to read {title}'s files on: {error}");
+                log::warn!("Mods: {title}'s files cannot be read: {error}");
                 Self::open_mod_files_found(
                     state,
                     crate::i18n::tr_fill("VERA:ModFilesNotRead", &[("mod", &title)]),
@@ -329,7 +333,10 @@ impl App {
                 Some("VERA:ModFilesMake"),
             ),
             Against::BadList => (
-                crate::i18n::tr_fill("VERA:ModFilesListBad", &[("mod", &title)]),
+                crate::i18n::tr_fill(
+                    "VERA:ModFilesListBad",
+                    &[("mod", &title), ("count", &count), ("code", &code)],
+                ),
                 Some("VERA:ModFilesMake"),
             ),
             Against::Differs(differences) => (
@@ -340,6 +347,7 @@ impl App {
                         ("changed", &differences.changed.len()),
                         ("missing", &differences.missing.len()),
                         ("extra", &differences.extra.len()),
+                        ("code", &code),
                     ],
                 ),
                 Some("VERA:ModFilesUpdate"),
