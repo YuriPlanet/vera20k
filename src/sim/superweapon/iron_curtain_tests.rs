@@ -155,6 +155,35 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
     }
 }
 
+/// A saved slope byte past the 21-record table reads Z 0 at the waypoint, as
+/// every cell looked up by coordinate does, instead of stopping the game.
+#[test]
+fn waypoint_curtain_on_a_slope_past_the_table_plays_at_ground_zero() {
+    let (rules, mut sim, _) = world_with(rules(""), 64, &[]);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let index = terrain.index(40, 40).unwrap();
+    terrain.cells_mut_for_test()[index].slope_type = 21;
+    sim.session
+        .install_waypoints(&std::collections::HashMap::from([(
+            1,
+            crate::map::waypoints::Waypoint {
+                index: 1,
+                rx: 40,
+                ry: 40,
+            },
+        )]));
+    assert!(super::at_waypoint(
+        &mut sim,
+        &rules,
+        1,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let anim = sim.substrate.anims.iter().next().unwrap().1;
+    let coord = anim.world_coord();
+    assert_eq!([coord.x, coord.y, coord.z], [10368, 10368, 5]);
+}
+
 #[test]
 fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_house() {
     let (rules, mut sim, _) = world_with(rules(""), 64, &[]);

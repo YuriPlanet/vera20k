@@ -3388,6 +3388,12 @@ impl Simulation {
                 let Some(offset) = offsets.get(slot).copied() else {
                     break;
                 };
+                // 43C124..43C137: an offset equal to the zero Point2D at
+                // 89C848 (never written) ends the fires, as the reader's end
+                // marker does; an explicit `DamageFireOffsetN=0,0` stops here.
+                if offset.pixel_x == 0 && offset.pixel_y == 0 {
+                    break;
+                }
                 let fire_name = &rules.general.damage_fire_types[type_index].name;
                 let fire_type = self.interner.intern(fire_name);
                 let descriptor = AnimClassSpawnDescriptor {
@@ -5310,6 +5316,19 @@ mod tests {
         can_be_occupied: bool,
         strength: i32,
     ) -> (Simulation, RuleSet, u64) {
+        damage_fire_fixture_with_offsets(
+            can_be_occupied,
+            strength,
+            "DamageFireOffset0=-24,-1\nDamageFireOffset1=64,36\n",
+        )
+    }
+
+    /// `offsets` are TESTART's `DamageFireOffsetN=` lines.
+    fn damage_fire_fixture_with_offsets(
+        can_be_occupied: bool,
+        strength: i32,
+        offsets: &str,
+    ) -> (Simulation, RuleSet, u64) {
         let rules_ini = IniFile::from_str(&format!(
             "[BuildingTypes]\n0=TESTBLD\n\n\
              [TESTBLD]\nStrength={strength}\nImage=TESTART\nCanBeOccupied={}\n\n\
@@ -5317,12 +5336,12 @@ mod tests {
              [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n",
             if can_be_occupied { "yes" } else { "no" },
         ));
-        let art_ini = IniFile::from_str(
-            "[TESTART]\nFoundation=4x4\nDamageFireOffset0=-24,-1\nDamageFireOffset1=64,36\n\n\
+        let art_ini = IniFile::from_str(&format!(
+            "[TESTART]\nFoundation=4x4\n{offsets}\n\
              [FIRE01]\nRate=450\nLoopCount=-1\nStartSound=BuildingFireBig\n\n\
              [FIRE02]\nRate=450\nLoopCount=-1\nStartSound=BuildingFireMed\n\n\
              [FIRE03]\nRate=450\nLoopCount=-1\nStartSound=BuildingFireSmall\n",
-        );
+        ));
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
             .expect("damage-fire rules and ART");
         let mut art = ArtRegistry::from_ini(&art_ini);
@@ -5392,6 +5411,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// 43C124..43C137: an authored (0,0) offset ends the fires, as the
+    /// reader's end marker does, so later offsets get none.
+    #[test]
+    fn a_zero_damage_fire_offset_ends_the_fires() {
+        let (mut sim, rules, id) = damage_fire_fixture_with_offsets(
+            false,
+            100,
+            "DamageFireOffset0=-24,-1\nDamageFireOffset1=0,0\nDamageFireOffset2=64,36\n",
+        );
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(10);
+        sim.update_building_damage_fire(id, &rules);
+        let fires = &sim.substrate.entities.get(id).unwrap().damage_fires;
+        assert!(fires.active);
+        let slots: Vec<bool> = fires.anim_ids.iter().map(Option::is_some).collect();
+        assert_eq!(
+            slots,
+            [true, false, false, false, false, false, false, false]
+        );
     }
 
     /// Each `art_text` section is an AnimType, so the ordered Rules processor
