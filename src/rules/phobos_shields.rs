@@ -195,8 +195,9 @@ impl ShieldIdleAnimSet {
 }
 
 /// `Valueable<AnimTypeClass*>::Read` (`Utilities/TemplateDef.h:1793..1797` ->
-/// `:53..78`): a blank (`none`/`<none>`) value assigns null, an unknown name
-/// or `<default>` fails the parse and retains the current value. The default
+/// `:53..78`): `none`/`<none>` are `INIClass::IsBlank` (0x40F4D0 compares
+/// those two exact sentinels), so a blank assigns null; an unknown name or
+/// `<default>` fails the parse and retains the current value. The default
 /// build has no shield idle animations, so it leaves the value unset.
 fn read_anim_value(
     section: &crate::rules::ini_parser::IniSection,
@@ -223,8 +224,9 @@ fn read_anim_value(
 }
 
 /// `Nullable<AnimTypeClass*>::Read<false, false>` (`Utilities/TemplateDef.h`
-/// `:1834..1849`): `<default>` and the blank `none` spellings reset the band;
-/// any other name becomes the value.
+/// `:1834..1849`): `<default>` and the `none`/`<none>` spellings that
+/// `INIClass::IsBlank` (0x40F4D0) accepts reset the band; any other name
+/// becomes the value.
 fn read_anim_band(
     section: &crate::rules::ini_parser::IniSection,
     key: &str,
