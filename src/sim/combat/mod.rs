@@ -115,6 +115,8 @@ mod ares_warhead_combat_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_warhead_effects_tests;
 #[cfg(test)]
+mod berzerk_alliance_tests;
+#[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]
 mod bridge_launch_tests;

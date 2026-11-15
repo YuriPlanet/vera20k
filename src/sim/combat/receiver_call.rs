@@ -503,7 +503,22 @@ pub(super) fn resolve_receive_damage_with_input(
 
     let allied = |asker: InternedId, other: InternedId| alliances.is_allied(interner, asker, other);
     let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
-    let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
+    // The stock Psychedelic test (`0x701CD7..0x701CF8`) reads only the call's
+    // SourceHouse (`[esp+0xE0]`). Phobos removes it with the LJMP at
+    // `0x701CE5` and re-adds the check at its own hook `0x701D2E`, where the
+    // other house is the live attacker's owner and the SourceHouse only
+    // without an attacker, and `[CombatDamage] AllowBerzerkOnAllies=yes`
+    // lets the allied hit through
+    // (`Ext/Techno/Hooks.ReceiveDamage.cpp:528-539`).
+    #[cfg(feature = "phobos")]
+    let psychedelic_allied_rejection = !rules.phobos_globals.allow_berzerk_on_allies
+        && source
+            .map(|entity| entity.owner())
+            .or(event.source_house)
+            .is_some_and(|owner| allied(target.owner(), owner));
+    #[cfg(not(feature = "phobos"))]
+    let psychedelic_allied_rejection =
+        source_house.is_some_and(|owner| allied(target.owner(), owner));
     // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950 (hook
     // 0x701BFE): the rank's RADIMMUNE, PSIONICWEAPONIMMUNE, POISONIMMUNE and
     // PSIONICSIMMUNE join the type flags, and `ImmuneToBerserk` overrides the
@@ -611,7 +626,7 @@ pub(super) fn resolve_receive_damage_with_input(
         affects_allies: warhead.affects_allies,
         attacker_is_allied,
         ares_house_damage_allowed,
-        source_house_is_allied,
+        psychedelic_allied_rejection,
         psychedelic: warhead.psychedelic,
         psionics_immune: target_type.is_some_and(|object| {
             let immune = rank_psionics || object.immune_to_psionics;

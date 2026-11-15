@@ -141,6 +141,22 @@ fn the_warhead_prevent_scatter_fallback() {
     );
 }
 
+/// `[CombatDamage] AllowBerzerkOnAllies=` (`Ext/Rules/Body.cpp:421`,
+/// constructor `Body.h:339,847` no): the switch on Phobos' re-added Psychedelic
+/// ally test (`0x701D2E`, `Ext/Techno/Hooks.ReceiveDamage.cpp:535`). It sits
+/// next to `BerzerkTargeting` in the same section.
+#[cfg(feature = "phobos")]
+#[test]
+fn allow_berzerk_on_allies_constructs_false_and_reads_from_combat_damage() {
+    assert!(!PhobosGlobals::default().allow_berzerk_on_allies);
+    assert!(read("[CombatDamage]\nAllowBerzerkOnAllies=yes\n").allow_berzerk_on_allies);
+    assert!(!read("[CombatDamage]\nAllowBerzerkOnAllies=no\n").allow_berzerk_on_allies);
+    assert!(
+        !read("[General]\nAllowBerzerkOnAllies=yes\n").allow_berzerk_on_allies,
+        "the key is a `[CombatDamage]` read"
+    );
+}
+
 /// `[General] AIChronoSphereSW=` / `AIChronoWarpSW=` (`ValueableIdx`, i.e. a
 /// superweapon type ID, constructors the unset index `-1`,
 /// `Ext/Rules/Body.cpp:122-123`, `Body.h:41-42,581-582`): the supers

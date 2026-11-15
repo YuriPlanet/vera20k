@@ -1132,6 +1132,15 @@ pub struct PhobosGlobals {
     /// may target (`Ext/Techno/Hooks.Firing.cpp:370`).
     #[serde(default)]
     pub berzerk_targeting: AffectedHouse,
+    /// `[CombatDamage] AllowBerzerkOnAllies=`, default `no` (`:421`,
+    /// constructor `Body.h:339,847`, `Valueable<bool>`): whether an allied
+    /// source still lets a Psychedelic hit make its target berserk. Phobos
+    /// removes the stock SourceHouse-only ally test (the LJMP at `0x701CE5`)
+    /// and re-adds it in its own hook (`0x701D2E`,
+    /// `Ext/Techno/Hooks.ReceiveDamage.cpp:528-539`), where the allied house
+    /// is the live attacker's owner when there is one.
+    #[serde(default)]
+    pub allow_berzerk_on_allies: bool,
     /// `[General] Strafing.SimulateBurst=`, default `no`
     /// (`Ext/Rules/Body.cpp:264`, constructor `Ext/Rules/Body.h:706`): the
     /// fallback for an unset weapon `Strafing.SimulateBurst`; `yes` alternates
@@ -1870,6 +1879,7 @@ impl Default for PhobosGlobals {
             ai_superweapon_delay: None,
             reveal_houses: AffectedHouse::TEAM,
             berzerk_targeting: AffectedHouse::ALL,
+            allow_berzerk_on_allies: false,
             strafing_simulate_burst: false,
             strafing_use_ammo_per_shot: false,
             strafing_target_cell: false,
@@ -3004,6 +3014,9 @@ fn section_settings(section: &crate::rules::ini_parser::IniSection) -> PhobosGlo
             "BerzerkTargeting",
             defaults.berzerk_targeting,
         ),
+        // `Ext/Rules/Body.cpp:421`.
+        allow_berzerk_on_allies: section
+            .read_bool("AllowBerzerkOnAllies", defaults.allow_berzerk_on_allies),
         overload_particle_sys_count: section.read_int(
             "Overload.ParticleSysCount",
             defaults.overload_particle_sys_count,
