@@ -1336,19 +1336,20 @@ fn unit_body_draw<'a>(
     let model = water_image_type(entity, interner, rules, cells).map_or(model, Cow::Borrowed);
     let model_object = drawn_model_object(entity, &model, interner, rules);
     let tilt_crash_jumpjet = model_object.is_some_and(|object| object.tilt_crash_jumpjet);
-    // RESIDUAL: mixed actual/drawn TurretCount or IsGattling still selects
-    // the drawn model's indexed mode. Native70DC60/717880 keeps actual-type
+    // A RESIDUAL remains when actual and drawn types have different
+    // TurretCount or IsGattling modes. The helper selects the drawn type's
+    // mode. Native70DC60/717880 keeps actual-type
     // admission, then reads the selected model's base/indexed slots. Such
-    // custom combinations can draw the wrong gun or omit it; the common
-    // zero-count ROBO/MTNK water path uses the ordinary base pair.
+    // custom combinations can draw the wrong gun or omit it. The ordinary
+    // base pair serves the zero-count ROBO/MTNK water path.
     let turret_parts = object_draws_turret_parts(model_object, entity.current_turret_index());
     let body = body_draw(entity, band, tilt_crash_jumpjet, turret_parts);
     Some((model, body))
 }
 
-/// Ares Ext/Techno/Hooks.Art.cpp: GetUnitType10045340 is called by
-/// UnitClass_DrawVXL_WaterType100481E0
-/// (hook73B4A0 replaces the original type selection, resumes73B4DA).
+/// Ares UnitClass_DrawVXL_WaterType100481E0 in Ext/Techno/Hooks.Art.cpp
+/// calls GetUnitType10045340. Its hook73B4A0 replaces the original type
+/// selection and resumes73B4DA.
 /// WaterImage wins over deployed UnloadingClass and observer disguise. The
 /// miner's temporary Type swap73D29C..73D2C4 precedes this lookup. The live
 /// object's OnBridge and GetCell5F6960 decide admission, independently of Z
@@ -1380,8 +1381,8 @@ fn water_image_type<'a>(
         .then_some(image)
 }
 
-/// The rules record for a selected model: the bound handle when it is the
-/// object's own type, else a lookup by name. Both answer as
+/// Resolve a selected model through the object's bound handle when it is
+/// its own type, and through its name otherwise. Both answer as
 /// `rules.object(model)` would.
 pub(super) fn drawn_model_object<'r>(
     entity: &crate::app::presentation::frame::ObjectRecord,

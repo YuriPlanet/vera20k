@@ -5730,10 +5730,11 @@ pub(crate) struct TechnoTypeReferences {
     /// `UnloadingClass=` (+6B8, `0x007146E8..0x0071471A`), a UnitType, and
     /// `DeployingAnim=` (+6BC, `0x00714715..0x0071473F`), an AnimType.
     unloading_class: Option<String>,
-    /// Ares Ext/TechnoType/Hooks.cpp: ctor1003C9E4 clears +1DC. Early reader10041DC0
+    /// Ares TechnoTypeExt ctor1003C9E4 clears +1DC. Early reader10041DC0 in
+    /// Ext/TechnoType/Hooks.cpp
     /// (hook715320, resumes715326) calls1002EBC0/1002D970 and UnitType
-    /// Find1002DCF0, without allocation. Absent/empty/unknown retains;
-    /// none/<none> clears. Only the draw consumes this extension pointer.
+    /// Find1002DCF0, without allocation. Absent/empty/unknown retains the
+    /// pointer. The values none/<none> clear it. The draw consumes this pointer.
     #[serde(default)]
     water_image: Option<String>,
     deploying_anim: Option<String>,

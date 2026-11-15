@@ -139,7 +139,7 @@ pub fn object_voxel_turret_index(object: Option<&ObjectType>, current: i32) -> i
 }
 
 /// Gun admission for a model drawn as its own type. Unit73B7A3 tests the
-/// selected type's Turret;70DC60/717880 tests the actual type's TurretCount
+/// selected type's Turret, and 70DC60/717880 tests the actual type's TurretCount
 /// with a current index other than -1. Mixed actual/selected indexed modes
 /// remain a presentation residual in unit_body_draw. Aircraft draw their
 /// main voxel (4144B0), and building voxel turrets have their own loader.
