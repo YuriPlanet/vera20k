@@ -1,0 +1,169 @@
+# Phobos 未完成项与残渣总表（实机测试前必读）
+
+基准：`phobos-local` @ `6a261e2cb`（2026-11-15）。
+扫描器：`G:\20k\scratch\phobos_chain_analysis_v3.py`（`GAP = 31`，suspects = 0，
+compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；每关一个键或修一条
+残渣，都在此表划掉并更新扫描器。
+
+## 1. 未移植键（31）——按机制分组
+
+出处列为 Phobos 源码，消费者列为真正读取该值的位置，便于下一步定位实现点。
+“默认”均来自构造函数或读取处的 default 参数。
+
+### 1.1 ToolTips / uimd.ini（7）
+
+| 键 | 出处 | 类型 / 默认 | 消费者 |
+|---|---|---|---|
+| `ExtendedToolTips` | `Phobos.INI.cpp:148` | bool, no（`Phobos.h:13`） | `Misc/PhobosToolTip.cpp` |
+| `AnchoredToolTips` | `Phobos.INI.cpp:151` | bool, no（`Phobos.h:41`） | `Misc/PhobosToolTip.cpp` |
+| `MaxWidth` | `Phobos.INI.cpp:154` | int, 0（`MaxToolTipWidth`） | `Misc/PhobosToolTip.cpp` |
+| `CostLabel` | `Phobos.INI.cpp:156` | string, `$`（`LoadStringOrDefault`） | `Misc/PhobosToolTip.cpp`、`Misc/FlyingStrings.cpp` |
+| `TimeLabel` | `Phobos.INI.cpp:165` | string, `⌚` | `Misc/PhobosToolTip.cpp` |
+| `SWShotsFormat` | `Phobos.INI.cpp:168` | string, `Shots: %d` | `Misc/PhobosToolTip.cpp` |
+| `DisableEmptySpawnPositions` | `Phobos.INI.cpp:142`（`[LoadingScreen]`） | bool, no | `Misc/Hooks.UI.cpp` |
+
+注意：这 7 个读的是 **uimd.ini**（`ini_uimd.LoadFromFile(UIMD_INI)`），不是
+rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建立 uimd 读取入口。
+
+### 1.2 侧边栏与单人局开关（6）
+
+| 键 | 出处 | 类型 / 默认 | 消费者 |
+|---|---|---|---|
+| `SortCameoByName` | `Ext/Rules/Body.cpp:501` | bool, no（`Body.h:411,916`） | `Misc/Hooks.UI.cpp` |
+| `SetTabBySelectingFactory` | `Ext/Rules/Body.cpp:307` | bool, no（`:227,739`） | `Ext/Techno/Hooks.Misc.cpp` |
+| `AllowChatBoxInSinglePlayer` | `Ext/Rules/Body.cpp:619` | bool, no（`:517,1014`） | `Misc/Hooks.MessageList.cpp` |
+| `AllowBeaconHotKeyInSinglePlayer` | `Ext/Rules/Body.cpp:625` | bool, no（`:523,1022`） | `Ext/Beacon/Hooks.cpp` |
+| `AutoRemoveEarliestBeacon` | `Ext/Rules/Body.cpp:624` | bool, no（`:522,1020`） | `Ext/House/Hooks.cpp` |
+| `AllowDeployControlledMCV` | `Ext/Rules/Body.cpp:246` | bool, no（`:163,690`） | `Ext/Unit/Hooks.DeploysInto.cpp`、`Ext/Building/Hooks.Selling.cpp`、`Ext/TAction/Body.cpp` |
+
+### 1.3 目标 / 任务推进（2）
+
+| 键 | 出处 | 类型 / 默认 | 消费者 |
+|---|---|---|---|
+| `AutoTarget.InsignificantWhenMindControlled` | `Ext/Rules/Body.cpp:658` | bool, **yes**（`:551,1052`） | `Ext/Techno/Hooks.Targeting.cpp` |
+| `ReadyToNextMission.MovingCheck` | `Ext/Rules/Body.cpp:646` | bool, no（`:538,1040`） | `Misc/Hooks.BugFixes.cpp`（原生 `0x7442D6` Unit / `0x521BA7` Infantry） |
+
+### 1.4 修复 / 经济（5）
+
+| 键 | 出处 | 类型 / 默认 | 消费者 |
+|---|---|---|---|
+| `FixRepairStepCost` | `Ext/Rules/Body.cpp:401` | bool, no（`:304,818`） | `Misc/Hooks.BugFixes.cpp` |
+| `ExtendedPlayerRepair` | `Ext/Rules/Body.cpp:549` | bool, no（`:426,965`） | `Ext/Event/Body.cpp`、`Ext/House/Hooks.cpp` |
+| `DisplayIncome.AllowAI` | `Ext/Rules/Body.cpp:299` | bool, **yes**（`:155,727`） | `Ext/Building/Body.cpp` |
+| `EnablePowerSurplus` | `Ext/Rules/Body.cpp:243` | bool, no（`:150,687`） | `Ext/House/Body.cpp` |
+| `PowerSurplus.ScaleToDrainAmount` | `Ext/Rules/Body.cpp:244` | int, 0（`:151,688`） | `Ext/House/Body.cpp` |
+
+### 1.5 光照 / 视觉（8，含 1 个阻塞）
+
+| 键 | 出处 | 类型 / 默认 | 消费者 |
+|---|---|---|---|
+| `AircraftLevelLightMultiplier` | `Ext/Rules/Body.cpp:349` | double, 1.0（`:257,778`） | `Ext/Techno/Hooks.Tint.cpp` |
+| `JumpjetLevelLightMultiplier` | `Ext/Rules/Body.cpp:350` | double, 0.0（`:258,779`） | `Ext/Techno/Hooks.Tint.cpp` |
+| `RadialIndicatorVisibility` | `Ext/Rules/Body.cpp:172` | AffectedHouse, Allies（`:207,736`） | `Misc/Hooks.UI.cpp` |
+| `ChronoSparkleDisplayDelay` | `Ext/Rules/Body.cpp:118` | int, 24（`:37,577`） | `Ext/Techno/Hooks.Misc.cpp`、`Ext/Building/Hooks.cpp`、`Ext/Aircraft/Hooks.cpp` |
+| `ChronoSparkleBuildingDisplayPositions` | `Ext/Rules/Body.cpp:119` | enum, OccupantSlots（`:38,578`） | `Ext/Building/Hooks.cpp` |
+| `ColorAddUse8BitRGB` | `Ext/Rules/Body.cpp:260` | bool, no（`:178,703`） | `Utilities/GeneralUtils.cpp`（`GetColorFromColorAdd`；VERA 已有 `ColorAddTable::phobos_word`，其注释已记该键为残渣） |
+| `UseRetintFix` | `Ext/Rules/Body.cpp:409` | bool, **yes**（`:311,823`） | `Ext/TAction/Hooks.cpp`（retint 后重新激活 LightSource） |
+| `VoxelLightSource` | `Ext/Rules/Body.cpp:352` | `Nullable<Vector3D<float>>`，未设（`:271,780`） | `ReplaceVoxelLightSources`（`Body.cpp:1189-1207`）——**阻塞**，见 §3 |
+
+### 1.6 跳跃（2）与战头（1）
+
+| 键 | 出处 | 类型 / 默认 | 消费者 |
+|---|---|---|---|
+| `JumpjetClimbPredictHeight` | `Ext/Rules/Body.cpp:336` | bool, no（`:242,766`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
+| `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
+| `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
+
+## 2. 明确排除（不移植，扫描器已列 disabled）
+
+| 键 | 原因 |
+|---|---|
+| `InflictLocomotor` / `RemoveInflictedLocomotor` | `TestLocomotionClass` 开发者测试钩（`Ext/WarheadType/Detonate.cpp:251-254`），Phobos 构建内不生效 |
+| `Trajectory.Sample.TargetSnapDistance` | Phobos 轨迹 Sample 模板编译关闭（`Ext/Bullet/Trajectories/PhobosTrajectory.h:5-11`） |
+| `VoxelShadowLightSource` | read（`Ext/Rules/Body.cpp:353`）、Process（`:947`）、apply（`:1200-1207`）全被注释，作者自注 “doesn't really impact anything” |
+
+## 3. 已记录残渣（按链，含触发/影响/频率/风险）
+
+### 本会话新增链
+1. **Warhead.PreventScatter**（`8bacaf9bd`）：rules 解析不到的 warhead 名 → VERA
+   照常散射；native 会走全局。触发：坏 WARHEAD 引用；频率：仅坏数据；风险：低。
+2. **AIChronoSphereSW/AIChronoWarpSW**（`6fb756008`）：
+   - `ValueableIdx` 名字→索引在**跨 INI 层**的差异：native 坏名字保留旧层索引，
+     VERA 单次合并读取下解析为未找到；频率：仅坏数据。
+   - 动作 56/57 未选中 super 时不发火（与 stock 一致）。
+   - `Fire_SW` 用 `Type=` 当 Supers 索引：retail 列表恰好同序；自定义乱序时以
+     “所选 Super 的 Type= 值”发射（oracle golden 即此行为）。
+3. **Berserk 组**（`7c1d5f362`/`8f324f49e`）：无新增残渣；`QueueMission(m,false)`
+   当帧不 commence，与 native 相同。
+4. **JumpjetControls 构造**（`fdec98b6a`）：`[JumpjetControls]` 先于类型构造的
+   读取顺序是 Phobos 特性成立的前提（无独立 capture）；段被解析两次（纯函数，
+   无行为差异）。retail 段值=旧字面量，零售行为不变。
+5. **体素光照**（`413e3d0c6`）：`UseFixedVoxelLighting` 只影响**图集烘焙**；改
+   rules 后需重建图集（对应 native `DestroyVoxelCaches`）。`VoxelLightSource`
+   见下。
+6. **MindControl.Permanent.ReplaceSilent**（`6a261e2cb`）：无残渣；只作用于
+   Ares 的 ApplyPermaMC 调用点，Dominator 原生路径不变。
+
+### 全局已知残渣（早前链条，仍需实机抽查）
+- **`VoxelLightSource`（阻塞）**：apply 需要
+  `Game::VoxelLightSource = Matrix3D::VoxelDefaultMatrix * normalized(src)`。
+  缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
+  生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
+  `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
+- **`ColorAddUse8BitRGB`**：需要 `Drawing::RGB_To_Int`（YRpp 头文件，本地未
+  vendored）；VERA 的 `ColorAddTable::phobos_word` 已就位，只差该分支。
+- **sim-scale deviations（有意保留，AGENTS.md）**：VERA 自有渲染器与 native
+  管线不同（体素光栅/着色、图集）；`sim/` 不依赖 `render/`。实机对比时以
+  “玩法可辨差异”为准，不以像素级 native 一致为准。
+
+## 4. 实机测试清单（按本次新增链）
+
+环境：本机 mod 测试数据目录（`config.toml` 的 `ra2_dir`；`VERA.INI`：`YROriginalStyle`、
+`SoloSkirmish`），启动 `vera20k.exe`；用 `--profile fast` 构建。
+每项给出：改哪个 INI、看什么现象、失败时先查哪条链。
+
+1. **PreventScatter**（`rulesmd.ini`）
+   - 在测试战头的 `[Warhead]` 段加 `PreventScatter=yes`，打一个敌方车辆；预期
+     被击单位**原地不散开**（对比默认散射）。
+   - `[CombatDamage] Warhead.PreventScatter=yes` + 战头不写：同样不散开。
+   - 战头写 `PreventScatter=no` + 全局 yes：仍然散开（可写 `no` 压全局）。
+2. **AI Chrono**（`rulesmd.ini`）
+   - 复制一个 ChronoSphere/ChronoWarp 超武，`[General] AIChronoSphereSW=<名字>`、
+     `AIChronoWarpSW=<名字>`（**类型 ID，不是数字**）；让 AI 跑含 56/57 动作的
+     脚本（AIMD 的 “Allied Chronosphere” 脚本），观察它用的是键指定的超武。
+   - 只写 `AIChronoSphereSW` + 该超武 `SW.PostDependent=<warp 名>`：warp 应为指定项。
+   - 写错名字（不存在）：应回落到“最后一个 Type=ChronoSphere/Warp”。
+3. **Berserk**（`rulesmd.ini`）
+   - 心灵控制类武器（`Psychedelic=yes` 幻觉弹）打己方：默认不触发；加
+     `[CombatDamage] AllowBerzerkOnAllies=yes` 后己方目标进入 berserk 并改打身边单位。
+   - `[CombatDamage] BerzerkMission=Area Guard`：被打成 berserk 的单位任务面板应为
+     Area Guard（默认 Hunt）；同时其移动目的地被清空。
+4. **JumpjetControls**（`rulesmd.ini`）
+   - `[JumpjetControls]` 改 `Speed=20`、`Crash=9`、`NoWobbles=yes`：**没有**写
+     `JumpjetSpeed=` 等键的飞行单位（如 ZEP 只写 `JumpjetHeight`）应使用新值：
+     更快、俯冲更快、悬停不再摆动；写了 `JumpjetClimb=` 的单位仍用自己的值。
+   - 注意 stock 拼写 `JumpJetTurnRate=`/`JumpJetAccel=` 是**无效键**
+     （gamemd 大小写敏感），测试时用 `JumpjetTurnRate=`/`JumpjetAccel=`。
+5. **体素光照**（`rulesmd.ini`）
+   - `[AudioVisual] UseFixedVoxelLighting=yes`：体素车辆/飞机的明暗高光应明显
+     变化（viewer 项被移除），关闭后恢复。
+   - `VoxelLightSource=` **预期无效果**（未移植，见 §3）。
+6. **ReplaceSilent**（`rulesmd.ini`，需要 Ares 语义的 `MindControl.Permanent=yes` 战头）
+   - 先让一个单位被控制（Yuri 心灵控制/控制塔），再用带 `MindControl.Permanent=yes`
+     的战头打它（替换旧控制）：默认会听到 `MindClearedSound`；
+     `[AudioVisual] MindControl.Permanent.ReplaceSilent=yes` 后应静音；
+     战头写 `RemoveMindControl.Silent=no` 时即使全局 yes 也要有声音。
+7. **回归抽查**（本次未改但被涉及）
+   - 心灵控制释放（杀控制者）声音与光环消失；Chrono 动作 56 的两种超武发射；
+     幻象弹对免疫单位无效。
+
+## 5. 测试环境注意
+
+- 代码测试基线失败**与本工作无关**：core phobos 总计 60 条、client phobos 7 条
+  （如 `crit_tests`、`view_admission_tests`、`mirage_disguise` 等由并行会话 WIP
+  或 retail ini 缺失导致）；实机测试不要以这些失败为由回滚。
+- 共享 checkout 有并行会话 dirty 文件（`app/input/radar.rs`、
+  `app/presentation/{banners,screen_shake}.rs` 等），提交/合并时只 stage 自己
+  的文件。
+- 每次实机发现问题，按 §1 定位键 → 查 §3 是否已记为残渣 → 修复后补一条
+  regression test 并更新本表。
