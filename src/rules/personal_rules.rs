@@ -1,22 +1,19 @@
-//! Optional VERA-specific source overrides, separate from player preferences.
+//! The player's own rule switches: the Options page's Terrain Deformation
+//! and Superweapon Limit, which a network room's host shares. VERA-only.
+//!
+//! VERARULES.INI, a file of the player's own rule keys, was read here until
+//! it was retired for New Mod (docs/modding.md); `persistence::rules_profile`
+//! tells a player whose file still holds changes.
 //!
 //! Compose before the existing Rules readers rather than adding a Process pass:
 //! another pass can reset omitted fields and repeat native postprocessing.
 
 use std::borrow::Cow;
-use std::sync::Arc;
 
-use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 
-/// The most VERARULES.INI bytes a network room's host shares, so the room's
-/// options stay well inside the online lobby's 24 KiB.
-pub const SHARE_LIMIT: usize = 8 * 1024;
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PersonalRules {
-    patch: IniFile,
-    override_map_rules: bool,
     /// The Options page's Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
     terrain_deformation: bool,
@@ -24,43 +21,9 @@ pub struct PersonalRules {
     /// VERA.INI), read as Terrain Deformation is: 0 while off, else
     /// [`admitted_superweapon_limit`]'s 2 to [`SUPERWEAPON_LIMIT_MAX`].
     superweapon_limit: u8,
-    /// The file as read, which a network room's host shares.
-    source: Arc<[u8]>,
-}
-
-impl Default for PersonalRules {
-    fn default() -> Self {
-        Self {
-            patch: IniFile::empty(),
-            override_map_rules: false,
-            terrain_deformation: false,
-            superweapon_limit: 0,
-            source: Arc::from(&[][..]),
-        }
-    }
 }
 
 impl PersonalRules {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, RulesError> {
-        let mut patch = IniFile::from_bytes(bytes)?;
-        let override_map_rules = patch
-            .section_or_empty("VERA")
-            .read_bool("OverrideMapRules", false);
-        patch.remove_section("VERA");
-        Ok(Self {
-            patch,
-            override_map_rules,
-            terrain_deformation: false,
-            superweapon_limit: 0,
-            source: Arc::from(bytes),
-        })
-    }
-
-    /// The VERARULES.INI bytes these rules were read from; empty without one.
-    pub fn source(&self) -> &[u8] {
-        &self.source
-    }
-
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.terrain_deformation = on;
     }
@@ -79,34 +42,18 @@ impl PersonalRules {
         self.superweapon_limit
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.patch.is_empty()
-    }
-
-    /// The file or an Options switch changes the game: what
-    /// [`Self::compatibility_crc`] adds to the network rules digest.
+    /// A switch changes the game: what [`Self::compatibility_crc`] adds to
+    /// the network rules digest.
     pub fn in_effect(&self) -> bool {
-        !self.is_empty() || self.terrain_deformation || self.superweapon_limit != 0
+        self.terrain_deformation || self.superweapon_limit != 0
     }
 
-    pub(crate) fn apply_base_layer(&self, layer: &mut IniFile) {
-        if !self.is_empty() {
-            layer.merge_source_sections(&self.patch, false);
-        }
-    }
-
-    pub(crate) fn apply_later_layer(&self, layer: &mut IniFile) {
-        if self.override_map_rules {
-            self.apply_base_layer(layer);
-        }
-    }
-
-    /// The selected root as each scenario reads it: these rules composed
-    /// over it, then the Options switches; unchanged while neither changes
-    /// anything. Composing here rather than before the cold start lets a
-    /// process play another player's rules without rebuilding its one
-    /// registry (`NativeRulesProcessOwner::use_personal_rules`). Terrain
-    /// Deformation turns on
+    /// The selected root as each scenario reads it: the switches' rules
+    /// composed over it; unchanged while both are off. Composing here rather
+    /// than before the cold start lets a process play another player's
+    /// switches without rebuilding its one registry
+    /// (`NativeRulesProcessOwner::use_personal_rules`). Terrain Deformation
+    /// turns on
     /// `[CombatDamage] TerrainDeformation=` and gives the nuke's warhead each
     /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=10` the root does
     /// not set, so a nuke digs a crater three levels deep and 23 cells across,
@@ -119,41 +66,33 @@ impl PersonalRules {
         if !self.in_effect() {
             return Cow::Borrowed(root);
         }
-        let mut root = root.clone();
-        if !self.is_empty() {
-            root.merge_source_sections(&self.patch, true);
-        }
         let mut options = String::new();
         if self.superweapon_limit != 0 {
-            options.push_str(&superweapon_limit(&root, self.superweapon_limit));
+            options.push_str(&superweapon_limit(root, self.superweapon_limit));
         }
         if self.terrain_deformation {
-            options.push_str(&terrain_deformation(&root));
+            options.push_str(&terrain_deformation(root));
         }
-        if !options.is_empty() {
-            root.merge_source_sections(&IniFile::from_str(&options), true);
-        }
+        let mut root = root.clone();
+        root.merge_source_sections(&IniFile::from_str(&options), true);
         Cow::Owned(root)
     }
 
-    /// The network rules digest must compare the precedence policy and the
-    /// Options switches as well as values. A comment-only file with the
-    /// switches off has no effect, including on the compatibility hash.
+    /// What the switches add to the network rules digest; `None` while both
+    /// are off. The header keeps the words it had while VERARULES.INI was
+    /// read, so a game with only the switches on digests as it did.
     pub fn compatibility_crc(&self) -> Option<u32> {
         if !self.in_effect() {
             return None;
         }
-        let policy = if self.override_map_rules { "yes" } else { "no" };
-        let mut header = format!("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules={policy}\n");
+        let mut header = String::from("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules=no\n");
         if self.terrain_deformation {
             header.push_str("TerrainDeformation=yes\n");
         }
         if self.superweapon_limit != 0 {
             header.push_str(&format!("SuperweaponLimit={}\n", self.superweapon_limit));
         }
-        let mut input = IniFile::from_str(&header);
-        input.merge_source_sections(&self.patch, true);
-        Some(input.native_crc())
+        Some(IniFile::from_str(&header).native_crc())
     }
 }
 
@@ -229,11 +168,8 @@ mod tests {
     use super::*;
     use crate::assets::asset_manager::AssetManager;
     use crate::map::source::test_support::TestDirectory;
-    use crate::rules::native_processing::ProcessedRulesLayers;
     use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
     use crate::rules::retail_sources::RetailRulesSources;
-
-    const ROOT: &[u8] = b"[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\nCost=500\nCost=600\nROOT=First\nROOT=Second\nSHOW=Show\n[Easy]\nFirePower=1.5\nArmor=.5\n[Difficult]\nFirePower=1.5\nArmor=.4\n[Probe]\nValue=First\n[Probe]\nValue=Second\n";
 
     fn sources(root: &[u8]) -> RetailRulesSources {
         let directory = TestDirectory::new("personal-rules");
@@ -243,174 +179,32 @@ mod tests {
         RetailRulesSources::select(&assets).unwrap()
     }
 
-    fn owner(personal: &str) -> NativeRulesProcessOwner {
-        sources(ROOT)
-            .with_personal_rules(PersonalRules::from_bytes(personal.as_bytes()).unwrap())
-            .into_owner(Default::default(), Default::default())
-            .unwrap()
-    }
-
     #[test]
-    fn comment_only_profile_preserves_selected_sources_and_compatibility() {
-        let root = b"[Probe]\nValue=First\n[Probe]\nValue=Second\n";
-        let selected = sources(root);
-        let original = selected
-            .clone()
-            .into_owner(Default::default(), Default::default())
-            .unwrap();
-        let comments = selected
-            .with_personal_rules(
-                PersonalRules::from_bytes(
-                    b";[TEST]\n;Strength=200\n[VERA]\nOverrideMapRules=yes\n",
-                )
-                .unwrap(),
-            )
-            .into_owner(Default::default(), Default::default())
-            .unwrap();
-        assert_eq!(comments.personal_rules_compatibility_crc(), None);
-        assert_eq!(
-            original.selected_source_ini_hashes(),
-            comments.selected_source_ini_hashes()
-        );
-        assert_eq!(
-            original.scenario_root().native_crc(),
-            comments.scenario_root().native_crc()
-        );
-        assert_eq!(
-            original
-                .scenario_root()
-                .section("Probe")
-                .unwrap()
-                .read_string("Value", "", 32),
-            comments
-                .scenario_root()
-                .section("Probe")
-                .unwrap()
-                .read_string("Value", "", 32)
-        );
-        assert!(comments.scenario_root().section("VERA").is_none());
-    }
-
-    #[test]
-    fn base_overrides_preserve_later_pass_priority_and_original_sources() {
-        let patch = "[TEST]\nStrength=200\nCost=250\nNewKey=yes\n[NewSection]\nNewKey=yes\n";
-        let original = owner("");
-        let mut customized = owner(patch);
-        assert_eq!(
-            customized
-                .scenario_root()
-                .section("TEST")
-                .unwrap()
-                .read_int("Strength", 0),
-            200
-        );
-        for (section, key) in [("Probe", "Value"), ("TEST", "ROOT")] {
-            assert_eq!(
-                original
-                    .scenario_root()
-                    .section(section)
-                    .unwrap()
-                    .read_string(key, "", 32),
-                customized
-                    .scenario_root()
-                    .section(section)
-                    .unwrap()
-                    .read_string(key, "", 32)
-            );
-        }
-        assert!(
-            customized
-                .scenario_root()
-                .section("TEST")
-                .unwrap()
-                .read_bool("NewKey", false)
-        );
-        assert!(
-            customized
-                .scenario_root()
-                .section("NewSection")
-                .unwrap()
-                .read_bool("NewKey", false)
-        );
-        let loaded = customized
-            .load_scenario(
-                NativeScenarioRulesPrefix::NonCampaign(None),
-                &IniFile::empty(),
-            )
-            .unwrap();
-        assert_eq!(loaded.into_parts().0.object("TEST").unwrap().strength, 200);
-        let mode = IniFile::from_str("[TEST]\nStrength=150\n");
-        let map = IniFile::from_str("[TEST]\nStrength=175\n");
-        let loaded = customized
-            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
-            .unwrap();
-        let (rules, _, _, _) = loaded.into_parts();
-        let unit = rules.object("TEST").unwrap();
-        assert_eq!(unit.strength, 175);
-        assert_eq!(unit.cost, 250);
-        assert_eq!(mode.section("TEST").unwrap().read_int("Strength", 0), 150);
-        assert_eq!(map.section("TEST").unwrap().read_int("Strength", 0), 175);
-    }
-
-    #[test]
-    fn forced_campaign_overrides_preserve_section_absence_and_saved_rules() {
-        let patch = "[VERA]\nOverrideMapRules=yes\n[TEST]\nStrength=200\n[Easy]\nFirePower=2\n[Difficult]\nFirePower=2\n";
-        let mut owner = owner(patch);
-        let named = IniFile::from_str("[TEST]\nStrength=150\n");
-        let map = IniFile::from_str("[TEST]\nStrength=175\n[Easy]\nCost=.9\n");
-        let loaded = owner
-            .load_scenario(NativeScenarioRulesPrefix::Campaign(Some(&named)), &map)
-            .unwrap();
-        let (rules, _, _, _) = loaded.into_parts();
-        assert_eq!(rules.object("TEST").unwrap().strength, 200);
-        assert_eq!(rules.general.difficulty_rows[0].firepower, 2.0);
-        // The present Easy section still applies its own omitted-key defaults.
-        assert_eq!(rules.general.difficulty_rows[0].armor, 1.0);
-        // No new Difficult section was injected into the map to reset Armor.
-        assert_eq!(rules.general.difficulty_rows[2].firepower, 2.0);
-        assert_eq!(rules.general.difficulty_rows[2].armor, f64::from(0.4_f32));
-        assert_eq!(map.section("TEST").unwrap().read_int("Strength", 0), 175);
-        assert!(map.section("Difficult").is_none());
-        let encoded =
-            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
-        let saved: ProcessedRulesLayers = crate::util::save_codec::deserialize(&encoded).unwrap();
-        let restored = owner.project_saved_scenario_rules(&saved).unwrap();
-        assert_eq!(
-            restored.simulation_config_hash(),
-            rules.simulation_config_hash()
-        );
-        let base = PersonalRules::from_bytes(b"[TEST]\nStrength=200\n").unwrap();
-        let force =
-            PersonalRules::from_bytes(b"[VERA]\nOverrideMapRules=yes\n[TEST]\nStrength=200\n")
-                .unwrap();
-        assert_ne!(base.compatibility_crc(), force.compatibility_crc());
-    }
-
-    #[test]
-    fn a_room_plays_another_players_rules_and_keeps_what_the_shell_read() {
-        let root = b"[Countries]\n0=Alpha\n[Orphan]\nMultiplay=yes\n[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n";
+    fn a_room_plays_another_players_switches_and_keeps_what_the_shell_read() {
+        let root = b"[Countries]\n0=Alpha\n[Orphan]\nMultiplay=yes\n[Warheads]\n0=NUKE\n[NUKE]\nVerses=100%\n";
         let mut owner = sources(root)
-            .with_personal_rules(PersonalRules::from_bytes(b"[TEST]\nStrength=200\n").unwrap())
             .into_owner(Default::default(), Default::default())
             .unwrap();
         let settings = IniFile::from_str("[MultiPlayer]\nSide=Orphan\n");
         assert_eq!(owner.read_multiplayer_country(&settings, -1), 1);
-        let strength = |owner: &mut NativeRulesProcessOwner| {
+        let deforms = |owner: &mut NativeRulesProcessOwner| {
             let loaded = owner
                 .load_scenario(
                     NativeScenarioRulesPrefix::NonCampaign(None),
                     &IniFile::empty(),
                 )
                 .unwrap();
-            loaded.into_parts().0.object("TEST").unwrap().strength
+            loaded.into_parts().0.combat_damage.terrain_deformation
         };
-        // The host's file replaces the player's own, and the Country the
+        // The host's switches replace the player's own, and the Country the
         // shell allocated stays for the match's loading to bind.
-        owner.use_personal_rules(PersonalRules::from_bytes(b"[TEST]\nStrength=300\n").unwrap());
+        let mut host = PersonalRules::default();
+        host.set_terrain_deformation(true);
+        owner.use_personal_rules(host);
         assert_eq!(owner.country_name(1), Some("Orphan"));
-        assert_eq!(strength(&mut owner), 300);
+        assert!(deforms(&mut owner));
         owner.use_personal_rules(PersonalRules::default());
-        assert_eq!(strength(&mut owner), 100);
+        assert!(!deforms(&mut owner));
     }
 
     #[test]
@@ -439,7 +233,7 @@ mod tests {
         let root = b"[Warheads]\n0=NUKE\n[NUKE]\nVerses=100%\n";
         assert_eq!(scenario(root, false), (false, (0.0, 1, 0), false, false));
         assert_eq!(scenario(root, true), (true, (1.0, 3, 10), true, true));
-        // Keys the root already sets, from a mod or VERARULES.INI, stay.
+        // Keys the root already sets, from a mod, stay.
         let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
         assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
     }
@@ -484,24 +278,5 @@ mod tests {
             scenario(99),
             ([(20, true), (i32::MAX, false), (1, false)], true)
         );
-    }
-
-    #[test]
-    fn a_personal_ai_nearest_enemy_survives_mode_and_map_layers() {
-        let load = |mode: &str, map: &str| {
-            let mut owner = owner("[General]\nAINearestEnemy=yes\n");
-            let mode = IniFile::from_str(mode);
-            let map = IniFile::from_str(map);
-            let (rules, _, _, _) = owner
-                .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
-                .unwrap()
-                .into_parts();
-            rules.general.ai_nearest_enemy
-        };
-        assert!(load("", ""), "no later layer");
-        assert!(load("[MultiplayerDialogSettings]\nCrates=no\n", ""), "mode");
-        assert!(load("", "[Basic]\nName=x\n"), "map without General");
-        assert!(load("[General]\nFlightLevel=500\n", ""), "mode General");
-        assert!(load("", "[General]\nFlightLevel=500\n"), "map General");
     }
 }

@@ -1372,7 +1372,7 @@ fn prepare_session_for_loading(
 /// VERA: a network match plays the rules its room took from its host
 /// (`HostRules`), which the room's agreement already compared, and so does
 /// a replay that recorded them; every other game, offline replays included,
-/// plays the player's own personal rules.
+/// plays the player's own Options switches.
 fn play_startup_personal_rules(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
     startup: &LoadingStartup,
@@ -1390,7 +1390,7 @@ fn play_startup_personal_rules(
         // A network room refused these before its start; a replay plays on
         // without them and its check reports the difference.
         Err(error) => {
-            log::error!("The room's personal rules do not read: {error}");
+            log::error!("The room's rules do not read: {error}");
             process_assets.use_personal_rules(Default::default());
         }
     }

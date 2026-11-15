@@ -974,9 +974,9 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
         | ShellMessageBoxPurpose::UpdateCheck => atlas.ra2_dialog_background,
-        ShellMessageBoxPurpose::Notice | ShellMessageBoxPurpose::ModRestart(_) => {
-            atlas.ra2_dialog_background
-        }
+        ShellMessageBoxPurpose::Notice
+        | ShellMessageBoxPurpose::ModRestart(_)
+        | ShellMessageBoxPurpose::ModFiles(_) => atlas.ra2_dialog_background,
         _ => None,
     }
     .or_else(|| atlas.mode_two_dialog_background(None));

@@ -174,8 +174,9 @@ refuses it in the same way; the host's game then stops queueing in that room, sa
 and sends its options again, before it turns off Balance automatically and then Teams
 if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
 `{terrain_deformation?:true, superweapon_limit?:2..20, personal_rules?:<base64>}`: the host's
-Terrain Deformation, its Superweapon Limit and its `VERARULES.INI` in standard base64 of at
-most 8,192 bytes (10,924 characters). The game leaves each part out while it is off, and
+Terrain Deformation and its Superweapon Limit. `personal_rules`, the host's `VERARULES.INI`
+in standard base64 of at most 8,192 bytes (10,924 characters), came from games before the
+file was retired; current games never send it and refuse a room that has it. The game leaves each part out while it is off, and
 the object while all are; every player's match plays them in place of the player's own. A
 lobby from before the Superweapon Limit refuses options that carry `superweapon_limit`; the host's
 game then turns it off, says so and sends its options again, keeping the other rules. A

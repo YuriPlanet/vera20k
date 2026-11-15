@@ -119,10 +119,10 @@ struct NativeRulesSourceSnapshot {
     fixed_sounds: Arc<SoundRegistry>,
     /// The same immutable EVAMD catalog used by process playback.
     fixed_eva: Arc<EvaRegistry>,
-    /// VERA source customization, composed over the root and LANGRULE each
-    /// scenario reads (`scenario_root`, `startup_layers`), never over the
-    /// selected INIs the cold start and the shell's Country reads use. A
-    /// network room swaps in its host's between games
+    /// VERA's Options switches, composed over the root each scenario reads
+    /// (`scenario_root`), never over the selected INIs the cold start and the
+    /// shell's Country reads use. A network room swaps in its host's between
+    /// games
     /// ([`NativeRulesProcessOwner::use_personal_rules`]).
     personal_rules: PersonalRules,
     /// Startup mounted `ares.mix`: Ares plays in every game this process
@@ -418,7 +418,7 @@ impl NativeRulesProcessOwner {
 
     /// Session6980C0/475540 against the retained process INI. This mutates the
     /// one live registry before PrepareSession's separate Country body pass.
-    /// VERA: the selected root without personal rules, so every player's
+    /// VERA: the selected root without the Options switches, so every player's
     /// shell registry is the same whichever rules a room plays; Full_Init's
     /// Country prepass reads them.
     pub fn read_multiplayer_country(&mut self, settings: &IniFile, current: i32) -> i32 {
@@ -696,15 +696,15 @@ impl NativeRulesProcessOwner {
         &self.sources.selected_rules_root
     }
 
-    /// VERA's extra source, precedence policy and Options switches as played,
-    /// for the network rules digest (`ProcessAssets::multiplayer_rules_digest`).
+    /// VERA's Options switches as played, for the network rules digest
+    /// (`ProcessAssets::multiplayer_rules_digest`).
     pub fn personal_rules_compatibility_crc(&self) -> Option<u32> {
         self.sources.personal_rules.compatibility_crc()
     }
 
-    /// VERA: play `rules` from the next scenario on, as a network room plays
-    /// its host's. Scenario roots compose them, so the one registry and
-    /// everything the shell read into it stay as they are.
+    /// VERA: play the switches `rules` from the next scenario on, as a network
+    /// room plays its host's. Scenario roots compose them, so the one registry
+    /// and everything the shell read into it stay as they are.
     pub fn use_personal_rules(&mut self, rules: PersonalRules) {
         self.sources.personal_rules = rules;
     }
@@ -720,7 +720,7 @@ impl NativeRulesProcessOwner {
     }
 
     /// The root every scenario's Rules start from: the selected root with the
-    /// personal rules and Options switches applied.
+    /// Options switches applied.
     pub(crate) fn scenario_root(&self) -> Cow<'_, IniFile> {
         self.sources
             .personal_rules
@@ -761,8 +761,7 @@ impl NativeRulesProcessOwner {
     /// Multiplayer agreement follows the frozen process sources, including
     /// LANGRULE. Reopening those files would hash different state from the
     /// sources Full_Init686B20 actually consumes. The root is digested as
-    /// scenarios read it, with the personal rules and Options switches
-    /// applied.
+    /// scenarios read it, with the Options switches applied.
     pub fn multiplayer_source_digests(&self) -> [Option<String>; 3] {
         [
             Some(self.scenario_root().multiplayer_digest()),
@@ -990,7 +989,7 @@ impl NativeRulesProcessOwner {
         };
         let mut layers = self.startup_layers(langrule.as_ref());
         if !skip_root_color_add_and_mode && let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
+            layers.push(RulesLayerKind::GameMode, mode.clone());
         }
         (layers, skip_root_color_add_and_mode)
     }
@@ -1158,10 +1157,9 @@ impl NativeRulesProcessOwner {
             ),
             NativeScenarioRulesPrefix::Campaign(named) => {
                 let state = self.take_pre_reset_state(true);
-                let named = named.map(|ini| self.personalized_layer(ini));
                 let trace = match process_native_campaign_rules_prepass(
                     state,
-                    named.as_ref(),
+                    named,
                     &self.sources.fixed_art,
                     &self.sources.fixed_eva,
                     &self.sources.fixed_sounds,
@@ -1286,9 +1284,7 @@ impl NativeRulesProcessOwner {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares);
         if let Some(langrule) = langrule {
-            let mut langrule = langrule.clone();
-            self.sources.personal_rules.apply_base_layer(&mut langrule);
-            layers.push(RulesLayerKind::LangRule, langrule);
+            layers.push(RulesLayerKind::LangRule, langrule.clone());
         }
         layers
     }
@@ -1303,22 +1299,13 @@ impl NativeRulesProcessOwner {
     ) -> RulesLayerStack {
         let mut layers = self.startup_layers(langrule);
         if !skip_mode && let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
+            layers.push(RulesLayerKind::GameMode, mode.clone());
         }
-        layers.push(
-            RulesLayerKind::Scenario,
-            self.personalized_layer(map_rules_overrides),
-        );
+        layers.push(RulesLayerKind::Scenario, map_rules_overrides.clone());
         if let Some(tmcj4f) = tmcj4f_rules {
-            layers.push(RulesLayerKind::Tmcj4f, self.personalized_layer(tmcj4f));
+            layers.push(RulesLayerKind::Tmcj4f, tmcj4f.clone());
         }
         layers
-    }
-
-    fn personalized_layer(&self, original: &IniFile) -> IniFile {
-        let mut rules = original.clone();
-        self.sources.personal_rules.apply_later_layer(&mut rules);
-        rules
     }
 }
 

@@ -1,7 +1,8 @@
 //! VERA's Mods page, opened by the Mods button of Options; gamemd has none.
 //! A family page shaped like the movie list `0x129`: the mods in the `Mods`
 //! folder with the original game first, what the selected one says of itself,
-//! and Use This Mod, Open Mods Folder and Back (docs/modding.md).
+//! and Use This Mod, Open Mods Folder, Check Files, New Mod and Back
+//! (docs/modding.md).
 //!
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
 
@@ -17,6 +18,8 @@ pub(crate) const LIST: u16 = 0x7E30;
 pub(crate) const USE: u16 = 0x7E31;
 pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
+pub(crate) const CHECK: u16 = 0x7E34;
+pub(crate) const NEW: u16 = 0x7E35;
 
 /// The Options button's caption and the page's heading.
 pub(crate) const TITLE_KEY: &str = "VERA:Mods";
@@ -24,8 +27,8 @@ pub(crate) const BUTTON_HELP_KEY: &str = "VERA:ModsHelp";
 /// The caption over the list, and the list's status help.
 pub(crate) const PROMPT_KEY: &str = "VERA:ModsPrompt";
 
-/// Use This Mod and Open Mods Folder on the column's first rungs, Back on the
-/// bottom row.
+/// Use This Mod, Open Mods Folder, Check Files and New Mod on the column's
+/// first rungs, Back on the bottom row.
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: TITLE_KEY,
@@ -42,6 +45,20 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
             dlu_top: 149,
             csf_key: "VERA:ModsOpenFolder",
             tooltip_key: "VERA:ModsOpenFolderHelp",
+            result: None,
+        },
+        MenuPageButtonSpec {
+            id: CHECK,
+            dlu_top: 176,
+            csf_key: "VERA:ModCheck",
+            tooltip_key: "VERA:ModCheckHelp",
+            result: None,
+        },
+        MenuPageButtonSpec {
+            id: NEW,
+            dlu_top: 203,
+            csf_key: "VERA:ModNew",
+            tooltip_key: "VERA:ModNewHelp",
             result: None,
         },
     ],

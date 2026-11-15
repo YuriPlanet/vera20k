@@ -589,7 +589,7 @@ impl App {
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
     pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
-        // VERA: setup screens start from the player's own personal rules,
+        // VERA: setup screens start from the player's own Options switches,
         // which a previous room's replaced; a room's agreement plays its
         // host's.
         state.process_assets.use_own_personal_rules();
@@ -1727,6 +1727,22 @@ impl App {
                 Self::answer_mod_restart(
                     state,
                     folder,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModFiles(which) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_files(
+                    state,
+                    which,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModMade(dir) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_made(
+                    state,
+                    &dir,
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
             }
