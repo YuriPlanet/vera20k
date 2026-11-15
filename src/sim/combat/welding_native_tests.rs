@@ -172,12 +172,7 @@ fn physical_repair_and_particle_readers_match_original_layers_and_constructor_de
             ),
             (
                 "spawn_direction_bits",
-                json!(
-                    system
-                        .spawn_direction
-                        .to_array()
-                        .map(|value| (value as f32).to_bits())
-                ),
+                json!(system.spawn_direction.map(|value| value.bits())),
             ),
         ] {
             assert_eq!(

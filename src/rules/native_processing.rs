@@ -6936,7 +6936,7 @@ impl RulesPassProcessor {
         Some(self.find_or_construct(family, incoming))
     }
 
-    /// ParticleTypeClass::FindOrAllocate @ 0x00645430 answers -1 only for
+    /// ParticleTypeClass::FindOrCreate @ 0x00645430 answers -1 only for
     /// `<none>` (`_strcmpi` against 0x00817474); an empty name or `none`
     /// finds or constructs a ParticleType like any other spelling.
     fn find_or_allocate_particle(&mut self, incoming: &str) -> Option<usize> {
@@ -10433,7 +10433,8 @@ impl RulesPassProcessor {
                     .read_object_sound(&raw, fixed_sounds);
                 // ParticleSystemType ReadINI 0x0064430F..0x00644323: ReadString
                 // into 0x40 bytes over the shared empty default 0x00889F64,
-                // then an unconditional ParticleType FindOrAllocate whose index
+                // then an unconditional ParticleType FindOrCreate (0x00645430,
+                // called at 0x00644318) whose index
                 // replaces +294. A reached pass without HoldsWhat therefore
                 // binds the empty-named ParticleType.
                 let holds_what = raw.read_string("HoldsWhat", "", 0x40);
