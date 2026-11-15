@@ -2612,7 +2612,9 @@ impl GameEntity {
         self.fall.set_attached_anim_flag(attached);
     }
 
-    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+    /// Object+88, the held canopy identity published by Paradrop5F5AF1.
+    /// Presentation reads this identity with the object's other frame facts.
+    pub fn parachute_animation(&self) -> Option<u64> {
         self.fall.parachute_animation()
     }
 
