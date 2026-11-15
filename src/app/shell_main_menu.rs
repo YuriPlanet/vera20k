@@ -184,6 +184,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.terrain_deformation = enabled;
         self.process_assets.set_terrain_deformation(enabled);
     }
+    fn store_ten_superweapons(&mut self, enabled: bool) {
+        // As Terrain Deformation: the next game's rules read it.
+        self.persistence.options_profile.ten_superweapons = enabled;
+        self.process_assets.set_ten_superweapons(enabled);
+    }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;

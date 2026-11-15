@@ -1891,6 +1891,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              box, which the app passes in for the rules the next scenario reads",
         ),
         (
+            "rules/personal_rules.rs",
+            "set_ten_superweapons",
+            "VERA's own switch with no native member: the Options page's Ten Superweapons \
+             box, which the app passes in for the rules the next scenario reads",
+        ),
+        (
             "rules/superweapon_type.rs",
             "set_tech_level",
             "runs only inside RuleSet's load: Phobos SW.TechLevel",

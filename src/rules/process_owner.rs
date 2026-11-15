@@ -714,6 +714,11 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules.set_terrain_deformation(on);
     }
 
+    /// The Options page's Ten Superweapons box, read by the next scenario.
+    pub fn set_ten_superweapons(&mut self, on: bool) {
+        self.sources.personal_rules.set_ten_superweapons(on);
+    }
+
     /// The root every scenario's Rules start from: the selected root with the
     /// personal rules and Options switches applied.
     pub(crate) fn scenario_root(&self) -> Cow<'_, IniFile> {

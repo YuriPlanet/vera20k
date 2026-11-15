@@ -129,6 +129,9 @@ pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
 /// VERA's terrain deformation box (`docs/terrain-deformation.md`).
 pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
 pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
+/// VERA's Ten Superweapons box (`docs/ten-superweapons.md`).
+pub(crate) const TEN_SUPERWEAPONS_LABEL: &str = "VERA:TenSuperweapons";
+pub(crate) const TEN_SUPERWEAPONS_HELP: &str = "VERA:TenSuperweaponsHelp";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
@@ -713,6 +716,10 @@ pub(crate) enum LauncherCheckboxId {
     /// nuke leaves a crater. Saved; the next game's rules read it, so a match
     /// already running keeps its own.
     TerrainDeformation,
+    /// VERA's own box: each superweapon may be built ten times, and each
+    /// building charges its own shot. Saved; the next game's rules read it,
+    /// as Terrain Deformation's do.
+    TenSuperweapons,
     /// VERA's local camera option: the wheel changes battle view distance.
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
@@ -823,6 +830,7 @@ pub(crate) enum LauncherOptionsEvent {
     ShiftQueueChanged(bool),
     AutoRepairChanged(bool),
     TerrainDeformationChanged(bool),
+    TenSuperweaponsChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
     MinimapBeaconsChanged(bool),
@@ -899,6 +907,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) auto_repair: bool,
     pub(crate) minimap_beacons: bool,
     pub(crate) terrain_deformation: bool,
+    pub(crate) ten_superweapons: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
     /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
@@ -958,6 +967,7 @@ impl Default for LauncherOptionsValues {
             auto_repair: false,
             minimap_beacons: false,
             terrain_deformation: false,
+            ten_superweapons: false,
             performance_stats: false,
             show_string_keys: false,
             skip_intro: false,
@@ -1410,6 +1420,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => &mut self.values.auto_repair,
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
+            LauncherCheckboxId::TenSuperweapons => &mut self.values.ten_superweapons,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
             LauncherCheckboxId::MinimapBeacons => &mut self.values.minimap_beacons,
@@ -1452,6 +1463,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => self
                 .pending_events
                 .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
+            LauncherCheckboxId::TenSuperweapons => self
+                .pending_events
+                .push(LauncherOptionsEvent::TenSuperweaponsChanged(checked)),
             LauncherCheckboxId::MouseWheelZoom => self
                 .pending_events
                 .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
@@ -1724,6 +1738,7 @@ impl Category {
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::TerrainDeformation),
+                Setting::Checkbox(Check::TenSuperweapons),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
@@ -2483,6 +2498,7 @@ mod tests {
                 Check::ShiftQueue,
                 Check::AutoRepair,
                 Check::TerrainDeformation,
+                Check::TenSuperweapons,
                 Check::PerformanceStats,
                 Check::ShowStringKeys,
                 Check::SkipIntro,

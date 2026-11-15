@@ -173,12 +173,14 @@ waits, and the host's game seats the first when a seat frees. A lobby from befor
 refuses it in the same way; the host's game then stops queueing in that room, says so
 and sends its options again, before it turns off Balance automatically and then Teams
 if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
-`{terrain_deformation?:true, personal_rules?:<base64>}`: the host's Terrain Deformation,
-and its `VERARULES.INI` in standard base64 of at most 8,192 bytes (10,924 characters).
-The game leaves each part out while it is off, and the object while both are; every
-player's match plays them in place of the player's own. A lobby from before it refuses
-it in the same way; the host's game then drops the room's rules, says so and sends its
-options again, before it stops queueing, then turns off Balance automatically and then
+`{terrain_deformation?:true, ten_superweapons?:true, personal_rules?:<base64>}`: the host's
+Terrain Deformation, its Ten Superweapons and its `VERARULES.INI` in standard base64 of at
+most 8,192 bytes (10,924 characters). The game leaves each part out while it is off, and
+the object while all are; every player's match plays them in place of the player's own. A
+lobby from before Ten Superweapons refuses options that carry `ten_superweapons`; the host's
+game then turns it off, says so and sends its options again, keeping the other rules. A
+lobby from before the room's rules refuses them in the same way; the host's game then
+drops the room's rules, says so and sends its options again, before it stops queueing, then turns off Balance automatically and then
 Teams if the lobby still refuses. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;

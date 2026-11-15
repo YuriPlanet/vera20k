@@ -452,15 +452,19 @@ pub struct SkirmishLaunchOptions {
 }
 
 /// VERA: the rules a network room plays besides its options, which only its
-/// host sets: the host's Terrain Deformation box and the host's VERARULES.INI
-/// when it changes the game and fits. Every player's match plays these
-/// instead of their own; offline games play the player's own
+/// host sets: the host's Terrain Deformation and Ten Superweapons boxes and
+/// the host's VERARULES.INI when it changes the game and fits. Every player's
+/// match plays these instead of their own; offline games play the player's own
 /// (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostRules {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub terrain_deformation: bool,
+    /// Left out while off, so a room without it sends the rules it sent
+    /// before the box.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ten_superweapons: bool,
     /// The host's VERARULES.INI in base64, at most
     /// [`SHARE_LIMIT`](crate::rules::personal_rules::SHARE_LIMIT) bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -469,15 +473,17 @@ pub struct HostRules {
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && self.personal_rules.is_none()
+        !self.terrain_deformation && !self.ten_superweapons && self.personal_rules.is_none()
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
-    /// box, and its VERARULES.INI when the file changes the game and fits.
+    /// and Ten Superweapons boxes, and its VERARULES.INI when the file changes
+    /// the game and fits.
     pub fn from_own(own: &PersonalRules) -> Self {
         let fits = own.source().len() <= crate::rules::personal_rules::SHARE_LIMIT;
         Self {
             terrain_deformation: own.terrain_deformation(),
+            ten_superweapons: own.ten_superweapons(),
             personal_rules: (!own.is_empty() && fits)
                 .then(|| crate::util::base64::base64_encode(own.source())),
         }
@@ -500,6 +506,7 @@ impl HostRules {
             }
         };
         rules.set_terrain_deformation(self.terrain_deformation);
+        rules.set_ten_superweapons(self.ten_superweapons);
         Ok(rules)
     }
 }

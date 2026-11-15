@@ -226,6 +226,13 @@ pub(crate) struct RetailOptionsProfile {
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] TenSuperweapons=`: the Options page's Ten Superweapons box.
+    /// Each superweapon may be built ten times and each building charges its
+    /// own shot (`docs/ten-superweapons.md`). Like Terrain Deformation it
+    /// changes the rules each new game reads
+    /// ([`crate::rules::personal_rules::PersonalRules::set_ten_superweapons`]).
+    /// Off by default.
+    pub(crate) ten_superweapons: bool,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
     /// service instead of showing `TXT_APIMISSING`. No Options page offers it.
     /// Off by default; no real service exists yet.
@@ -385,6 +392,7 @@ impl Default for RetailOptionsProfile {
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            ten_superweapons: false,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
@@ -417,7 +425,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 34],
+    pub(crate) vera: [(&'static str, String); 35],
 }
 
 impl RetailOptionsLoad {
@@ -641,6 +649,7 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.ten_superweapons = vera.read_bool("TenSuperweapons", self.ten_superweapons);
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
@@ -848,6 +857,10 @@ impl RetailOptionsProfile {
                 (
                     "TerrainDeformation",
                     format_bool(self.terrain_deformation).to_string(),
+                ),
+                (
+                    "TenSuperweapons",
+                    format_bool(self.ten_superweapons).to_string(),
                 ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
                 (

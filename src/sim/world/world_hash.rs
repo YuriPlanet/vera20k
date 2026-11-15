@@ -1607,6 +1607,7 @@ impl Simulation {
                 inst.ready_tick().hash(hasher);
                 inst.hash_recharge_time(hasher);
                 inst.hash_grant_flags(hasher);
+                inst.hash_building_charges(hasher);
                 inst.hash_paid_selection(hasher);
                 inst.hash_ares_launch_history(hasher);
                 if let Some(id) = inst.native_unique_id() {

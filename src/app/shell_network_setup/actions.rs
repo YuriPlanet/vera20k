@@ -205,6 +205,10 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             let rules = &mut options.host_rules;
             rules.terrain_deformation = !rules.terrain_deformation;
         }
+        TEN_SUPERWEAPONS => {
+            let rules = &mut options.host_rules;
+            rules.ten_superweapons = !rules.ten_superweapons;
+        }
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;

@@ -1318,6 +1318,11 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
+    /// VERA's `SuperWeaponPerBuilding=` (default no; `docs/ten-superweapons.md`):
+    /// each building of this type charges its own shot of the Supers it
+    /// provides, rather than the house's one charge alone. gamemd has no such
+    /// key; the Ten Superweapons box sets it.
+    pub super_weapon_per_building: bool,
     /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` lists, retained per
@@ -4819,6 +4824,7 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
+            super_weapon_per_building: section.read_bool("SuperWeaponPerBuilding", false),
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: PhobosOreGathering::default(),

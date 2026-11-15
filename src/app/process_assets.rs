@@ -49,7 +49,7 @@ pub(crate) struct ProcessAssets {
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
     /// The player's own personal rules, read once at startup like the
     /// selected game sources; only the Options switches change them later
-    /// ([`Self::set_terrain_deformation`]). A network room plays its host's
+    /// ([`Self::set_terrain_deformation`], [`Self::set_ten_superweapons`]). A network room plays its host's
     /// instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
@@ -198,6 +198,15 @@ impl ProcessAssets {
         self.personal_rules.set_terrain_deformation(on);
         if let Some(rules) = self.native_rules.as_mut() {
             rules.set_terrain_deformation(on);
+        }
+    }
+
+    /// The Options page's Ten Superweapons box: the next offline scenario's
+    /// rules read it.
+    pub(crate) fn set_ten_superweapons(&mut self, on: bool) {
+        self.personal_rules.set_ten_superweapons(on);
+        if let Some(rules) = self.native_rules.as_mut() {
+            rules.set_ten_superweapons(on);
         }
     }
 
