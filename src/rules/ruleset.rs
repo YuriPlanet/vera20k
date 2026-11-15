@@ -7891,8 +7891,11 @@ impl RuleSet {
     }
 
     /// Look up a TerrainObjectType by section name, case-insensitive.
+    /// Short names use a stack key instead of allocating a temporary string.
     pub fn terrain_object_type_case_insensitive(&self, name: &str) -> Option<&TerrainObjectType> {
-        self.terrain_object_types.get(&name.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.terrain_object_types.get(key)
+        })
     }
 
     /// Incremental projection of the retained FindOrAllocate71E2A0 result.
@@ -11112,8 +11115,9 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::AresSuperWeaponMetadata> {
-        self.ares_super_weapon_metadata
-            .get(&id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.ares_super_weapon_metadata.get(key)
+        })
     }
 
     /// The Phobos techno gates for a superweapon, if the capability is
@@ -11123,8 +11127,9 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::PhobosSuperWeaponAvailability> {
-        self.phobos_super_weapon_metadata
-            .get(&id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.phobos_super_weapon_metadata.get(key)
+        })
     }
 
     /// The `[GlobalControls]` parallel AI queue switches (Phobos extension).
@@ -11178,9 +11183,9 @@ impl RuleSet {
 
     /// Resolve a particle system type name to its ID (case-insensitive).
     pub fn ps_type_id_by_name(&self, name: &str) -> Option<ParticleSystemTypeId> {
-        self.particle_system_types_by_name
-            .get(&name.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.particle_system_types_by_name.get(key).copied()
+        })
     }
 
     /// Parsed VoxelAnim Types in their retained registry order.
@@ -11195,9 +11200,9 @@ impl RuleSet {
 
     /// Resolve a `[VoxelAnims]` type name to its ID (case-insensitive).
     pub fn voxel_anim_type_id_by_name(&self, name: &str) -> Option<VoxelAnimTypeId> {
-        self.voxel_anim_types_by_name
-            .get(&name.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.voxel_anim_types_by_name.get(key).copied()
+        })
     }
 
     /// Number of `[VoxelAnims]` types loaded, also used to validate saved IDs.
@@ -11220,9 +11225,9 @@ impl RuleSet {
     /// Look up the factory type for a structure by ID (case-insensitive).
     /// Returns None if the structure has no Factory= key in rules.ini.
     pub fn factory_type(&self, structure_id: &str) -> Option<FactoryType> {
-        self.factory_map
-            .get(&structure_id.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(structure_id, |key| {
+            self.factory_map.get(key).copied()
+        })
     }
 
     /// `group`'s `[General] Prerequisite*` list.
