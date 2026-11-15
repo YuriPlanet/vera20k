@@ -11,8 +11,6 @@
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
-use thiserror::Error;
-
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::native_processing::anim_type_runtime_key;
@@ -20,6 +18,7 @@ use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SL
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::native_x87::NativeF64Bits;
+use crate::util::pixel_conversion::PixelConversionBounds;
 
 /// A war factory's unload art, read by `BuildingTypeClass::LoadVisualAssets
 /// @ 0x0045F230` from the image section of the art INI: each a 0x40-byte
@@ -697,17 +696,6 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
     }
 }
 
-/// Failures while binding native AnimType metadata to retail SHP assets.
-#[derive(Debug, Error)]
-pub enum AnimAssetBindError {
-    #[error("damage-fire art contains an offset outside the verified native conversion domain")]
-    InvalidDamageFireOffset,
-    #[error("required animation type [{0}] is absent from merged art data")]
-    MissingAnimType(String),
-    #[error("animation SHP [{name}] has an invalid signed frame count {count}")]
-    InvalidFrameCount { name: String, count: i32 },
-}
-
 /// Display layer used by native object submission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AnimLayer {
@@ -1168,25 +1156,28 @@ pub struct ArtRegistry {
     anim_theater_flags: HashMap<String, (bool, bool)>,
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
     scheduler_anim_types: BTreeSet<String>,
-    damage_fire_offsets_valid: bool,
+}
+
+/// An AnimType whose ART body was never read: the constructor's values, with
+/// its own name as Image.
+fn unread_anim_type_config(name: &str) -> AnimTypeRuntimeConfig {
+    let mut config = parse_anim_runtime_config(&IniSection::new(name.to_owned()));
+    config.art_body_read = false;
+    config.image = name.to_owned();
+    config
 }
 
 fn resolve_loaded_bounds(
-    name: &str,
     raw_count: i32,
     shadow: bool,
     explicit_end: Option<i32>,
     explicit_loop_end: Option<i32>,
-) -> Result<(i32, i32), AnimAssetBindError> {
-    // A count of 0 binds as gamemd writes it (`0x00427C2D`): End, LoopEnd
-    // and Middle are 0. A negative signed count (header word 0x8000 and up)
-    // would send gamemd's unsigned frame checks past the table; refuse it.
-    if raw_count < 0 {
-        return Err(AnimAssetBindError::InvalidFrameCount {
-            name: name.to_string(),
-            count: raw_count,
-        });
-    }
+) -> (i32, i32) {
+    // The loader reads the header word signed (`MOVSX`, `0x00427C2D`) and
+    // stores what it gets: a count of 0 gives End, LoopEnd and Middle 0, and
+    // a word of 0x8000 and up a negative End. AnimClass::AI's frame tests are
+    // signed (`JGE`, `0x004246A7..0x00424738`), so such an anim ends at its
+    // first frame boundary.
     let header_end = header_end(raw_count, shadow);
     // Native copies the loader-derived End into LoopEnd before applying the
     // explicit INI End and LoopEnd keys. ReadINI stores both as written
@@ -1196,7 +1187,7 @@ fn resolve_loaded_bounds(
     // atlas holds no key for it.
     let loaded_end = explicit_end.unwrap_or(header_end);
     let loaded_loop_end = explicit_loop_end.unwrap_or(header_end);
-    Ok((loaded_end, loaded_loop_end))
+    (loaded_end, loaded_loop_end)
 }
 
 /// The End the loader takes from a SHP header of `raw_count` frames: the back
@@ -1218,29 +1209,6 @@ impl AnimTypeRuntimeConfig {
         self.explicit_end
             .unwrap_or(header_end(shp_frame_count, self.shadow))
     }
-}
-
-/// Verified `TacticalClass::IsometricPixelToWorld` transform for the initialized
-/// retail tactical matrix. Native evaluates the row in extended precision, stores
-/// one f32 result, then truncates toward zero in `Math::ftol`.
-fn damage_fire_world_delta(pixel_x: i32, pixel_y: i32) -> Option<(i32, i32)> {
-    const EXACT_F32_INTEGER_LIMIT: i32 = 1 << 24;
-    const ISO_PIXEL_TO_WORLD_A: f32 = f32::from_bits(0x4088_88CE);
-
-    let twice_y = pixel_y.checked_mul(2)?;
-    let native_x = pixel_x.checked_add(twice_y)?;
-    let native_y = pixel_x.checked_neg()?.checked_add(twice_y)?;
-    for value in [pixel_x, pixel_y, native_x, native_y] {
-        if value.unsigned_abs() > EXACT_F32_INTEGER_LIMIT as u32 {
-            return None;
-        }
-    }
-    let world_x = ISO_PIXEL_TO_WORLD_A * native_x as f32;
-    let world_y = ISO_PIXEL_TO_WORLD_A * native_y as f32;
-    if !world_x.is_finite() || !world_y.is_finite() {
-        return None;
-    }
-    Some((world_x.trunc() as i32, world_y.trunc() as i32))
 }
 
 /// Hardcoded filename prefixes that always receive `NewTheater` treatment
@@ -1283,7 +1251,6 @@ impl ArtRegistry {
         let mut anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig> =
             LookupMap::default();
         let mut anim_theater_flags = HashMap::new();
-        let mut damage_fire_offsets_valid = true;
 
         for section_name in ini.section_names() {
             let section = match ini.section(section_name) {
@@ -1417,10 +1384,11 @@ impl ArtRegistry {
                     if [x, y] == UNSET {
                         break;
                     }
-                    let (world_dx, world_dy) = damage_fire_world_delta(x, y).unwrap_or_else(|| {
-                        damage_fire_offsets_valid = false;
-                        (0, 0)
-                    });
+                    // Building damage fires convert it with
+                    // `TacticalClass::IsometricPixelToWorld` (`0x0043C152` calls
+                    // `0x006D2070`), whose one port takes every signed value.
+                    let (world_dx, world_dy) =
+                        PixelConversionBounds::isometric_pixel_to_leptons(x, y);
                     offsets.push(DamageFireOffset {
                         pixel_x: x,
                         pixel_y: y,
@@ -1468,7 +1436,7 @@ impl ArtRegistry {
             let section_key = section_name.to_uppercase();
             can_hide_things.insert(section_key.clone(), can_hide);
             occupy_heights.insert(section_key.clone(), occupy_height);
-            anim_runtime_configs.insert(section_key.clone(), anim_runtime_config);
+            anim_runtime_configs.insert(section_name.to_ascii_uppercase(), anim_runtime_config);
             anim_theater_flags.insert(section_key.clone(), (anim_theater, anim_new_theater));
             entry_names.insert(section_key, section_name.to_owned());
             entries.insert(
@@ -1551,7 +1519,6 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
-            damage_fire_offsets_valid,
         }
     }
 
@@ -1566,7 +1533,6 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
-            damage_fire_offsets_valid: true,
         }
     }
 
@@ -1587,17 +1553,12 @@ impl ArtRegistry {
     }
 
     /// Generic native-like AnimType runtime metadata for an art section.
+    /// AnimType names match as `AnimTypeClass::FindOrAllocate` compares them
+    /// (`_strcmpi`, `0x007C8D20`, whose C-locale path folds ASCII letters
+    /// only), so the map is keyed and read with the ASCII uppercase, as the
+    /// binders and the processing receipt write it.
     pub fn anim_runtime_config(&self, image_id: &str) -> Option<&AnimTypeRuntimeConfig> {
-        // An ASCII name without a lowercase letter is its own uppercase and
-        // needs no uppercase copy.
-        if image_id
-            .bytes()
-            .all(|byte| byte.is_ascii() && !byte.is_ascii_lowercase())
-        {
-            self.anim_runtime_configs.get(image_id)
-        } else {
-            self.anim_runtime_configs.get(&image_id.to_uppercase())
-        }
+        with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.get(key))
     }
 
     /// Apply the canonical RulesClass processing receipt before asset binding.
@@ -1612,10 +1573,7 @@ impl ArtRegistry {
                 if *read {
                     self.anim_runtime_config(name).cloned()
                 } else {
-                    let mut config = parse_anim_runtime_config(&IniSection::new(name.clone()));
-                    config.art_body_read = false;
-                    config.image = name.clone();
-                    Some(config)
+                    Some(unread_anim_type_config(name))
                 }
             })
             .collect();
@@ -1711,13 +1669,11 @@ impl ArtRegistry {
             .get_mut(&key)
             .expect("test animation section must exist");
         let (loaded_end, loaded_loop_end) = resolve_loaded_bounds(
-            &key,
             raw_count,
             config.shadow,
             config.explicit_end,
             config.explicit_loop_end,
-        )
-        .expect("test animation bounds must be valid");
+        );
         config.raw_shp_frame_count = Some(raw_count);
         config.middle_frame = Some(raw_count / 2);
         config.end = loaded_end;
@@ -1743,12 +1699,12 @@ impl ArtRegistry {
     /// not authorize asset loading or drawing for these types.
     ///
     /// Missing registered ART is therefore handled by the canonical receipt,
-    /// not this loader's error policy. Other failed asset bindings are counted
-    /// for the caller; they do not create a second AnimType registry.
+    /// not this loader. A name with no AnimType stays unbound and is counted
+    /// for the caller; this pass does not create a second AnimType registry.
     ///
     /// Follows each bound type's `Next=`/`TrailerAnim=` like the strict binder,
     /// so a chained type has loader-derived bounds when the store switches to
-    /// it. A type that fails to bind ends its chain here.
+    /// it. A name with no AnimType ends its chain here.
     pub fn bind_anim_class_assets(
         &mut self,
         roots: &[String],
@@ -1767,42 +1723,33 @@ impl ArtRegistry {
             if !visited.insert(name.clone()) || self.scheduler_anim_types.contains(&name) {
                 continue;
             }
-            match self.bind_one_anim_asset(&name, asset_manager, theater_ext, theater_name) {
-                Ok(()) => {
-                    if let Some(config) = self.anim_runtime_configs.get(&name) {
-                        pending.extend(config.next.iter().cloned());
-                        pending.extend(config.trailer_anim.iter().cloned());
-                        pending.extend(config.bounce_anim.iter().cloned());
-                        pending.extend(config.expire_anim.iter().cloned());
-                        pending.extend(config.spawns.iter().cloned());
-                    }
-                    self.scheduler_anim_types.insert(name);
-                }
-                Err(error) => {
-                    skipped += 1;
-                    log::warn!(
-                        "AnimClass animation [{name}] did not bind and will draw nothing: {error}"
-                    );
-                }
-            }
+            let Some(config) = self.anim_runtime_configs.get(&name).cloned() else {
+                skipped += 1;
+                log::warn!("AnimClass animation [{name}] has no AnimType and will draw nothing");
+                continue;
+            };
+            self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
+            pending.extend(config.next.iter().cloned());
+            pending.extend(config.trailer_anim.iter().cloned());
+            pending.extend(config.bounce_anim.iter().cloned());
+            pending.extend(config.expire_anim.iter().cloned());
+            pending.extend(config.spawns.iter().cloned());
+            self.scheduler_anim_types.insert(name);
         }
         skipped
     }
 
     /// Resolve one animation's SHP and write the loader-derived bounds back into
-    /// its runtime config. Shared by the strict and tolerant binders.
+    /// its runtime config, `config`, which the map holds under `name`. Shared
+    /// by the strict and tolerant binders.
     fn bind_one_anim_asset(
         &mut self,
         name: &str,
+        config: &AnimTypeRuntimeConfig,
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), AnimAssetBindError> {
-        let config = self
-            .anim_runtime_configs
-            .get(name)
-            .cloned()
-            .ok_or_else(|| AnimAssetBindError::MissingAnimType(name.to_string()))?;
+    ) {
         let image_id = self.resolve_anim_image_id(name);
         let candidates = effect_shp_candidates(
             crate::rules::art_data::EffectImageKind::Animation,
@@ -1818,7 +1765,7 @@ impl ArtRegistry {
         if !config.art_body_read && data.is_none() {
             // Fresh unread types and saved own-name misses are valid null
             // images (AnimRead427D22 / AnimTypeLoad428955).
-            return Ok(());
+            return;
         }
         let header_word = |data: Option<&[u8]>, offset: usize| {
             data.and_then(|data| data.get(offset..offset + 2))
@@ -1833,7 +1780,7 @@ impl ArtRegistry {
             bound.raw_shp_frame_count = Some(raw_count);
             bound.raw_shp_height = Some(header_word(data, 4));
             bound.middle_frame = Some(0);
-            return Ok(());
+            return;
         }
         // Read_Map4AD092 / MouseLoad5BE689 -> InitTheater427940 can replace
         // Shape after427B50 wrote End/LoopEnd/Middle. Bind that earlier image
@@ -1852,12 +1799,11 @@ impl ArtRegistry {
         let bounds_count = header_word(bounds_data, 6);
         let (mut loaded_end, mut loaded_loop_end) = if bounds_data.is_some() {
             resolve_loaded_bounds(
-                name,
                 bounds_count,
                 config.shadow,
                 config.explicit_end,
                 config.explicit_loop_end,
-            )?
+            )
         } else {
             //427C1A skips numeric writes on a null resolver image. Explicit
             // ART reads still occur, and Start/Middle can spawn particles.
@@ -1880,7 +1826,7 @@ impl ArtRegistry {
             // ART bounds reads: fill only zero End/LoopEnd, always write
             // Middle. Earlier successful generic bounds survive this call.
             let post_count = header_word(Some(post_data), 6);
-            let (post_end, _) = resolve_loaded_bounds(name, post_count, config.shadow, None, None)?;
+            let (post_end, _) = resolve_loaded_bounds(post_count, config.shadow, None, None);
             if loaded_end == 0 {
                 loaded_end = post_end;
             }
@@ -1895,22 +1841,30 @@ impl ArtRegistry {
         bound.middle_frame = Some(middle);
         bound.end = loaded_end;
         bound.loop_end = loaded_loop_end;
-        Ok(())
     }
 
     /// Bind native loader-derived End/LoopEnd values for the transitive
     /// Next/Trailer closure rooted at the supplied animation names.
+    ///
+    /// A root no AnimType holds is a theater `Tile%02dAnim=` name that nothing
+    /// else names. `Read_Theater_TileSets_INI` passes it to
+    /// `AnimTypeClass::FindOrAllocate` (`0x00546538`), which builds a new
+    /// type (`0x00428BD6..0x00428BEA`). The map read that does this
+    /// (`0x006879FF`) comes after `RulesClass::Process` read the ART
+    /// (`0x0068774F`), so the type keeps its constructor values, like any
+    /// unread type, and draws nothing. Residual: such a name with an ART
+    /// section of its own binds with that section read. gamemd reads it only
+    /// in game mode 5, whose `RulesClass::Process(TMCJ4F.INI)` runs after the
+    /// map read (`0x00687B18..0x00687B76`), and keeps the constructor values
+    /// otherwise. Only mod data does this: every retail `Tile%02dAnim=` name
+    /// is in `[Animations]`.
     pub fn bind_scheduler_anim_assets(
         &mut self,
         roots: &[String],
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), AnimAssetBindError> {
-        if !self.damage_fire_offsets_valid {
-            return Err(AnimAssetBindError::InvalidDamageFireOffset);
-        }
-
+    ) {
         let mut pending: VecDeque<String> = roots
             .iter()
             .map(|name| name.to_ascii_uppercase())
@@ -1922,12 +1876,12 @@ impl ArtRegistry {
             if !resolved.insert(name.clone()) {
                 continue;
             }
-            self.bind_one_anim_asset(&name, asset_manager, theater_ext, theater_name)?;
             let config = self
                 .anim_runtime_configs
-                .get(&name)
-                .cloned()
-                .expect("binding above resolved this configuration");
+                .entry(name.clone())
+                .or_insert_with(|| unread_anim_type_config(&name))
+                .clone();
+            self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
 
             if let Some(next) = config.next {
                 pending.push_back(next);
@@ -1951,7 +1905,6 @@ impl ArtRegistry {
         }
 
         self.scheduler_anim_types = resolved;
-        Ok(())
     }
 
     /// Hidden-occupancy gate from the art.ini object-type-ID section.
@@ -3333,26 +3286,10 @@ mod anim_runtime_metadata_tests {
     }
 
     #[test]
-    fn damage_fire_pixel_offsets_bind_verified_world_deltas() {
-        assert_eq!(damage_fire_world_delta(-24, -1), Some((-110, 93)));
-        assert_eq!(damage_fire_world_delta(64, 36), Some((580, 34)));
-        assert_eq!(damage_fire_world_delta(i32::MIN, 0), None);
-    }
-
-    #[test]
     fn loaded_bounds_apply_shadow_before_explicit_native_overrides() {
-        assert_eq!(
-            resolve_loaded_bounds("FIRE", 64, true, None, None).unwrap(),
-            (32, 32),
-        );
-        assert_eq!(
-            resolve_loaded_bounds("FIRE", 64, true, Some(7), None).unwrap(),
-            (7, 32),
-        );
-        assert_eq!(
-            resolve_loaded_bounds("FIRE", 64, true, Some(0), Some(-1)).unwrap(),
-            (0, -1),
-        );
+        assert_eq!(resolve_loaded_bounds(64, true, None, None), (32, 32),);
+        assert_eq!(resolve_loaded_bounds(64, true, Some(7), None), (7, 32),);
+        assert_eq!(resolve_loaded_bounds(64, true, Some(0), Some(-1)), (0, -1),);
     }
 }
 

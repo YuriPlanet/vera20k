@@ -79,14 +79,12 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     };
     let mut rules = retail.rules;
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").expect("retail temperate assets");
-    rules
-        .bind_scheduler_anim_assets(
-            &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
-            &assets,
-            "tem",
-            "TEMPERATE",
-        )
-        .expect("production animation bounds come from physical retail SHPs");
+    rules.bind_scheduler_anim_assets(
+        &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
     let mut sim = Simulation::with_seed(0x4441_7500);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

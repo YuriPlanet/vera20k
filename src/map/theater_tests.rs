@@ -1346,6 +1346,16 @@ fn gsi_13_04_tile_anims_come_from_the_setname_section() {
 
     // A tileset whose SetName names no section has no animations at all.
     assert_eq!(lookup.tile_anim(0), None);
+
+    // `none` and `<none>` get no type from FindOrAllocate (`0x00546538`), so
+    // the block is skipped (issue 4493).
+    let none = parse_tileset_ini(
+        b"[TileSet0000]\nSetName=Falls\nFileName=wf\nTilesInSet=2\n\
+          [Falls]\nTile01Anim=none\nTile02Anim=<None>\n",
+        "tem",
+    )
+    .unwrap();
+    assert_eq!((none.tile_anim(0), none.tile_anim(1)), (None, None));
 }
 
 #[test]

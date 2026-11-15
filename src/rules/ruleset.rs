@@ -11419,9 +11419,9 @@ impl RuleSet {
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), crate::rules::art_data::AnimAssetBindError> {
+    ) {
         self.art_registry
-            .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)
+            .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
     }
 
     pub fn bind_anim_class_assets(
@@ -11454,7 +11454,7 @@ impl RuleSet {
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), crate::rules::art_data::AnimAssetBindError> {
+    ) {
         let mut roots: Vec<String> = self
             .art_registry
             .scheduler_anim_types()
@@ -11464,11 +11464,7 @@ impl RuleSet {
         roots.push(name.to_ascii_uppercase());
         roots.sort();
         roots.dedup();
-        // Preserve the existing strict load failure boundary. RESIDUAL: a
-        // previously tolerant root with a missing chained SHP can fail here.
-        // This affects modded art; none of retail's nine chain keys starts
-        // from a tolerant root. No new asset admission policy is introduced.
-        self.bind_scheduler_anim_assets(&roots, assets, theater_ext, theater_name)
+        self.bind_scheduler_anim_assets(&roots, assets, theater_ext, theater_name);
     }
 
     /// Synthetic fixtures that previously projected ART then restored the raw

@@ -420,14 +420,12 @@ fn load_with_assets(
     // synchronously before its native constructor spends an ID.
     let scheduler_roots =
         crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    rules
-        .bind_scheduler_anim_assets(
-            &scheduler_roots,
-            &assets,
-            theater.extension,
-            &map.header.theater,
-        )
-        .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
     let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
