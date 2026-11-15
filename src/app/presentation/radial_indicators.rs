@@ -101,6 +101,30 @@ pub(crate) fn build(
         if !object.has_radial_indicator() || entity.category() != EntityCategory::Structure {
             continue;
         }
+        // Phobos `BuildingClass_DrawRadialIndicator_Visibility` (hook
+        // 0x456776, `Misc/Hooks.UI.cpp:294-306`): the current player and an
+        // observer always see it; any other owner shows only when the
+        // configured `AffectedHouse` admits the allied or enemy arm.
+        #[cfg(feature = "phobos")]
+        if let Some(viewer) = sim.session().current_house()
+            && !sim.session().is_observer_house(viewer)
+            && entity.owner() != viewer
+        {
+            let allied = crate::map::houses::is_allied_with(
+                sim.house_alliances().as_map(),
+                sim.resolve(entity.owner()),
+                sim.resolve(viewer),
+            );
+            let can_see = rules.phobos_globals.radial_indicator_visibility;
+            let visible = if allied {
+                can_see.contains(crate::rules::phobos_shields::AffectedHouse::ALLIES)
+            } else {
+                can_see.contains(crate::rules::phobos_shields::AffectedHouse::ENEMIES)
+            };
+            if !visible {
+                continue;
+            }
+        }
         push_building_indicator(
             &mut draws, sim, rules, entity, object, true, colors, viewport, time_ms,
         );
