@@ -1,7 +1,7 @@
 # Phobos 未完成项与残渣总表（实机测试前必读）
 
-基准：`phobos-local` @ `6a261e2cb`（2026-11-15）。
-扫描器：`G:\20k\scratch\phobos_chain_analysis_v3.py`（`GAP = 31`，suspects = 0，
+基准：`phobos-local`（2026-11-16）。
+扫描器：`G:\20k\scratch\phobos_chain_analysis_v3.py`（**`GAP = 0`**，suspects = 0，
 compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；每关一个键或修一条
 残渣，都在此表划掉并更新扫描器。
 
@@ -29,9 +29,15 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
 - `RadialIndicatorVisibility`：`app/presentation/radial_indicators.rs` 按
   `0x456776` 的 owner/observer/allied/enemy 分支过滤他人建筑的指示环。
 
-仍未实现的 20 键及阻塞原因见 §1.7。ToolTips 7 键（uimd.ini）本次未动。
+ToolTips 7 键已于 2026-11-16 完成（见 §1.1），仍未实现的键及阻塞原因见 §1.7。
 
-### 1.1 ToolTips / uimd.ini（7）
+### 1.1 ToolTips / uimd.ini（7）——已完成（2026-11-16）
+
+`src/rules/phobos_tooltips_ui.rs` 读取全部 7 键，`ProcessAssets` 启动时解析；
+消费者为 `app/input/tooltips.rs`（扩展文本、`MaxWidth`、锚定）与
+`app/loading/composition.rs`（载入界面黑点）。残渣见
+[`docs/phobos-tooltips-ui.md`](phobos-tooltips-ui.md)（电力行、Ares 门控的
+`SW.Shots`、`MaxWidth` 的 5 px 绘制内边距）。
 
 | 键 | 出处 | 类型 / 默认 | 消费者 |
 |---|---|---|---|
@@ -95,11 +101,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 20 键与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 13 项（15 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
-| ToolTips 7 键（`ExtendedToolTips`/`AnchoredToolTips`/`MaxWidth`/`CostLabel`/`TimeLabel`/`SWShotsFormat`/`DisableEmptySpawnPositions`） | 读的是 **uimd.ini**；VERA 目前没有 uimd 读取入口。需先建入口，再对照 `Misc/PhobosToolTip.cpp` 与 `app/input/tooltips.rs` 接线。 |
 | `SortCameoByName` | `CameoKey` 只存 UIName，无内部 `Name`；Phobos `0x6A84DB/0x6A86ED` 先 `strcmp(Name)` 再 `wcscmp(UIName)`。需给 Techno/SuperWeapon 键补内部名并改 `inserts_before`，约 20 个构造点。 |
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `DisplayIncome.AllowAI` | VERA 尚未实现 `DisplayIncome` 收益累积/周期标签（全仓无消费者）；单实现 AllowAI 无意义，需先补整条 DisplayIncome 链。 |
@@ -121,6 +126,18 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `VoxelShadowLightSource` | read（`Ext/Rules/Body.cpp:353`）、Process（`:947`）、apply（`:1200-1207`）全被注释，作者自注 “doesn't really impact anything” |
 
 ## 3. 已记录残渣（按链，含触发/影响/频率/风险）
+
+### 2026-11-16 ToolTips/uimd 链
+- **扩展文本电力行**：`ExtendedToolTips=yes` 时 Phobos 在时间后追加
+  `PowerLabel±电力`。VERA 未接：建筑臂需要实时 PowerPlantEnhancer 结算，单位臂
+  需要未移植的 `UnitPowerDrain`。触发：开启扩展提示；频率：每次悬停电力建筑/单位；
+  风险：文本少一段，无数值错误。
+- **SWShotsFormat 余量**：`SW.Shots` 状态只在 Ares 包（`AresSuperWeaponAvailability`
+  + `ares_launch_count`），仅 phobos 构建没有计数 → 射击行不显示。触发：自定义
+  `SW.Shots` 且开启扩展提示；频率：仅此类超武；风险：少一行提示。
+- **MaxWidth 的 5 px 绘制内边距**（钩子 `0x479029`）：VERA 文字内边距为固定常量，
+  不随 `MaxWidth>0` 收缩。触发：设置 MaxWidth；频率：每次 cameo 提示；风险：边框
+  附近文字间距差 5 px。
 
 ### 本会话新增链
 1. **Warhead.PreventScatter**（`8bacaf9bd`）：rules 解析不到的 warhead 名 → VERA

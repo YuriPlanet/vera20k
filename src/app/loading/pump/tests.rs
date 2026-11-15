@@ -1075,6 +1075,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
         initial.map_data(),
         projection.active_scenario_waypoints(),
         &assignments,
+        true,
     );
     assert_eq!(
         composition
@@ -1707,6 +1708,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
         &launch_map,
         &active_scenario_waypoints,
         &assignments,
+        true,
     );
     let prepared = composition.preview.expect("FFA retained preview");
     assert_eq!(

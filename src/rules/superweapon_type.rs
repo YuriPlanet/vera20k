@@ -2428,6 +2428,12 @@ impl AresSuperWeaponAvailability {
         self.shots < 0 || count < self.shots
     }
 
+    /// `SW.Shots=` itself for the tooltip's `SWShotsFormat` line
+    /// (`Misc/PhobosToolTip.cpp:196-205`).
+    pub(crate) fn shots(&self) -> i32 {
+        self.shots
+    }
+
     pub(crate) fn allows_controller(&self, player: bool) -> bool {
         if player {
             self.allow_player

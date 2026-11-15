@@ -272,7 +272,7 @@ const POWER_BLACKOUT_LABEL_DEFAULT: &str = "\u{26A1}\u{274C}";
 /// `<none>` and bare `none`, case-insensitive (`CCINIClass.h`), the same pair the
 /// type factories answer null for — and only those keep the default. Anything
 /// else is asked of the string table, whose miss stays visible.
-fn load_string_or_default(
+pub(crate) fn load_string_or_default(
     section: &IniSection,
     key: &str,
     default: &str,

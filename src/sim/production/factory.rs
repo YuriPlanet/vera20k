@@ -714,6 +714,19 @@ pub fn ares_time_to_build(
     time
 }
 
+/// Phobos `PhobosToolTip::GetBuildTime` (`Misc/PhobosToolTip.cpp:50-76`): the
+/// tooltip's temporary object carries the local player as its owner, so the
+/// full [`object_time_to_build`] formula runs against the live house, power and
+/// factory count; the tip never prints less than 54 frames.
+pub fn tooltip_build_time(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> i32 {
+    object_time_to_build(sim, rules, owner, obj).max(54)
+}
+
 /// `TechnoClass::Time_To_Build @ 0x006F47A0` for `owner` building `obj`:
 /// [`time_to_build`], or with Ares its replacement [`ares_time_to_build`].
 pub(super) fn object_time_to_build(

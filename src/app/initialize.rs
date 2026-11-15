@@ -734,6 +734,11 @@ impl App {
                 )
                 .with_personal_rules(personal_rules);
             process_assets.csf = startup_csf;
+            // Phobos parses `uimd.ini` once right after the archive mount
+            // (`src/Phobos.INI.cpp:135-170`); the loading screen's
+            // `[LoadingScreen]` read and the in-game tooltip config share it.
+            #[cfg(feature = "phobos")]
+            process_assets.load_phobos_tooltips_ui();
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()
                 .and_then(|assets| {

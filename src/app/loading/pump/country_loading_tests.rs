@@ -150,6 +150,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
         [800, 600],
         ShellScale::RETAIL,
         &[],
+        true,
     );
     composition.bind_country_loading(late, Some(&csf));
     assert_eq!(composition.text.country_name.as_deref(), Some("Child"));

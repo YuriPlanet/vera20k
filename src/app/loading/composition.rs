@@ -370,6 +370,11 @@ impl LoadingCompositionSnapshot {
 }
 
 /// Build a complete selected-map snapshot after the map's initial parse.
+///
+/// `draw_start_dots` is Phobos `uimd.ini [LoadingScreen]
+/// DisableEmptySpawnPositions` inverted (`Misc/Hooks.UI.cpp:29-37`, hook
+/// `0x640B8D`): off skips gamemd's hardcoded 4x4 black fills over the start
+/// positions; the numbered markers themselves stay.
 pub(crate) fn build_loading_composition(
     map: &MapFile,
     session: &SkirmishLaunchSession,
@@ -377,6 +382,7 @@ pub(crate) fn build_loading_composition(
     render_size: [u32; 2],
     scale: ShellScale,
     assignments: &[LoadingStartAssignment],
+    draw_start_dots: bool,
 ) -> LoadingCompositionSnapshot {
     let region = mmpb_region_rect(loading_authored_size(render_size, scale)[0]).scaled(scale);
     let prefix = native_loading_waypoint_prefix(&map.waypoints);
@@ -392,7 +398,9 @@ pub(crate) fn build_loading_composition(
             let fit = aspect_fit_preview(region, preview.width, preview.height)?;
             let mut image = preview.clone();
             if let Some(bounds) = bounds {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                if draw_start_dots {
+                    burn_black_start_indicators(&mut image, &prefix, bounds);
+                }
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -426,6 +434,7 @@ pub(crate) fn build_random_map_loading_composition(
     launch_map: &MapFile,
     active_scenario_waypoints: &HashMap<u32, Waypoint>,
     assignments: &[LoadingStartAssignment],
+    draw_start_dots: bool,
 ) -> LoadingCompositionSnapshot {
     let region = mmpb_region_rect(loading_authored_size(render_size, scale)[0]).scaled(scale);
     let mut markers = Vec::new();
@@ -435,7 +444,9 @@ pub(crate) fn build_random_map_loading_composition(
             let fit = aspect_fit_preview(region, image.width, image.height)?;
             let prefix = native_loading_waypoint_prefix(active_scenario_waypoints);
             if let Some(bounds) = projected_playfield_bounds(launch_map) {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                if draw_start_dots {
+                    burn_black_start_indicators(&mut image, &prefix, bounds);
+                }
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -1041,6 +1052,7 @@ mod tests {
             &map,
             &map.waypoints,
             &[],
+            true,
         );
 
         let preview = composition.preview.expect("valid bitmap fits the region");
@@ -1136,6 +1148,7 @@ mod tests {
             [800, 600],
             ShellScale::RETAIL,
             &assignments,
+            true,
         );
 
         // (55,55) is inside the RMG Size diamond (104 < x+y) but below the
@@ -1149,6 +1162,7 @@ mod tests {
             [800, 600],
             ShellScale::RETAIL,
             &assignments,
+            true,
         );
         assert_eq!(with_filler.markers, baseline.markers);
 
@@ -1164,6 +1178,7 @@ mod tests {
             [800, 600],
             ShellScale::RETAIL,
             &assignments,
+            true,
         );
         assert_ne!(with_inside.markers[0].anchor, baseline.markers[0].anchor);
     }
@@ -1241,6 +1256,7 @@ mod tests {
             &map,
             &map.waypoints,
             &assignments,
+            true,
         );
 
         let preview = composition.preview.expect("retained preview");

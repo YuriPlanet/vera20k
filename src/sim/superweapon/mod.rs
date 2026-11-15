@@ -1774,6 +1774,43 @@ fn use_weeds_anim_stage(
     Some(progress.min(54))
 }
 
+/// What the Phobos super tooltip prints besides the name and cost
+/// (`Misc/PhobosToolTip.cpp:155-215`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SuperTooltipFacts {
+    /// `SuperClass::GetRechargeTime @ 0x006CC260`, the full charge time.
+    pub recharge_frames: i32,
+    /// `SW_Shots` and the owner's `HouseExt::SuperExts[].ShotCount`:
+    /// `(remaining, total)`. `None` while the type leaves the key unset or
+    /// without Ares, whose package holds the only `SW.Shots` reader in VERA.
+    pub shots: Option<(i32, i32)>,
+}
+
+/// The facts `PhobosToolTip::HelpText_Super` reads from `owner`'s live
+/// instance of `section`; `None` while the owner holds no such Super.
+pub fn super_tooltip_facts(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: &InternedId,
+    section: &str,
+) -> Option<SuperTooltipFacts> {
+    let sw = rules.super_weapon(section)?;
+    let type_id = sim.interner.get(section)?;
+    let instance = sim.super_weapons.get(owner)?.get(&type_id)?;
+    #[cfg(feature = "ares")]
+    let shots = rules
+        .super_weapon_metadata(section)
+        .map(|metadata| metadata.availability().shots())
+        .filter(|total| *total > 0)
+        .map(|total| (total - instance.ares_launch_count, total));
+    #[cfg(not(feature = "ares"))]
+    let shots = None;
+    Some(SuperTooltipFacts {
+        recharge_frames: instance.recharge_time(sw),
+        shots,
+    })
+}
+
 /// Query active superweapons for a specific owner (for sidebar rendering).
 pub fn superweapon_views_for_owner(
     sim: &Simulation,
