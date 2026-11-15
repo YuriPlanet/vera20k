@@ -709,15 +709,6 @@ pub enum AnimAssetBindError {
     MissingAnimType(String),
     #[error("animation SHP [{name}] has an invalid signed frame count {count}")]
     InvalidFrameCount { name: String, count: i32 },
-    #[error(
-        "animation type [{name}] has invalid loaded {field} value {value} for {raw_count} frames"
-    )]
-    InvalidLoadedBound {
-        name: String,
-        field: &'static str,
-        value: i32,
-        raw_count: i32,
-    },
 }
 
 /// Display layer used by native object submission.
@@ -1189,23 +1180,6 @@ pub struct ArtRegistry {
     damage_fire_offsets_valid: bool,
 }
 
-fn validate_loaded_bound(
-    name: &str,
-    field: &'static str,
-    value: i32,
-    raw_count: i32,
-) -> Result<(), AnimAssetBindError> {
-    if value < -1 || value > raw_count {
-        return Err(AnimAssetBindError::InvalidLoadedBound {
-            name: name.to_string(),
-            field,
-            value,
-            raw_count,
-        });
-    }
-    Ok(())
-}
-
 fn resolve_loaded_bounds(
     name: &str,
     raw_count: i32,
@@ -1221,11 +1195,13 @@ fn resolve_loaded_bounds(
     }
     let header_end = header_end(raw_count, shadow);
     // Native copies the loader-derived End into LoopEnd before applying the
-    // explicit INI End and LoopEnd keys.
+    // explicit INI End and LoopEnd keys. ReadINI stores both as written
+    // (`0x00427FE8`, `0x0042801C`) and nothing checks them against the frame
+    // count (`0x00427C1C..0x00427C5C`, AnimClass::AI `0x0042468C`): a frame
+    // past the SHP draws nothing (`CC_Draw_Shape`, `0x0069E7F3`), as the
+    // atlas holds no key for it.
     let loaded_end = explicit_end.unwrap_or(header_end);
     let loaded_loop_end = explicit_loop_end.unwrap_or(header_end);
-    validate_loaded_bound(name, "End", loaded_end, raw_count)?;
-    validate_loaded_bound(name, "LoopEnd", loaded_loop_end, raw_count)?;
     Ok((loaded_end, loaded_loop_end))
 }
 
@@ -3352,15 +3328,6 @@ mod anim_runtime_metadata_tests {
         assert_eq!(damage_fire_world_delta(-24, -1), Some((-110, 93)));
         assert_eq!(damage_fire_world_delta(64, 36), Some((580, 34)));
         assert_eq!(damage_fire_world_delta(i32::MIN, 0), None);
-    }
-
-    #[test]
-    fn loaded_bounds_allow_native_sentinels_but_reject_out_of_range_values() {
-        assert!(validate_loaded_bound("FIRE", "End", -1, 30).is_ok());
-        assert!(validate_loaded_bound("FIRE", "End", 0, 30).is_ok());
-        assert!(validate_loaded_bound("FIRE", "End", 30, 30).is_ok());
-        assert!(validate_loaded_bound("FIRE", "End", -2, 30).is_err());
-        assert!(validate_loaded_bound("FIRE", "End", 31, 30).is_err());
     }
 
     #[test]

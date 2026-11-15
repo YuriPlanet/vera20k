@@ -939,6 +939,43 @@ impl Drop for AnimDimTestRoot {
     }
 }
 
+/// `End=`/`LoopEnd=` past the SHP's frames bind as written: ReadINI stores
+/// them (`0x00427FE8`, `0x0042801C`) and the loader fills only zero values
+/// (`0x00427C1C..0x00427C5C`). Retail GAWEAP_3D has this shape on a 4-frame
+/// SHP; its frames past the end draw nothing (`CC_Draw_Shape`, `0x0069E7F3`).
+#[test]
+fn animation_bounds_past_the_shp_frames_bind_as_written() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let mut header = vec![0_u8; 8];
+    header[2..4].copy_from_slice(&1_u16.to_le_bytes());
+    header[4..6].copy_from_slice(&1_u16.to_le_bytes());
+    header[6..8].copy_from_slice(&4_i16.to_le_bytes());
+    std::fs::write(root.path().join("OVER.SHP"), header).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[OVER]\nEnd=9\nLoopStart=10\nLoopEnd=19\n");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\nMetallicDebris=OVER\n"))
+        .process_with_fixed_art(&ini)
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN")
+        .unwrap();
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_start,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (9, 10, 19, Some(4), Some(2))
+    );
+}
+
 #[test]
 fn animation_image_flag_binding_preserves_own_runtime_metadata() {
     use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
