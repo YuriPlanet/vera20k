@@ -1305,7 +1305,7 @@ mod tests {
         let mut own = PersonalRules::from_bytes(b"[E1]\nCost=75\n").unwrap();
         own.set_terrain_deformation(true);
         let played = HostRules::from_own(&own, true).personal_rules().unwrap();
-        assert!(played.terrain_deformation() && played.same_changes(&own));
+        assert_eq!(played.compatibility_crc(), own.compatibility_crc());
         let kept = HostRules::from_own(&own, false).personal_rules().unwrap();
         assert!(kept.terrain_deformation() && kept.is_empty());
         // A file of comments has nothing to share, and a room sharing

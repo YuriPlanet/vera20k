@@ -214,22 +214,15 @@ impl ProcessAssets {
     pub(crate) fn use_personal_rules(
         &mut self,
         rules: crate::rules::personal_rules::PersonalRules,
-    ) -> Result<(), String> {
-        let Some(owner) = self.native_rules.as_mut() else {
-            return Ok(());
-        };
-        owner
-            .use_personal_rules(rules)
-            .map_err(|error| format!("these personal rules do not load: {error}"))
+    ) {
+        if let Some(owner) = self.native_rules.as_mut() {
+            owner.use_personal_rules(rules);
+        }
     }
 
     /// Offline games play the player's own personal rules.
     pub(crate) fn use_own_personal_rules(&mut self) {
-        let own = self.personal_rules.clone();
-        if let Err(error) = self.use_personal_rules(own) {
-            // They loaded at startup, from the same selected sources.
-            log::error!("Own personal rules no longer load: {error}");
-        }
+        self.use_personal_rules(self.personal_rules.clone());
     }
 
     /// The Rules, Art and AI roots and the theater INI suffix are the stock YR
@@ -609,7 +602,7 @@ impl ProcessAssets {
         .ok()
         .map(|selected| selected.ini);
         self.native_ini_hashes = Some(crate::rules::native_ini_hash::NativeIniHashes::compute(
-            rules.unpatched_rules_root(),
+            rules.selected_rules_root(),
             &mode_inis,
             cooperative.as_ref(),
             &ai,
@@ -1071,18 +1064,18 @@ mod tests {
         let original = digest(&stock);
         assert_ne!(original, digest(&own));
         // Quick Match plays none; a room its host's, priority included.
-        own.use_personal_rules(PersonalRules::default()).unwrap();
+        own.use_personal_rules(PersonalRules::default());
         assert_eq!(original, digest(&own));
         let host =
             PersonalRules::from_bytes(b"[General]\nBuildSpeed=.5\n[VERA]\nOverrideMapRules=yes\n")
                 .unwrap();
-        stock.use_personal_rules(host.clone()).unwrap();
-        own.use_personal_rules(host).unwrap();
+        stock.use_personal_rules(host.clone());
+        own.use_personal_rules(host);
         assert_eq!(digest(&stock), digest(&own));
         assert_ne!(original, digest(&stock));
         let mut deformation = PersonalRules::default();
         deformation.set_terrain_deformation(true);
-        stock.use_personal_rules(deformation).unwrap();
+        stock.use_personal_rules(deformation);
         assert_ne!(original, digest(&stock));
     }
 

@@ -55,16 +55,6 @@ impl PersonalRules {
         &self.source
     }
 
-    /// Both change the game's rules the same way, whatever their Options
-    /// switches: a file that changes nothing matches none.
-    pub fn same_changes(&self, other: &Self) -> bool {
-        match (self.is_empty(), other.is_empty()) {
-            (true, true) => true,
-            (false, false) => self.changes_crc() == other.changes_crc(),
-            _ => false,
-        }
-    }
-
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.terrain_deformation = on;
     }
@@ -83,12 +73,6 @@ impl PersonalRules {
         !self.is_empty() || self.terrain_deformation
     }
 
-    pub(crate) fn apply_root(&self, root: &mut IniFile) {
-        if !self.is_empty() {
-            root.merge_source_sections(&self.patch, true);
-        }
-    }
-
     pub(crate) fn apply_base_layer(&self, layer: &mut IniFile) {
         if !self.is_empty() {
             layer.merge_source_sections(&self.patch, false);
@@ -101,8 +85,12 @@ impl PersonalRules {
         }
     }
 
-    /// The selected root as each scenario reads it, unchanged while the
-    /// Options switches are off. Terrain Deformation turns on
+    /// The selected root as each scenario reads it: these rules composed
+    /// over it, then the Options switches; unchanged while neither changes
+    /// anything. Composing here rather than before the cold start lets a
+    /// process play another player's rules without rebuilding its one
+    /// registry (`NativeRulesProcessOwner::use_personal_rules`). Terrain
+    /// Deformation turns on
     /// `[CombatDamage] TerrainDeformation=` and gives the nuke's warhead each
     /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=10` the root does
     /// not set, so a nuke digs a crater three levels deep and 23 cells across,
@@ -110,8 +98,15 @@ impl PersonalRules {
     /// `NUKE` (0x0081AF98), and retail sets none of them. Map and mode rules
     /// still read after it and can turn it off.
     pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
-        if !self.terrain_deformation {
+        if !self.in_effect() {
             return Cow::Borrowed(root);
+        }
+        let mut root = root.clone();
+        if !self.is_empty() {
+            root.merge_source_sections(&self.patch, true);
+        }
+        if !self.terrain_deformation {
+            return Cow::Owned(root);
         }
         let mut options = String::from("[CombatDamage]\nTerrainDeformation=yes\n");
         if let Some(nuke) = root.section("NUKE") {
@@ -129,35 +124,25 @@ impl PersonalRules {
                 options.push_str(&crater);
             }
         }
-        let mut root = root.clone();
         root.merge_source_sections(&IniFile::from_str(&options), true);
         Cow::Owned(root)
     }
 
-    /// The network rules digest must compare the precedence policy and the Options
-    /// switches as well as values. A comment-only file with the switches off
-    /// has no effect, including on the compatibility hash.
+    /// The network rules digest must compare the precedence policy and the
+    /// Options switches as well as values. A comment-only file with the
+    /// switches off has no effect, including on the compatibility hash.
     pub fn compatibility_crc(&self) -> Option<u32> {
         if !self.in_effect() {
             return None;
         }
-        Some(self.crc_with(self.terrain_deformation))
-    }
-
-    /// The file's changes and precedence policy without the Options switches.
-    fn changes_crc(&self) -> u32 {
-        self.crc_with(false)
-    }
-
-    fn crc_with(&self, terrain_deformation: bool) -> u32 {
         let policy = if self.override_map_rules { "yes" } else { "no" };
         let mut header = format!("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules={policy}\n");
-        if terrain_deformation {
+        if self.terrain_deformation {
             header.push_str("TerrainDeformation=yes\n");
         }
         let mut input = IniFile::from_str(&header);
         input.merge_source_sections(&self.patch, true);
-        input.native_crc()
+        Some(input.native_crc())
     }
 }
 
@@ -210,22 +195,22 @@ mod tests {
             comments.selected_source_ini_hashes()
         );
         assert_eq!(
-            original.selected_rules_root().native_crc(),
-            comments.selected_rules_root().native_crc()
+            original.scenario_root().native_crc(),
+            comments.scenario_root().native_crc()
         );
         assert_eq!(
             original
-                .selected_rules_root()
+                .scenario_root()
                 .section("Probe")
                 .unwrap()
                 .read_string("Value", "", 32),
             comments
-                .selected_rules_root()
+                .scenario_root()
                 .section("Probe")
                 .unwrap()
                 .read_string("Value", "", 32)
         );
-        assert!(comments.selected_rules_root().section("VERA").is_none());
+        assert!(comments.scenario_root().section("VERA").is_none());
     }
 
     #[test]
@@ -235,7 +220,7 @@ mod tests {
         let mut customized = owner(patch);
         assert_eq!(
             customized
-                .selected_rules_root()
+                .scenario_root()
                 .section("TEST")
                 .unwrap()
                 .read_int("Strength", 0),
@@ -244,12 +229,12 @@ mod tests {
         for (section, key) in [("Probe", "Value"), ("TEST", "ROOT")] {
             assert_eq!(
                 original
-                    .selected_rules_root()
+                    .scenario_root()
                     .section(section)
                     .unwrap()
                     .read_string(key, "", 32),
                 customized
-                    .selected_rules_root()
+                    .scenario_root()
                     .section(section)
                     .unwrap()
                     .read_string(key, "", 32)
@@ -257,14 +242,14 @@ mod tests {
         }
         assert!(
             customized
-                .selected_rules_root()
+                .scenario_root()
                 .section("TEST")
                 .unwrap()
                 .read_bool("NewKey", false)
         );
         assert!(
             customized
-                .selected_rules_root()
+                .scenario_root()
                 .section("NewSection")
                 .unwrap()
                 .read_bool("NewKey", false)
@@ -321,6 +306,33 @@ mod tests {
             PersonalRules::from_bytes(b"[VERA]\nOverrideMapRules=yes\n[TEST]\nStrength=200\n")
                 .unwrap();
         assert_ne!(base.compatibility_crc(), force.compatibility_crc());
+    }
+
+    #[test]
+    fn a_room_plays_another_players_rules_and_keeps_what_the_shell_read() {
+        let root = b"[Countries]\n0=Alpha\n[Orphan]\nMultiplay=yes\n[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n";
+        let mut owner = sources(root)
+            .with_personal_rules(PersonalRules::from_bytes(b"[TEST]\nStrength=200\n").unwrap())
+            .into_owner(Default::default(), Default::default())
+            .unwrap();
+        let settings = IniFile::from_str("[MultiPlayer]\nSide=Orphan\n");
+        assert_eq!(owner.read_multiplayer_country(&settings, -1), 1);
+        let strength = |owner: &mut NativeRulesProcessOwner| {
+            let loaded = owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::empty(),
+                )
+                .unwrap();
+            loaded.into_parts().0.object("TEST").unwrap().strength
+        };
+        // The host's file replaces the player's own, and the Country the
+        // shell allocated stays for the match's loading to bind.
+        owner.use_personal_rules(PersonalRules::from_bytes(b"[TEST]\nStrength=300\n").unwrap());
+        assert_eq!(owner.country_name(1), Some("Orphan"));
+        assert_eq!(strength(&mut owner), 300);
+        owner.use_personal_rules(PersonalRules::default());
+        assert_eq!(strength(&mut owner), 100);
     }
 
     #[test]

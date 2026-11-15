@@ -1379,18 +1379,20 @@ fn play_startup_personal_rules(
 ) {
     let room = match startup {
         LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
-        LoadingStartup::Replay { session, .. } if !session.options.host_rules.is_empty() => {
-            &session.options.host_rules
-        }
+        // A network match recorded the room's, none included.
+        LoadingStartup::Replay {
+            session, game_mode, ..
+        } if game_mode.is_network() => &session.options.host_rules,
         _ => return process_assets.use_own_personal_rules(),
     };
-    let played = room
-        .personal_rules()
-        .and_then(|rules| process_assets.use_personal_rules(rules));
-    if let Err(error) = played {
+    match room.personal_rules() {
+        Ok(rules) => process_assets.use_personal_rules(rules),
         // A network room refused these before its start; a replay plays on
-        // and its check reports the difference.
-        log::error!("The room's personal rules do not load: {error}");
+        // without them and its check reports the difference.
+        Err(error) => {
+            log::error!("The room's personal rules do not read: {error}");
+            process_assets.use_personal_rules(Default::default());
+        }
     }
 }
 

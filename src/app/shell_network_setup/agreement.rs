@@ -34,16 +34,14 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
         .ok_or_else(|| anyhow!("no selected map"))?;
     let mode = setup.mode.override_file.clone();
     // VERA: every player plays the room's rules, the host's, and agrees on
-    // them; Quick Match's room has none.
+    // them; a Quick Match room has none (`live_service` drops what its host
+    // sends), a launcher's room each player's own.
     let room_rules = setup
         .options
         .host_rules
         .personal_rules()
         .map_err(|error| anyhow!("the host's personal rules do not read: {error}"))?;
-    state
-        .process_assets
-        .use_personal_rules(room_rules)
-        .map_err(anyhow::Error::msg)?;
+    state.process_assets.use_personal_rules(room_rules);
     let seed_options = if crate::map::rmg::is_seed_selection(file) {
         let root = &state
             .platform

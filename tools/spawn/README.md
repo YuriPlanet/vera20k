@@ -85,9 +85,11 @@ A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `name` (the `[Countries]` ID), `label` (its `UIName=` text), `side` (its `[Sides]`
 index) and `selectable` (the menu offers it), so a launcher can offer a mod's
 countries as the game does.
-`rules_digest` is Battle's. `[Settings] GameMode` selects an `MPModesMD.ini` row
-by id (default 1): a network launch takes a stock row, and a one-human launch any
-row of the `MPModesMD.ini` the game loaded, or row 1 when the id has none, so a
+`rules_digest` is Battle's. A network launch plays each player's own `VERARULES.INI`
+(up to 8 KB) and Terrain Deformation, which the digest covers.
+`[Settings] GameMode` selects an `MPModesMD.ini` row by id (default 1): a network
+launch takes a stock row, and a one-human launch any row of the `MPModesMD.ini` the
+game loaded, or row 1 when the id has none, so a
 mod's own modes start too. The digest covers that row's
 INI, so another mode takes its digest from the report's `game_modes`, which lists
 the stock rows. A mod chosen in `config.toml`

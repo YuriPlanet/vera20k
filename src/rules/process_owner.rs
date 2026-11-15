@@ -44,7 +44,7 @@ use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 /// physical parse and payload length so startup and every Full_Init reset can
 /// repeat ReadCCFile's Digest gate; `Prevalidated` keeps synthetic owner
 /// callers' existing contract.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum NativeLangRuleSource {
     Prevalidated(IniFile),
     Selected(crate::rules::retail_sources::SelectedIni),
@@ -97,49 +97,6 @@ impl NativeLangRuleSource {
             Self::SelectionFailed(_) => None,
         }
     }
-
-    /// The reader layer personal rules compose over; the Digest gate keeps
-    /// reading the physical file.
-    fn source_ini_mut(&mut self) -> Option<&mut IniFile> {
-        match self {
-            Self::Prevalidated(ini) => Some(ini),
-            Self::Selected(selected) => Some(&mut selected.ini),
-            Self::SelectionFailed(_) => None,
-        }
-    }
-}
-
-/// VERA: the selected root and LANGRULE before personal rules composed over
-/// them, kept while they change anything, so the process can play another
-/// player's personal rules ([`NativeRulesProcessOwner::with_personal_rules`]).
-#[derive(Debug)]
-struct UnpatchedSources {
-    rules_root: IniFile,
-    langrule: Option<IniFile>,
-}
-
-/// VERA: compose `rules` over the selected root and LANGRULE's reader layer
-/// before the cold start reads them, as a VERA-only source with no Process
-/// pass of its own; returns the copies from before, or `None` when the
-/// rules change nothing.
-fn compose_personal_rules(
-    root: &mut IniFile,
-    langrule: Option<&mut NativeLangRuleSource>,
-    rules: &PersonalRules,
-) -> Option<Box<UnpatchedSources>> {
-    if rules.is_empty() {
-        return None;
-    }
-    let mut langrule = langrule.and_then(NativeLangRuleSource::source_ini_mut);
-    let unpatched = UnpatchedSources {
-        rules_root: root.clone(),
-        langrule: langrule.as_deref().cloned(),
-    };
-    rules.apply_root(root);
-    if let Some(langrule) = langrule.as_mut() {
-        rules.apply_base_layer(langrule);
-    }
-    Some(Box::new(unpatched))
 }
 
 /// The startup-selected INI objects reused by every later native Process call.
@@ -162,12 +119,12 @@ struct NativeRulesSourceSnapshot {
     fixed_sounds: Arc<SoundRegistry>,
     /// The same immutable EVAMD catalog used by process playback.
     fixed_eva: Arc<EvaRegistry>,
-    /// VERA source customization composed over this process's selected INIs.
-    /// Its Options switches change later, and only scenario roots read them;
-    /// a network room's rules replace the whole owner instead.
+    /// VERA source customization, composed over the root and LANGRULE each
+    /// scenario reads (`scenario_root`, `startup_layers`), never over the
+    /// selected INIs the cold start and the shell's Country reads use. A
+    /// network room swaps in its host's between games
+    /// ([`NativeRulesProcessOwner::use_personal_rules`]).
     personal_rules: PersonalRules,
-    /// The selected INIs before `personal_rules`, while those change them.
-    unpatched: Option<Box<UnpatchedSources>>,
     /// Startup mounted `ares.mix`: Ares plays in every game this process
     /// loads (`rules::ares_switch`).
     ships_ares: bool,
@@ -397,10 +354,6 @@ impl NativeRulesProcessOwner {
         personal_rules: PersonalRules,
         ships_ares: bool,
     ) -> Result<Self, RulesError> {
-        let mut selected_rules_root = selected_rules_root;
-        let mut langrule = langrule;
-        let unpatched =
-            compose_personal_rules(&mut selected_rules_root, langrule.as_mut(), &personal_rules);
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
             log::warn!("Optional LANGRULE.INI selection failed: {error}");
@@ -435,79 +388,10 @@ impl NativeRulesProcessOwner {
                 fixed_sounds,
                 fixed_eva,
                 personal_rules,
-                unpatched,
                 ships_ares,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
-    }
-
-    /// The cold start again from the same selected INIs, with `personal_rules`
-    /// composed over them instead and `ships_ares` as given: what a process
-    /// started with that VERARULES.INI holds before its first game. `self`
-    /// stays as it was.
-    fn cold_start_again(
-        &self,
-        personal_rules: PersonalRules,
-        ships_ares: bool,
-    ) -> Result<Self, RulesError> {
-        let sources = &self.sources;
-        let mut langrule = sources.langrule.clone();
-        let root = match sources.unpatched.as_deref() {
-            Some(unpatched) => {
-                if let (Some(reader), Some(before)) = (
-                    langrule
-                        .as_mut()
-                        .and_then(NativeLangRuleSource::source_ini_mut),
-                    unpatched.langrule.as_ref(),
-                ) {
-                    *reader = before.clone();
-                }
-                unpatched.rules_root.clone()
-            }
-            None => sources.selected_rules_root.clone(),
-        };
-        Self::from_named_cold_start_sources(
-            root,
-            langrule,
-            sources.fixed_art.clone(),
-            Arc::clone(&sources.fixed_sounds),
-            Arc::clone(&sources.fixed_eva),
-            sources.rules_art_names.clone(),
-            personal_rules,
-            ships_ares,
-        )
-    }
-
-    /// VERA: play `rules` instead of the personal rules this owner holds, as
-    /// a network room plays its host's. Their Options switches apply at
-    /// once; other VERARULES.INI changes cold-start the selected INIs again,
-    /// so the Types and registry are those of a process started with that
-    /// file. A failed cold start leaves this owner as it was.
-    pub fn use_personal_rules(&mut self, rules: PersonalRules) -> Result<(), RulesError> {
-        if !self.sources.personal_rules.same_changes(&rules) {
-            *self = self.cold_start_again(rules, self.sources.ships_ares)?;
-        } else {
-            self.sources.personal_rules = rules;
-        }
-        Ok(())
-    }
-
-    /// The personal rules this owner plays.
-    pub fn personal_rules(&self) -> &PersonalRules {
-        &self.sources.personal_rules
-    }
-
-    /// The selected rules root before personal rules: what network
-    /// admission's native hash compares, since a network room plays its
-    /// host's personal rules.
-    pub fn unpatched_rules_root(&self) -> &IniFile {
-        self.sources
-            .unpatched
-            .as_deref()
-            .map_or(&self.sources.selected_rules_root, |unpatched| {
-                &unpatched.rules_root
-            })
     }
 
     /// The same cold start for a game that ships `ares.mix` (or not): it
@@ -518,12 +402,25 @@ impl NativeRulesProcessOwner {
         if ships_ares == self.sources.ships_ares {
             return self;
         }
-        self.cold_start_again(self.sources.personal_rules.clone(), ships_ares)
-            .expect("the same sources cold-started once already")
+        let sources = self.sources;
+        Self::from_named_cold_start_sources(
+            sources.selected_rules_root,
+            sources.langrule,
+            sources.fixed_art,
+            sources.fixed_sounds,
+            sources.fixed_eva,
+            sources.rules_art_names,
+            sources.personal_rules,
+            ships_ares,
+        )
+        .expect("the same sources cold-started once already")
     }
 
     /// Session6980C0/475540 against the retained process INI. This mutates the
     /// one live registry before PrepareSession's separate Country body pass.
+    /// VERA: the selected root without personal rules, so every player's
+    /// shell registry is the same whichever rules a room plays; Full_Init's
+    /// Country prepass reads them.
     pub fn read_multiplayer_country(&mut self, settings: &IniFile, current: i32) -> i32 {
         self.assert_no_prepared_prefix();
         let (events, state) = self
@@ -728,10 +625,9 @@ impl NativeRulesProcessOwner {
         else {
             return [None, None];
         };
+        let root = self.scenario_root();
         let read = |id: &str| {
-            self.sources
-                .selected_rules_root
-                .section(id)
+            root.section(id)
                 .and_then(|section| section.read_name("LoadingTheme", 128))
                 .map(str::to_owned)
         };
@@ -806,14 +702,21 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules.compatibility_crc()
     }
 
+    /// VERA: play `rules` from the next scenario on, as a network room plays
+    /// its host's. Scenario roots compose them, so the one registry and
+    /// everything the shell read into it stay as they are.
+    pub fn use_personal_rules(&mut self, rules: PersonalRules) {
+        self.sources.personal_rules = rules;
+    }
+
     /// The Options page's Terrain Deformation box, read by the next scenario.
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.sources.personal_rules.set_terrain_deformation(on);
     }
 
     /// The root every scenario's Rules start from: the selected root with the
-    /// Options switches applied.
-    fn scenario_root(&self) -> Cow<'_, IniFile> {
+    /// personal rules and Options switches applied.
+    pub(crate) fn scenario_root(&self) -> Cow<'_, IniFile> {
         self.sources
             .personal_rules
             .scenario_root(&self.sources.selected_rules_root)
@@ -853,7 +756,8 @@ impl NativeRulesProcessOwner {
     /// Multiplayer agreement follows the frozen process sources, including
     /// LANGRULE. Reopening those files would hash different state from the
     /// sources Full_Init686B20 actually consumes. The root is digested as
-    /// scenarios read it, with the Options switches applied.
+    /// scenarios read it, with the personal rules and Options switches
+    /// applied.
     pub fn multiplayer_source_digests(&self) -> [Option<String>; 3] {
         [
             Some(self.scenario_root().multiplayer_digest()),
@@ -1095,8 +999,7 @@ impl NativeRulesProcessOwner {
     /// Generated RMG saved-DL admission deliberately keeps its existing path.
     pub fn prepare_noncampaign_scenario_prefix(&mut self) -> NativeNonCampaignPrefixPreparation {
         let state = self.take_pre_reset_state(true);
-        let trace =
-            process_native_noncampaign_rules_prepass(state, &self.sources.selected_rules_root);
+        let trace = process_native_noncampaign_rules_prepass(state, &self.scenario_root());
         let identity = Arc::new(());
         self.registry = Some(NativeRulesRegistryOwner::PreparedNonCampaign {
             trace,
@@ -1237,10 +1140,7 @@ impl NativeRulesProcessOwner {
             | NativeScenarioRulesPrefix::RandomMap(mode) => {
                 let state = self.take_pre_reset_state(clear_classes);
                 (
-                    process_native_noncampaign_rules_prepass(
-                        state,
-                        &self.sources.selected_rules_root,
-                    ),
+                    process_native_noncampaign_rules_prepass(state, &self.scenario_root()),
                     mode,
                 )
             }
@@ -1381,7 +1281,9 @@ impl NativeRulesProcessOwner {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares);
         if let Some(langrule) = langrule {
-            layers.push(RulesLayerKind::LangRule, langrule.clone());
+            let mut langrule = langrule.clone();
+            self.sources.personal_rules.apply_base_layer(&mut langrule);
+            layers.push(RulesLayerKind::LangRule, langrule);
         }
         layers
     }

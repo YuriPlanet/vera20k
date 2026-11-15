@@ -580,6 +580,10 @@ impl App {
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
     pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+        // VERA: setup screens start from the player's own personal rules,
+        // which a previous room's replaced; a room's agreement plays its
+        // host's.
+        state.process_assets.use_own_personal_rules();
         //6980D6→6722F0 and475540 read the same process INI each visit and
         // may allocate a Country before the52E123 body pass.
         state

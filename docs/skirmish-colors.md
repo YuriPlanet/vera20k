@@ -44,7 +44,8 @@ MyTeal=123,255,145
 
 Put the section in a mod's `rulesmd.ini` or in your own
 [`VERARULES.INI`](personal-rules.md). In a network game every player needs the same
-list, as for any other rules change.
+list, and a room's setup screens read it from each player's own rules rather than
+the host's, so put it in a mod.
 
 ## VERA20k's own colours
 

@@ -305,10 +305,14 @@ Terrain Deformation and, when the host shares it, the host's `VERARULES.INI`, at
 either off in Game Options, and they travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `host_rules` beside VERA's room options. Every player's game, the host's too, plays
-them in place of its own (`ProcessAssets::use_personal_rules`): Terrain Deformation
-from the next scenario, other `VERARULES.INI` changes by starting the rules again
-from the selected INIs, as a game started with that file would hold them. Offline
-games play the player's own. So the room's door, the native rules hash (LAN's join
+them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
+Personal rules compose over the root and LANGRULE each scenario reads, never over the
+cold start or the shell's Country reads, so every player's one rules registry is the
+same whichever rules a room plays. Offline games play the player's own, a network
+replay the room's it recorded. A Quick Match room has none: the guest's game drops
+any its host sends, and the lobby refuses them there. A launcher's network game
+(`tools/spawn`) has no host to share them, so each player plays their own, which its
+`ExpectedRulesDigest` compares. So the room's door, the native rules hash (LAN's join
 check, online the room's `ex_info`), leaves personal rules out, while the rules
 digest compares the ones each game plays, with their `OverrideMapRules=`. A file
 that does not read, or is longer than 8 KB, is refused, never played. When the door

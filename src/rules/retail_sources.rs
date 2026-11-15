@@ -30,9 +30,8 @@ pub struct IniSourceIdentity {
     pub(crate) source_sha256: String,
 }
 
-/// Clone copies its snapshot, as a cold start with other personal rules
-/// does (`NativeRulesProcessOwner::use_personal_rules`).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+#[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub struct SelectedIni {
     pub ini: IniFile,
     /// Root bytes parsed before optional Ares include expansion. LANGRULE's
@@ -239,7 +238,7 @@ impl RetailRulesSources {
 
     /// VERA-only source composition; physical source identities remain intact.
     /// No extra native Rules pass is introduced by a personal override: the
-    /// owner composes it over the root and LANGRULE before its cold start.
+    /// owner composes it over each scenario's root and LANGRULE.
     pub fn with_personal_rules(mut self, personal_rules: PersonalRules) -> Self {
         self.personal_rules = personal_rules;
         self

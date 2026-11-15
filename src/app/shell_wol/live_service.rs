@@ -2842,7 +2842,7 @@ fn apply_event(
             service_event(state, WolServiceEvent::UserLeft(name));
         }
         "options" => {
-            let p: wire::OptionsEvent = decode(payload).inspect_err(|_| {
+            let mut p: wire::OptionsEvent = decode(payload).inspect_err(|_| {
                 log::warn!("Online host options could not be decoded");
             })?;
             if p.revision < service.revision {
@@ -2872,6 +2872,11 @@ fn apply_event(
             }
             let generated = p.options.random_map.clone();
             if !state.match_state.session.host() {
+                // VERA: Quick Match plays the original game, whatever rules
+                // its host sends.
+                if super::lobby::quick_match_runner(state) {
+                    p.options.launch.options.host_rules = Default::default();
+                }
                 let names = p
                     .options
                     .launch

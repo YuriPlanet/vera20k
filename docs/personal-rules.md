@@ -44,7 +44,11 @@ goes to every player with the room's options, and each player's match plays it i
 place of their own. The host can untick **Host's Personal Rules** in the room's Game
 Options to play without them. Your own file still applies to your offline games.
 Quick Match plays the original game, without anyone's personal rules
-([room rules](Networking.md#room-rules)).
+([room rules](Networking.md#room-rules)). A game a launcher starts plays each
+player's own file, so there every player needs the same one.
+
+Changes to `[Countries]` or a country's own section reach the game itself, but the
+country list on the setup screens keeps the game's own.
 
 To return to the original behavior, comment out or remove your changes. An empty
 or fully commented file has no effect. Deleting the file creates a fresh commented
