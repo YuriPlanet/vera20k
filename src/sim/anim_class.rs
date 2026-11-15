@@ -253,13 +253,23 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
         if input.instance_ramp >= 15 {
             return AnimTranslucencyResult { draw: false, flags };
         }
-        let frame = i64::from(input.current_frame);
-        let end = i64::from(input.end_frame);
-        flags |= if frame * 5 > end * 3 {
+        // `0x004230A8..0x004230FB`: the stage against End times the doubles
+        // 0.6, 0.4 and 0.2 (`0x007E3558`, `0x007E3550`, `0x007E3548`) on the
+        // x87 in chop-53. 0.6 rounds below three fifths, so with End a
+        // multiple of 5 the stage at three fifths already takes 75%.
+        use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
+        let stage = X87Chop53::load_i32(input.current_frame);
+        let end = X87Chop53::load_i32(input.end_frame);
+        let above = |factor: u64| {
+            X87Chop53::load_f64(NativeF64Bits::from_bits(factor)).is_ok_and(|factor| {
+                X87Chop53::compare(stage, X87Chop53::mul(end, factor)) == X87Ordering::Greater
+            })
+        };
+        flags |= if above(0x3FE3_3333_3333_3333) {
             6
-        } else if frame * 5 > end * 2 {
+        } else if above(0x3FD9_9999_9999_999A) {
             4
-        } else if frame * 5 > end {
+        } else if above(0x3FC9_9999_9999_999A) {
             2
         } else {
             0
@@ -4776,6 +4786,32 @@ mod long_tail_contract_tests {
                 (result.draw, result.flags),
                 expected,
                 "ramp {instance_ramp}"
+            );
+        }
+    }
+
+    /// `0x004230A8..0x004230FB`: End 15 (EXPLOMED, WAKE1, RING) reaches 75%
+    /// at stage 9, because 15 times the 0.6 double chops below 9, while the
+    /// 0.4 and 0.2 doubles sit above their fifths.
+    #[test]
+    fn translucent_ramp_takes_75_percent_at_three_fifths() {
+        for (current_frame, flags) in [(3, 0), (4, 2), (6, 2), (7, 4), (9, 6)] {
+            let result = anim_translucency_selection(AnimTranslucencyInput {
+                base_flags: 0,
+                forced_translucent: false,
+                double_thick: false,
+                translucency_detail_level: 0,
+                game_detail_level: 2,
+                translucent_ramp: true,
+                current_frame,
+                end_frame: 15,
+                explicit_translucency: 0,
+                instance_ramp: 0,
+            });
+            assert_eq!(
+                (result.draw, result.flags),
+                (true, flags),
+                "stage {current_frame}"
             );
         }
     }
