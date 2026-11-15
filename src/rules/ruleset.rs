@@ -5936,6 +5936,15 @@ impl RuleSet {
                 object.civilian = civilian;
             }
         }
+        for (name, sparks) in processed.infantry_damage_spark_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.damage_sparks = sparks;
+            }
+        }
         for (name, art) in processed.infantry_art_states() {
             if let Some(object) = rules
                 .object_list
