@@ -548,6 +548,18 @@ impl ParticleSystem {
         self.lifetime = lifetime;
     }
 
+    /// BuildingClass::ReceiveDamage's NowYellow arm for its natural system
+    /// (`0x004426B6..0x004426C2`): FLD the spawn timer (`+0xE8`), FMUL the
+    /// binary32 1.5 at `0x007E4460`, FSTP it back.
+    pub(crate) fn slow_spawning_at_yellow(&mut self) {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+        const ONE_AND_A_HALF: NativeF32Bits = NativeF32Bits::from_bits(0x3FC0_0000);
+        self.spawn_timer = X87::store_f32_masked_chop(X87::mul(
+            X87::load_f32(self.spawn_timer),
+            X87::load_f32(ONE_AND_A_HALF),
+        ));
+    }
+
     pub const fn stable_id(&self) -> u64 {
         self.stable_id
     }
