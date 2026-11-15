@@ -2486,9 +2486,11 @@ pub struct ObjectType {
     // resolution against the particle-system registry is deferred (matches
     // the same deferred-typing decision used for ParticleType.warhead and
     // ParticleSystemType.holds_what's parse-side captures).
-    /// `NaturalParticleSystem=` — gap-generator / cloak-related particle
-    /// system. Live code path in YR (BuildingClass::UpdateGapGenerator_Tick),
-    /// but no retail INI sets the key, so the slot is normally null.
+    /// `NaturalParticleSystem=` (Type+0x764): the system a building keeps at
+    /// `+0x30C`. BuildingClass Unlimbo (`0x00440E99`) and UpdateCloak's
+    /// fade-in (`0x00454F72`) build it, the fade-out deletes it and
+    /// ReceiveDamage's NowYellow (`0x004426AC`) slows it. No retail INI sets
+    /// the key.
     pub natural_particle_system: Option<String>,
     /// `NaturalParticleLocation=` X,Y,Z offset paired with the system above.
     pub natural_particle_location: IVec3,

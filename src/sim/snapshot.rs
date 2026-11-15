@@ -1575,6 +1575,14 @@ fn restore_object_references(
                 "damage_smoke_system_id",
                 entity.damage_smoke_system_id.system(),
             ),
+            (
+                "natural_particle_system",
+                entity.building.natural_particle_system.system(),
+            ),
+            (
+                "destroy_smoke_particle_system",
+                entity.building.destroy_smoke_particle_system.system(),
+            ),
         ]
         .into_iter()
         .filter_map(|(field, system)| system.map(|id| (field, id)))

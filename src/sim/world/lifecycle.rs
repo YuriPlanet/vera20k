@@ -1771,11 +1771,20 @@ impl Simulation {
         // (0x004533A0(1)). VERA has no fence sections: a mod's posts stand
         // without a fence between them. No retail type is LaserFencePost=.
         self.discover_building_owner_after_unlimbo(stable_id, context);
-        // Residual: 0x00440E99..0x00440F5B. A type with NaturalParticleSystem=
-        // (Type+0x764) and no system yet (+0x30C) constructs one
-        // (0x0062DC50) at its location plus Type+0x768, owned by the
-        // building. Not ported: such a building shows no particles. No
-        // retail BuildingType sets the key.
+        // 0x00440E99..0x00440EB5: a type with NaturalParticleSystem=
+        // (Type+0x764) and no system yet (+0x30C) builds one. No retail
+        // BuildingType sets the key.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                entity.category() == EntityCategory::Structure
+                    && entity.building.natural_particle_system.system().is_none()
+            })
+        {
+            self.construct_natural_particle_system(stable_id, context.rules());
+        }
         // While Ares plays, BuildingClass_Put_DontSpawnSpotlight (1004EA10,
         // hook 0x441163) skips this: TechnoClass's Put hook built the light.
         if !context.rules.ares() {
@@ -5052,6 +5061,8 @@ impl Simulation {
             listener.lift.source(),
             listener.drop_credit.manipulated_by(),
             listener.building.building_light.light(),
+            listener.building.natural_particle_system.system(),
+            listener.building.destroy_smoke_particle_system.system(),
         ]
         .into_iter()
         .flatten()
@@ -5564,6 +5575,12 @@ impl Simulation {
         let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
         let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
         let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
+        // A Building's natural `+0x30C` and destroy-smoke `+0x320` links are
+        // two more of those eight.
+        let clear_natural_system =
+            listener.building.natural_particle_system.system() == Some(expired_id);
+        let clear_destroy_smoke =
+            listener.building.destroy_smoke_particle_system.system() == Some(expired_id);
         // Techno707AE7..707B03 clears ArchiveTarget+218 on control1. The
         // later Foot4D99F1..4D99FC clears a still-matching archive on both
         // controls, independent of sensors and same-owner target exemptions.
@@ -5664,6 +5681,8 @@ impl Simulation {
             || clear_fire_system
             || clear_spark_system
             || clear_railgun_system
+            || clear_natural_system
+            || clear_destroy_smoke
             || clear_damage_smoke
             || clear_archive_target
             || clear_suspended_nav_com
@@ -5702,6 +5721,12 @@ impl Simulation {
         }
         if clear_railgun_system {
             listener.railgun_particle_system.forget();
+        }
+        if clear_natural_system {
+            listener.building.natural_particle_system.forget();
+        }
+        if clear_destroy_smoke {
+            listener.building.destroy_smoke_particle_system.forget();
         }
         if clear_archive_target {
             listener.set_archive_target(None);
@@ -6825,6 +6850,29 @@ impl Simulation {
         self.substrate.pending_delete.queue_object(stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
+    }
+
+    /// A particle system deleted at once rather than retired: its vt+0x20
+    /// with 1 (`0x00630230`) runs `~ParticleSystemClass @ 0x0062E070` and
+    /// frees the body. The destructor announces the expiry (`0x0062E092`),
+    /// Limbos the system (`0x0062E099`), deletes each particle
+    /// (`0x0062E0AE..0x0062E15D`) and leaves the system lists, all of which
+    /// the common destructor below does, so every listener's link clears and
+    /// the system and its particles are gone this frame. The destructor reads
+    /// no GameState. A queued ticket would name a freed body, so it goes too.
+    pub(crate) fn delete_particle_system_now(
+        &mut self,
+        stable_id: u64,
+        context: UninitContext<'_>,
+    ) {
+        if !self.substrate.particle_systems.contains_key(stable_id) {
+            return;
+        }
+        self.substrate.pending_delete.remove_object(stable_id);
+        // RESIDUAL: each particle's own destructor announces its expiry
+        // (`0x0062D9C8`); VERA only conceals them. No listener holds a
+        // particle id.
+        self.finalize_and_remove_common(stable_id, context, 1);
     }
 
     /// A queued object's IsReadyToDelete (vt+0x44), by kind. An ID no store

@@ -2770,6 +2770,15 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     if let Some(system) = entity.fire_particle_system.system() {
         (0x304_u16, system).hash(hasher);
     }
+    // A Building's natural `+0x30C` link gates the cloak fade-in's rebuild
+    // and its destroy-smoke `+0x320` link gates that pick; both hashed only
+    // when set, as no retail type sets either key.
+    if let Some(system) = entity.building.natural_particle_system.system() {
+        (0x30C_u16, system).hash(hasher);
+    }
+    if let Some(system) = entity.building.destroy_smoke_particle_system.system() {
+        (0x320_u16, system).hash(hasher);
+    }
 }
 
 /// One locomotor object, field for field, and the object its piggyback slot

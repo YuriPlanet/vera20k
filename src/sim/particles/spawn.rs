@@ -27,8 +27,9 @@ use glam::IVec3;
 
 /// A Techno's retained ParticleSystem link: `+0x304` the Fire system
 /// FireAt6FF1A7 creates, `+0x308` the Spark system, shared by FireAt6FF1F5
-/// and the Cyborg AI producer6FAEDA, and `+0x314` the Railgun system
-/// FireAt6FF26E creates. Constructor6F3231 clears them;
+/// and the Cyborg AI producer6FAEDA, `+0x314` the Railgun system
+/// FireAt6FF26E creates, and a Building's `+0x30C` natural and `+0x320`
+/// destroy-smoke systems. Constructor6F3231 clears them;
 /// PointerExpired707AC2..707AD7 clears an exact match for either control byte.
 /// The system's actual Logic/child lifetime owns expiry, not a Techno timer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -244,7 +245,8 @@ impl Simulation {
             substrate.retire_attached_damage_smoke(stable_id);
         }
     }
-    /// Shared original Object5F5F40 adapter for the Smoke and Cyborg Spark gates.
+    /// Shared original Object5F5F40 adapter for the Smoke, destroy-smoke and
+    /// Cyborg Spark gates.
     fn damage_particle_owner_height(
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         entity: &crate::sim::game_entity::GameEntity,
@@ -510,16 +512,7 @@ impl Simulation {
                     raw.y.wrapping_add(offset.y),
                     raw.z.wrapping_add(offset.z),
                 );
-                let smoke = object
-                    .damage_particle_systems
-                    .iter()
-                    .rev()
-                    .filter_map(|name| rules.ps_type_id_by_name(name))
-                    .filter(|&id| {
-                        rules.particle_system_type(id).behaves_like
-                            == ParticleSystemBehavesLike::Smoke
-                    })
-                    .collect::<Vec<_>>();
+                let smoke = smoke_types_last_first(&object.damage_particle_systems, rules);
                 Some((coords, stable_id, smoke))
             })
         else {
@@ -556,6 +549,137 @@ impl Simulation {
             entity.damage_smoke_system_id.system = Some(system_id);
         }
     }
+
+    /// BuildingClass's `NaturalParticleSystem=` constructor, as Unlimbo
+    /// (`0x00440EBB..0x00440F5B`) and UpdateCloak's fade-in
+    /// (`0x00454F72..0x0045500C`) both run it: a `ParticleSystemClass`
+    /// (`0x0062DC50`) of Type+0x764 at Location (`+0x9C`) plus
+    /// `NaturalParticleLocation=` (Type+0x768), aimed at the cell holding
+    /// Location (`MapClass::GetCellAt @ 0x00565730`), with no owner, the zero
+    /// target coordinate (`0x0089C848`, zeroed by `0x0043B0F0`) and no House.
+    /// `+0x30C` takes the result, NULL too. The callers own their gates; a
+    /// type without a system builds nothing.
+    pub(crate) fn construct_natural_particle_system(&mut self, building_id: u64, rules: &RuleSet) {
+        let Some((type_id, coords, cell)) =
+            self.substrate.entities.get(building_id).and_then(|entity| {
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                let type_id =
+                    rules.ps_type_id_by_name(object.natural_particle_system.as_deref()?)?;
+                let location =
+                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                let offset = object.natural_particle_location;
+                let coords = IVec3::new(
+                    location.x.wrapping_add(offset.x),
+                    location.y.wrapping_add(offset.y),
+                    location.z.wrapping_add(offset.z),
+                );
+                // RESIDUAL: off the map, Map565730 gives the shared dummy
+                // cell to aim at; VERA passes no target there.
+                let cell = Self::map_coord_cell(&self.resolved_terrain, location.x, location.y)
+                    .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
+                Some((type_id, coords, cell))
+            })
+        else {
+            return;
+        };
+        let system =
+            self.spawn_particle_system(type_id, coords, cell, None, IVec3::ZERO, None, rules);
+        if let Some(entity) = self.substrate.entities.get_mut(building_id) {
+            entity.building.natural_particle_system.bind(system);
+        }
+    }
+
+    /// UpdateCloak's fade-out end (`0x00454E7F..0x00454E9E`): a set `+0x30C`
+    /// system is deleted at once through its vt+0x20 with 1, and the link is
+    /// cleared.
+    pub(crate) fn delete_natural_particle_system(
+        &mut self,
+        building_id: u64,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        let Some(system) = self
+            .substrate
+            .entities
+            .get(building_id)
+            .and_then(|entity| entity.building.natural_particle_system.system())
+        else {
+            return;
+        };
+        self.delete_particle_system_now(system, context);
+        if let Some(entity) = self.substrate.entities.get_mut(building_id) {
+            entity.building.natural_particle_system.forget();
+        }
+    }
+
+    /// BuildingClass::DestructionEffects' destroy smoke
+    /// (`0x00441D69..0x00441EF6`): the `DestroyParticleSystems=` Smoke types
+    /// from the last to the first; then, only while `+0x320` is NULL, the list
+    /// holds one and GetHeight (vt+0x1C8, `ObjectClass::GetHeight @
+    /// 0x005F5F40`) is above -10, one system at Location plus
+    /// `DestroySmokeOffset=` (Type+0x7C0), picked by Scenario
+    /// `RandomRanged(0, count - 1)` (`0x0065C7E0`) and owned by the building,
+    /// with no target, a zero target coordinate and no House. `+0x320` takes
+    /// the result.
+    pub(crate) fn construct_destroy_smoke(&mut self, building_id: u64, rules: &RuleSet) {
+        let Some((coords, system_types)) =
+            self.substrate.entities.get(building_id).and_then(|entity| {
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                let smoke = smoke_types_last_first(&object.destroy_particle_systems, rules);
+                if entity
+                    .building
+                    .destroy_smoke_particle_system
+                    .system()
+                    .is_some()
+                    || smoke.is_empty()
+                    || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
+                {
+                    return None;
+                }
+                let location =
+                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                let offset = object.destroy_smoke_offset;
+                let coords = IVec3::new(
+                    location.x.wrapping_add(offset.x),
+                    location.y.wrapping_add(offset.y),
+                    location.z.wrapping_add(offset.z),
+                );
+                Some((coords, smoke))
+            })
+        else {
+            return;
+        };
+        let pick = self
+            .scenario_rng
+            .next_range_u32_inclusive(0, system_types.len() as u32 - 1) as usize;
+        let system = self.spawn_particle_system(
+            system_types[pick],
+            coords,
+            None,
+            Some(building_id),
+            IVec3::ZERO,
+            None,
+            rules,
+        );
+        if let Some(entity) = self.substrate.entities.get_mut(building_id) {
+            entity.building.destroy_smoke_particle_system.bind(system);
+        }
+    }
+}
+
+/// A `DamageParticleSystems=` or `DestroyParticleSystems=` list's Smoke types
+/// (ParticleSystemType+0x2B4 is 0), walked from the last entry to the first,
+/// as TechnoClass::ReceiveDamage (`0x00701900`) and
+/// BuildingClass::DestructionEffects (`0x00441D69..0x00441E2D`) both gather
+/// them.
+fn smoke_types_last_first(names: &[String], rules: &RuleSet) -> Vec<ParticleSystemTypeId> {
+    names
+        .iter()
+        .rev()
+        .filter_map(|name| rules.ps_type_id_by_name(name))
+        .filter(|&id| {
+            rules.particle_system_type(id).behaves_like == ParticleSystemBehavesLike::Smoke
+        })
+        .collect()
 }
 
 impl crate::sim::world::ObjectSubstrate {

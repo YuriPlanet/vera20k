@@ -58,7 +58,7 @@
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
 //!   3 and 4 (CloakGenerator, LaserFencePost), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
-//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user).
+//!   bare `RET`). Step 14 (`DestroyParticleSystems=` smoke) has no stock user.
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
 //!   owner retains constructor and chrono reinforcement writes, which the
 //!   `Death_Explosion` last-entry override reads. No stock `Explodes=` vehicle
@@ -793,6 +793,9 @@ impl Simulation {
             let follow_up = remap.map(DeathAnimFollowUp::Remap);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn { follow_up, ..spawn });
         }
+        // 14. `0x00441D69..0x00441EF6`: one `DestroyParticleSystems=` Smoke
+        // system, owned by the building.
+        self.construct_destroy_smoke(building_id, rules);
         // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
         // the killing call's IgnoreDefenses becomes NoSurvivor.
         if ignore_defenses && let Some(building) = self.substrate.entities.get_mut(building_id) {
