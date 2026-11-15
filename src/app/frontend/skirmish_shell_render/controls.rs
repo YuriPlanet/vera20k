@@ -1424,10 +1424,11 @@ mod tests {
             .expect("FF has its sliders");
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
-                DIFFICULTY, MultiplayerSetupLayout, SetupDialog, SetupFlavor, TEAM_COUNT,
+                DIFFICULTY, MultiplayerSetupLayout, SUPERWEAPON_LIMIT, SetupDialog, SetupFlavor,
+                TEAM_COUNT,
             };
             // gamemd's setup dialogs and VERA's room; only the room paints
-            // its Teams count.
+            // its Teams count and Superweapon Limit.
             for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
@@ -1446,7 +1447,9 @@ mod tests {
                     layout
                         .trackbars
                         .into_iter()
-                        .filter(|(id, _)| dialog.modern || *id != TEAM_COUNT)
+                        .filter(|(id, _)| {
+                            dialog.modern || (*id != TEAM_COUNT && *id != SUPERWEAPON_LIMIT)
+                        })
                         .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
                 );
             }
