@@ -4396,10 +4396,8 @@ mod infantry_hash_tests {
 
     #[test]
     fn foot_retarget_snapshot_retains_native_next_scan_mask_and_empty_clear() {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
+        let native =
+            crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
         let row = native["greatest_threat_rows"]
             .as_array()
             .unwrap()
@@ -4453,10 +4451,8 @@ mod infantry_hash_tests {
 
     #[test]
     fn inherited_foot_firing_state_survives_snapshot_and_changes_noninfantry_hash() {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
+        let native =
+            crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
         let raw = native["rows"]
             .as_array()
             .unwrap()

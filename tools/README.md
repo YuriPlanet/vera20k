@@ -68,6 +68,13 @@ untrimmed files. A harness that still runs writes more than is committed; trim
 its output the same way before committing it. Hand-written profiles and the
 palette fixtures, which a tool checks by hash, keep their formatting.
 
+A corpus that records the RNG streams before and after every row can store
+each distinct state once: `python -m tools.share_rng_states FILE` moves them
+into a top-level `rng_states` table and leaves `{"rng_state": n}` in their
+place. Tests that load it through `test_fixture::json` see the states where
+they were, so read such a corpus only that way. This took
+`anytown_damage/foot_missions.json` from 27 MB to 9 MB.
+
 ## Retail-backed ignored tests
 
 ```sh

@@ -13,7 +13,6 @@
 
 use crate::sim::movement::DriveLocomotionRuntime;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
@@ -44,14 +43,7 @@ use crate::util::native_x87::MaskedX87Chop53;
 mod area_guard_oracle_tests;
 
 pub(in crate::sim::world::techno_ai) fn oracle() -> &'static Value {
-    static CORPUS: OnceLock<Value> = OnceLock::new();
-    CORPUS.get_or_init(|| {
-        let value: Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
-        value
-    })
+    crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json")
 }
 
 pub(in crate::sim::world::techno_ai) fn signed(value: &Value) -> i32 {

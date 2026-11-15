@@ -531,6 +531,41 @@ def corpus_text(data, depth=0) -> str:
     return json.dumps(data, separators=(",", ":"), allow_nan=False) + ("\n" if depth == 0 else "")
 
 
+RNG_STATE_KEYS = ["disabled", "index_a", "index_b", "state"]
+
+
+def shared_rng_states(data: dict) -> dict:
+    """The corpus with each distinct RNG stream state stored once, in `rng_states`.
+
+    A corpus that records every stream before and after each row repeats a few
+    250-word states thousands of times. Each state becomes `{"rng_state": n}`,
+    numbered in the order first met. Rust tests read the corpus through
+    `test_fixture::json`, which puts the states back, so they see the same data.
+    """
+    if "rng_states" in data:
+        raise OracleError("The corpus already stores its RNG states in rng_states")
+    table, numbers = [], {}
+
+    def share(value):
+        if isinstance(value, dict):
+            if list(value) == ["rng_state"]:
+                raise OracleError("A corpus object already reads as an rng_state reference")
+            if sorted(value) == RNG_STATE_KEYS and isinstance(value["state"], list):
+                key = _canonical(value)
+                if key not in numbers:
+                    numbers[key] = len(table)
+                    table.append(value)
+                return {"rng_state": numbers[key]}
+            return {key: share(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [share(item) for item in value]
+        return value
+
+    shared = share(data)
+    shared["rng_states"] = table
+    return shared
+
+
 def first_difference(expected, actual, path="$", limit=180) -> str | None:
     """Locate the first mismatch without dumping whole model states."""
     if type(expected) is not type(actual):
