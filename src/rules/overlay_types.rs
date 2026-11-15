@@ -885,6 +885,74 @@ mod tests {
         assert_eq!(rng.native_state_hex(), before);
     }
 
+    /// Phobos `AdjacentWallDamage` (`Ext/Rules/Body.cpp:443`, default 200,
+    /// `Ext/Cell/Hooks.cpp:5-11`, hook `0x480EA8`): the penultimate hit's
+    /// cardinal chain uses the authored value. A connected 200-strength wall
+    /// survives the penultimate hit; `-1` forces the neighbour's destruction
+    /// while `0` fails the `roll >= damage` gate.
+    #[test]
+    fn adjacent_wall_damage_drives_the_cardinal_chain() {
+        let ini = IniFile::from_str(
+            "[OverlayTypes]\n0=FILL0\n1=FILL1\n2=GAWALL\n\
+             [GAWALL]\nWall=yes\nStrength=200\nDamageLevels=3\n",
+        );
+        let registry = OverlayTypeRegistry::from_ini(&ini, Some(&ini));
+        let wall = registry.id_for_name("GAWALL").unwrap();
+        assert_eq!(registry.flags(wall).unwrap().damage_levels, 3);
+        let scene = |wall| {
+            let mut sim = crate::sim::world::Simulation::new();
+            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+            sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
+            let grid = sim.overlay_grid.as_mut().unwrap();
+            grid.place_overlay(2, 2, wall, 0);
+            grid.place_overlay(3, 2, wall, 0);
+            // The connection nibble keeps the penultimate level retained
+            // (DestroyOverlay480EDD..480EEA).
+            grid.set_overlay_data(2, 2, 1);
+            grid.set_overlay_data(3, 2, 1);
+            sim
+        };
+        let cells = |sim: &crate::sim::world::Simulation| {
+            let grid = sim.overlay_grid.as_ref().unwrap();
+            (
+                grid.cell(2, 2).overlay_id,
+                grid.cell(2, 2).overlay_data >> 4,
+                grid.cell(3, 2).overlay_id,
+                grid.cell(3, 2).overlay_data,
+            )
+        };
+
+        let mut forced = scene(wall);
+        for _ in 0..2 {
+            forced.apply_wall_damage(
+                crate::sim::overlay_grid::WallPointerTarget::Real(2, 2),
+                200,
+                &registry,
+                -1,
+            );
+        }
+        assert_eq!(
+            cells(&forced),
+            (None, 0, None, 0),
+            "forced adjacent damage removes the linked pair"
+        );
+
+        let mut rejected = scene(wall);
+        for _ in 0..2 {
+            rejected.apply_wall_damage(
+                crate::sim::overlay_grid::WallPointerTarget::Real(2, 2),
+                200,
+                &registry,
+                0,
+            );
+        }
+        assert_eq!(
+            cells(&rejected),
+            (Some(wall), 2, Some(wall), 1),
+            "adjacent damage 0 always fails the gate"
+        );
+    }
+
     #[test]
     fn retail_wide_wall_strength_keeps_the_damage_rng_gate() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(

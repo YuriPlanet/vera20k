@@ -1324,19 +1324,37 @@ pub(crate) fn damage_wall_overlay_with_terrain(
         resolved_terrain,
         WallPointerTarget::Real(rx, ry),
         damage,
+        200,
         rng,
         None,
     )
 }
 
+/// `[CombatDamage] AdjacentWallDamage` (`Ext/Rules/Body.cpp:443`): the value
+/// a wall's penultimate hit applies to each pristine cardinal neighbour,
+/// `200` natively (`Ext/Cell/Hooks.cpp:5-11`).
+pub(crate) fn adjacent_wall_damage_for(rules: &crate::rules::ruleset::RuleSet) -> i32 {
+    #[cfg(feature = "phobos")]
+    {
+        rules.phobos_globals.adjacent_wall_damage
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        200
+    }
+}
+
 /// Damage the already retained Cell receiver, including its shared-Dummy
 /// identity. The caller has performed Map5657A0; do not look it up again.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn damage_wall_overlay_with_runtime_host(
     overlay_grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
     mut resolved_terrain: Option<&mut ResolvedTerrainGrid>,
     target: WallPointerTarget,
     damage: i32,
+    adjacent_damage: i32,
     rng: &mut crate::sim::rng::SimRng,
     mut host: Option<&mut dyn WallDamageTransactionHost>,
 ) -> WallDamageResult {
@@ -1352,12 +1370,14 @@ pub(crate) fn damage_wall_overlay_with_runtime_host(
         &mut host,
         target.into(),
         damage,
+        adjacent_damage,
         rng,
         &mut result,
     );
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn damage_wall_recursive(
     grid: &mut OverlayGrid,
     registry: &OverlayTypeRegistry,
@@ -1365,6 +1385,7 @@ fn damage_wall_recursive(
     host: &mut Option<&mut dyn WallDamageTransactionHost>,
     target: NativeRuntimeOverlayCell,
     damage: i32,
+    adjacent_damage: i32,
     rng: &mut crate::sim::rng::SimRng,
     result: &mut WallDamageResult,
 ) {
@@ -1447,7 +1468,8 @@ fn damage_wall_recursive(
                     resolved_terrain,
                     host,
                     neighbor_target,
-                    200,
+                    adjacent_damage,
+                    adjacent_damage,
                     rng,
                     result,
                 );

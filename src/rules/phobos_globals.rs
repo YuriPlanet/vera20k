@@ -298,6 +298,13 @@ pub struct PhobosGlobals {
     /// re-derived each draw; unset keeps `[AudioVisual] ConditionYellow`.
     #[serde(default)]
     pub condition_yellow_terrain: Option<NativeF64Bits>,
+    /// `[CombatDamage] AdjacentWallDamage=`, default `200`
+    /// (`Ext/Rules/Body.cpp:443`, constructor `Body.h:858`): the damage a wall
+    /// at its penultimate state deals to each pristine cardinal neighbour
+    /// (`CellClass_DamageWall_AdjacentWallDamage @ 0x480EA8`,
+    /// `Ext/Cell/Hooks.cpp:5-11`).
+    #[serde(default = "two_hundred")]
+    pub adjacent_wall_damage: i32,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1401,6 +1408,11 @@ fn one_i32() -> i32 {
     1
 }
 
+/// `AdjacentWallDamage=`'s constructor value (`Ext/Rules/Body.h:858`).
+fn two_hundred() -> i32 {
+    200
+}
+
 /// The `Pips.SelfHeal.*` frame pairs' constructor value
 /// (`Ext/Rules/Body.h:614-616`).
 fn thirteen_twenty() -> [i32; 2] {
@@ -1535,6 +1547,7 @@ impl Default for PhobosGlobals {
             pips_self_heal_units_offset: [33, -32],
             pips_self_heal_buildings_offset: [15, 10],
             condition_yellow_terrain: None,
+            adjacent_wall_damage: 200,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1746,6 +1759,10 @@ impl Default for PhobosGlobals {
 impl PhobosGlobals {
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut globals = section_settings(ini.section_or_empty("CombatDamage"));
+        // `Ext/Rules/Body.cpp:443`: the adjacent wall damage.
+        globals.adjacent_wall_damage = ini
+            .section_or_empty("CombatDamage")
+            .read_int("AdjacentWallDamage", globals.adjacent_wall_damage);
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so
         // their relative order does not matter.

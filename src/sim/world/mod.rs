@@ -3122,6 +3122,7 @@ impl Simulation {
                                 self.resolved_terrain.as_mut(),
                                 crate::sim::overlay_grid::WallPointerTarget::Real(rx, ry),
                                 raw_ambient_damage,
+                                crate::sim::overlay_grid::adjacent_wall_damage_for(rules),
                                 &mut self.scenario_rng,
                                 Some(&mut host),
                             )
@@ -8113,6 +8114,7 @@ impl Simulation {
         target: crate::sim::overlay_grid::WallPointerTarget,
         damage: i32,
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        adjacent_damage: i32,
     ) {
         let Some(grid) = self.overlay_grid.as_mut() else {
             return;
@@ -8130,6 +8132,7 @@ impl Simulation {
             self.resolved_terrain.as_mut(),
             target,
             damage,
+            adjacent_damage,
             &mut self.scenario_rng,
             Some(&mut host),
         );

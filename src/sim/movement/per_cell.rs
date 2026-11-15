@@ -678,7 +678,12 @@ impl Simulation {
             //defer it across this native boundary.
             effects.flush_sound(self, rules);
         }
-        self.apply_wall_damage(target, -1, registry);
+        self.apply_wall_damage(
+            target,
+            -1,
+            registry,
+            crate::sim::overlay_grid::adjacent_wall_damage_for(rules),
+        );
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             // Phobos `UnitClass_PerCellProcess_TiltWhenCrushes` (hook
             // `0x73B05B`, `Ext/Unit/Hooks.Crushing.cpp:6-21`) gates the

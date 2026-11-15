@@ -1069,3 +1069,18 @@ fn the_terrain_condition_yellow_defaults_and_reads() {
         assert_eq!(cleared.condition_yellow_terrain, None, "{token}");
     }
 }
+
+/// `[CombatDamage] AdjacentWallDamage=` (`Ext/Rules/Body.cpp:443`,
+/// constructor 200 `Body.h:858`).
+#[test]
+fn the_adjacent_wall_damage_defaults_and_reads() {
+    assert_eq!(PhobosGlobals::default().adjacent_wall_damage, 200);
+    assert_eq!(
+        read("[CombatDamage]\nAdjacentWallDamage=0\n").adjacent_wall_damage,
+        0
+    );
+    assert_eq!(
+        read("[CombatDamage]\nAdjacentWallDamage=350\n").adjacent_wall_damage,
+        350
+    );
+}

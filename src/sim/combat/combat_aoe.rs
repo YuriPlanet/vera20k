@@ -500,6 +500,10 @@ pub(crate) struct AoECollector {
     /// [`crate::sim::scenario_session::ScenarioSession::truce_harvester_types`]:
     /// the `HarvesterUnit=` types while ScenarioFlags bit 0x800 is set.
     truce_harvesters: Vec<crate::sim::intern::InternedId>,
+    /// `[CombatDamage] AdjacentWallDamage=`, resolved once at collection
+    /// start (`CellClass_DamageWall_AdjacentWallDamage @ 0x480EA8`,
+    /// `Ext/Cell/Hooks.cpp:5-11`, `Ext/Rules/Body.cpp:443`).
+    adjacent_wall_damage: i32,
     /// Phobos `MergeBuildingDamage.Get(RulesExt::Global()->MergeBuildingDamage)`
     /// (`Ext/WarheadType/Hooks.cpp:414`), resolved once at collection start.
     #[cfg(feature = "phobos")]
@@ -698,6 +702,7 @@ impl AoECollector {
             base_damage,
             origin,
             ground_source_admitted,
+            adjacent_wall_damage: crate::sim::overlay_grid::adjacent_wall_damage_for(rules),
             spread_leptons,
             exact_impact,
             native_occupancy: native_occupancy.is_some(),
@@ -771,6 +776,7 @@ impl AoECollector {
             target,
             initial_wall,
             self.base_damage,
+            self.adjacent_wall_damage,
             warhead,
             layer_context,
             cell_prelude,
@@ -1204,6 +1210,7 @@ fn route_wall_before_cell_objects(
     target: WallPointerTarget,
     initial_wall: Option<(bool, bool)>,
     raw_damage: i32,
+    adjacent_damage: i32,
     warhead: &WarheadType,
     context: &mut AoELayerContext<'_>,
     cell_prelude: &mut Option<&mut dyn AoECellPrelude>,
@@ -1240,6 +1247,7 @@ fn route_wall_before_cell_objects(
             context.terrain.as_deref_mut(),
             target,
             routed_damage,
+            adjacent_damage,
             rng,
             Some(&mut host),
         )
