@@ -1118,7 +1118,9 @@ impl SuperWeaponInstance {
     /// `SuperClass::Reset @ 0x006CE0B0` past its anim release
     /// ([`reset_super`]): the charge ends (`+0x6F`) and the recharge timer
     /// restarts with [`Self::recharge_time`]; a stopped timer is stopped again
-    /// at once, keeping all of it (`0x006CE12A..0x006CE18F`).
+    /// at once, keeping all of it (`0x006CE12A..0x006CE18F`). VERA: with Ten
+    /// Superweapons' building charges it restarts with
+    /// [`Self::next_recharge`], so a spy costs the house one shot, not all.
     /// `CameoChargeState` (`+0x78`, -1) is the sidebar's. The grant, the hold
     /// and the drain state stay.
     fn reset(&mut self, sw: &SuperWeaponType, current_frame: u32) {
@@ -1126,7 +1128,7 @@ impl SuperWeaponInstance {
         let frame = current_frame as i32;
         let stopped = self.charge_start_tick == -1;
         self.is_ready = false;
-        let mut timer = CdTimer::started(frame, self.recharge_time(sw));
+        let mut timer = CdTimer::started(frame, self.next_recharge(sw));
         if stopped {
             timer.pause(frame);
         }

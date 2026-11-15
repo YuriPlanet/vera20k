@@ -201,16 +201,14 @@ fn emp_cannon(
                     house.aim_emp_cannons(cell);
                 }
             } else {
-                let Some(target) =
-                    super_target.or_else(|| sim.houses.get(&owner).map(|h| h.nuke_target()))
-                else {
+                let Some(target) = super_target.or_else(|| nuke_target(sim, id)) else {
                     return 1;
                 };
                 fire_weapon_zero(sim, id, rules, ctx, bridge_state_changed, target);
                 queue_guard(sim, id, rules);
                 return 1;
             }
-        } else if let Some(target) = sim.houses.get(&owner).map(|house| house.nuke_target()) {
+        } else if let Some(target) = nuke_target(sim, id) {
             fire_weapon_zero(sim, id, rules, ctx, bridge_state_changed, target);
             queue_guard(sim, id, rules);
         }
@@ -606,7 +604,7 @@ fn spawn_warning(
     id: u64,
 ) -> Option<crate::sim::anim_class::AnimId> {
     let owner = sim.substrate.entities.get(id)?.owner();
-    let (rx, ry) = sim.houses.get(&owner)?.nuke_target();
+    let (rx, ry) = nuke_target(sim, id)?;
     let coord = cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
     // Ares hook 44C9FF (10036750): the firing type's `Nuke.PsiWarning`;
     // none skips the warning (0x0044CA7A).
@@ -618,6 +616,22 @@ fn spawn_warning(
     let anim = spawn_anim(sim, rules, &warning, coord, true)?;
     sim.substrate.set_anim_owner_house(anim, owner);
     Some(anim)
+}
+
+/// The cell silo `id` strikes: its owner's NukeTarget (HouseClass, which
+/// `SuperClass::Launch` writes), or with VERA's Ten Superweapons the silo's
+/// own ([`crate::sim::mission::leaf::BuildingMissionLeaf::own_nuke_target`]).
+fn nuke_target(sim: &Simulation, id: u64) -> Option<(u16, u16)> {
+    let entity = sim.substrate.entities.get(id)?;
+    entity
+        .mission_leaf
+        .as_building()
+        .and_then(|leaf| leaf.own_nuke_target())
+        .or_else(|| {
+            sim.houses
+                .get(&entity.owner())
+                .map(|house| house.nuke_target())
+        })
 }
 
 /// Status 2 (`0x0044CA97..0x0044CCB6`): the missile, a bullet of the firing
@@ -657,7 +671,7 @@ fn launch_missile(
         // Native dereferences the missing WeaponType or warhead.
         return 1;
     };
-    let Some((rx, ry)) = sim.houses.get(&owner).map(|house| house.nuke_target()) else {
+    let Some((rx, ry)) = nuke_target(sim, id) else {
         return 1;
     };
     let origin = fire_coordinate(
