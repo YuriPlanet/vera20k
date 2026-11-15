@@ -3302,3 +3302,105 @@ fn phobos_overload_episode_kills_on_the_type_rows_with_one_voice() {
     );
     assert!(captives.iter().all(|&gi| owner(&sim, gi) == "Russians"));
 }
+
+/// Phobos `PermaMC_FreeUnit_SetContext` (`Misc/Hooks.Ares.cpp:120-124`): the
+/// victim an Ares `MindControl.Permanent=yes` capture replaces is freed
+/// through `FreeUnit(silent)`, so its `MindClearedSound` plays only when the
+/// flag is off.
+#[cfg(all(feature = "ares", feature = "phobos"))]
+#[test]
+fn ares_perma_mc_replace_respects_the_free_silent_flag() {
+    use crate::sim::world::FrameEffects;
+
+    for silent in [false, true] {
+        let rules = rules();
+        let mut sim = sim(11);
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+        assert!(sim.capture_unit(
+            yuri,
+            gi,
+            &rules,
+            None,
+            FrameEffects::default()
+        ));
+        sim.sound_events.clear_for_test();
+        let americans = sim.interner.get("Americans").unwrap();
+        assert!(sim.ares_apply_perma_mc(
+            gi,
+            americans,
+            &rules,
+            None,
+            FrameEffects::default(),
+            silent,
+        ));
+        let sounds = voc_sounds(&sim);
+        assert_eq!(
+            sounds.iter().any(|sound| sound == "MindCleared"),
+            !silent,
+            "silent={silent}: {sounds:?}"
+        );
+    }
+}
+
+/// The silent flag's source at the permanent-capture detonation: the warhead's
+/// `RemoveMindControl.Silent=` (`Nullable<bool>`) over
+/// `[AudioVisual] MindControl.Permanent.ReplaceSilent=`
+/// (`Ext/Rules/Body.h:50,329` and `:503,999`), the fallback Phobos installs at
+/// the same call.
+#[cfg(all(feature = "ares", feature = "phobos"))]
+#[test]
+fn ares_perma_mc_replace_silent_follows_the_warhead_then_the_global() {
+    use crate::sim::world::FrameEffects;
+
+    for (warhead_key, global, silent) in [
+        ("", false, false),
+        ("", true, true),
+        ("RemoveMindControl.Silent=yes\n", false, true),
+        ("RemoveMindControl.Silent=no\n", true, false),
+    ] {
+        let text = format!(
+            "{}\n[PERMA]\nMindControl.Permanent=yes\n{warhead_key}",
+            RULES.replacen(
+                "[Warheads]\n0=Controller\n1=Super\n2=KILLWH",
+                "[Warheads]\n0=Controller\n1=Super\n2=KILLWH\n3=PERMA",
+                1
+            )
+        );
+        let mut rules = rules_from(&text);
+        rules.phobos_globals.mind_control_permanent_replace_silent = global;
+        let warhead = rules.warhead("PERMA").expect("PERMA warhead").clone();
+        assert!(
+            warhead
+                .ares_combat()
+                .is_some_and(|combat| combat.mind_control_permanent())
+        );
+
+        let mut sim = sim(13);
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+        assert!(sim.capture_unit(
+            yuri,
+            gi,
+            &rules,
+            None,
+            FrameEffects::default()
+        ));
+        sim.sound_events.clear_for_test();
+        let americans = sim.interner.get("Americans").unwrap();
+        assert!(sim.apply_ares_perma_mc_detonation(
+            Some(gi),
+            Some(americans),
+            &warhead,
+            &rules,
+            None,
+            FrameEffects::default(),
+        ));
+        let sounds = voc_sounds(&sim);
+        assert_eq!(
+            sounds.iter().any(|sound| sound == "MindCleared"),
+            !silent,
+            "warhead={warhead_key:?} global={global}: {sounds:?}"
+        );
+    }
+}

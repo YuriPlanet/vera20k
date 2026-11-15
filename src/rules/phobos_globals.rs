@@ -1325,6 +1325,16 @@ pub struct PhobosGlobals {
     /// (`Ext/Rules/Body.cpp:347`, `Body.h:777`).
     #[serde(default)]
     pub damage_enemies_multiplier_berzerk: Option<NativeF64Bits>,
+    /// `[AudioVisual] MindControl.Permanent.ReplaceSilent=`, default `no`
+    /// (`Ext/Rules/Body.cpp:598`, constructor `Body.h:503,999`): the fallback
+    /// for the warhead `RemoveMindControl.Silent=` when an Ares
+    /// `MindControl.Permanent=yes` capture replaces a victim that is already
+    /// controlled, where Phobos' `PermaMC_FreeUnit_SetContext`
+    /// (`Misc/Hooks.Ares.cpp:120-124`) passes the flag to
+    /// `CaptureManagerExt::FreeUnit`. The ordinary `RemoveMindControl=`
+    /// detonation keeps [`Self::remove_mind_control_silent`].
+    #[serde(default)]
+    pub mind_control_permanent_replace_silent: bool,
     /// `[AudioVisual] RemoveMindControl.Silent=`, default `no`
     /// (`Ext/Rules/Body.cpp:597`, constructor `Ext/Rules/Body.h:998`): a
     /// warhead's `RemoveMindControl=` frees its victims without the
@@ -1951,6 +1961,7 @@ impl Default for PhobosGlobals {
             damage_owner_multiplier_berzerk: None,
             damage_allies_multiplier_berzerk: None,
             damage_enemies_multiplier_berzerk: None,
+            mind_control_permanent_replace_silent: false,
             remove_mind_control_silent: false,
             merge_building_damage: false,
             shake_is_local: false,
@@ -2289,6 +2300,10 @@ impl PhobosGlobals {
         // `Ext/Rules/Body.cpp:325-326`: the `VisualScatter=` radius pair,
         // read just ahead of the `CombatAlert*` block (`:355-364`).
         // `Ext/Rules/Body.cpp:597`: an `[AudioVisual]` read, not CombatDamage.
+        globals.mind_control_permanent_replace_silent = audio_visual.read_bool(
+            "MindControl.Permanent.ReplaceSilent",
+            globals.mind_control_permanent_replace_silent,
+        );
         globals.remove_mind_control_silent = audio_visual.read_bool(
             "RemoveMindControl.Silent",
             globals.remove_mind_control_silent,

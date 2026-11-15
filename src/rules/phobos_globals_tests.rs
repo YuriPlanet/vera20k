@@ -495,6 +495,35 @@ fn the_mind_control_silent_and_merge_building_damage_globals() {
     assert!(!wrong.merge_building_damage);
 }
 
+/// `[AudioVisual] MindControl.Permanent.ReplaceSilent=`
+/// (`Ext/Rules/Body.cpp:598`, constructor `no` `Body.h:503,999`): the fallback
+/// of the warhead silent flag only where an Ares permanent capture replaces an
+/// already-controlled victim (`Misc/Hooks.Ares.cpp:120-124`).
+#[cfg(feature = "phobos")]
+#[test]
+fn the_permanent_replace_silent_defaults_false_and_reads_from_audio_visual() {
+    assert!(!PhobosGlobals::default().mind_control_permanent_replace_silent);
+    assert!(
+        read("[AudioVisual]
+MindControl.Permanent.ReplaceSilent=yes
+")
+            .mind_control_permanent_replace_silent
+    );
+    assert!(
+        !read("[AudioVisual]
+MindControl.Permanent.ReplaceSilent=no
+")
+            .mind_control_permanent_replace_silent
+    );
+    assert!(
+        !read("[CombatDamage]
+MindControl.Permanent.ReplaceSilent=yes
+")
+            .mind_control_permanent_replace_silent,
+        "the key is an `[AudioVisual]` read"
+    );
+}
+
 /// `[General] ShakeIsLocal=` (`Ext/Rules/Body.cpp:491`), constructed `no`
 /// (`Ext/Rules/Body.h:906`): the fallback a warhead's own `ShakeIsLocal=` reads.
 #[test]

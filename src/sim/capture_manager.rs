@@ -1125,6 +1125,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
+        free_silent: bool,
     ) -> bool {
         let Some(object) = self.substrate.entities.get(id) else {
             return false;
@@ -1140,7 +1141,18 @@ impl Simulation {
             return false;
         }
         if let Some(controller) = object.mind_control.controller {
-            self.free_unit(controller, id, rules, registry, frame_effects);
+            // Phobos `PermaMC_FreeUnit_SetContext` (`Misc/Hooks.Ares.cpp:120-124`)
+            // patches this FreeUnit call: the replaced victim's MindClearedSound
+            // follows the warhead's `RemoveMindControl.Silent=` (else
+            // `[AudioVisual] MindControl.Permanent.ReplaceSilent=`).
+            self.free_unit_with_sound(
+                controller,
+                id,
+                rules,
+                registry,
+                frame_effects,
+                !free_silent,
+            );
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
