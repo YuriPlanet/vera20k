@@ -157,3 +157,59 @@ fn terrain_retained_xyz_projection_and_piece_z_match_original_render() {
         }
     }
 }
+
+/// Phobos `ConditionYellow.Terrain` (`Ext/Rules/Body.cpp:147`,
+/// `Ext/TerrainType/Hooks.cpp:106,274`): the damaged-frame threshold falls
+/// back to `[AudioVisual] ConditionYellow`, and a damaged-frame tree switches
+/// exactly at the authored ratio.
+#[cfg(feature = "phobos")]
+#[test]
+fn phobos_terrain_condition_yellow_reads_and_switches_the_damaged_frame() {
+    use super::terrain_condition_yellow;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]\nConditionYellow=0.5\nConditionYellow.Terrain=0.1\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        terrain_condition_yellow(&rules),
+        f64::from(0.1f32),
+        "the Phobos Parser<double> widening"
+    );
+    let fallback =
+        RuleSet::from_ini(&IniFile::from_str("[AudioVisual]\nConditionYellow=0.4\n")).unwrap();
+    assert_eq!(
+        terrain_condition_yellow(&fallback),
+        f64::from(0.4f32),
+        "the shared ConditionYellow remains binary32-widened"
+    );
+
+    let frame = |rules: &RuleSet, health| {
+        terrain_draw_frame(
+            None,
+            health,
+            100,
+            terrain_condition_yellow(rules),
+            true,
+            false,
+            false,
+            None,
+            0,
+            false,
+        )
+    };
+    assert_eq!(
+        frame(&rules, 10),
+        1,
+        "at the authored ratio the frame flips"
+    );
+    assert_eq!(frame(&rules, 11), 0);
+    assert_eq!(
+        frame(&fallback, 40),
+        1,
+        "the shared ConditionYellow fallback"
+    );
+    assert_eq!(frame(&fallback, 41), 0);
+}

@@ -1331,9 +1331,7 @@ pub(crate) fn build_overlay_instances(
             stage,
             obj.health(),
             terrain_type.map_or(1, |terrain_type| terrain_type.strength),
-            state
-                .rules()
-                .map_or(0.5, |rules| rules.general.condition_yellow),
+            state.rules().map_or(0.5, terrain_condition_yellow),
             terrain_type.is_some_and(|terrain_type| terrain_type.has_damaged_frames),
             terrain_type.is_some_and(|terrain_type| terrain_type.has_crumbling_frames),
             obj.is_crumbling(),
@@ -1420,6 +1418,23 @@ pub(crate) fn build_overlay_instances(
             .collect();
         ground_objects.push(PlannedObjectInstance::object(parent, pieces));
     }
+}
+
+/// The health ratio at or below which a `HasDamagedFrames` terrain object
+/// shows its damaged frame: `[AudioVisual] ConditionYellow.Terrain`, else
+/// the shared `ConditionYellow` (`Ext/TerrainType/Hooks.cpp:106`,
+/// `Ext/Rules/Body.cpp:147`). The `0x71B98B` redraw hack
+/// (`Hooks.cpp:268-283`) only forces a native redraw when the ratio is
+/// crossed; VERA re-derives the frame on every draw, so no retained flag is
+/// needed (residual).
+#[cfg(feature = "phobos")]
+pub(crate) fn terrain_condition_yellow(rules: &crate::rules::ruleset::RuleSet) -> f64 {
+    rules
+        .phobos_globals
+        .condition_yellow_terrain
+        .map_or(rules.general.condition_yellow, |bits| {
+            f64::from_bits(bits.bits())
+        })
 }
 
 /// Terrain DrawIt (0x71C1B0) frame: an IsAnimated type's stage, else frame 1

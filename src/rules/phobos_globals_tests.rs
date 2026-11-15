@@ -1044,3 +1044,28 @@ fn the_self_heal_pip_globals_default_and_read_from_audio_visual() {
     assert_eq!(set.pips_self_heal_units_offset, [9, 10]);
     assert_eq!(set.pips_self_heal_buildings_offset, [11, 12]);
 }
+
+/// `[AudioVisual] ConditionYellow.Terrain=` (`Ext/Rules/Body.cpp:147`,
+/// constructed unset `Body.h:70`): the terrain damaged-frame threshold.
+#[test]
+fn the_terrain_condition_yellow_defaults_and_reads() {
+    assert_eq!(PhobosGlobals::default().condition_yellow_terrain, None);
+    // 0.1 is not exact in binary: the Phobos Parser<double> stores a
+    // binary32 first, so the widened value differs from an exact double.
+    let set = read("[AudioVisual]\nConditionYellow.Terrain=0.1\n");
+    assert_eq!(
+        set.condition_yellow_terrain
+            .map(|bits| f64::from_bits(bits.bits())),
+        Some(f64::from(0.1f32))
+    );
+    let set = read("[AudioVisual]\nConditionYellow.Terrain=50%\n");
+    assert_eq!(
+        set.condition_yellow_terrain
+            .map(|bits| f64::from_bits(bits.bits())),
+        Some(0.5)
+    );
+    for token in ["<default>", "none", "<none>"] {
+        let cleared = read(&format!("[AudioVisual]\nConditionYellow.Terrain={token}\n"));
+        assert_eq!(cleared.condition_yellow_terrain, None, "{token}");
+    }
+}

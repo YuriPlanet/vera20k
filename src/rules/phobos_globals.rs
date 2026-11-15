@@ -290,6 +290,14 @@ pub struct PhobosGlobals {
     /// Building offset, before the foundation geometry.
     #[serde(default = "self_heal_buildings_offset")]
     pub pips_self_heal_buildings_offset: [i32; 2],
+    /// `[AudioVisual] ConditionYellow.Terrain=`, `Nullable<double>`
+    /// (`Ext/Rules/Body.cpp:147`, constructed unset `Body.h:70`): the health
+    /// ratio at or below which a `HasDamagedFrames` terrain object shows its
+    /// damaged frame (`Ext/TerrainType/Hooks.cpp:96-120`). The `0x71B98B`
+    /// redraw hack (`:268-283`) is unnecessary here because the frame is
+    /// re-derived each draw; unset keeps `[AudioVisual] ConditionYellow`.
+    #[serde(default)]
+    pub condition_yellow_terrain: Option<NativeF64Bits>,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1526,6 +1534,7 @@ impl Default for PhobosGlobals {
             pips_self_heal_infantry_offset: [25, -35],
             pips_self_heal_units_offset: [33, -32],
             pips_self_heal_buildings_offset: [15, 10],
+            condition_yellow_terrain: None,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1827,6 +1836,11 @@ impl PhobosGlobals {
         globals.pips_self_heal_buildings_offset = audio_visual.read_phobos_int_pair(
             "Pips.SelfHeal.Buildings.Offset",
             globals.pips_self_heal_buildings_offset,
+        );
+        globals.condition_yellow_terrain = read_nullable_double_bits(
+            audio_visual,
+            "ConditionYellow.Terrain",
+            globals.condition_yellow_terrain,
         );
         globals.firing_anim_update =
             audio_visual.read_bool("FiringAnim.Update", globals.firing_anim_update);
