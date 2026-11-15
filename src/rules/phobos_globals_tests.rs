@@ -1096,3 +1096,91 @@ DisableOveroptimizationInTargeting=yes
     assert!(!other.ai_air_targeting_fix);
     assert!(!other.disable_overoptimization_in_targeting);
 }
+
+/// The rest of batch 56a's readers (`Ext/Rules/Body.cpp:323,370-375,449,451,
+/// 540,606`): defaults from the constructor, `[AI]` for the placement
+/// switches, `[CombatDamage]` for the missile spawn cell, and the enum's
+/// name table.
+#[test]
+fn the_ai_placement_and_bugfix_keys_read_from_their_own_sections() {
+    use crate::rules::ini_value::PhobosDynamicTeamDelayType;
+
+    let defaults = PhobosGlobals::default();
+    assert!(defaults.ai_auto_deploy_mcv);
+    assert!(defaults.ai_set_base_center);
+    assert!(!defaults.ai_bias_spawn_cell);
+    assert!(!defaults.ai_forbid_conyard);
+    assert!(!defaults.ai_node_walls_only);
+    assert!(!defaults.ai_clean_wall_node);
+    assert!(!defaults.building_waypoints);
+    assert!(defaults.missile_spawn_attack_cell);
+    assert!(!defaults.falling_down_targeting_fix);
+    assert!(!defaults.balloon_hover_pathing_fix);
+    assert_eq!(
+        defaults.team_delays_dynamic_type,
+        PhobosDynamicTeamDelayType::StartingPoint
+    );
+
+    let set = read(
+        "[AI]
+AIAutoDeployMCV=no
+AISetBaseCenter=no
+AIBiasSpawnCell=yes
+AIForbidConYard=yes
+AINodeWallsOnly=yes
+AICleanWallNode=yes
+[General]
+BuildingWaypoints=yes
+FallingDownTargetingFix=yes
+BalloonHoverPathingFix=yes
+TeamDelays.DynamicType=AliveEnemies
+[CombatDamage]
+MissileSpawnAttackCell=no
+",
+    );
+    assert!(!set.ai_auto_deploy_mcv);
+    assert!(!set.ai_set_base_center);
+    assert!(set.ai_bias_spawn_cell);
+    assert!(set.ai_forbid_conyard);
+    assert!(set.ai_node_walls_only);
+    assert!(set.ai_clean_wall_node);
+    assert!(set.building_waypoints);
+    assert!(!set.missile_spawn_attack_cell);
+    assert!(set.falling_down_targeting_fix);
+    assert!(set.balloon_hover_pathing_fix);
+    assert_eq!(
+        set.team_delays_dynamic_type,
+        PhobosDynamicTeamDelayType::AliveEnemies
+    );
+
+    // Each key is read from its one section only.
+    let wrong = read(
+        "[General]
+AIAutoDeployMCV=no
+AISetBaseCenter=no
+AIBiasSpawnCell=yes
+AIForbidConYard=yes
+AINodeWallsOnly=yes
+AICleanWallNode=yes
+MissileSpawnAttackCell=no
+[AI]
+BuildingWaypoints=yes
+TeamDelays.DynamicType=AliveEnemies
+[CombatDamage]
+FallingDownTargetingFix=yes
+",
+    );
+    assert!(wrong.ai_auto_deploy_mcv);
+    assert!(wrong.ai_set_base_center);
+    assert!(!wrong.ai_bias_spawn_cell);
+    assert!(!wrong.ai_forbid_conyard);
+    assert!(!wrong.ai_node_walls_only);
+    assert!(!wrong.ai_clean_wall_node);
+    assert!(wrong.missile_spawn_attack_cell);
+    assert!(!wrong.building_waypoints);
+    assert!(!wrong.falling_down_targeting_fix);
+    assert_eq!(
+        wrong.team_delays_dynamic_type,
+        PhobosDynamicTeamDelayType::StartingPoint
+    );
+}

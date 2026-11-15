@@ -523,12 +523,15 @@ pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
         return false;
     };
     let selected = selected_in_order(state);
-    let Some(refusal) = state
+    let refusal = state
         .match_state
         .sim_runtime
         .as_ref()
-        .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
-    else {
+        .and_then(|rt| {
+            rt.simulation
+                .planning_press_refusal(&selected, point, state.rules())
+        });
+    let Some(refusal) = refusal else {
         return false;
     };
     refuse(state, PlanningRefusal::Press(refusal));

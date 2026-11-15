@@ -1140,24 +1140,32 @@ impl Simulation {
     /// a Techno answers NoUnknowns, the first Techno that cannot use waypoints
     /// answers by WhatAmI (Aircraft, Building, else NoUnknowns).
     /// TechnoClass::CanUseWaypoint 0x0070F070 asks the type (vt+0xA0):
-    /// AircraftType 0x0041CB50 and BuildingType 0x00465910 answer false, and
-    /// Infantry and Unit types jump to the base 0x00711E80, true.
+    /// AircraftType 0x0041CB50 answers false, Infantry and Unit types jump to
+    /// the base 0x00711E80, true, and BuildingType 0x00465910 answers false
+    /// unless `[General] BuildingWaypoints=` replaced its vtable entry
+    /// (`0x7E4610`, `Ext/Building/Hooks.cpp:877-883`).
     pub fn planning_press_refusal(
         &self,
         selected: &[u64],
         point: [i32; 2],
+        rules: Option<&crate::rules::ruleset::RuleSet>,
     ) -> Option<PlanningPressRefusal> {
         if let Some(node) = self.planning_node_id_at_screen(None, point) {
             return self
                 .planning_invalid_node_reason(selected, node)
                 .map(|_| PlanningPressRefusal::InvalidNode);
         }
-        self.planning_selection_refusal(selected)
+        self.planning_selection_refusal(selected, rules)
     }
 
     /// PlanMgr639DA0's selection-only check, also used directly by radar
     /// input653CD1 without a tactical node hit test or refusal message.
-    pub fn planning_selection_refusal(&self, selected: &[u64]) -> Option<PlanningPressRefusal> {
+    pub fn planning_selection_refusal(
+        &self,
+        selected: &[u64],
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+    ) -> Option<PlanningPressRefusal> {
+        let building_waypoints = rules.is_some_and(building_waypoints);
         selected.iter().find_map(|&id| {
             match self
                 .substrate
@@ -1166,7 +1174,12 @@ impl Simulation {
                 .map(|entity| entity.category())
             {
                 Some(EntityCategory::Aircraft) => Some(PlanningPressRefusal::NoAircraft),
-                Some(EntityCategory::Structure) => Some(PlanningPressRefusal::NoBuildings),
+                // `BuildingTypeClass::CanUseWaypoint` (`vtable 0x7E4610`
+                // points at the Phobos answer) returns the key, so a building
+                // is a usable waypoint subject with it on.
+                Some(EntityCategory::Structure) => {
+                    (!building_waypoints).then_some(PlanningPressRefusal::NoBuildings)
+                }
                 Some(EntityCategory::Unit | EntityCategory::Infantry) => None,
                 _ => Some(PlanningPressRefusal::NoUnknowns),
             }
@@ -2016,8 +2029,25 @@ impl Simulation {
     }
 }
 
-fn valid_planning_record(record: &CommandRecord, actor: u64, flag: u8) -> bool {
-    if record.opcode() != 4 || record.payload()[22] != flag {
+/// `[General] BuildingWaypoints=` (`Valueable<bool>`, false;
+/// `Ext/Rules/Body.cpp:323`, `Body.h:326,835`). Phobos points
+/// `BuildingTypeClass::CanUseWaypoint` at this switch
+/// (`Ext/Building/Hooks.cpp:877-883`, vtable `0x7E4610`), so a building type
+/// answers `TechnoClass::CanUseWaypoint @ 0x0070F070`'s `vt+0xA0` question
+/// with the key.
+fn building_waypoints(rules: &crate::rules::ruleset::RuleSet) -> bool {
+    #[cfg(feature = "phobos")]
+    {
+        rules.phobos_globals.building_waypoints
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        false
+    }
+}
+
+fn valid_planning_record(record: &CommandRecord, actor: u64, flag: u8) -> bool {    if record.opcode() != 4 || record.payload()[22] != flag {
         return false;
     }
     let mut ordinary = record.clone();
