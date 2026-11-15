@@ -488,7 +488,11 @@ pub(crate) fn build_display_effect_instances(
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its
         // owner-relative75-lepton lift. Draw it at its own Display encounter.
-        let is_parachute = parachute_canopy_owner(anim, input.frame).is_some();
+        // Paradrop5F5AF1 retains the canopy at Object+88. Ares10047C60
+        // changes its type, and another attached effect can share its art.
+        let is_parachute = anim
+            .owner_entity()
+            .is_some_and(|owner| input.frame.parachute_animation(owner) == Some(stable_id));
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let AnimTypeArt {
             config,
@@ -821,16 +825,6 @@ pub(super) fn presentation_anim_frame_count(
         let canonical = type_name.to_ascii_uppercase();
         frame_counts.get(&canonical).copied()
     })
-}
-
-/// Paradrop5F5AF1 retains the canopy at Object+88. Ares10047C60 changes
-/// its type, and another attached effect can share that type's art.
-fn parachute_canopy_owner(
-    anim: &crate::sim::anim_class::AnimObject,
-    frame: &crate::app::presentation::frame::PresentationFrame,
-) -> Option<u64> {
-    let owner = anim.owner_entity()?;
-    (frame.object(owner)?.parachute_animation() == Some(anim.stable_id())).then_some(owner)
 }
 
 /// `UpdateConditionalAnimDrawingLogic`'s offset for one attach-effect

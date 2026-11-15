@@ -70,7 +70,6 @@ pub(crate) struct ObjectRecord {
     owner: InternedId,
     is_voxel: bool,
     on_bridge: bool,
-    parachute_animation: Option<u64>,
     ion_blast_lift: i8,
     pub(crate) position: crate::sim::components::Position,
     /// The barrel's facing and elevation are the pose's `turret` and
@@ -597,7 +596,6 @@ impl ObjectRecord {
             owner: entity.owner(),
             is_voxel: entity.is_voxel(),
             on_bridge: entity.on_bridge(),
-            parachute_animation: entity.parachute_animation(),
             ion_blast_lift: entity.ion_blast_lift_pixels(),
             position: entity.position.clone(),
             body_facing: entity.body_facing.clone(),
@@ -738,10 +736,6 @@ impl ObjectRecord {
 
     pub(crate) fn is_falling_down(&self) -> bool {
         self.answers.is_falling_down
-    }
-
-    pub(crate) fn parachute_animation(&self) -> Option<u64> {
-        self.parachute_animation
     }
 
     pub(crate) fn is_warped_out(&self) -> bool {
@@ -1192,6 +1186,9 @@ pub(crate) struct PresentationFrame {
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
     anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
+    /// Object+88's held canopy identities, copied from GameEntity at capture.
+    /// The frame rebuilds this sparse lookup each time; ordinary objects add no entry.
+    parachute_animations: crate::util::lookup_hash::LookupMap<u64, u64>,
     /// What the scene's other drawers read of the world's objects
     /// (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
@@ -1244,6 +1241,15 @@ impl PresentationFrame {
         );
         let scene = scene.expect("captured beside the records");
         let anim_coords = sim.anim_absolute_coords().collect();
+        let parachute_animations = sim
+            .entities()
+            .values()
+            .filter_map(|entity| {
+                entity
+                    .parachute_animation()
+                    .map(|animation| (entity.stable_id(), animation))
+            })
+            .collect();
         let psychic_detection = at.psychic.is_some();
         let mut ids = Vec::with_capacity(objects.len());
         let mut spans = Vec::with_capacity(objects.len());
@@ -1270,6 +1276,7 @@ impl PresentationFrame {
             display_members: Default::default(),
             display_order: Default::default(),
             anim_coords,
+            parachute_animations,
             scene,
             psychic_detection,
         }
@@ -1323,6 +1330,11 @@ impl PresentationFrame {
     /// `Simulation::anim_absolute_coord` of anim `id`.
     pub(crate) fn anim_coord(&self, id: u64) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         self.anim_coords.get(&id).copied()
+    }
+
+    /// `GameEntity::parachute_animation` of object `id` at capture.
+    pub(crate) fn parachute_animation(&self, id: u64) -> Option<u64> {
+        self.parachute_animations.get(&id).copied()
     }
 
     /// Whether `object` stands for its own sound handles
