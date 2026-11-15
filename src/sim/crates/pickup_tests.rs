@@ -2430,3 +2430,49 @@ fn ares_random_crate_money_bounds_the_top_up() {
     assert_eq!(effects::money_crate_amount(&mut rng, &rules, 0, base), 2000);
     assert_eq!(rng.next_u32(), before.clone().next_u32(), "no draw");
 }
+
+/// Phobos `UnitCrateVehicleCap` (`Ext/Rules/Body.cpp:282`, hook
+/// `0x481C27`, `Misc/Hooks.Crates.cpp:63-73`): the Unit slot's
+/// tracked-vehicle ceiling; a negative value never caps, and the Squad slot
+/// keeps its own constant.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_unit_crate_vehicle_cap_global_gates_the_unit_slot() {
+    let scene = |cap_line: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=TNK\n[TNK]\nStrength=100\n\
+             [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\n{cap_line}"
+        )))
+        .expect("crate rules");
+        let mut sim = sim_with_grid(1);
+        let _owner = house(&mut sim, "Americans", false);
+        let actor = sim
+            .spawn_object("TNK", "Americans", 20, 22, 0, &rules)
+            .expect("tracked tank");
+        (sim, rules, actor)
+    };
+    let land = crate::rules::terrain_rules::LandType::Clear.as_index();
+    let slot = |sim: &Simulation, rules: &RuleSet, actor: u64| {
+        super::multiplayer_eligible_slot(sim, rules, actor, land, POWERUP_UNIT)
+    };
+
+    let (sim, rules, actor) = scene("UnitCrateVehicleCap=0\n");
+    assert_ne!(
+        slot(&sim, &rules, actor),
+        POWERUP_UNIT,
+        "cap 0 rejects the tracked tank"
+    );
+    let (sim, rules, actor) = scene("UnitCrateVehicleCap=-1\n");
+    assert_eq!(
+        slot(&sim, &rules, actor),
+        POWERUP_UNIT,
+        "a negative cap never caps"
+    );
+    let (sim, rules, actor) = scene("");
+    assert_eq!(
+        slot(&sim, &rules, actor),
+        POWERUP_UNIT,
+        "the constructor cap of 50 admits one vehicle"
+    );
+}

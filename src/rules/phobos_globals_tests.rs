@@ -1111,3 +1111,15 @@ DisableOveroptimizationInTargeting=yes
     assert!(!other.ai_air_targeting_fix);
     assert!(!other.disable_overoptimization_in_targeting);
 }
+
+/// `[CrateRules] CrateOnlyOnLand=` and `UnitCrateVehicleCap=`
+/// (`Ext/Rules/Body.cpp:281-282`, constructors `Body.h:733-734`).
+#[test]
+fn the_crate_globals_default_and_read_from_crate_rules() {
+    let defaults = PhobosGlobals::default();
+    assert!(!defaults.crate_only_on_land);
+    assert_eq!(defaults.unit_crate_vehicle_cap, 50);
+    let set = read("[CrateRules]\nCrateOnlyOnLand=yes\nUnitCrateVehicleCap=-1\n");
+    assert!(set.crate_only_on_land);
+    assert_eq!(set.unit_crate_vehicle_cap, -1);
+}

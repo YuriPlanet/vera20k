@@ -257,6 +257,15 @@ fn place_one_random_crate(
         // happens. A draw outside the grid takes the land branch, matching the
         // native fallback cell.
         let movement_surface = crate_surface_at_packed(sim, drawn);
+        // Phobos `MapClass_PlaceRandomCrate_Sampling` (`0x56BD8B`,
+        // `Misc/Hooks.Crates.cpp:4-42`): `CrateOnlyOnLand` skips a water draw
+        // before the nearby-cell search, so no retry draws follow.
+        #[cfg(feature = "phobos")]
+        if matches!(movement_surface, CrateSurface::Water)
+            && rules.phobos_globals.crate_only_on_land
+        {
+            return Ok(OneCrateResult::HardRejected);
+        }
 
         let Some(cell) = snap_to_passable(sim, drawn, movement_surface) else {
             continue;
@@ -2891,6 +2900,55 @@ pub(crate) mod tests {
     /// thing the water flag can change is which crate image is chosen. Its
     /// Clear and Water land rows are [`OPEN_LAND_KEYS`], bound as a loaded map
     /// binds its rules.
+    /// Phobos `CrateOnlyOnLand` (`Ext/Rules/Body.cpp:281`, hook `0x56BD8B`,
+    /// `Misc/Hooks.Crates.cpp:4-42`): a drawn water cell skips the crate
+    /// spawn without further draws; the stock path still snaps to the
+    /// water-side destination.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn crate_only_on_land_skips_a_water_draw() {
+        let registry = crate_registry();
+        let grid = PathGrid::test_all_passable(MAP, MAP);
+        let scene = || {
+            let mut sim = sim_with_grid(0x1234_5678);
+            sim.install_fixture_path_grid(Some(&grid));
+            let mut terrain = uniform_terrain(false);
+            for cell in terrain.cells_mut_for_test() {
+                cell.speed_costs.float =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+                cell.speed_costs.track =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+            }
+            terrain
+                .cell_mut_for_test(14, 13)
+                .expect("drawn cell")
+                .land_type = LandType::Water.as_index();
+            let destination = terrain.cell_mut_for_test(15, 13).expect("destination");
+            destination.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
+            destination.land_type = LandType::Clear.as_index();
+            terrain
+                .cell_mut_for_test(13, 12)
+                .expect("wrong-movement decoy")
+                .speed_costs
+                .track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+            sim.resolved_terrain = Some(terrain);
+            sim
+        };
+
+        let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\nCrateOnlyOnLand=yes\n");
+        let mut sim = scene();
+        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+        assert_eq!(result.accepted, 0, "the water draw is skipped");
+
+        let rules = crate_ruleset("CrateMinimum=1\nCrateMaximum=1\n");
+        let mut sim = scene();
+        let result = place_scenario_start_crates(&mut sim, &rules, &registry, 1);
+        assert_eq!(
+            result.accepted, 1,
+            "stock still places a crate through the water draw"
+        );
+    }
+
     fn uniform_terrain(water: bool) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
         use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
         use crate::rules::terrain_rules::{LandType, SpeedCostProfile};

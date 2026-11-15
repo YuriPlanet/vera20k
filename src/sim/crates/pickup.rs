@@ -243,6 +243,21 @@ fn announce_upgrade(
     }
 }
 
+/// `[CrateRules] UnitCrateVehicleCap` (`Ext/Rules/Body.cpp:282`,
+/// `CellClass_GoodieCheck_UnitCrateVehicleCap @ 0x481C27`): the Unit crate's
+/// tracked-vehicle ceiling, `50` natively; a negative value never caps.
+fn unit_crate_vehicle_cap(rules: &RuleSet) -> i32 {
+    #[cfg(feature = "phobos")]
+    {
+        rules.phobos_globals.unit_crate_vehicle_cap
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        UNIT_CRATE_MAX_VEHICLES
+    }
+}
+
 /// `0x00481C03..0x00481D6B`: the multiplayer eligibility switch on the
 /// selected slot and the over-water test. Returns the slot the arm runs.
 pub(crate) fn multiplayer_eligible_slot(
@@ -262,7 +277,10 @@ pub(crate) fn multiplayer_eligible_slot(
     let object = sim.object_type(actor.type_ref(), rules);
     let eligible = match powerup {
         // `0x00481C1E`: too many vehicles, or a shore cell.
-        POWERUP_UNIT => house.tracking().vehicles() <= UNIT_CRATE_MAX_VEHICLES && !shore,
+        POWERUP_UNIT => {
+            let cap = unit_crate_vehicle_cap(rules);
+            (cap < 0 || house.tracking().vehicles() <= cap) && !shore
+        }
         // `0x00481C32`: too much infantry, or a shore cell.
         POWERUP_SQUAD => house.tracking().infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded

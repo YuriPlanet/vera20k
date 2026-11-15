@@ -305,6 +305,20 @@ pub struct PhobosGlobals {
     /// `Ext/Cell/Hooks.cpp:5-11`).
     #[serde(default = "two_hundred")]
     pub adjacent_wall_damage: i32,
+    /// `[CrateRules] CrateOnlyOnLand=`, default `no`
+    /// (`Ext/Rules/Body.cpp:281`, constructor `Body.h:733`): a random crate
+    /// drawn on a water cell is skipped instead of snapped to the shore
+    /// (`MapClass_PlaceRandomCrate_Sampling @ 0x56BD8B`,
+    /// `Misc/Hooks.Crates.cpp:4-42`).
+    #[serde(default)]
+    pub crate_only_on_land: bool,
+    /// `[CrateRules] UnitCrateVehicleCap=`, default `50`
+    /// (`Ext/Rules/Body.cpp:282`, constructor `Body.h:734`): the Unit crate's
+    /// tracked-vehicle ceiling; a negative value never caps
+    /// (`CellClass_GoodieCheck_UnitCrateVehicleCap @ 0x481C27`,
+    /// `Misc/Hooks.Crates.cpp:63-73`).
+    #[serde(default = "fifty")]
+    pub unit_crate_vehicle_cap: i32,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1435,6 +1449,11 @@ fn two_hundred() -> i32 {
     200
 }
 
+/// `UnitCrateVehicleCap=`'s constructor value (`Ext/Rules/Body.h:734`).
+fn fifty() -> i32 {
+    50
+}
+
 /// The `Pips.SelfHeal.*` frame pairs' constructor value
 /// (`Ext/Rules/Body.h:614-616`).
 fn thirteen_twenty() -> [i32; 2] {
@@ -1570,6 +1589,8 @@ impl Default for PhobosGlobals {
             pips_self_heal_buildings_offset: [15, 10],
             condition_yellow_terrain: None,
             adjacent_wall_damage: 200,
+            crate_only_on_land: false,
+            unit_crate_vehicle_cap: 50,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1787,6 +1808,12 @@ impl PhobosGlobals {
         globals.adjacent_wall_damage = ini
             .section_or_empty("CombatDamage")
             .read_int("AdjacentWallDamage", globals.adjacent_wall_damage);
+        // `Ext/Rules/Body.cpp:281-282`: the crate placement switches.
+        let crate_rules = ini.section_or_empty("CrateRules");
+        globals.crate_only_on_land =
+            crate_rules.read_bool("CrateOnlyOnLand", globals.crate_only_on_land);
+        globals.unit_crate_vehicle_cap =
+            crate_rules.read_int("UnitCrateVehicleCap", globals.unit_crate_vehicle_cap);
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so
         // their relative order does not matter.
