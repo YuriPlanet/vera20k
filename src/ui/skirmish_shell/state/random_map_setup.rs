@@ -337,6 +337,9 @@ pub struct RandomMapSetupModalState {
     /// VERA extension: the generated map on show was written as a map file;
     /// Export Map rests until the next Generate.
     pub exported: bool,
+    /// VERA extension: where the last export wrote the map, as the player
+    /// reads it, shown where the progress text goes while `exported` holds.
+    pub exported_to: Option<String>,
     /// VERA extension: the preset the options still stand at; any edit of
     /// theirs clears it.
     pub preset: Option<RandomMapPreset>,
@@ -427,6 +430,7 @@ impl RandomMapSetupModalState {
             preset: None,
             extras_page: None,
             extras_note: None,
+            exported_to: None,
             fairness: None,
             history: Vec::new(),
             custom_presets: Vec::new(),
@@ -951,6 +955,7 @@ impl RandomMapSetupModalState {
         self.generating = false;
         self.generated = true;
         self.exported = false;
+        self.exported_to = None;
         self.saved_seed_buttons_enabled = true;
         if preview.is_some() {
             self.preview_generation = self.preview_generation.wrapping_add(1);
