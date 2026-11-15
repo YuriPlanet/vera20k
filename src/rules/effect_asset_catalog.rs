@@ -530,6 +530,16 @@ pub fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
             .into_iter()
             .filter(|name| rules.anim_type_names.contains(name)),
     );
+    // The rules `TurretAnim=` name is a building animation reference no ART
+    // slot declares; `Grand_Opening` creates the slot-9 animation from it, so
+    // its SHP frames must bind like an art slot root.
+    roots.extend(
+        rules
+            .all_objects()
+            .filter_map(|object| object.turret_anim.as_deref())
+            .map(str::to_ascii_uppercase)
+            .filter(|name| rules.anim_type_names.contains(name)),
+    );
     roots
 }
 
@@ -1051,7 +1061,7 @@ mod tests {
 
 #[cfg(test)]
 mod anim_class_root_tests {
-    use super::anim_class_roots;
+    use super::{anim_class_roots, tolerant_anim_class_roots};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
 
@@ -1157,4 +1167,30 @@ mod anim_class_root_tests {
                 .all(|root| root != "NONE" && root != "<NONE>" && root != "UNREGISTERED")
         );
     }
+    /// The rules `TurretAnim=` name is a building animation no ART slot
+    /// declares; the tolerant binder must bind its frames or `Grand_Opening`
+    /// fails the slot-9 spawn with `AnimSpawnError::UnboundType`.
+    #[test]
+    fn rules_turret_anim_joins_the_building_anim_roots() {
+        let ini = IniFile::from_str(
+            "[BuildingTypes]
+0=T
+[T]
+Strength=100
+Turret=yes
+TurretAnim=S
+             TurretAnimIsVoxel=false
+[Animations]
+0=S
+",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("rules");
+        assert!(rules.anim_type_names.contains("S"), "fixture anim registers");
+        let roots = tolerant_anim_class_roots(&rules);
+        assert!(
+            roots.iter().any(|name| name == "S"),
+            "the rules TurretAnim name joins the roots: {roots:?}"
+        );
+    }
+
 }
