@@ -860,6 +860,15 @@ pub(crate) fn build_sidebar_cameo_instances(
             });
         }
     }
+    // StripDraw's empty-slot path (6A99BE -> 6A9B4B) paints the same flash
+    // darkening on a lit empty record.
+    if let Some(mask) = chrome.and_then(|atlas| atlas.darken.as_ref()) {
+        flash.extend(
+            view.flash_empty_slots
+                .iter()
+                .filter_map(|&slot| build_darken_instance(mask, slot, co, 4)),
+        );
+    }
     SidebarCameoInstances {
         cameo: instances,
         hover,

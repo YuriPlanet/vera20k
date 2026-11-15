@@ -94,6 +94,8 @@ pub enum SavedCameoId {
 pub struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
+    /// Each strip's record flash deadlines (+0x88): one per entry, then the
+    /// empty records up to the last one a cameo flash lit (at most 75 records).
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],

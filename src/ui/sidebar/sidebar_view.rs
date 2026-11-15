@@ -338,6 +338,20 @@ pub(crate) fn build_sidebar_view_with_spec(
         layout_spec,
         cameo_order,
     );
+    // StripDraw's empty-slot path (6A99BE -> 6A9B4B) still darkens a visible
+    // record past the strip's count that FlashCameo 6AC5F0 lit.
+    let records = cameo_order.items(active_tab).len();
+    let flash_empty_slots = (visible_items..visible_items + max_visible)
+        .filter(|&slot| slot >= records && cameo_order.empty_slot_flash_darkened(active_tab, slot))
+        .map(|slot| {
+            grid_slot_rect(
+                [layout.strip_x + layout_spec.cameo_inset_x, grid_top],
+                slot - visible_items,
+                columns,
+                layout_spec,
+            )
+        })
+        .collect();
 
     SidebarView {
         panel_rect,
@@ -351,6 +365,7 @@ pub(crate) fn build_sidebar_view_with_spec(
         max_scroll_rows,
         tabs,
         items,
+        flash_empty_slots,
         added_grids: Vec::new(),
         repair_button,
         sell_button,
@@ -499,6 +514,8 @@ pub(crate) fn apply_observer_strip(
             })
             .collect(),
     );
+    // The observer branch of StripDraw draws Houses, not empty records.
+    view.flash_empty_slots.clear();
     view.scroll_rows = top;
     view.max_scroll_rows = max_top;
     view.scroll_down_button.disabled = disabled;
@@ -519,17 +536,8 @@ fn grid_items<'a>(
     entries
         .enumerate()
         .map(|(idx, (entry, display_name))| {
-            let row = idx / columns;
-            let col = idx % columns;
-            let x = (origin[0] + col as f32 * layout_spec.cameo_column_pitch).round();
-            let y = (origin[1] + row as f32 * layout_spec.cameo_row_height).round();
             SidebarItem {
-                rect: Rect {
-                    x,
-                    y,
-                    w: layout_spec.cameo_width.round(),
-                    h: layout_spec.cameo_height.round(),
-                },
+                rect: grid_slot_rect(origin, idx, columns, layout_spec),
                 type_id: entry.type_id,
                 display_name: display_name.to_owned(),
                 cost: entry.cost,
@@ -553,6 +561,23 @@ fn grid_items<'a>(
             }
         })
         .collect()
+}
+
+/// Slot `idx` of a grid of `columns` whose first cameo is at `origin`.
+fn grid_slot_rect(
+    origin: [f32; 2],
+    idx: usize,
+    columns: usize,
+    layout_spec: SidebarChromeLayoutSpec,
+) -> Rect {
+    let row = idx / columns;
+    let col = idx % columns;
+    Rect {
+        x: (origin[0] + col as f32 * layout_spec.cameo_column_pitch).round(),
+        y: (origin[1] + row as f32 * layout_spec.cameo_row_height).round(),
+        w: layout_spec.cameo_width.round(),
+        h: layout_spec.cameo_height.round(),
+    }
 }
 
 fn category_is_on_tab(

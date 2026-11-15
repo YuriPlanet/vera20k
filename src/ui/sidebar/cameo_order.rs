@@ -7,7 +7,7 @@
 use crate::sim::StageClass;
 use crate::sim::intern::InternedId;
 use crate::util::lookup_hash::{LookupMap, LookupSet};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub(crate) use crate::sim::snapshot::SavedCameoId as CameoId;
 
@@ -25,10 +25,13 @@ pub(crate) fn strip_rejects_entry(len: usize, ares: bool) -> bool {
     if ares { false } else { len > 75 }
 }
 
+/// The records a native strip holds (`StripClass` +0x58, stride 0x34).
+pub(crate) const STRIP_RECORDS: usize = 75;
+
 /// Leading strip entries `SidebarClass::FlashCameo` 6AC5F0 scans: its 75
 /// records, or (Ares.dll 1002C1D0, hook 0x6AC6D9) the whole tab vector.
 fn flash_scan_limit(ares: bool) -> usize {
-    if ares { usize::MAX } else { 75 }
+    if ares { usize::MAX } else { STRIP_RECORDS }
 }
 
 /// The request retained by a cameo before its queued event reaches the Factory.
@@ -231,6 +234,15 @@ pub(crate) struct CameoStrips {
     /// Strip entry +88 survives key refresh and Mouse save/no-init. Entries
     /// removed by Recalculate discard their deadline with their identity.
     flash_deadlines: HashMap<CameoId, i32>,
+    /// The deadlines (+88) of empty records, by record index, every one at or
+    /// past its strip's count. Only [`Self::flash_type_index`] writes one:
+    /// FlashCameo 6AC5F0 compares TypeIndex alone, and an empty record keeps
+    /// TypeIndex 0 (Init_Clear 6A81B0, Recalculate's tail clear 6AA9EA..
+    /// 6AAA25). InsertEntry 6A8710 overwrites the record at the old count,
+    /// shifting or writing the new entry there with +88 zeroed (6A87DA); a
+    /// removal moves only the records below the count down, so the empty
+    /// ones keep their index.
+    empty_flash_deadlines: [BTreeMap<usize, i32>; 4],
     redraw_until: i32,
     frame: i32,
     /// Select6AB80D/6AB0C9 and StripAI6A8F7C own presentation requests and
@@ -466,9 +478,12 @@ impl CameoStrips {
     /// TAction115 -> Sidebar6AC5F0 matches the first retained numeric type
     /// index, deliberately without comparing RTTI (Unit/Aircraft can collide).
     /// Original-executed controls: tools/sidebar_oracle/trigger_cameos.json.
+    /// Its scan runs over all 75 records (6AC6F2..6AC6FD), so a type at index
+    /// 0 that no entry matches lights the first empty record, at the strip's
+    /// count, and StripDraw darkens that slot (6A99BE -> 6A9B4B).
     /// Ares 3.0 `SidebarClass_FlashCameo` (Ares.dll 1002C1D0, hook 0x6AC6D9)
     /// runs the same match over the whole tab vector, not the first 75
-    /// ([`flash_scan_limit`]).
+    /// ([`flash_scan_limit`]), and that vector has no empty records.
     pub(crate) fn flash_type_index(
         &mut self,
         tab: SidebarTab,
@@ -479,12 +494,15 @@ impl CameoStrips {
         ares: bool,
     ) {
         let deadline = frame.wrapping_add(duration);
-        if let Some(entry) = self.strips[tab.tab_index()]
+        let strip = &self.strips[tab.tab_index()];
+        if let Some(entry) = strip
             .iter()
             .take(flash_scan_limit(ares))
             .find(|entry| index_of(entry.id) == Some(type_index))
         {
             self.flash_deadlines.insert(entry.id, deadline);
+        } else if !ares && type_index == 0 && strip.len() < flash_scan_limit(ares) {
+            self.empty_flash_deadlines[tab.tab_index()].insert(strip.len(), deadline);
         }
         self.redraw_until = deadline.wrapping_add(1);
     }
@@ -492,27 +510,65 @@ impl CameoStrips {
     /// StripDraw6A9B59..6A9B76 uses signed deadline/frame and signed IDIV,
     /// not an unsigned clock or an elapsed-time approximation.
     pub(crate) fn flash_darkened(&self, id: CameoId) -> bool {
-        self.flash_deadlines.get(&id).copied().unwrap_or(0) > self.frame && self.frame % 16 > 8
+        self.deadline_darkens(self.flash_deadlines.get(&id).copied().unwrap_or(0))
     }
 
+    /// Whether StripDraw's empty-slot path (6A99BE -> 6A9B4B) darkens record
+    /// `slot` of `tab`, at or past the strip's count.
+    pub(crate) fn empty_slot_flash_darkened(&self, tab: SidebarTab, slot: usize) -> bool {
+        self.deadline_darkens(
+            self.empty_flash_deadlines[tab.tab_index()]
+                .get(&slot)
+                .copied()
+                .unwrap_or(0),
+        )
+    }
+
+    fn deadline_darkens(&self, deadline: i32) -> bool {
+        deadline > self.frame && self.frame % 16 > 8
+    }
+
+    /// Each strip's record deadlines in record order: one per entry, then the
+    /// empty records up to the last one that holds a deadline (Mouse Save
+    /// 5BE6D0 writes all 75 records).
     pub(crate) fn saved_flash(&self) -> ([Vec<i32>; 4], i32) {
         (
             std::array::from_fn(|index| {
-                self.strips[index]
+                let mut deadlines: Vec<i32> = self.strips[index]
                     .iter()
                     .map(|entry| self.flash_deadlines.get(&entry.id).copied().unwrap_or(0))
-                    .collect()
+                    .collect();
+                for (&slot, &deadline) in &self.empty_flash_deadlines[index] {
+                    deadlines.resize(slot, 0);
+                    deadlines.push(deadline);
+                }
+                deadlines
             }),
             self.redraw_until,
         )
     }
 
-    /// Called after the saved-order owner validates counts and identities.
+    /// Called after the saved-order owner validates counts and identities;
+    /// deadlines past a strip's entries are its empty records'.
     pub(crate) fn restore_flash(&mut self, deadlines: [Vec<i32>; 4], redraw_until: i32) {
         self.flash_deadlines.clear();
-        for (strip, deadlines) in self.strips.iter().zip(deadlines) {
-            for (entry, deadline) in strip.iter().zip(deadlines) {
-                self.flash_deadlines.insert(entry.id, deadline);
+        for ((strip, empty), deadlines) in self
+            .strips
+            .iter()
+            .zip(&mut self.empty_flash_deadlines)
+            .zip(deadlines)
+        {
+            empty.clear();
+            for (slot, deadline) in deadlines.into_iter().enumerate() {
+                match strip.get(slot) {
+                    Some(entry) => {
+                        self.flash_deadlines.insert(entry.id, deadline);
+                    }
+                    None if deadline != 0 => {
+                        empty.insert(slot, deadline);
+                    }
+                    None => {}
+                }
             }
         }
         self.redraw_until = redraw_until;
@@ -671,7 +727,9 @@ impl CameoStrips {
                 .position(|entry| candidate.key.inserts_before(&entry.key))
                 .unwrap_or(strip.len())
         };
+        let old_count = strip.len();
         strip.insert(at, candidate.clone());
+        self.empty_flash_deadlines[candidate.tab.tab_index()].remove(&old_count);
         true
     }
 
