@@ -101,21 +101,21 @@ enum UnitRenderSlopeState {
 pub(super) enum UnitTextureSource {
     Stable(usize),
     Pose(usize),
-    /// A stable key's depth-tested image on a retained pose page.
-    DepthTested(usize),
+    /// A stable key rendered in the native image cache's raster style.
+    Styled(usize),
 }
 
 impl UnitTextureSource {
     pub(super) fn target(self) -> ObjectTexture {
         match self {
             Self::Stable(page) => ObjectTexture::UnitAtlasPage(page),
-            Self::Pose(page) | Self::DepthTested(page) => ObjectTexture::UnitPosePage(page),
+            Self::Pose(page) | Self::Styled(page) => ObjectTexture::UnitPosePage(page),
         }
     }
 }
 
-/// The image cache flags of the object drawing a voxel, from its own type's
-/// art: `UseBuffer=`, `DisableVoxelCache=` (`+0xDBE`, `0x00706806`) and
+/// The image cache flags of the object drawing a voxel, from its current
+/// native type's art: `UseBuffer=`, `DisableVoxelCache=` (`+0xDBE`, `0x00706806`) and
 /// `DisableShadowCache=` (`+0xDBF`, `0x00706C33`).
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct VoxelDrawer {
@@ -139,7 +139,7 @@ impl VoxelDrawer {
     }
 }
 
-/// What a part draw needs to render a stable key depth-tested.
+/// What a part draw needs to render outside the selected model's atlas style.
 pub(crate) struct DepthTestedImages<'a> {
     pub pose_cache: &'a std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     pub assets: &'a crate::assets::asset_manager::AssetManager,
@@ -185,10 +185,9 @@ impl<'a> DepthTestedImages<'a> {
 /// One stable part drawn through `TechnoClass::Draw @ 0x00706640` under its
 /// cache record `image` (None: uncached). A hit blits the stored image; a
 /// miss or an uncached draw renders in the current style ([`VoxelImageCache`])
-/// and a miss stores it with `key`'s barrel pitch. A `UseBuffer=` type's
-/// atlas image is already depth-tested; any other type's depth-tested image
-/// lives on a retained pose page, and an image rendered over stale depth
-/// on a retained page for a record, else on this frame's.
+/// and a miss stores it with `key`'s barrel pitch. An image whose style
+/// differs from the selected model's atlas lives on a retained pose page.
+/// Stale-depth images use a retained page for a record, else this frame's.
 ///
 /// [`VoxelImageCache`]: crate::render::voxel_image_cache::VoxelImageCache
 pub(super) fn cached_part_entry(
@@ -201,13 +200,18 @@ pub(super) fn cached_part_entry(
 ) -> Option<(UnitSpriteEntry, UnitTextureSource)> {
     use crate::render::unit_pose_cache::LivePage;
     let (drawn, entry) = atlas_get_with_frame_fallback(atlas, key)?;
-    // The image a depth-tested draw of a type without `UseBuffer=` blits.
+    //706F02 reads the actual type, while73B4D8 selects model geometry.
+    // Entry-only component fixtures have no model and retain their drawer's
+    // matching atlas style. Production admission always installs the model.
+    let atlas_style = atlas.raster_style(&drawn).unwrap_or(drawer.use_buffer);
     let variant = |depth_tested: bool| {
-        let images = depth_tested_images.filter(|_| depth_tested && !drawer.use_buffer)?;
-        images
-            .pose_cache
-            .borrow_mut()
-            .render_depth_tested(images.assets, images.rules, &drawn)
+        let images = depth_tested_images.filter(|_| depth_tested != atlas_style)?;
+        images.pose_cache.borrow_mut().render_styled(
+            images.assets,
+            images.rules,
+            &drawn,
+            depth_tested,
+        )
     };
     let live = |render, depth: &mut _, page| {
         depth_tested_images?.render_live(render, depth, &drawn, None, page)
@@ -240,12 +244,13 @@ pub(super) fn cached_part_entry(
         }
     };
     if let Some(stale) = stale {
-        return Some((stale, UnitTextureSource::DepthTested(stale.page)));
+        return Some((stale, UnitTextureSource::Styled(stale.page)));
     }
-    Some(match variant(depth_tested) {
-        Some((entry, _)) => (entry, UnitTextureSource::DepthTested(entry.page)),
-        None => (entry, UnitTextureSource::Stable(entry.page)),
-    })
+    if depth_tested == atlas_style {
+        return Some((entry, UnitTextureSource::Stable(entry.page)));
+    }
+    let (entry, _) = variant(depth_tested)?;
+    Some((entry, UnitTextureSource::Styled(entry.page)))
 }
 
 // Original755852..755875 initializes17..20 to identity, so the stable
@@ -807,8 +812,10 @@ pub(crate) fn unit_visitor<'a>(
                 let alpha: f32 = 1.0;
                 // 0x73B140's split is inside the same native parent draw call.
                 // Ground units, including those below bridges, keep LayerClass order.
-                let drawer = *drawers.entry(entity.type_ref()).or_insert_with(|| {
-                    VoxelDrawer::of(state.rules(), sim.interner().resolve(entity.type_ref()))
+                let drawer_type =
+                    super::helpers::unit_draw_type_ref(entity, sim.interner(), state.rules());
+                let drawer = *drawers.entry(drawer_type).or_insert_with(|| {
+                    VoxelDrawer::of(state.rules(), sim.interner().resolve(drawer_type))
                 });
                 // Aircraft4148A0 draws the unmasked ground shadow before its body
                 // at4149D7. Unlike Unit's masked suffix, the body's later pixels
