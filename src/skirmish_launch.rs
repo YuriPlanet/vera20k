@@ -445,16 +445,16 @@ pub struct SkirmishLaunchOptions {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<String>,
     /// VERA's room rules: the host's Terrain Deformation and personal
-    /// rules, which every player's match plays. Left out while the host
-    /// shares neither.
+    /// rules, which every player's match plays. Left out while the room has
+    /// neither.
     #[serde(default, skip_serializing_if = "HostRules::is_empty")]
     pub host_rules: HostRules,
 }
 
 /// VERA: the rules a network room plays besides its options, which only its
-/// host sets: the host's Terrain Deformation box and, when the host shares
-/// it, the host's VERARULES.INI. Every player's match plays these instead of
-/// their own; offline games play the player's own
+/// host sets: the host's Terrain Deformation box and the host's VERARULES.INI
+/// when it changes the game and fits. Every player's match plays these
+/// instead of their own; offline games play the player's own
 /// (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -473,19 +473,14 @@ impl HostRules {
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
-    /// box, and its VERARULES.INI when `share` and the file changes the game
-    /// and fits.
-    pub fn from_own(own: &PersonalRules, share: bool) -> Self {
+    /// box, and its VERARULES.INI when the file changes the game and fits.
+    pub fn from_own(own: &PersonalRules) -> Self {
+        let fits = own.source().len() <= crate::rules::personal_rules::SHARE_LIMIT;
         Self {
             terrain_deformation: own.terrain_deformation(),
-            personal_rules: (share && Self::can_share(own))
+            personal_rules: (!own.is_empty() && fits)
                 .then(|| crate::util::base64::base64_encode(own.source())),
         }
-    }
-
-    /// The host's VERARULES.INI changes the game and fits in a room.
-    pub fn can_share(own: &PersonalRules) -> bool {
-        !own.is_empty() && own.source().len() <= crate::rules::personal_rules::SHARE_LIMIT
     }
 
     /// The rules every player's match plays. Another game sent them, so a
@@ -1304,14 +1299,19 @@ mod tests {
         use crate::rules::personal_rules::{PersonalRules, SHARE_LIMIT};
         let mut own = PersonalRules::from_bytes(b"[E1]\nCost=75\n").unwrap();
         own.set_terrain_deformation(true);
-        let played = HostRules::from_own(&own, true).personal_rules().unwrap();
+        let played = HostRules::from_own(&own).personal_rules().unwrap();
         assert_eq!(played.compatibility_crc(), own.compatibility_crc());
-        let kept = HostRules::from_own(&own, false).personal_rules().unwrap();
-        assert!(kept.terrain_deformation() && kept.is_empty());
         // A file of comments has nothing to share, and a room sharing
         // nothing sends the options as before.
         let comments = PersonalRules::from_bytes(b"; [E1]\n; Cost=75\n").unwrap();
-        assert_eq!(HostRules::from_own(&comments, true), HostRules::default());
+        assert_eq!(HostRules::from_own(&comments), HostRules::default());
+        // A host's file past the limit stays home; its box still counts.
+        let mut big = b"[E1]\nCost=75\n".to_vec();
+        big.resize(SHARE_LIMIT + 1, b';');
+        let mut big = PersonalRules::from_bytes(&big).unwrap();
+        big.set_terrain_deformation(true);
+        let shared = HostRules::from_own(&big);
+        assert!(shared.terrain_deformation && shared.personal_rules.is_none());
         let options = serde_json::to_value(SkirmishLaunchOptions::default()).unwrap();
         assert!(options.get("host_rules").is_none());
         // Another game's file past the limit is refused, not played.

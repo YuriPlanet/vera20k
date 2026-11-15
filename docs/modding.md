@@ -241,7 +241,7 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 A match starts only if everyone has the same VERA20k version and build, the same map, and
 the same `rulesmd.ini`, `artmd.ini`, `aimd.ini`, theater INIs (such as `snowmd.ini`) and
 terrain tiles. Your `VERARULES.INI` and **Terrain Deformation** don't need to match: a room
-plays its host's, which the host can turn off in the room's Game Options. With a mod in use,
+plays its host's. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini` and `veraui.ini`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what

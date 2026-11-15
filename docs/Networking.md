@@ -300,9 +300,9 @@ watching. A rollback past Balance automatically and Teams then turns those off t
 ### Room rules
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
-Terrain Deformation and, when the host shares it, the host's `VERARULES.INI`, at most
-8 KB. They open as the host's Options box and file have them, the host can turn
-either off in Game Options, and they travel with the host's options, online as
+Terrain Deformation and the host's `VERARULES.INI` when it changes anything and holds
+at most 8 KB. Terrain Deformation opens as the host's Options box has it and the host
+can change it in Game Options; the file has no box. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `host_rules` beside VERA's room options. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
