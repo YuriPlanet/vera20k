@@ -102,6 +102,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
     }
+    fn store_look(&mut self, knob: crate::ui::main_menu_dialogs::options::LookKnob, level: u8) {
+        // The Modern picture pass reads the profile every frame.
+        self.persistence.options_profile.look[knob.index()] = level;
+    }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
         // frame is corrected; no atlas or ramp has to be rebuilt. Options'

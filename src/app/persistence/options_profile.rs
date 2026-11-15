@@ -266,6 +266,10 @@ pub(crate) struct RetailOptionsProfile {
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
+    /// `[VERA] LookGlow=`, `LookSharpen=`, `LookContrast=`, `LookSaturation=`:
+    /// the Modern picture's levels by `LookKnob::index`, 0 (Off) to 10.
+    /// Presentation only; all off is the Classic picture.
+    pub(crate) look: [u8; 4],
     /// `[VERA] Translate*=`: what received online chat is translated into, and
     /// where. The lobby's Chat Translation page and the `/translate` chat
     /// command change it, and write it alone
@@ -385,6 +389,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
+            look: [0; 4],
             chat_translation: Default::default(),
             language: None,
             skipped_update: String::new(),
@@ -409,7 +414,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 33],
+    pub(crate) vera: [(&'static str, String); 37],
 }
 
 impl RetailOptionsLoad {
@@ -657,6 +662,12 @@ impl RetailOptionsProfile {
                 crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
                     vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
                 );
+            for knob in crate::ui::main_menu_dialogs::options::LookKnob::ALL {
+                let level = &mut self.look[knob.index()];
+                *level = crate::ui::main_menu_dialogs::options::LookKnob::level_from_ini(
+                    vera.read_int(knob.ini_key(), i32::from(*level)),
+                );
+            }
             let chat = &mut self.chat_translation;
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 chat.set_language(crate::ui::chat_translation::ChatLanguage::from_tag(value));
@@ -846,6 +857,10 @@ impl RetailOptionsProfile {
                     format_bool(self.show_string_keys).to_string(),
                 ),
                 ("ColorVisionMode", self.color_vision.ini_value().to_string()),
+                ("LookGlow", self.look[0].to_string()),
+                ("LookSharpen", self.look[1].to_string()),
+                ("LookContrast", self.look[2].to_string()),
+                ("LookSaturation", self.look[3].to_string()),
             ],
         }
     }

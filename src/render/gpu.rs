@@ -303,6 +303,7 @@ pub struct GpuContext {
     /// VERA's whole-viewport colour-vision filter. Every present path shares
     /// it, including the synchronous loading repaints outside the frame loop.
     pub(crate) color_vision: super::color_vision::ColorVisionFilter,
+    pub(crate) modern_graphics: super::modern_graphics::ModernGraphics,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Arc<web_present::WebPresent>,
 }
@@ -584,6 +585,7 @@ impl GpuContext {
             capture_target,
             timer,
             color_vision: super::color_vision::ColorVisionFilter::new(),
+            modern_graphics: super::modern_graphics::ModernGraphics::new(),
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
         })
@@ -594,6 +596,21 @@ impl GpuContext {
     /// repaints (which present outside the frame loop) use the same value.
     pub(crate) fn set_color_vision_matrix(&self, matrix: Option<super::color_vision::Mat3>) {
         self.color_vision.set_matrix(matrix);
+    }
+
+    /// Publish this frame's Modern look; `None` is Classic.
+    pub(crate) fn set_modern_graphics(&self, look: Option<super::modern_graphics::Look>) {
+        self.modern_graphics.set_look(look);
+    }
+
+    /// Apply the published Modern look to the finished frame.
+    pub(crate) fn encode_modern_graphics(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::Texture,
+    ) {
+        self.modern_graphics
+            .encode(&self.device, &self.queue, encoder, target);
     }
 
     /// Apply the published correction as the last draw before `present`.

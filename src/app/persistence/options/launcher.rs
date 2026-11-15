@@ -57,6 +57,7 @@ pub(crate) fn launcher_values_from_profile(
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
         color_vision: profile.color_vision,
+        look: profile.look,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -110,6 +111,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
     /// the final frame pass on the very next frame.
     fn store_color_vision(&mut self, mode: ColorVisionMode);
+    /// A `[VERA] Look...=` list's pick; presentation only.
+    fn store_look(&mut self, knob: crate::ui::main_menu_dialogs::options::LookKnob, level: u8);
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
@@ -172,6 +175,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
+        LauncherOptionsEvent::LookLevelSelected(knob, level) => operations.store_look(knob, level),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {

@@ -337,7 +337,7 @@ impl InternetControlsLayout {
 /// VERA's Options pages under Game Controls on the in-game menu, one sidebar
 /// button each. A sidebar too short for them all shows the first ones
 /// ([`PauseMenuLayout::add_page_tabs`]).
-pub const PAGE_TABS: usize = 2;
+pub const PAGE_TABS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
@@ -583,10 +583,11 @@ mod tests {
         }
     }
 
-    /// VERA's page buttons take rows 1 and 2 under Game Controls and
-    /// Keyboard the row after them. The template's later buttons and the
-    /// relay's follow, and Resume stays. B5's own seven rows end at Resume at
-    /// 640x480, so Keyboard has no row there.
+    /// VERA's page buttons take the rows under Game Controls, as many as the
+    /// sidebar has free (at least two: B5's seven rows end at Resume at
+    /// 640x480, where the third page and Keyboard have no row), and Keyboard
+    /// the row after them once every page has one. The template's later
+    /// buttons and the relay's follow, and Resume stays.
     #[test]
     fn page_tabs_stand_under_game_controls_and_move_the_later_buttons_down() {
         use PauseMenuButton::*;
@@ -603,10 +604,14 @@ mod tests {
             let mut b5 = native;
             b5.add_page_tabs();
             b5.add_page_tabs();
-            let keyboard = height > 480;
-            let tabs = PAGE_TABS as i32 + i32::from(keyboard);
-            assert_eq!(b5.page_tabs(), [row(1), row(2)]);
-            assert_eq!(b5.button(Keyboard), keyboard.then(|| row(3)));
+            let shown = b5.page_tabs().len() as i32;
+            let rows = |shown: i32| (1..=shown).map(row).collect::<Vec<_>>();
+            assert!(shown >= 2, "{width}x{height}");
+            assert_eq!(b5.page_tabs(), rows(shown));
+            let keyboard = b5.button(Keyboard).is_some();
+            assert_eq!(keyboard, shown == PAGE_TABS as i32 && height > 480);
+            assert_eq!(b5.button(Keyboard), keyboard.then(|| row(shown + 1)));
+            let tabs = shown + i32::from(keyboard);
             assert_eq!(b5.button(GameControls), Some(row(0)));
             for (button, at) in [(Load, 1), (Save, 2), (Delete, 3), (Abort, 4)] {
                 assert_eq!(b5.button(button), Some(row(tabs + at)), "{button:?}");
@@ -623,11 +628,18 @@ mod tests {
                 relay_first.enable_shared_pause();
                 relay_first.add_page_tabs();
                 assert_eq!(tabs_first, relay_first);
-                assert_eq!(tabs_first.page_tabs(), [row(1), row(2)]);
-                assert_eq!(tabs_first.button(Keyboard), Some(row(3)));
-                assert_eq!(tabs_first.button(Abort), Some(row(4)));
-                assert_eq!(tabs_first.button(SharedPause), Some(row(5)));
-                assert!(row(6).y <= tabs_first.button(Resume).unwrap().y);
+                let shown = tabs_first.page_tabs().len() as i32;
+                assert!(shown >= 2, "{width}x{height} {template:?}");
+                assert_eq!(tabs_first.page_tabs(), rows(shown));
+                let keyboard = tabs_first.button(Keyboard).is_some();
+                assert_eq!(
+                    tabs_first.button(Keyboard),
+                    keyboard.then(|| row(shown + 1))
+                );
+                let tabs = shown + i32::from(keyboard);
+                assert_eq!(tabs_first.button(Abort), Some(row(tabs + 1)));
+                assert_eq!(tabs_first.button(SharedPause), Some(row(tabs + 2)));
+                assert!(row(tabs + 3).y <= tabs_first.button(Resume).unwrap().y);
             }
         }
     }

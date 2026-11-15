@@ -59,6 +59,7 @@ simulation, session and network command owners.
 
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
+- [Modern picture](modern-picture.md): the `[VERA] LookGlow=`, `LookSharpen=`, `LookContrast=` and `LookSaturation=` sliders over the battlefield.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.

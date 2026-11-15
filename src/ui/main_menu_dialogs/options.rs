@@ -139,6 +139,7 @@ pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:HouseColorStrengthHelp"
 /// nothing for it.
 pub(crate) const COLOR_VISION_LABEL: &str = "VERA:ColorVision";
 pub(crate) const COLOR_VISION_HELP: &str = "VERA:ColorVisionHelp";
+pub(crate) const LOOK_HELP: &str = "VERA:LookHelp";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
 /// VERA's Language list on the Interface page. Its rows are each language's
@@ -548,6 +549,78 @@ impl DisplayTarget {
     }
 }
 
+/// One strength of VERA's Modern picture (`render::modern_graphics`), each
+/// its own `[VERA]` key and slider: 0 (off, the default) to 10.
+/// With all four off the picture is Classic, the original untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LookKnob {
+    Glow,
+    Sharpen,
+    Contrast,
+    Saturation,
+}
+
+impl LookKnob {
+    pub(crate) const ALL: [Self; 4] = [Self::Glow, Self::Sharpen, Self::Contrast, Self::Saturation];
+    /// The highest level.
+    pub(crate) const MAX_LEVEL: u8 = 10;
+
+    /// Its place in the profile's and the page's four levels.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Its `[VERA]` key.
+    pub(crate) const fn ini_key(self) -> &'static str {
+        match self {
+            Self::Glow => "LookGlow",
+            Self::Sharpen => "LookSharpen",
+            Self::Contrast => "LookContrast",
+            Self::Saturation => "LookSaturation",
+        }
+    }
+
+    /// Its list's caption.
+    pub(crate) const fn caption(self) -> &'static str {
+        match self {
+            Self::Glow => "VERA:LookGlow",
+            Self::Sharpen => "VERA:LookSharpen",
+            Self::Contrast => "VERA:LookContrast",
+            Self::Saturation => "VERA:LookSaturation",
+        }
+    }
+
+    /// Its slider.
+    pub(crate) const fn trackbar(self) -> LauncherTrackbarId {
+        match self {
+            Self::Glow => LauncherTrackbarId::LookGlow,
+            Self::Sharpen => LauncherTrackbarId::LookSharpen,
+            Self::Contrast => LauncherTrackbarId::LookContrast,
+            Self::Saturation => LauncherTrackbarId::LookSaturation,
+        }
+    }
+
+    /// The knob a slider sets, if it is one of the four.
+    pub(crate) const fn of(trackbar: LauncherTrackbarId) -> Option<Self> {
+        match trackbar {
+            LauncherTrackbarId::LookGlow => Some(Self::Glow),
+            LauncherTrackbarId::LookSharpen => Some(Self::Sharpen),
+            LauncherTrackbarId::LookContrast => Some(Self::Contrast),
+            LauncherTrackbarId::LookSaturation => Some(Self::Saturation),
+            _ => None,
+        }
+    }
+
+    /// A `[VERA]` value as a level; one out of range reads as Off.
+    pub(crate) const fn level_from_ini(value: i32) -> u8 {
+        if value >= 1 && value <= Self::MAX_LEVEL as i32 {
+            value as u8
+        } else {
+            0
+        }
+    }
+}
+
 /// The page's lists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherComboId {
@@ -649,6 +722,12 @@ pub(crate) enum LauncherTrackbarId {
     /// pack leaves it out: the menu sets it up with
     /// [`OptionsDialogState::set_in_game_controls`] and applies it on close.
     GameSpeed,
+    /// VERA's Modern picture sliders ([`LookKnob`]): 0 (off) to 10, the
+    /// position is the level.
+    LookGlow,
+    LookSharpen,
+    LookContrast,
+    LookSaturation,
 }
 
 impl LauncherTrackbarId {
@@ -659,6 +738,9 @@ impl LauncherTrackbarId {
             Self::Scroll => 6,
             Self::GameSpeed => crate::ui::shell::game_speed::MAX_POSITION as u8,
             Self::Score | Self::Sound | Self::Voice => 10,
+            Self::LookGlow | Self::LookSharpen | Self::LookContrast | Self::LookSaturation => {
+                LookKnob::MAX_LEVEL
+            }
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
             }
@@ -670,7 +752,14 @@ impl LauncherTrackbarId {
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
-            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
+            Self::Score
+            | Self::Sound
+            | Self::Voice
+            | Self::HouseColorStrength
+            | Self::LookGlow
+            | Self::LookSharpen
+            | Self::LookContrast
+            | Self::LookSaturation => 50,
         }
     }
 
@@ -805,6 +894,8 @@ pub(crate) enum LauncherOptionsEvent {
     HealthBarModeSelected(HealthBarMode),
     /// The Colour Vision list's pick, applied to the very next frame.
     ColorVisionModeSelected(ColorVisionMode),
+    /// A Modern picture slider's level: the knob and its level, 0 for off.
+    LookLevelSelected(LookKnob, u8),
     /// The Display list's pick, applied to the window at once.
     DisplaySelected(DisplayTarget),
     /// The Language list's pick, a language tag, applied at once.
@@ -916,6 +1007,8 @@ pub(crate) struct LauncherOptionsValues {
     /// The Colour Vision list's choice; reads every frame, so it applies at
     /// once without rebuilding anything.
     pub(crate) color_vision: ColorVisionMode,
+    /// The Modern picture's levels, by [`LookKnob::index`]; 0 is Off.
+    pub(crate) look: [u8; 4],
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -960,6 +1053,7 @@ impl Default for LauncherOptionsValues {
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
             color_vision: ColorVisionMode::Off,
+            look: [0; 4],
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -1056,6 +1150,9 @@ pub(crate) struct OptionsDialogState {
     game_speed_names: Vec<String>,
     /// The in-game menu's Sound button caption. Set with the speed.
     in_game_sound_label: String,
+    /// Whether this dialog is the in-game menu's page, which names VERA's
+    /// Interface page Graphics ([`Category::in_game_settings`]).
+    pub(crate) in_game: bool,
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -1137,6 +1234,7 @@ impl OptionsDialogState {
             game_speed_caption: String::new(),
             game_speed_names: Vec::new(),
             in_game_sound_label: String::new(),
+            in_game: false,
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -1233,6 +1331,7 @@ impl OptionsDialogState {
             speed_position
         };
         self.in_game_sound_label = sound_label;
+        self.in_game = true;
     }
 
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
@@ -1245,6 +1344,13 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => self.values.sound_position,
             LauncherTrackbarId::Voice => self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => self.values.house_color_position,
+            LauncherTrackbarId::LookGlow
+            | LauncherTrackbarId::LookSharpen
+            | LauncherTrackbarId::LookContrast
+            | LauncherTrackbarId::LookSaturation => {
+                let knob = LookKnob::of(id).expect("a Modern picture slider");
+                self.values.look[knob.index()]
+            }
         }
     }
 
@@ -1281,6 +1387,13 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => &mut self.values.sound_position,
             LauncherTrackbarId::Voice => &mut self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => &mut self.values.house_color_position,
+            LauncherTrackbarId::LookGlow
+            | LauncherTrackbarId::LookSharpen
+            | LauncherTrackbarId::LookContrast
+            | LauncherTrackbarId::LookSaturation => {
+                let knob = LookKnob::of(id).expect("a Modern picture slider");
+                &mut self.values.look[knob.index()]
+            }
         };
         if *slot == position {
             return;
@@ -1329,6 +1442,18 @@ impl OptionsDialogState {
                     .push(LauncherOptionsEvent::HouseColorStrengthChanged(
                         position + crate::rules::house_colors::STRENGTH_MIN,
                     ))
+            }
+            // The Modern picture pass reads the profile every frame, so the
+            // level shows on the next frame while the slider moves.
+            LauncherTrackbarId::LookGlow
+            | LauncherTrackbarId::LookSharpen
+            | LauncherTrackbarId::LookContrast
+            | LauncherTrackbarId::LookSaturation => {
+                let knob = LookKnob::of(id).expect("a Modern picture slider");
+                self.pending_events
+                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
+                self.pending_events
+                    .push(LauncherOptionsEvent::LookLevelSelected(knob, position));
             }
         }
     }
@@ -1685,23 +1810,31 @@ impl Category {
         use LauncherTrackbarId as Slider;
         match self {
             Self::Display if !HAS_VSYNC => &[
-                Setting::List(List::Zoom),
-                Setting::List(List::Display),
-                Setting::Slider(Slider::HouseColorStrength),
-                Setting::List(List::ColorVision),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
-            ],
-            Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
+                Setting::Slider(Slider::LookGlow),
+                Setting::Slider(Slider::LookSharpen),
+                Setting::Slider(Slider::LookContrast),
+                Setting::Slider(Slider::LookSaturation),
+            ],
+            Self::Display => &[
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::List(List::ColorVision),
+                Setting::Slider(Slider::LookGlow),
+                Setting::Slider(Slider::LookSharpen),
+                Setting::Slider(Slider::LookContrast),
+                Setting::Slider(Slider::LookSaturation),
             ],
             Self::Gameplay => &[
                 Setting::Slider(Slider::Detail),
@@ -1836,6 +1969,13 @@ impl Category {
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::Tooltips),
             ],
+            // VERA's Graphics tab: the Modern picture sliders.
+            Self::Interface => &[
+                Setting::Slider(Slider::LookGlow),
+                Setting::Slider(Slider::LookSharpen),
+                Setting::Slider(Slider::LookContrast),
+                Setting::Slider(Slider::LookSaturation),
+            ],
             _ => &[],
         }
     }
@@ -1845,6 +1985,7 @@ impl Category {
         match self {
             Self::Gameplay => "VERA:InGameGameplayHelp",
             Self::Display => "VERA:InGameDisplayHelp",
+            Self::Interface => "VERA:LookHelp",
             _ => self.help(),
         }
     }
@@ -2444,6 +2585,10 @@ mod tests {
                 Slider::Sound,
                 Slider::Voice,
                 Slider::HouseColorStrength,
+                Slider::LookGlow,
+                Slider::LookSharpen,
+                Slider::LookContrast,
+                Slider::LookSaturation,
             ]
             .map(Setting::Slider),
         )

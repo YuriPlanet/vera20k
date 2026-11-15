@@ -793,6 +793,20 @@ impl App {
             .renderer
             .gpu
             .set_color_vision_matrix(state.color_vision_matrix());
+        // VERA's Modern picture covers the battlefield of a match, never the
+        // sidebar, the bottom strip or an open in-game menu.
+        let modern_look = (state.frontend.screen == GameScreen::InGame
+            && !state.match_state.match_presentation.in_game_menu.is_open())
+        .then(|| {
+            let area = crate::app::presentation::window_ui::battlefield_window_rect(state);
+            crate::render::modern_graphics::Look::from_levels(
+                state.persistence.options_profile.look,
+                state.renderer.gpu.config.height,
+                [area.x, area.y, area.w, area.h],
+            )
+        })
+        .flatten();
+        state.renderer.gpu.set_modern_graphics(modern_look);
         // The glyph atlas empties or grows only between frames, while no
         // instance built from it is waiting to draw.
         state
@@ -1747,6 +1761,10 @@ impl App {
         // are all covered. Every screenshot and capture readback above is
         // encoded earlier in this command buffer and stays uncorrected.
         // Synchronous loading repaints call the same GpuContext helper.
+        state
+            .renderer
+            .gpu
+            .encode_modern_graphics(&mut encoder, &output.texture);
         state
             .renderer
             .gpu

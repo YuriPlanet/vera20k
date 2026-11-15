@@ -18,16 +18,16 @@ use super::{
     HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
     HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
     HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
-    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
-    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    LOCK_CURSOR_LABEL, LOOK_HELP, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
+    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, LookKnob,
+    MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
+    OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
+    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL,
+    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL,
+    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP,
+    SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize,
+    TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -170,6 +170,10 @@ const FIRST_ROW: i32 = 38;
 const BOX_PITCH: i32 = 15;
 const SLIDER_PITCH: i32 = 37;
 const LIST_PITCH: i32 = 27;
+/// A Modern picture slider's row: its caption on the left, beside the track.
+const INLINE_SLIDER_PITCH: i32 = 20;
+/// The caption's width left of an inline slider, in DLUs.
+const INLINE_CAPTION_W: i32 = 62;
 /// A box's width. Retail's are 130 DLUs, where VERA's longer captions, such as
 /// "Custom End Game Banner", wrap, and a caption that wraps loses its second
 /// line to the 10-DLU height.
@@ -185,7 +189,8 @@ const ESC_MENU_BUTTON_Y: i32 = ESC_MENU_SIZE_Y + 10;
 /// The in-game menu's pages in the order of their sidebar buttons, which the
 /// menu places (`PauseMenuLayout::add_page_tabs`).
 /// [`Category::in_game_settings`] says what each page shows.
-const IN_GAME_TABS: [Category; PAGE_TABS] = [Category::Gameplay, Category::Display];
+const IN_GAME_TABS: [Category; PAGE_TABS] =
+    [Category::Gameplay, Category::Display, Category::Interface];
 /// The page the in-game menu opens on. It has no tab: the template's own Game
 /// Controls button shows it (`app::input::pause_menu`).
 pub(crate) const IN_GAME_LANDING: Category = Category::Controls;
@@ -285,6 +290,16 @@ fn page_rows(settings: &[Setting], first_row: i32, px: impl Fn(RectPx) -> RectPx
                     px(RectPx::new(caption.x, caption.y + 16, 180, COMBO_FACE_H)),
                 ));
                 rows.end += LIST_PITCH;
+            }
+            // VERA's Modern picture sliders: the caption left of the track on
+            // one row, so the four stand together as one block.
+            Setting::Slider(id) if LookKnob::of(id).is_some() => {
+                rows.labels.push((
+                    dlu(ROW_X - INLINE_CAPTION_W, top + 2, INLINE_CAPTION_W - 2, 10),
+                    PageLabel::Slider(id),
+                ));
+                rows.trackbars.push((id, slider(ROW_X, top, 150, 13)));
+                rows.end += INLINE_SLIDER_PITCH;
             }
             // Trackbar art exists for retail's windows only: 150 DLUs with
             // a value plaque (Generate Map's), 120 without (Visual Details').
@@ -696,6 +711,9 @@ impl OptionsDialogState {
     /// A category's name: retail's band heading for the four bands `0xD5`
     /// has, VERA's own for the other two.
     pub(crate) fn shell_category_label(&self, category: Category) -> Cow<'_, str> {
+        if self.in_game && category == Category::Interface {
+            return Cow::Owned(tr("VERA:LookPage"));
+        }
         Cow::Borrowed(match category {
             Category::Display => &self.labels.display_options,
             Category::Gameplay => &self.labels.game_options,
@@ -716,6 +734,13 @@ impl OptionsDialogState {
             LauncherTrackbarId::Voice => &self.labels.voice_volume,
             LauncherTrackbarId::HouseColorStrength => {
                 return Cow::Owned(tr(HOUSE_COLOR_STRENGTH_LABEL));
+            }
+            LauncherTrackbarId::LookGlow
+            | LauncherTrackbarId::LookSharpen
+            | LauncherTrackbarId::LookContrast
+            | LauncherTrackbarId::LookSaturation => {
+                let knob = LookKnob::of(id).expect("a Modern picture slider");
+                return Cow::Owned(tr(knob.caption()));
             }
             LauncherTrackbarId::GameSpeed => &self.game_speed_caption,
         })
@@ -1081,6 +1106,10 @@ impl OptionsDialogState {
                 }
                 // Retail's string for the Game Options speed slider.
                 LauncherTrackbarId::GameSpeed => LauncherStatusHelp::Csf("STT:GameOptSliderSpeed"),
+                LauncherTrackbarId::LookGlow
+                | LauncherTrackbarId::LookSharpen
+                | LauncherTrackbarId::LookContrast
+                | LauncherTrackbarId::LookSaturation => LauncherStatusHelp::Vera(LOOK_HELP),
             });
         }
         if let Some((id, _)) = layout
@@ -1604,10 +1633,11 @@ mod tests {
             [
                 (LauncherButton::Category(Category::Gameplay), below(1)),
                 (LauncherButton::Category(Category::Display), below(2)),
+                (LauncherButton::Category(Category::Interface), below(3)),
             ]
         );
-        assert_eq!(menu.button(PauseMenuButton::Keyboard), Some(below(3)));
-        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(4)));
+        assert_eq!(menu.button(PauseMenuButton::Keyboard), Some(below(4)));
+        assert_eq!(menu.button(PauseMenuButton::Load), Some(below(5)));
 
         let display = LauncherButton::Category(Category::Display);
         let rect = button(&layout, display);

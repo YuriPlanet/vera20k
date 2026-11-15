@@ -282,6 +282,15 @@ pub(crate) fn shell_raster(state: &AppState, sidebar: bool) -> Option<TextRaster
 }
 
 /// `(x, y, width, height)` in `raster`'s pixels, in the window's.
+/// The battlefield in window pixels: the tactical rect the zoom pass puts in
+/// the window, without the sidebar column and the bottom strip.
+pub(crate) fn battlefield_window_rect(state: &AppState) -> ScissorRect {
+    window_rect(
+        zoom_raster(state).unwrap_or(TextRaster::NATIVE),
+        crate::app::input::camera::tactical_viewport_px(state),
+    )
+}
+
 fn window_rect(raster: TextRaster, (x, y, width, height): (u32, u32, u32, u32)) -> ScissorRect {
     ScissorRect::of(
         TextRect {

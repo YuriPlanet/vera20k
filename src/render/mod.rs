@@ -36,6 +36,7 @@ pub mod cell_window;
 pub mod chrome_atlas;
 pub(crate) mod chrono_screen;
 pub(crate) mod color_vision;
+pub(crate) mod modern_graphics;
 pub mod combat_light;
 pub mod cursor_atlas;
 #[cfg(test)]
