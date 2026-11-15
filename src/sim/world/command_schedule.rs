@@ -30,10 +30,10 @@ impl Simulation {
     /// Foot's cell click constructs MoveFlash before it issues the unit order
     /// (4D7EB5..4D8065), outside EventClass. In LAN/WOL the native flash joins
     /// a local unsynced list (4D7F28..4D8062). Keep that local action off the
-    /// packet FIFO while using the existing ingress and animation owners.
-    /// `spawn_move_flash` still declines network animation construction until
-    /// that local visual owner exists. Offline flashes retain their established
-    /// tail timing, including animation identities and any constructor RNG.
+    /// packet FIFO while using the existing ingress and animation owners:
+    /// `spawn_move_flash` makes the network flash a local anim. Offline
+    /// flashes retain their established tail timing, including animation
+    /// identities and any constructor RNG.
     fn command_uses_frame_ingress(command: &Command, is_network: bool) -> bool {
         command.uses_frame_ingress() || is_network && matches!(command, Command::MoveFlash { .. })
     }

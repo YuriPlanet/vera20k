@@ -31,7 +31,9 @@ const RTTI_TERRAIN: i32 = 0x24;
 /// (`MOV EAX, 0x29; RET`).
 const RTTI_VOXEL_ANIM: i32 = 0x29;
 const RTTI_WAVE: i32 = 0x240;
-const SYNC_EXEMPT_ANIM_ID: i32 = -2;
+/// The id a LAN or online MoveFlash takes (`FootClass::ClickedAction_Cell`,
+/// `0x004D7F42`), which `0x0064DAB0` skips with its Anim RTTI.
+pub(crate) const SYNC_EXEMPT_ANIM_ID: i32 = -2;
 
 /// One ObjectClass entry as seen by a display-layer checksum pass.
 ///

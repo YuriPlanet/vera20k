@@ -65,6 +65,10 @@ pub(crate) enum FrameStep {
     /// Publish the terrain navigation and smudge changes the object pass left
     /// pending.
     TerrainNavigation,
+    /// The local anims' AI (`0x0055B61B..0x0055B649`, AnimClass vt+0x5C):
+    /// gamemd walks its local list (`0x00A83E00`) after the LogicClass
+    /// vector in LAN and online games, the only ones that fill it.
+    LocalAnims,
     /// `IonBlastClass::UpdateAll @ 0x0053D310` (`0x0055B64B`), then
     /// `AlphaShapeClass::PurgeDisabled @ 0x00420E90` (`0x0055B650`).
     IonBlasts,
@@ -81,7 +85,7 @@ pub(crate) enum FrameStep {
 }
 
 /// The master frame's steps before its tail, in the order they run.
-pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
+pub(crate) const LOGIC_STEPS: [FrameStep; 20] = [
     FrameStep::SessionCommands,
     FrameStep::AdmitCommands,
     FrameStep::Triggers,
@@ -98,6 +102,7 @@ pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
     FrameStep::Wakes,
     FrameStep::Vision,
     FrameStep::TerrainNavigation,
+    FrameStep::LocalAnims,
     FrameStep::IonBlasts,
     FrameStep::CrateRegen,
     FrameStep::Factories,
@@ -115,7 +120,7 @@ impl FrameStep {
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
             Self::OreGrowth => phase::ORE_GROWTH,
-            Self::BombList => return None,
+            Self::BombList | Self::LocalAnims => return None,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
             Self::LightningStorm => phase::SUPERWEAPONS,
@@ -449,6 +454,20 @@ impl Simulation {
                 // Retaliation is not a step: every receiver issues its Mission
                 // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`),
                 // and passengers board in their class PerCellProcess.
+            }
+            FrameStep::LocalAnims => {
+                for id in self.substrate.anims.local_ids() {
+                    frame.bridge_state_changed |= self
+                        .visit_anim(id, rules, overlay_registry, effects)
+                        .map_err(|error| {
+                            FrameAdvanceError::new(
+                                self.session.tick(),
+                                self.session.binary_frame(),
+                                id,
+                                error.to_string(),
+                            )
+                        })?;
+                }
             }
             // Follows the object loop.
             FrameStep::IonBlasts => {
