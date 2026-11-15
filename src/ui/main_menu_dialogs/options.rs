@@ -70,6 +70,9 @@ pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "VERA:MouseWheelZoom";
 pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "VERA:MouseWheelZoomHelp";
 pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "VERA:RightClickOrders";
 pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str = "VERA:RightClickOrdersHelp";
+/// VERA's beacon box (`docs/minimap-beacons.md`).
+pub(crate) const MINIMAP_BEACONS_LABEL: &str = "VERA:MinimapBeacons";
+pub(crate) const MINIMAP_BEACONS_HELP: &str = "VERA:MinimapBeaconsHelp";
 pub(crate) const LOCK_CURSOR_LABEL: &str = "VERA:LockCursor";
 pub(crate) const LOCK_CURSOR_HELP: &str = "VERA:LockCursorHelp";
 pub(crate) const VERA_ICON_LABEL: &str = "VERA:VeraIcon";
@@ -714,6 +717,9 @@ pub(crate) enum LauncherCheckboxId {
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
     RightClickOrders,
+    /// VERA's own box: in Place Beacon mode a left click on the radar
+    /// places the beacon there (`app::input::radar`). It applies at once.
+    MinimapBeacons,
     /// VERA's cursor lock: the pointer stays inside the game window. It
     /// applies at once and is saved.
     LockCursor,
@@ -819,6 +825,7 @@ pub(crate) enum LauncherOptionsEvent {
     TerrainDeformationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
+    MinimapBeaconsChanged(bool),
     LockCursorChanged(bool),
     VeraIconChanged(bool),
     HdRadarChanged(bool),
@@ -890,6 +897,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
+    pub(crate) minimap_beacons: bool,
     pub(crate) terrain_deformation: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
@@ -948,6 +956,7 @@ impl Default for LauncherOptionsValues {
             hd_map_previews: true,
             shift_queue: false,
             auto_repair: false,
+            minimap_beacons: false,
             terrain_deformation: false,
             performance_stats: false,
             show_string_keys: false,
@@ -1403,6 +1412,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
+            LauncherCheckboxId::MinimapBeacons => &mut self.values.minimap_beacons,
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
@@ -1448,6 +1458,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::RightClickOrders => self
                 .pending_events
                 .push(LauncherOptionsEvent::RightClickOrdersChanged(checked)),
+            LauncherCheckboxId::MinimapBeacons => self
+                .pending_events
+                .push(LauncherOptionsEvent::MinimapBeaconsChanged(checked)),
             LauncherCheckboxId::LockCursor => self
                 .pending_events
                 .push(LauncherOptionsEvent::LockCursorChanged(checked)),
@@ -1748,6 +1761,7 @@ impl Category {
             Self::Controls => &[
                 Setting::Slider(Slider::Scroll),
                 Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::MinimapBeacons),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
@@ -1794,6 +1808,7 @@ impl Category {
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::MinimapBeacons),
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::MouseWheelZoom),
@@ -2457,6 +2472,7 @@ mod tests {
                 Check::YrOriginalStyle,
                 Check::MouseWheelZoom,
                 Check::RightClickOrders,
+                Check::MinimapBeacons,
                 Check::LockCursor,
                 Check::VeraIcon,
                 Check::HdRadar,

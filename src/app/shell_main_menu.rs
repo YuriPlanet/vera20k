@@ -174,6 +174,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next logic frame's pass reads it; Options' accept writes it out.
         self.persistence.options_profile.auto_repair = enabled;
     }
+    fn store_minimap_beacons(&mut self, enabled: bool) {
+        // The next radar click reads it; Options' accept writes it out.
+        self.persistence.options_profile.minimap_beacons = enabled;
+    }
     fn store_terrain_deformation(&mut self, enabled: bool) {
         // The next game's rules and every later network agreement read it;
         // Options' accept writes it out.

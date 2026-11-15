@@ -451,6 +451,9 @@ pub(crate) enum LeftUp {
     Radar {
         target: crate::render::radar::NativeRadarInputTarget,
         super_weapon: Option<crate::app::input::commands::PlaceAction<'static>>,
+        /// VERA minimap beacons: the radar answered the beacon action
+        /// ([`crate::app::input::radar::with_minimap_beacon`]).
+        beacon: bool,
     },
 }
 
@@ -480,11 +483,18 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
     let LeftUp::Radar {
         target,
         super_weapon,
+        beacon,
     } = click
     else {
         tactical_left_up(state);
         return;
     };
+    // VERA minimap beacons: the beacon action places at the pick, as the
+    // tactical release's 0x3C arm does at its Cell (0x004AC033).
+    if beacon {
+        crate::app::input::beacon::place_at_cell(state, target.cell);
+        return;
+    }
     // The selection's dispatch, each object asking its own What_Action
     // (`Selection__DispatchMultiUnitOrder @ 0x004AE750`, at `0x004ABF94`), a
     // superweapon action included; for one SPECIAL_PLACE follows
@@ -938,7 +948,13 @@ pub(crate) fn minimap_mouse(state: &mut AppState, button: MouseButton, btn_state
             if right_click_orders && state.match_state.input.minimap_press_active() => {}
         (MouseButton::Left, true)
             if left_click_can_issue_orders(state)
-                || state.match_state.input.targeting_mode.is_some() =>
+                || state.match_state.input.targeting_mode.is_some()
+                // VERA minimap beacons: the beacon click stays on the left
+                // button, as on the battlefield, in both schemes. RESIDUAL:
+                // the release asks the radar again, so a team key pressed
+                // while the left button is held can turn it into the team's
+                // order, as a targeting press cancelled mid-press already can.
+                || crate::app::input::radar::minimap_beacon_armed(state) =>
         {
             crate::app::input::radar::begin_context_press(state);
         }

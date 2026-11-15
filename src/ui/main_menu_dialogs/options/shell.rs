@@ -19,15 +19,15 @@ use super::{
     HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
     HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
-    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MINIMAP_BEACONS_HELP,
+    MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL,
+    PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP,
+    SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP,
+    SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    Setting, SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
+    VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -746,6 +746,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
             LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
+            LauncherCheckboxId::MinimapBeacons => MINIMAP_BEACONS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
             LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
@@ -825,6 +826,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
+            LauncherCheckboxId::MinimapBeacons => self.values.minimap_beacons,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::HdRadar => self.values.hd_radar,
@@ -1104,6 +1106,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::RightClickOrders => {
                     LauncherStatusHelp::Vera(RIGHT_CLICK_ORDERS_HELP)
+                }
+                LauncherCheckboxId::MinimapBeacons => {
+                    LauncherStatusHelp::Vera(MINIMAP_BEACONS_HELP)
                 }
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Vera(LOCK_CURSOR_HELP),
                 LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Vera(VERA_ICON_HELP),

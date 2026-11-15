@@ -212,6 +212,13 @@ pub(crate) struct RetailOptionsProfile {
     /// A local input preference: nothing in the rules or on the network
     /// changes. Off by default, so buildings wait for the wrench as in gamemd.
     pub(crate) auto_repair: bool,
+    /// `[VERA] MinimapBeacons=`: the Options page's Minimap Beacons box. On,
+    /// a left click on the radar in Place Beacon mode, with nothing selected,
+    /// places the beacon at that cell (`app::input::radar`,
+    /// `docs/minimap-beacons.md`); gamemd's radar answers that click with no
+    /// action and only recentres the view. A local input preference: the
+    /// beacon travels as the ordinary beacon record. Off by default.
+    pub(crate) minimap_beacons: bool,
     /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
     /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
     /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
@@ -375,6 +382,7 @@ impl Default for RetailOptionsProfile {
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             auto_repair: false,
+            minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
             wol_test_service: false,
@@ -409,7 +417,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 33],
+    pub(crate) vera: [(&'static str, String); 34],
 }
 
 impl RetailOptionsLoad {
@@ -634,6 +642,7 @@ impl RetailOptionsProfile {
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
+            self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -841,6 +850,10 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
+                (
+                    "MinimapBeacons",
+                    format_bool(self.minimap_beacons).to_string(),
+                ),
                 (
                     "ShowStringKeys",
                     format_bool(self.show_string_keys).to_string(),
@@ -1963,6 +1976,21 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .right_click_orders
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn minimap_beacons_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        let mut profile = load_snapshot(&startup, b"").retained_profile;
+        assert!(!profile.minimap_beacons);
+        profile.minimap_beacons = true;
+        let written = profile.transform_settings(b"[VERA]\nUnowned=keep\n");
+        assert!(String::from_utf8_lossy(&written).contains("MinimapBeacons=yes"));
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .minimap_beacons
+        );
     }
 
     /// `[VERA] CommanderFeedback=` is the talking-head switch. It defaults to
