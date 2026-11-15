@@ -1278,7 +1278,10 @@ fn advance_in_game_runtime_mode(
             decision.frames_running,
             decision.run_sim,
         ),
-        RuntimeAdvanceMode::ExactOneStep => u32::from(decision.scroll_input),
+        RuntimeAdvanceMode::ExactOneStep if decision.scroll_input => {
+            crate::app::input::camera::ScrollSteps::Whole
+        }
+        RuntimeAdvanceMode::ExactOneStep => crate::app::input::camera::ScrollSteps::None,
     };
     // Sample the gesture once, before simulation. Apply its request at the
     // native Tactical__AI/pre-follow seam, after this frame's bounds writers.
@@ -1542,7 +1545,7 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
     // A held key release has not reached the keys yet: an arrow it lets go
     // must not keep scrolling until the tick is back.
     let keyboard_steps = if state.platform.window_events_held {
-        0
+        crate::app::input::camera::ScrollSteps::None
     } else {
         scroll_steps
     };
@@ -1566,7 +1569,7 @@ fn after_simulation_pass(
     state: &mut AppState,
     decision: RuntimePassDecision,
     main_tick_pumps_audio: bool,
-    scroll_steps: u32,
+    scroll_steps: crate::app::input::camera::ScrollSteps,
     replaying: bool,
 ) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
@@ -1619,9 +1622,7 @@ fn after_simulation_pass(
     if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
         pump_audio_service(state, music_now_ms);
     }
-    for _ in 0..scroll_steps {
-        crate::app::input::camera::queue_keyboard_scroll(state);
-    }
+    crate::app::input::camera::queue_keyboard_scroll(state, scroll_steps);
     if decision.tactical_mutation || replaying {
         crate::app::input::camera::animate_zoom(state);
     }
