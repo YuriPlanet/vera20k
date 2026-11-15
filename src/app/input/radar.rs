@@ -74,6 +74,9 @@ pub(crate) enum RadarAction {
     /// Ares: the armed superweapon's `Cursor` or `NoCursor` (hook `0x653B3A`),
     /// which launches only where it may fire.
     AresSuperWeapon { cursor: i32, launch: bool },
+    /// VERA minimap beacons ([`with_minimap_beacon`]): the tactical
+    /// release's PlaceBeacon (0x3C), which gamemd's radar never answers.
+    PlaceBeacon,
 }
 
 impl RadarAction {
@@ -167,6 +170,8 @@ impl RadarAction {
             Self::AresSuperWeapon { cursor, .. } => {
                 crate::app::input::ares_cursor::cursor_id(cursor, true)
             }
+            // Row 78 has no mini set of its own; VERA draws the main one.
+            Self::PlaceBeacon => CursorId::Beacon,
         }
     }
 }
@@ -296,6 +301,34 @@ pub(crate) fn action(
     action
 }
 
+/// VERA minimap beacons (`[VERA] MinimapBeacons=`, `docs/minimap-beacons.md`).
+/// With nothing selected and no superweapon armed, gamemd's radar answers no
+/// action (`0x00653C6A` asks only the selection), so a press in Place Beacon
+/// mode just recentres the view. With the option on, that click answers the
+/// beacon action the tactical release places (`0x006929AF`, `0x004AC033`).
+/// Any action gamemd's radar does answer keeps priority.
+pub(crate) fn with_minimap_beacon(
+    native: Option<RadarAction>,
+    enabled: bool,
+    beacon_mode: bool,
+    nothing_selected: bool,
+    super_weapon_armed: bool,
+) -> Option<RadarAction> {
+    native.or(
+        (enabled && beacon_mode && nothing_selected && !super_weapon_armed)
+            .then_some(RadarAction::PlaceBeacon),
+    )
+}
+
+/// Whether the radar pixel under the cursor answers the beacon action
+/// ([`with_minimap_beacon`]), which VERA's right-click scheme otherwise
+/// leaves the left press to the camera for.
+pub(crate) fn minimap_beacon_armed(state: &AppState) -> bool {
+    state.persistence.options_profile.minimap_beacons
+        && crate::app::input::beacon::mode_active(state)
+        && hover(state).is_some_and(|hover| hover.action == Some(RadarAction::PlaceBeacon))
+}
+
 /// The radar action for the pixel under the cursor, as [`begin_context_press`],
 /// [`finish_order_press`] and [`cursor`] ask it.
 struct Hover {
@@ -333,9 +366,16 @@ fn hover(state: &AppState) -> Option<Hover> {
     let armed = state
         .armed_super_weapon_type()
         .and_then(|section| state.rules()?.super_weapon_index(section));
+    let action = with_minimap_beacon(
+        action(&query, armed, target.cell, object),
+        state.persistence.options_profile.minimap_beacons,
+        crate::app::input::beacon::mode_active(state),
+        selected.is_empty(),
+        state.armed_super_weapon_type().is_some(),
+    );
     Some(Hover {
         target,
-        action: action(&query, armed, target.cell, object),
+        action,
         shrouded: query.cell_shrouded(target.cell),
         lead_moves_to_shroud: query.lead_moves_to_shroud(),
     })
@@ -455,6 +495,7 @@ pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
         LeftUp::Radar {
             target,
             super_weapon,
+            beacon: action == RadarAction::PlaceBeacon,
         },
     );
 }
