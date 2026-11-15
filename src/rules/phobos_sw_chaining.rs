@@ -19,7 +19,11 @@
 //! `SuperWeaponTypeClass::FindIndex`; an unknown name is dropped at read time
 //! and a reached list replaces the field. The weight vectors keep their
 //! integer weights verbatim, including zero and negative values; the roll
-//! chances are `Parser<float>` values stored as binary32 bits.
+//! chances are `Parser<float>` values stored as binary32 bits. The native
+//! fields live on the retained `SWTypeExt`, so a later rules layer that omits
+//! a key keeps the earlier layer's value, and the numbered weight vectors
+//! grow through the whole load instead of being rebuilt per layer
+//! (`Body.cpp:184-235`, `:253-265`).
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependency on sim/, render/, ui/, etc.
@@ -79,33 +83,64 @@ impl Default for PhobosSuperWeaponChaining {
 }
 
 impl PhobosSuperWeaponChaining {
-    /// `SWTypeExt::LoadFromINIFile`'s `SW.Next*`/`SW.Link*` reads.
+    /// `SWTypeExt::LoadFromINIFile`'s `SW.Next*`/`SW.Link*` reads into the
+    /// retained extension. Native calls this once per reached rules layer on
+    /// the same `SWTypeExt`, so a key this layer does not reach keeps the
+    /// earlier layer's value, and the weight vectors keep the native
+    /// replacement/append rules ([`read_numbered_weights`],
+    /// [`read_appended_weights`]).
     /// `resolve` answers the canonical registered superweapon name for a
     /// token (`SuperWeaponTypeClass::FindIndex`), or `None` for an unknown
     /// one.
     pub(crate) fn from_section(
+        previous: Self,
         section: &IniSection,
         resolve: impl Fn(&str) -> Option<String>,
     ) -> Self {
-        let defaults = Self::default();
-        Self {
-            next: read_idx_vector(section, "SW.Next", &resolve),
-            next_real_launch: section.read_bool("SW.Next.RealLaunch", defaults.next_real_launch),
-            next_ignore_inhibitors: section
-                .read_bool("SW.Next.IgnoreInhibitors", defaults.next_ignore_inhibitors),
-            next_ignore_designators: section.read_bool(
-                "SW.Next.IgnoreDesignators",
-                defaults.next_ignore_designators,
-            ),
-            next_roll_chances: read_roll_chances(section, "SW.Next.RollChances"),
-            next_random_weights: read_random_weights(section, "SW.Next", "SW.Next.RandomWeights"),
-            link: read_idx_vector(section, "SW.Link", &resolve),
-            link_grant: section.read_bool("SW.Link.Grant", defaults.link_grant),
-            link_ready: section.read_bool("SW.Link.Ready", defaults.link_ready),
-            link_reset: section.read_bool("SW.Link.Reset", defaults.link_reset),
-            link_roll_chances: read_roll_chances(section, "SW.Link.RollChances"),
-            link_random_weights: read_random_weights(section, "SW.Link", "SW.Link.RandomWeights"),
+        let mut out = previous;
+        if let Some(next) = read_idx_vector(section, "SW.Next", &resolve) {
+            out.next = next;
         }
+        if let Some(value) = section.read_bool_value("SW.Next.RealLaunch") {
+            out.next_real_launch = value;
+        }
+        if let Some(value) = section.read_bool_value("SW.Next.IgnoreInhibitors") {
+            out.next_ignore_inhibitors = value;
+        }
+        if let Some(value) = section.read_bool_value("SW.Next.IgnoreDesignators") {
+            out.next_ignore_designators = value;
+        }
+        if let Some(chances) = read_roll_chances(section, "SW.Next.RollChances") {
+            out.next_roll_chances = chances;
+        }
+        read_numbered_weights(
+            section,
+            "SW.Next",
+            "SW.Next.RandomWeights",
+            &mut out.next_random_weights,
+        );
+        if let Some(link) = read_idx_vector(section, "SW.Link", &resolve) {
+            out.link = link;
+        }
+        if let Some(value) = section.read_bool_value("SW.Link.Grant") {
+            out.link_grant = value;
+        }
+        if let Some(value) = section.read_bool_value("SW.Link.Ready") {
+            out.link_ready = value;
+        }
+        if let Some(value) = section.read_bool_value("SW.Link.Reset") {
+            out.link_reset = value;
+        }
+        if let Some(chances) = read_roll_chances(section, "SW.Link.RollChances") {
+            out.link_roll_chances = chances;
+        }
+        read_appended_weights(
+            section,
+            "SW.Link",
+            "SW.Link.RandomWeights",
+            &mut out.link_random_weights,
+        );
+        out
     }
 
     pub(crate) fn next(&self) -> &[String] {
@@ -164,43 +199,45 @@ fn roll_chances(chances: &[NativeF32Bits]) -> Vec<f64> {
         .collect()
 }
 
-/// `ValueableIdxVector<SuperWeaponType>`: absent keeps the empty list, a
-/// reached list replaces it, and each unknown token is dropped.
+/// `ValueableIdxVector<SuperWeaponType>`: absent keeps the field, a reached
+/// list replaces it, and each unknown token is dropped.
 fn read_idx_vector(
     section: &IniSection,
     key: &str,
     resolve: &impl Fn(&str) -> Option<String>,
-) -> Vec<String> {
-    section
-        .read_list(key, 2048)
-        .map(|tokens| {
-            tokens
-                .into_iter()
-                .filter_map(|token| resolve(token.trim()))
-                .collect()
-        })
-        .unwrap_or_default()
+) -> Option<Vec<String>> {
+    section.read_list(key, 2048).map(|tokens| {
+        tokens
+            .into_iter()
+            .filter_map(|token| resolve(token.trim()))
+            .collect()
+    })
 }
 
 /// `ValueableVector<float>`: a present list replaces the field; each token is
 /// a Phobos float (binary32) and a token that does not convert is skipped.
-fn read_roll_chances(section: &IniSection, key: &str) -> Vec<NativeF32Bits> {
-    section
-        .read_phobos_double_list(key)
-        .map(|chances| {
-            chances
-                .into_iter()
-                .map(|chance| NativeF32Bits::from_bits((chance as f32).to_bits()))
-                .collect()
-        })
-        .unwrap_or_default()
+fn read_roll_chances(section: &IniSection, key: &str) -> Option<Vec<NativeF32Bits>> {
+    section.read_phobos_double_list(key).map(|chances| {
+        chances
+            .into_iter()
+            .map(|chance| NativeF32Bits::from_bits((chance as f32).to_bits()))
+            .collect()
+    })
 }
 
-/// The numbered weight lists, then the unnumbered alias replacing or creating
-/// slot 0 (`Body.cpp:198-222`, `:255-265`): the numbered loop stops at the
-/// first empty list.
-fn read_random_weights(section: &IniSection, prefix: &str, alias: &str) -> Vec<Vec<i32>> {
-    let mut lists = Vec::new();
+/// The numbered weight lists then the unnumbered alias, as native updates the
+/// retained `SW.Next_RandomWeightsData`/`LimboDelivery_RandomWeightsData`
+/// (`Body.cpp:184-235`): a numbered slot below the retained length is
+/// replaced, a longer one is appended, and the loop stops at the first
+/// empty/missing list without touching the retained tail. The alias then
+/// replaces or creates slot 0. Both native loops share this body; it lives
+/// here because the `SW.Link` sibling below belongs to the same reader.
+pub(crate) fn read_numbered_weights(
+    section: &IniSection,
+    prefix: &str,
+    alias: &str,
+    retained: &mut Vec<Vec<i32>>,
+) {
     for index in 0.. {
         let key = format!("{prefix}.RandomWeights{index}");
         let Some(weights) = section.read_int_list(&key) else {
@@ -209,18 +246,52 @@ fn read_random_weights(section: &IniSection, prefix: &str, alias: &str) -> Vec<V
         if weights.is_empty() {
             break;
         }
-        lists.push(weights);
+        if retained.len() > index {
+            retained[index] = weights;
+        } else {
+            retained.push(weights);
+        }
     }
     if let Some(weights) = section.read_int_list(alias)
         && !weights.is_empty()
     {
-        if lists.is_empty() {
-            lists.push(weights);
+        if retained.is_empty() {
+            retained.push(weights);
         } else {
-            lists[0] = weights;
+            retained[0] = weights;
         }
     }
-    lists
+}
+
+/// `SW.Link`'s numbered loop (`Body.cpp:253-263`) has no replace arm: every
+/// reached list is appended to the retained vector, so a later rules pass
+/// duplicates the whole list run. The alias below still patches slot 0. This
+/// is Phobos' own behavior (a plain `emplace_back`), reproduced as written.
+fn read_appended_weights(
+    section: &IniSection,
+    prefix: &str,
+    alias: &str,
+    retained: &mut Vec<Vec<i32>>,
+) {
+    for index in 0.. {
+        let key = format!("{prefix}.RandomWeights{index}");
+        let Some(weights) = section.read_int_list(&key) else {
+            break;
+        };
+        if weights.is_empty() {
+            break;
+        }
+        retained.push(weights);
+    }
+    if let Some(weights) = section.read_int_list(alias)
+        && !weights.is_empty()
+    {
+        if retained.is_empty() {
+            retained.push(weights);
+        } else {
+            retained[0] = weights;
+        }
+    }
 }
 
 #[cfg(test)]
