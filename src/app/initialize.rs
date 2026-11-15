@@ -387,7 +387,7 @@ impl App {
         );
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
-        personal_rules.set_ten_superweapons(options_profile.ten_superweapons);
+        personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config

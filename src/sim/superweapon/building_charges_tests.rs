@@ -1,5 +1,5 @@
-//! VERA's Ten Superweapons (`SuperWeaponPerBuilding=`,
-//! `docs/ten-superweapons.md`): each such building charges its own shot.
+//! VERA's Superweapon Limit (`SuperWeaponPerBuilding=`,
+//! `docs/superweapon-limit.md`): each such building charges its own shot.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;

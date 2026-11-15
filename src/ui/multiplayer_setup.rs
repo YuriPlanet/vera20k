@@ -90,11 +90,12 @@ pub(crate) const NO_YURI: u16 = 0x7F08;
 pub(crate) const NO_FRANCE: u16 = 0x7F09;
 pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
-/// The room's rules ([`HostRules`](crate::skirmish_launch::HostRules)): the
-/// host's Terrain Deformation and Ten Superweapons.
+/// The room's Terrain Deformation ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const TERRAIN_DEFORMATION: u16 = 0x7F12;
-pub(crate) const TEN_SUPERWEAPONS: u16 = 0x7F14;
-pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
+/// The room's Superweapon Limit, a trackbar in VERA's Game Options only
+/// ([`HostRules`](crate::skirmish_launch::HostRules)).
+pub(crate) const SUPERWEAPON_LIMIT: u16 = 0x7F14;
+pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
     BRIDGES,
     ALLYING,
     NO_YURI,
@@ -102,11 +103,10 @@ pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
     NO_SPY,
     NO_STOLEN_TECH,
     TERRAIN_DEFORMATION,
-    TEN_SUPERWEAPONS,
 ];
 /// Their labels in VERA's language files; the retail string table has none
 /// for them.
-pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
     "VERA:DestroyableBridges",
     "VERA:InGameAllying",
     "VERA:NoYuri",
@@ -114,7 +114,6 @@ pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
     "VERA:NoSpy",
     "VERA:NoStolenTech",
     "VERA:TerrainDeformation",
-    "VERA:TenSuperweapons",
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
@@ -554,7 +553,7 @@ pub(crate) struct SetupView {
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
     /// [`ROOM_CHECKBOXES`]' states.
-    pub(crate) room_checks: [bool; 8],
+    pub(crate) room_checks: [bool; 7],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
@@ -879,7 +878,9 @@ pub(crate) struct MultiplayerSetupLayout {
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
     /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
-    pub(crate) room_checkboxes: [RectPx; 8],
+    pub(crate) room_checkboxes: [RectPx; 7],
+    /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
+    pub(crate) superweapon_limit_label: RectPx,
     /// The Teams box shares [`Self::game_options`]' box and OK: the Teams
     /// count's label, Team Starts and Team Colors, placed only with it, and
     /// online Balance and Balance automatically.
@@ -888,7 +889,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) team_colors: RectPx,
     pub(crate) balance: Option<RectPx>,
     pub(crate) auto_balance: Option<RectPx>,
-    pub(crate) trackbars: [(u16, RectPx); 5],
+    pub(crate) trackbars: [(u16, RectPx); 6],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
@@ -1023,7 +1024,8 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
-            room_checkboxes: [RectPx::new(0, 0, 0, 0); 8],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
+            superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             teams_label: RectPx::new(0, 0, 0, 0),
             team_starts: RectPx::new(0, 0, 0, 0),
             team_colors: RectPx::new(0, 0, 0, 0),
@@ -1038,6 +1040,7 @@ impl MultiplayerSetupLayout {
                     rect(180, 215, 266, if dialog.wol() && host { 21 } else { 22 }),
                 ),
                 (TEAM_COUNT, RectPx::new(0, 0, 0, 0)),
+                (SUPERWEAPON_LIMIT, RectPx::new(0, 0, 0, 0)),
             ],
             labels,
             option_labels,
@@ -1092,7 +1095,12 @@ impl MultiplayerSetupLayout {
             if *id == TEAM_COUNT {
                 *bar = popup(215, 30, 129, 21);
             }
+            // Superweapon Limit under Unit Count.
+            if *id == SUPERWEAPON_LIMIT {
+                *bar = popup(215, 30 + 30 * OPTION_TRACKBARS.len() as i32, 129, 21);
+            }
         }
+        self.superweapon_limit_label = popup(24, 32 + 30 * OPTION_TRACKBARS.len() as i32, 185, 17);
         self.teams_label = popup(24, 32, 185, 17);
         self.team_starts = popup(215, 62, 124, 24);
         self.team_colors = popup(215, 92, 124, 24);
@@ -1102,10 +1110,10 @@ impl MultiplayerSetupLayout {
             self.balance = Some(popup(215, 122, 124, 24));
             self.auto_balance = Some(popup(215, 154, 226, 17));
         }
-        // Two columns under the trackbars, the left one over the art: the
-        // native five and Destroyable Bridges, then In-game Allying, the four
-        // bans, Terrain Deformation and Ten Superweapons.
-        let row = |index: i32| 124 + 22 * index;
+        // Two columns of six under the trackbars and Superweapon Limit, the
+        // left one over the art: the native five and Destroyable Bridges,
+        // then In-game Allying, the four bans and Terrain Deformation.
+        let row = |index: i32| 154 + 22 * index;
         let left = |index| popup(24, row(index), 185, 17);
         let right = |index| popup(215, row(index), 226, 17);
         for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
@@ -1119,7 +1127,6 @@ impl MultiplayerSetupLayout {
             right(3),
             right(4),
             right(5),
-            right(6),
         ];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, options.w, options.h),
@@ -1233,7 +1240,7 @@ impl MultiplayerSetupLayout {
                     .into_iter()
                     .chain(ROOM_CHECKBOXES)
                     .chain(OPTION_TRACKBARS)
-                    .chain([GAME_OPTIONS_OK])
+                    .chain([SUPERWEAPON_LIMIT, GAME_OPTIONS_OK])
                     .find(hit);
             }
             Some(RoomBox::Teams) => {
@@ -1251,7 +1258,9 @@ impl MultiplayerSetupLayout {
             None => {}
         }
         let in_room = |id: &u16| {
-            *id != TEAM_COUNT && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
+            *id != TEAM_COUNT
+                && *id != SUPERWEAPON_LIMIT
+                && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
         };
         let paged = view.row_count > view.dialog.rows_per_page();
         view.combos
@@ -1509,7 +1518,7 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
-            room_checks: [false; 8],
+            room_checks: [false; 7],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
             grouped: false,

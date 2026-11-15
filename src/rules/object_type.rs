@@ -1318,10 +1318,10 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
-    /// VERA's `SuperWeaponPerBuilding=` (default no; `docs/ten-superweapons.md`):
+    /// VERA's `SuperWeaponPerBuilding=` (default no; `docs/superweapon-limit.md`):
     /// each building of this type charges its own shot of the Supers it
     /// provides, rather than the house's one charge alone. gamemd has no such
-    /// key; the Ten Superweapons box sets it.
+    /// key; the Superweapon Limit sets it.
     pub super_weapon_per_building: bool,
     /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
     additional_super_weapons: Vec<String>,

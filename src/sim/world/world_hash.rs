@@ -508,7 +508,7 @@ fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut 
             b"building-firing-super-weapon-5f8".hash(hasher);
             building.firing_super_weapon().hash(hasher);
         }
-        // Only Ten Superweapons sets it; None adds no bytes.
+        // Only Superweapon Limit sets it; None adds no bytes.
         if let Some(cell) = building.own_nuke_target() {
             b"building-own-nuke-target-vera".hash(hasher);
             cell.hash(hasher);

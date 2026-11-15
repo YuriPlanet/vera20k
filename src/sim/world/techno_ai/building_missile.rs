@@ -619,7 +619,7 @@ fn spawn_warning(
 }
 
 /// The cell silo `id` strikes: its owner's NukeTarget (HouseClass, which
-/// `SuperClass::Launch` writes), or with VERA's Ten Superweapons the silo's
+/// `SuperClass::Launch` writes), or with VERA's Superweapon Limit the silo's
 /// own ([`crate::sim::mission::leaf::BuildingMissionLeaf::own_nuke_target`]).
 fn nuke_target(sim: &Simulation, id: u64) -> Option<(u16, u16)> {
     let entity = sim.substrate.entities.get(id)?;
@@ -653,7 +653,6 @@ fn launch_missile(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };
-    let owner = entity.owner();
     let firing = entity
         .mission_leaf
         .as_building()

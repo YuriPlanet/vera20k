@@ -279,7 +279,7 @@ pub(super) fn launch(
         sim.houses.request_house_tech_tree_recheck(owner);
         return false;
     };
-    // VERA's Ten Superweapons: each `SuperWeaponPerBuilding=` silo fires its
+    // VERA's Superweapon Limit: each `SuperWeaponPerBuilding=` silo fires its
     // own shot, so a launch takes the first one not already firing and gives
     // it its own target; gamemd's first silo and NukeTarget otherwise.
     let per_building = silo_object.super_weapon_per_building;
@@ -342,7 +342,7 @@ fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedI
         })
 }
 
-/// Ten Superweapons: the house's first silo of `type_id`, as
+/// Superweapon Limit: the house's first silo of `type_id`, as
 /// [`find_building_of_type`] orders them, whose mission is not Missile.
 fn find_idle_silo(sim: &Simulation, owner: InternedId, type_id: InternedId) -> Option<u64> {
     let house = sim.houses.get(&owner)?;

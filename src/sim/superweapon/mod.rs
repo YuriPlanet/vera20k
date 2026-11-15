@@ -472,8 +472,8 @@ pub struct SuperWeaponInstance {
     ares_launch_count: i32,
     #[serde(rename = "ares_last_launch_frame")]
     ares_charge_origin_frame: Option<i32>,
-    /// VERA's Ten Superweapons (`SuperWeaponPerBuilding=`,
-    /// `docs/ten-superweapons.md`): the frames left on each charge the
+    /// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`,
+    /// `docs/superweapon-limit.md`): the frames left on each charge the
     /// house's further such buildings hold, the Super's own timer charging the
     /// first building's. gamemd has one charge per Super; this stays empty
     /// unless the rules set the key.
@@ -684,7 +684,7 @@ impl SuperWeaponInstance {
     }
 
     /// The shots charged and waiting: the Super's own when it is ready, and
-    /// each building charge with no frames left (Ten Superweapons).
+    /// each building charge with no frames left (Superweapon Limit).
     pub fn ready_shots(&self) -> usize {
         usize::from(self.is_active && self.is_ready)
             + self
@@ -694,7 +694,7 @@ impl SuperWeaponInstance {
                 .count()
     }
 
-    /// Ten Superweapons: keep one building charge for each of `buildings`
+    /// Superweapon Limit: keep one building charge for each of `buildings`
     /// past the first, whose charge is the Super's own timer. A new
     /// building's starts empty, at `recharge` frames; a lost building takes
     /// the emptiest charge with it, the Super's own included, so the house
@@ -1599,7 +1599,7 @@ pub struct SuperWeaponView {
     /// The select hook's refusal of a press, if any. None without Ares.
     pub ares_refusal: Option<AresCameoRefusal>,
     /// The shots charged and waiting ([`SuperWeaponInstance::ready_shots`]):
-    /// more than one only with Ten Superweapons, when the cameo counts them.
+    /// more than one only with Superweapon Limit, when the cameo counts them.
     pub ready_shots: usize,
 }
 
@@ -2537,8 +2537,8 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
     sync_building_charges(sim, rules, owner);
 }
 
-/// VERA's Ten Superweapons (`SuperWeaponPerBuilding=`,
-/// `docs/ten-superweapons.md`): each of `owner`'s live buildings of such a
+/// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`,
+/// `docs/superweapon-limit.md`): each of `owner`'s live buildings of such a
 /// type charges its own shot of each Super it provides
 /// ([`SuperWeaponInstance::set_building_count`]). The hold and grant passes
 /// call it last, once they have decided which Supers stay granted; a held

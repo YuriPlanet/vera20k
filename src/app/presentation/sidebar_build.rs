@@ -462,7 +462,7 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 const STRUCTURE_QUEUE_BADGES: bool = cfg!(feature = "phobos");
 
 fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {
-    // VERA's Ten Superweapons: a superweapon cameo counts its charged shots
+    // VERA's Superweapon Limit: a superweapon cameo counts its charged shots
     // once more than one waits. gamemd's has no count.
     if item.is_superweapon {
         return item.queued_count > 1;

@@ -94,7 +94,7 @@ pub struct BuildingMissionLeaf {
     /// `Type=`. Constructor -1 (`0x0043B7B9`).
     #[serde(default = "no_firing_super_weapon")]
     firing_super_weapon: i32,
-    /// VERA's Ten Superweapons (`SuperWeaponPerBuilding=`): the cell the last
+    /// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`): the cell the last
     /// launch gave this silo, so silos opening together each strike their own
     /// target. gamemd's silos all read the house's one NukeTarget, which a
     /// silo without the key still does (None).

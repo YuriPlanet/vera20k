@@ -450,7 +450,10 @@ pub(crate) fn render_multiplayer_setup(
             );
         }
         for bar in view.trackbars.iter().filter(|bar| {
-            bar.visible && !OPTION_TRACKBARS.contains(&bar.id) && bar.id != TEAM_COUNT
+            bar.visible
+                && !OPTION_TRACKBARS.contains(&bar.id)
+                && bar.id != TEAM_COUNT
+                && bar.id != SUPERWEAPON_LIMIT
         }) {
             push_trackbar(
                 &mut controls,
@@ -1098,6 +1101,18 @@ fn push_option_controls(
                 ShellAlign::V_CENTER,
             ));
         }
+        texts.push(text(
+            &crate::i18n::tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_LABEL),
+            layout.superweapon_limit_label,
+            ShellAlign::NONE,
+        ));
+        if let Some(bar) = view
+            .trackbars
+            .iter()
+            .find(|bar| bar.id == SUPERWEAPON_LIMIT)
+        {
+            push_trackbar(controls, texts, state, view, layout, bar, text_depth);
+        }
     }
     for bar in view
         .trackbars
@@ -1151,6 +1166,9 @@ fn push_trackbar(
                 .to_string(),
             // 1 is Teams Off.
             TEAM_COUNT if bar.value < 2 => crate::i18n::tr("VERA:TeamsOff"),
+            SUPERWEAPON_LIMIT if bar.value < 2 => {
+                crate::i18n::tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_OFF)
+            }
             _ => bar.range.stepped(bar.value).to_string(),
         };
         texts.push(shell_text::draw_in_rect_scaled(

@@ -205,10 +205,6 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             let rules = &mut options.host_rules;
             rules.terrain_deformation = !rules.terrain_deformation;
         }
-        TEN_SUPERWEAPONS => {
-            let rules = &mut options.host_rules;
-            rules.ten_superweapons = !rules.ten_superweapons;
-        }
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;
@@ -279,6 +275,14 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
                 options.starting_credits = credits;
             }
             UNITS => options.unit_count = value,
+            // 1 is Off.
+            SUPERWEAPON_LIMIT => {
+                let limit = crate::rules::personal_rules::admitted_superweapon_limit(value);
+                if options.host_rules.superweapon_limit == limit {
+                    return Ok(());
+                }
+                options.host_rules.superweapon_limit = limit;
+            }
             _ => anyhow::bail!("unknown setup slider"),
         }
         state.match_state.session.set_network_options(options)?;

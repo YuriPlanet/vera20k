@@ -714,9 +714,9 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules.set_terrain_deformation(on);
     }
 
-    /// The Options page's Ten Superweapons box, read by the next scenario.
-    pub fn set_ten_superweapons(&mut self, on: bool) {
-        self.sources.personal_rules.set_ten_superweapons(on);
+    /// The Options page's Superweapon Limit, read by the next scenario.
+    pub fn set_superweapon_limit(&mut self, limit: i32) {
+        self.sources.personal_rules.set_superweapon_limit(limit);
     }
 
     /// The root every scenario's Rules start from: the selected root with the

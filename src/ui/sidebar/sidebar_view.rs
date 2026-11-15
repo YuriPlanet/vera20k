@@ -645,7 +645,7 @@ fn collect_build_entries(
                 enabled: sw.sidebar_enabled(),
                 at_build_limit: false,
                 progress: sw.progress,
-                // VERA's Ten Superweapons: the shots charged and waiting.
+                // VERA's Superweapon Limit: the shots charged and waiting.
                 queued_count: sw.ready_shots,
                 is_building_this_type: !sw.is_ready && sw.is_online && sw.progress > 0.0,
                 is_ready: sw.is_ready,

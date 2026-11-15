@@ -452,7 +452,7 @@ pub struct SkirmishLaunchOptions {
 }
 
 /// VERA: the rules a network room plays besides its options, which only its
-/// host sets: the host's Terrain Deformation and Ten Superweapons boxes and
+/// host sets: the host's Terrain Deformation box, Superweapon Limit and
 /// the host's VERARULES.INI when it changes the game and fits. Every player's
 /// match plays these instead of their own; offline games play the player's own
 /// (`ProcessAssets::use_personal_rules`).
@@ -461,10 +461,13 @@ pub struct SkirmishLaunchOptions {
 pub struct HostRules {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub terrain_deformation: bool,
-    /// Left out while off, so a room without it sends the rules it sent
-    /// before the box.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub ten_superweapons: bool,
+    /// The Superweapon Limit, 0 while off. Left out while off, so a room
+    /// without it sends the rules it sent before the setting; a guest plays
+    /// another value as [`admitted_superweapon_limit`] reads it.
+    ///
+    /// [`admitted_superweapon_limit`]: crate::rules::personal_rules::admitted_superweapon_limit
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub superweapon_limit: u8,
     /// The host's VERARULES.INI in base64, at most
     /// [`SHARE_LIMIT`](crate::rules::personal_rules::SHARE_LIMIT) bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -473,17 +476,17 @@ pub struct HostRules {
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && !self.ten_superweapons && self.personal_rules.is_none()
+        !self.terrain_deformation && self.superweapon_limit == 0 && self.personal_rules.is_none()
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
-    /// and Ten Superweapons boxes, and its VERARULES.INI when the file changes
+    /// box and Superweapon Limit, and its VERARULES.INI when the file changes
     /// the game and fits.
     pub fn from_own(own: &PersonalRules) -> Self {
         let fits = own.source().len() <= crate::rules::personal_rules::SHARE_LIMIT;
         Self {
             terrain_deformation: own.terrain_deformation(),
-            ten_superweapons: own.ten_superweapons(),
+            superweapon_limit: own.superweapon_limit(),
             personal_rules: (!own.is_empty() && fits)
                 .then(|| crate::util::base64::base64_encode(own.source())),
         }
@@ -506,9 +509,13 @@ impl HostRules {
             }
         };
         rules.set_terrain_deformation(self.terrain_deformation);
-        rules.set_ten_superweapons(self.ten_superweapons);
+        rules.set_superweapon_limit(i32::from(self.superweapon_limit));
         Ok(rules)
     }
+}
+
+fn is_zero(value: &u8) -> bool {
+    *value == 0
 }
 
 /// The Teams counts a VERA room offers besides Off: up to 15, two seats a
@@ -1327,6 +1334,29 @@ mod tests {
             ..HostRules::default()
         };
         assert!(long.personal_rules().is_err());
+    }
+
+    /// A room sends its host's Superweapon Limit as the number, and a guest
+    /// plays one past the slider's end at the most it allows.
+    #[test]
+    fn a_room_carries_its_hosts_superweapon_limit_as_a_number() {
+        let mut own = crate::rules::personal_rules::PersonalRules::default();
+        own.set_superweapon_limit(7);
+        let shared = HostRules::from_own(&own);
+        assert_eq!(
+            serde_json::to_value(&shared).unwrap(),
+            serde_json::json!({"superweapon_limit": 7})
+        );
+        assert_eq!(shared.personal_rules().unwrap().superweapon_limit(), 7);
+        let past_the_end = HostRules {
+            superweapon_limit: 200,
+            ..HostRules::default()
+        };
+        let played = past_the_end.personal_rules().unwrap();
+        assert_eq!(
+            played.superweapon_limit(),
+            crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX
+        );
     }
 
     #[test]
