@@ -19,7 +19,7 @@ use crate::sim::production::{
     ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
-use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
+use crate::sim::world::{LifecycleOutput, Simulation};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
     pending_production_prediction_rate, pending_production_smoothed_stage, strip_rejects_entry,
@@ -139,6 +139,9 @@ pub(crate) struct SidebarSimInputs {
     pub(crate) power_produced: i32,
     pub(crate) power_drained: i32,
     pub(crate) sw_views: Vec<SuperWeaponView>,
+    /// The observer strip's Houses while the local player is an observer
+    /// ([`crate::app::presentation::observer_strip::observer_houses`]).
+    pub(crate) observers: Option<Vec<crate::app::presentation::observer_strip::ObserverHouse>>,
 }
 
 impl SidebarSimInputs {
@@ -163,6 +166,9 @@ impl SidebarSimInputs {
                 rules,
                 &sim.interner().get(owner).unwrap_or_default(),
             ),
+            observers: sim.interner().get(owner).and_then(|owner| {
+                crate::app::presentation::observer_strip::observer_houses(sim, owner)
+            }),
         }
     }
 }
@@ -240,8 +246,17 @@ pub(crate) struct PreparedSidebarOrder {
     strips: CameoStrips,
     factory_links: HashMap<InternedId, CameoFactoryLink>,
     prediction_categories: HashSet<ProductionCategory>,
+    active_tab: SidebarTab,
     #[cfg(feature = "phobos")]
     sw_sidebar_expanded: bool,
+}
+
+/// The tab a loaded game opens on: Mouse Load 5BDF70 restores the saved
+/// ActiveTab (+0x539C), and Load_Game_From_File's Sidebar Init 6A5310 shows it
+/// again through ToggleSidebar 6A7D70; nothing after the load resets it. A
+/// save without strips opens Init_Clear 6A5030's first tab.
+pub(crate) fn loaded_active_tab(order: Option<&PreparedSidebarOrder>) -> SidebarTab {
+    order.map_or_else(SidebarTab::default_active_tab, |order| order.active_tab)
 }
 
 #[cfg(feature = "phobos")]
@@ -746,6 +761,15 @@ impl SidebarProjectionState {
                         .find(|status| status.type_id == type_id)
                         .copied(),
                     armed: armed_building == Some(type_id),
+                    primary_holds_type: sim
+                        .production()
+                        .factories()
+                        .view(
+                            owner,
+                            crate::sim::production::primary_factory_category(object),
+                        )
+                        .and_then(|factory| factory.object)
+                        .is_some_and(|held| held.type_id == type_id),
                 },
             );
         }
@@ -980,10 +1004,6 @@ impl SidebarProjectionState {
                     is_on_hold: !is_ready
                         && (factory.is_some() && !running
                             || request == Some(CameoRequestState::Held)),
-                    held_type: factory
-                        .as_ref()
-                        .and_then(|factory| factory.object)
-                        .map(|object| object.type_id),
                 })
             })
             .collect()
@@ -1052,19 +1072,21 @@ impl SidebarProjectionState {
                         i32::from(factory.build_step_rate(sim, rules)) + 1,
                     ))
                 } else {
-                    let busy = sim
-                        .production()
-                        .factories()
-                        .view(owner, category)
-                        .is_some_and(|factory| {
-                            factory.is_running()
-                                || factory.object.is_some()
-                                || !factory.queue.is_empty()
-                        });
+                    let factory = sim.production().factories().view(owner, category);
+                    let busy = factory.as_ref().is_some_and(|factory| {
+                        factory.is_running()
+                            || factory.object.is_some()
+                            || !factory.queue.is_empty()
+                    });
                     if busy || self.prediction_categories.contains(&category) {
                         return;
                     }
-                    self.set_prediction_category(category, object.naval, true, rules.ares());
+                    // Select6AB718..6AB73C marks House5005B0 only when the
+                    // House has no Factory for the category (500510); an idle
+                    // one still gets the early clock (6AB7CC..6AB94D).
+                    if factory.is_none() {
+                        self.set_prediction_category(category, object.naval, true, rules.ares());
+                    }
                     let cost = sim.cost_of(owner, object, rules);
                     let available = crate::sim::production::credits_for_owner(
                         sim,
@@ -1136,6 +1158,9 @@ impl SidebarProjectionState {
 
     /// StripAI6A8F7C advances presentation once per native frame, independently
     /// of Draw. A linked stopped/cash-stalled Factory suppresses prediction.
+    /// Residual: VERA steps it on every sidebar refresh, not once per Sidebar
+    /// Action visit. A predicted clock runs only until its PRODUCE executes,
+    /// one input delay, so the different step count is not visible.
     pub(crate) fn advance_cameo_requests(
         &mut self,
         sim: &crate::sim::world::Simulation,
@@ -1186,6 +1211,14 @@ impl SidebarProjectionState {
     /// The layout's cameo columns, taken by the strips at the next reconcile.
     pub(crate) fn set_cameo_columns(&mut self, columns: usize) {
         self.cameo_columns = crate::ui::sidebar::cameo_order::StripColumns::new(columns);
+    }
+
+    /// The observer strip's House count for the strips' scroll rules
+    /// ([`CameoStrips::set_observer_entries`]), after the reconcile.
+    pub(crate) fn set_observer_entries(&mut self, houses: Option<usize>) {
+        if let Some((_, strips)) = self.cameos.as_mut() {
+            strips.set_observer_entries(houses);
+        }
     }
 
     pub(crate) fn set_cameo_frame(&mut self, frame: i32) {
@@ -1333,14 +1366,17 @@ impl SidebarProjectionState {
         (*displayed != before).then_some(CreditTick { counting_up })
     }
 
+    /// `CreditsClass::AI @ 0x004A2600` for the observer
+    /// (`0x004A2614..0x004A2678`): the counter is set to the scenario's
+    /// elapsed seconds, with no counting step and no `CreditTicks` cue.
+    pub(crate) fn set_observer_clock(&mut self, owner: &str, seconds: i32) {
+        self.displayed_credits.insert(owner.to_owned(), seconds);
+    }
+
     #[cfg(test)]
     fn displayed_credits_for_test(&self, owner: &str) -> Option<i32> {
         self.displayed_credits.get(owner).copied()
     }
-}
-
-pub(crate) fn credits_advance_for_frame(frame_committed: bool, tick_lane: TickLane) -> bool {
-    frame_committed && tick_lane == TickLane::Ordinary
 }
 
 /// Project comparison fields from their existing owners. The full build
@@ -1468,6 +1504,9 @@ pub(crate) fn prepare_saved_order(
     };
     let request_states = saved.requests().clone();
     let saved_factory_links = saved.factory_links().clone();
+    let active_tab = *SidebarTab::all()
+        .get(usize::from(saved.active_tab()))
+        .ok_or("saved sidebar has an invalid active tab")?;
     let prediction_categories: HashSet<_> = saved.prediction_categories().iter().copied().collect();
     if prediction_categories.len() != saved.prediction_categories().len() {
         return Err("saved sidebar has duplicate prediction categories".into());
@@ -1481,7 +1520,15 @@ pub(crate) fn prepare_saved_order(
     let mut strips: [Vec<Cameo>; 4] = std::array::from_fn(|_| Vec::new());
     let mut factory_links = HashMap::new();
     for (index, identities) in saved_strips.into_iter().enumerate() {
-        if flash_deadlines[index].len() != identities.len() {
+        // One deadline per entry, then at most the native strip's empty
+        // records ([`CameoStrips::saved_flash`]).
+        let deadlines = flash_deadlines[index].len();
+        if deadlines < identities.len()
+            || deadlines
+                > identities
+                    .len()
+                    .max(crate::ui::sidebar::cameo_order::STRIP_RECORDS)
+        {
             return Err(format!(
                 "saved sidebar strip {index} has mismatched flash deadlines"
             ));
@@ -1584,6 +1631,7 @@ pub(crate) fn prepare_saved_order(
         strips,
         factory_links,
         prediction_categories,
+        active_tab,
         #[cfg(feature = "phobos")]
         sw_sidebar_expanded,
     }))
@@ -1921,6 +1969,61 @@ mod tests {
             assert!(projection.cameo_request(e2).is_none());
             assert!(projection.prediction_categories.is_empty());
         }
+    }
+
+    /// Select6AB718..6AB73C sets House5005B0 only when Fetch_Factory 500510
+    /// finds none; an idle Factory still starts the early clock.
+    #[test]
+    fn an_idle_factory_starts_the_clock_without_the_first_request_mark() {
+        use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=E2\n[E2]\nCost=100\nStrength=100\n",
+            ))
+            .unwrap();
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.intern("Russians");
+        sim.houses_mut_for_test()
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 1, None, true, 50_000, 10,
+            ));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let e2 = sim.interner().get("E2").unwrap();
+        let factories = sim.production_mut_for_test().factories_mut_for_test();
+        assert!(factories.test_enqueue_kernel(owner, ProductionCategory::Infantry, e2, 0, 100));
+        let factory = factories
+            .test_factory_mut(owner, ProductionCategory::Infantry)
+            .unwrap();
+        factory.set_object_for_test(None);
+        factory.set_suspended_for_test(true);
+        let mut projection = SidebarProjectionState::default();
+        let cameo = Cameo {
+            id: CameoId::Object(e2),
+            tab: SidebarTab::Infantry,
+            available: true,
+            key: CameoKey::Techno {
+                own_side: true,
+                considered_aircraft: false,
+                naval: false,
+                tech_level: 1,
+                cost: 100,
+                name: "E2".into(),
+            },
+        };
+        projection.reconcile_cameos(owner, &[cameo], 3, &[e2], false);
+        let produce = CameoClick {
+            order: Some(CameoOrder::Produce),
+            ..CameoClick::default()
+        };
+        projection.record_cameo_click(&sim, &rules, owner, e2, produce);
+        assert_eq!(
+            projection.cameo_request(e2),
+            Some(CameoRequestState::Started)
+        );
+        assert!(projection.prediction_categories.is_empty());
     }
 
     /// Original whole Sidebar6ABAD0→Strip6ABB60 clears both retained
@@ -2283,188 +2386,5 @@ mod tests {
         warm.restore_credits_counter(Some("Americans"), None);
         assert_eq!(warm.saved_credits_counter("Americans"), None);
         assert_eq!(warm.displayed_credits_or_seed("Americans", 1000), 1000);
-    }
-
-    /// Compose the production seam: credits step only when the runtime
-    /// decision admits the simulation AND that pass commits an Ordinary frame.
-    /// This mirrors the only advance site, which sits inside the
-    /// `decision.run_sim` block of `advance_in_game_runtime_mode`.
-    fn credits_step(
-        inputs: crate::app::match_runtime::sim_tick::RuntimePassInputs,
-        frame_committed: bool,
-    ) -> bool {
-        let decision = crate::app::match_runtime::sim_tick::decide_runtime_pass(inputs);
-        decision.run_sim && credits_advance_for_frame(frame_committed, decision.tick_lane)
-    }
-
-    #[test]
-    fn sidebar_credit_gate_matrix() {
-        use crate::app::match_runtime::session::SessionMode;
-        use crate::app::match_runtime::sim_tick::{RuntimePassInputs, decide_runtime_pass};
-
-        // Baseline wall-clock pass: active window, accepted startup receipt,
-        // elapsed pacer window, nothing paused, no menu. Every freeze case
-        // below flips exactly one real predicate off this baseline.
-        let admitting = RuntimePassInputs {
-            exact_step: false,
-            window_active: true,
-            focus_frozen: false,
-            startup_admitted: true,
-            frame_stepping: false,
-            paused: false,
-            scenario_paused: false,
-            menu_open: false,
-            session_mode: SessionMode::Skirmish,
-            pacer_timing_admits: true,
-            network_wait: false,
-            network_dialog_open: false,
-        };
-        let baseline = decide_runtime_pass(admitting);
-        assert!(baseline.run_sim);
-        assert_eq!(baseline.tick_lane, TickLane::Ordinary);
-        assert!(baseline.admitted_by_pacer);
-        assert!(credits_step(admitting, true));
-        assert!(
-            !credits_step(admitting, false),
-            "an uncommitted frame must freeze displayed credits"
-        );
-
-        for (case, inputs) in [
-            (
-                "no-admit redraw",
-                RuntimePassInputs {
-                    pacer_timing_admits: false,
-                    ..admitting
-                },
-            ),
-            (
-                "paused redraw",
-                RuntimePassInputs {
-                    paused: true,
-                    ..admitting
-                },
-            ),
-            (
-                // An open menu is a pause (`MatchState::paused`).
-                "menu redraw",
-                RuntimePassInputs {
-                    paused: true,
-                    menu_open: true,
-                    ..admitting
-                },
-            ),
-            (
-                "focus-frozen redraw",
-                RuntimePassInputs {
-                    window_active: false,
-                    focus_frozen: true,
-                    ..admitting
-                },
-            ),
-            (
-                "missing startup receipt",
-                RuntimePassInputs {
-                    startup_admitted: false,
-                    ..admitting
-                },
-            ),
-            (
-                // Wait_For_Players blocks the frame.
-                "network wait",
-                RuntimePassInputs {
-                    network_wait: true,
-                    ..admitting
-                },
-            ),
-        ] {
-            let decision = decide_runtime_pass(inputs);
-            assert!(!decision.run_sim, "{case} must not run the simulation");
-            assert!(
-                !credits_step(inputs, true),
-                "{case} must freeze displayed credits"
-            );
-        }
-
-        // Without `pause_on_focus_loss` a deactivated window keeps the world
-        // and displayed credits advancing; only input polling stops.
-        let background = RuntimePassInputs {
-            window_active: false,
-            ..admitting
-        };
-        let decision = decide_runtime_pass(background);
-        assert!(
-            decision.run_sim,
-            "an unfrozen background match keeps running"
-        );
-        assert!(decision.admitted_by_pacer);
-        assert!(!decision.scroll_input, "a deactivated window never scrolls");
-        assert!(credits_step(background, true));
-
-        // Before 0xEA opens, the wait loop still services tactical input and
-        // draws (0x006497EC); once it is open it does neither.
-        let waiting = RuntimePassInputs {
-            session_mode: SessionMode::Lan,
-            network_wait: true,
-            ..admitting
-        };
-        let decision = decide_runtime_pass(waiting);
-        assert!(decision.tactical_mutation && decision.scroll_input);
-        let decision = decide_runtime_pass(RuntimePassInputs {
-            network_dialog_open: true,
-            ..waiting
-        });
-        assert!(!decision.run_sim && !decision.tactical_mutation && !decision.scroll_input);
-        assert!(
-            !decide_runtime_pass(RuntimePassInputs {
-                exact_step: true,
-                ..waiting
-            })
-            .run_sim,
-            "an exact step cannot pass a network wait"
-        );
-
-        // A committed network-modal frame keeps the world advancing but must
-        // not step displayed credits.
-        let network_modal = RuntimePassInputs {
-            paused: true,
-            menu_open: true,
-            session_mode: SessionMode::Lan,
-            ..admitting
-        };
-        let decision = decide_runtime_pass(network_modal);
-        assert!(
-            decision.run_sim,
-            "the network modal pump keeps the world advancing"
-        );
-        assert_eq!(decision.tick_lane, TickLane::NetworkModal);
-        assert!(
-            !credits_step(network_modal, true),
-            "a committed network-modal frame must freeze displayed credits"
-        );
-
-        // Explicit single steps advance credits iff their one frame commits,
-        // even while paused.
-        let exact = RuntimePassInputs {
-            exact_step: true,
-            paused: true,
-            ..admitting
-        };
-        assert!(
-            credits_step(exact, true),
-            "exact-step commit must advance exactly at its committed Ordinary seam"
-        );
-        assert!(!credits_step(exact, false));
-        let debug_step = RuntimePassInputs {
-            frame_stepping: true,
-            paused: true,
-            pacer_timing_admits: false,
-            ..admitting
-        };
-        let debug_decision = decide_runtime_pass(debug_step);
-        assert!(!debug_decision.admitted_by_pacer);
-        assert!(
-            credits_step(debug_step, true),
-            "debug single-step commit must advance exactly at its committed Ordinary seam"
-        );
     }
 }

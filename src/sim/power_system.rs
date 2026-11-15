@@ -88,8 +88,8 @@ pub struct PowerState {
     power_dirty: bool,
     radar_dirty: bool,
     /// House+2B0/+2B8, the radar outage `CreateRadarOutage @ 0x0050BCD0`
-    /// starts (the Lightning Storm; the trigger action RadarBlackout
-    /// `0x006E3B56` is not ported). The constructor seeds it like the
+    /// starts (the Lightning Storm, and trigger action 139 RadarBlackout
+    /// `0x006E3B40` in `sim::trigger_runtime`). The constructor seeds it like the
     /// blackout timer (`0x004F5843..0x004F584F`).
     radar_outage_timer: crate::sim::timer::CdTimer,
     /// VERA-derived per-owner projection of508DF0's client-local radar
@@ -1047,6 +1047,8 @@ fn radar_provider_available(
         if entity.owner() != owner
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
+            // VERA-only: 508E9D..508F06 has no dying test. Invisible: UnInit
+            // already puts a dead building in limbo.
             || entity.death.is_dying()
             || !entity.building_online()
             || (require_discovery && !entity.discovery.discovered_by_current_house())

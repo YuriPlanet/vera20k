@@ -156,6 +156,20 @@ pub(crate) fn commit_prepared_load(
     let mut power = committed.power_bar_anim;
     power.reanchor_after_load(power_ms);
     state.match_state.match_presentation.power_bar_anim = power;
+    // The loaded world's next frame is its first Sidebar Action visit: the
+    // jump to the saved tick is not a run of missed visits.
+    if let Some(tick) = state
+        .match_state
+        .sim_runtime
+        .presentation()
+        .map(|rt| rt.simulation.session().tick())
+    {
+        state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .last_sim_tick = tick;
+    }
 
     // VocClass::LoadStaticSounds (`0x00751710`) restarts the saved loopable
     // coordinate sounds after its clear, which `stop_all` above performed.
@@ -197,8 +211,11 @@ pub(crate) fn commit_prepared_load(
         .match_presentation
         .lighting
         .restore_anim_intensities(committed.details.anim_intensities);
-    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists; their
-    // display keys refresh below against incoming rules/CSF without reordering.
+    // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists and the
+    // open tab; their display keys refresh below against incoming rules/CSF
+    // without reordering.
+    state.match_state.match_presentation.active_sidebar_tab =
+        crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
     #[cfg(feature = "phobos")]
     let sw_sidebar_expanded = committed
         .details

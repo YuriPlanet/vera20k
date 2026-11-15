@@ -56,7 +56,11 @@ pub struct GameOptions {
     /// setup dialog sets it, `0x0052D1FB`). Off, it withholds the
     /// `DisableableFromShell=` Supers, and CanBuild the buildings whose
     /// `SuperWeapon=` is one unless `[AI] BuildTech=` lists them (retail's
-    /// three Battle Labs, which then grant nothing).
+    /// three Battle Labs, which then grant nothing). RESIDUAL (kept by the
+    /// maintainer, 2026-11-15): only Init_Game's rules read (`0x0052D201`) and
+    /// the multiplayer and skirmish dialogs write the byte, so in gamemd a
+    /// campaign started after a skirmish with it off still refuses them
+    /// (CanBuild `0x004F7A9A`); VERA builds options per match, on in campaign.
     pub super_weapons: bool,
     /// Build adjacent to allied buildings. Rules+0x14BA.
     pub build_off_ally: bool,

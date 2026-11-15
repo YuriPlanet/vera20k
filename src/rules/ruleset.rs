@@ -1308,7 +1308,7 @@ pub struct GeneralRules {
     /// `0x004F94FB` and then jumps (`0x004F9500 JMP`) to `LAB_004F95D4`, so a
     /// harvester under attack gets the EVA and **no** siren. The
     /// `EVA_OurAllyIsUnderAttack` branch does NOT jump past — native sirens
-    /// for an ally's base too, which VERA does not (pre-existing residual).
+    /// for an ally's base too, and so does VERA (`AllyUnderAttack`).
     pub base_under_attack_sound: Option<String>,
     /// Building crumble cue from `[AudioVisual] BuildingDieSound=` (stock
     /// `BuildingGenericDie`).

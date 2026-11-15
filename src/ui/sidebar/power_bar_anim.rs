@@ -140,9 +140,11 @@ impl PowerBarAnimState {
             self.compute_targets(self.cached_output, self.cached_drain, theoretical_total());
     }
 
-    /// One ordinary visible Sidebar AI visit (`63FEA0..640385`). The caller
-    /// supplies its wall clock even when no simulation frame was admitted.
-    /// The rated-list read runs only after the native unchanged/idle return.
+    /// One Sidebar Action visit (`63FEA0..640385`, called at `6A7B0A`);
+    /// the caller runs as many as the pass holds
+    /// ([`crate::app::presentation::sidebar_gadgets::sidebar_action_visits`]),
+    /// with its wall clock. The rated-list read runs only after the native
+    /// unchanged/idle return.
     pub fn update(
         &mut self,
         output: i32,

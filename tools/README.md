@@ -54,6 +54,20 @@ oracle families index their own fixtures and producers.
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
 
+## Capture files
+
+The JSON a Rust test reads is the golden. Raw capture archives, receipts and
+validation records are not committed, and the committed JSON holds only fields
+some Rust source names, written compact (no indentation).
+
+On 2026-11-14 the raw archives that no Rust test read were removed and the
+test-read JSON under the `*_oracle` folders was trimmed this way. A harness
+whose archive is gone can no longer rebuild its JSON from the repository: a
+rebuild needs a new capture, and Git history holds the old archives and the
+untrimmed files. A harness that still runs writes more than is committed; trim
+its output the same way before committing it. Hand-written profiles and the
+palette fixtures, which a tool checks by hash, keep their formatting.
+
 ## Retail-backed ignored tests
 
 ```sh

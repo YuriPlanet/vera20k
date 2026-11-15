@@ -170,30 +170,29 @@ pub(crate) fn recalc_base_plan(
     while remaining > 0 {
         let pass_start_len = priority.len();
         let mut progressed = false;
-        let mut last_unselected = None;
+        // Only an unselected GAPLUG is the stuck pass's fallback: the index
+        // resets each pass (0x00505890) and only the GAPLUG name match writes
+        // it (0x005058C1..0x005058CD). With none, the loop ends
+        // (0x00505951..0x00505954) and buildings whose prerequisites never
+        // come are left out of the plan. The pass runs to the list's end even
+        // past remaining 0 (0x00505935..0x00505947); 0x005059B7 then ends it.
+        let mut gaplug_fallback = None;
         for index in 0..eligible.len() {
             if selected[index] {
                 continue;
             }
-            last_unselected = Some(index);
             let candidate = eligible[index];
-            if !candidate.id.eq_ignore_ascii_case("GAPLUG")
-                && prerequisites_satisfied(candidate, &priority[..pass_start_len], rules)
-            {
+            if candidate.id.eq_ignore_ascii_case("GAPLUG") {
+                gaplug_fallback = Some(index);
+            } else if prerequisites_satisfied(candidate, &priority[..pass_start_len], rules) {
                 priority.push(candidate);
                 selected[index] = true;
                 remaining = remaining.wrapping_sub(1);
                 progressed = true;
-                if remaining == 0 {
-                    break;
-                }
             }
         }
-        if remaining == 0 {
-            break;
-        }
         if !progressed {
-            let Some(index) = last_unselected else {
+            let Some(index) = gaplug_fallback else {
                 break;
             };
             priority.push(eligible[index]);
@@ -784,17 +783,31 @@ mod tests {
     }
 
     #[test]
-    fn recalc_withholds_gaplug_and_breaks_cycle_with_last_unselected() {
+    fn recalc_falls_back_only_to_gaplug_and_drops_an_unmeetable_building() {
         // BLOCK waits on a BuildingType the planner never selects; a name no
         // BuildingType has would be dropped by the parser and block nothing.
+        // GAPLUG skips the prerequisite test and enters only as the first
+        // stuck pass's fallback; the next has no GAPLUG and ends, so BLOCK
+        // never enters the plan (0x00505951..0x00505954).
         let rules = basic_rules(
             "7=BLOCK\n8=GAPLUG\n9=NEVER",
             "[BLOCK]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
-             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
              [NEVER]\nOwner=Americans\nTechLevel=1\nFoundation=1x1\n",
         );
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 11);
-        assert_eq!(&values(&plan)[6..], [8, 7]);
+        assert_eq!(&values(&plan)[6..], [8]);
+    }
+
+    /// With no eligible yard to preselect (0x0050571D..0x00505731), the count
+    /// runs out one candidate early; the pass still reaches the list's end
+    /// and plans that last one, the second POW.
+    #[test]
+    fn recalc_pass_continues_past_remaining_zero() {
+        let mut rules = basic_rules("", "");
+        rules.build_const_types = vec!["RAD".to_owned()];
+        let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
+        assert_eq!(values(&plan), [1, 3, 4, 2, 0, 1]);
     }
 
     #[test]

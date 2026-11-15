@@ -1407,6 +1407,9 @@ fn install_shared_house_sources(
 }
 
 /// Commit the explicit launch-session diplomacy graph at the post-crate boundary.
+/// RESIDUAL (invisible): in GameMode 4 native MakeAlly runs its live tail at
+/// launch (`0x004F9C1F..0x004F9C28`), so Paranoid gives each computer one
+/// anger point per human allying; VERA installs the graph without it.
 pub(crate) fn apply_skirmish_launch_alliances(
     sim: &mut Simulation,
     session: &SkirmishLaunchSession,
@@ -1934,6 +1937,8 @@ pub fn populate_special_houses(sim: &mut Simulation, house_roster: &HouseRoster,
         // Original gamemd CreateHouses6882C2..68837E constructs this fixed
         // tail without participant SetCreditsAndColor4FCE00. House ctor
         // 4F58D8 leaves cash0; launch credits belong to participants.
+        // RESIDUAL (invisible): the constructor's TechLevel is 1 (4F56C3),
+        // not the session's; neither house ever builds.
         let mut house = HouseState::new(
             name_id,
             side_idx,

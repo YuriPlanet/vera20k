@@ -217,6 +217,28 @@ fn sw_sidebar_expanded_flag_survives_the_snapshot_envelope() {
     );
 }
 
+/// Mouse Save 5BE6D0 / Load 5BDF70 keep the open tab (ActiveTab, +0x539C).
+#[test]
+fn a_loaded_game_opens_the_tab_it_was_saved_on() {
+    use crate::ui::sidebar::SidebarTab;
+    let (sim, rules, owner, types) = fixture();
+    let saved = retained_history(owner, types)
+        .saved_order()
+        .unwrap()
+        .with_active_tab(2);
+    let prepared = prepare(&save(&sim, &rules, Some(&saved)), &sim, &rules).unwrap();
+    let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+    let committed = prepared.commit_into(&mut runtime);
+    assert_eq!(
+        crate::app::sidebar_projection::loaded_active_tab(committed.sidebar_order.as_ref()),
+        SidebarTab::Infantry
+    );
+    assert_eq!(
+        crate::app::sidebar_projection::loaded_active_tab(None),
+        SidebarTab::Building
+    );
+}
+
 #[test]
 fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
     let (sim, rules, owner, types) = fixture();
@@ -385,6 +407,7 @@ fn invalid_sidebar_payload_preserves_outgoing_projection_and_running_world() {
         SavedSidebarOrder::new(owner, unknown),
         SavedSidebarOrder::new(owner, wrong_kind),
         SavedSidebarOrder::new(owner, over_capacity),
+        SavedSidebarOrder::new(owner, valid.strips().clone()).with_active_tab(4),
     ];
     for order in invalid {
         assert!(matches!(

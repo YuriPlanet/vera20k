@@ -376,8 +376,9 @@ impl SoundPlaybackInputs<'_> {
     }
 }
 
-/// Tick the sidebar power bar animation (segment-by-segment transition).
-pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
+/// Run the power bar's AnimationTick 63FEA0 for each of this pass's Sidebar
+/// Action `visits` ([`super::sidebar_gadgets::sidebar_action_visits`]).
+pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64, visits: u64) {
     let owner_name = preferred_local_owner_name(state);
     let bar_height_px = power_bar_budget_px(state);
     // The theoretical total walks the house's buildings: the frame's answer.
@@ -395,11 +396,21 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64) {
             let theoretical_total = || frame.scene.ui.theoretical_power();
             anim.fit_strip(bar_height_px, theoretical_total);
             let (produced, drained) = production::power_balance_for_owner(sim, rules, owner);
-            anim.update(produced, drained, theoretical_total, wall_ms);
+            for _ in 0..visits {
+                anim.update(produced, drained, theoretical_total, wall_ms);
+                if !anim.in_motion() {
+                    break;
+                }
+            }
         }
         _ => {
             anim.fit_strip(bar_height_px, || 0);
-            anim.update(0, 0, || 0, wall_ms);
+            for _ in 0..visits {
+                anim.update(0, 0, || 0, wall_ms);
+                if !anim.in_motion() {
+                    break;
+                }
+            }
         }
     }
 }

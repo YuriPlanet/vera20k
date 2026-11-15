@@ -1277,6 +1277,11 @@ impl ScenarioSession {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn install_observer_houses_for_test(&mut self, observers: Vec<InternedId>) {
+        self.observer_houses = observers;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_scenario_side_for_test(&mut self, side: i32) {
         self.install_scenario_side(side);
     }

@@ -25,6 +25,7 @@ pub(crate) mod instances;
 pub(crate) mod ion_blasts;
 pub(crate) mod lasers;
 pub(crate) mod line_trails;
+pub(crate) mod observer_strip;
 pub(crate) mod outcome_banner;
 pub(crate) mod overlay_index;
 #[cfg(feature = "phobos")]

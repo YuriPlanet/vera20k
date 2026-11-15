@@ -180,11 +180,12 @@ fn prepare_save<'a>(
         .borrow()
         .saved();
     sinking_waterlines.retain(|(id, _)| sim.entities().contains(*id));
-    let sidebar_order = state
-        .match_state
-        .match_presentation
+    let presentation = &state.match_state.match_presentation;
+    let active_tab = saved_active_tab(presentation.active_sidebar_tab);
+    let sidebar_order = presentation
         .sidebar_projection
-        .saved_order();
+        .saved_order()
+        .map(|order| order.with_active_tab(active_tab));
     // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
     // the local presentation envelope rather than the simulation hash.
     #[cfg(feature = "phobos")]
@@ -286,6 +287,14 @@ fn prepare_save<'a>(
         local_view,
         resources,
     })
+}
+
+/// Mouse Save 5BE6D0 writes the open tab (ActiveTab, +0x539C) beside the
+/// strips; every save path carries it ([`SavedSidebarOrder::active_tab`]).
+///
+/// [`SavedSidebarOrder::active_tab`]: crate::sim::snapshot::SavedSidebarOrder::active_tab
+pub(crate) fn saved_active_tab(tab: crate::ui::sidebar::SidebarTab) -> u8 {
+    tab.tab_index() as u8
 }
 
 impl PreparedSave<'_> {

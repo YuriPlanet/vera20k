@@ -90,7 +90,7 @@ pub use self::production_types::*;
 // imported private submodules directly).
 pub(crate) use self::can_build::ares_build_limit_remaining;
 pub(crate) use self::can_build::owns_prerequisites;
-pub use self::can_build::{CanBuild, can_build};
+pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
 pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};

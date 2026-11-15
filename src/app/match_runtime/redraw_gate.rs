@@ -517,6 +517,13 @@ impl RedrawGate {
         hold
     }
 
+    /// A requested draw found the screen busy (`GpuContext::screen_busy`):
+    /// remember it, so the picture draws once the screen is free even when
+    /// it looks unchanged to a probe.
+    pub(crate) fn hold_busy_draw(&mut self) {
+        self.redraw_held = true;
+    }
+
     /// After a probe's service: what happens to `current`, the picture it
     /// would draw.
     pub(crate) fn probe_verdict(&self, current: Option<StillFrame>, now: Instant) -> ProbeVerdict {
@@ -610,6 +617,25 @@ mod tests {
         gate.note_input();
         assert_eq!(gate.next_pass(t), NextPass::Draw);
         assert_eq!(gate.probe_verdict(Some(shown), t), ProbeVerdict::Draw);
+    }
+
+    /// A requested draw that found the screen busy still draws afterwards,
+    /// though the picture looks unchanged to a probe.
+    #[test]
+    fn a_draw_that_found_the_screen_busy_draws_once_it_is_free() {
+        let t = Instant::now();
+        let after_limit = t + LIMITS.picture;
+        let shown = menu(120, false, [0, 0]);
+        let mut gate = RedrawGate::default();
+        gate.record_presented(Some(shown), t, LIMITS);
+        assert_eq!(gate.next_pass(after_limit), NextPass::Probe);
+        gate.hold_busy_draw();
+        assert_eq!(gate.next_pass(after_limit), NextPass::Draw);
+        gate.record_presented(Some(shown), after_limit, LIMITS);
+        assert_eq!(
+            gate.next_pass(after_limit + LIMITS.picture),
+            NextPass::Probe
+        );
     }
 
     #[test]

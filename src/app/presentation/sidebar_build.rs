@@ -222,14 +222,14 @@ pub fn build_sidebar_chrome_instances_for_layout(
 
 /// Render the vertical power bar meter by stacking powerp.shp strip tiles.
 ///
-/// Draws segments from top to bottom matching the original PowerClass::Draw_It:
-///   Empty (top)  = unused bar space (frame 0)
-///   Red          = deficit segments (frame 3)
-///   Yellow       = balance indicator (frame 2)
-///   Green        = surplus / consumed power (frame 1, with frame 4 blink)
+/// Draws segments from top to bottom as PowerClass::Draw 63FB20 does
+/// ([`PowerBarAnimState::visit_draw_segments`]): empty space (frame 0), the
+/// blink (frame 4) in place of the first lit segment, then the surplus over
+/// 100 (frame 1, +152C), the spare up to 100 (frame 2, +1530) and the drain
+/// (frame 3, +1534).
 ///
-/// Segment counts come from `PowerBarAnimState` which animates them
-/// one-at-a-time toward their targets for a smooth sliding effect.
+/// Segment counts come from `PowerBarAnimState`, which moves them one at a
+/// time toward their targets.
 fn render_power_bar(
     inst: &mut Vec<SpriteInstance>,
     atlas: &SidebarChromeAtlas,
@@ -450,8 +450,10 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// Whether a Building or Defense cameo may draw a queue count at all.
 ///
 /// gamemd's badge path resolves the requested type's House Factory with a
-/// hard-coded `BuildCat` (`StripClass::Draw`, `0x006A9C48..0x006A9CC3`), so a
-/// structure entry never finds its own Factory and never counts. Phobos'
+/// hard-coded `BuildCat` 0 (`StripClass::Draw`, push at `0x006A9C52`, then
+/// Fetch_Factory `0x00500510`): every structure gets the Buildings Factory. A
+/// Building entry finds its own, which holds one build at a time, so its count
+/// is at most the held copy; a Defense entry never counts. Phobos'
 /// `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`
 /// (`src/Ext/Building/Hooks.cpp`) replaces that `BuildCat` with the building
 /// type's own, unconditionally — it is not gated on
@@ -858,6 +860,15 @@ pub(crate) fn build_sidebar_cameo_instances(
             });
         }
     }
+    // StripDraw's empty-slot path (6A99BE -> 6A9B4B) paints the same flash
+    // darkening on a lit empty record.
+    if let Some(mask) = chrome.and_then(|atlas| atlas.darken.as_ref()) {
+        flash.extend(
+            view.flash_empty_slots
+                .iter()
+                .filter_map(|&slot| build_darken_instance(mask, slot, co, 4)),
+        );
+    }
     SidebarCameoInstances {
         cameo: instances,
         hover,
@@ -868,6 +879,66 @@ pub(crate) fn build_sidebar_cameo_instances(
         label_overlay,
         overlay: overlay_instances,
     }
+}
+
+/// The observer strip's pictures, from the chrome atlas: each listed House's
+/// side background at its row pair, its flag 70 pixels right and down
+/// (`0x006AA0F1..0x006AA154`, `0x006AA1E3..0x006AA2C9`).
+pub(crate) fn build_observer_strip_instances(
+    state: &AppState,
+    view: &SidebarView,
+) -> Vec<SpriteInstance> {
+    let (Some(houses), Some(atlas)) = (view.observer.as_deref(), current_sidebar_chrome(state))
+    else {
+        return Vec::new();
+    };
+    let co = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let art = &atlas.observer_art;
+    let mut out = Vec::new();
+    for house in houses {
+        let [x, y] = house.origin;
+        if let Some(&background) = art.background(house.side) {
+            push_chrome(&mut out, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
+        }
+        if let Some(&flag) = art.flag(house.country) {
+            push_chrome(&mut out, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+        }
+    }
+    out
+}
+
+/// Over the strip's SIDE2 tiles, under its text.
+const OBSERVER_BACKGROUND_DEPTH: f32 = 0.00045;
+const OBSERVER_FLAG_DEPTH: f32 = 0.000449;
+
+/// The observer strip's texts in each House's colour (Fancy_Text_Print
+/// `0x004A61C0`, style `0x42`): the name at 8, 4 into the row pair, each
+/// line 17 pixels below the last (`0x006AA373..0x006AA583`).
+fn observer_strip_text(
+    font: &BitFont,
+    houses: &[crate::ui::sidebar::ObserverEntry],
+    co: [f32; 2],
+) -> Vec<SpriteInstance> {
+    let mut out = Vec::new();
+    for house in houses {
+        let tint = house.rgb.map(|c| f32::from(c) / 255.0);
+        let [x, y] = [house.origin[0] + 8.0, house.origin[1] + 4.0];
+        for (line, text) in std::iter::once(&house.name).chain(&house.lines).enumerate() {
+            out.extend(font.build_text(
+                text,
+                x,
+                y + line as f32 * 17.0,
+                1.0,
+                crate::render::sidebar_text::CREDITS_DEPTH,
+                tint,
+                co,
+            ));
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -917,6 +988,8 @@ pub(crate) fn build_sidebar_text_instances(
                 .flatten();
             let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
             let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
+            // Residual: native truncates this halving; the float half
+            // places odd widths up to 1 px apart, which a player cannot see.
             let text_x = if shifts_left {
                 slot.x + READY_PAD_X
             } else {
@@ -950,6 +1023,9 @@ pub(crate) fn build_sidebar_text_instances(
                     .build_text(&count_str, text_x, text_y, 1.0, 0.00042, ready_tint, co),
             );
         }
+    }
+    if let Some(houses) = view.observer.as_deref() {
+        instances.extend(observer_strip_text(&state.renderer.bit_font, houses, co));
     }
     SidebarTextInstances {
         status: instances,
@@ -1495,7 +1571,7 @@ mod tests {
     }
 
     /// A count of one is the held product rather than a queued copy whenever the
-    /// linked Factory holds this entry's type, whether that product is finished
+    /// primary Factory holds this entry's type, whether that product is finished
     /// or on hold: gamemd compares `Factory+0x58`'s type with the requested one
     /// at `0x006A9CBF..0x006A9CC3` and draws nothing. Reading the building flag
     /// instead left a bare `1` on a placement-ready structure.

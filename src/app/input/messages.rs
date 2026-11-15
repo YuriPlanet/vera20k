@@ -730,6 +730,10 @@ fn post_named_house_line(
         ),
         HouseLineColor::Country => {
             // HouseType+0xC0 holds 2*entry+1 (ReadColor 0x474A90).
+            // RESIDUAL (kept by the maintainer, 2026-11-15): a multiplayer
+            // SetCreditsAndColor overwrites it with the slot's raw colour
+            // priority (`0x004FCE17`), so gamemd colours these lines with that
+            // scheme of the country's last slot house; VERA keeps Color=.
             let scheme = country.map_or(0, |country| rules.country_color_scheme(&country));
             country_message_rgb(scheme, &rules.color_schemes)
         }
@@ -924,13 +928,24 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
     post_grey_row(state, &text, false, false);
 }
 
+/// What the layout edit mode tells the player (`input::layout_edit`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutEditLine {
+    /// It is on, and how to use it.
+    On,
+    /// Save ended it, and what they moved is kept.
+    Saved,
+    /// It ended without saving.
+    Cancelled,
+}
+
 /// Tell the player the layout edit mode is on and how to use it, or that it
-/// is off and what they moved is kept.
-pub(crate) fn post_layout_edit(state: &mut AppState, on: bool) {
-    let key = if on {
-        "VERA:LayoutEditHint"
-    } else {
-        "VERA:LayoutEditDone"
+/// is off and whether what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, line: LayoutEditLine) {
+    let key = match line {
+        LayoutEditLine::On => "VERA:LayoutEditHint",
+        LayoutEditLine::Saved => "VERA:LayoutEditDone",
+        LayoutEditLine::Cancelled => "VERA:LayoutEditCancelled",
     };
     post_grey_row(state, &crate::i18n::tr(key), false, false);
 }

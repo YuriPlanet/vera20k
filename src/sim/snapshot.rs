@@ -79,21 +79,31 @@ pub enum SavedCameoId {
 ///
 /// SidebarClass Save 6AC5E0 / Load 6AC5D0 only forward to RadarClass; Mouse
 /// Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
-/// four strips at +1544, stride F94. Load5BDF70 reads it at5BE089..5BE092;
-/// no-init5BE9B0->6A4F20 resets progress6AC7C0, preserving count/type/order.
+/// four strips at +1544, stride F94, and ActiveTab at +539C. Load5BDF70 reads
+/// it at5BE089..5BE092; no-init5BE9B0->6A4F20 resets progress6AC7C0,
+/// preserving count/type/order and the open tab.
 /// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
 /// 6D03A0 at 67E68F, whose SidebarClass Init 6A5310 hides and shows the shown
 /// sidebar, and ToggleSidebar 6A7D70 zeroes every strip's TopRow on the show.
+/// Residual: each strip's PendingScroll, saved inside the same object, is not
+/// carried, so a scroll still rolling at the save does not finish after the
+/// load. Trigger: saving within the few frames after an arrow or wheel
+/// scroll; a player cannot see it.
 /// This neutral transport does not introduce a sim dependency on a UI owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
+    /// Each strip's record flash deadlines (+0x88): one per entry, then the
+    /// empty records up to the last one a cameo flash lit (at most 75 records).
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],
     factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
     prediction_categories: Vec<crate::sim::production::ProductionCategory>,
+    /// The open strip's index (Sidebar `ActiveTab`, `+0x539C`), part of the
+    /// same 0x556C object Mouse Save/Load write and read.
+    active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
     #[cfg(feature = "phobos")]
@@ -113,6 +123,7 @@ impl SavedSidebarOrder {
             request_states,
             factory_links,
             prediction_categories: Vec::new(),
+            active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
             #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
@@ -181,6 +192,15 @@ impl SavedSidebarOrder {
 
     pub fn prediction_categories(&self) -> &[crate::sim::production::ProductionCategory] {
         &self.prediction_categories
+    }
+
+    pub fn with_active_tab(mut self, index: u8) -> Self {
+        self.active_tab = index;
+        self
+    }
+
+    pub fn active_tab(&self) -> u8 {
+        self.active_tab
     }
 
     #[cfg(any(test, feature = "test-support"))]

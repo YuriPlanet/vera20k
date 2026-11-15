@@ -12,6 +12,11 @@
 //! [`HandoffQueue`] makes every use of the GPU context's queue wait for that
 //! frame first, and the context's surface calls do the same.
 //!
+//! A job may have a tail ([`FrameHandoff::send_with_tail`]) that runs after
+//! the job counts as finished: waits and queue users go on beside it. The
+//! GPU context takes the window's next picture there, which waits for the
+//! screen with VSync on, so no other thread waits for the screen.
+//!
 //! The browser has no thread to give this to and hands the frame over inline.
 
 use std::any::Any;
@@ -121,8 +126,11 @@ impl Deref for HandoffQueue {
 
 type Job = Box<dyn FnOnce() + Send>;
 
+/// A job and the tail that runs once it counts as finished.
+type Jobs = (Job, Option<Job>);
+
 struct Worker {
-    jobs: std::sync::mpsc::Sender<Job>,
+    jobs: std::sync::mpsc::Sender<Jobs>,
     thread: std::thread::JoinHandle<()>,
 }
 
@@ -152,14 +160,24 @@ impl FrameHandoff {
 
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn start(shared: &Arc<Shared>) -> Option<Worker> {
-        let (jobs, inbox) = std::sync::mpsc::channel::<Job>();
+        let (jobs, inbox) = std::sync::mpsc::channel::<Jobs>();
         let finished = Arc::clone(shared);
         let thread = std::thread::Builder::new()
             .name("frame-handoff".into())
             .spawn(move || {
-                for job in inbox {
+                for (job, tail) in inbox {
                     let run = std::panic::AssertUnwindSafe(|| run_job(job));
                     finished.finish(std::panic::catch_unwind(run).err());
+                    // A tail runs even after its job panicked: it may hold a
+                    // flag that only it clears.
+                    if let Some(tail) = tail {
+                        let run = std::panic::AssertUnwindSafe(|| run_job(tail));
+                        if let Err(panic) = std::panic::catch_unwind(run) {
+                            // The next wait raises it, as a job's own.
+                            *finished.lock() = Some(panic);
+                            finished.outstanding.store(true, Ordering::Release);
+                        }
+                    }
                 }
             });
         match thread {
@@ -183,11 +201,33 @@ impl FrameHandoff {
             self.shared.outstanding.store(true, Ordering::Release);
             worker
                 .jobs
-                .send(Box::new(job))
+                .send((Box::new(job), None))
                 .expect("the frame hand-off thread outlives its sender");
             return;
         }
         job();
+    }
+
+    /// Run `job` on the hand-off thread as [`Self::send`] does, then `tail`
+    /// once `job` counts as finished: waits return and the queue is free
+    /// while `tail` runs. Without the thread both run here.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn send_with_tail(
+        &self,
+        job: impl FnOnce() + Send + 'static,
+        tail: impl FnOnce() + Send + 'static,
+    ) {
+        self.waiter().wait();
+        let Some(worker) = &self.worker else {
+            job();
+            tail();
+            return;
+        };
+        self.shared.outstanding.store(true, Ordering::Release);
+        worker
+            .jobs
+            .send((Box::new(job), Some(Box::new(tail))))
+            .expect("the frame hand-off thread outlives its sender");
     }
 }
 
@@ -259,6 +299,26 @@ mod tests {
         waiting.join().unwrap();
         assert!(done.load(Ordering::SeqCst));
         assert!(handoff.waiter().take_waited() > Duration::ZERO);
+    }
+
+    /// A tail waiting for the screen keeps no one else waiting: the frame
+    /// counts as finished, so drawing the next one may begin.
+    #[test]
+    fn a_wait_does_not_wait_for_the_tail() {
+        let handoff = FrameHandoff::new();
+        let (release, held) = mpsc::channel::<()>();
+        let (ended, tail_end) = mpsc::channel::<()>();
+        handoff.send_with_tail(
+            || {},
+            move || {
+                held.recv().unwrap();
+                ended.send(()).unwrap();
+            },
+        );
+        handoff.waiter().wait();
+        assert!(tail_end.try_recv().is_err(), "the tail is still waiting");
+        release.send(()).unwrap();
+        tail_end.recv().unwrap();
     }
 
     #[test]

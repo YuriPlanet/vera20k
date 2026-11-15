@@ -377,6 +377,22 @@ impl App {
                     }
                 }));
         }
+        // The same wake for the hand-off thread, once it has the window's
+        // next picture (`GpuContext::screen_busy`).
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(state), Some(proxy)) = (self.state.as_ref(), self.sim_wake.as_ref())
+            && !state.renderer.gpu.has_present_wake()
+        {
+            let proxy = std::sync::Mutex::new(proxy.clone());
+            state
+                .renderer
+                .gpu
+                .set_present_wake(std::sync::Arc::new(move || {
+                    if let Ok(proxy) = proxy.lock() {
+                        let _ = proxy.send_event(());
+                    }
+                }));
+        }
     }
 
     pub fn new_replay(request: crate::app::frontend::launch::ReplayLaunchRequest) -> Self {

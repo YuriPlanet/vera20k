@@ -379,7 +379,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
         &gadgets,
     );
     assert_eq!(building_tab.tabs[0].frame_index, 4);
-    gadgets.update_tab_flashes(29, 29, [true, true, false, false]);
+    gadgets.update_tab_flashes(19, 29, [true, true, false, false]);
     let normal = view_with_gadgets(
         &sim,
         &options,
@@ -412,7 +412,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
             expected
         );
     }
-    gadgets.update_tab_flashes(30, 30, [false; 4]);
+    gadgets.update_tab_flashes(1, 30, [false; 4]);
     assert!(!gadgets.tab_flashes[0].is_active());
     assert!(!gadgets.tab_flashes[1].is_active());
 }
@@ -1863,5 +1863,43 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             &mut gadgets
         ),
         SuperWeaponClick::Refused
+    );
+}
+
+/// `StripClass::Draw` asks the House's primary Factory for the type's kind
+/// (Fetch_Factory 0x00500510 with BuildCat 0, 0x006A9C52..0x006A9C67) whether
+/// it holds the entry's type before drawing a count of one
+/// (0x006A9CB0..0x006A9CC3); the cameo's own Factory link plays no part.
+#[test]
+fn the_count_badge_asks_the_primary_factory_not_the_cameo_link() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        .map(|retail| retail.rules)
+    else {
+        return;
+    };
+    let (mut sim, owner) = world(&rules, &["GACNST", "GAPILE"]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &candidates, 12, false);
+    let drawn = view(&sim, &options, &projection, SidebarTab::Infantry, 1200.0);
+    projection.replace_view(Some(drawn));
+    assert!(crate::sim::production::enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "E1",
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    // No lifecycle output reaches the projection: the E1 cameo has no link.
+    projection.refresh_cameo_draw_state(&sim, &frame_for(&sim, &rules, owner), &rules, owner, None);
+    let items = &projection.view().unwrap().items;
+    assert!(
+        items
+            .iter()
+            .find(|item| item.type_id == "E1")
+            .unwrap()
+            .is_held_this_type
     );
 }

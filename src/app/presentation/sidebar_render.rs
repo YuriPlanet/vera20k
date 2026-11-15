@@ -44,13 +44,15 @@ pub(crate) fn counter_credits(sim: &crate::sim::world::Simulation, owner: &str) 
     production::credits_for_owner(sim, owner).max(0)
 }
 
-/// Advance the displayed balance at the authoritative gameplay-frame seam.
-pub(crate) fn advance_sidebar_credits_after_frame(
-    state: &mut AppState,
-    frame_committed: bool,
-    tick_lane: crate::sim::world::TickLane,
-) {
-    if !crate::app::sidebar_projection::credits_advance_for_frame(frame_committed, tick_lane) {
+/// Step the credits counter once per Sidebar Action visit
+/// ([`sidebar_action_visits`](crate::app::presentation::sidebar_gadgets::sidebar_action_visits)):
+/// `CreditsClass::AI @ 0x004A2600`'s only caller is `TabClass::Action @
+/// 0x006D099D`, which GScreen Input reaches. Each visit reads the balance the
+/// pass ends with. Residual: Input runs before Logic (Main_Tick 0x0055D8AB),
+/// so gamemd counts toward the balance one frame older; the counter starts
+/// moving one frame later there, which a player cannot see.
+pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
+    if visits == 0 {
         return;
     }
     let Some(owner_name) = preferred_local_owner_name(state) else {
@@ -64,20 +66,42 @@ pub(crate) fn advance_sidebar_credits_after_frame(
     else {
         return;
     };
+    if sim
+        .interner()
+        .get(&owner_name)
+        .is_some_and(|owner| sim.session().is_observer_house(owner))
+    {
+        // The observer's counter shows the time the match has run
+        // (`0x004A2614..0x004A2678`): Scenario +0x61C plus the running span
+        // since +0x614, over 60, set at once and silent.
+        let seconds = state
+            .match_state
+            .scenario_elapsed_clock
+            .elapsed_seconds(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .set_observer_clock(&owner_name, seconds);
+        return;
+    }
     let credits = counter_credits(sim, &owner_name);
-    let Some(tick) = state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .advance_credits(&owner_name, credits)
-    else {
+    let projection = &mut state.match_state.match_presentation.sidebar_projection;
+    let mut last_step = None;
+    for _ in 0..visits {
+        let Some(step) = projection.advance_credits(&owner_name, credits) else {
+            break;
+        };
+        last_step = Some(step);
+    }
+    let Some(tick) = last_step else {
         return;
     };
-    // `CreditsClass::Draw @ 0x004A24F4..0x004A2533`: one `CreditTicks` cue per
-    // changed AI step — `[0]` counting up, `[1]` counting down — at volume
-    // `0.5f`, centre pan, for the local player's counter only (the observer
-    // branch draws elapsed time instead). Native plays it from the next
-    // sidebar draw, which clears the latch; VERA emits at the step itself.
+    // `CreditsClass::Draw @ 0x004A24F4..0x004A2533`: the `CreditTicks` cue
+    // of the latest changed AI step — `[0]` counting up, `[1]` counting
+    // down — at volume `0.5f`, centre pan, for the local player's counter
+    // only (the observer branch draws elapsed time instead). Draw plays it
+    // once per picture and clears the latch, so a pass plays at most one.
     let Some(sound_id) = state.rules().and_then(|rules| {
         crate::app::sidebar_projection::credit_tick_sound(&rules.general.credit_ticks, tick)
             .map(str::to_string)
@@ -378,6 +402,11 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
+        .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
         .set_cameo_frame(sim.session().binary_frame() as i32);
     state
         .match_state
@@ -572,6 +601,25 @@ fn build_view(
             }
             scroll[grid.part] = grid.scroll_rows;
         }
+    }
+    // While the local player observes, the strip lists the players over the
+    // grid, and its TopRow counts them.
+    if let Some(houses) = inputs.sim.observers.as_deref()
+        && let Some(sim) = state
+            .match_state
+            .sim_runtime
+            .presentation()
+            .map(|rt| &rt.simulation)
+    {
+        let entries =
+            crate::app::presentation::observer_strip::observer_entries(state, sim, houses);
+        let top = state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .cameo_strips()
+            .scroll_row(inputs.tab);
+        sidebar::apply_observer_strip(&mut view, inputs.spec, entries, top, &inputs.gadgets);
     }
     // The view never substitutes another tab, so the retained active tab needs
     // no write-back: `apply_cameo_transitions` (and the switch itself) is the
