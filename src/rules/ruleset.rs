@@ -3758,12 +3758,15 @@ impl GeneralRules {
 
     fn from_ini(ini: &IniFile) -> Self {
         let defaults = Self::default();
-        // Separate ReadJumpjetControls674467..67447E, no General gate.
-        let display_cruise_height = ini
+        // Separate ReadJumpjetControls674467..67447E, no General gate: the
+        // section gate `0x526810` and the seven Rules reads are
+        // `JumpjetControls::from_ini_section`'s one owner; this struct carries
+        // `Rules+0x420`.
+        let jumpjet_controls = ini
             .section("JumpjetControls")
-            .map_or(defaults.display_cruise_height, |s| {
-                s.read_int("CruiseHeight", defaults.display_cruise_height)
-            });
+            .map(crate::rules::jumpjet_params::JumpjetControls::from_ini_section)
+            .unwrap_or_default();
+        let display_cruise_height = jumpjet_controls.cruise_height;
         // AI IQ thresholds live in their own [IQ] read.
         let iq = ini.section_or_empty("IQ");
         // gamemd-derived: `RulesClass__ReadIQ @ 0x00674240` reads signed
@@ -7281,6 +7284,22 @@ impl RuleSet {
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
         let color_add = processed.color_add_state().0.clone();
 
+        // The rules-scale reader of every Phobos `[General]`, `[CombatDamage]`
+        // and `[JumpjetControls]` key; the type loop below needs two of its
+        // seeds. Native reads `[JumpjetControls]` before the type registries.
+        #[cfg(feature = "phobos")]
+        let phobos_globals = crate::rules::phobos_globals::PhobosGlobals::from_ini(ini);
+        // Phobos `TechnoTypeClass_CTOR_JumpjetControls` (`0x7115AE`): the
+        // constructor block every techno type starts from.
+        #[cfg(feature = "phobos")]
+        let jumpjet_ctor = {
+            let controls = ini
+                .section("JumpjetControls")
+                .map(crate::rules::jumpjet_params::JumpjetControls::from_ini_section)
+                .unwrap_or_default();
+            crate::rules::jumpjet_params::JumpjetParams::from_controls(&controls, &phobos_globals)
+        };
+
         // Step 1: Parse each type registry and load object sections.
         for &(registry_name, category) in TYPE_REGISTRIES {
             let ids: Vec<String> = parse_registry(ini, registry_name);
@@ -7292,6 +7311,17 @@ impl RuleSet {
                     .or_insert(registry_index as i32);
                 if let Some(section) = ini.section(id) {
                     let mut obj: ObjectType = ObjectType::from_ini_section(id, section, category);
+                    // Phobos re-seeds the constructor from `[JumpjetControls]`;
+                    // the per-type reads above only override what the section
+                    // authors, exactly as one native ReadINI pass would.
+                    #[cfg(feature = "phobos")]
+                    {
+                        obj.jumpjet_params =
+                            crate::rules::jumpjet_params::JumpjetParams::from_ini_section_with(
+                                section,
+                                &jumpjet_ctor,
+                            );
+                    }
                     if category == ObjectCategory::Building {
                         obj.base_plan_type_index = type_array_indices
                             .get(&(category, id.to_ascii_uppercase()))
@@ -7482,8 +7512,6 @@ impl RuleSet {
         // [CombatDamage] IonCannonWarhead, C4Warhead and CrushWarhead: the
         // ordered Process owner's, published by from_processed_rules.
         let bridge_warheads = crate::rules::bridge_warheads::BridgeWarheads::default();
-        #[cfg(feature = "phobos")]
-        let phobos_globals = crate::rules::phobos_globals::PhobosGlobals::from_ini(ini);
 
         let mut mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
             ini,

@@ -526,6 +526,18 @@ pub struct PhobosGlobals {
     /// facing spin (hook `0x54CB0E`).
     #[serde(default = "truth")]
     pub jumpjet_rotate_on_crash: bool,
+    /// `[JumpjetControls] Crash=` (`Valueable<double>`, constructor **5.0**;
+    /// `Ext/Rules/Body.cpp:1353`, `Body.h:54,594`): the crash descent seed the
+    /// Phobos `TechnoTypeClass::Constructor` hook stores in `+0xD7C` for a type
+    /// that does not author `JumpjetCrash=` (`0x7115AE`, see
+    /// [`crate::rules::jumpjet_params::JumpjetParams::from_controls`]).
+    #[serde(default = "crash_default")]
+    pub jumpjet_crash: crate::util::native_x87::NativeF64Bits,
+    /// `[JumpjetControls] NoWobbles=` (`Valueable<bool>`, constructor
+    /// **false**; `Ext/Rules/Body.cpp:1354`, `Body.h:55,595`): the `+0xD8C`
+    /// seed alongside [`Self::jumpjet_crash`].
+    #[serde(default)]
+    pub jumpjet_no_wobbles: bool,
     /// `[General] JumpjetClimbIgnoreBuilding=` (`Valueable<bool>`, default
     /// **false**; `Ext/Rules/Body.cpp:338`, `Body.h:244,768`): the fallback for
     /// a TechnoType's nullable `JumpjetClimbIgnoreBuilding=`; the jumpjet floor
@@ -1651,6 +1663,11 @@ fn truth() -> bool {
     true
 }
 
+/// `[JumpjetControls] Crash=`'s constructor value (`Ext/Rules/Body.h:594`).
+fn crash_default() -> crate::util::native_x87::NativeF64Bits {
+    crate::util::native_x87::NativeF64Bits::from_bits(5.0f64.to_bits())
+}
+
 /// `CombatAlert.Interval=`'s constructor value (`Ext/Rules/Body.h:787`).
 fn combat_alert_interval_default() -> i32 {
     150
@@ -1783,6 +1800,8 @@ impl Default for PhobosGlobals {
             chrono_sphere_delay: 0,
             mind_control_threat_delay: 0,
             jumpjet_rotate_on_crash: truth(),
+            jumpjet_crash: crash_default(),
+            jumpjet_no_wobbles: false,
             jumpjet_climb_ignore_building: false,
             sinkable: None,
             sink_speed: 5,
@@ -2626,6 +2645,13 @@ impl PhobosGlobals {
         globals.jumpjet_rotate_on_crash = ini
             .section_or_empty("JumpjetControls")
             .read_bool("RotateOnCrash", globals.jumpjet_rotate_on_crash);
+        // `Ext/Rules/Body.cpp:1353-1354`: the same `[JumpjetControls]` pass.
+        let jumpjet_controls = ini.section_or_empty("JumpjetControls");
+        let crash = jumpjet_controls
+            .read_phobos_double("Crash", f64::from_bits(globals.jumpjet_crash.bits()));
+        globals.jumpjet_crash = crate::util::native_x87::NativeF64Bits::from_bits(crash.to_bits());
+        globals.jumpjet_no_wobbles =
+            jumpjet_controls.read_bool("NoWobbles", globals.jumpjet_no_wobbles);
         globals.jumpjet_climb_ignore_building = general.read_bool(
             "JumpjetClimbIgnoreBuilding",
             globals.jumpjet_climb_ignore_building,

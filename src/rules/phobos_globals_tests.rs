@@ -934,6 +934,25 @@ fn the_jumpjet_rotate_on_crash_defaults_true() {
     assert!(read("[General]\nRotateOnCrash=no\n").jumpjet_rotate_on_crash);
 }
 
+/// `[JumpjetControls] Crash=` (`Ext/Rules/Body.cpp:1353`, constructor **5.0**
+/// `Body.h:594`) and `NoWobbles=` (`:1354`, constructor **false**
+/// `Body.h:595`): the two Phobos-only seeds of the techno constructor hook.
+#[test]
+fn the_jumpjet_crash_and_no_wobbles_default_and_read() {
+    let defaults = PhobosGlobals::default();
+    assert_eq!(f64::from_bits(defaults.jumpjet_crash.bits()), 5.0);
+    assert!(!defaults.jumpjet_no_wobbles);
+
+    let set = read("[JumpjetControls]\nCrash=9.5\nNoWobbles=yes\n");
+    assert_eq!(f64::from_bits(set.jumpjet_crash.bits()), 9.5);
+    assert!(set.jumpjet_no_wobbles);
+
+    // `[JumpjetControls]` only: a `[General]` or `[CombatDamage]` spelling is
+    // invisible.
+    let wrong = read("[General]\nCrash=9.5\nNoWobbles=yes\n[CombatDamage]\nCrash=9.5\n");
+    assert_eq!(wrong, defaults);
+}
+
 /// `[General] JumpjetClimbIgnoreBuilding=` (`Ext/Rules/Body.cpp:338`,
 /// constructor **false** `Body.h:768`).
 #[test]
