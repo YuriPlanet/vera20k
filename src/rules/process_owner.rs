@@ -696,14 +696,15 @@ impl NativeRulesProcessOwner {
         &self.sources.selected_rules_root
     }
 
-    /// VERA's Options switches as played, for the network rules digest (`ProcessAssets::multiplayer_rules_digest`).
+    /// VERA's Options switches as played, for the network rules digest
+    /// (`ProcessAssets::multiplayer_rules_digest`).
     pub fn personal_rules_compatibility_crc(&self) -> Option<u32> {
         self.sources.personal_rules.compatibility_crc()
     }
 
-    /// VERA: play the switches `rules` from the next scenario on, as a
-    /// network room plays its host's. Scenario roots compose them, so the one registry and
-    /// everything the shell read into it stay as they are.
+    /// VERA: play the switches `rules` from the next scenario on, as a network
+    /// room plays its host's. Scenario roots compose them, so the one registry
+    /// and everything the shell read into it stay as they are.
     pub fn use_personal_rules(&mut self, rules: PersonalRules) {
         self.sources.personal_rules = rules;
     }

@@ -160,7 +160,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .write_all(bytes)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

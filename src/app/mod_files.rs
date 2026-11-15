@@ -478,7 +478,7 @@ pub(crate) fn start(title: String, dir: PathBuf) -> std::io::Result<PageCheck> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

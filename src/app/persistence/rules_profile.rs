@@ -10,8 +10,9 @@ use crate::util::case_insensitive_path::find;
 
 const FILENAME: &str = "VERARULES.INI";
 
-/// The file every earlier version wrote when the player had none: comments
-/// only, so a copy that still holds exactly this was never changed.
+/// The starter released versions wrote when the player had none: comments
+/// only, so a copy that still holds exactly this was never changed. Any other
+/// comments-only starter stays, unmentioned.
 const STARTER: &[u8] = b"; Personal gameplay changes. Original game files are never changed.
 ; Restart VERA and start a new game after editing this file.
 ; Remove the leading ; from a section and its settings to enable them.
@@ -46,12 +47,20 @@ pub(crate) fn retire(directory: &Path) -> Option<String> {
         }
         return None;
     }
-    let settings = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
-        .map_or(true, |ini| !ini.is_empty());
+    // `[VERA]` held only the reader's own switch, OverrideMapRules, which
+    // changed no rule by itself, so a file of only that has nothing to keep.
+    let settings = crate::rules::ini_parser::IniFile::from_bytes(&bytes).map_or(true, |ini| {
+        ini.section_names()
+            .iter()
+            .any(|name| !name.eq_ignore_ascii_case("VERA"))
+    });
     if !settings {
         return None;
     }
-    log::warn!("{} holds settings, which are no longer read", path.display());
+    log::warn!(
+        "{} holds settings, which are no longer read",
+        path.display()
+    );
     Some(crate::i18n::tr_fill(
         "VERA:RulesFileRetired",
         &[("file", &path.display())],
@@ -63,8 +72,8 @@ mod tests {
     use super::*;
 
     /// The starter the game wrote goes; a file with settings stays where it
-    /// is, as it is, and gives the notice; a file of comments stays, with
-    /// none.
+    /// is, as it is, and gives the notice; a file of comments and the
+    /// reader's own `[VERA]` switch stays, with none.
     #[test]
     fn a_start_removes_the_starter_and_names_a_file_with_settings() {
         let directory =
@@ -83,7 +92,7 @@ mod tests {
         assert!(retire(&directory).is_some());
         assert_eq!(std::fs::read(&path).unwrap(), custom);
 
-        let comments = b";[E1]\r\n;Cost=75\r\n";
+        let comments = b";[E1]\r\n;Cost=75\r\n[VERA]\r\nOverrideMapRules=yes\r\n";
         std::fs::write(&path, comments).unwrap();
         assert_eq!(retire(&directory), None);
         assert_eq!(std::fs::read(&path).unwrap(), comments);
