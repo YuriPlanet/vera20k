@@ -63,6 +63,22 @@ pub(crate) use text::{
     combo_item_label, skirmish_right_panel_label_strings, skirmish_selected_map_name,
 };
 
+/// The IME candidate anchor follows the search text and any active preedit.
+pub(crate) fn choose_map_search_ime_area(
+    state: &AppState,
+    layout: &ChooseMapModalLayout,
+    search: &str,
+) -> crate::ui::shell::geom::RectPx {
+    let display = text::map_search_display(state, search);
+    text::map_search_caret_rect(
+        &state.renderer.bit_font,
+        &display,
+        layout.map_search,
+        layout.scale,
+    )
+    .unwrap_or(layout.map_search)
+}
+
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellFrameWave;
 use crate::app::loading::init::MapMenuEntry;
@@ -232,6 +248,7 @@ fn build_skirmish_shell_instances(
     seed_layout: Option<&SavedSeedLayout>,
     setup_layout: Option<&RandomMapSetupLayout>,
     shell: &SkirmishShellState,
+    search_display: &str,
     rules: Option<&RuleSet>,
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
@@ -337,6 +354,7 @@ fn build_skirmish_shell_instances(
                     choose_map_layout,
                     interior,
                     shell,
+                    search_display,
                     wave.is_none(),
                 );
             }
@@ -542,6 +560,13 @@ fn render_skirmish_shell_with_atlas(
         .choose_map_modal
         .as_ref()
         .map(|_| crate::app::frontend::shell_layout::choose_map_layout(state));
+    let search_display = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_ref()
+        .map(|modal| text::map_search_display(state, &modal.search))
+        .unwrap_or_default();
     // `0x105` and the seed browser each replace the page beneath them, and both
     // the sprite pass and the text pass need the same rects: one layout per page
     // per frame, from the same seam the input handlers read.
@@ -754,6 +779,7 @@ fn render_skirmish_shell_with_atlas(
             seed_layout.as_ref(),
             setup_layout,
             &state.frontend.skirmish_shell_state,
+            &search_display,
             state.rules(),
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
