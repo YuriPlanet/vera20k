@@ -92,6 +92,10 @@ The game then reads the mod's files as if you had copied them on top of the game
 Nothing is copied, and the game folder isn't touched. A mod made to be copied into the
 game folder works the same from its own folder.
 
+With **No mod** selected, an `ares.mix` already in the game folder is ignored.
+A selected mod can use that copy or provide its own, which takes precedence.
+Other changed rules and terrain files still need to match between players.
+
 A mod is only data files, and VERA20k never runs a program from one. If a mod you
 download comes with an `.exe`, a `.dll` or a launcher, VERA20k doesn't need it, so don't
 run it.

@@ -28,15 +28,17 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
-and map, and whether the game ships `ares.mix`, which the rules agreement
-covers. Every build mounts `ares.mix` when the game or its mod holds it, and
-reads such a game's INIs and rules the Ares way; without it Ares plays only
+and map, and whether the selected mod loads `ares.mix`, which the rules agreement
+covers. With **No mod** selected, the installation's `ares.mix` is ignored and
+ordinary builds keep the original archive order and INI readers. A selected mod
+can load its own `ares.mix` or use the installation's copy; that game's INIs and
+rules are read the Ares way. Without it Ares plays only
 from Ares keys in the rules, mode or map, read the stock way ([Ares](ares.md)).
-A game with `ares.mix` adds one byte to the rules digest, so its digest differs
+A game loading `ares.mix` adds one byte to the rules digest, so its digest differs
 from the same files read without it; a game without it adds nothing.
-Players on one version reach the same answer; a game from before this decides
-differently, is another version and is refused by the build check first, and a
-rollback returns everyone on that build to the earlier reading.
+Players on one build reach the same answer. Older builds, including those that
+load an installed `ares.mix` with No mod selected, are refused by the existing
+build check. A rollback restores that build's earlier selection and INI reading.
 
 The rules agreement is one digest of the process's rules sources
 (`ProcessAssets::multiplayer_rules_digest`) and of each theater's INI as the theater
@@ -56,8 +58,7 @@ refused by the build check first; a rollback returns to the earlier digest for e
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
-YR's; `ares.mix` in the
-game folder, which makes it an Ares game; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+YR's; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
 LANGRULE, the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, another INI is compared with the retail archives' own entry, else

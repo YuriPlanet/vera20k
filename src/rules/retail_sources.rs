@@ -594,10 +594,10 @@ mod tests {
         assert!(selected.ini.section("Digest").is_some());
     }
 
-    /// A game that ships `ares.mix` (Load_Bootstrap_AresMIX, hook
-    /// `0x0053029E`) selects its INIs with Ares' syntax in every build: a `+=`
-    /// list key is numbered as Ares numbers it. Without `ares.mix`, a build
-    /// without the `ares` feature keeps gamemd's syntax.
+    /// A selected mod that mounts `ares.mix` (Load_Bootstrap_AresMIX, hook
+    /// `0x0053029E`) selects its INIs with Ares' syntax in every build. No mod
+    /// ignores the installed archive and keeps gamemd's syntax in builds
+    /// without the remaining `ares` feature.
     #[test]
     fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
         use crate::assets::asset_manager::MediaArchiveMode;
@@ -613,9 +613,14 @@ mod tests {
             b"[GAPOWR]\nFoundation=2x2\n",
         )
         .unwrap();
-        let keys = || {
-            let assets =
-                AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let mod_dir = TestDirectory::new("ares-rules-mod");
+        let keys = |selected_mod: bool| {
+            let assets = AssetManager::with_mod(
+                directory.path(),
+                selected_mod.then_some(mod_dir.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
             let sources = RetailRulesSources::select(&assets).unwrap();
             let keys: Vec<String> = sources
                 .rulesmd
@@ -629,9 +634,10 @@ mod tests {
         // A build with the `ares` feature reads every game the Ares way.
         let feature = cfg!(feature = "ares");
         let stock_key = if feature { "var_0" } else { "+" };
-        assert_eq!(keys(), (false, feature, vec![stock_key.to_owned()]));
+        assert_eq!(keys(false), (false, feature, vec![stock_key.to_owned()]));
         directory.write_mix("ares.mix", "ares.txt", b"ares");
-        assert_eq!(keys(), (true, true, vec!["var_0".to_owned()]));
+        assert_eq!(keys(false), (false, feature, vec![stock_key.to_owned()]));
+        assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()]));
     }
 
     #[test]

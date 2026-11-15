@@ -6,8 +6,8 @@
 //! from Ares.dll: adding Ares keys to an INI is all it takes. Ares plays in a
 //! game when one of its Rules passes (RULESMD, LANGRULE, the mode INI, the
 //! map, TMCJ4F) holds a key that an Ares reader finds and no stock reader
-//! reads in that section, or when the installed game or the mod ships
-//! `ares.mix` (Ares mounts it from `Load_Bootstrap_AresMIX`, hook
+//! reads in that section, or when the selected mod mounts its own or the
+//! installation's `ares.mix` (Ares mounts it from `Load_Bootstrap_AresMIX`, hook
 //! `0x0053029E`). Retail data holds neither, so a retail game plays as
 //! gamemd. Every build lets the switch turn on, the release build too. Until
 //! the last Ares code leaves the `ares` build feature, a build without that
@@ -42,9 +42,10 @@
 //! (its `+` keys, `[Child]:[Base]` sections, later-wins keys and
 //! `[#include]`); a game that ships `ares.mix` has its INIs loaded and its
 //! Rules processed and projected the Ares way ([`ares_way`]), any other game
-//! the stock way. Every build mounts `ares.mix` when the installed game or
-//! the mod holds it (`AssetManager::ships_ares`). The few Ares readers whose
-//! state only Ares code uses run in both, so their keys still turn Ares on in
+//! the stock way. With no mod selected, an installed `ares.mix` is ignored;
+//! a selected mod can mount its own or the installation's copy
+//! (`AssetManager::ships_ares`). The few Ares readers whose state only Ares
+//! code uses run in both, so their keys still turn Ares on in
 //! a stock-way game; the rest run only the Ares way. The mode belongs to the
 //! retained Rules registry, and each Process call and projection opens it
 //! ([`read_ares_way`]); the game's later readers (its fixed ART, the asset

@@ -492,9 +492,10 @@ impl ProcessAssets {
             }
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
-        // the map, which the map agreement covers, and whether `ares.mix`
-        // ships. A game with it adds the byte, so the same files read with
-        // and without `ares.mix` never agree; a game without it adds nothing.
+        // the map, which the map agreement covers, and whether the selected
+        // mod mounted `ares.mix`. A game using it adds the byte, so the same
+        // files read with and without Ares never agree; with no mod selected
+        // the installed archive is ignored and adds nothing.
         // Until the `ares` feature is deleted a build with it writes the byte
         // for every game, as it always has.
         if cfg!(feature = "ares") || assets.ships_ares() {
@@ -564,9 +565,9 @@ impl ProcessAssets {
         compared.extend(theater_inis.iter().map(String::as_str));
         self.changed_game_files =
             crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
-        // `ares.mix` makes the game an Ares game (`rules::ares_switch`): its
-        // INIs and Rules are read the Ares way even where every compared file
-        // is the retail copy, so it changes the original game too.
+        // A selected mod mounting `ares.mix` makes the game an Ares game
+        // (`rules::ares_switch`): its INIs and Rules are read the Ares way even
+        // where every compared file is retail. With no mod selected it is ignored.
         if assets.ships_ares() {
             self.changed_game_files.push("ares.mix".to_owned());
         }
@@ -810,6 +811,45 @@ impl ProcessAssets {
 mod tests {
     use super::{MediaArchiveMode, ProcessAssets};
     use crate::assets::asset_manager::AssetManager;
+
+    #[test]
+    fn original_game_agrees_with_an_ares_installation_without_loading_ares() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::rules::ares_switch::read_ares_way;
+
+        let install = audio_test_install("original-ares-agreement");
+        for (name, text) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\nBuildSpeed=.8\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(install.path().join(name), text).unwrap();
+        }
+        let mod_dir = TestDirectory::new("selected-ares-agreement");
+        let digest = |selected_mod: bool| {
+            let assets = AssetManager::with_mod(
+                install.path(),
+                selected_mod.then_some(mod_dir.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
+            let _reading = read_ares_way(assets.ships_ares());
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            process.multiplayer_rules_digest("").unwrap()
+        };
+        let original = digest(false);
+        install.write_mix("ares.mix", "ares.txt", b"installed Ares");
+        assert_eq!(digest(false), original);
+        assert_ne!(digest(true), original);
+        std::fs::write(
+            install.path().join("rulesmd.ini"),
+            "[General]\nBuildSpeed=.9\n",
+        )
+        .unwrap();
+        assert_ne!(digest(false), original, "actual rule changes still differ");
+    }
 
     #[test]
     fn generated_rules_agreement_covers_rmg_settings_and_theater_inputs() {

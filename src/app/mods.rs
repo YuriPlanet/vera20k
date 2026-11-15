@@ -4,7 +4,8 @@
 //! mod is a subfolder of `Mods` in the settings folder (docs/modding.md), and
 //! the one in use reads as if its files had been copied on top of the game
 //! folder ([`AssetManager::with_mod`], `map::source::set_mod_dir`). With no
-//! mod in use nothing here changes what the game reads.
+//! mod in use the asset manager skips an installed `ares.mix`, so the
+//! original game does not depend on whether the installation also has Ares.
 //!
 //! This module decides which mod a launch uses: the `--mod <folder>` or
 //! `--no-mod` switch, else config.toml's `[paths] mod`. A choice that cannot

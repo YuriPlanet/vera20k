@@ -8,8 +8,10 @@ key plays with Ares, and any other game plays as the original (`src/rules/ares_s
 No option or client setting turns it on.
 
 The official downloads do not hold all of Ares yet. Its code is moving out of the `ares`
-build feature area by area. Every build mounts `ares.mix` when the game's folder or the mod
-in use holds it, and reads such a game the Ares way: its INIs load with Ares' syntax (`+=`
+build feature area by area. With **No mod** selected, `ares.mix` in the installation is
+ignored, so an Ares installation can play the original game without moving files.
+A selected mod can use its own `ares.mix` or the installation's copy. Every build
+mounts it for that mod and reads the game the Ares way: its INIs load with Ares' syntax (`+=`
 keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
 with every Ares key VERA20K reads, Ares' sound bags and string tables are added, and the
 whole simulation, the Country loading screen, the sidebar and superweapon targeting take their
