@@ -1084,3 +1084,30 @@ fn the_adjacent_wall_damage_defaults_and_reads() {
         350
     );
 }
+
+/// `[General] AIAirTargetingFix=` (`Ext/Rules/Body.cpp:452`, constructor
+/// `false` `Body.h:867`) and `[General] DisableOveroptimizationInTargeting=`
+/// (`Ext/Rules/Body.cpp:531`, constructor `false` `Body.h:951`): the two
+/// targeting switches, both `[General]` reads.
+#[test]
+fn the_targeting_switches_default_false_and_read_from_general() {
+    let defaults = PhobosGlobals::default();
+    assert!(!defaults.ai_air_targeting_fix);
+    assert!(!defaults.disable_overoptimization_in_targeting);
+    let set = read(
+        "[General]
+AIAirTargetingFix=yes
+DisableOveroptimizationInTargeting=yes
+",
+    );
+    assert!(set.ai_air_targeting_fix);
+    assert!(set.disable_overoptimization_in_targeting);
+    let other = read(
+        "[AI]
+AIAirTargetingFix=yes
+DisableOveroptimizationInTargeting=yes
+",
+    );
+    assert!(!other.ai_air_targeting_fix);
+    assert!(!other.disable_overoptimization_in_targeting);
+}
