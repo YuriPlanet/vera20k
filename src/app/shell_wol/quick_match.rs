@@ -379,8 +379,8 @@ use crate::app::shell_network_setup::agreement::changed_files_text;
 /// original game. A mod fails the pre-match check; other INI roots or
 /// changed game files fail the join's rules hash (`0x0079BA60`, silently in
 /// Quick Match), against any opponent without the same. The box says what to
-/// turn off, and the runner ends before it queues. Personal rules and the
-/// Options switches need nothing: its room has no host rules, so its match
+/// turn off, and the runner ends before it queues. The Options switches need
+/// nothing: its room has no host rules, so its match
 /// plays without them (`HostRules`).
 fn original_game_refusal(
     mod_in_use: bool,
@@ -1777,13 +1777,10 @@ mod tests {
         use crate::app::process_assets::ProcessAssets;
         use crate::assets::asset_manager::MediaArchiveMode;
         use crate::rules::personal_rules::PersonalRules;
-        let assets = |file: &str| {
-            ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_personal_rules(PersonalRules::from_bytes(file.as_bytes()).unwrap())
-        };
-        // Personal rules and Terrain Deformation stay home: Quick Match's
-        // room shares none, so its match plays without them.
-        let mut changes = assets("[NUKE]\nDeformDepth=10\n");
+        // The Options switches stay home: Quick Match's room shares none,
+        // so its match plays without them.
+        let mut changes = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+            .with_personal_rules(PersonalRules::default());
         changes.set_terrain_deformation(true);
         assert_eq!(original_game_refusal(false, &changes), None);
         // A loose rulesmd.ini the retail archives don't hold, found at startup.

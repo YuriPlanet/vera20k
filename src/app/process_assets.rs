@@ -47,9 +47,9 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
-    /// The player's own personal rules, read once at startup like the
-    /// selected game sources; only the Options switches change them later
-    /// ([`Self::set_terrain_deformation`], [`Self::set_superweapon_limit`]). A network room plays its host's
+    /// The player's own Options switches, read at startup with VERA.INI and
+    /// changed by the Options page ([`Self::set_terrain_deformation`],
+    /// [`Self::set_superweapon_limit`]). A network room plays its host's
     /// instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
@@ -210,8 +210,8 @@ impl ProcessAssets {
         }
     }
 
-    /// The player's own VERARULES.INI and Options switches, which offline
-    /// games play and a network room's host shares.
+    /// The player's own Options switches, which offline games play and a
+    /// network room's host shares.
     pub(crate) fn personal_rules(&self) -> &crate::rules::personal_rules::PersonalRules {
         &self.personal_rules
     }
@@ -229,7 +229,7 @@ impl ProcessAssets {
         }
     }
 
-    /// Offline games play the player's own personal rules.
+    /// Offline games play the player's own switches.
     pub(crate) fn use_own_personal_rules(&mut self) {
         self.use_personal_rules(self.personal_rules.clone());
     }
@@ -439,7 +439,7 @@ impl ProcessAssets {
     pub(crate) fn native_ini_hashes(
         &self,
     ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
-        // VERA: without personal rules or the Options switches, which a
+        // VERA: without the Options switches, which a
         // network room takes from its host and Quick Match leaves out; the
         // rules digest still compares the ones each game plays.
         self.native_ini_hashes
@@ -479,8 +479,8 @@ impl ProcessAssets {
         // digest.
         digests.push(self.changed_tiles(assets).digest.clone());
         let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
-        // VERA: the personal rules played, with their precedence policy,
-        // which the digested sources leave out; none adds nothing.
+        // VERA: the Options switches played, which the digested sources
+        // leave out; none adds nothing.
         if let Some(crc) = rules.personal_rules_compatibility_crc() {
             bytes.extend_from_slice(b"personal rules\0");
             bytes.extend_from_slice(&crc.to_le_bytes());
@@ -1049,7 +1049,7 @@ mod tests {
     }
 
     #[test]
-    fn rooms_compare_the_personal_rules_they_play_not_the_players_own() {
+    fn rooms_compare_the_switches_they_play_not_the_players_own() {
         use crate::map::source::test_support::TestDirectory;
         use crate::rules::personal_rules::PersonalRules;
 
@@ -1057,35 +1057,32 @@ mod tests {
         dir.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         dir.write("artmd.ini", b"[Test]\nVoxel=no\n");
         dir.write("aimd.ini", b"[Test]\nValue=1\n");
-        let start = |bytes: &[u8]| {
+        let start = |rules: PersonalRules| {
             let assets = AssetManager::from_loose_root_for_test(dir.path());
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_personal_rules(PersonalRules::from_bytes(bytes).unwrap());
+                .with_personal_rules(rules);
             process.initialize_sources_if_needed(&assets).unwrap();
             process.install_native_ini_hashes(&assets, &[]);
             process.return_from_loading(assets);
             process
         };
         let digest = |process: &ProcessAssets| process.multiplayer_rules_digest("").unwrap();
-        let mut stock = start(b"");
-        let mut own = start(b"[General]\nBuildSpeed=.5\n");
-        // The room's door leaves personal rules to the room.
+        let mut deformation = PersonalRules::default();
+        deformation.set_terrain_deformation(true);
+        let mut stock = start(PersonalRules::default());
+        let mut own = start(deformation);
+        // The room's door leaves the switches to the room.
         assert_eq!(stock.native_ini_hashes(), own.native_ini_hashes());
         let original = digest(&stock);
         assert_ne!(original, digest(&own));
-        // Quick Match plays none; a room its host's, priority included.
+        // Quick Match plays none; a room its host's.
         own.use_personal_rules(PersonalRules::default());
         assert_eq!(original, digest(&own));
-        let host =
-            PersonalRules::from_bytes(b"[General]\nBuildSpeed=.5\n[VERA]\nOverrideMapRules=yes\n")
-                .unwrap();
+        let mut host = PersonalRules::default();
+        host.set_superweapon_limit(5);
         stock.use_personal_rules(host.clone());
         own.use_personal_rules(host);
         assert_eq!(digest(&stock), digest(&own));
-        assert_ne!(original, digest(&stock));
-        let mut deformation = PersonalRules::default();
-        deformation.set_terrain_deformation(true);
-        stock.use_personal_rules(deformation);
         assert_ne!(original, digest(&stock));
     }
 

@@ -66,7 +66,6 @@ first, and the game folder is never changed.
 | What you can put here | What it does |
 | --- | --- |
 | A folder for your mod, inside `Mods` | Holds the mod's files. See [The Mods folder](#the-mods-folder). |
-| `VERARULES.INI` | Your own rule changes, with or without a mod. The game creates this file for you. |
 | A `Maps` folder of `.yrm` files | Adds your maps to the map list, with or without a mod. Create the folder if it isn't there. Maps you download online go here too. |
 | `vera20k.<language>.ini` | Adds a language, or changes the game's text. See [translating](../src/i18n/README.md). |
 
@@ -167,9 +166,6 @@ out, ready for you to fill in: the mod's name and maker, and its
 the game plays with no mod, so until you change them the new mod plays as the original
 game.
 
-Your own `VERARULES.INI` still counts with a mod in use, and it wins: a key you set there
-beats the same key in the mod's `rulesmd.ini`.
-
 1. Press **Open Folder** in the box that comes up, or **Open Mods Folder**.
 2. Rename the folder if you like, and change the files.
 3. [Pick the mod](#pick-a-mod).
@@ -241,8 +237,9 @@ only reads the files ending in `md`, so changing `rules.ini` or `art.ini` does n
 
 ### Change a unit
 
-Open `VERARULES.INI` and write the unit's section with only the keys you want to change.
-This changes the GI's cost and health:
+Make a mod with [New Mod](#start-a-new-mod), open its `rulesmd.ini` and find the unit's
+section, such as `[E1]` for the GI. Change the keys you want and leave the rest as they
+are. This makes the GI cheaper and tougher:
 
 ```ini
 [E1]
@@ -250,8 +247,8 @@ Cost=100
 Strength=200
 ```
 
-A map's own rules win over this file, unless you
-[turn that off](personal-rules.md#mission-and-map-priority).
+Then [pick the mod](#pick-a-mod). As in the original game, a map's own rules win over the
+mod's.
 
 ### Replace art, sounds, the AI or the main rules
 
@@ -277,8 +274,6 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 - Restart the game and start a new match. A loaded save keeps the rules it was saved with.
 - Check that the game uses your mod. The main menu shows its name, and near its start
   `logs/ra2.log` has a line beginning `Mod in use:`.
-- Check `VERARULES.INI` in the VERA20k folder. A key set there beats the same key in a
-  mod's `rulesmd.ini`.
 - Check your spelling. A wrong name is ignored with no error, and capitals count: `Cost=`
   works, `cost=` doesn't.
 - `;` starts a comment. `#` doesn't.
@@ -288,8 +283,8 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
 the same `rulesmd.ini`, `artmd.ini`, `aimd.ini`, theater INIs (such as `snowmd.ini`) and
-terrain tiles. Your `VERARULES.INI` and **Terrain Deformation** don't need to match: a room
-plays its host's. With a mod in use,
+terrain tiles. **Terrain Deformation** and the **Superweapon Limit** don't need to match: a
+room plays its host's. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
@@ -302,7 +297,7 @@ what it changes from the original game (its mod, or files such as a loose `rules
 or that it plays the original, so the difference is in another player's game.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
-game, without anyone's `VERARULES.INI` or Terrain Deformation. With a mod in use it tells
+game, without anyone's Terrain Deformation or Superweapon Limit. With a mod in use it tells
 you to pick **No mod** in the Mods menu first. It also names
 any files in the game folder that change the original rules or terrain tiles, such as a
 loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.
@@ -310,8 +305,7 @@ loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left the
 ## Sharing your mod
 
 - Give people your mod's folder, with only the files you made or changed in it. They put
-  it in their own `Mods` folder and pick it in the Mods menu. A `VERARULES.INI` goes in
-  their VERA20k folder; to play one online, host the room, and every player plays yours.
+  it in their own `Mods` folder and pick it in the Mods menu.
 - Say in `mod.ini`'s `Terms=` what others may do with your work. The Mods menu shows it.
 - Make a file list first ([Check a mod's files](#check-a-mods-files)), so people can
   check that their copy is complete.
@@ -322,7 +316,6 @@ loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left the
 
 ## More detail
 
-- [Personal rules](personal-rules.md): everything about `VERARULES.INI`.
 - [INI profiles](ini-roots.md): use your own rules, art and AI files under other names.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what

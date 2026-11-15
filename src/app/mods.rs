@@ -112,6 +112,10 @@ pub(crate) struct Mods {
     /// Why the mod asked for is not in use, or did not load: shown once the
     /// main menu is at rest.
     notice: Option<String>,
+    /// What a start says of the retired VERARULES.INI
+    /// (`persistence::rules_profile`), shown after [`Self::notice`]. Never a
+    /// refusal: a launch by another program plays on.
+    rules_file_notice: Option<String>,
     /// `mod-start.txt`, held while this run's start with a mod has yet to
     /// pass or fail. Never held by a run the game starts for itself (a map
     /// picture, a capture), which leaves the record to the player's own run.
@@ -143,6 +147,12 @@ impl Mods {
                 ModSwitch::Use(active.folder.clone())
             })
             .args()
+    }
+
+    /// What the main menu says of the retired VERARULES.INI once it is at
+    /// rest, after the mod's own notice (`persistence::rules_profile`).
+    pub(crate) fn add_rules_file_notice(&mut self, text: String) {
+        self.rules_file_notice = Some(text);
     }
 
     /// Why the mod this launch asked for is not in use, while the player has
@@ -621,8 +631,8 @@ fn claim(path: &Path, folder: &str) -> std::io::Result<Claim> {
 /// Decide this launch's mod.
 ///
 /// `hidden` is a run with a sealed set-up (a capture, a map picture): it
-/// reads no choice from config.toml, as it reads no VERA.INI or VERARULES.INI,
-/// and uses a mod only when a switch names one.
+/// reads no choice from config.toml, as it reads no VERA.INI, and uses a mod
+/// only when a switch names one.
 pub(crate) fn begin(paths: &PathsConfig, switch: Option<&ModSwitch>, hidden: bool) -> Mods {
     let mut mods = Mods {
         kept: paths.mod_name().map(str::to_owned),
@@ -753,11 +763,12 @@ pub(crate) fn start_failed_text(title: &str) -> String {
 }
 
 /// Once the main menu has been at rest for [`MENU_SETTLE`]: a start with a
-/// mod has passed, and a mod that is not in use is explained. Returns when to
+/// mod has passed, and a mod that is not in use, or a VERARULES.INI that is
+/// no longer read, is explained. Returns when to
 /// look again while that is still to come.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let mods = &state.frontend.mods;
-    if mods.record.is_none() && mods.notice.is_none() {
+    if mods.record.is_none() && mods.notice.is_none() && mods.rules_file_notice.is_none() {
         return None;
     }
     if !state.main_menu_at_rest() {
@@ -770,7 +781,12 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         return Some(due);
     }
     started(state);
-    if let Some(text) = state.frontend.mods.notice.take() {
+    let mods = &mut state.frontend.mods;
+    let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
+        (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
+        (first, second) => first.or(second),
+    };
+    if let Some(text) = text {
         crate::app::App::open_shell_notice(state, text);
     }
     None

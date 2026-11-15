@@ -6,9 +6,8 @@ A LAN or online room plays its host's setting, which the host can change in the 
 Options, and a save keeps the rules it was started with. Quick Match plays the original game,
 without it.
 
-The box switches on this rules key for each new game. A mod, a map or your
-[personal rules](personal-rules.md) (`VERARULES.INI`) can set it as well, and a map can switch it
-off for its own game:
+The box switches on this rules key for each new game. A mod or a map can set it as well,
+and a map can switch it off for its own game:
 
 ```ini
 [CombatDamage]

@@ -40,7 +40,7 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
         .options
         .host_rules
         .personal_rules()
-        .map_err(|error| anyhow!("the host's personal rules do not read: {error}"))?;
+        .map_err(|error| anyhow!("the host's rules do not read: {error}"))?;
     state.process_assets.use_personal_rules(room_rules);
     let seed_options = if crate::map::rmg::is_seed_selection(file) {
         let root = &state
@@ -112,8 +112,8 @@ pub(crate) fn rules_differ_text(state: &AppState) -> String {
 
 /// What this game changes from the original game, which other players'
 /// games must change the same way: its mod, `config.toml`'s INI roots and
-/// changed game files. `None` when it plays the original. Personal rules
-/// and Terrain Deformation never count: a room plays its host's
+/// changed game files. `None` when it plays the original. The Options
+/// switches never count: a room plays its host's
 /// (`HostRules`).
 pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
     use crate::i18n::{tr, tr_fill};
