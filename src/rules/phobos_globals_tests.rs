@@ -1136,3 +1136,14 @@ fn the_temporal_kill_powered_anim_defaults_and_reads() {
     assert!(PhobosGlobals::default().temporal_kill_powered_anim);
     assert!(!read("[General]\nTemporal.KillPoweredAnim=no\n").temporal_kill_powered_anim);
 }
+
+/// `[General] Storage.TiberiumIndex=` (`Ext/Rules/Body.cpp:109`,
+/// constructor `-1` `Body.h:568`).
+#[test]
+fn the_storage_tiberium_index_defaults_and_reads() {
+    assert_eq!(PhobosGlobals::default().storage_tiberium_index, -1);
+    assert_eq!(
+        read("[General]\nStorage.TiberiumIndex=1\n").storage_tiberium_index,
+        1
+    );
+}

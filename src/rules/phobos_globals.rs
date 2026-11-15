@@ -333,6 +333,13 @@ pub struct PhobosGlobals {
     /// `Misc/Hooks.BugFixes.cpp:3655-3664`).
     #[serde(default = "true_bool")]
     pub temporal_kill_powered_anim: bool,
+    /// `[General] Storage.TiberiumIndex=`, default `-1`
+    /// (`Ext/Rules/Body.cpp:109`, constructor `Body.h:568`): a
+    /// `Refinery.UseStorage` refinery stores its raw deposits as this
+    /// `[Tiberiums]` index, converting the amount by the two types' values
+    /// (`UnitClass_Unload_Storage @ 0x73E474`, `Ext/House/Hooks.cpp:61-79`).
+    #[serde(default = "minus_one")]
+    pub storage_tiberium_index: i32,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1473,6 +1480,11 @@ fn fifteen_hundred() -> i32 {
     1500
 }
 
+/// `Storage.TiberiumIndex=`'s constructor value (`Ext/Rules/Body.h:568`).
+fn minus_one() -> i32 {
+    -1
+}
+
 /// The `Pips.SelfHeal.*` frame pairs' constructor value
 /// (`Ext/Rules/Body.h:614-616`).
 fn thirteen_twenty() -> [i32; 2] {
@@ -1612,6 +1624,7 @@ impl Default for PhobosGlobals {
             unit_crate_vehicle_cap: 50,
             free_mcv_credits_threshold: 1500,
             temporal_kill_powered_anim: true,
+            storage_tiberium_index: -1,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1843,6 +1856,9 @@ impl PhobosGlobals {
             "Temporal.KillPoweredAnim",
             globals.temporal_kill_powered_anim,
         );
+        globals.storage_tiberium_index = ini
+            .section_or_empty("General")
+            .read_int("Storage.TiberiumIndex", globals.storage_tiberium_index);
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so
         // their relative order does not matter.
