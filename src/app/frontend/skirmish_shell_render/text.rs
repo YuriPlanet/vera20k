@@ -1245,6 +1245,20 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
             scale.factor(),
         );
+    } else if let Some(path) = modal.exported_to.as_ref().filter(|_| modal.exported) {
+        // VERA: where Export Map wrote the file, which is not the game folder.
+        let text = localized_label(state, "VERA:RandomMapExportedTo", "Saved to {path}")
+            .replace("{path}", path);
+        push_text_draw(
+            out,
+            state,
+            &text,
+            rect_to_text_rect(layout.progress_text),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            SHELL_DROPDOWN_TEXT_DEPTH - 0.0001,
+            scale.factor(),
+        );
     } else if let Some((key, fallback)) = modal.extras_note {
         // VERA: what the last Extras tool did, where the progress text goes.
         push_text_draw(

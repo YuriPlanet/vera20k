@@ -1104,16 +1104,24 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
     )
 }
 
+/// An exported map's path as the dialog shows it: from inside the player's
+/// home folder when it lies there (`AppData\Local\VERA20k\Maps\rmap1.yrm`),
+/// else whole.
+fn shown_export_path(path: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    home.and_then(|home| path.strip_prefix(home).ok())
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
 impl App {
     /// VERA extension: keep the dialog's generated map as `rmap<seed>.yrm` in
     /// VERA's Maps folder through [`crate::app::map_library::keep_map`],
     /// never the game folder, so Choose Map lists it at once; a name another
-    /// map holds takes the map's hash suffix. False when there is no map or
-    /// the write fails.
-    fn export_generated_map(state: &mut AppState) -> bool {
-        let Some(generated) = state.frontend.random_map_retention.candidate() else {
-            return false;
-        };
+    /// map holds takes the map's hash suffix. Returns the written file, none
+    /// when there is no map or the write fails.
+    fn export_generated_map(state: &mut AppState) -> Option<std::path::PathBuf> {
+        let generated = state.frontend.random_map_retention.candidate()?;
         let modal = state
             .frontend
             .skirmish_shell_state
@@ -1146,11 +1154,11 @@ impl App {
         match crate::app::map_library::keep_map(state, &file, text.as_bytes()) {
             Ok(path) => {
                 log::info!("random map: exported {}", path.display());
-                true
+                Some(path)
             }
             Err(err) => {
                 log::warn!("random map: could not export {file}: {err:#}");
-                false
+                None
             }
         }
     }
@@ -1995,14 +2003,24 @@ impl App {
             return true;
         }
         if export_requested {
+            // The file goes to VERA's Maps folder, not the game folder, so the
+            // dialog says where it went, or that it did not.
             let exported = Self::export_generated_map(state);
+            let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .map(std::path::PathBuf::from);
             if let Some(modal) = state
                 .frontend
                 .skirmish_shell_state
                 .random_map_setup_modal
                 .as_mut()
             {
-                modal.exported = exported;
+                modal.exported = exported.is_some();
+                modal.exported_to = exported
+                    .as_deref()
+                    .map(|path| shown_export_path(path, home.as_deref()));
+                modal.extras_note = exported
+                    .is_none()
+                    .then_some(("VERA:RandomMapExportFailed", "The map could not be saved"));
             }
             return true;
         }
@@ -2056,6 +2074,27 @@ mod terrain_preview_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// VERA extension: Export Map's note names the file from inside the
+    /// player's home folder, and a file outside it whole.
+    #[test]
+    fn an_exported_map_is_shown_from_the_home_folder() {
+        let home = std::path::Path::new("home").join("player");
+        let kept = home.join("AppData").join("rmap7.yrm");
+        assert_eq!(
+            shown_export_path(&kept, Some(&home)),
+            std::path::Path::new("AppData")
+                .join("rmap7.yrm")
+                .display()
+                .to_string()
+        );
+        let elsewhere = std::path::Path::new("maps").join("rmap7.yrm");
+        assert_eq!(
+            shown_export_path(&elsewhere, Some(&home)),
+            elsewhere.display().to_string()
+        );
+        assert_eq!(shown_export_path(&kept, None), kept.display().to_string());
+    }
 
     /// Restarting the same random map after a Skirmish match: the shell's
     /// retained staging supplies every start.
