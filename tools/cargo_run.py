@@ -564,13 +564,24 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         all_tests: bool = False) -> int:
     times = RunTimes()
     try:
-        return _run(root, args, label, timeout, policy, times, all_tests)
+        status = _run(root, args, label, timeout, policy, times, all_tests)
+        if status is FOCUS_OUTGROWN:
+            print('Test groups: the group uses test code that only another group compiles (the errors '
+                  'above); compiling every test instead. To repair the group: python -m tools.test_groups '
+                  'lend <test module> <group> (tools/README.md, "Test groups")', file=sys.stderr, flush=True)
+            status = _run(root, args, label, timeout, policy, times, True)
+        return status
     finally:
         print(times.summary(), file=sys.stderr, flush=True)
 
 
+# What _run returns when a focused test build failed on an item rustc reports as
+# configured out: a test of the group now uses another group's test code.
+FOCUS_OUTGROWN = object()
+
+
 def _run(root: Path, args: list[str], label: str | None, timeout: float, policy, times: RunTimes,
-         all_tests: bool = False) -> int:
+         all_tests: bool = False):
     from tools._cargo_cache import CachePolicy, register_locked, automatic_locked, retention_due
     from tools._cargo_seed import profile_directory, seed
     policy = policy if policy is not None else CachePolicy.from_env()
@@ -646,6 +657,7 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                 print(f'Cache seeding stopped ({error}); Cargo builds what it lacks',
                       file=sys.stderr, flush=True)
         artifacts = set()
+        configured_out = False
         try:
             hashes = {}
             before = source_identity(root, hashes)
@@ -667,16 +679,14 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
                     elif message.get('reason') == 'compiler-artifact' and message.get('executable'):
                         artifacts.add(Path(message['executable']))
                     elif message.get('reason') == 'compiler-message':
-                        print(message['message'].get('rendered', line), end='', file=sys.stderr, flush=True)
+                        rendered = message['message'].get('rendered', line)
+                        print(rendered, end='', file=sys.stderr, flush=True)
+                        configured_out |= 'configured out' in rendered
                     elif message.get('reason') not in {'compiler-artifact', 'build-script-executed', 'build-finished'}:
                         print(line, end='', flush=True)
                 result = child.wait()
             if result:
-                if focus:
-                    print('Test groups: only the groups named above compiled. For a test item that is '
-                          '"configured out", lend its module to the group (tools/README.md, "Test groups"); '
-                          '--all-tests compiles every test.', file=sys.stderr, flush=True)
-                return result
+                return FOCUS_OUTGROWN if focus and configured_out else result
             # A label's manifest records this identity: compare contents exactly
             # there. Elsewhere the stat table is enough; see source_identity.
             after = source_identity(root, None if label else hashes)

@@ -263,6 +263,42 @@ class CargoRunTests(unittest.TestCase):
             self.assertEqual(status, 0)
             self.assertNotIn('no test matched', errors)
 
+    def test_a_focused_build_that_needs_another_groups_test_code_compiles_every_test_instead(self):
+        (self.root / 'src').mkdir()
+        (self.root / 'Cargo.toml').write_text('[package]\nname = "vera20k"\n')
+        (self.root / 'src/lib.rs').write_text('mod app;\n')
+        (self.root / 'src/core_lib.rs').write_text('pub mod sim;\n')
+        (self.root / 'src/Cargo.toml').write_text('[package.metadata.test-groups]\nsim = ["sim"]\n')
+        commands = []
+        actual_popen = subprocess.Popen
+
+        def start(command, **kwargs):
+            if command[0] != 'cargo':
+                return actual_popen(command, **kwargs)
+            commands.append(command)
+            focused = any('test-focus' in word for word in command)
+            child = unittest.mock.MagicMock()
+            child.__enter__.return_value = child
+            child.stdout = io.StringIO(json.dumps({'reason': 'compiler-message', 'message': {
+                'rendered': self.error}}) + '\n' if focused else '')
+            child.wait.return_value = 101 if focused else 0
+            return child
+
+        def run():
+            commands.clear()
+            with patch.object(cargo_run, 'build_processes', return_value=[]), \
+                 patch.object(cargo_run.subprocess, 'Popen', side_effect=start), \
+                 redirect_stderr(io.StringIO()):
+                return cargo_run.run(self.root, ['test', '-p', 'vera20k-core', '--lib', '--no-run', 'sim::ammo'], None, 0)
+
+        self.error = 'error[E0432]: unresolved import\nnote: found an item that was configured out\n'
+        self.assertEqual(run(), 0)
+        self.assertEqual(['test-focus' in ' '.join(command) for command in commands], [True, False])
+        # Any other compile error is the caller's own: it is reported once.
+        self.error = 'error[E0308]: mismatched types\n'
+        self.assertEqual(run(), 101)
+        self.assertEqual(len(commands), 1)
+
     def test_automatic_core_features_stay_before_libtest_separator(self):
         # Cargo consumes the feature selection; everything after -- belongs
         # to libtest. Issue #1841 built successfully, then ran zero assertions.
