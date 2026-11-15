@@ -1571,7 +1571,7 @@ mod tests {
     }
 
     /// A count of one is the held product rather than a queued copy whenever the
-    /// linked Factory holds this entry's type, whether that product is finished
+    /// primary Factory holds this entry's type, whether that product is finished
     /// or on hold: gamemd compares `Factory+0x58`'s type with the requested one
     /// at `0x006A9CBF..0x006A9CC3` and draws nothing. Reading the building flag
     /// instead left a bare `1` on a placement-ready structure.

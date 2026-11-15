@@ -185,10 +185,11 @@ pub struct SidebarItem {
     pub queued_count: usize,
     /// True when this cameo's linked Factory is actively producing.
     pub is_building_this_type: bool,
-    /// True when the linked Factory's held product IS this entry's type,
-    /// finished or not. `StripClass::Draw` reads `Factory+0x58` and compares its
-    /// type index with the requested one at `0x006A9CBF..0x006A9CC3` to decide
-    /// whether a count of one is the held product rather than a queued copy.
+    /// True when the House's primary Factory for this type's kind holds this
+    /// entry's type, finished or not. `StripClass::Draw` reads that Factory's
+    /// `+0x58` and compares its type with the requested one at
+    /// `0x006A9CBF..0x006A9CC3` to decide whether a count of one is the held
+    /// product rather than a queued copy.
     pub is_held_this_type: bool,
     pub is_ready: bool,
     /// True when the linked Factory has no rate or is suspended. A cash stall

@@ -23,13 +23,6 @@ pub(crate) struct CameoFactoryStatus {
     pub(crate) is_ready: bool,
     pub(crate) is_building: bool,
     pub(crate) is_on_hold: bool,
-    /// The linked Factory's held product type (`Factory+0x58`), finished or
-    /// not. `StripClass::Draw` compares it with the entry's own type at
-    /// `0x006A9CBF..0x006A9CC3` before drawing a count of one.
-    /// RESIDUAL: native reads the house's primary Factory (`0x00500510`, called
-    /// at `0x006A9C67`), not this link; they differ only after a rearm leaves
-    /// the link on a Factory holding another type.
-    pub(crate) held_type: Option<InternedId>,
 }
 
 /// One retained object cameo's live inputs to `StripClass::Draw @ 0x006A9540`,
@@ -50,6 +43,14 @@ pub(crate) struct ObjectCameoDrawInputs {
     pub(crate) status: Option<CameoFactoryStatus>,
     /// The armed building placement names this type.
     pub(crate) armed: bool,
+    /// The House's primary Factory for this type's kind holds this type,
+    /// finished or not: `StripClass::Draw` fetches it with BuildCat 0
+    /// (`0x006A9C52..0x006A9C67`,
+    /// [`primary_factory_category`](crate::sim::production::primary_factory_category))
+    /// and compares its product (`Factory+0x58`) with the entry's type
+    /// (`0x006A9CB0..0x006A9CC3`) before drawing a count of one. The cameo's
+    /// own Factory link plays no part.
+    pub(crate) primary_holds_type: bool,
 }
 
 /// The one rule for a retained object cameo's drawn state: the unavailable
@@ -76,7 +77,7 @@ pub(crate) fn draw_object_cameo(item: &mut SidebarItem, inputs: &ObjectCameoDraw
         .clamp(0.0, 1.0);
     item.is_ready = status.is_some_and(|status| status.is_ready);
     item.is_building_this_type = status.is_some_and(|status| status.is_building);
-    item.is_held_this_type = status.is_some_and(|status| status.held_type == Some(status.type_id));
+    item.is_held_this_type = inputs.primary_holds_type;
     item.is_on_hold = status.is_some_and(|status| status.is_on_hold);
     item.is_armed = item.is_ready && inputs.armed;
 }
@@ -908,11 +909,11 @@ mod tests {
                             is_ready: complete,
                             is_building: running,
                             is_on_hold: !complete && !running,
-                            held_type: Some(
-                                interner.intern(factory["held_type"].as_str().unwrap()),
-                            ),
                         }),
                         armed: false,
+                        // The sidecar's one Factory is the House's primary
+                        // Infantry Factory.
+                        primary_holds_type: factory["held_type"].as_str().unwrap() == name,
                     },
                 );
                 assert_eq!(
@@ -929,14 +930,6 @@ mod tests {
                 assert_eq!(!item.enabled, drew("unavailable_darken"));
                 assert_eq!(item.is_ready, drew("ready_text"));
                 assert_eq!(item.is_building_this_type, drew("clock"));
-                // `StripClass::Draw` reads `Factory+0x58`'s own type for the
-                // count-of-one badge arm; the sidecar names that product.
-                assert_eq!(
-                    item.is_held_this_type,
-                    linked && factory["held_type"].as_str().unwrap() == name,
-                    "{}",
-                    control["name"]
-                );
                 assert_eq!(
                     (item.progress * f32::from(PRODUCTION_STEPS)).round() as u16,
                     decision["stage"].as_u64().unwrap() as u16,
