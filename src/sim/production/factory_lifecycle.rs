@@ -1330,8 +1330,8 @@ pub(in crate::sim) fn step_factories(sim: &mut Simulation) {
 ///
 /// Residual: native sidebar entry order remains separate from the retained
 /// Factory build-type order used here. TAction106 requests this same House
-/// recheck. Other unported trigger writers and unpowered-factory cameo
-/// admission remain separate existing gaps.
+/// recheck, as every other native +1FC writer does. Unpowered-factory cameo
+/// admission remains a separate existing gap.
 pub(in crate::sim) fn recalculate_strips(
     sim: &Simulation,
     rules: &RuleSet,

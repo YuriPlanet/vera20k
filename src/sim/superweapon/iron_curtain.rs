@@ -36,9 +36,6 @@
 //! `world_orders_c4_tests::c4_iron_curtain_application_cancels_pending_detonation`.
 //!
 //! RESIDUALS:
-//! - The EVA line is skipped natively while `0x00A8B538` is set
-//!   (`HouseClass::MPlayer_Defeated @ 0x004FC205`), on every client after
-//!   the local player's multiplayer defeat; VERA always plays it.
 //! - A null `IronCurtainInvokeAnim=` hands AnimClass a null type natively;
 //!   VERA constructs nothing. Retail sets `IRONBLST`.
 //! TAction109 (`0x006E36E0`) shares the receiver overrides below, but its

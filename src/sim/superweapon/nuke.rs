@@ -36,8 +36,6 @@
 //! - The House dirty tail also refreshes local building construction options
 //!   (vt+0x4E0) and sidebar strips (`0x006A7D20`); those presentation
 //!   consumers are outside the simulation's revoke/grant migration.
-//! - The launch-mute global `0x00A8B538` that skips the EVA line
-//!   (`0x006CDDEE`) is not modeled: the line always plays.
 //! - A `NUKEBALL` VERA cannot construct (a type without its SHP, as in lib
 //!   tests) holds no anim, and the bullet detonates at its next AI; retail
 //!   binds `NUKEBALL.SHP`.

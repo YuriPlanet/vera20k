@@ -2499,8 +2499,9 @@ pub(super) fn super_hold(
 
 /// House50B1D0: grant provided stock instances in the existing type registry
 /// order. Native dirty-tail callers run hold/revoke before this pass. Ordinary
-/// placement merely requests that tail; upgrade attachment is a separate,
-/// currently unported synchronous caller. Never construct a missing Super here.
+/// placement merely requests that tail; upgrade attachment calls it
+/// synchronously (`0x004409EF`, `sim::building_upgrades`). Never construct a
+/// missing Super here.
 pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
