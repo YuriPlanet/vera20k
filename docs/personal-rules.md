@@ -41,8 +41,8 @@ normal rule dependencies and derived values still apply.
 
 A LAN or online room plays its host's personal rules: the host's file, up to 8 KB,
 goes to every player with the room's options, and each player's match plays it in
-place of their own. The host can untick **Host's Personal Rules** in the room's Game
-Options to play without them. Your own file still applies to your offline games.
+place of their own. To host a room without them, comment them out and restart VERA.
+Your own file still applies to your offline games.
 Quick Match plays the original game, without anyone's personal rules
 ([room rules](Networking.md#room-rules)). A game a launcher starts plays each
 player's own file, so there every player needs the same one.

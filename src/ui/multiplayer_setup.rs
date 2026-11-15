@@ -90,11 +90,9 @@ pub(crate) const NO_YURI: u16 = 0x7F08;
 pub(crate) const NO_FRANCE: u16 = 0x7F09;
 pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
-/// The room's rules ([`HostRules`](crate::skirmish_launch::HostRules)): the
-/// host's Terrain Deformation and personal rules.
+/// The room's Terrain Deformation ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const TERRAIN_DEFORMATION: u16 = 0x7F12;
-pub(crate) const HOST_PERSONAL_RULES: u16 = 0x7F13;
-pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
+pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
     BRIDGES,
     ALLYING,
     NO_YURI,
@@ -102,11 +100,10 @@ pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
     NO_SPY,
     NO_STOLEN_TECH,
     TERRAIN_DEFORMATION,
-    HOST_PERSONAL_RULES,
 ];
 /// Their labels in VERA's language files; the retail string table has none
 /// for them.
-pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
     "VERA:DestroyableBridges",
     "VERA:InGameAllying",
     "VERA:NoYuri",
@@ -114,7 +111,6 @@ pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
     "VERA:NoSpy",
     "VERA:NoStolenTech",
     "VERA:TerrainDeformation",
-    "VERA:HostPersonalRules",
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
@@ -554,10 +550,7 @@ pub(crate) struct SetupView {
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
     /// [`ROOM_CHECKBOXES`]' states.
-    pub(crate) room_checks: [bool; 8],
-    /// The host has personal rules its room can share
-    /// ([`HostRules::can_share`](crate::skirmish_launch::HostRules::can_share)).
-    pub(crate) personal_rules_shareable: bool,
+    pub(crate) room_checks: [bool; 7],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
@@ -630,7 +623,6 @@ impl SetupView {
             NEXT_ROWS => self.first_row + self.dialog.rows_per_page() < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
-            HOST_PERSONAL_RULES => self.host && self.personal_rules_shareable,
             id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
             id if team_join_row(id).is_some() => self
                 .header_button(id)
@@ -883,7 +875,7 @@ pub(crate) struct MultiplayerSetupLayout {
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
     /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
-    pub(crate) room_checkboxes: [RectPx; 8],
+    pub(crate) room_checkboxes: [RectPx; 7],
     /// The Teams box shares [`Self::game_options`]' box and OK: the Teams
     /// count's label, Team Starts and Team Colors, placed only with it, and
     /// online Balance and Balance automatically.
@@ -1027,7 +1019,7 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
-            room_checkboxes: [RectPx::new(0, 0, 0, 0); 8],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
             teams_label: RectPx::new(0, 0, 0, 0),
             team_starts: RectPx::new(0, 0, 0, 0),
             team_colors: RectPx::new(0, 0, 0, 0),
@@ -1106,9 +1098,9 @@ impl MultiplayerSetupLayout {
             self.balance = Some(popup(215, 122, 124, 24));
             self.auto_balance = Some(popup(215, 154, 226, 17));
         }
-        // Two columns of seven under the trackbars, the left one over the
-        // art: the native five, Destroyable Bridges and Terrain Deformation,
-        // then In-game Allying, the four bans and Host's Personal Rules.
+        // Two columns of six under the trackbars, the left one over the art:
+        // the native five and Destroyable Bridges, then In-game Allying, the
+        // four bans and Terrain Deformation.
         let row = |index: i32| 124 + 22 * index;
         let left = |index| popup(24, row(index), 185, 17);
         let right = |index| popup(215, row(index), 226, 17);
@@ -1122,7 +1114,6 @@ impl MultiplayerSetupLayout {
             right(2),
             right(3),
             right(4),
-            left(6),
             right(5),
         ];
         self.game_options = Some(GameOptionsLayout {
@@ -1513,8 +1504,7 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
-            room_checks: [false; 8],
-            personal_rules_shareable: true,
+            room_checks: [false; 7],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
             grouped: false,

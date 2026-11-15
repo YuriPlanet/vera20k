@@ -376,10 +376,8 @@ impl App {
         if let SpawnGame::Network(network) = &mut request.game {
             // VERA: a launcher's room has no host to share rules: each
             // player plays their own, which its ExpectedRulesDigest compares.
-            network.session.options.host_rules = crate::skirmish_launch::HostRules::from_own(
-                state.process_assets.personal_rules(),
-                true,
-            );
+            network.session.options.host_rules =
+                crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
         }
         if let SpawnGame::Network(network) = &request.game {
             match &network.transport {
