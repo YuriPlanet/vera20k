@@ -204,16 +204,15 @@ pub(crate) fn building_voxel_pair_names(
     }
 }
 
-/// Ares ObjectTypeClass_Load3DArt_Turrets/_Barrels (10042220, 10042090;
-/// hooks 0x5F865F, 0x5F887B), UnloadTurretArt (100423B0, hook 0x5F8084) and
-/// the UnitClass_DrawVXL_Turrets/_Barrels1..3 reads (10042650, 100425D0,
-/// 10042610, 10042630; hooks 0x73BD15, 0x73B90E, 0x73BCCD, 0x73BD6A) lift the
-/// eighteen-slot bound on these voxels; this enumeration never had one.
+/// Unit73B8D9/70DCF0 uses a positive TurretCount to select indexed mode,
+/// then reads the current slot without comparing it to that count. The
+/// ObjectType5F865F/5F887B loads retain earlier native slots when a later
+/// read shrinks the count. Enumerate their physically retained libraries.
 /// Layers and gun indices the model can draw. Body and shadow storage stay
 /// independent of the selected gun, while every indexed gun has its own HVA.
-/// Missing optional barrels never create atlas work. A missing indexed turret
-/// ends enumeration, matching the loader's bounded prefix walk; UnitModel
-/// rejects the entire invalid model, as native's failure cleanup does.
+/// Missing optional barrels never create atlas work. The shared physical
+/// loader handles indexed-pair failure through ObjectType5F8ACB's cleanup
+/// before this enumeration.
 pub fn seed_layers_for(
     asset_manager: &AssetManager,
     type_id: &str,
@@ -247,13 +246,13 @@ pub fn seed_layers_for(
     }
     let count = indexed_turret_count(type_id, rules);
     if count > 0 {
-        for i in 0..count.min(18) {
-            let (t, b) = model.indexed_parts(i as usize);
+        for i in 0..model.indexed_count() {
+            let (t, b) = model.indexed_parts(i);
             if t.is_some() {
-                layers.push((VxlLayer::Turret, i));
+                layers.push((VxlLayer::Turret, i as i32));
             }
             if b.is_some() {
-                layers.push((VxlLayer::Barrel, i));
+                layers.push((VxlLayer::Barrel, i as i32));
             }
         }
     } else {
