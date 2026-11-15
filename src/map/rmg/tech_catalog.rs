@@ -371,7 +371,7 @@ pub(crate) fn stock_contract_catalog() -> Vec<TechType> {
     resolve(processed.neutral_tech_buildings(), &art)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

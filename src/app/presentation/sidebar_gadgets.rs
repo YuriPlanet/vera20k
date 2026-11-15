@@ -178,6 +178,6 @@ fn update_tab_flashes_for_owner(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "sidebar_gadgets_tests.rs"]
 mod tests;

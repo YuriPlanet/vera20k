@@ -16,7 +16,7 @@ use super::zone_build::projected_zone_record_index;
 use super::zone_map::{ZONE_INVALID, ZoneGrid, ZoneId};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, zone_class};
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod native_repair_tests {
     include!("base_zone_repair_native_tests.rs");
 }

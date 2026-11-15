@@ -8,7 +8,7 @@ use super::DispatchPath;
 use super::ordinary;
 use super::ramp_repair::Family;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "damage_dispatch_tests.rs"]
 mod tests;
 

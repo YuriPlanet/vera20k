@@ -65,21 +65,21 @@ mod sample_queue;
 use clip_cache::ClipCache;
 use playback::{PlaybackControl, PlaylistCursor, RingSource};
 use sample_queue::SampleQueue;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod ambient_playout_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod coordinate_playback_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod coordinate_sound_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod gattling_loop_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod house_cue_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod ring_resample_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod unit_voice_lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod unit_voice_tests;
 pub(crate) use observation::{PcmObservationConfig, PcmObservationContext, PcmObservationReport};
 use observation::{PcmObserver, VoiceLatchState};
@@ -3218,7 +3218,7 @@ fn taunt_filename(pattern: &str, number: u8) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
 
@@ -5265,7 +5265,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod country_taunt_tests {
     use super::taunt_filename;
 

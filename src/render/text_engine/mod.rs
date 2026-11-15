@@ -829,7 +829,7 @@ fn paragraphs(text: &str) -> Vec<(usize, usize)> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::assets::fnt_file::FntFile;

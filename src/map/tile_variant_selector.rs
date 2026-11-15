@@ -333,7 +333,7 @@ pub(crate) fn select_from_initialized_table(
     raw % total_file_count
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;

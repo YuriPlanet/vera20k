@@ -1896,11 +1896,11 @@ fn piece_scissor(
     (r > x && b > y).then_some([x as u32, y as u32, (r - x) as u32, (b - y) as u32])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "projectile_draw_gpu_tests.rs"]
 mod projectile_gpu_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod webgl_shader_tests {
     use crate::render::{batch, tactical_shader, webgl::pad_camera_structs};
 

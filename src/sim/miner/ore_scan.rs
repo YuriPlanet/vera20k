@@ -433,7 +433,7 @@ fn is_cell_harvestable(
     (code == 0).then_some(cell)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
 

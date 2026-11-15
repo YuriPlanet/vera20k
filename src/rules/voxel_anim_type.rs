@@ -259,7 +259,7 @@ fn radians_from_degrees(degrees: f64) -> NativeF64Bits {
     .expect("an INI angle in degrees stays finite in radians")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

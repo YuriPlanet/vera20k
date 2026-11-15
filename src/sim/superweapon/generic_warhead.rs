@@ -15,7 +15,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::world::{FrameEffects, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "generic_warhead_tests.rs"]
 mod tests;
 

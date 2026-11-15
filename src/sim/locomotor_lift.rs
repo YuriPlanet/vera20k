@@ -1020,10 +1020,10 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "locomotor_lift_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "locomotor_lift_native_tests.rs"]
 mod native_tests;

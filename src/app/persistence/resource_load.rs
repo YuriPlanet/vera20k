@@ -455,6 +455,6 @@ impl PreparedSavedGame {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "resource_load_tests.rs"]
 mod tests;

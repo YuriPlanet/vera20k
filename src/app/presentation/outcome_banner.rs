@@ -432,7 +432,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

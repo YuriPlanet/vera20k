@@ -269,7 +269,7 @@ pub(crate) const fn lepton_to_packed_cell_component(value: i32) -> i32 {
     (value / 256) as i16 as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

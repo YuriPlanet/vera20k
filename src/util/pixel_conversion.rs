@@ -43,7 +43,7 @@ impl PixelConversionBounds {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

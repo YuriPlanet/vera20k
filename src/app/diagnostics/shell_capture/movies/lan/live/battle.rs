@@ -3758,7 +3758,7 @@ fn placement_cursor(state: &AppState, yard: u64, type_id: &str) -> Result<(u16, 
     anyhow::bail!("no legal {type_id} placement near deployed yard")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod identity_tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};

@@ -1110,7 +1110,7 @@ mod receiver {
             }
         }
     }
-    #[cfg(test)]
+    #[cfg(all(test, tests_sim_c_g))]
     mod tests {
         use super::*;
         use crate::rules::ini_parser::IniFile;
@@ -3271,10 +3271,10 @@ mod receiver {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "emp_victim_tests.rs"]
 mod victim_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "emp_building_tests.rs"]
 mod building_tests;

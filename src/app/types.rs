@@ -235,7 +235,7 @@ pub(crate) use crate::render::cursor_atlas::{
     CursorId, SoftwareCursor, SoftwareCursorFrame, SoftwareCursorSequence,
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

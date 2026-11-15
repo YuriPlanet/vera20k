@@ -911,11 +911,11 @@ fn housing_targets(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "availability_tests.rs"]
 mod availability_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use serde::Deserialize;

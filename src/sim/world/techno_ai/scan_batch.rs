@@ -503,6 +503,6 @@ fn scan_may_be_due(entity: &GameEntity, now: u32) -> bool {
         }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "scan_batch_tests.rs"]
 mod tests;

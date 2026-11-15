@@ -253,7 +253,7 @@ fn infantry_doing_allows(doing: i32) -> ReadyResult {
         .ok_or(ReadyUnavailable::InvalidDoing(doing))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use std::cell::RefCell;
 

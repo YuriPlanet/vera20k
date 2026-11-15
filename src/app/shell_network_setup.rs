@@ -1272,7 +1272,7 @@ pub(crate) fn acknowledge_notice(state: &mut AppState) {
     state.platform.window.request_redraw();
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

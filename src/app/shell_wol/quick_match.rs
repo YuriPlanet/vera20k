@@ -1600,7 +1600,7 @@ pub(crate) fn add_buddy_answered(state: &mut AppState, yes: bool, ask_again: boo
     welcome(state);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

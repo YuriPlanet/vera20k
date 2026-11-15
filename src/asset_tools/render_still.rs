@@ -1036,7 +1036,7 @@ fn fit_scale(w: u32, h: u32, requested: u32) -> Option<u32> {
     Some(scale)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

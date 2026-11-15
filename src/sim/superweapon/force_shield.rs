@@ -32,7 +32,7 @@
 //!   util/native_x87.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "force_shield_tests.rs"]
 mod tests;
 

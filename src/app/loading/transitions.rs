@@ -944,7 +944,7 @@ pub(crate) fn clear_screen(encoder: &mut wgpu::CommandEncoder, view: &wgpu::Text
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod game_speed_tests {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::house_state::HouseState;

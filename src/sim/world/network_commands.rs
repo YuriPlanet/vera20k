@@ -339,7 +339,7 @@ impl<'a> NetworkCommandQueues<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::sim::command::{
@@ -520,6 +520,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "network_wait_tests.rs"]
 mod network_wait_tests;

@@ -167,7 +167,7 @@ pub(crate) fn sample_process_entry(entity: &mut GameEntity, sampled_slope: u8, b
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::{SlopeRenderPhase, SlopeTransitionState};
     use crate::map::entities::EntityCategory;

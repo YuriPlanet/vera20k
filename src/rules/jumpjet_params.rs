@@ -270,7 +270,7 @@ impl JumpjetOverride {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

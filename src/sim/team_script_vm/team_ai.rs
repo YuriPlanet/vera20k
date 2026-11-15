@@ -34,11 +34,11 @@ use crate::sim::intern::StringInterner;
 /// instead of `+0x171C`) for Regroup and Coordinate_Move.
 const RELAXED_STRAY_ACTIONS: [i32; 2] = [0x35, 0x36];
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "guard_slower_tests.rs"]
 mod guard_slower_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "retreat_tests.rs"]
 mod retreat_tests;
 
@@ -946,7 +946,7 @@ impl crate::sim::team_script_vm::TeamScriptVm {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::TeamTarget;
 

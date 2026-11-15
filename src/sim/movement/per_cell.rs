@@ -2000,19 +2000,19 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "per_cell_exit_tests.rs"]
 mod exit_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "per_cell_crush_tests.rs"]
 mod crush_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "per_cell_infantry_tail_tests.rs"]
 mod infantry_tail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod discovery_tests {
     use super::*;
     use crate::sim::combat::Health;

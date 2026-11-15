@@ -145,7 +145,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
 

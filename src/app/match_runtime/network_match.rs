@@ -1391,7 +1391,7 @@ pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
     add_vote(state, local, target);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

@@ -2044,7 +2044,7 @@ pub(super) fn push_saved_browser_prompt_text<I>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;

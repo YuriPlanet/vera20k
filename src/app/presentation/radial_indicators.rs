@@ -495,10 +495,10 @@ fn screen_center(viewport: SurfaceLineViewport, x: i32, y: i32, z: i32) -> [i32;
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radial_indicator_app_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radial_indicator_gpu_tests.rs"]
 mod gpu_tests;

@@ -789,7 +789,7 @@ fn render_shp_entry(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::{
         CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,

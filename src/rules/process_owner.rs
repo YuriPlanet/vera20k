@@ -6,19 +6,19 @@
 //! The compatibility `RuleSet` is a projection from those sources; it is never
 //! allowed to become a second registry owner.
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "sinking_sound_tests.rs"]
 mod sinking_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "selection_voice_tests.rs"]
 mod selection_voice_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "planning_rules_tests.rs"]
 mod planning_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "object_image_tests.rs"]
 mod object_image_tests;
 
@@ -1306,23 +1306,23 @@ impl NativeRulesProcessOwner {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "session_country_tests.rs"]
 mod session_country_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ares_eva_process_tests.rs"]
 mod ares_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "process_owner_global_controls_tests.rs"]
 mod global_controls_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "country_loading_prefix_tests.rs"]
 mod country_loading_prefix_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::assets::asset_manager::AssetManager;

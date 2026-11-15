@@ -455,7 +455,7 @@ fn opacity_for_selector_bits(bits: u8) -> f32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::app::presentation::frame::ObjectRecord;

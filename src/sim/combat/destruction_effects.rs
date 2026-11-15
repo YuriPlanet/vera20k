@@ -783,7 +783,7 @@ pub(crate) fn pick_death_anim<'r>(rng: &mut SimRng, list: &'r [String]) -> &'r s
     &list[index]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "destruction_effects_tests.rs"]
 mod tests;
 

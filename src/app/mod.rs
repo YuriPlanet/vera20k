@@ -94,7 +94,7 @@ pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
 pub(crate) mod restart;
@@ -114,7 +114,7 @@ mod shell_saved_seeds;
 mod shell_skirmish;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
 pub(crate) mod spawn_probe;
 mod state;
@@ -427,7 +427,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

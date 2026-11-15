@@ -558,7 +558,7 @@ fn purifier_bonus_amount(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod income_tests {
     use super::purifier_bonus_amount;
     use crate::util::native_x87::NativeF32Bits;

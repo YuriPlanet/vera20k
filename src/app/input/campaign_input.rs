@@ -68,7 +68,7 @@ fn lock_input(
     input.clear_command_latches();
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use crate::app::input::cursor::CursorVisibility;
     use crate::app::input::state::MatchInputState;

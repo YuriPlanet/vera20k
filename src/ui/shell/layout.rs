@@ -147,7 +147,7 @@ fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx, inset: Option<i32>) 
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 pub(crate) mod tests {
     use super::*;
     use crate::ui::shell::descriptor::{

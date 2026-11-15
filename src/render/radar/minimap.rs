@@ -961,10 +961,10 @@ fn create_white_texture(
     batch.create_texture_on_device(device, queue, &white_rgba, 2, 2, None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "minimap_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "minimap_gpu_tests.rs"]
 mod gpu_tests;

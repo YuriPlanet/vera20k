@@ -582,6 +582,6 @@ pub(crate) fn resolved_to_tile(terrain: &ResolvedTerrainGrid, ty: &ObjectType) -
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "build_site_tests.rs"]
 mod tests;

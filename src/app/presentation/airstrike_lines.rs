@@ -293,6 +293,6 @@ pub(crate) fn composite(
     draws
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "airstrike_lines_tests.rs"]
 mod tests;

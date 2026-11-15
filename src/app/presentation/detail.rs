@@ -153,7 +153,7 @@ impl DetailState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use serde_json::{Value, json};

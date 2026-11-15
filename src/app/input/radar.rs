@@ -478,6 +478,6 @@ fn centre_view_on_pick(state: &mut AppState) {
     crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "radar_tests.rs"]
 mod tests;

@@ -658,6 +658,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "powered_unit_tests.rs"]
 mod tests;

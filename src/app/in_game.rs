@@ -928,7 +928,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     /// Every in-scenario modal route, including BBB's Keyboard (state 4,
     /// `0x004E1FE0` control 0x52C) and Sound (state 6, control 0x52D)

@@ -31,31 +31,31 @@ fn tube_active(entity: &crate::sim::game_entity::GameEntity) -> bool {
         && entity.low_bridge_tube_state.is_some()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "track_object_turn_tests.rs"]
 mod track_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "forced_track_object_turn_tests.rs"]
 mod forced_track_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "teleport_anim_object_turn_tests.rs"]
 mod teleport_anim_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "per_cell_object_turn_tests.rs"]
 mod per_cell_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "airborne_cell_tag_tests.rs"]
 mod airborne_cell_tag_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "periodic_cell_object_turn_tests.rs"]
 mod periodic_cell_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "object_turn_lookup_tests.rs"]
 mod object_turn_lookup_tests;
 

@@ -3446,16 +3446,16 @@ pub(crate) fn publish_gap_generator_event(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tracked_cells_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod vision_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod reveal_area_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod adjust_for_z_tests {
     use super::{height_lift_px, iso_height_shift_cells};
 

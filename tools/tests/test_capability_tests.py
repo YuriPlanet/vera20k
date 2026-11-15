@@ -15,6 +15,7 @@ from unittest import mock
 
 from tools import capability_tests
 from tools.capability_tests import BY_NAME, CAPABILITIES, COMBINATIONS, features_of
+from tools.group_tests import is_group_feature
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "Cargo.toml"
@@ -22,8 +23,11 @@ CORE_MANIFEST = ROOT / "src" / "Cargo.toml"
 
 
 def manifest_features() -> dict[str, list[str]]:
+    """The client's features, less the test groups: those only choose which tests a
+    focused run compiles (tools/group_tests.py), and every other build compiles them all."""
     with MANIFEST.open("rb") as handle:
-        return tomllib.load(handle)["features"]
+        features = tomllib.load(handle)["features"]
+    return {name: values for name, values in features.items() if not is_group_feature(name)}
 
 
 def uncovered_core_features(root: dict, core: dict[str, list[str]]) -> set[str]:
@@ -44,7 +48,7 @@ def uncovered_core_features(root: dict, core: dict[str, list[str]]) -> set[str]:
         if name not in covered:
             covered.add(name)
             pending.extend(core.get(name, ()))
-    return set(core) - covered
+    return {name for name in set(core) - covered if not is_group_feature(name)}
 
 
 class CapabilityRegistryTests(unittest.TestCase):

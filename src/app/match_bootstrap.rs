@@ -894,7 +894,7 @@ pub fn accepted_tick_is_admitted(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::skirmish_launch::{

@@ -178,7 +178,7 @@ pub(crate) fn choose_folder() -> bool {
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

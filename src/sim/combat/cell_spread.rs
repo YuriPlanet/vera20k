@@ -154,7 +154,7 @@ pub fn splash_threshold_leptons(cell_spread: f64) -> i64 {
     i64::from(X87Chop53::ftol_f64_low_masked(cell_spread * 256.0))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
 

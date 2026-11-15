@@ -6,27 +6,27 @@
 //! RNG and native-ID owners then continue through terrain and map objects.
 //! Opening forces, shroud, AI credits and diplomacy retain their shared owners.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "campaign_house_bootstrap_tests.rs"]
 mod campaign_house_bootstrap_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "scenario_house_name_retail_tests.rs"]
 mod scenario_house_name_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "scenario_launch_identity_retail_tests.rs"]
 mod scenario_launch_identity_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "scenario_fillsilos_retail_tests.rs"]
 mod scenario_fillsilos_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "scenario_special_money_retail_tests.rs"]
 mod scenario_special_money_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "building_ai_sale_tag_retail_tests.rs"]
 mod building_ai_sale_tag_retail_tests;
 
@@ -3784,7 +3784,7 @@ pub fn initialize_map_roster_houses(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

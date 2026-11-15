@@ -735,7 +735,7 @@ fn collect_build_entries(
     entries
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
 
     use crate::rules::object_type::ObjectCategory;

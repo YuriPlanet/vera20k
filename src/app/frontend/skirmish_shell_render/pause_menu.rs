@@ -343,7 +343,7 @@ pub(crate) fn render_pause_menu_shell(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

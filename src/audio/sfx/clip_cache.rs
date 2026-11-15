@@ -108,7 +108,7 @@ impl ClipCache {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;

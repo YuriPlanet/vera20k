@@ -442,7 +442,7 @@ pub(crate) fn dispatch_smudge_request(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
 
@@ -483,7 +483,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod oracle_tests {
     use super::*;
 
@@ -628,7 +628,7 @@ mod oracle_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod dispatch_tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainCell;

@@ -2853,7 +2853,7 @@ fn push_candidate(candidates: &mut Vec<String>, candidate: String) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod anim_runtime_metadata_tests {
     use super::*;
     use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -3380,6 +3380,6 @@ mod anim_runtime_metadata_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "art_data_tests.rs"]
 mod tests;

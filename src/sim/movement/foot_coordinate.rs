@@ -143,6 +143,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_coordinate_tests.rs"]
 mod tests;

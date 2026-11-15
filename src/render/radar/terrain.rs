@@ -559,6 +559,6 @@ fn native_ftol(value: X87Value) -> i32 {
     X87Chop53::ftol_i64(value).expect("native radar sample fits i32") as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "terrain_tests.rs"]
 mod tests;

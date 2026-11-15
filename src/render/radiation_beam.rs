@@ -324,6 +324,6 @@ fn divide_coordinate(value: [i32; 3], count: i32) -> [i32; 3] {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_render_a_r, tests_app_presentation, tests_render_s_z)))]
 #[path = "radiation_beam_tests.rs"]
 pub(crate) mod tests;

@@ -557,7 +557,7 @@ pub const DC_START_BITS: u32 = 11;
 /// From `libavcodec/bink.c:389`.
 pub const BINK_RLELENS: [u8; 4] = [4, 8, 12, 32];
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

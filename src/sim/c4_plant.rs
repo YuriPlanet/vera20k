@@ -694,6 +694,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "c4_plant_tests.rs"]
 mod tests;

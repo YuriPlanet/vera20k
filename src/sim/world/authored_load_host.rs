@@ -287,7 +287,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;

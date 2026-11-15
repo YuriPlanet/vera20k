@@ -754,7 +754,7 @@ fn validate_options(options: &TacticalOptions) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::path::PathBuf;

@@ -1843,15 +1843,15 @@ fn native_e2_head(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "factory_system_hold_tests.rs"]
 mod system_hold_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "ares_build_time_tests.rs"]
 mod ares_build_time_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod tests {
     use super::*;
 

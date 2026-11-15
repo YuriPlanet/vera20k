@@ -860,7 +860,7 @@ fn distinct_pictures(cameos: &[RenderedCameo]) -> (Vec<usize>, Vec<usize>) {
     (pictures, picture_of)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::rendered_cameo_from_canvas;
 

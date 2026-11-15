@@ -1062,7 +1062,7 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
 

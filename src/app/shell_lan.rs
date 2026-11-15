@@ -1206,7 +1206,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     deadline
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

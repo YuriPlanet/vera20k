@@ -127,10 +127,10 @@ pub mod insignia_type;
 #[cfg(feature = "phobos")]
 pub mod invulnerability_rules;
 pub mod phobos_parallel_ai_queues;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_prone_speed_tests.rs"]
 mod phobos_prone_speed_tests;
 #[cfg(feature = "phobos")]
@@ -197,11 +197,11 @@ pub(crate) mod ares_tiberium;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ares_manual_control_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ares_switch_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ares_type_selection_tests;
 pub mod compatibility;
 pub mod animation_sequence;
@@ -213,16 +213,16 @@ pub mod building_rubble;
 pub mod building_upgrade;
 pub mod buildup_asset_catalog;
 pub mod campaign_loading;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod campaign_start_tests;
 pub mod campaigns;
 pub mod color_add;
 pub mod color_scheme;
 pub mod combat_damage;
 pub mod crate_rules;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod country_parent_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod country_veterancy_tests;
 pub mod effect_asset_catalog;
 pub mod end_game;
@@ -258,7 +258,7 @@ pub mod prerequisite;
 pub mod process_owner;
 pub mod projectile_type;
 pub mod radar_event_config;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod radial_indicator_tests;
 pub mod recoil;
 pub mod secret_lab;
@@ -284,7 +284,7 @@ pub mod voxel_asset_catalog;
 mod voxel_model_plan;
 pub mod voxel_frame_catalog;
 pub mod warhead_type;
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_rules_o_z, not(feature = "ares")))]
 mod warhead_verses_tests;
 pub mod weapon_type;
 
@@ -292,19 +292,19 @@ pub mod weapon_type;
 pub mod area_guard_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod deploy_voice_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod disk_laser_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ini_token_readers_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_rules_a_n, tests_rules_o_z)))]
 mod mirage_disguise_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod move_sound_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod path_delay_rules_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod allow_shrouded_subterannean_moves_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod retail_ini_fixture;

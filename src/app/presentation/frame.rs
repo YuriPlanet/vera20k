@@ -1447,6 +1447,6 @@ impl ObjectRecord {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "frame_tests.rs"]
 mod tests;

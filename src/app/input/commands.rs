@@ -8,7 +8,7 @@ use crate::map::entities::EntityCategory;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "ground_command_native_tests.rs"]
 mod ground_command_native_tests;
 
@@ -1191,7 +1191,7 @@ pub(super) fn queue_house_cheer_in_sim(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::{
         EXECUTE_MARGIN, executed_by, schedule_command_in_sim, schedule_stress_attack_moves,
@@ -2252,14 +2252,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "local_owner_tests.rs"]
 mod local_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "paid_superweapon_tests.rs"]
 mod paid_superweapon_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "force_shield_target_tests.rs"]
 mod force_shield_target_tests;

@@ -997,7 +997,7 @@ fn frame_for_tick(
     frame.max(0) as usize
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::geom;

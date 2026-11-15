@@ -1307,7 +1307,7 @@ fn list_caption(id: LauncherComboId) -> String {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::rules::house_colors::{STRENGTH_MAX, STRENGTH_RETAIL};

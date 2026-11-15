@@ -723,10 +723,10 @@ fn factories_admit(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_a_b, tests_sim_t_z, tests_sim_trigger)))]
 #[path = "ai_team_creation_tests.rs"]
 pub(crate) mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_team_creation_campaign_tests.rs"]
 mod campaign_tests;

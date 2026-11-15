@@ -4453,7 +4453,7 @@ fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
     help
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

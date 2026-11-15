@@ -34,23 +34,23 @@ use crate::rules::voxel_frame_catalog::{
 use crate::sim::movement::slope_transition::SLOPE_TRANSITION_FRAMES;
 use std::borrow::Cow;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "hover_draw_tests.rs"]
 mod hover_draw_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "naval_draw_tests.rs"]
 mod naval_draw_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "unit_body_draw_tests.rs"]
 mod unit_body_draw_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "aircraft_body_point_tests.rs"]
 mod aircraft_body_point_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "voxel_image_draw_tests.rs"]
 mod voxel_image_draw_tests;
 
@@ -3015,7 +3015,7 @@ pub(super) fn house_color_to_remap_row(hc: HouseColorIndex) -> u32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
     use crate::app::presentation::frame::ObjectRecord;

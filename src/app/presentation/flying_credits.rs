@@ -161,7 +161,7 @@ impl FlyingCredits {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

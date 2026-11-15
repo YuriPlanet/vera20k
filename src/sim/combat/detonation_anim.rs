@@ -551,7 +551,7 @@ pub(crate) fn projectile_impact_cell(
     (rx, ry, sub_x, sub_y, impact.z)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -882,7 +882,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 mod phobos_enhancement_tests {
     use super::*;
     use crate::map::entities::EntityCategory;

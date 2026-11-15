@@ -271,7 +271,7 @@ impl FrameSubmission {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::sync::mpsc;
 

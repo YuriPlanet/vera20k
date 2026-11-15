@@ -800,7 +800,7 @@ pub(crate) fn retained_overlay_land(flags: &OverlayTypeFlags, slope_type: u8) ->
     (uses_early_branch || flags.tiberium).then_some(flags.land)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

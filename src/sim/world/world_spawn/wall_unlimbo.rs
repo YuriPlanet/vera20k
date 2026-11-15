@@ -449,6 +449,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "wall_unlimbo_tests.rs"]
 mod tests;

@@ -96,11 +96,11 @@ impl AllianceWalks {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "shroud_refresh_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "paranoid_walks_tests.rs"]
 mod paranoid_walks_tests;
 
@@ -111,11 +111,11 @@ thread_local! {
     static WALK_EVERY_MAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "reveal_to_all_tests.rs"]
 mod reveal_to_all_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "sight_cadence_tests.rs"]
 mod sight_cadence_tests;
 

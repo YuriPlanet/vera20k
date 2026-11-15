@@ -146,7 +146,7 @@ fn question_rect(width: i32, height: i32) -> RectPx {
     in_game_shell::ordinary_child_rect(geom::dlu_rect(99, 165, 230, 19), width, height)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

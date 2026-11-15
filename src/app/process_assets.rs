@@ -780,7 +780,7 @@ impl ProcessAssets {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{MediaArchiveMode, ProcessAssets};
     use crate::assets::asset_manager::AssetManager;

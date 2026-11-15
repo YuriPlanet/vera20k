@@ -317,7 +317,7 @@ impl ResolvedRuleHandles {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

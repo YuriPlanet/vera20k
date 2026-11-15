@@ -90,7 +90,7 @@ impl StopObservation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod stop_observation_tests {
     use super::{AiActivity, LanTarget, LiveLanCapture, StopObservation};
     use crate::app::match_diagnostics::CommandExecutionObservation;

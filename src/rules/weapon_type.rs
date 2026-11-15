@@ -660,7 +660,7 @@ fn sound_list(section: &IniSection, key: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn ares_projectile_range_reads_cells_as_leptons_and_apply_damage_decides_zeroing() {

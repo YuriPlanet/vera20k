@@ -32,7 +32,7 @@
 //!   one for the three keys retail comments out, which no retail building
 //!   reaches).
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "ai_fire_tests.rs"]
 mod tests;
 

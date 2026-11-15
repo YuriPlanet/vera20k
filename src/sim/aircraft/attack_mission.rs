@@ -27,11 +27,11 @@
 
 use crate::sim::combat::fire_error::FireError;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "approach_range_tests.rs"]
 mod approach_range_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "attack_mission_tests.rs"]
 mod tests;
 

@@ -146,7 +146,7 @@ fn canonical_type_id(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_ascii_uppercase())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

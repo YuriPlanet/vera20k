@@ -166,7 +166,7 @@ fn read_null_terminated(data: &[u8], pos: &mut usize) -> Option<String> {
     Some(s)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

@@ -1011,7 +1011,7 @@ pub(crate) fn direct_greatest_threat(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     use super::*;
     use serde_json::Value;

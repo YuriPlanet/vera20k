@@ -166,6 +166,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_retaliation_tests.rs"]
 mod tests;

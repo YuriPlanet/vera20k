@@ -539,7 +539,7 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
 

@@ -560,7 +560,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::sim::{house_state::HouseState, world::FrameEffects};

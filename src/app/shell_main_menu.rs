@@ -2365,7 +2365,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod status_error_tests {
     use super::{CardHost, shell_error_card};
     use crate::app::initialize::{StartupFiles, StartupProblem};

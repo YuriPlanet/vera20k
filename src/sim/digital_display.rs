@@ -305,7 +305,7 @@ pub fn values_for_display(
     Some(value)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

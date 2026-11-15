@@ -381,6 +381,6 @@ pub(super) fn load_into(ini: &mut IniFile, data: &[u8], list: &str) -> IniSectio
     listed.0
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ini_ares_syntax_tests.rs"]
 mod tests;

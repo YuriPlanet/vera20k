@@ -1590,11 +1590,11 @@ fn blit_entry(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "sidebar_chrome_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod provenance_tests {
     use super::{SidebarTheme, select_sidebar_theme};
 

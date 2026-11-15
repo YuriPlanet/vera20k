@@ -1856,6 +1856,6 @@ fn capture_decision(table: &[i32], roll: i32) -> Option<u8> {
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "capture_manager_tests.rs"]
 mod tests;

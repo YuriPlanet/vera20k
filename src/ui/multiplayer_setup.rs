@@ -1314,7 +1314,7 @@ pub(crate) fn tooltip_key(dialog: SetupDialog, control: u16) -> Option<String> {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

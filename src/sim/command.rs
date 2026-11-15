@@ -1809,11 +1809,11 @@ impl CommandEnvelope {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "command_battle_opening_tests.rs"]
 mod battle_opening_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::{
         ABSTRACT_OBJECT_TARGET_KIND, ArchiveRecord, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN,

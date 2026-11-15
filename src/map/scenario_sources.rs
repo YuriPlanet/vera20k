@@ -429,7 +429,7 @@ pub(crate) fn read_map_menu_entry(path: &Path, file_name: &str) -> MapMenuEntry 
     read_map_menu_entry_from_ini(&ini, file_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::preview::{PreviewSourceBounds, PreviewStartPoint};

@@ -644,7 +644,7 @@ fn tint(rgb: [u8; 3]) -> [f32; 3] {
     rgb.map(|channel| f32::from(channel) / 255.0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -556,7 +556,7 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};

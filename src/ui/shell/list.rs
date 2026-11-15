@@ -525,7 +525,7 @@ pub fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
     .max(metrics.min_thumb_h)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     // Timer expectations are from the61C690 instructions cited above; geometry

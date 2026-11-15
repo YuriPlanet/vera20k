@@ -29,7 +29,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::sim::world::edge_cell::Edge;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "retreat_mission_tests.rs"]
 mod tests;
 

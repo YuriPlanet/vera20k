@@ -1603,27 +1603,27 @@ fn is_local_band_candidate(
     }) && static_selection_gate(entity, entity_type, rules, require_playfield_membership)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_reveal_tests.rs"]
 mod reveal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_building_type_select_tests.rs"]
 mod building_type_select_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_group_as_tests.rs"]
 mod group_as_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_invisible_tests.rs"]
 mod invisible_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "entity_pick_band_owner_tests.rs"]
 mod band_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

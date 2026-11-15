@@ -288,23 +288,23 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "bridge_engineer_admission_tests.rs"]
 mod bridge_engineer_admission_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "building_control_tests.rs"]
 mod building_control_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "multi_engineer_tests.rs"]
 mod multi_engineer_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "passenger_entry_tests.rs"]
 mod passenger_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "self_deploy_site_tests.rs"]
 mod self_deploy_site_tests;
 
@@ -2280,7 +2280,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod repair_notification_tests {
     use super::*;
 

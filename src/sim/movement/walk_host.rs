@@ -9,7 +9,7 @@ use crate::sim::{
     world::{FrameEffects, Simulation},
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "walk_completion_tests.rs"]
 mod tests;
 

@@ -75,10 +75,10 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::{PlacementEvidence, RevealRequest, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_oracle_tests.rs"]
 mod oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "spawn_manager_tests.rs"]
 mod tests;
 

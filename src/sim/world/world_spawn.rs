@@ -3365,10 +3365,10 @@ fn undeploy_unit_cell(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "world_spawn/tests.rs"]
 mod techno_constructor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "failed_yard_repack_tests.rs"]
 mod failed_yard_repack_tests;

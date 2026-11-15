@@ -1410,27 +1410,27 @@ fn collect_live_building_lights(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "curtain_tint_tests.rs"]
 mod curtain_tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "lighting_tint_tests.rs"]
 mod tint_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "anim_lighting_tests.rs"]
 mod anim_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "unit_light_tests.rs"]
 mod unit_light_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "infantry_light_tests.rs"]
 mod infantry_light_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod palette_producer_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

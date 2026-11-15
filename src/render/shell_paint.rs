@@ -837,7 +837,7 @@ fn push_skirmish_entry(
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::ui::shell::geom::RIGHT_PANEL_WIDTH;

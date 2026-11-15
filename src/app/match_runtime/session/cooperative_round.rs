@@ -600,7 +600,7 @@ fn apply_round_options(
     Ok(changed)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::app::match_bootstrap::LoadingStartup;

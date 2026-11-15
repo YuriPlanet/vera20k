@@ -31,7 +31,7 @@ pub(crate) struct PcmObservationConfig {
     pub max_samples_per_event: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
     use crate::audio::arbiter::{EntryFacts, PlayRequest, TestPlayback};

@@ -618,6 +618,6 @@ pub(crate) fn all_to_hunt_score_override(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_strategy_tests.rs"]
 mod tests;

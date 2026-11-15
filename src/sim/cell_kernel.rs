@@ -495,7 +495,7 @@ pub fn select_infantry_subcell(
         .find(|spot| *spot >= 2 && occupied_mask & (1 << spot) == 0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 

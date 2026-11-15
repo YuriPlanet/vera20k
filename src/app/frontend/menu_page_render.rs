@@ -501,7 +501,7 @@ pub(crate) fn render_menu_page(
     Ok(MenuPageRenderResult::Rendered)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::ui::single_player_shell::SINGLE_PLAYER_PAGE;

@@ -1082,6 +1082,6 @@ fn greater(lhs: MaskedX87Value, rhs: MaskedX87Value) -> bool {
     X::compare(lhs, rhs) == MaskedX87Ordering::Greater
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "ares_system_tests.rs"]
 mod tests;

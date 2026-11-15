@@ -79,7 +79,7 @@ fn write_candidate(manifest: &Manifest, destination: &Path) -> Result<(), String
         })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

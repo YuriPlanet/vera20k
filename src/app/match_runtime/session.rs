@@ -3712,7 +3712,7 @@ fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::{MatchSession, NetworkRoom, SessionMode};
 

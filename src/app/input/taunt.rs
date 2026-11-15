@@ -135,7 +135,7 @@ fn play(state: &mut AppState, byte: u8, pattern: Option<&str>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

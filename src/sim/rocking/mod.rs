@@ -12,7 +12,7 @@ pub(crate) mod ion_blast;
 pub mod rocking_system;
 pub mod self_destruct;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "rocking_tests.rs"]
 mod rocking_tests;
 

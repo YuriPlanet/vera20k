@@ -242,7 +242,7 @@ fn packing_order(keys: impl IntoIterator<Item = TileKey>) -> Vec<TileKey> {
     keys
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

@@ -262,7 +262,7 @@ pub(crate) fn keyboard_layout(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::window_takes_fitted_shell;
 

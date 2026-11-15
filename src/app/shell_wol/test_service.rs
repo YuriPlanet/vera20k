@@ -908,7 +908,7 @@ fn store_credential(stored: &mut Vec<WolCredential>, nickname: String, password:
     stored.sort_by_key(|stored| stored.slot);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

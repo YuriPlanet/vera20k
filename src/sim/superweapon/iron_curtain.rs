@@ -55,7 +55,7 @@
 //!   sim/combat, sim/radar, sim/game_entity, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "iron_curtain_tests.rs"]
 mod tests;
 

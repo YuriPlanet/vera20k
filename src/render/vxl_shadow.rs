@@ -18,7 +18,7 @@ pub(crate) fn supported(vxl: &VxlFile, params: &VxlRenderParams) -> bool {
         && !vxl.limbs.is_empty()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "vxl_shadow_tests.rs"]
 mod tests;
 

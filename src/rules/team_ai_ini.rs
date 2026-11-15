@@ -772,7 +772,7 @@ fn scan_count_and_word(value: &str) -> Option<(i32, &str)> {
     Some((count, word))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

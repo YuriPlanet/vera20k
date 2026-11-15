@@ -596,7 +596,7 @@ pub fn sort_rows(rows: &mut [ScoreRow]) {
     crate::util::retail_pointer_sort::sort_by(rows, |a, b| b.score.cmp(&a.score));
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

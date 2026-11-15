@@ -145,6 +145,6 @@ pub(crate) fn apply(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "ion_blast_tests.rs"]
 mod tests;

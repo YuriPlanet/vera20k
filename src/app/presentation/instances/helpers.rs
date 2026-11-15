@@ -893,7 +893,7 @@ impl PassByWindow {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
     use crate::render::locomotor_visual::screen_position;
@@ -1641,6 +1641,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_warp_draw_tests.rs"]
 mod building_warp_draw_tests;

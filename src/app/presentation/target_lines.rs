@@ -710,7 +710,7 @@ fn emit_rally_line(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::sim::combat::TargetKind;
@@ -826,18 +826,18 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "rally_line_tests.rs"]
 mod rally_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "action_line_tests.rs"]
 mod action_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "target_laser_tests.rs"]
 mod target_laser_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "psychic_line_tests.rs"]
 mod psychic_tests;

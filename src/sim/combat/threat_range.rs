@@ -365,7 +365,7 @@ pub(crate) fn threat_range_leptons(obj: &ObjectType, mode: i32, weapon_ranges: [
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

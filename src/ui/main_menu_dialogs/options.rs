@@ -1858,7 +1858,7 @@ pub(crate) enum Setting {
     Checkbox(LauncherCheckboxId),
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::assets::csf_file::CsfFile;

@@ -317,6 +317,6 @@ pub fn unpack_map_description(packed: &[u8]) -> Vec<u16> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "setup_tests.rs"]
 mod tests;

@@ -155,6 +155,6 @@ pub(super) const fn normalize_second_direction(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "track_fresh_dispatch_tests.rs"]
 mod tests;

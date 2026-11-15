@@ -361,7 +361,7 @@ impl MusicPlayer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use std::sync::Arc;
 

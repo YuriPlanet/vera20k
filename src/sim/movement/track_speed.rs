@@ -200,7 +200,7 @@ pub(super) fn advance(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

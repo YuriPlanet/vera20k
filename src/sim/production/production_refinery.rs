@@ -363,7 +363,7 @@ fn find_free_unit_nearby_cell(
     sim.nearby_wheel_cell(seed, free_unit.movement_zone, options)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod tests {
     use super::FREE_UNIT_FALLBACK_ATTEMPTS;
 

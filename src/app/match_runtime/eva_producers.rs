@@ -438,7 +438,7 @@ pub(crate) fn rally_point_announces(obj: &ObjectType) -> bool {
     !obj.construction_yard && !obj.resource_destination
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

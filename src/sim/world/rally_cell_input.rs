@@ -239,11 +239,11 @@ fn resolve_rally_cell_click(
     .filter(|cell| *cell != (0, 0)))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "naval_opening_tests.rs"]
 mod naval_opening_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod tests {
     use super::super::native_cell_input_test_fixture::{bounds, coord, native_fixture, pair};
     use super::*;

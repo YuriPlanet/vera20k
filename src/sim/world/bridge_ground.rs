@@ -88,7 +88,7 @@ pub(super) fn apply(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

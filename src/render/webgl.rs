@@ -235,7 +235,7 @@ pub(crate) fn write_table(queue: &wgpu::Queue, texture: &wgpu::Texture, words: &
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

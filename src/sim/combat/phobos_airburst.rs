@@ -1208,6 +1208,6 @@ fn firing_report(
         ));
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "phobos_airburst_tests.rs"]
 mod tests;

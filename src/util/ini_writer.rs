@@ -282,7 +282,7 @@ fn key_name_bytes(line: &[u8]) -> Option<&str> {
     std::str::from_utf8(&line[..equals]).ok().and_then(key_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

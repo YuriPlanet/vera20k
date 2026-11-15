@@ -310,6 +310,6 @@ fn pose_piece(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "voxel_anims_tests.rs"]
 mod tests;

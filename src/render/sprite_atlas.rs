@@ -4144,11 +4144,11 @@ fn gather_sprite_band<'s>(
     atlas_growth::gather_band(&rects, 1, |i| sprites[i].1.indices())
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "sprite_atlas_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "sprite_atlas_projectile_tests.rs"]
 mod projectile_tests;
 

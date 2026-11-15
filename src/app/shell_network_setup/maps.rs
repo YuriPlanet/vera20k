@@ -151,7 +151,7 @@ pub(crate) fn staging_digest(state: &AppState) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     #[test]

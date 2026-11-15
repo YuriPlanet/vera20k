@@ -785,7 +785,7 @@ fn composition_layers(
     layers
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

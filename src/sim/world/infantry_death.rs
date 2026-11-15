@@ -754,7 +754,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod corpse_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -960,7 +960,7 @@ mod corpse_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod dead_body_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
