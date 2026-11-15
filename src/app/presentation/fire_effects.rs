@@ -195,9 +195,7 @@ mod tests {
             assert!(!flashes.is_empty() && !weapon.report.is_empty());
             // Bind the real SHP bytes so absence of an animation cannot pass.
             for flash in flashes {
-                rules
-                    .bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE")
-                    .unwrap();
+                rules.bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE");
             }
             let mut sim = Simulation::new();
             crate::sim::arena_fixture::flat_ground(&mut sim, rules);

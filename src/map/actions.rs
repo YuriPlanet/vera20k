@@ -490,9 +490,7 @@ mod tests {
         assert_eq!(roots, ["BEACON"]);
         // Same strict owner used by both app load roots and saved resources.
         // Native BEACON controls read its physical ten-frame SHP and ART.
-        rules
-            .bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
-            .unwrap();
+        rules.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE");
         let mut sim = crate::sim::world::Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.session

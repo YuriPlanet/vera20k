@@ -230,9 +230,7 @@ fn retail_loaded_tank_uses_the_shared_numeric_kernel_and_frame_table() {
     assert!(ion_roots.iter().all(|name| roots.contains(name)));
     // Exercise the production binder, including its native constructor-only
     // type admission. Successful binding need not imply a physical SHP.
-    rules
-        .bind_scheduler_anim_assets(&ion_roots, &assets, "TEM", "TEMPERATE")
-        .expect("retail IonBlast/IonBeam roots bind through the production owner");
+    rules.bind_scheduler_anim_assets(&ion_roots, &assets, "TEM", "TEMPERATE");
     rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
     rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
     assert_eq!(rules.general.ion_cannon_damage, 751);

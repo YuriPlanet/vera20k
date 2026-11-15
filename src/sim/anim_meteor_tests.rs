@@ -283,8 +283,7 @@ fn retail_meteor_profiles_keep_missing_stock_images_explicit() {
     for name in ["METSMALL", "METLARGE"] {
         fixture
             .rules
-            .bind_scheduler_anim_assets(&[name.to_string()], &assets, "TEM", "TEMPERATE")
-            .unwrap();
+            .bind_scheduler_anim_assets(&[name.to_string()], &assets, "TEM", "TEMPERATE");
         assert_eq!(
             fixture
                 .rules
@@ -401,9 +400,7 @@ fn strict_and_tolerant_spawn_closures_bind_cycles_with_explicit_custom_images() 
         rules.install_art_fixture(ArtRegistry::from_ini(&art));
         let roots = vec!["METSMALL".to_string()];
         if strict {
-            rules
-                .bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
-                .unwrap();
+            rules.bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE");
         } else {
             assert_eq!(
                 rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE"),

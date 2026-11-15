@@ -1666,9 +1666,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     roots.sort();
     roots.dedup();
-    rules
-        .bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater)
-        .expect("physical selected building SHP bounds");
+    rules.bind_scheduler_anim_assets(&roots, &assets, theater.extension, &map.header.theater);
     for name in ["YAPPET_E", "YAPPET_F", "YAPPET_G", "YAPPET_H"] {
         assert!(
             rules

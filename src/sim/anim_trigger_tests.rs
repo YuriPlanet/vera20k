@@ -380,9 +380,7 @@ fn a_network_drop_zone_flare_reveals_for_every_human_whoever_is_local() {
         return;
     };
     let mut rules = retail.rules;
-    rules
-        .bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE")
-        .unwrap();
+    rules.bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE");
     let flare = |local: &str| {
         let mut sim = Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
