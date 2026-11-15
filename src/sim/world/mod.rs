@@ -6154,6 +6154,7 @@ impl Simulation {
         origin: glam::IVec3,
         admit_inline: bool,
         packets: &mut Vec<crate::sim::voxel_anim::VoxelDebrisSpawn>,
+        rules: &RuleSet,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let stable_id = self.substrate.allocate_stable_id();
         let native_unique_id = self.next_native_runtime_id();
@@ -6166,9 +6167,17 @@ impl Simulation {
             origin,
             &mut self.scenario_rng,
         )?;
-        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn { object };
+        let attached_system = voxel_type
+            .attached_system
+            .as_deref()
+            .and_then(|name| rules.ps_type_id_by_name(name))
+            .map(|system_type| (system_type, origin));
+        let spawn = crate::sim::voxel_anim::VoxelDebrisSpawn {
+            object,
+            attached_system,
+        };
         if admit_inline {
-            self.admit_death_debris(std::iter::once(spawn));
+            self.admit_death_debris(std::iter::once(spawn), rules);
         } else {
             packets.push(spawn);
         }
@@ -6180,11 +6189,34 @@ impl Simulation {
     pub(crate) fn admit_death_debris(
         &mut self,
         spawns: impl IntoIterator<Item = crate::sim::voxel_anim::VoxelDebrisSpawn>,
+        rules: &RuleSet,
     ) {
         for spawn in spawns {
             let stable_id = spawn.object.stable_id();
             self.substrate.voxel_anims.insert(spawn.object);
             self.reveal_voxel_anim(stable_id);
+            // The constructor's tail (`0x00749864..0x007498BD`) builds the
+            // type's AttachedSystem at the input location, aimed at the cell
+            // there (Map565730), owned by the anim, with zero target coords
+            // (`0x00B1D188`) and no House, and keeps the result at +0x108.
+            // RESIDUAL: off the map, Map565730 gives the shared dummy cell to
+            // aim at; VERA passes no target, so the target coords stay zero.
+            if let Some((system_type, origin)) = spawn.attached_system {
+                let target = Self::map_coord_cell(&self.resolved_terrain, origin.x, origin.y)
+                    .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
+                let system = self.spawn_particle_system(
+                    system_type,
+                    origin,
+                    target,
+                    Some(stable_id),
+                    glam::IVec3::ZERO,
+                    None,
+                    rules,
+                );
+                if let Some(piece) = self.substrate.voxel_anims.get_mut(stable_id) {
+                    piece.bind_attached_system(system);
+                }
+            }
         }
     }
 

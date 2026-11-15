@@ -116,7 +116,9 @@ impl FireWorld for LiveFire<'_> {
     ) -> Option<OwnerFacts> {
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::{object_location, target_get_coords};
-        // Every VERA system owner is a Techno.
+        // 0x0062F9F8..0x0062FA0C: As_Techno on +0xE0. A VoxelAnim owner
+        // (AttachedSystem=) is no Techno, so the caller ends spawning
+        // (vt+0xF8, 0x0062FBC9) as for no owner.
         let entity = sim.substrate.entities.get(owner?)?;
         let alive = entity.is_object_alive();
         let frame = sim.session.binary_frame();

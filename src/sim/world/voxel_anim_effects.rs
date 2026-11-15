@@ -5,10 +5,9 @@
 //! Bounce owns physics; Object.Location advances only at the flight tail.
 //! Remaining native paths: `StartSound=`, which the constructor plays into
 //! the anim's sound handle (`0x00749838`, +0x114) and the AI keeps at the
-//! anim's position (`0x00749F43`), Trailer74A70E's distinct height
-//! conversion and AttachedSystem construction. No retail [VoxelAnims] type
-//! authors StartSound, TrailerAnim or AttachedSystem; authored types which
-//! do still miss those effects.
+//! anim's position (`0x00749F43`), and Trailer74A70E's distinct height
+//! conversion. No retail [VoxelAnims] type authors StartSound or
+//! TrailerAnim; authored types which do still miss those effects.
 
 use glam::IVec3;
 
@@ -108,6 +107,7 @@ impl Simulation {
             IVec3::new(x, y, z),
             true,
             &mut Vec::new(),
+            rules,
         ) {
             log::warn!("trigger voxel anim {type_index} left the supported launch domain: {error}");
         }
@@ -326,6 +326,7 @@ impl Simulation {
                             impact,
                             true,
                             &mut Vec::new(),
+                            rules,
                         ) {
                             log::warn!("meteor child {child} left the launch domain: {error}");
                             break;

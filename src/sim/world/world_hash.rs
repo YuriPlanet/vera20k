@@ -1736,6 +1736,10 @@ impl Simulation {
             debris.marked_for_deletion().hash(hasher);
             debris.owner_house().hash(hasher);
             debris.bounce().hash_bits(hasher);
+            // CRC74AA63 folds +0x108 only when set; no retail type sets it.
+            if let Some(system) = debris.attached_system() {
+                system.hash(hasher);
+            }
         }
     }
 }

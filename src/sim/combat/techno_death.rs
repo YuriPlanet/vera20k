@@ -422,6 +422,7 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
             origin,
             admit_inline,
             self.voxel_debris,
+            self.rules,
         )
     }
 }
