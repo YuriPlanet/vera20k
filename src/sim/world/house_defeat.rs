@@ -56,9 +56,14 @@
 //!   producers remain separate caller coverage.
 //! - MPlayer_Defeated's capture-the-flag cleanup (Flag_Remove `0x004FBE40` at
 //!   `0x004FC112..0x004FC15E`, Scenario flag `0x10`) and the Harvester-Truce
-//!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported; their
-//!   Scenario flags are off in stock skirmish, and skirmish never sets `0x10`
-//!   (trace in `movement::foot_speed`).
+//!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported.
+//!   Skirmish never sets `0x10` (trace in `movement::foot_speed`). The truce
+//!   loop removes the house's remaining Units (`0x008B410C`), but Blowup_All
+//!   has already destroyed them: the truce immunity guards only area damage
+//!   (`0x00489710`), not Blowup_All's direct damage.
+//! - Invisible, not ported: the WOL stats byte `0xA8B8C1` (set at
+//!   `0x004FC556`, read only by the stats sender `0x006C6FA0`), and the
+//!   local defeat's mouse call (`0x004FC22A`) and repaint flags.
 //! - The local-player branch (`0x004FC1B0..0x004FC307`) is ported for the
 //!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
 //!   `local_player_defeated` names the ported readers). The borrowed client
@@ -261,7 +266,9 @@ impl Simulation {
     /// Returned events join the post-Logic dispatcher without executing during
     /// a House visit. Without `defeat_pass`
     /// (VERA's first tick) the defeat gates and the game-over scan are
-    /// skipped.
+    /// skipped. RESIDUAL (invisible): the online map-edge probe
+    /// (`0x004F882B..0x004F890D`) is not ported; it draws Scenario RNG only
+    /// on a cell state honest play never reaches.
     pub(super) fn house_rung(
         &mut self,
         rules: &RuleSet,

@@ -980,7 +980,10 @@ pub struct HouseState {
     /// Native `[0x00A8F040]`, the `EVA_LowPower` one-shot guard
     /// (`0x004F8D02` test, `0x004F8D61` set, `0x004F8DAB` clear). It is a
     /// process global gated behind `this == PlayerPtr`, so one flag per human
-    /// house is the same state. Persisted and hashed (schema v133).
+    /// house is the same state. Persisted and hashed (schema v133). RESIDUAL
+    /// (kept by the maintainer, 2026-11-15): nothing saves, loads or resets
+    /// the global, so after a load gamemd warns again if still short, and a
+    /// match that ended short leaves the next one silent until power returns.
     #[serde(default)]
     eva_low_power_guard: bool,
     /// Native `HouseClass+0x245`: a building's auto-repair start sets it
@@ -992,7 +995,9 @@ pub struct HouseState {
     /// Native `HouseClass+0x280` timer: the auto-repair start of a house no
     /// human controls arms it (`0x00450764..0x00450779`), and the latch holds
     /// until it expires. The constructor starts it at the construction frame
-    /// with no time left. Persisted and hashed (schema v216).
+    /// with no time left. Persisted and hashed (schema v216). RESIDUAL
+    /// (invisible): native Load's NoInit restarts it (0x004F5327..0x004F5339),
+    /// so a loaded computer may repair 36-90 frames sooner there.
     repair_latch_timer: CdTimer,
     /// House+57E4..+15FF3: native retained 130x130 padded spatial threat map.
     /// Constructor4F61EF/4F6312 clears it. Save504093 and Load5031C9 retain

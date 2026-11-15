@@ -136,6 +136,8 @@ pub(crate) fn first_buildable_from_array<'a>(
     side_index: i32,
     super_weapons: bool,
 ) -> Option<&'a ObjectType> {
+    // VERA-only: native scans a country outside [Countries] with bit 31/30
+    // and almost always finds nothing.
     rules.country_index(country_name)?;
     let country = CountryBuildMasks::for_country(rules, country_name);
     type_ids.iter().find_map(|type_id| {
