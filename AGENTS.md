@@ -292,7 +292,11 @@ production code touches anything behind `test-support` or `#[cfg(test)]`, also r
 
 - Working Rust: start with focused
   `python -m tools.cargo_run -- test -p <crate> --lib <module_path>::`, where `<crate>`
-  is the module's crate from the split above (`vera20k-core` or `vera20k`).
+  is the module's crate from the split above (`vera20k-core` or `vera20k`). Write the
+  module path from the crate root (`sim::combat::`, not a bare test name): the runner
+  then compiles only that [test group](tools/README.md#test-groups), and a rebuild
+  after an edit takes about half the time. A run in which no test matched fails.
+  `python -m tools.test_groups tag` gives a new test module its group.
 - Rust PR readiness: after any critic fixes, focused tests for the modules the change
   touches and their direct consumers, with retail `ini/`, `RA2_DIR` set,
   `VERA20K_REQUIRE_RETAIL_INI=1` and `VERA20K_REQUIRE_RETAIL_ASSETS=1`; no baseline

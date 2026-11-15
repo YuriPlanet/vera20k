@@ -127,6 +127,79 @@ configuration locally with:
 python -m tools.cargo_run -- build --locked --release --no-default-features --bin vera20k
 ```
 
+## Test groups
+
+A test run that names one part of one crate compiles only that part's tests:
+
+```sh
+python -m tools.cargo_run -- test -p vera20k-core --lib sim::combat::gattling
+python -m tools.cargo_run -- test -p vera20k --lib app::input::camera::
+python -m tools.cargo_run --all-tests -- test -p vera20k-core --lib sim::combat::gattling
+python -m tools.test_groups list
+python -m tools.test_groups check
+python -m tools.test_groups tag
+python -m tools.test_groups lend sim::deploy_tests sim-movement
+```
+
+Each crate's test modules belong to groups. A group is a `tests-<group>` feature
+and, under `[package.metadata.test-groups]` in the crate's Cargo.toml
+(`src/Cargo.toml` for the engine), the module path prefixes it owns; the longest
+prefix that starts a module's path owns it. A test module is declared
+`#[cfg(all(test, tests_<group>))]`. The crate's build script
+(`src/test_group_cfgs.rs`) switches every group on, so `cargo test`, a
+`--workspace` run, the Test workflow and the Release test job compile and run
+every test as before. Only the `test-focus` feature narrows a build, to the groups
+whose features are on.
+
+The runner adds those features itself. When a test run names one crate with `-p`
+and every filter is a module path from the crate root (`sim::combat::`, not
+`gattling_`) that falls inside one or two groups, it builds with `test-focus` and
+those groups and prints `Test groups: sim-combat-d-z of vera20k-core`. Every other
+test run compiles every test: no filter, a bare test name, a filter that spans
+three or more groups, `--workspace`, or `--all-tests` before `--`. A test run in
+which no test matched exits 101, focused or not, so a mistyped filter cannot pass.
+
+Measured on the same one-value edit with the same command, with every test
+compiled and with one group (November 2026, Cargo time):
+
+| Crate and filter | Every test | One group | First build of a group |
+| --- | --- | --- | --- |
+| `vera20k-core`, `sim::combat::gattling` | 26.5 to 27.6 s | 10.0 to 12.0 s | 51 s |
+| `vera20k`, `app::input::camera::` | 18.0 to 20.9 s | about 12 s | 63 s |
+
+With no test at all the engine crate rebuilds in about 8 s and the client crate in
+about 10 s, and a group adds roughly 0.05 s per 1,000 test lines it compiles: the
+client crate cannot go far below half, and an engine group should stay under about
+65,000 compiled lines. Each group, and each pair of groups a run names, is its
+own build of the crate's tests. Its first build compiles them from nothing, and it
+keeps its own incremental cache (0.5 to 1.3 GiB) and test executable (0.13 to
+0.18 GiB); the build of every test keeps 2.6 GiB and 0.3 GiB for the engine. The
+cache retention below treats them like any other build: its budgets and the
+free-space reserve evict a checkout's incremental caches together, least recently
+used first, and keep only the newest test executable of a crate.
+
+Test code that more than one group uses:
+
+- A test module that code outside the groups uses (a `#[cfg(test)]` function or
+  impl in production files) is marked `#[cfg(test)] // shared by test groups` and
+  compiles in every test build.
+- A test module another group's tests use lists that group after its own:
+  `#[cfg(all(test, any(tests_sim_h_o, tests_sim_movement)))]`.
+  `python -m tools.test_groups lend <test module path> <group>` writes it, and
+  `lend <test module path> all` marks the module shared. Lend the smallest module
+  that holds the helper: every lent line compiles in the borrower's builds.
+
+When a focused build fails on an item rustc reports as "configured out", a test of
+the group has started using another group's test code. The runner then compiles
+every test instead, in the same run, and says so; `lend` the module the error
+names to repair the group.
+
+A new `#[cfg(test)] mod tests` works without a group: it compiles in every test
+build. `python -m tools.test_groups tag` writes each test module's group, `check`
+lists the modules that are out of step, and a focused run prints the first of
+them. To add or split a group, edit the table and the features in the crate's
+Cargo.toml, then run `tag` and build the new groups once.
+
 ## Cargo ownership and labeled builds
 
 ```sh
