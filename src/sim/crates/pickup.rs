@@ -352,6 +352,21 @@ pub(crate) fn multiplayer_eligible_slot(
     slot
 }
 
+/// `[CrateRules] FreeMCV.CreditsThreshold` (`Ext/Rules/Body.cpp:283`,
+/// `CellClass_GoodieCheck_FreeMCV @ 0x481BB8`): the MCV pre-empt's credit
+/// floor, `1500` natively.
+fn free_mcv_credits_threshold(rules: &RuleSet) -> i32 {
+    #[cfg(feature = "phobos")]
+    {
+        rules.phobos_globals.free_mcv_credits_threshold
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        MCV_PREEMPT_CREDITS
+    }
+}
+
 /// `0x00481BB8..0x00481BFF`: with the lobby Bases option, a house with no
 /// tracked building, more than 1500 available credits and no tracked first
 /// ownable `BaseUnit=` is forced onto the Unit slot.
@@ -363,7 +378,7 @@ fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     if house.tracking().buildings() != 0 {
         return false;
     }
-    if house.economy().available_money() <= MCV_PREEMPT_CREDITS {
+    if house.economy().available_money() <= free_mcv_credits_threshold(rules) {
         return false;
     }
     let country_bit = rules.country_owner_mask(sim.interner.resolve(house.house_type_id()));

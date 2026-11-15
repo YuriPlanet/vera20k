@@ -1113,13 +1113,18 @@ DisableOveroptimizationInTargeting=yes
 }
 
 /// `[CrateRules] CrateOnlyOnLand=` and `UnitCrateVehicleCap=`
-/// (`Ext/Rules/Body.cpp:281-282`, constructors `Body.h:733-734`).
+/// (`Ext/Rules/Body.cpp:281-283`, constructors `Body.h:733-735`).
 #[test]
 fn the_crate_globals_default_and_read_from_crate_rules() {
     let defaults = PhobosGlobals::default();
     assert!(!defaults.crate_only_on_land);
     assert_eq!(defaults.unit_crate_vehicle_cap, 50);
-    let set = read("[CrateRules]\nCrateOnlyOnLand=yes\nUnitCrateVehicleCap=-1\n");
+    assert_eq!(defaults.free_mcv_credits_threshold, 1500);
+    let set = read(
+        "[CrateRules]\nCrateOnlyOnLand=yes\nUnitCrateVehicleCap=-1\n\
+         FreeMCV.CreditsThreshold=6000\n",
+    );
     assert!(set.crate_only_on_land);
     assert_eq!(set.unit_crate_vehicle_cap, -1);
+    assert_eq!(set.free_mcv_credits_threshold, 6000);
 }

@@ -319,6 +319,13 @@ pub struct PhobosGlobals {
     /// `Misc/Hooks.Crates.cpp:63-73`).
     #[serde(default = "fifty")]
     pub unit_crate_vehicle_cap: i32,
+    /// `[CrateRules] FreeMCV.CreditsThreshold=`, default `1500`
+    /// (`Ext/Rules/Body.cpp:283`, constructor `Body.h:735`): the credit floor
+    /// above which a buildingless house is forced onto the Unit crate
+    /// (`CellClass_GoodieCheck_FreeMCV @ 0x481BB8`,
+    /// `Misc/Hooks.Crates.cpp:46-61`).
+    #[serde(default = "fifteen_hundred")]
+    pub free_mcv_credits_threshold: i32,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1454,6 +1461,11 @@ fn fifty() -> i32 {
     50
 }
 
+/// `FreeMCV.CreditsThreshold=`'s constructor value (`Ext/Rules/Body.h:735`).
+fn fifteen_hundred() -> i32 {
+    1500
+}
+
 /// The `Pips.SelfHeal.*` frame pairs' constructor value
 /// (`Ext/Rules/Body.h:614-616`).
 fn thirteen_twenty() -> [i32; 2] {
@@ -1591,6 +1603,7 @@ impl Default for PhobosGlobals {
             adjacent_wall_damage: 200,
             crate_only_on_land: false,
             unit_crate_vehicle_cap: 50,
+            free_mcv_credits_threshold: 1500,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1814,6 +1827,10 @@ impl PhobosGlobals {
             crate_rules.read_bool("CrateOnlyOnLand", globals.crate_only_on_land);
         globals.unit_crate_vehicle_cap =
             crate_rules.read_int("UnitCrateVehicleCap", globals.unit_crate_vehicle_cap);
+        globals.free_mcv_credits_threshold = crate_rules.read_int(
+            "FreeMCV.CreditsThreshold",
+            globals.free_mcv_credits_threshold,
+        );
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so
         // their relative order does not matter.

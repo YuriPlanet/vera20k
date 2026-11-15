@@ -2476,3 +2476,53 @@ fn the_unit_crate_vehicle_cap_global_gates_the_unit_slot() {
         "the constructor cap of 50 admits one vehicle"
     );
 }
+
+/// Phobos `[CrateRules] FreeMCV.CreditsThreshold` (`Ext/Rules/Body.cpp:283`,
+/// default 1500 `Body.h:735`, hook `0x481BB8`): the MCV pre-empt's credit
+/// floor.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_free_mcv_credit_threshold_gates_the_preempt() {
+    let (mut sim, mut rules, registry, _owner, actor) = arena();
+    sim.session.game_options_mut_for_test().bases = true;
+    rules.phobos_globals.free_mcv_credits_threshold = 6000;
+    place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_MONEY as u8);
+    assert!(
+        pickup_crate(
+            &mut sim,
+            &rules,
+            &registry,
+            (21, 22),
+            actor,
+            crate::sim::world::FrameEffects::default()
+        ),
+        "5000 credits do not exceed a 6000 floor, so the money crate pays"
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .values()
+            .any(|entity| sim.interner.resolve(entity.type_ref()) == "AMCV"),
+        "no pre-empted MCV"
+    );
+
+    let (mut sim, mut rules, registry, _owner, actor) = arena();
+    sim.session.game_options_mut_for_test().bases = true;
+    rules.phobos_globals.free_mcv_credits_threshold = 0;
+    place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_MONEY as u8);
+    assert!(!pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        (21, 22),
+        actor,
+        crate::sim::world::FrameEffects::default()
+    ));
+    assert!(
+        sim.substrate
+            .entities
+            .values()
+            .any(|entity| sim.interner.resolve(entity.type_ref()) == "AMCV"),
+        "a 0 floor pre-empts onto the base unit"
+    );
+}
