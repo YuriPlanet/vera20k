@@ -492,9 +492,10 @@ impl ProcessAssets {
             }
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
-        // the map, which the map agreement covers, and whether `ares.mix`
-        // ships. A game with it adds the byte, so the same files read with
-        // and without `ares.mix` never agree; a game without it adds nothing.
+        // the map, which the map agreement covers, and whether the selected
+        // mod mounted `ares.mix`. A game using it adds the byte, so the same
+        // files read with and without Ares never agree; with no mod selected
+        // the installed archive is ignored and adds nothing.
         // Until the `ares` feature is deleted a build with it writes the byte
         // for every game, as it always has.
         if cfg!(feature = "ares") || assets.ships_ares() {
@@ -539,8 +540,9 @@ impl ProcessAssets {
     /// the selected rules root and ART, AIMD, each mode's INI by id
     /// `1..=count` and CoopCampMD.
     /// VERA: also finds the game-folder files that change those sources,
-    /// LANGRULE.INI, a theater INI or a theater's tiles (VERA's own agreement
-    /// compares these) from the retail copies ([`Self::changed_game_files`]).
+    /// a selected mod's LANGRULE.INI, a theater INI or a theater's tiles
+    /// (VERA's own agreement compares these) from the retail copies
+    /// ([`Self::changed_game_files`]).
     pub(crate) fn install_native_ini_hashes(
         &mut self,
         assets: &AssetManager,
@@ -551,22 +553,21 @@ impl ProcessAssets {
         let roots = assets.ini_roots();
         let theater_inis = crate::map::theater::theater_ini_names(assets);
         // MPModesMD.ini is the mode roster: which mode INIs the hash adds.
-        let mut compared = vec![
-            roots.rules(),
-            roots.art(),
-            roots.ai(),
-            "langrule.ini",
-            "MPModesMD.ini",
-        ];
+        let mut compared = vec![roots.rules(), roots.art(), roots.ai(), "MPModesMD.ini"];
+        // Match RetailRulesSources' selection: Original mode never consumes
+        // the installation's optional LANGRULE, so it changes no game files.
+        if assets.mod_selected() {
+            compared.push("langrule.ini");
+        }
         compared.extend(modes.iter().map(|mode| mode.override_file.as_str()));
         compared
             .push(crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI);
         compared.extend(theater_inis.iter().map(String::as_str));
         self.changed_game_files =
             crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
-        // `ares.mix` makes the game an Ares game (`rules::ares_switch`): its
-        // INIs and Rules are read the Ares way even where every compared file
-        // is the retail copy, so it changes the original game too.
+        // A selected mod mounting `ares.mix` makes the game an Ares game
+        // (`rules::ares_switch`): its INIs and Rules are read the Ares way even
+        // where every compared file is retail. With no mod selected it is ignored.
         if assets.ships_ares() {
             self.changed_game_files.push("ares.mix".to_owned());
         }
@@ -812,6 +813,104 @@ mod tests {
     use crate::assets::asset_manager::AssetManager;
 
     #[test]
+    fn original_game_ignores_langrule_while_mods_keep_its_rules_and_digest() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+        let install = audio_test_install("original-langrule");
+        let mod_dir = TestDirectory::new("selected-langrule");
+        for (name, text) in [
+            (
+                "rulesmd.ini",
+                "[General]\nBuildSpeed=.7\n[ColorAdd]\nBase=1,2,3\n",
+            ),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(install.path().join(name), text).unwrap();
+        }
+        let start = |selected_mod: bool| -> Result<_, String> {
+            let assets = AssetManager::with_mod(
+                install.path(),
+                selected_mod.then_some(mod_dir.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            let (rules, _) = process.initialize_sources_if_needed(&assets)?;
+            let color = rules.unwrap().color_add.entries()[0].rgb;
+            process.install_native_ini_hashes(&assets, &[]);
+            process.return_from_loading(assets);
+            Ok((
+                process.multiplayer_rules_digest("")?,
+                color,
+                process.changed_game_files().to_vec(),
+            ))
+        };
+        let original = start(false).unwrap();
+        std::fs::write(
+            install.path().join("LANGRULE.INI"),
+            crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL,
+        )
+        .unwrap();
+        assert_eq!(start(false).unwrap(), original);
+        let modded = start(true).unwrap();
+        assert_ne!(modded.0, original.0);
+        assert_eq!(modded.1, [7, 8, 9]);
+        assert!(
+            modded
+                .2
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case("langrule.ini"))
+        );
+        std::fs::write(
+            install.path().join("LANGRULE.INI"),
+            "[General]\nBuildSpeed=9\n",
+        )
+        .unwrap();
+        assert_eq!(start(false).unwrap(), original);
+        assert!(start(true).is_err(), "mods retain LANGRULE's Digest check");
+    }
+
+    #[test]
+    fn original_game_agrees_with_an_ares_installation_without_loading_ares() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::rules::ares_switch::read_ares_way;
+
+        let install = audio_test_install("original-ares-agreement");
+        for (name, text) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\nBuildSpeed=.8\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(install.path().join(name), text).unwrap();
+        }
+        let mod_dir = TestDirectory::new("selected-ares-agreement");
+        let digest = |selected_mod: bool| {
+            let assets = AssetManager::with_mod(
+                install.path(),
+                selected_mod.then_some(mod_dir.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
+            let _reading = read_ares_way(assets.ships_ares());
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            process.multiplayer_rules_digest("").unwrap()
+        };
+        let original = digest(false);
+        install.write_mix("ares.mix", "ares.txt", b"installed Ares");
+        assert_eq!(digest(false), original);
+        assert_ne!(digest(true), original);
+        std::fs::write(
+            install.path().join("rulesmd.ini"),
+            "[General]\nBuildSpeed=.9\n",
+        )
+        .unwrap();
+        assert_ne!(digest(false), original, "actual rule changes still differ");
+    }
+
+    #[test]
     fn generated_rules_agreement_covers_rmg_settings_and_theater_inputs() {
         let dir = crate::assets::asset_manager::test_support::audio_test_install("rmg-agreement");
         for (name, bytes) in [
@@ -866,8 +965,16 @@ mod tests {
         ] {
             std::fs::write(dir.path().join(name), bytes).unwrap();
         }
+        let mod_dir = crate::assets::asset_manager::test_support::TestDirectory::new(
+            "langrule-agreement-mod",
+        );
         let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
-        let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let assets = AssetManager::with_mod(
+            dir.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         process.initialize_sources_if_needed(&assets).unwrap();
         process.return_from_loading(assets);
         let original = process.multiplayer_rules_digest("mode.ini").unwrap();
@@ -879,7 +986,12 @@ mod tests {
             "the live process retains its source snapshot"
         );
         let mut fresh = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
-        let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let assets = AssetManager::with_mod(
+            dir.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         fresh.initialize_sources_if_needed(&assets).unwrap();
         fresh.return_from_loading(assets);
         assert_ne!(

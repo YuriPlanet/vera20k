@@ -1794,8 +1794,8 @@ mod tests {
         changes.install_native_ini_hashes(&game, &[]);
         assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
         assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
-        // `ares.mix` makes the same folder an Ares game, which Quick Match
-        // does not play either.
+        // With no mod selected, an installed `ares.mix` is ignored. The
+        // changed rules still refuse Quick Match; removing them permits it.
         dir.write_mix("ares.mix", "ares.txt", b"ares");
         let game = crate::assets::asset_manager::AssetManager::new(
             dir.path(),
@@ -1803,7 +1803,33 @@ mod tests {
         )
         .unwrap();
         changes.install_native_ini_hashes(&game, &[]);
-        assert_eq!(changes.changed_game_files(), ["rulesmd.ini", "ares.mix"]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
+        assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
+        std::fs::remove_file(dir.path().join("rulesmd.ini")).unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(false, &changes), None);
+        // Original mode also skips an installed LANGRULE, even without a
+        // valid Digest; it must not prevent Quick Match from queuing.
+        std::fs::write(
+            dir.path().join("langrule.ini"),
+            b"[General]\nBuildSpeed=9\n",
+        )
+        .unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(false, &changes), None);
+        // A selected mod remains ineligible for Quick Match.
         assert_eq!(
             original_game_refusal(true, &changes),
             Some("VERA:QuickMatchNoMod")

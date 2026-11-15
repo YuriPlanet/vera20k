@@ -220,7 +220,7 @@ struct RulesLayer {
 #[derive(Debug, Clone)]
 pub struct RulesLayerStack {
     layers: Vec<RulesLayer>,
-    /// The installed game or its mod ships `ares.mix` (`rules::ares_switch`).
+    /// The selected mod mounted `ares.mix` (`rules::ares_switch`).
     ships_ares: bool,
 }
 

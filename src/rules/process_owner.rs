@@ -2508,6 +2508,11 @@ mod tests {
     #[test]
     fn langrule_without_a_digest_fails_startup() {
         fn load(with_langrule: bool) -> Result<RuleSet, String> {
+            use crate::assets::asset_manager::{
+                MediaArchiveMode, test_support::audio_test_install,
+            };
+
+            let install = audio_test_install("langrule-digest-install");
             let directory = TestDirectory::new(if with_langrule {
                 "langrule-missing-digest"
             } else {
@@ -2518,7 +2523,12 @@ mod tests {
             if with_langrule {
                 directory.write("langrule.ini", b"[General]\nBuildSpeed=.7\n");
             }
-            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let assets = AssetManager::with_mod(
+                install.path(),
+                Some(directory.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
             let mut owner = RetailRulesSources::select(&assets)
                 .unwrap()
                 .into_owner(Arc::default(), Arc::default())?;
@@ -2551,11 +2561,21 @@ mod tests {
         use crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL as VALID_LANGRULE;
 
         fn startup_color_add(langrule: &str) -> Result<[u8; 3], String> {
+            use crate::assets::asset_manager::{
+                MediaArchiveMode, test_support::audio_test_install,
+            };
+
+            let install = audio_test_install("langrule-color-install");
             let directory = TestDirectory::new("startup-langrule-digest");
             directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.8\n");
             directory.write("artmd.ini", b"");
             directory.write("langrule.ini", langrule.as_bytes());
-            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let assets = AssetManager::with_mod(
+                install.path(),
+                Some(directory.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
             let owner = RetailRulesSources::select(&assets)
                 .unwrap()
                 .into_owner(Arc::default(), Arc::default())?;

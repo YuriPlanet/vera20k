@@ -4,8 +4,9 @@
 //! takes its syntax and every Rules read its replacements. VERA has no DLL to
 //! load. Its launch is an Ares launch when the game it opens ships `ares.mix`
 //! (`AssetManager::ships_ares`), and the asset manager records that here when
-//! it opens a game for play, the installed one or a mod chosen later. A thread
-//! with no reading scope open reads its INIs and Rules by this answer
+//! it opens a game for play. With no mod selected, the installation's
+//! `ares.mix` is ignored; a selected mod can use that copy or its own. A
+//! thread with no reading scope open reads its INIs and Rules by this answer
 //! (`rules::ares_switch::ares_way`).
 //!
 //! The asset manager owns the answer; this is its copy for code that parses

@@ -299,8 +299,8 @@ fn load_with_assets(
         Some(&launch.session().mode.override_file),
     )?;
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
-    // It shares the process Rules owner (including LANGRULE Digest reads), but
-    // cannot admit Full_Init's mode-5 TMCJ4F route.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(

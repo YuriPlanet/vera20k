@@ -494,8 +494,13 @@ impl AssetManager {
         &self.ini_roots
     }
 
-    /// Whether startup mounted Ares's `ares.mix` from the installation or the
-    /// mod. It makes Ares play in every game (`rules::ares_switch`).
+    /// Whether this game overlays a selected mod on the installation.
+    pub fn mod_selected(&self) -> bool {
+        self.mod_dir.is_some()
+    }
+
+    /// Whether the selected mod mounted Ares's `ares.mix`, its own copy or
+    /// the installation's. With no mod selected, it is ignored (`rules::ares_switch`).
     pub fn ships_ares(&self) -> bool {
         self.archives
             .iter()
@@ -555,7 +560,8 @@ impl AssetManager {
 
     /// VERA: [`AssetManager::new`] with a mod folder's files read as if they
     /// had been copied on top of `ra2_dir`. gamemd has one folder; a mod made
-    /// to be copied into it resolves the same from its own folder.
+    /// to be copied into it resolves the same from its own folder. Only a
+    /// selected mod mounts `ares.mix`; with no mod selected it stays unused.
     pub fn with_mod(
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
@@ -607,16 +613,18 @@ impl AssetManager {
         // call at 0x006BD7EF) runs Init_Base_Mix_Files there instead, and
         // Expand_MIX_Deorg (0x0052BB64) skips Init_Game's call, so expansions
         // and the masters resolve ahead of LANGMD.MIX and LANGUAGE.MIX.
-        // VERA has no Ares.dll to find: a game is an Ares game when its
-        // folder or its mod holds `ares.mix`, which is asked before anything
-        // is mounted since it decides this order. Until the `ares` feature is
-        // deleted, a build with it takes Ares' order in every game.
-        let ares = cfg!(feature = "ares") || manager.loose_path("ares.mix").is_some();
-        if !ares {
+        // VERA's No mod choice ignores an installed ares.mix, so an Ares
+        // installation can also play the original game. A selected mod may
+        // supply it or inherit the installation's copy. Decide before any
+        // mount: Ares changes source priority as well as INI parsing. Until
+        // its build feature is deleted, that feature still forces Ares order.
+        let ares = manager.mod_selected() && manager.loose_path("ares.mix").is_some();
+        let ares_order = cfg!(feature = "ares") || ares;
+        if !ares_order {
             manager.mount_language_archives(&mut policy)?;
         }
         manager.mount_base_mix_files(ares, &mut policy)?;
-        if ares {
+        if ares_order {
             manager.mount_language_archives(&mut policy)?;
         }
 
