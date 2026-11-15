@@ -204,11 +204,14 @@ impl Simulation {
                     }
                     // RESIDUAL: native walks the cell's objects within
                     // DamageRadius (X+Y distance) with no `Warhead=` too,
-                    // handing ReceiveDamage a null warhead
-                    // (`0x0074A884..0x0074A92E`); VERA skips the walk. Every
-                    // retail VoxelAnim with `Damage=` names a `Warhead=`, but
-                    // retail TIRE sets neither, so a TIRE bounce hands Damage
-                    // 0 to an object at its exact XY (DamageRadius 0).
+                    // handing ReceiveDamage the type's own Damage and a null
+                    // warhead (`0x0074A884..0x0074A92E`); VERA skips the walk.
+                    // Every retail VoxelAnim with `Damage=` names a
+                    // `Warhead=`, but retail TIRE sets neither (Damage 0,
+                    // DamageRadius 0): a bounce on an object's exact XY
+                    // reaches TechnoClass::ReceiveDamage, which raises the
+                    // type's Damage to 1 (`0x00701900`), and a building there
+                    // loses 1 HP. It needs an exact-lepton hit.
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
                         // 1005D640: a negative DamageRadius or a Damage of
