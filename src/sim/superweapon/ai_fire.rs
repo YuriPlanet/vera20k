@@ -15,17 +15,18 @@
 //! `ai_best_rally_target`, `ai_ground_rally_point`, `ai_genetic_mutator` and
 //! `ai_psydom` execute the original code; `ai_fire_tests.rs` replays them.
 //!
+//! The second preferred defensive cell (`+0x54F8`) keeps its constructor
+//! value, as in gamemd: its setter House50DA40 has no call, jump or stored
+//! pointer, and the only other writers are the constructor (`0x004F5A9D`) and
+//! TAction141's clear (`0x0050DA6B`). The ForceShield arm (`0x00509A4B`) and
+//! Ares's IsTargetConstraintsEligible10032110 therefore see an unset cell.
+//! TAction35's type54EC and TAction135/136's cell54F0 are retained by
+//! HouseState and consumed here; a nonzero cell54F0 bypasses the
+//! MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
+//! TAction140/141 set/clear the separate timed defensive alert54F4/54FC
+//! through that same HouseState owner.
+//!
 //! RESIDUALS:
-//! - The second preferred defensive cell (`+0x54F8`) keeps its constructor
-//!   value: House50DA40's writer is not ported and an active caller is not
-//!   established. TAction35's type54EC and TAction135/136's cell54F0 are retained
-//!   by HouseState and consumed here; its nonzero value bypasses the
-//!   MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
-//!   TAction140/141 now set/clear the separate timed defensive alert54F4/54FC
-//!   through that same HouseState owner. Native141 also clears54F8, whose
-//!   current constructor-zero restriction remains part of this residual.
-//!   Ares's IsTargetConstraintsEligible10032110 reads it as well, so its
-//!   defensive-cell constraints see an unset cell.
 //! - A difficulty past a short `AIIonCannon*Value=` list reads 0
 //!   ([`HouseState::difficulty_value`]); native reads past the vector (a null
 //!   one for the three keys retail comments out, which no retail building
@@ -390,7 +391,7 @@ fn extension_target(
     if policy.preference() == P::Offensive && house.preferred_super_weapon_target() != (0, 0) {
         return Some(house.preferred_super_weapon_target());
     }
-    // Defensive preference reads +54F8, currently the constructor-zero residual.
+    // Defensive preference reads +54F8, which gamemd never sets (0x0050DA40).
     let kind = house.preferred_super_weapon_target_kind();
     match policy.mode() {
         M::None | M::IronCurtain => None,

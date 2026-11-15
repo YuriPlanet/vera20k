@@ -2209,8 +2209,8 @@ impl HouseState {
 
     /// House50DA50, reached by TAction1416E44C0: clear the alert and restore
     /// its constructor frame (-100). Original Steam gamemd,
-    /// instruction reading. Native also clears +54F8, which currently retains
-    /// its constructor zero here (ai_fire's secondary-cell residual).
+    /// instruction reading. Native also clears +54F8, which nothing in gamemd
+    /// sets (see `superweapon::ai_fire`), so it stays zero here.
     pub(crate) fn clear_super_weapon_defense(&mut self) {
         self.super_weapon_targets.defense_cell = (0, 0);
         self.super_weapon_targets.defense_frame = -100;

@@ -5,8 +5,8 @@
 //! are unrelated. YR never fills those slots: every caller of
 //! `DisplayClass::SetWaypointMode @ 0x004AC700` passes mode 0, so its flag
 //! (+0x11B3) is never set and `DetermineAction`'s waypoint branch (0x006928A9) never
-//! runs. The functions that add waypoints (0x00502160, 0x00502290, 0x005022F0)
-//! have no references. Drawing (`Tactical::DrawWaypointPaths @ 0x006DAD60`) and
+//! runs. The House path helpers have no references: the adder 0x00502160, the
+//! current-path query 0x00502290 and the other-path cell check 0x005022F0. Drawing (`Tactical::DrawWaypointPaths @ 0x006DAD60`) and
 //! following (`FootClass::ProceedToNextPlanningWaypoint @ 0x004DE580`) therefore
 //! only ever see empty paths.
 //!

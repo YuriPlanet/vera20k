@@ -64,6 +64,10 @@ fn normalized_house_laser_rgb(rgb: [u8; 3]) -> [u8; 3] {
     if nonzero {
         channels = channels.map(|channel| if channel < 96.0 { 0.0 } else { channel });
     }
+    // RESIDUAL (invisible): a campaign map's laser colour takes this second
+    // pass through Normalize_Color_To_240 @ 0x0050B920 (0x00501058), which
+    // sums (r²+b²)+g². The house_color oracle matches every retail colour; a
+    // mod colour could land one step off in one channel.
     normalize(channels).0.map(|channel| channel as u8)
 }
 
