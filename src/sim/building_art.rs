@@ -452,6 +452,9 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
+        // 0x00446662..0x0044667B, after the wall-tower variant arm and before
+        // the shared light block: slot 9 from the rules `TurretAnim=` name.
+        self.sync_rules_turret_anim(id, rules);
         // 0x004466D5..0x0044676C: the light block Unlimbo shares.
         if first_opening {
             self.light_building(id, rules);
@@ -780,6 +783,61 @@ impl Simulation {
             .unwrap()
             .building_art
             .wall_tower_variant = next;
+    }
+
+    /// `0x00446662..0x0044667B` inside `Grand_Opening`: a `HasTurret` building
+    /// without `TurretAnimIsVoxel` synchronizes its slot-9 animation from the
+    /// rules `TurretAnim=` name (type `+0x11B0`); the wall-tower variant arm
+    /// above owns the `Image` + `B`/`C`/`D` name on a changed variant. Native
+    /// `0x451890` replaces the slot animation on every opening.
+    ///
+    /// RESIDUAL: the damaged/garrisoned slot-9 names are separate rules reads
+    /// (`0x004644FD`/`0x00464594`, `TurretAnimDamaged=` plus the image's
+    /// `TurretAnimGarrisoned=`); this port uses the normal name for both, and
+    /// the reachable data authors neither key.
+    fn sync_rules_turret_anim(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let name = self.interner.resolve(entity.type_ref());
+        let Some(object) = rules.object(name) else {
+            return;
+        };
+        if object.turret_anim_is_voxel {
+            return;
+        }
+        let Some(turret_name) = object.turret_anim.clone() else {
+            return;
+        };
+        // 0x451238..0x451242 asks `HasTurret()` (vt+0x3FC = 0x4527D0), which
+        // folds in the type's upgrades; a `Turret=no` host never reaches the
+        // slot-9 synchronization.
+        if !self.substrate.entities.get(id).is_some_and(|entity| {
+            entity
+                .building_upgrades()
+                .has_turret(object, rules, &self.interner)
+        }) {
+            return;
+        }
+        let config = BuildingAnimConfig {
+            native_slot: 9,
+            anim_type: turret_name.to_ascii_uppercase(),
+            damaged_variant: None,
+            garrisoned_variant: None,
+            kind: crate::rules::art_data::BuildingAnimKind::Special,
+            is_primary: false,
+            x: object.turret_anim_x,
+            y: object.turret_anim_y,
+            y_sort: 0,
+            z_adjust: object.turret_anim_z_adjust,
+            loop_start: 0,
+            loop_end: 0,
+            loop_count: 0,
+            rate: 0,
+            start_frame: 0,
+            ping_pong: false,
+        };
+        self.allocate_building_anim_slot(id, 9, &turret_name, false, 0, Some(config), rules);
     }
 
     /// Original451890: synchronize other slots, construct new AnimClass, copy
@@ -1581,6 +1639,72 @@ mod slot_tests {
         assert_eq!(sim.interner.resolve(sim.anim(new3).unwrap().type_id()), "N");
         assert!(sim.anim(old9).is_none());
         assert!(sim.anim(old3).is_none());
+    }
+
+    /// `0x00446662..0x0044667B` (`Grand_Opening`, after the wall-tower
+    /// variant arm and before the light block): a `HasTurret` building without
+    /// `TurretAnimIsVoxel` seeds slot 9 from the rules `TurretAnim=` name; a
+    /// voxel turret or a `Turret=no` type keeps the slot empty.
+    #[test]
+    fn rules_turret_anim_seeds_slot_nine_only_for_an_shp_turret() {
+        use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+
+        let ini = "[BuildingTypes]
+0=T
+1=V
+2=N
+                   [T]
+Strength=100
+Turret=yes
+TurretAnim=S
+TurretAnimX=3
+TurretAnimY=-2
+TurretAnimZAdjust=-40
+                   [V]
+Strength=100
+Turret=yes
+TurretAnim=S
+TurretAnimIsVoxel=yes
+                   [N]
+Strength=100
+Turret=no
+TurretAnim=S
+                   [Animations]
+0=S
+";
+        let run = |type_id: &str| {
+            let art_ini = IniFile::from_str("[T]
+[V]
+[N]
+[S]
+");
+            let mut rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(ini), &art_ini)
+                    .unwrap();
+            let art = ArtRegistry::from_ini(&art_ini);
+            rules.install_art_data(art);
+            let mut sim = Simulation::new();
+            let id = sim.substrate.allocate_stable_id();
+            let mut entity = GameEntity::test_default_of_category(
+                id,
+                type_id,
+                "A",
+                2,
+                2,
+                crate::map::entities::EntityCategory::Structure,
+            );
+            entity.set_type_ref_for_test(sim.interner.intern(type_id));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(100);
+            sim.substrate.entities.insert(entity);
+            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            sim.grand_opening(id, false, false, &rules, None, FrameEffects::default());
+            let slot = sim.entities().get(id).unwrap().building_art.anim_slots()[9];
+            slot.map(|anim| sim.interner.resolve(sim.anim(anim).unwrap().type_id()).to_string())
+        };
+        assert_eq!(run("T").as_deref(), Some("S"));
+        assert_eq!(run("V"), None, "a voxel turret keeps slot 9 empty");
+        assert_eq!(run("N"), None, "a Turret=no host never seeds slot 9");
     }
 
     #[test]

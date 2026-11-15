@@ -2169,6 +2169,63 @@ fn turret_anim_frame_uses_body_shape_low_power_and_requires_a_turret() {
     );
 }
 
+/// `AnimationAI @ 0x451250..0x451296` without the Phobos hook: slot 9 still
+/// follows `BodyShape[facing]` from the `0x007F4890` table.
+#[test]
+#[cfg(not(feature = "phobos"))]
+fn the_native_slot_nine_frame_follows_the_body_shape_table() {
+    use crate::sim::anim_class::AnimWorldCoord;
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[BuildingTypes]
+0=DEF
+1=SHED
+[Animations]
+0=TANIM
+         [DEF]
+Strength=1000
+Armor=concrete
+Foundation=1x1
+Turret=yes
+         [SHED]
+Strength=100
+Armor=wood
+Foundation=1x1
+",
+    ))
+    .unwrap();
+    let mut rules = rules;
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+    let (mut sim, building, _) = fixture(&rules, "DEF", (10, 10));
+    let coord = sim
+        .substrate
+        .entities
+        .get(building)
+        .map(|entity| crate::sim::movement::ground_pose::position_world_coord(&entity.position))
+        .unwrap();
+    assert!(sim.spawn_named_anim(
+        &rules,
+        "TANIM",
+        AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        },
+        0,
+        0,
+        0,
+    ));
+    let anim = *sim.substrate.anims.iter().map(|(id, _)| id).next().unwrap();
+    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    entity.building_art.anim_slots_mut_for_test()[9] = Some(anim);
+    entity.body_facing.snap(0x4000, FRAME);
+    update_native_turret_anim_frame(&mut sim, building, &rules);
+    assert_eq!(
+        sim.anim_stage_and_frames(anim, &rules).unwrap().0,
+        20,
+        "facing bucket 8 takes BodyShape 20"
+    );
+}
+
 /// `Ext/Building/Hooks.cpp:868-873` (hook `0x44B630`): a building with
 /// `IsAnimDelayedFire=yes` arms the SpecialAnim delay for its first shot, but
 /// once a burst is in progress (`CurrentBurstIndex != 0`) ART

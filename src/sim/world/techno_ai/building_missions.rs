@@ -264,6 +264,8 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // runs once per frame, so GetTurretFrame is called exactly once here.
     #[cfg(feature = "phobos")]
     update_turret_anim_frame(sim, id, rules);
+    #[cfg(not(feature = "phobos"))]
+    update_native_turret_anim_frame(sim, id, rules);
     // 450F9E..451145, between the step and the ready admission, which it
     // does not touch.
     sim.update_super_weapon_anims(id, rules);
@@ -1215,6 +1217,43 @@ fn advance_turret_anim(substrate: &mut ObjectSubstrate, id: u64) {
     if let Some(entity) = substrate.entities.get_mut(id) {
         entity.turret_anim_frame.advance();
     }
+}
+
+/// `AnimationAI @ 0x451250..0x451296` without Phobos' hook: the slot-9
+/// animation's current frame is `BodyShape[facing]` from the `0x007F4890`
+/// table (`(28 - i) & 31`), written with the animation step/delay cleared.
+#[cfg(not(feature = "phobos"))]
+fn update_native_turret_anim_frame(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(anim_id) = entity.building_art.anim_slots()[9] else {
+        return;
+    };
+    let name = sim.interner.resolve(entity.type_ref());
+    let Some(object) = rules.object(name) else {
+        return;
+    };
+    if object.turret_anim_is_voxel {
+        return;
+    }
+    if !entity
+        .building_upgrades()
+        .has_turret(object, rules, &sim.interner)
+    {
+        return;
+    }
+    let facing = crate::util::direction_tables::step32_from_facing16(
+        entity.body_facing_current(sim.session.binary_frame()),
+    );
+    let frame = crate::util::direction_tables::DRAGON_FRAME_TABLE[usize::from(facing)];
+    let z_adjust = sim
+        .substrate
+        .anims
+        .get(anim_id)
+        .map_or(0, crate::sim::anim_class::AnimObject::z_adjust);
+    sim.substrate
+        .set_anim_frame_and_z_adjust(anim_id, frame, z_adjust);
 }
 
 /// Phobos `BuildingClass_AnimationAI_TurretAnim` hook `0x451242`
