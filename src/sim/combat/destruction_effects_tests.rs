@@ -189,7 +189,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, rx: u16, ry: u16) ->
 }
 
 /// Every anim in creation order: (type, coordinate, delay, flags, zAdjust).
-fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, u16, u32, i32)> {
+fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, i32, u32, i32)> {
     sim.substrate
         .anims
         .iter()
@@ -242,7 +242,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -886,7 +886,7 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -1450,7 +1450,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             assert_eq!(
                 (anim.2, anim.3, anim.4),
                 (
-                    ctor["delay"].as_u64().unwrap() as u16,
+                    ctor["delay"].as_u64().unwrap() as i32,
                     ctor["flags"].as_u64().unwrap() as u32,
                     0
                 ),
@@ -1509,7 +1509,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 (
                     event["type"].as_str().unwrap().to_string(),
                     ints(&event["coord"]),
-                    event["delay"].as_u64().unwrap() as u16,
+                    event["delay"].as_u64().unwrap() as i32,
                     event["flags"].as_u64().unwrap() as u32,
                 )
             })

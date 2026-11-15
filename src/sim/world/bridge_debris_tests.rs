@@ -252,8 +252,8 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
                 "{input}"
             );
             assert_eq!(
-                u64::from(anim.runtime().delay_remaining),
-                constructor["delay"].as_u64().unwrap(),
+                i64::from(anim.runtime().delay_remaining),
+                constructor["delay"].as_i64().unwrap(),
                 "{input}"
             );
             assert_eq!(

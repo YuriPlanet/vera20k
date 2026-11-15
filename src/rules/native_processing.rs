@@ -305,6 +305,24 @@ impl RulesLayerStack {
         )
     }
 
+    /// [`Self::process_with_fixed_art`] against a fixed SOUNDMD, which the
+    /// process owner always supplies outside tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn process_with_fixed_art_and_sounds(
+        &self,
+        fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        self.process_with_fixed_art_and_registry_state_recovering(
+            fixed_art,
+            NativeRulesRegistryState::new(self.ships_ares),
+            RulesProcessContext::Ordinary,
+            &EvaRegistry::default(),
+            fixed_sounds,
+        )
+        .map_err(NativeRulesProcessingFailure::into_error)
+    }
+
     /// Continue Process calls against an already-live process registry.
     ///
     /// Shell preview and gameplay Full_Init share native Type registries even
@@ -5845,6 +5863,10 @@ pub(crate) struct AnimTypeReferences {
     /// sets it.
     #[serde(default)]
     weapon: Option<String>,
+    /// The one sound slot (+2F8, constructor -1) `AnimTypeClass::Start @
+    /// 0x00424CE0` plays: `StartSound=` resolved through VocClass::FindIndex
+    /// (`0x007514D0`), else `Report=` (`0x00428344..0x004283BC`).
+    start_sound: Option<String>,
 }
 
 // A stock-way read never sets `weapon`, so a stock game's hash folds the
@@ -5859,6 +5881,7 @@ impl Hash for AnimTypeReferences {
         self.trailer_anim.hash(state);
         self.warhead.hash(state);
         self.spawns_particle.hash(state);
+        self.start_sound.hash(state);
         if self.weapon.is_some() {
             self.weapon.hash(state);
         }
@@ -5880,6 +5903,7 @@ impl AnimTypeReferences {
         config.spawns_particle = upper(&self.spawns_particle);
         // Ares AnimTypeExt `Weapon`; None unless read the Ares way.
         config.ares_weapon = self.weapon.clone();
+        config.start_sound = upper(&self.start_sound);
     }
 }
 
@@ -8597,6 +8621,17 @@ impl RulesPassProcessor {
                 let member = &mut self.family_mut(RulesTypeFamily::Animation)[index];
                 member.read_object_sound(section, fixed_sounds);
                 member.anim_art_read = true;
+                // 0x00428344..0x004283BC: StartSound= is a ReadString128 and
+                // VocClass::FindIndex (0x007514D0) that keeps the current ID
+                // on an empty or unknown name. While the slot is still -1,
+                // Report= is read the same way, but its miss stores -1.
+                member.anim_references.start_sound = fixed_sounds
+                    .read_rules_reference(
+                        section,
+                        "StartSound",
+                        member.anim_references.start_sound.take(),
+                    )
+                    .or_else(|| fixed_sounds.read_rules_reference(section, "Report", None));
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
                 // This retains the existing fresh/unowned read projection;

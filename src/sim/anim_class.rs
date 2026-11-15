@@ -297,7 +297,9 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
 pub struct AnimRuntime {
     pub current_frame: i32,
     pub frame_step: i32,
-    pub delay_remaining: u16,
+    /// AnimClass +0x184, a signed int: the constructor's delay or a drawn
+    /// `RandomLoopDelay=` pause.
+    pub delay_remaining: i32,
     pub rate_reload: u16,
     pub frame_timer: CdTimer,
     pub loop_remaining: u8,
@@ -1354,7 +1356,7 @@ struct AnimGates {
     bouncing: bool,
     inactive: bool,
     first_ai_guard: bool,
-    delay_remaining: u16,
+    delay_remaining: i32,
     /// Paused (`+0x19E`) or Temporal-paused (`+0x11A`).
     paused: bool,
     rate_reload: u16,
@@ -1945,7 +1947,7 @@ impl Simulation {
                     0
                 },
                 frame_step: if reverse { -1 } else { 1 },
-                delay_remaining: descriptor.delay,
+                delay_remaining: i32::from(descriptor.delay),
                 rate_reload: 0,
                 frame_timer: CdTimer::default(),
                 loop_remaining: native_loop_remaining(config.loop_count, descriptor.loop_count),
@@ -2357,11 +2359,13 @@ impl Simulation {
         // to zero calls `AnimClass::Start @ 0x00424CE0` (call site `0x004243A1`)
         // and returns. The field also holds the `RandomLoopDelay=` pause, so a
         // looping anim restarts, and replays its start sound, after each pause.
-        if gates.delay_remaining > 0 {
+        // `0x00424386..0x00424399` tests `!= 0` and decrements, so a negative
+        // pause counts on down and holds the anim.
+        if gates.delay_remaining != 0 {
             let Some(anim) = self.substrate.anims.get_mut(id) else {
                 return Ok(false);
             };
-            anim.runtime.delay_remaining -= 1;
+            anim.runtime.delay_remaining = anim.runtime.delay_remaining.wrapping_sub(1);
             if anim.runtime.delay_remaining == 0 {
                 self.anim_start(id, &config, rules, overlay_registry, frame_effects)?;
             }
@@ -2459,11 +2463,11 @@ impl Simulation {
             }
         }
 
+        // `0x004247B1..0x004247E5`: unless both bounds are 0, Random_Ranged
+        // (`0x0065C7E0`) on the Scenario stream draws the signed pause; equal
+        // bounds draw nothing.
         if let Some((low, high)) = random_loop_delay {
-            let delay = self
-                .scenario_rng
-                .next_range_u32_inclusive(u32::from(low), u32::from(high))
-                as u16;
+            let delay = self.scenario_rng.next_range_i32_inclusive(low, high);
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.runtime.delay_remaining = delay;
             }
@@ -3876,8 +3880,8 @@ impl Simulation {
     /// over (`0x00424925`).
     ///
     /// `AnimType+0x2F8` is one slot: `AnimTypeClass::ReadINI @ 0x00427D00`
-    /// reads `Report=` into it only when `StartSound=` resolved to `-1`, which
-    /// is what `start_sound.or(report)` reproduces.
+    /// reads `Report=` into it only when `StartSound=` resolved to `-1`
+    /// (`0x00428344..0x004283BC`); `config.start_sound` holds that slot.
     ///
     /// Constructor-time starts pass no overlay registry; no retail marking
     /// anim has fewer than two frames, so none marks from there.
@@ -3892,13 +3896,7 @@ impl Simulation {
         let ares = rules.ares_form();
         let sound_name = self.anim(id).and_then(|anim| {
             (!anim.no_effects())
-                .then(|| {
-                    config
-                        .start_sound
-                        .as_ref()
-                        .or(config.report.as_ref())
-                        .cloned()
-                })
+                .then(|| config.start_sound.clone())
                 .flatten()
         });
         if let Some(sound_name) = sound_name
@@ -5364,12 +5362,21 @@ mod tests {
             .enumerate()
             .map(|(index, name)| format!("{index}={name}\n"))
             .collect();
-        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        // SOUNDMD knows every sound the art names.
+        let sounds: Vec<&str> = art_ini
+            .section_names()
+            .iter()
+            .filter_map(|name| art_ini.section(name))
+            .flat_map(|section| ["StartSound", "Report"].map(|key| section.get_for_test(key)))
+            .flatten()
+            .collect();
+        let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
             &IniFile::from_str(&format!(
                 "[General]\nDamageFireTypes=\n\n[AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n\n\
                  [Animations]\n{animations}"
             )),
             &art_ini,
+            &sounds,
         )
         .unwrap();
         let mut art = ArtRegistry::from_ini(&art_ini);
@@ -5934,6 +5941,35 @@ mod tests {
                 .make_infantry,
             -2
         );
+    }
+
+    /// `AnimClass::AI @ 0x00423AC0`: the loop boundary stores the signed
+    /// `RandomLoopDelay=` draw (`0x004247B1..0x004247E5`) and the countdown
+    /// tests `!= 0` (`0x00424386`), so a negative pause holds the anim.
+    #[test]
+    fn a_negative_random_loop_delay_holds_the_anim() {
+        let rules = runtime_rules(
+            "[LOOPER]\nRate=900\nEnd=2\nLoopCount=-1\nRandomLoopDelay=-3,-3\n",
+            &[("LOOPER", 2)],
+        );
+        let mut sim = Simulation::new();
+        let type_name = sim.interner.intern("LOOPER");
+        let id = sim
+            .spawn_anim_object(
+                &rules,
+                AnimClassSpawnDescriptor {
+                    loop_count: -1,
+                    ..runtime_descriptor(type_name, 0)
+                },
+            )
+            .expect("bound art constructs");
+        for frame in 1..40 {
+            sim.session.set_binary_frame_for_test(frame);
+            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
+                .unwrap();
+        }
+        let delay = sim.anim(id).unwrap().runtime.delay_remaining;
+        assert!(delay < -3, "the pause counts on down, got {delay}");
     }
 
     /// The whole point of routing combat explosions through `AnimStore`: the

@@ -470,7 +470,7 @@ pub struct AnimTypeRuntimeConfig {
     pub expire_anim: Option<String>,
     pub trailer_anim: Option<String>,
     pub trailer_seperation: i32,
-    pub random_loop_delay: Option<(u16, u16)>,
+    pub random_loop_delay: Option<(i32, i32)>,
     pub random_rate_logic_frames: Option<(u16, u16)>,
     pub y_draw_offset: i32,
     pub z_adjust: i32,
@@ -514,7 +514,11 @@ pub struct AnimTypeRuntimeConfig {
     pub shadow: bool,
     pub ping_pong: bool,
     pub reverse: bool,
+    /// The raw `Report=` read.
     pub report: Option<String>,
+    /// The sound `AnimClass::Start @ 0x00424CE0` plays (AnimType +2F8). The
+    /// rules processor resolves it against SOUNDMD (`AnimTypeReferences`);
+    /// before that, this reader stands in `StartSound=`, else `Report=`.
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
 }
@@ -1061,10 +1065,11 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         expire_anim: None,
         trailer_anim: None,
         trailer_seperation: section.read_int("TrailerSeperation", 0),
-        // ReadMinMax (`0x004280D4`); `None` marks an absent key.
+        // ReadMinMax (`0x004280D4`) stores both ints as written
+        // (+2DC/+2E0); `None` marks an absent key.
         random_loop_delay: section.is_present("RandomLoopDelay").then(|| {
             let [low, high] = section.read_minmax("RandomLoopDelay", [0, 0]);
-            (low.max(0) as u16, high.max(0) as u16)
+            (low, high)
         }),
         random_rate_logic_frames: read_random_rate(section),
         y_draw_offset: section.read_int("YDrawOffset", 0),
@@ -1090,6 +1095,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
             .map(str::to_ascii_uppercase),
         start_sound: section
             .read_name("StartSound", 0x80)
+            .or_else(|| section.read_name("Report", 0x80))
             .map(str::to_ascii_uppercase),
         stop_sound: section
             .read_name("StopSound", 0x80)

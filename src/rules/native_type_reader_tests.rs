@@ -151,6 +151,42 @@ fn spawns_particle_allocates_through_the_particle_factory() {
     assert_eq!(particles.registry_ids(), ["none"]);
 }
 
+/// AnimType ReadINI resolves `StartSound=` through VocClass::FindIndex
+/// (`0x007514D0`) and reads `Report=` while the slot is still -1
+/// (`0x00428344..0x004283BC`): an unknown StartSound gives way to Report, and
+/// a known StartSound wins.
+#[test]
+fn an_unknown_anim_start_sound_gives_way_to_report() {
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Boom\n1=Bang\n",
+    ));
+    let art = IniFile::from_str(
+        "[MISS]\nStartSound=NoSuchSound\nReport=Boom\n\
+         [HIT]\nStartSound=Bang\nReport=Boom\n",
+    );
+    let processed = RulesLayerStack::new(IniFile::from_str("[Animations]\n0=MISS\n1=HIT\n"))
+        .process_with_fixed_art_and_registry_state_recovering(
+            &art,
+            NativeRulesRegistryState::default(),
+            RulesProcessContext::Ordinary,
+            &crate::rules::sound_ini::EvaRegistry::default(),
+            &sounds,
+        )
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let start_sound = |name: &str| {
+        rules
+            .art()
+            .anim_runtime_config(name)
+            .unwrap()
+            .start_sound
+            .clone()
+    };
+    assert_eq!(start_sound("MISS").as_deref(), Some("BOOM"));
+    assert_eq!(start_sound("HIT").as_deref(), Some("BANG"));
+}
+
 /// BuildingType's ToOverlay read finds its fixed ART section by ObjectType+1F8
 /// (`0x004610DE`), the 25-byte Image buffer: a longer Image names the section
 /// of its first 24 bytes, and the type keeps that cut Image.
