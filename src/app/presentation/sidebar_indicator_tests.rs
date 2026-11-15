@@ -398,3 +398,112 @@ fn a_defeated_player_draws_no_weeds_counter() {
         .is_none()
     );
 }
+
+/// `SidebarClass_DrawIt_ProducingProgress @ 0x6A6EB1`: the four strips start at
+/// `(Sidebar_GDIPositions ? 26 : 20) + offset.X`, `197 + offset.Y`, one
+/// `XOffset` (`? 29 : 32`) apart, and only an existing factory gets a strip.
+/// VERA prints the completion as a percentage (no `tab0xpp.shp` in retail).
+#[test]
+fn the_producing_progress_strips_use_the_native_columns_and_switch() {
+    use super::producing_progress_indicators;
+    let on = ui("ProducingProgress.Show=yes\n");
+    let settings = rules("Sidebar.ProducingProgress.Offset=12,-7\n");
+    let side_settings = settings.side_producing_progress(0);
+    let tint = [0.5, 0.25, 0.125];
+
+    // 168-wide surface, so the lane's midpoint anchor is 84.
+    let drawn = producing_progress_indicators(
+        &on,
+        &side_settings,
+        [Some(27), None, Some(54), None],
+        true,
+        168,
+        tint,
+    );
+    assert_eq!(drawn.len(), 2, "only existing factories draw a strip");
+    assert_eq!(drawn[0].text, "50%");
+    assert_eq!(drawn[0].anchor_x, 26 + 12 - 84);
+    assert_eq!(drawn[0].anchor_y, 190);
+    assert_eq!(drawn[0].tint, tint);
+    assert_eq!(drawn[1].text, "100%");
+    assert_eq!(drawn[1].anchor_x, 26 + 2 * 29 + 12 - 84);
+    assert_eq!(drawn[1].anchor_y, 190);
+
+    // Non-GDI positions use the wider 32 px pitch from the base of 20.
+    let non_gdi = producing_progress_indicators(
+        &on,
+        &side_settings,
+        [Some(0), Some(0), Some(0), Some(0)],
+        false,
+        168,
+        tint,
+    );
+    assert_eq!(non_gdi.len(), 4);
+    assert_eq!(non_gdi[3].anchor_x, 20 + 3 * 32 + 12 - 84);
+
+    assert!(
+        producing_progress_indicators(
+            &ui(""),
+            &side_settings,
+            [Some(27), Some(27), Some(27), Some(27)],
+            true,
+            168,
+            tint
+        )
+        .is_empty(),
+        "ProducingProgress.Show defaults to no"
+    );
+}
+
+/// The four columns follow `0x6A6EB1`'s factory chain through the production
+/// registry: `i=0` accepts a combat-only house (BuildCat::DontCare), and `i=3`
+/// is land vehicle, then naval, then aircraft.
+#[test]
+fn the_producing_progress_columns_map_the_native_factory_chain() {
+    use super::producing_progress_columns;
+    use crate::sim::production::ProductionCategory;
+
+    // A fresh sim with one house factory in each listed category.
+    let columns = |categories: &[ProductionCategory], set_progress: Option<u16>| {
+        let mut sim = Simulation::new();
+        let owner = sim.intern("me");
+        let type_id = sim.intern("TEST");
+        for (order, &category) in categories.iter().enumerate() {
+            assert!(sim.production_mut_for_test().factories_mut_for_test().test_enqueue_kernel(
+                owner,
+                category,
+                type_id,
+                order as u64,
+                100,
+            ));
+        }
+        if let Some(value) = set_progress {
+            sim.production_mut_for_test()
+                .factories_mut_for_test()
+                .test_first_mut()
+                .expect("one factory")
+                .set_progress_for_test(value);
+        }
+        producing_progress_columns(&sim, owner)
+    };
+
+    let infantry = columns(&[ProductionCategory::Infantry], Some(27));
+    assert_eq!(infantry[2], Some(27), "the infantry strip keeps its stage");
+    assert_eq!(infantry[0], None);
+    assert_eq!(infantry[3], None);
+
+    let combat_only = columns(&[ProductionCategory::Defense], None);
+    assert_eq!(combat_only[0], Some(0), "DontCare admits the combat slot");
+    assert_eq!(combat_only[1], Some(0), "the combat column too");
+
+    assert_eq!(
+        columns(&[ProductionCategory::Ship], None)[3],
+        Some(0),
+        "no land-vehicle factory falls through to naval"
+    );
+    assert_eq!(
+        columns(&[ProductionCategory::Aircraft], None)[3],
+        Some(0),
+        "and then to aircraft"
+    );
+}

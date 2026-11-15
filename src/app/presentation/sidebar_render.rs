@@ -823,47 +823,52 @@ pub(crate) fn refresh_sidebar_indicators(state: &mut AppState) {
         let (harvesters_active, harvesters_total) = sim.harvester_counts(rules, owner);
         // Native draws the harvester counter before the power delta, and this is
         // also the lane's append order.
-        Some(
-            [
-                harvester_counter_indicator(
-                    sim,
-                    rules,
-                    side,
-                    owner,
-                    &presentation.sidebar_indicators,
-                    presentation.show_harvester_counter,
-                    crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(
-                        state,
-                    )),
-                    harvesters_active,
-                    harvesters_total,
-                ),
-                power_delta_indicator(
-                    sim,
-                    rules,
-                    side,
-                    owner,
-                    &presentation.sidebar_indicators,
-                    presentation.show_power_delta,
-                    produced,
-                    drained,
-                ),
-                weeds_counter_indicator(
-                    sim,
-                    rules,
-                    side,
-                    owner,
-                    &presentation.sidebar_indicators,
-                    presentation.show_weeds_counter,
-                    crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(
-                        state,
-                    )),
-                ),
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>(),
-        )
+        let mut indicators: Vec<_> = [
+            harvester_counter_indicator(
+                sim,
+                rules,
+                side,
+                owner,
+                &presentation.sidebar_indicators,
+                presentation.show_harvester_counter,
+                crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(state)),
+                harvesters_active,
+                harvesters_total,
+            ),
+            power_delta_indicator(
+                sim,
+                rules,
+                side,
+                owner,
+                &presentation.sidebar_indicators,
+                presentation.show_power_delta,
+                produced,
+                drained,
+            ),
+            weeds_counter_indicator(
+                sim,
+                rules,
+                side,
+                owner,
+                &presentation.sidebar_indicators,
+                presentation.show_weeds_counter,
+                crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(state)),
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        // `0x6A6EB1` is a separate native drawing site inside the sidebar's
+        // own draw pass, so its strips paint over the credits-tick text.
+        indicators.extend(producing_progress_indicators(
+            &presentation.sidebar_indicators,
+            &rules.side_producing_progress(side),
+            producing_progress_columns(sim, owner),
+            rules.side_gdi_positions(side),
+            presentation.sidebar_layout_spec.sidebar_width.round() as i32,
+            crate::app::presentation::sidebar_text::credits_tint(current_sidebar_theme(state)),
+        ));
+        Some(indicators)
     })();
     let presentation = &mut state.match_state.match_presentation;
     match resolved {
@@ -1098,6 +1103,85 @@ fn weeds_counter_indicator(
         anchor_y: INDICATOR_SURFACE_Y + side_settings.offset[1],
         align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign::Center,
     })
+}
+
+/// `Ext/Sidebar/Hooks.cpp:44-77` (`SidebarClass_DrawIt_ProducingProgress
+/// @ 0x6A6EB1`): the four strip columns, in native order — the building
+/// factory (`BuildCat::DontCare`, so a combat-only house still fills i=0), the
+/// combat factory, infantry, and the land-vehicle slot that falls through to
+/// naval and then aircraft. The last chain asks for a factory *with* a held
+/// object before falling through; `None` is native's `-1` (no factory, no
+/// strip).
+#[cfg(feature = "phobos")]
+fn producing_progress_columns(
+    sim: &crate::sim::world::Simulation,
+    owner: crate::sim::intern::InternedId,
+) -> [Option<u16>; 4] {
+    use crate::sim::production::{PRODUCTION_STEPS, ProductionCategory};
+    let progress = |category| {
+        sim.production()
+            .factories()
+            .view(owner, category)
+            .map(|view| view.progress.min(PRODUCTION_STEPS))
+    };
+    let held = |category| {
+        sim.production()
+            .factories()
+            .view(owner, category)
+            .filter(|view| view.object.is_some())
+            .map(|view| view.progress.min(PRODUCTION_STEPS))
+    };
+    [
+        progress(ProductionCategory::Building).or_else(|| progress(ProductionCategory::Defense)),
+        progress(ProductionCategory::Defense),
+        progress(ProductionCategory::Infantry),
+        held(ProductionCategory::Vehicle)
+            .or_else(|| held(ProductionCategory::Ship))
+            .or_else(|| progress(ProductionCategory::Aircraft)),
+    ]
+}
+
+/// `0x6A6EB1`: one strip per factory column at
+/// `XBase + column * XOffset`, `YBase`, gated only by `uimd.ini
+/// [Sidebar] ProducingProgress.Show`. Phobos blits `tab00pp.shp`..`tab03pp.shp`
+/// frames; those ship with Phobos rather than retail, so VERA prints the same
+/// completion as a percentage (`hud_boards::producing_progress_label`). The
+/// text lane anchors on the surface midpoint, so the native absolute x is
+/// rebased here.
+#[cfg(feature = "phobos")]
+fn producing_progress_indicators(
+    ui: &crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
+    side_settings: &crate::rules::phobos_sidebar_indicators::ProducingProgressSideSettings,
+    progress: [Option<u16>; 4],
+    gdi_positions: bool,
+    surface_width: i32,
+    tint: [f32; 3],
+) -> Vec<crate::ui::sidebar::SidebarIndicator> {
+    if !ui.producing_progress.show {
+        return Vec::new();
+    }
+    progress
+        .into_iter()
+        .enumerate()
+        .filter_map(|(column, progress)| {
+            let progress = progress?;
+            let (x, y) = super::hud_boards::producing_progress_anchor(
+                side_settings.offset,
+                gdi_positions,
+                column,
+            );
+            Some(crate::ui::sidebar::SidebarIndicator {
+                text: super::hud_boards::producing_progress_label(
+                    progress,
+                    crate::sim::production::PRODUCTION_STEPS,
+                ),
+                tint,
+                anchor_x: x.wrapping_sub(surface_width / 2),
+                anchor_y: y,
+                align: crate::rules::phobos_sidebar_indicators::SidebarTextAlign::Left,
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn current_sidebar_theme(
