@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> None:
         shared = shared_rng_states(json.loads(path.read_text(encoding="utf-8")))
         path.write_text(json.dumps(shared, separators=(",", ":"), allow_nan=False) + "\n",
                         encoding="utf-8")
-        print(f"{path}: {len(shared['rng_states'])} distinct RNG states, "
+        print(f"{path}: {len(shared['shared_rng_states'])} distinct RNG states, "
               f"{before:,} to {path.stat().st_size:,} bytes")
 
 

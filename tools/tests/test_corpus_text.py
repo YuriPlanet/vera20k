@@ -24,12 +24,12 @@ class CorpusTextTests(unittest.TestCase):
         self.assertEqual(shared_rng_states(data), {
             "rows": [{"rng_before": {"rng_state": 0}, "rng_after": {"rng_state": 1}},
                      {"rng_before": {"rng_state": 1}}],
-            "seed": {"state": [5]}, "rng_states": [first, second]})
+            "seed": {"state": [5]}, "shared_rng_states": [first, second]})
 
     def test_a_bare_list_corpus_keeps_its_rows_under_rows(self):
         state = {"disabled": False, "index_a": 0, "index_b": 31, "state": [1]}
         self.assertEqual(shared_rng_states([{"rng": state}, {"rng": state}]), {
-            "rows": [{"rng": {"rng_state": 0}}, {"rng": {"rng_state": 0}}], "rng_states": [state]})
+            "rows": [{"rng": {"rng_state": 0}}, {"rng": {"rng_state": 0}}], "shared_rng_states": [state]})
 
 
 if __name__ == "__main__":

@@ -70,7 +70,7 @@ palette fixtures, which a tool checks by hash, keep their formatting.
 
 A corpus that records the RNG streams before and after every row can store
 each distinct state once: `python -m tools.share_rng_states FILE` moves them
-into a top-level `rng_states` table and leaves `{"rng_state": n}` in their
+into a top-level `shared_rng_states` table and leaves `{"rng_state": n}` in their
 place. A corpus that is a bare list becomes `{"rows": list}`, so its tests
 read `["rows"]`. Tests that load it through `test_fixture::json` see the
 states where they were, so read such a corpus only that way. This took nine
