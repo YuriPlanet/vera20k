@@ -1066,6 +1066,19 @@ impl IniSection {
         })
     }
 
+    /// Phobos `Valueable<DynamicTeamDelayType>` (`[General]
+    /// TeamDelays.DynamicType`, `Ext/Rules/Body.cpp:606`): the same name
+    /// reader; absent or rejected text keeps `current`.
+    pub fn read_phobos_valueable_dynamic_team_delay_type(
+        &self,
+        key: &str,
+        current: PhobosDynamicTeamDelayType,
+    ) -> PhobosDynamicTeamDelayType {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            PhobosDynamicTeamDelayType::parse(raw).unwrap_or(current)
+        })
+    }
+
     /// [`Self::read_bool`] where the caller supplies the default later: `None`
     /// wherever ReadBool would return its default argument (an absent key,
     /// or a first character outside `1TY0FN`).
@@ -2201,6 +2214,52 @@ fn parse_phobos_edge_type(raw: &str) -> Option<PhobosEdgeType> {
         None
     }
 }
+
+/// Phobos `DynamicTeamDelayType` (`Utilities/Enum.h`, the eight names in
+/// declaration order): what `[General] TeamDelays.DynamicType=` selects when
+/// `HouseClass::ResetTeamDelay @ 0x004F8ACC` recomputes a house's team delays.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum PhobosDynamicTeamDelayType {
+    #[default]
+    StartingPoint,
+    PlayerCount,
+    Allies,
+    Enemies,
+    AliveCount,
+    AliveAllies,
+    AliveEnemies,
+    None,
+}
+
+impl PhobosDynamicTeamDelayType {
+    /// `EnumParser<DynamicTeamDelayType>`'s name table; an unknown spelling
+    /// keeps the previous value.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let name = raw.trim();
+        if name.eq_ignore_ascii_case("startingpoint") {
+            Some(Self::StartingPoint)
+        } else if name.eq_ignore_ascii_case("playercount") {
+            Some(Self::PlayerCount)
+        } else if name.eq_ignore_ascii_case("allies") {
+            Some(Self::Allies)
+        } else if name.eq_ignore_ascii_case("enemies") {
+            Some(Self::Enemies)
+        } else if name.eq_ignore_ascii_case("alivecount") {
+            Some(Self::AliveCount)
+        } else if name.eq_ignore_ascii_case("aliveallies") {
+            Some(Self::AliveAllies)
+        } else if name.eq_ignore_ascii_case("aliveenemies") {
+            Some(Self::AliveEnemies)
+        } else if name.eq_ignore_ascii_case("none") {
+            Some(Self::None)
+        } else {
+            None
+        }
+    }
+}
+
 
 fn parse_phobos_double(raw: &str) -> Option<f64> {
     let parsed = try_parse_leading_f64(raw, FloatScanRounding::Nearest)?;

@@ -3525,3 +3525,99 @@ fn spawn_slot_type_names(sim: &Simulation, owner: u64) -> Vec<String> {
         })
         .collect()
 }
+
+/// `[CombatDamage] MissileSpawnAttackCell=` (`Ext/Rules/Body.cpp:449`, its
+/// constructed value true): `SpawnManagerClass_AI_SetDestinationForMissiles
+/// @ 0x006B75AC` (`Misc/Hooks.BugFixes.cpp:840-870`) answers a missile's
+/// destination with the target's centre Cell, except for a Building target,
+/// whose object stays the destination to keep its footprint accurate.
+#[cfg(feature = "phobos")]
+#[test]
+fn missile_spawn_attack_cell_sends_the_missile_to_the_target_cell() {
+    use crate::sim::components::NavTargetRef;
+
+    let launch_destination = |attack_cell: bool, target_type: &str| {
+        let mut rules = make_spawner_rules();
+        rules.phobos_globals.missile_spawn_attack_cell = attack_cell;
+        let mut sim = flat_sim();
+        let v3 = sim
+            .spawn_object("V3", "Russians", 10, 10, 0, &rules)
+            .expect("spawn V3");
+        let target = sim
+            .spawn_object(target_type, "Yuri", 20, 20, 0, &rules)
+            .expect("spawn the target");
+        let child = sim
+            .substrate
+            .entities
+            .get(v3)
+            .and_then(|e| e.spawn_manager.as_ref())
+            .and_then(|m| m.slots[0].spawn)
+            .expect("child");
+        if let Some(manager) = sim
+            .substrate
+            .entities
+            .get_mut(v3)
+            .and_then(|e| e.spawn_manager.as_mut())
+        {
+            manager.set_target(Some(TargetKind::Entity(target)));
+        }
+        for _ in 0..3 {
+            if let Some(manager) = sim
+                .substrate
+                .entities
+                .get_mut(v3)
+                .and_then(|e| e.spawn_manager.as_mut())
+            {
+                manager.update_timer = CdTimer::default();
+            }
+            spawn_manager_ai(
+                &mut sim,
+                &rules,
+                v3,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            );
+            if !sim
+                .substrate
+                .entities
+                .get(child)
+                .is_some_and(|child| child.lifecycle.in_limbo())
+            {
+                break;
+            }
+        }
+        let child = sim.substrate.entities.get(child).expect("child alive");
+        assert!(!child.lifecycle.in_limbo(), "the launch happened");
+        let destination = child.navigation.nav_com();
+        let target_cell = (
+            sim.substrate
+                .entities
+                .get(target)
+                .expect("target alive")
+                .position
+                .rx(),
+            sim.substrate
+                .entities
+                .get(target)
+                .expect("target alive")
+                .position
+                .ry(),
+        );
+        (destination, NavTargetRef::object(target), target_cell)
+    };
+
+    let (destination, object, cell) = launch_destination(true, "MOBILE");
+    assert_eq!(
+        destination,
+        Some(NavTargetRef::cell(cell.0, cell.1)),
+        "a Unit target is reduced to its Cell"
+    );
+    let (destination, object, cell) = launch_destination(false, "MOBILE");
+    assert_eq!(destination, Some(object), "the key off keeps the object");
+    let (destination, object, _) = launch_destination(true, "TARGET");
+    assert_eq!(
+        destination,
+        Some(object),
+        "a Building target keeps the object"
+    );
+}

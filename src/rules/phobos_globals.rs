@@ -563,6 +563,81 @@ pub struct PhobosGlobals {
     /// ring up to the radius is walked.
     #[serde(default)]
     pub disable_overoptimization_in_targeting: bool,
+    /// `[AI] AIAutoDeployMCV=` (`Valueable<bool>`, **true**;
+    /// `Ext/Rules/Body.cpp:370`, `Body.h:275,794`): a computer house's MCV
+    /// skips `BuildingClass`'s placement attempt and queues mission 16
+    /// (`Deploy`) itself. Native's caller tests `!AIAutoDeployMCV &&
+    /// pMCV->Owner->NumConYards > 0` at `0x00740A11` before queueing
+    /// (`Ext/BuildingType/Hooks.Placing.cpp:6`, hook `0x00740A11` -> `0x00740A50`).
+    #[serde(default = "true_bool")]
+    pub ai_auto_deploy_mcv: bool,
+    /// `[AI] AISetBaseCenter=` (`Valueable<bool>`, **true**;
+    /// `Ext/Rules/Body.cpp:371`, `Body.h:276,795`): the same MCV step also
+    /// rewrites the owner's base centre and spawn cell. Native's gate is `!
+    /// AISetBaseCenter && pMCV->Owner->NumConYards > 1` at `0x00739889`
+    /// (`Ext/BuildingType/Hooks.Placing.cpp:16`, hook `0x00739889` ->
+    /// `0x0073992B`).
+    #[serde(default = "true_bool")]
+    pub ai_set_base_center: bool,
+    /// `[AI] AIBiasSpawnCell=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:372`, `Body.h:277,796`): `HouseClass::AI_Building_
+    /// Strategy`'s spawn-cell bias, run at `0x004FD538` only when the key is
+    /// set (`Ext/BuildingType/Hooks.Placing.cpp:26`).
+    #[serde(default)]
+    pub ai_bias_spawn_cell: bool,
+    /// `[AI] AIForbidConYard=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:373`, `Body.h:278,797`): `BaseClass::Find_Node`'s
+    /// placement loop refuses a Construction Yard placement and clears the
+    /// node's attempt counter (`0x004451F8`, `Ext/BuildingType/
+    /// Hooks.Placing.cpp:72`), and a placed Construction Yard node is refused
+    /// at `0x0042EB8E` (`:121`).
+    #[serde(default)]
+    pub ai_forbid_conyard: bool,
+    /// `[AI] AINodeWallsOnly=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:374`, `Body.h:279,798`): an AI house that has placed
+    /// no wall yet in this fill call only expands a direction whose first cell
+    /// is one of its own base nodes of that wall type
+    /// (`0x005885D1` FirestormWall, `0x005887C1` Wall;
+    /// `Ext/BuildingType/Hooks.Placing.cpp:139-189`).
+    #[serde(default)]
+    pub ai_node_walls_only: bool,
+    /// `[AI] AICleanWallNode=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:375`, `Body.h:280,799`): the same placement loop
+    /// refuses a wall node whose eight neighbours hold no `ProtectWithWall`
+    /// building (`0x004451F8`, `Ext/BuildingType/Hooks.Placing.cpp:72`).
+    #[serde(default)]
+    pub ai_clean_wall_node: bool,
+    /// `[General] BuildingWaypoints=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:323`, `Body.h:326,835`): lets the waypoint planner
+    /// and the placement display accept building targets
+    /// (`BuildingTypeClass::CanUseWaypoint` vtable `0x7E4610`).
+    #[serde(default)]
+    pub building_waypoints: bool,
+    /// `[CombatDamage] MissileSpawnAttackCell=` (`Valueable<bool>`, **true**;
+    /// `Ext/Rules/Body.cpp:449`, `Body.h:359,864`): a missile's spawn manager
+    /// keeps the attack cell as the spawn's destination
+    /// (`SpawnManager @ 0x006B75AC`, `Misc/Hooks.BugFixes.cpp:862`).
+    #[serde(default = "true_bool")]
+    pub missile_spawn_attack_cell: bool,
+    /// `[General] FallingDownTargetingFix=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:451`, `Body.h:361,866`): the auto-target scan also
+    /// scores targets that are falling down, through `pTarget->GetCoords()`
+    /// (`Ext/Techno/Hooks.cpp:1630-1810`).
+    #[serde(default)]
+    pub falling_down_targeting_fix: bool,
+    /// `[General] BalloonHoverPathingFix=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:540`, `Body.h:455,958`): keeps a balloon's hover
+    /// pathing inside its hover range instead of the stock shortcut
+    /// (`Misc/Hooks.BugFixes.cpp:3499`; the key drives
+    /// `Optimizations::DisableBalloonHoverPathingFix`).
+    #[serde(default)]
+    pub balloon_hover_pathing_fix: bool,
+    /// `[General] TeamDelays.DynamicType=` (`Valueable<DynamicTeamDelayType>`,
+    /// `StartingPoint`; `Ext/Rules/Body.cpp:606`, `Body.h:510,1007`): what
+    /// `HouseClass::ResetTeamDelay @ 0x004F8ACC` counts when it refills a
+    /// house's team delays.
+    #[serde(default)]
+    pub team_delays_dynamic_type: crate::rules::ini_value::PhobosDynamicTeamDelayType,
     /// `[General] AircraftWeapon.KickOutPassengers=` (`Valueable<bool>`,
     /// true; `Ext/Rules/Body.cpp:272`, `Body.h:190,714`): the fallback for a
     /// weapon's `KickOutPassengers` in `AircraftClass::Fire_At`'s passenger
@@ -1665,6 +1740,23 @@ impl Default for PhobosGlobals {
             ai_paradrop_mission: MissionType::Hunt,
             ai_air_targeting_fix: false,
             disable_overoptimization_in_targeting: false,
+            // `Ext/Rules/Body.cpp:370-375`, `Body.h:794-799`: the AI placement
+            // switches; the two MCV ones are constructed true.
+            ai_auto_deploy_mcv: true,
+            ai_set_base_center: true,
+            ai_bias_spawn_cell: false,
+            ai_forbid_conyard: false,
+            ai_node_walls_only: false,
+            ai_clean_wall_node: false,
+            // `Ext/Rules/Body.cpp:323`, `Body.h:835`.
+            building_waypoints: false,
+            // `Ext/Rules/Body.cpp:449`, `Body.h:864`.
+            missile_spawn_attack_cell: true,
+            // `Ext/Rules/Body.cpp:451,540`, `Body.h:866,958`.
+            falling_down_targeting_fix: false,
+            balloon_hover_pathing_fix: false,
+            // `Ext/Rules/Body.cpp:606`, `Body.h:1007`.
+            team_delays_dynamic_type: crate::rules::ini_value::PhobosDynamicTeamDelayType::StartingPoint,
             aircraft_weapon_kick_out_passengers: true,
             secondary_fire_sequence_land_only: true,
             damaged_speed: default_damaged_speed(),
@@ -2162,6 +2254,35 @@ impl PhobosGlobals {
             "DisableOveroptimizationInTargeting",
             globals.disable_overoptimization_in_targeting,
         );
+        // `Ext/Rules/Body.cpp:323,451,540,606`: the `[General]` keys of this
+        // batch, read in the constructor's order.
+        globals.building_waypoints =
+            general.read_bool("BuildingWaypoints", globals.building_waypoints);
+        globals.falling_down_targeting_fix = general.read_bool(
+            "FallingDownTargetingFix",
+            globals.falling_down_targeting_fix,
+        );
+        globals.balloon_hover_pathing_fix = general.read_bool(
+            "BalloonHoverPathingFix",
+            globals.balloon_hover_pathing_fix,
+        );
+        globals.team_delays_dynamic_type = general.read_phobos_valueable_dynamic_team_delay_type(
+            "TeamDelays.DynamicType",
+            globals.team_delays_dynamic_type,
+        );
+        // `Ext/Rules/Body.cpp:370-375`: the placement switches live in `[AI]`,
+        // not in `[General]`.
+        let ai = ini.section_or_empty("AI");
+        globals.ai_auto_deploy_mcv = ai.read_bool("AIAutoDeployMCV", globals.ai_auto_deploy_mcv);
+        globals.ai_set_base_center = ai.read_bool("AISetBaseCenter", globals.ai_set_base_center);
+        globals.ai_bias_spawn_cell = ai.read_bool("AIBiasSpawnCell", globals.ai_bias_spawn_cell);
+        globals.ai_forbid_conyard = ai.read_bool("AIForbidConYard", globals.ai_forbid_conyard);
+        globals.ai_node_walls_only = ai.read_bool("AINodeWallsOnly", globals.ai_node_walls_only);
+        globals.ai_clean_wall_node = ai.read_bool("AICleanWallNode", globals.ai_clean_wall_node);
+        // `Ext/Rules/Body.cpp:449`: this one is a `[CombatDamage]` read.
+        globals.missile_spawn_attack_cell = ini
+            .section_or_empty("CombatDamage")
+            .read_bool("MissileSpawnAttackCell", globals.missile_spawn_attack_cell);
         // `Ext/Rules/Body.cpp:511-515`: `Valueable<Leptons>` keys, parsed as
         // cells × 256 (`Parser<Leptons>`); a failed read keeps the default.
         globals.extra_range_target_moving = general

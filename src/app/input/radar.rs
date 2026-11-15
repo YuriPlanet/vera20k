@@ -304,7 +304,7 @@ pub(crate) fn action(
     if query.planning
         && query
             .sim
-            .planning_selection_refusal(query.selected)
+            .planning_selection_refusal(query.selected, state.rules())
             .is_some()
     {
         return None;
