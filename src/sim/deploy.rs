@@ -396,11 +396,19 @@ impl Simulation {
                 {
                     return false;
                 }
+                #[cfg(feature = "phobos")]
+                let allow_controlled_mcv = rules.phobos_globals.allow_deploy_controlled_mcv;
+                #[cfg(not(feature = "phobos"))]
+                let allow_controlled_mcv = false;
                 if object.deploys_into.is_some()
                     && (entity.parasite.eater().is_some()
                         || (crate::sim::mcv_deploy::deploys_into(self, entity, rules)
                             .is_some_and(|yard| yard.construction_yard)
-                            && entity.mind_control.controller().is_some()))
+                            && entity.mind_control.controller().is_some()
+                            // Phobos `AllowDeployControlledMCV` (`Ext/Unit/
+                            // Hooks.DeploysInto.cpp:170-178`): opt in to
+                            // deploying a mind-controlled MCV.
+                            && !allow_controlled_mcv))
                 {
                     return false;
                 }

@@ -940,6 +940,30 @@ impl IniSection {
         }
     }
 
+    /// Phobos `Nullable<WarheadTypeClass*>` and the other `Nullable<T*>`
+    /// readers (`Utilities/TemplateDef.h`): the clearing tokens of
+    /// [`Self::read_phobos_nullable_with`], otherwise an authored type name.
+    /// VERA keeps the name and resolves it at the consumer, as
+    /// [`Self::read_phobos_type_name`] does.
+    #[cfg(feature = "phobos")]
+    pub fn read_phobos_nullable_type_name(
+        &self,
+        key: &str,
+        current: &Option<String>,
+    ) -> Option<String> {
+        self.read_string_with(key, 2048, current.clone(), |current, raw| {
+            if raw.eq_ignore_ascii_case("<default>")
+                || crate::rules::ini_parser::is_native_none_type_name(raw)
+            {
+                return None;
+            }
+            if raw.trim().is_empty() {
+                return current;
+            }
+            Some(raw.to_owned())
+        })
+    }
+
     /// Phobos `Nullable<DirType>` (the reused `nLandingDir` reader at
     /// `Ext/BuildingType/Body.cpp:292`): `Parser<int>` then `read<DirType>`'s
     /// check `DirType::North..=DirType::NorthWest` (`0..=224`; a `DirType` is
@@ -1029,6 +1053,27 @@ impl IniSection {
     /// Unlike stock ReadDouble, a failed conversion keeps the old nullable.
     pub fn read_phobos_nullable_double(&self, key: &str, current: Option<f64>) -> Option<f64> {
         self.read_phobos_nullable_with(key, current, parse_phobos_double)
+    }
+
+    /// Phobos `Nullable<Vector3D<float>>` (`Utilities/TemplateDef.h:230-237`
+    /// via `INI_EX::Read<float, 3>`): the clearing tokens of
+    /// [`Self::read_phobos_nullable_with`], then three comma-separated
+    /// `Parser<float>` tokens. A read that does not convert all three keeps
+    /// the previous nullable.
+    pub fn read_phobos_nullable_float3(
+        &self,
+        key: &str,
+        current: Option<[f32; 3]>,
+    ) -> Option<[f32; 3]> {
+        self.read_phobos_nullable_with(key, current, |raw| {
+            let mut fields = [0.0f32; 3];
+            let mut tokens = raw.split(',');
+            for field in &mut fields {
+                let token = tokens.next()?;
+                *field = parse_phobos_double(token)? as f32;
+            }
+            Some(fields)
+        })
     }
 
     /// Phobos `Valueable<double>` (`INI_EX::ReadDouble`): ReadString(2048),

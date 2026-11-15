@@ -17,11 +17,11 @@
 //! `canTargetRtti & 4 ? LastLayer != Underground : LastLayer == Ground`
 //! (`:3079-3097`), so the single Techno walk carries the airborne target.
 
-use crate::sim::combat::threat_range::ScanMission;
 use crate::sim::combat::TargetKind;
+use crate::sim::combat::threat_range::ScanMission;
 use crate::sim::house_state::HouseState;
-use crate::sim::world::display_layers::DisplayLayer;
 use crate::sim::world::Simulation;
+use crate::sim::world::display_layers::DisplayLayer;
 
 /// A hunter whose weapon carries neither AA nor AG — `PLAINHUNT` — reaches
 /// the same widened word, because VERA's class-bit reader treats a weapon
@@ -38,8 +38,7 @@ const EXTRA: &str = "[VehicleTypes]\n1=AGHUNT\n\
 /// A flat arena with the hunter on the ground at (8, 10) and a hostile
 /// `HORNET` airborne at Z 64 three cells east, inside the weapon's range.
 fn hunt_scene(fix: bool, hunter: &str) -> (Option<u64>, u64, Option<DisplayLayer>) {
-    let (mut sim, mut rules, _) =
-        crate::sim::world::entry_test_fixture::fixture_with_rules(EXTRA);
+    let (mut sim, mut rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(EXTRA);
     rules.phobos_globals.ai_air_targeting_fix = fix;
     for (index, name) in ["Americans", "Russians"].into_iter().enumerate() {
         let owner = sim.intern(name);
@@ -83,5 +82,9 @@ fn an_anti_ground_hunter_holds_an_airborne_target_only_with_the_fix() {
     assert_eq!(stock, None, "stock refuses every non-Ground LastLayer");
 
     let (fixed, aircraft, _) = hunt_scene(true, "AGHUNT");
-    assert_eq!(fixed, Some(aircraft), "the widened word admits the aircraft");
+    assert_eq!(
+        fixed,
+        Some(aircraft),
+        "the widened word admits the aircraft"
+    );
 }

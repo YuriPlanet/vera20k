@@ -101,6 +101,10 @@ pub(crate) struct UnitReadyView<'a, W: UnitReadyWorld + ?Sized> {
     pub(crate) locomotor: Option<LocomotorReadyState>,
     pub(crate) attack_target_present: bool,
     pub(crate) position: ReadyLeptonPoint,
+    /// Whether the moving guard runs at all: Phobos
+    /// `ReadyToNextMission.MovingCheck` or a non-human owner or a queued
+    /// Unload (`Ext/Rules/Body.cpp:646`, `Misc/Hooks.BugFixes.cpp:3327-3338`).
+    pub(crate) moving_check: bool,
     pub(crate) world: &'a W,
 }
 
@@ -111,6 +115,8 @@ pub(crate) struct InfantryReadyView<'a> {
     pub(crate) object_is_falling_down: u8,
     pub(crate) locomotor: Option<LocomotorReadyState>,
     pub(crate) attack_target_present: bool,
+    /// See [`UnitReadyView::moving_check`].
+    pub(crate) moving_check: bool,
 }
 
 /// Complete borrowed inputs for the Aircraft leaf.
@@ -155,7 +161,7 @@ pub(crate) fn unit_ready_to_commence<W: UnitReadyWorld + ?Sized>(
             .locomotor
             .ok_or(ReadyUnavailable::Locomotor)?
             .is_moving_now();
-        if moving {
+        if moving && view.moving_check {
             if view.world.signed_height() >= 0 {
                 let effective = view.mission.effective();
                 if effective != MISSION_GUARD
@@ -215,7 +221,7 @@ pub(crate) fn infantry_ready_to_commence(view: InfantryReadyView<'_>) -> ReadyRe
         .ok_or(ReadyUnavailable::Locomotor)?
         .is_moving_now();
     let effective = view.mission.effective();
-    if moving && effective != MISSION_GUARD && effective != MISSION_HUNT {
+    if moving && view.moving_check && effective != MISSION_GUARD && effective != MISSION_HUNT {
         if effective != MISSION_ATTACK {
             return Ok(false);
         }
@@ -353,6 +359,7 @@ mod tests {
             locomotor: Some(stopped()),
             attack_target_present: false,
             position: ReadyLeptonPoint::new(40 * 256, 51 * 256),
+            moving_check: true,
             world,
         }
     }
@@ -367,6 +374,7 @@ mod tests {
             object_is_falling_down: 0,
             locomotor: Some(stopped()),
             attack_target_present: false,
+            moving_check: true,
         }
     }
 
@@ -417,6 +425,31 @@ mod tests {
         view.locomotor = None;
         assert_eq!(unit_ready_to_commence(view), Ok(false));
         assert!(world.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn moving_check_off_admits_a_moving_unit_with_a_clear_body() {
+        // Phobos `ReadyToNextMission.MovingCheck` (`Misc/Hooks.BugFixes.cpp`):
+        // the default-off fix skips the whole moving guard, so a moving unit
+        // whose tracker bytes and contact slot are clear becomes ready.
+        let mission = mission_fixture(MISSION_MOVE.raw(), MissionId::NONE.raw(), 0);
+        let leaf_state = unit_leaf(0, 0, 0, 0);
+        let world = TestWorld::default();
+        let leaf = leaf_state.as_unit().expect("Unit leaf");
+        let mut view = unit_view(&mission, leaf, &world);
+        view.locomotor = Some(moving());
+        assert_eq!(unit_ready_to_commence(view), Ok(false));
+        let mut view = unit_view(&mission, leaf, &world);
+        view.locomotor = Some(moving());
+        view.moving_check = false;
+        assert_eq!(unit_ready_to_commence(view), Ok(true));
+        assert_eq!(
+            world.calls.borrow().as_slice(),
+            &[
+                Lookup::ContactSlotZero,
+                Lookup::BuildingUnder(ReadyLeptonPoint::new(40 * 256, 51 * 256))
+            ]
+        );
     }
 
     #[test]

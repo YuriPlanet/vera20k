@@ -122,8 +122,15 @@ fn edit_keys(edge: &InGameKeyEdge<'_>) -> Vec<EditKey> {
 pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
     let list = &state.match_state.match_presentation.message_list;
     if !list.editing() {
-        if !edge.state.is_pressed() || edge.repeat || !state.match_state.session_mode().is_network()
-        {
+        // Phobos `Game_ComScenarioDialog_ChatBox*` (`Misc/
+        // Hooks.MessageList.cpp:3-33`) skips the native multiplayer checks,
+        // so the box opens in single player too. The send path below keeps
+        // its own network gate, as native's does.
+        let chat_allowed = state.match_state.session_mode().is_network()
+            || state
+                .rules()
+                .is_some_and(|rules| rules.phobos_globals.allow_chat_box_in_single_player);
+        if !edge.state.is_pressed() || edge.repeat || !chat_allowed {
             return false;
         }
         let modifiers = state.match_state.input.hotkey_modifiers;

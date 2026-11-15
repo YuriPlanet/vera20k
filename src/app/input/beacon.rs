@@ -85,6 +85,31 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
             .beacons
             .can_place(house)
     });
+    // Phobos `MouseClass_ToggleBeaconMode_AllUsed` (`0x4AC9B2`,
+    // `Ext/House/Hooks.cpp:874-903`): with every slot used and
+    // `AutoRemoveEarliestBeacon`, select and delete the oldest own beacon
+    // (the packet goes out because it is selected) and place over its slot.
+    let mut can_place = can_place;
+    if !can_place
+        && matches!(request, BeaconModeRequest::Toggle)
+        && state
+            .rules()
+            .is_some_and(|rules| rules.phobos_globals.auto_remove_earliest_beacon)
+        && let Some(house) = beacons::local_house_index(state)
+        && let Some(slot) = state.match_state.match_presentation.beacons.earliest(house)
+    {
+        state
+            .match_state
+            .match_presentation
+            .beacons
+            .set_selected(house, slot);
+        beacons::delete_beacon(state, BeaconTarget::Selected);
+        can_place = state
+            .match_state
+            .match_presentation
+            .beacons
+            .can_place(house);
+    }
     let Some(next) = place_beacon_mode_transition(
         request,
         modes,
@@ -103,9 +128,15 @@ pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeReq
 }
 
 /// `BeaconPlacementCommandClass::Execute 0x005370A0`: the key refuses
-/// GameMode 0 and 5.
+/// GameMode 0 and 5. Phobos `AllowBeaconHotKeyInSinglePlayer`
+/// (`Ext/Beacon/Hooks.cpp:3-9`) jumps over that refusal, so the command
+/// enters placement in every mode.
 pub(crate) fn execute_command(state: &mut AppState) {
-    if beacons::feedback_mode(state.match_state.session_mode()) {
+    if beacons::feedback_mode(state.match_state.session_mode())
+        || state
+            .rules()
+            .is_some_and(|rules| rules.phobos_globals.allow_beacon_hotkey_in_single_player)
+    {
         enter_placement_mode(state);
     }
 }

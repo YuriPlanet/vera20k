@@ -2778,6 +2778,54 @@ fn apply_selection_mutation(
         &mutation,
     );
     state.match_state.input.follow_target = follow_target;
+    // Phobos `ObjectClass_Select` (`Ext/Techno/Hooks.Misc.cpp:796-830`):
+    // selecting an own factory building switches the sidebar tab, unless the
+    // building type's `SetTabBySelecting` names one. Only a newly selected
+    // object triggers the hook, hence `successful_adds`.
+    #[cfg(feature = "phobos")]
+    let phobos_tab = {
+        use crate::ui::sidebar::SidebarTab;
+        let rules = state
+            .rules()
+            .filter(|rules| rules.phobos_globals.set_tab_by_selecting_factory);
+        rules.and_then(|rules| {
+            let local = sim.session().current_house();
+            let active = state
+                .match_state
+                .match_presentation
+                .active_sidebar_tab
+                .tab_index();
+            successful_adds.iter().find_map(|&id| {
+                let entity = sim.entities().get(id)?;
+                if entity.category() != crate::map::entities::EntityCategory::Structure
+                    || Some(entity.owner()) != local
+                {
+                    return None;
+                }
+                let object = rules.object(sim.interner().resolve(entity.type_ref()))?;
+                let key = object.phobos_set_tab_by_selecting;
+                if (0..4).contains(&key) {
+                    return SidebarTab::all().get(key as usize).copied();
+                }
+                if key >= 4 {
+                    return None;
+                }
+                // `Factory` RTTI: 16 InfantryType, 40 UnitType, 3 AircraftType,
+                // 7 BuildingType (`BuildingType->Factory`).
+                match object.factory_rtti() {
+                    16 => Some(SidebarTab::Infantry),
+                    40 | 3 => Some(SidebarTab::Vehicle),
+                    7 => Some(if active == 0 {
+                        SidebarTab::Defense
+                    } else {
+                        SidebarTab::Building
+                    }),
+                    _ => None,
+                }
+            })
+        })
+    };
+
     // Phobos "Flashing Technos on selecting": the client switch gates the
     // `[AudioVisual] SelectionFlashDuration` the sim's flash owner reads.
     // ObjectClass_Select flashes each newly selected Techno the current player
@@ -2821,6 +2869,10 @@ fn apply_selection_mutation(
     }
     state.match_state.input.selection_order = ordered.clone();
     state.match_state.input.selection_order_pending = true;
+    #[cfg(feature = "phobos")]
+    if let Some(tab) = phobos_tab {
+        state.match_state.match_presentation.active_sidebar_tab = tab;
+    }
     let Some(owner) = preferred_local_owner(state) else {
         return true;
     };

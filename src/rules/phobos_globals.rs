@@ -33,6 +33,73 @@ use crate::rules::mission_data::MissionType;
 use crate::rules::phobos_shields::AffectedHouse;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
+/// Phobos `ChronoSparkleDisplayPosition` (`Utilities/Enum.h:277-287`), a
+/// flags byte whose `None` is 0 and whose `All` is 0xFF.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
+pub struct ChronoSparkleDisplayPosition(u8);
+
+impl ChronoSparkleDisplayPosition {
+    pub const NONE: Self = Self(0x0);
+    pub const BUILDING: Self = Self(0x1);
+    pub const OCCUPANTS: Self = Self(0x2);
+    pub const OCCUPANT_SLOTS: Self = Self(0x4);
+    pub const ALL: Self = Self(0xFF);
+
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 != 0
+    }
+
+    /// `TemplateDef.h:1230-1260`: a comma/space token list, case-insensitive;
+    /// any unknown token fails the whole read (`Debug::INIParseFailed`).
+    pub fn parse(tokens: &[&str]) -> Option<Self> {
+        let mut parsed = Self::NONE;
+        for token in tokens {
+            let token = token.trim();
+            if token.is_empty() {
+                continue;
+            }
+            if token.eq_ignore_ascii_case("building") {
+                parsed.0 |= Self::BUILDING.0;
+            } else if token.eq_ignore_ascii_case("occupants") {
+                parsed.0 |= Self::OCCUPANTS.0;
+            } else if token.eq_ignore_ascii_case("occupantslots") {
+                parsed.0 |= Self::OCCUPANT_SLOTS.0;
+            } else if token.eq_ignore_ascii_case("all") {
+                parsed.0 |= Self::ALL.0;
+            } else if token.eq_ignore_ascii_case("none") {
+                // `none` contributes nothing.
+            } else {
+                return None;
+            }
+        }
+        Some(parsed)
+    }
+}
+
+/// `[AudioVisual] RadialIndicatorVisibility=`'s constructor value, `Allies`
+/// (`Ext/Rules/Body.h:736`).
+fn radial_indicator_visibility_default() -> crate::rules::phobos_shields::AffectedHouse {
+    crate::rules::phobos_shields::AffectedHouse::ALLIES
+}
+
+/// `[General] ChronoSparkleDisplayDelay=`'s constructor value
+/// (`Ext/Rules/Body.h:577`).
+fn chrono_sparkle_delay_default() -> i32 {
+    24
+}
+
+/// `[General] ChronoSparkleBuildingDisplayPositions=`'s constructor value,
+/// `OccupantSlots` (`Ext/Rules/Body.h:578`).
+fn chrono_sparkle_positions_default() -> ChronoSparkleDisplayPosition {
+    ChronoSparkleDisplayPosition::OCCUPANT_SLOTS
+}
+
 /// `Leptons(-1)`'s constructor value for saves that predate the field.
 fn minus_one_i32() -> i32 {
     -1
@@ -1592,6 +1659,144 @@ pub struct PhobosGlobals {
     /// fallback for an AircraftType's own `RetreatToEdge=` (`Ext/Aircraft/Body.cpp:89`).
     #[serde(default)]
     pub aircraft_retreat_to_edge: crate::rules::phobos_aircraft_edge::PhobosEdgeType,
+    /// `[General] SortCameoByName=`, default `no`
+    /// (`Ext/Rules/Body.cpp:501`, constructor `Ext/Rules/Body.h:411`): the
+    /// sidebar comparator ranks by the type's internal name before
+    /// `UIName` (`StripClass_OperatorLessThan_*` hooks `0x6A84DB`, `0x6A86ED`).
+    #[serde(default)]
+    pub sort_cameo_by_name: bool,
+    /// `[General] SetTabBySelectingFactory=`, default `no`
+    /// (`Ext/Rules/Body.cpp:307`, constructor `Ext/Rules/Body.h:227`): selecting
+    /// a factory switches the sidebar to its tab (`Ext/Techno/Hooks.Misc.cpp`).
+    #[serde(default)]
+    pub set_tab_by_selecting_factory: bool,
+    /// `[General] AllowChatBoxInSinglePlayer=`, default `no`
+    /// (`Ext/Rules/Body.cpp:619`, constructor `Ext/Rules/Body.h:1014`): the
+    /// chat box stays usable outside multiplayer (`Misc/Hooks.MessageList.cpp`).
+    #[serde(default)]
+    pub allow_chat_box_in_single_player: bool,
+    /// `[General] AllowBeaconHotKeyInSinglePlayer=`, default `no`
+    /// (`Ext/Rules/Body.cpp:625`, constructor `Ext/Rules/Body.h:1022`): the
+    /// beacon placement key works in single-player (`Ext/Beacon/Hooks.cpp`).
+    #[serde(default)]
+    pub allow_beacon_hotkey_in_single_player: bool,
+    /// `[General] AutoRemoveEarliestBeacon=`, default `no`
+    /// (`Ext/Rules/Body.cpp:624`, constructor `Ext/Rules/Body.h:1020`): a
+    /// player at the beacon cap evicts the oldest own beacon instead of
+    /// refusing (`Ext/House/Hooks.cpp`).
+    #[serde(default)]
+    pub auto_remove_earliest_beacon: bool,
+    /// `[General] AllowDeployControlledMCV=`, default `no`
+    /// (`Ext/Rules/Body.cpp:246`, constructor `Ext/Rules/Body.h:163`): a
+    /// mind-controlled MCV or a mind-controlled Construction Yard may
+    /// deploy/repack (`Ext/Unit/Hooks.DeploysInto.cpp`, `Ext/TAction/Body.cpp`).
+    #[serde(default)]
+    pub allow_deploy_controlled_mcv: bool,
+    /// `[CombatDamage] AutoTarget.InsignificantWhenMindControlled=`, default
+    /// **`yes`** (`Ext/Rules/Body.cpp:658`, constructor
+    /// `Ext/Rules/Body.h:1052`): a mind-controlled insignificant object is
+    /// treated as insignificant for automatic targeting.
+    #[serde(default = "true_bool")]
+    pub auto_target_insignificant_when_mind_controlled: bool,
+    /// `[General] ReadyToNextMission.MovingCheck=`, default `no`
+    /// (`Ext/Rules/Body.cpp:646`, constructor `Ext/Rules/Body.h:1040`): a moving
+    /// unit/infantry is not ready for the next mission
+    /// (`Misc/Hooks.BugFixes.cpp`, native `0x7442D6` / `0x521BA7`).
+    #[serde(default)]
+    pub ready_to_next_mission_moving_check: bool,
+    /// `[General] FixRepairStepCost=`, default `no`
+    /// (`Ext/Rules/Body.cpp:401`, constructor `Ext/Rules/Body.h:818`): the
+    /// player's repair step charges the repaired hit points, not the full
+    /// frame step (`Misc/Hooks.BugFixes.cpp`).
+    #[serde(default)]
+    pub fix_repair_step_cost: bool,
+    /// `[General] ExtendedPlayerRepair=`, default `no`
+    /// (`Ext/Rules/Body.cpp:549`, constructor `Ext/Rules/Body.h:965`): the
+    /// player may repair enemies/allies (`Ext/Event/Body.cpp`,
+    /// `Ext/House/Hooks.cpp`).
+    #[serde(default)]
+    pub extended_player_repair: bool,
+    /// `[AudioVisual] DisplayIncome.AllowAI=`, default **`yes`**
+    /// (`Ext/Rules/Body.cpp:299`, constructor `Ext/Rules/Body.h:727`): AI
+    /// houses also show income labels (`Ext/Building/Body.cpp`).
+    #[serde(default = "true_bool")]
+    pub display_income_allow_ai: bool,
+    /// `[AI] EnablePowerSurplus=`, default `no`
+    /// (`Ext/Rules/Body.cpp:243`, constructor `Ext/Rules/Body.h:687`): a
+    /// house's surplus power is tracked and shown (`Ext/House/Body.cpp`).
+    #[serde(default)]
+    pub enable_power_surplus: bool,
+    /// `[AI] PowerSurplus.ScaleToDrainAmount=`, default **0**
+    /// (`Ext/Rules/Body.cpp:244`, constructor `Ext/Rules/Body.h:688`): the
+    /// drain amount the surplus bar scales against; 0 uses the fixed scale.
+    #[serde(default)]
+    pub power_surplus_scale_to_drain_amount: i32,
+    /// `[AudioVisual] AircraftLevelLightMultiplier=` (`Valueable<double>`,
+    /// constructor **1.0**, `Ext/Rules/Body.cpp:349`, `Body.h:778`): the
+    /// level-light multiplier applied to Aircraft voxels
+    /// (`Ext/Techno/Hooks.Tint.cpp`).
+    #[serde(default = "one_f64")]
+    pub aircraft_level_light_multiplier: NativeF64Bits,
+    /// `[AudioVisual] JumpjetLevelLightMultiplier=` (`Valueable<double>`,
+    /// constructor **0.0**, `Ext/Rules/Body.cpp:350`, `Body.h:779`): the
+    /// level-light multiplier applied to Jumpjet voxels
+    /// (`Ext/Techno/Hooks.Tint.cpp`).
+    #[serde(default = "zero_f64")]
+    pub jumpjet_level_light_multiplier: NativeF64Bits,
+    /// `[AudioVisual] RadialIndicatorVisibility=` (`Valueable<AffectedHouse>`,
+    /// constructor **Allies**, `Ext/Rules/Body.cpp:172`, `Body.h:736`): whose
+    /// radial indicator rings draw (`Misc/Hooks.UI.cpp`).
+    #[serde(default = "radial_indicator_visibility_default")]
+    pub radial_indicator_visibility: crate::rules::phobos_shields::AffectedHouse,
+    /// `[General] ChronoSparkleDisplayDelay=` (`Valueable<int>`,
+    /// constructor **24**, `Ext/Rules/Body.cpp:118`, `Body.h:577`): the
+    /// building chrono-sparkle cadence; 0 would divide by zero in native
+    /// (`Ext/Building/Hooks.cpp`).
+    #[serde(default = "chrono_sparkle_delay_default")]
+    pub chrono_sparkle_display_delay: i32,
+    /// `[General] ChronoSparkleBuildingDisplayPositions=` (`Valueable<
+    /// ChronoSparkleDisplayPosition>`, constructor **OccupantSlots**,
+    /// `Ext/Rules/Body.cpp:119`, `Body.h:578`): which anchors a building's
+    /// chrono sparkles use (`Ext/Building/Hooks.cpp`).
+    #[serde(default = "chrono_sparkle_positions_default")]
+    pub chrono_sparkle_building_display_positions:
+        crate::rules::phobos_globals::ChronoSparkleDisplayPosition,
+    /// `[AudioVisual] ColorAddUse8BitRGB=`, default `no`
+    /// (`Ext/Rules/Body.cpp:260`, constructor `Ext/Rules/Body.h:703`):
+    /// `GetColorFromColorAdd` treats the value as an 8-bit RGB triple
+    /// (`Utilities/GeneralUtils.cpp`).
+    #[serde(default)]
+    pub color_add_use_8bit_rgb: bool,
+    /// `[AudioVisual] UseRetintFix=`, default **`yes`**
+    /// (`Ext/Rules/Body.cpp:409`, constructor `Ext/Rules/Body.h:823`): a
+    /// retinted object re-activates its LightSource (`Ext/TAction/Hooks.cpp`).
+    #[serde(default = "true_bool")]
+    pub use_retint_fix: bool,
+    /// `[AudioVisual] VoxelLightSource=` (`Nullable<Vector3D<float>>`,
+    /// constructor unset, `Ext/Rules/Body.cpp:352`, `Body.h:780`): replaces
+    /// `Game::VoxelLightSource` (`ReplaceVoxelLightSources`,
+    /// `Body.cpp:1189-1207`). Native multiplies it by
+    /// `Matrix3D::VoxelDefaultMatrix`; that matrix is the recorded blocker
+    /// (`docs/phobos-open-work-and-residuals.md` §3).
+    #[serde(default)]
+    pub voxel_light_source: Option<[NativeF32Bits; 3]>,
+    /// `[General] JumpjetClimbPredictHeight=`, default `no`
+    /// (`Ext/Rules/Body.cpp:336`, constructor `Ext/Rules/Body.h:766`): the
+    /// jumpjet climb prediction scans the cells ahead
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp`).
+    #[serde(default)]
+    pub jumpjet_climb_predict_height: bool,
+    /// `[General] JumpjetClimbWithoutCutOut=`, default `no`
+    /// (`Ext/Rules/Body.cpp:337`, constructor `Ext/Rules/Body.h:767`): the
+    /// jumpjet ascent skips the native stop-check cut-out
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp`).
+    #[serde(default)]
+    pub jumpjet_climb_without_cut_out: bool,
+    /// `[CombatDamage] VeinholeWarhead=` (`Nullable<WarheadTypeClass*>`,
+    /// constructor unset, `Ext/Rules/Body.cpp:136`, `Body.h:597`): the warhead
+    /// a veinhole anim detonates (`Ext/Anim/Body.cpp`).
+    #[serde(default)]
+    pub veinhole_warhead: Option<String>,
 }
 
 /// `RadarJamHouses=`'s constructor value (`Ext/Rules/Body.h:657`).
@@ -2014,6 +2219,30 @@ impl Default for PhobosGlobals {
             paradrop_delay: default_paradrop_delay(),
             aircraft_spawn_from_edge: crate::rules::phobos_aircraft_edge::PhobosEdgeType::Owner,
             aircraft_retreat_to_edge: crate::rules::phobos_aircraft_edge::PhobosEdgeType::Owner,
+            sort_cameo_by_name: false,
+            set_tab_by_selecting_factory: false,
+            allow_chat_box_in_single_player: false,
+            allow_beacon_hotkey_in_single_player: false,
+            auto_remove_earliest_beacon: false,
+            allow_deploy_controlled_mcv: false,
+            auto_target_insignificant_when_mind_controlled: true,
+            ready_to_next_mission_moving_check: false,
+            fix_repair_step_cost: false,
+            extended_player_repair: false,
+            display_income_allow_ai: true,
+            enable_power_surplus: false,
+            power_surplus_scale_to_drain_amount: 0,
+            aircraft_level_light_multiplier: NativeF64Bits::from_bits(1.0f64.to_bits()),
+            jumpjet_level_light_multiplier: NativeF64Bits::POSITIVE_ZERO,
+            radial_indicator_visibility: crate::rules::phobos_shields::AffectedHouse::ALLIES,
+            chrono_sparkle_display_delay: 24,
+            chrono_sparkle_building_display_positions: ChronoSparkleDisplayPosition::OCCUPANT_SLOTS,
+            color_add_use_8bit_rgb: false,
+            use_retint_fix: true,
+            voxel_light_source: None,
+            jumpjet_climb_predict_height: false,
+            jumpjet_climb_without_cut_out: false,
+            veinhole_warhead: None,
         }
     }
 }
@@ -2383,6 +2612,107 @@ impl PhobosGlobals {
         globals.ai_forbid_conyard = ai.read_bool("AIForbidConYard", globals.ai_forbid_conyard);
         globals.ai_node_walls_only = ai.read_bool("AINodeWallsOnly", globals.ai_node_walls_only);
         globals.ai_clean_wall_node = ai.read_bool("AICleanWallNode", globals.ai_clean_wall_node);
+        // `Ext/Rules/Body.cpp:243-244`: the surplus-power switches live in
+        // `[AI]`, not in `[General]`.
+        globals.enable_power_surplus =
+            ai.read_bool("EnablePowerSurplus", globals.enable_power_surplus);
+        globals.power_surplus_scale_to_drain_amount = ai.read_int(
+            "PowerSurplus.ScaleToDrainAmount",
+            globals.power_surplus_scale_to_drain_amount,
+        );
+        // `Ext/Rules/Body.cpp:246,299,307,336-337,401,549,619-625,646,658`:
+        // the remaining `[General]` reads of this batch.
+        globals.allow_deploy_controlled_mcv = general.read_bool(
+            "AllowDeployControlledMCV",
+            globals.allow_deploy_controlled_mcv,
+        );
+        globals.sort_cameo_by_name =
+            general.read_bool("SortCameoByName", globals.sort_cameo_by_name);
+        globals.set_tab_by_selecting_factory = general.read_bool(
+            "SetTabBySelectingFactory",
+            globals.set_tab_by_selecting_factory,
+        );
+        globals.jumpjet_climb_predict_height = general.read_bool(
+            "JumpjetClimbPredictHeight",
+            globals.jumpjet_climb_predict_height,
+        );
+        globals.jumpjet_climb_without_cut_out = general.read_bool(
+            "JumpjetClimbWithoutCutOut",
+            globals.jumpjet_climb_without_cut_out,
+        );
+        globals.fix_repair_step_cost =
+            general.read_bool("FixRepairStepCost", globals.fix_repair_step_cost);
+        globals.extended_player_repair =
+            general.read_bool("ExtendedPlayerRepair", globals.extended_player_repair);
+        globals.allow_chat_box_in_single_player = general.read_bool(
+            "AllowChatBoxInSinglePlayer",
+            globals.allow_chat_box_in_single_player,
+        );
+        globals.allow_beacon_hotkey_in_single_player = general.read_bool(
+            "AllowBeaconHotKeyInSinglePlayer",
+            globals.allow_beacon_hotkey_in_single_player,
+        );
+        globals.auto_remove_earliest_beacon = general.read_bool(
+            "AutoRemoveEarliestBeacon",
+            globals.auto_remove_earliest_beacon,
+        );
+        globals.ready_to_next_mission_moving_check = general.read_bool(
+            "ReadyToNextMission.MovingCheck",
+            globals.ready_to_next_mission_moving_check,
+        );
+        // `Ext/Rules/Body.cpp:118-119`: the building chrono-sparkle cadence and
+        // anchor flags are `[General]` reads.
+        globals.chrono_sparkle_display_delay = general.read_int(
+            "ChronoSparkleDisplayDelay",
+            globals.chrono_sparkle_display_delay,
+        );
+        if let Some(tokens) = general.read_list("ChronoSparkleBuildingDisplayPositions", 2048)
+            && let Some(parsed) = ChronoSparkleDisplayPosition::parse(&tokens)
+        {
+            globals.chrono_sparkle_building_display_positions = parsed;
+        }
+        // `Ext/Rules/Body.cpp:348-352,409,172,260,299`: the `[AudioVisual]`
+        // keys of this batch.
+        globals.aircraft_level_light_multiplier = read_double_bits(
+            audio_visual,
+            "AircraftLevelLightMultiplier",
+            globals.aircraft_level_light_multiplier,
+        );
+        globals.jumpjet_level_light_multiplier = read_double_bits(
+            audio_visual,
+            "JumpjetLevelLightMultiplier",
+            globals.jumpjet_level_light_multiplier,
+        );
+        globals.use_retint_fix = audio_visual.read_bool("UseRetintFix", globals.use_retint_fix);
+        globals.color_add_use_8bit_rgb =
+            audio_visual.read_bool("ColorAddUse8BitRGB", globals.color_add_use_8bit_rgb);
+        globals.display_income_allow_ai =
+            audio_visual.read_bool("DisplayIncome.AllowAI", globals.display_income_allow_ai);
+        globals.radial_indicator_visibility = crate::rules::phobos_shields::read_affected_house(
+            audio_visual,
+            "RadialIndicatorVisibility",
+            globals.radial_indicator_visibility,
+        );
+        globals.voxel_light_source = audio_visual
+            .read_phobos_nullable_float3(
+                "VoxelLightSource",
+                globals
+                    .voxel_light_source
+                    .map(|values| values.map(|value| f32::from_bits(value.bits()))),
+            )
+            .map(|values| values.map(|value| NativeF32Bits::from_bits(value.to_bits())));
+        // `Ext/Rules/Body.cpp:648`: the insignificant-when-mind-controlled
+        // switch is a `[CombatDamage]` `Valueable<bool>` defaulting to yes.
+        globals.auto_target_insignificant_when_mind_controlled =
+            ini.section_or_empty("CombatDamage").read_bool(
+                "AutoTarget.InsignificantWhenMindControlled",
+                globals.auto_target_insignificant_when_mind_controlled,
+            );
+        // `Ext/Rules/Body.cpp:136`: a `Nullable<WarheadTypeClass*>`, so
+        // `<none>`/`<default>` clear it and a named warhead sets it.
+        globals.veinhole_warhead = ini
+            .section_or_empty("CombatDamage")
+            .read_phobos_nullable_type_name("VeinholeWarhead", &globals.veinhole_warhead);
         // `Ext/Rules/Body.cpp:449`: this one is a `[CombatDamage]` read.
         globals.missile_spawn_attack_cell = ini
             .section_or_empty("CombatDamage")
