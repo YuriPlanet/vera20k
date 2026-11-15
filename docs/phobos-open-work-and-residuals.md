@@ -13,7 +13,7 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
 ### 1.0 本次进展（2026-11-16，worktree `F:\20k-scratch\wt-keys`，`be130116a`）
 
 已读取全部 25 个非 ToolTips 键（含 `Default`、
-`from_ini` 四个节与回归测试），并接线了机制已存在的 15 键：
+`from_ini` 四个节与回归测试），并接线了机制已存在的 17 键：
 
 - `AllowDeployControlledMCV`：`sim/deploy.rs` 部署门 +
   `world_spawn.rs::construction_yard_redeploy_core_gate`（repack 路径）。
@@ -42,8 +42,12 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `ChronoSparkleDisplayDelay` / `ChronoSparkleBuildingDisplayPositions`：
+  `sim/temporal.rs` 的 Foot 与 Building 闪烁改读延迟；建筑按
+  `Building`/`Occupants`/`OccupantSlots` 位选择自身、在场乘员或端口，
+  建筑自身闪烁落在 `GetCenterCoords`（`Ext/Building/Hooks.cpp:39-83`）。
 
-仍未实现的 16 键及阻塞原因见 §1.7。ToolTips 7 键（uimd.ini）本次未动。
+仍未实现的 14 键及阻塞原因见 §1.7。ToolTips 7 键（uimd.ini）本次未动。
 
 ### 1.1 ToolTips / uimd.ini（7）
 
@@ -109,7 +113,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 16 键与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 14 键与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
@@ -117,7 +121,6 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `DisplayIncome.AllowAI` | VERA 尚未实现 `DisplayIncome` 收益累积/周期标签（全仓无消费者）；单实现 AllowAI 无意义，需先补整条 DisplayIncome 链。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
-| `ChronoSparkleDisplayDelay` / `ChronoSparkleBuildingDisplayPositions` | 需先定位 VERA 的 ChronoSparkle 生成/显示 owner；Phobos hook 同时作用于 Unit/Infantry/Building/Aircraft。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 | `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut` | 需先对照 `Ext/Unit/Hooks.Jumpjet.cpp` 找到 VERA jumpjet 爬升预测/切出 owner。 |
 | `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
