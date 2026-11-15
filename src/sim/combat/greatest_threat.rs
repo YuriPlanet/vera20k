@@ -596,6 +596,23 @@ fn finish_score(score: i32) -> Option<i32> {
     Some(score.max(1))
 }
 
+/// The two `[General]` targeting switches this module gates on, with their
+/// `false` fallbacks for a build without the `phobos` feature.
+fn targeting_fixes(rules: &crate::rules::ruleset::RuleSet) -> (bool, bool) {
+    #[cfg(feature = "phobos")]
+    {
+        (
+            rules.phobos_globals.ai_air_targeting_fix,
+            rules.phobos_globals.disable_overoptimization_in_targeting,
+        )
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        (false, false)
+    }
+}
+
 /// The ring index at which the native walk returns early once it holds a
 /// candidate (`0x006F9AE2..0x006F9B0A`; both divides truncate toward zero).
 fn is_early_return_ring(ring: i32, radius: i32) -> bool {
@@ -1637,7 +1654,13 @@ pub(crate) fn greatest_threat(
                 }
             }
         }
-        if best.is_some() && is_early_return_ring(ring, radius) {
+        // `0x006F9AE2..0x006F9B0A`: the `radius/4` and `radius/2` band
+        // returns stop the ring walk on a band that held an object.
+        // `DisableOveroptimizationInTargeting` jumps past the whole test to
+        // `0x006F9B1B` (`Ext/Techno/Hooks.Targeting.cpp:88-92`, hook
+        // `0x006F9AF4`), so the walk reaches its radius.
+        if best.is_some() && !targeting_fixes(ctx.rules).1 && is_early_return_ring(ring, radius)
+        {
             return result(best, collected, &ctx);
         }
         // `0x006F9B1B..0x006F9B6B`: otherwise a wall found by this ring wins,
@@ -1905,7 +1928,13 @@ fn global_list_scan(ctx: &ScanContext<'_>, flags: u32, zone: Option<u32>) -> Opt
         zone: None,
         reference: ThreatReference::NullCoord,
     };
-    if flags & 4 != 0 {
+    // `0x006F9B7E` `MOV AL,[ESP+0x14] ; TEST AL,0x4 ; JZ 0x006F9C56`: with
+    // the flags word's Aircraft bit (an AA weapon), the aircraft array
+    // (`0x00A8E394`, count `0x00A8E3A0`) is walked first. `AIAirTargetingFix`
+    // jumps straight to `0x006F9C56`
+    // (`Misc/Hooks.BugFixes.cpp:3074-3077`), leaving the single Techno
+    // walk below to cover airborne targets through the layer test.
+    if flags & 4 != 0 && !targeting_fixes(ctx.rules).0 {
         // `0x006F9B99..0x006F9BD2`: the aircraft walk's ally test spares
         // only the `AttackFriendlies=`, berserk and mind-controlled-transport
         // scanners.
@@ -2026,16 +2055,26 @@ fn flat_score(ctx: &ScanContext<'_>, walk: WalkArgs, candidate: &GameEntity) -> 
     if !ctx.offers(candidate) {
         return None;
     }
-    // `CMP [EDI+0x94],0x2 ; JNZ @ 0x006F9D13`: only objects the display last
-    // submitted to its Ground layer. Airborne aircraft are left to the
-    // aircraft walk; an airborne jumpjet is in neither walk, as native.
+    // `CMP [EDI+0x94],0x2 ; JNZ 0x006F9D93` at `0x006F9D13`: stock admits
+    // only objects whose `LastLayer` is Ground — airborne aircraft are left to
+    // the aircraft walk, which a mask without bit 4 never enters.
+    // `AIAirTargetingFix` (`Misc/Hooks.BugFixes.cpp:3079-3097`) replaces the
+    // test with `canTargetRtti & 4 ? LastLayer != Underground : LastLayer ==
+    // Ground`, `canTargetRtti` being this walk's flags word (`[ESP+0x14]`,
+    // already widened with `4` above when the mask has `0x10`).
     // VERA-internal: with no world (walk unit tests) there is no display and
     // the gate is off.
-    if let Some(world) = ctx.fire_world
-        && world.display_layers().layer_of(candidate.stable_id())
-            != Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
-    {
-        return None;
+    if let Some(world) = ctx.fire_world {
+        use crate::sim::world::display_layers::DisplayLayer;
+        let layer = world.display_layers().layer_of(candidate.stable_id());
+        let admitted = if targeting_fixes(ctx.rules).0 && walk.flags & 4 != 0 {
+            layer.is_some_and(|layer| layer != DisplayLayer::UNDERGROUND)
+        } else {
+            layer == Some(DisplayLayer::GROUND)
+        };
+        if !admitted {
+            return None;
+        }
     }
     if !ctx.house_gates_admit(candidate) {
         return None;
@@ -3600,6 +3639,14 @@ mod scenario_gate_tests;
 #[cfg(test)]
 #[path = "greatest_threat_land_targeting_tests.rs"]
 mod land_targeting_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "greatest_threat_ai_air_targeting_fix_tests.rs"]
+mod ai_air_targeting_fix_tests;
+
+#[cfg(all(test, feature = "phobos"))]
+#[path = "greatest_threat_targeting_band_tests.rs"]
+mod targeting_band_tests;
 
 #[cfg(test)]
 #[path = "greatest_threat_disguise_tests.rs"]

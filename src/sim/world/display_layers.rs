@@ -19,6 +19,9 @@ use crate::util::lookup_hash::LookupMap;
 pub struct DisplayLayer(u8);
 
 impl DisplayLayer {
+    /// The native layer index 0, `Layer::Underground` — what a subterranean
+    /// techno submits while it is below the surface.
+    pub const UNDERGROUND: Self = Self(0);
     pub const SURFACE: Self = Self(1);
     pub const GROUND: Self = Self(2);
     pub const AIR: Self = Self(3);

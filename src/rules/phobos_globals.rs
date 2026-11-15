@@ -499,6 +499,28 @@ pub struct PhobosGlobals {
     /// AI-owned paradropped `FootClass` (`Ext/Techno/Hooks.cpp:1885`).
     #[serde(default = "default_ai_paradrop_mission")]
     pub ai_paradrop_mission: MissionType,
+    /// `[General] AIAirTargetingFix=` (`Valueable<bool>`, false;
+    /// `Ext/Rules/Body.cpp:452`, `Body.h:362,867`): the flat
+    /// `TechnoClass::SelectAutoTarget` walk. Native keeps its separate
+    /// aircraft pass (`0x006F9B6E..0x006F9C52`) and refuses every object
+    /// whose `LastLayer` is not Ground (`CMP [EDI+0x94],0x2 ; JNZ
+    /// 0x006F9D93` at `0x006F9D13`), so an AI Hunt, whose mask carries no
+    /// Aircraft bit before `0x006F9C5D`, never sees an airborne target.
+    /// Yes skips the aircraft pass (`Misc/Hooks.BugFixes.cpp:3074-3077`,
+    /// hook `0x006F9B7E` -> `0x006F9C56`) and replaces the layer test with
+    /// `canTargetRtti & 4 ? LastLayer != Underground : LastLayer == Ground`
+    /// (`Misc/Hooks.BugFixes.cpp:3079-3097`, hook `0x006F9D13`).
+    #[serde(default)]
+    pub ai_air_targeting_fix: bool,
+    /// `[General] DisableOveroptimizationInTargeting=` (`Valueable<bool>`,
+    /// false; `Ext/Rules/Body.cpp:531`, `Body.h:440,951`): the cell ring
+    /// scan's band returns, `radius/4` and `radius/2` (`0x006F9AE2..0x006F9B0A`),
+    /// stop the walk on the first ring band that held an object. Yes jumps
+    /// past the whole band test to `0x006F9B1B`
+    /// (`Ext/Techno/Hooks.Targeting.cpp:88-92`, hook `0x006F9AF4`), so every
+    /// ring up to the radius is walked.
+    #[serde(default)]
+    pub disable_overoptimization_in_targeting: bool,
     /// `[General] AircraftWeapon.KickOutPassengers=` (`Valueable<bool>`,
     /// true; `Ext/Rules/Body.cpp:272`, `Body.h:190,714`): the fallback for a
     /// weapon's `KickOutPassengers` in `AircraftClass::Fire_At`'s passenger
@@ -1573,6 +1595,8 @@ impl Default for PhobosGlobals {
             sink_speed: 5,
             paradrop_mission: MissionType::Guard,
             ai_paradrop_mission: MissionType::Hunt,
+            ai_air_targeting_fix: false,
+            disable_overoptimization_in_targeting: false,
             aircraft_weapon_kick_out_passengers: true,
             secondary_fire_sequence_land_only: true,
             damaged_speed: default_damaged_speed(),
@@ -2041,6 +2065,14 @@ impl PhobosGlobals {
         // `[General]` force-weapon defaults (`Ext/Rules/Body.cpp:230-232`);
         // the three sections share no key, so their order does not matter.
         let general = ini.section_or_empty("General");
+        // `Ext/Rules/Body.cpp:452,531`: the two targeting switches, both
+        // constructed false.
+        globals.ai_air_targeting_fix =
+            general.read_bool("AIAirTargetingFix", globals.ai_air_targeting_fix);
+        globals.disable_overoptimization_in_targeting = general.read_bool(
+            "DisableOveroptimizationInTargeting",
+            globals.disable_overoptimization_in_targeting,
+        );
         // `Ext/Rules/Body.cpp:511-515`: `Valueable<Leptons>` keys, parsed as
         // cells × 256 (`Parser<Leptons>`); a failed read keeps the default.
         globals.extra_range_target_moving = general
