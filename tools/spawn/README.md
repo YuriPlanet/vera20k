@@ -81,6 +81,10 @@ BIN=$(ls -t target/owned-worktrees/*/fast/vera20k | head -n 1)
 
 A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
+`countries` lists the `Side=` values with what the skirmish menu shows for each:
+`name` (the `[Countries]` ID), `label` (its `UIName=` text), `side` (its `[Sides]`
+index) and `selectable` (the menu offers it), so a launcher can offer a mod's
+countries as the game does.
 `rules_digest` is Battle's. `[Settings] GameMode` selects an `MPModesMD.ini` row
 by id (default 1): a network launch takes a stock row, and a one-human launch any
 row of the `MPModesMD.ini` the game loaded, or row 1 when the id has none, so a
