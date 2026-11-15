@@ -167,3 +167,13 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   的文件。
 - 每次实机发现问题，按 §1 定位键 → 查 §3 是否已记为残渣 → 修复后补一条
   regression test 并更新本表。
+## 6. 实机测试记录
+
+- 2026-11-15 首次实机（`e01c7c1b7` 之前）：科技钻油井模型不显示。定位为
+  **VERA 未挂载 `ECACHE*.MIX` / `ELOCAL*.MIX` 通配家族**（gamemd
+  `0x826620`/`0x826614`，`Init_Game 0x530000`），而该 mod 把
+  `ZAOILD.SHP` 等建筑图放在 `ecachemd97.mix`。修复在 `e01c7c1b7`，测试
+  `startup_mounts_the_ecache_and_elocal_wildcard_families`。
+  该修复同时影响所有把资源放进 `ecache*/elocal*` 的 mod——测试时若发现
+  “某些 mod 单位/建筑/动画缺失”，先跑 `asset find <NAME> --all-mixes`
+  判断是否属于这类挂载缺口。
