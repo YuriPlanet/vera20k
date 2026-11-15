@@ -2557,7 +2557,7 @@ pub struct ObjectType {
     /// (`0x0051CD54..0x0051CD75`).
     pub default_to_guard_area: bool,
     /// InfantryType `Cyborg=` (`+0xEAC`, ReadBool with the current value as
-    /// default at `0x005243B0`). No stock INI authors it. See
+    /// default at `0x005243B8`). No stock INI authors it. See
     /// [`ObjectType::emits_damage_spark`] for the spark flag it feeds.
     pub cyborg: bool,
     /// TechnoType `+0xC8F`, projected from the Rules passes: see
