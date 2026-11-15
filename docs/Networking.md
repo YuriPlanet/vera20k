@@ -63,8 +63,9 @@ archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`)
 the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
 tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
-startup; the message names three and counts the rest, which the log lists; or personal
-rules and Terrain Deformation. A difference none of
+startup; the message names three and counts the rest, which the log lists. Personal
+rules and Terrain Deformation need nothing: Quick Match's room has no
+[room rules](#room-rules), so its match plays without them. A difference none of
 these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
 status page says the games differ (`VERA:MatchStartMismatch`), the log records both
 hashes, and the search goes on after the stage timeout; the host only times out. This
@@ -295,6 +296,35 @@ older guest is refused at LAN's build check and online cannot read the options w
 anyone waits. A lobby from before the queue refuses the field; the host's game stops
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Balance automatically and Teams then turns those off too.
+
+### Room rules
+
+A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
+Terrain Deformation and, when the host shares it, the host's `VERARULES.INI`, at most
+8 KB. They open as the host's Options box and file have them, the host can turn
+either off in Game Options, and they travel with the host's options, online as
+`launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
+`host_rules` beside VERA's room options. Every player's game, the host's too, plays
+them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
+Personal rules compose over the root and LANGRULE each scenario reads, never over the
+cold start or the shell's Country reads, so every player's one rules registry is the
+same whichever rules a room plays. Offline games play the player's own, a network
+replay the room's it recorded. A Quick Match room has none: the guest's game drops
+any its host sends, and the lobby refuses them there. A launcher's network game
+(`tools/spawn`) has no host to share them, so each player plays their own, which its
+`ExpectedRulesDigest` compares. So the room's door, the native rules hash (LAN's join
+check, online the room's `ex_info`), leaves personal rules out, while the rules
+digest compares the ones each game plays, with their `OverrideMapRules=`. A file
+that does not read, or is longer than 8 KB, is refused, never played. When the door
+still refuses a join because the rules files differ, or the digest a start, each game
+says what it changes from the original game, its mod, `config.toml`'s INI roots and
+changed game files, or that it plays the original (`agreement::rules_differ_text`);
+retail's text for it sends the player to Westwood. Nothing more is exchanged for
+that. A game of another build is refused at the build check first, so no released
+game reads `host_rules`; a lobby from before it refuses the field with 400
+`invalid_options`, and the host's game drops the room's rules, says so, and its room
+plays without them. A rollback past it plays every room without them, and each
+player needs the same personal rules again.
 
 ## Native behavior and deliberate bounds
 

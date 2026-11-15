@@ -780,7 +780,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.bans.france,
             options.bans.spy,
             options.bans.stolen_tech,
+            options.host_rules.terrain_deformation,
+            options.host_rules.personal_rules.is_some(),
         ],
+        personal_rules_shareable: crate::skirmish_launch::HostRules::can_share(
+            state.process_assets.personal_rules(),
+        ),
         row_icons,
         headers,
         grouped,

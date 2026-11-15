@@ -421,7 +421,7 @@ fn buddy_runner(state: &AppState) -> bool {
 }
 
 /// The Quick Match runner holds the records.
-pub(super) fn quick_match_runner(state: &AppState) -> bool {
+pub(crate) fn quick_match_runner(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.runner == Runner::QuickMatch)
 }
 
@@ -1562,7 +1562,11 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
         Ok(()) => true,
         Err(key) => {
             if let (true, Some(key)) = (show, key) {
-                let text = csf(state, key);
+                let text = if key == crate::ui::wol_lobby::RULES_DIFFER {
+                    crate::app::shell_network_setup::agreement::rules_differ_text(state)
+                } else {
+                    csf(state, key)
+                };
                 message_line(state, text);
             }
             false

@@ -372,7 +372,15 @@ impl App {
                 .as_deref()
                 .unwrap_or_default()
         );
-        let request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
+        let mut request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
+        if let SpawnGame::Network(network) = &mut request.game {
+            // VERA: a launcher's room has no host to share rules: each
+            // player plays their own, which its ExpectedRulesDigest compares.
+            network.session.options.host_rules = crate::skirmish_launch::HostRules::from_own(
+                state.process_assets.personal_rules(),
+                true,
+            );
+        }
         if let SpawnGame::Network(network) = &request.game {
             match &network.transport {
                 // Browsers cannot open the UDP sockets direct play needs.

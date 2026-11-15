@@ -39,10 +39,16 @@ the map file or replaces its objectives, triggers, layout or placed objects.
 Changing mission rules can affect mission balance or progression. The game's
 normal rule dependencies and derived values still apply.
 
-In a network game, every player must use matching personal rules and priority.
-They participate in the existing rules compatibility check. Quick Match plays the
-original game: with personal rules in effect it says to turn them off and does not
-search.
+A LAN or online room plays its host's personal rules: the host's file, up to 8 KB,
+goes to every player with the room's options, and each player's match plays it in
+place of their own. The host can untick **Host's Personal Rules** in the room's Game
+Options to play without them. Your own file still applies to your offline games.
+Quick Match plays the original game, without anyone's personal rules
+([room rules](Networking.md#room-rules)). A game a launcher starts plays each
+player's own file, so there every player needs the same one.
+
+Changes to `[Countries]` or a country's own section reach the game itself, but the
+country list on the setup screens keeps the game's own.
 
 To return to the original behavior, comment out or remove your changes. An empty
 or fully commented file has no effect. Deleting the file creates a fresh commented

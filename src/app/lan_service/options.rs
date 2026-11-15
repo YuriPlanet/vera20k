@@ -101,6 +101,12 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
             .options
             .teams,
         queue: session.network_queue().to_vec(),
+        host_rules: session
+            .network_setup()
+            .expect("projected setup")
+            .options
+            .host_rules
+            .clone(),
     })?;
     let admitted = queue_payload(
         state,
@@ -148,6 +154,15 @@ struct ExtendedOptions {
     /// [`SkirmishLaunchOptions::queue`]: crate::skirmish_launch::SkirmishLaunchOptions::queue
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     queue: Vec<String>,
+    /// The room's rules, beside `room`
+    /// ([`SkirmishLaunchOptions::host_rules`]).
+    ///
+    /// [`SkirmishLaunchOptions::host_rules`]: crate::skirmish_launch::SkirmishLaunchOptions::host_rules
+    #[serde(
+        default,
+        skip_serializing_if = "crate::skirmish_launch::HostRules::is_empty"
+    )]
+    host_rules: crate::skirmish_launch::HostRules,
 }
 
 impl ExtendedOptions {
@@ -193,6 +208,7 @@ pub(super) fn reapply_received_options(state: &mut AppState) -> Result<()> {
         options.selected_map_file,
         room,
         options.queue,
+        options.host_rules,
     )
 }
 
@@ -262,6 +278,7 @@ fn receive_options_text(
     selected_map_file: String,
     room: Option<crate::skirmish_launch::RoomOptions>,
     queue: Vec<String>,
+    host_rules: crate::skirmish_launch::HostRules,
 ) -> Result<()> {
     ensure!(
         source_sha256.is_empty() || crate::map::source::valid_source_sha256(&source_sha256),
@@ -283,6 +300,7 @@ fn receive_options_text(
     }
     // The text starts from this guest's own setup: an empty queue clears it.
     options.launch.options.queue = queue;
+    options.launch.options.host_rules = host_rules;
     crate::app::shell_network_setup::service_event(state, NetworkSetupEvent::HostSetup(options))?;
     state
         .match_state
@@ -479,6 +497,7 @@ pub(super) fn receive_extended(
                 options.selected_map_file,
                 room,
                 options.queue,
+                options.host_rules,
             )?;
             super::maps::received_options(state, scope, options.random_map)
         }
