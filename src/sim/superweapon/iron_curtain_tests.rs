@@ -54,9 +54,10 @@ fn rules(extra: &str) -> RuleSet {
     ini.merge(&IniFile::from_str(extra));
     let mut rules = RuleSet::from_ini(&ini).expect("iron curtain fixture rules");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-        "[IRONBLST]\nRate=450\nReport=IronCurtainBlast\nTranslucent=yes\n",
+        "[IRONBLST]\nRate=450\nTranslucent=yes\n",
     ));
     art.bind_anim_frame_count_for_test("IRONBLST", 12);
+    art.set_anim_sounds_for_test("IRONBLST", Some("IronCurtainBlast"), None);
     rules.replace_art_registry_for_test(art);
     rules
 }

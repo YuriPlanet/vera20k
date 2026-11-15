@@ -22,6 +22,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             .unwrap();
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&fixed_art);
     art.bind_anim_frame_count_for_test("DEATHTEST", 80);
+    art.set_anim_sounds_for_test("DEATHTEST", Some("DeathReport"), None);
     rules.replace_art_registry_for_test(art);
     let (mut saved, terrain) = death_load_world(&rules);
     saved.set_input_delay_ticks(0);

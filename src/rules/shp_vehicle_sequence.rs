@@ -529,8 +529,6 @@ mod tests {
             firing_frames: firing,
             standing_frames: None,
             shp_facings: 8,
-            report: None,
-            start_sound: None,
             extra_light: 0,
             terrain_palette: false,
             use_buffer: false,

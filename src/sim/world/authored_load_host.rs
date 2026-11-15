@@ -305,7 +305,12 @@ mod tests {
         );
         let processed =
             RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n1=MALFORMED\n"))
-                .process_with_fixed_art(&art_ini)
+                .process_with_fixed_art_and_sounds(
+                    &art_ini,
+                    &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+                        "[SoundList]\n0=TileStart\n",
+                    )),
+                )
                 .expect("process canonical ART read admission");
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&art_ini));

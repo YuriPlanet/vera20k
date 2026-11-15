@@ -1143,12 +1143,13 @@ mod tests {
         let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules parse");
         let mut art = crate::rules::art_data::ArtRegistry::from_ini(
             &crate::rules::ini_parser::IniFile::from_str(
-                "[BRIDGEEXP1]\nTranslucent=yes\nReport=Explosion06\n\
-                 [BRIDGEEXP2]\nTranslucent=yes\nReport=Explosion07\n",
+                "[BRIDGEEXP1]\nTranslucent=yes\n[BRIDGEEXP2]\nTranslucent=yes\n",
             ),
         );
         art.bind_anim_frame_count_for_test("BRIDGEEXP1", 8);
         art.bind_anim_frame_count_for_test("BRIDGEEXP2", 8);
+        art.set_anim_sounds_for_test("BRIDGEEXP1", Some("Explosion06"), None);
+        art.set_anim_sounds_for_test("BRIDGEEXP2", Some("Explosion07"), None);
         rules.replace_art_registry_for_test(art);
         rules
     }
