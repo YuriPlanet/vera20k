@@ -8,8 +8,8 @@
 //! (`Ext/Techno/Hooks.Targeting.cpp:88-92`), so a ring walk reaches its radius
 //! even when a band held a worse candidate first.
 
-use crate::sim::combat::threat_range::ScanMission;
 use crate::sim::combat::TargetKind;
+use crate::sim::combat::threat_range::ScanMission;
 use crate::sim::house_state::HouseState;
 
 /// A `SCOUTCAR` guarding from (8, 8) with a 12-cell weapon — the walk bound is
@@ -31,8 +31,7 @@ const EXTRA: &str = "[General]\nTargetEffectivenessCoefficientDefault=1\n\
 
 /// What the guarding car holds with the switch on or off, plus both targets.
 fn guard_scene(disable_optimization: bool) -> (Option<u64>, u64, u64) {
-    let (mut sim, mut rules, _) =
-        crate::sim::world::entry_test_fixture::fixture_with_rules(EXTRA);
+    let (mut sim, mut rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(EXTRA);
     rules.phobos_globals.disable_overoptimization_in_targeting = disable_optimization;
     for (index, name) in ["Americans", "Russians"].into_iter().enumerate() {
         let owner = sim.intern(name);

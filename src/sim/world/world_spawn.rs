@@ -3321,10 +3321,14 @@ impl Simulation {
         if !obj.construction_yard {
             return true;
         }
-        self.construction_yard_redeploy_core_gate(entity)
+        self.construction_yard_redeploy_core_gate(entity, rules)
     }
 
-    pub(super) fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
+    pub(super) fn construction_yard_redeploy_core_gate(
+        &self,
+        entity: &GameEntity,
+        rules: &RuleSet,
+    ) -> bool {
         // Building44374F..443778 /44F5F3..44F61C admit existing radio
         // contacts. Selling44AB68/44A2EE notifies and breaks them later.
         if !self.session.game_options().mcv_redeploy {
@@ -3332,8 +3336,13 @@ impl Simulation {
         }
         // `BuildingClass::CanUndeployMCV @ 0x00449C15` and
         // `ShouldShowDeployButton @ 0x0044F614`: a mind-controlled yard (+0x2C0)
-        // cannot repack.
-        if entity.mind_control.controller().is_some() {
+        // cannot repack. Phobos `AllowDeployControlledMCV`
+        // (`Ext/TAction/Body.cpp:234-242`) lifts that same refusal.
+        #[cfg(feature = "phobos")]
+        let allow_controlled = rules.phobos_globals.allow_deploy_controlled_mcv;
+        #[cfg(not(feature = "phobos"))]
+        let allow_controlled = false;
+        if entity.mind_control.controller().is_some() && !allow_controlled {
             return false;
         }
         self.houses

@@ -364,6 +364,17 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// just below .15, so per-step shares of 20, 40 and 100 cost 2, 5 and 14.
 pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     let step = rules.general.repair_step;
+    // Phobos `TechnoTypeClass_GetRepairStepCost` (`Misc/Hooks.BugFixes.cpp:
+    // 3394-3407`): the fix divides `Strength` by `RepairStep` as a double and
+    // clamps at 1.0 before dividing the cost, so a Strength below RepairStep
+    // still charges one whole step's share instead of panicking on the
+    // native IDIV.
+    #[cfg(feature = "phobos")]
+    if rules.phobos_globals.fix_repair_step_cost {
+        let steps = (f64::from(object.strength) / f64::from(step)).max(1.0);
+        let share = f64::from(rules.type_cost(object)) / steps;
+        return ((share * rules.general.repair_percent) as i32).max(1);
+    }
     let steps = object.strength.checked_div(step).unwrap_or_else(|| {
         panic!(
             "native repair step cost IDIV fault at 007120EC: strength={} step={step}",

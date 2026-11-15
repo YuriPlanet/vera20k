@@ -1659,8 +1659,7 @@ pub(crate) fn greatest_threat(
         // `DisableOveroptimizationInTargeting` jumps past the whole test to
         // `0x006F9B1B` (`Ext/Techno/Hooks.Targeting.cpp:88-92`, hook
         // `0x006F9AF4`), so the walk reaches its radius.
-        if best.is_some() && !targeting_fixes(ctx.rules).1 && is_early_return_ring(ring, radius)
-        {
+        if best.is_some() && !targeting_fixes(ctx.rules).1 && is_early_return_ring(ring, radius) {
             return result(best, collected, &ctx);
         }
         // `0x006F9B1B..0x006F9B6B`: otherwise a wall found by this ring wins,
@@ -2248,6 +2247,31 @@ fn aggressive_attack_move(ctx: &ScanContext<'_>) -> bool {
 /// Gate labels below are the ones used in the mapping of this function. The
 /// mask ([`ScanContext::mask`]) and the walk's flags word decide the class
 /// gate and the quarry gates; see [`threat_mask`].
+/// Phobos `AutoTarget.InsignificantWhenMindControlled`
+/// (`Ext/Rules/Body.cpp:658`, default **yes**): `0x006F8364` skips the
+/// insignificance refusal for a mind-controlled or permanently dominated
+/// candidate. The switch makes the refusal apply to that candidate too; with
+/// no Phobos capability the native exclusion stands.
+fn insignificant_applies_to(
+    candidate: &GameEntity,
+    rules: &crate::rules::ruleset::RuleSet,
+) -> bool {
+    if !candidate.mind_control.is_mind_controlled() {
+        return true;
+    }
+    #[cfg(feature = "phobos")]
+    {
+        rules
+            .phobos_globals
+            .auto_target_insignificant_when_mind_controlled
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        false
+    }
+}
+
 fn evaluate_candidate(
     ctx: &ScanContext<'_>,
     walk: WalkArgs,
@@ -2718,7 +2742,7 @@ fn evaluate_candidate(
     // (civilians, the cow) and every wall.
     if !considered_enemy
         && candidate_obj.insignificant
-        && !candidate.mind_control.is_mind_controlled()
+        && insignificant_applies_to(candidate, ctx.rules)
         && (!building || ctx.owner_is_passive(candidate))
         && !ctx.passive_building_exception(candidate, candidate_obj)
     {

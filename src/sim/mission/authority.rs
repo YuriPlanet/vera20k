@@ -273,16 +273,21 @@ fn evaluate_ready(
         )
         .or(Some(DEGRADED_NOT_MOVING));
         let attack_target_present = entity.attack_target.target().is_some();
-        // Phobos `FootClass_ReadyToNextMission_MovingCheck`: a computer owner
-        // always asks the locomotor; a human owner only with the key on.
-        let owner_is_human = sim
-            .houses
-            .get(&entity.owner())
-            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+        // Phobos `FootClass_ReadyToNextMission_MovingCheck`
+        // (`Misc/Hooks.BugFixes.cpp:3325-3338`): the `Is_Moving_Now` query is
+        // skipped for a human player unless `ReadyToNextMission.MovingCheck`
+        // restores the native check; a queued Unload or a computer-controlled
+        // house always queries (`HouseClass::IsControlledByHuman @ 0x0050B730`).
+        // Without the Phobos capability VERA keeps the native always-query.
         #[cfg(feature = "phobos")]
-        let moving_check = rules.phobos_globals.ready_to_next_mission_moving_check;
+        let moving_check = rules.phobos_globals.ready_to_next_mission_moving_check
+            || mission.queued().known() == Some(super::MissionType::Unload)
+            || !sim
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
         #[cfg(not(feature = "phobos"))]
-        let moving_check = false;
+        let moving_check = true;
 
         match entity.category() {
             EntityCategory::Unit => {
@@ -303,7 +308,6 @@ fn evaluate_ready(
                     locomotor,
                     attack_target_present,
                     position,
-                    owner_is_human,
                     moving_check,
                     world: &LiveUnitWorld { sim, rules, entity },
                 })
@@ -319,7 +323,6 @@ fn evaluate_ready(
                     object_is_falling_down: u8::from(entity.is_falling_down()),
                     locomotor,
                     attack_target_present,
-                    owner_is_human,
                     moving_check,
                 })
             }

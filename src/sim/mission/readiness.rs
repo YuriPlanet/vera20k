@@ -102,11 +102,11 @@ pub(crate) struct UnitReadyView<'a, W: UnitReadyWorld + ?Sized> {
     pub(crate) locomotor: Option<LocomotorReadyState>,
     pub(crate) attack_target_present: bool,
     pub(crate) position: ReadyLeptonPoint,
-    /// `Owner->IsControlledByHuman()`: a computer owner always asks the
-    /// locomotor's `Is_Moving_Now` (`0x7442D6`).
-    pub(crate) owner_is_human: bool,
-    /// `[General] ReadyToNextMission.MovingCheck=`: restores the stock
-    /// always-ask behavior for a human owner (Phobos hook `0x7442D6`).
+    /// Whether the `Is_Moving_Now` query runs at all, precomputed by the
+    /// caller: Phobos `ReadyToNextMission.MovingCheck` or a non-human owner or
+    /// a queued Unload (`Ext/Rules/Body.cpp:646`,
+    /// `Misc/Hooks.BugFixes.cpp:3327-3338`); always true without the Phobos
+    /// capability, which keeps the native unconditional query.
     pub(crate) moving_check: bool,
     pub(crate) world: &'a W,
 }
@@ -118,8 +118,6 @@ pub(crate) struct InfantryReadyView<'a> {
     pub(crate) object_is_falling_down: u8,
     pub(crate) locomotor: Option<LocomotorReadyState>,
     pub(crate) attack_target_present: bool,
-    /// See [`UnitReadyView::owner_is_human`] (hook `0x521BA7`).
-    pub(crate) owner_is_human: bool,
     /// See [`UnitReadyView::moving_check`].
     pub(crate) moving_check: bool,
 }
@@ -162,10 +160,10 @@ pub(crate) fn unit_ready_to_commence<W: UnitReadyWorld + ?Sized>(
 
     let queued = view.mission.queued();
     if queued != MISSION_ENTER {
-        // Phobos `FootClass_ReadyToNextMission_MovingCheck` (`0x7442D6`): the
-        // locomotor is asked only with the key on, a queued Unload, or a
-        // computer owner.
-        let moving = if view.moving_check || queued == MISSION_UNLOAD || !view.owner_is_human {
+        // Phobos `FootClass_ReadyToNextMission_MovingCheck` (`0x7442D6`)
+        // replaces the query itself, so the locomotor is not consulted unless
+        // the caller's `moving_check` holds.
+        let moving = if view.moving_check {
             view.locomotor
                 .ok_or(ReadyUnavailable::Locomotor)?
                 .is_moving_now()
@@ -228,11 +226,8 @@ pub(crate) fn infantry_ready_to_commence(view: InfantryReadyView<'_>) -> ReadyRe
     }
 
     // Phobos `FootClass_ReadyToNextMission_MovingCheck` (`0x521BA7`): the same
-    // gate as the Unit arm.
-    let moving = if view.moving_check
-        || view.mission.queued() == MISSION_UNLOAD
-        || !view.owner_is_human
-    {
+    // query gate as the Unit arm.
+    let moving = if view.moving_check {
         view.locomotor
             .ok_or(ReadyUnavailable::Locomotor)?
             .is_moving_now()
@@ -378,7 +373,6 @@ mod tests {
             locomotor: Some(stopped()),
             attack_target_present: false,
             position: ReadyLeptonPoint::new(40 * 256, 51 * 256),
-            owner_is_human: true,
             moving_check: true,
             world,
         }
@@ -394,7 +388,6 @@ mod tests {
             object_is_falling_down: 0,
             locomotor: Some(stopped()),
             attack_target_present: false,
-            owner_is_human: true,
             moving_check: true,
         }
     }
@@ -420,23 +413,19 @@ mod tests {
     fn the_ready_to_next_mission_moving_gate_follows_phobos() {
         let leaf_state = unit_leaf(0, 0, 0, 0);
         let world = TestWorld::default();
-        let run = |queued: MissionId, human: bool, key: bool, locomotor| {
-            let mission = mission_fixture(MISSION_MOVE.raw(), queued.raw(), 0);
+        let run = |moving_check: bool, locomotor| {
+            let mission = mission_fixture(MISSION_MOVE.raw(), MissionId::NONE.raw(), 0);
             let mut view = unit_view(&mission, leaf_state.as_unit().expect("Unit leaf"), &world);
             view.locomotor = locomotor;
-            view.owner_is_human = human;
-            view.moving_check = key;
+            view.moving_check = moving_check;
             unit_ready_to_commence(view)
         };
-        // Human, no queued Unload, key off: the moving unit stays ready and a
-        // missing locomotor is not an error, because the query never runs.
-        assert_eq!(run(MissionId::NONE, true, false, Some(moving())), Ok(true));
-        assert_eq!(run(MissionId::NONE, true, false, None), Ok(true));
-        // The key restores the stock always-ask behavior.
-        assert_eq!(run(MissionId::NONE, true, true, Some(moving())), Ok(false));
-        // A queued Unload always asks, and so does a computer owner.
-        assert_eq!(run(MISSION_UNLOAD, true, false, Some(moving())), Ok(false));
-        assert_eq!(run(MissionId::NONE, false, false, Some(moving())), Ok(false));
+        // The gate off skips the query: the moving unit stays ready and a
+        // missing locomotor is not an error.
+        assert_eq!(run(false, Some(moving())), Ok(true));
+        assert_eq!(run(false, None), Ok(true));
+        // The gate on restores the native query and its moving guard.
+        assert_eq!(run(true, Some(moving())), Ok(false));
     }
 
     #[test]
@@ -472,6 +461,31 @@ mod tests {
         view.locomotor = None;
         assert_eq!(unit_ready_to_commence(view), Ok(false));
         assert!(world.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn moving_check_off_admits_a_moving_unit_with_a_clear_body() {
+        // Phobos `ReadyToNextMission.MovingCheck` (`Misc/Hooks.BugFixes.cpp`):
+        // the default-off fix skips the whole moving guard, so a moving unit
+        // whose tracker bytes and contact slot are clear becomes ready.
+        let mission = mission_fixture(MISSION_MOVE.raw(), MissionId::NONE.raw(), 0);
+        let leaf_state = unit_leaf(0, 0, 0, 0);
+        let world = TestWorld::default();
+        let leaf = leaf_state.as_unit().expect("Unit leaf");
+        let mut view = unit_view(&mission, leaf, &world);
+        view.locomotor = Some(moving());
+        assert_eq!(unit_ready_to_commence(view), Ok(false));
+        let mut view = unit_view(&mission, leaf, &world);
+        view.locomotor = Some(moving());
+        view.moving_check = false;
+        assert_eq!(unit_ready_to_commence(view), Ok(true));
+        assert_eq!(
+            world.calls.borrow().as_slice(),
+            &[
+                Lookup::ContactSlotZero,
+                Lookup::BuildingUnder(ReadyLeptonPoint::new(40 * 256, 51 * 256))
+            ]
+        );
     }
 
     #[test]

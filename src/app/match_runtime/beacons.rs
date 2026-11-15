@@ -80,6 +80,12 @@ pub(crate) struct BeaconManager {
     // VERA extends the native eight rows to actual House registry indices.
     // BTreeMap preserves the native House-major visit order without a cap.
     slots: std::collections::BTreeMap<usize, [Option<Beacon>; BEACONS_PER_HOUSE]>,
+    /// Phobos `HouseExt::BeaconsPlacedOrder` (`Ext/House/Body.h`): the
+    /// per-House slot age, `1` for the oldest. It exists only while
+    /// `AutoRemoveEarliestBeacon` is read by its hooks (`Ext/House/Hooks.cpp:
+    /// 831-903`), but keeping it unconditionally costs three integers per
+    /// House and keeps the save shape deterministic.
+    placed_order: std::collections::BTreeMap<usize, [i32; BEACONS_PER_HOUSE]>,
 }
 
 impl BeaconManager {
@@ -113,6 +119,12 @@ impl BeaconManager {
             active: true,
             selected: false,
         });
+        // Phobos `BeaconManagerClass_PlaceBeacon_RecordOrder`
+        // (`Ext/House/Hooks.cpp:856-872`): the placed slot becomes the newest
+        // (`max(all orders) + 1`), whether it was empty or replaced.
+        let order = self.placed_order.entry(house).or_default();
+        let newest = order.iter().copied().max().unwrap_or(0).max(0) + 1;
+        order[slot] = newest;
         Some(slot)
     }
 
@@ -138,11 +150,40 @@ impl BeaconManager {
             return Deletion::Hidden;
         }
         *record = None;
+        // Phobos `BeaconManagerClass_DeleteBeacon_RecordOrder`
+        // (`Ext/House/Hooks.cpp:831-854`): the removed slot's age goes to 0
+        // and every newer slot ages by one, keeping `1` the oldest.
+        let order = self.placed_order.entry(house).or_default();
+        let old = std::mem::replace(&mut order[slot], 0);
+        if old != 0 {
+            for (other, value) in order.iter_mut().enumerate() {
+                if other != slot && *value > old {
+                    *value -= 1;
+                }
+            }
+        }
         Deletion::Removed {
             house,
             slot,
             searched,
         }
+    }
+
+    /// Phobos `MouseClass_ToggleBeaconMode_AllUsed` (`Ext/House/Hooks.cpp:
+    /// 874-903`) evicts the slot whose age is `1`. Its delete hook only
+    /// decrements newer ages and never renumbers them, so after one eviction
+    /// the minimum age can be `2` and Phobos's literal `== 1` search finds
+    /// nothing. VERA keeps the same ages but picks the smallest occupied one,
+    /// which is the same slot while ages start at `1` and stays correct
+    /// afterwards.
+    pub(crate) fn earliest(&self, house: usize) -> Option<usize> {
+        let order = self.placed_order.get(&house)?;
+        order
+            .iter()
+            .enumerate()
+            .filter(|(_, age)| **age > 0)
+            .min_by_key(|(slot, age)| (*age, *slot))
+            .map(|(slot, _)| slot)
     }
 
     /// The `(-1, -1)` search of `DeleteBeacon` (`0x004311EF..0x0043121F`),
@@ -518,6 +559,30 @@ mod tests {
         );
         assert_eq!(beacons.store(1, [5, 0, 0], None), Some(0));
         assert!(beacons.can_place(0) && beacons.can_place(31));
+    }
+
+    #[test]
+    fn placement_order_ages_the_oldest_slot_first() {
+        // Phobos `BeaconManagerClass_PlaceBeacon_RecordOrder` /
+        // `_DeleteBeacon_RecordOrder` (`Ext/House/Hooks.cpp:831-872`).
+        let mut beacons = BeaconManager::default();
+        for expected in 0..3 {
+            assert_eq!(
+                beacons.store(4, [expected, 0, 0], None),
+                Some(expected as usize)
+            );
+        }
+        assert_eq!(beacons.earliest(4), Some(0));
+        // Replacing the middle slot makes it the newest; slot 0 stays oldest.
+        beacons.store(4, [9, 0, 0], Some(1));
+        assert_eq!(beacons.earliest(4), Some(0));
+        beacons.delete(BeaconTarget::Slot { house: 4, slot: 0 }, Some(4));
+        // Deleting the age-1 slot leaves ages 3 (slot 1) and 2 (slot 2), so
+        // the middle slot becomes the oldest despite Phobos's literal `== 1`
+        // search finding nothing here.
+        assert_eq!(beacons.earliest(4), Some(2));
+        assert_eq!(beacons.store(4, [8, 0, 0], Some(0)), Some(0));
+        assert_eq!(beacons.earliest(4), Some(2));
     }
 
     #[test]

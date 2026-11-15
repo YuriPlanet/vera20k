@@ -532,22 +532,28 @@ fn the_mind_control_silent_and_merge_building_damage_globals() {
 fn the_permanent_replace_silent_defaults_false_and_reads_from_audio_visual() {
     assert!(!PhobosGlobals::default().mind_control_permanent_replace_silent);
     assert!(
-        read("[AudioVisual]
+        read(
+            "[AudioVisual]
 MindControl.Permanent.ReplaceSilent=yes
-")
-            .mind_control_permanent_replace_silent
+"
+        )
+        .mind_control_permanent_replace_silent
     );
     assert!(
-        !read("[AudioVisual]
+        !read(
+            "[AudioVisual]
 MindControl.Permanent.ReplaceSilent=no
-")
-            .mind_control_permanent_replace_silent
+"
+        )
+        .mind_control_permanent_replace_silent
     );
     assert!(
-        !read("[CombatDamage]
+        !read(
+            "[CombatDamage]
 MindControl.Permanent.ReplaceSilent=yes
-")
-            .mind_control_permanent_replace_silent,
+"
+        )
+        .mind_control_permanent_replace_silent,
         "the key is an `[AudioVisual]` read"
     );
 }
@@ -1475,4 +1481,167 @@ FallingDownTargetingFix=yes
         wrong.team_delays_dynamic_type,
         PhobosDynamicTeamDelayType::StartingPoint
     );
+}
+
+/// `[General]`/`[AI]`/`[CombatDamage]` keys of the remaining Phobos globals
+/// (`Ext/Rules/Body.cpp:118-119,136,243-246,299,307,336-337,401,549,619-625,
+/// 646,648,658`), with their constructor defaults.
+#[test]
+fn the_remaining_general_ai_and_combatdamage_globals() {
+    let defaults = PhobosGlobals::default();
+    assert!(!defaults.sort_cameo_by_name);
+    assert!(!defaults.set_tab_by_selecting_factory);
+    assert!(!defaults.allow_chat_box_in_single_player);
+    assert!(!defaults.allow_beacon_hotkey_in_single_player);
+    assert!(!defaults.auto_remove_earliest_beacon);
+    assert!(!defaults.allow_deploy_controlled_mcv);
+    assert!(!defaults.fix_repair_step_cost);
+    assert!(!defaults.extended_player_repair);
+    assert!(!defaults.enable_power_surplus);
+    assert_eq!(defaults.power_surplus_scale_to_drain_amount, 0);
+    assert!(defaults.display_income_allow_ai, "AllowAI constructs yes");
+    assert!(
+        defaults.auto_target_insignificant_when_mind_controlled,
+        "InsignificantWhenMindControlled constructs yes"
+    );
+    assert!(!defaults.ready_to_next_mission_moving_check);
+    assert_eq!(defaults.chrono_sparkle_display_delay, 24);
+    assert_eq!(
+        defaults.chrono_sparkle_building_display_positions.bits(),
+        0x4,
+        "OccupantSlots"
+    );
+    assert!(defaults.veinhole_warhead.is_none());
+
+    let set = read(
+        "[General]
+SortCameoByName=yes
+SetTabBySelectingFactory=yes
+AllowChatBoxInSinglePlayer=yes
+AllowBeaconHotKeyInSinglePlayer=yes
+AutoRemoveEarliestBeacon=yes
+AllowDeployControlledMCV=yes
+FixRepairStepCost=yes
+ExtendedPlayerRepair=yes
+JumpjetClimbPredictHeight=yes
+JumpjetClimbWithoutCutOut=yes
+ReadyToNextMission.MovingCheck=yes
+ChronoSparkleDisplayDelay=7
+ChronoSparkleBuildingDisplayPositions=Building, Occupants
+[AI]
+EnablePowerSurplus=yes
+PowerSurplus.ScaleToDrainAmount=40
+[AudioVisual]
+DisplayIncome.AllowAI=no
+[CombatDamage]
+AutoTarget.InsignificantWhenMindControlled=no
+VeinholeWarhead=WH_VEIN
+",
+    );
+    assert!(set.sort_cameo_by_name);
+    assert!(set.set_tab_by_selecting_factory);
+    assert!(set.allow_chat_box_in_single_player);
+    assert!(set.allow_beacon_hotkey_in_single_player);
+    assert!(set.auto_remove_earliest_beacon);
+    assert!(set.allow_deploy_controlled_mcv);
+    assert!(set.fix_repair_step_cost);
+    assert!(set.extended_player_repair);
+    assert!(set.jumpjet_climb_predict_height);
+    assert!(set.jumpjet_climb_without_cut_out);
+    assert!(set.ready_to_next_mission_moving_check);
+    assert_eq!(set.chrono_sparkle_display_delay, 7);
+    assert_eq!(
+        set.chrono_sparkle_building_display_positions.bits(),
+        0x1 | 0x2
+    );
+    assert!(set.enable_power_surplus);
+    assert_eq!(set.power_surplus_scale_to_drain_amount, 40);
+    assert!(!set.display_income_allow_ai);
+    assert!(!set.auto_target_insignificant_when_mind_controlled);
+    assert_eq!(set.veinhole_warhead.as_deref(), Some("WH_VEIN"));
+
+    // Every key above belongs to exactly one section.
+    let wrong = read(
+        "[AudioVisual]
+SortCameoByName=yes
+EnablePowerSurplus=yes
+ChronoSparkleDisplayDelay=7
+[General]
+DisplayIncome.AllowAI=no
+PowerSurplus.ScaleToDrainAmount=40
+[CombatDamage]
+ChronoSparkleBuildingDisplayPositions=All
+",
+    );
+    assert!(!wrong.sort_cameo_by_name);
+    assert!(!wrong.enable_power_surplus);
+    assert_eq!(wrong.chrono_sparkle_display_delay, 24);
+    assert!(wrong.display_income_allow_ai);
+    assert_eq!(wrong.power_surplus_scale_to_drain_amount, 0);
+    assert_eq!(
+        wrong.chrono_sparkle_building_display_positions.bits(),
+        0x4,
+        "not read from CombatDamage"
+    );
+}
+
+/// `[AudioVisual]` light multipliers, radial-indicator visibility,
+/// `UseRetintFix`, `ColorAddUse8BitRGB` and the nullable `VoxelLightSource`
+/// (`Ext/Rules/Body.cpp:172,260,349-352,409`).
+#[test]
+fn the_audiovisual_light_and_color_globals() {
+    let defaults = PhobosGlobals::default();
+    assert_eq!(
+        defaults.aircraft_level_light_multiplier.bits(),
+        1.0f64.to_bits()
+    );
+    assert_eq!(
+        defaults.jumpjet_level_light_multiplier.bits(),
+        0.0f64.to_bits()
+    );
+    assert_eq!(
+        defaults.radial_indicator_visibility,
+        crate::rules::phobos_shields::AffectedHouse::ALLIES
+    );
+    assert!(defaults.use_retint_fix, "UseRetintFix constructs yes");
+    assert!(!defaults.color_add_use_8bit_rgb);
+    assert!(defaults.voxel_light_source.is_none());
+
+    let set = read(
+        "[AudioVisual]
+AircraftLevelLightMultiplier=0.5
+JumpjetLevelLightMultiplier=2.0
+RadialIndicatorVisibility=owner
+UseRetintFix=no
+ColorAddUse8BitRGB=yes
+VoxelLightSource=1.0,2.0,3.0
+",
+    );
+    assert_eq!(set.aircraft_level_light_multiplier.bits(), 0.5f64.to_bits());
+    assert_eq!(set.jumpjet_level_light_multiplier.bits(), 2.0f64.to_bits());
+    assert_eq!(
+        set.radial_indicator_visibility,
+        crate::rules::phobos_shields::AffectedHouse::OWNER
+    );
+    assert!(!set.use_retint_fix);
+    assert!(set.color_add_use_8bit_rgb);
+    let light = set.voxel_light_source.expect("three tokens set it");
+    assert_eq!(
+        light.map(|value| f32::from_bits(value.bits())),
+        [1.0, 2.0, 3.0]
+    );
+
+    // `<none>` clears a previously set value; a short vector keeps it.
+    let cleared = read(
+        "[AudioVisual]
+VoxelLightSource=1.0,2.0,3.0
+",
+    );
+    assert!(cleared.voxel_light_source.is_some());
+    let malformed = read(
+        "[AudioVisual]
+VoxelLightSource=1.0
+",
+    );
+    assert!(malformed.voxel_light_source.is_none());
 }
