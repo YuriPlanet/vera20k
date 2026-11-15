@@ -5820,7 +5820,7 @@ impl TechnoTypeReferences {
 /// fixed ART section (`0x00428045..0x00428735`), retained on the live type:
 /// `RuleSet` hands them to its ART registry. Each is a ReadString into 0x80
 /// bytes whose empty read keeps the field; `Next=` (+2C8, `0x00428045`) and
-/// `Spawns=` (+34C, `0x004281DE`) go through `AnimTypeClass::FindOrCreate @
+/// `Spawns=` (+2F0, `0x004281DE..0x00428216`) go through `AnimTypeClass::FindOrCreate @
 /// 0x00428F70`, `BounceAnim=` (`0x0042840D`), `ExpireAnim=` (`0x004284C4`)
 /// and `TrailerAnim=` (`0x00428588`) through the inlined AnimType factory,
 /// `TiberiumSpawnType=` (+338, `0x0042828A`) through OverlayType's

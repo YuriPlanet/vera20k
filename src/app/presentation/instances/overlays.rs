@@ -544,7 +544,8 @@ pub(crate) fn build_display_effect_instances(
                     }
                 },
                 special_hidden: anim.draw_runtime().special_hidden,
-                // The native special-hide type bit remains an explicit residual.
+                // `+0x374` is `ShouldFogRemove=`; the fog check below ports
+                // this gate.
                 type_special_hide: false,
             },
         ) {

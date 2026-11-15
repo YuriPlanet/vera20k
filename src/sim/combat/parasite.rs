@@ -590,6 +590,10 @@ impl Simulation {
                     rules,
                 );
             }
+            // RESIDUAL: native reads Anim[dir8] of any non-empty list
+            // without a bound check (`0x0062A11D..0x0062A138`), so a list
+            // under eight entries reads past its end; VERA plays none there.
+            // Retail parasite weapons list eight or none.
             if let Some(name) = anims
                 .get(usize::from(dir_from_facing16(raw)))
                 .filter(|_| !anims.is_empty())

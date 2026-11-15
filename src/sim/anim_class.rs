@@ -325,7 +325,10 @@ pub struct AnimRuntime {
 pub struct AnimDrawRuntime {
     /// AnimClass `+0x19d`: unconditional draw suppression.
     pub hidden: bool,
-    /// AnimClass `+0x199`: applies only with the unresolved type `+0x374` bit.
+    /// AnimClass `+0x199`, the fogged byte. DrawIt skips the anim when it is
+    /// set and the type's `ShouldFogRemove=` (`+0x374`, `0x004282DC`) is too
+    /// (`0x00423014..0x00423026`). Presentation ports that gate with the fog
+    /// query (`instances::overlays`), so nothing sets this field.
     pub special_hidden: bool,
     /// AnimClass `+0x178`: ramp/age input used by translucency selection.
     pub translucency_ramp: u8,
@@ -440,8 +443,8 @@ pub struct AnimObject {
     start_sound_active: bool,
     stop_sound_id: Option<InternedId>,
     display: AnimDisplayState,
-    /// `AnimClass+0x128`: a `Bouncer=` chunk's BounceClass body. Its presence
-    /// is `+0x194` for the ported arm (the `IsMeteor=` arm is not built).
+    /// `AnimClass+0x128`: a `Bouncer=` or `IsMeteor=` chunk's BounceClass
+    /// body, both built by [`anim_constructor_draws`]. Its presence is `+0x194`.
     #[serde(default)]
     bounce: Option<BounceState>,
     /// Anim+108/+114/+19A and Object falling words for IsFlamingGuy AI.

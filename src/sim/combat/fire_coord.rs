@@ -995,6 +995,11 @@ fn barrel_voxel_coordinate(
 /// When nothing is picked and the firer rides an open-topped transport
 /// (`+0x82`), the weapon's `OpenToppedAnim=` (`+0x118`) plays instead
 /// (`0x006FF32F..0x006FF347`); stock gives it to PsychicJab and Virusgun.
+///
+/// RESIDUAL: the eight-way pick takes its facing from vt+0x308
+/// (`0x006FF2E5`), which for an aircraft is its SecondaryFacing (`+0x3A0`,
+/// `0x0041A570`); `aim_facing16` carries an aircraft's body facing. No retail
+/// aircraft weapon has `Anim=`.
 pub(crate) fn muzzle_anim_name(
     weapon: &crate::rules::weapon_type::WeaponType,
     aim_facing16: u16,

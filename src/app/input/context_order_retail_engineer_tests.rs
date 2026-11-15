@@ -163,7 +163,7 @@ fn retail_camov02_alias_binds_damaged_art_and_engineer_repair_restores_normal() 
     assert!(rules.object("CAMOV02").unwrap().can_be_occupied);
     assert!(rules.object("CAMOV02").unwrap().repairable);
     assert_eq!(rules.general.condition_yellow, 0.5);
-    // Original AnimType ReadINI427D00 and theater postpass427A80 bind both
+    // Original AnimType ReadINI427D00 and theater pass427940 bind both
     // sections to CUMOV02_A.SHP (8 raw frames). AD inherits NewTheater from
     // Image=CAMOV02_A while retaining its own damaged animation bounds.
     for (name, start, loop_start, loop_end) in [("CAMOV02_A", 0, 0, 2), ("CAMOV02_AD", 2, 2, 4)] {
