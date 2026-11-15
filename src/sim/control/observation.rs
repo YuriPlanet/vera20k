@@ -1709,9 +1709,21 @@ impl<'a> Observation<'a> {
         cells
     }
 
+    /// Whether this structure may be packed back into its maker right now.
+    ///
+    /// The wishlist's "占领敌方建造场以后，若敌方建造场可以打包回MCV并安全撤离，
+    /// 应当打包撤离到己方基地". The question is the receiver's own gate rather
+    /// than a rule the brain restates: `can_undeploy_building_runtime` is where
+    /// the deploy-facing rules and the native `ShouldShowDeployButton` reading
+    /// live, and a second copy of them here is how the two would disagree.
+    ///
+    /// Read-only. Packing is `Command::UndeployBuilding`, which re-checks.
+    pub fn can_repack_yard(&self, rules: &RuleSet, entity_id: u64) -> bool {
+        self.sim.can_undeploy_building_runtime(entity_id, rules)
+    }
+
     /// Whether the navigation projection the connectivity answers come from
     /// stands at all.
-    ///
     /// The water rows of the passability matrix are modelled
     /// (`crate::sim::pathfinding::passability` carries `Water` and `WaterBeach`
     /// and the three amphibious zones), so this is the seam for a fleet: a

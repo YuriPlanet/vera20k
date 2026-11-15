@@ -498,6 +498,84 @@ pub(super) fn suicide_errand(
 /// will fire.
 const SPLASH_CELLS: i32 = 10;
 
+/// Pack a captured yard and drive it home.
+///
+/// The wishlist's "占领敌方建造场以后，若敌方建造场可以打包回MCV并安全撤离，应当
+/// 打包撤离到己方基地". A captured yard stands where the enemy built it, which is
+/// by definition not where this house's base is: it is a second yard the enemy
+/// can shell at leisure, and it cannot be sold (its type is `BuildConst=`
+/// eligible, so [`sell_hard_to_hold`] refuses it by name).
+///
+/// Three things have to hold before the pack is worth the trip:
+///
+/// * **The house keeps a yard.** Packing the last one is how a base packs itself
+///   up under fire — the wishlist's "主基地车会收缩".
+/// * **The receiver allows it.** `can_repack_yard` is the deploy-facing gate, not
+///   a rule restated here; it is what refuses a mind-controlled yard and an
+///   option that turns the deploy button off.
+/// * **It is not already home.** A yard inside the base's own ring is a second
+///   yard doing its job; packing it to move it a few cells is a churn.
+pub(super) fn pack_captured_yard(
+    brain: &mut RetailBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    out: &mut Outbox,
+) {
+    let tick = obs.tick();
+    let Some(home) = brain.census.base_cell else {
+        return;
+    };
+    // Packing the house's only yard leaves it with none: the wishlist's "主基地
+    // 车会收缩", which a contested reading of the map made routine.
+    if brain.census.yards <= 1 {
+        return;
+    }
+    let mut issued = 0;
+    for unit in &brain.census.units {
+        if issued >= FORCE_ORDERS_PER_FRAME {
+            break;
+        }
+        let Some(ty) = obs.object_type(rules, unit.type_id) else {
+            continue;
+        };
+        if !ty.construction_yard {
+            continue;
+        }
+        // A yard standing among the house's *other* buildings is the base, not a
+        // prize. Its own cell is in `home_cells` like every building's, so it is
+        // excluded first; `census.base_cell` cannot tell the two apart when there
+        // are two yards, because the ledger names whichever it saw last.
+        let in_the_base = brain.census.home_cells.iter().any(|cell| {
+            *cell != unit.cell
+                && squared_distance(*cell, unit.cell) <= HOME_REACH_CELLS * HOME_REACH_CELLS
+        });
+        if in_the_base {
+            continue;
+        }
+        if !obs.can_repack_yard(rules, unit.entity_id) {
+            continue;
+        }
+        if !brain
+            .tracked
+            .admits(tick, unit.entity_id, TrackedKind::Deploy, None, None)
+        {
+            continue;
+        }
+        brain
+            .tracked
+            .record(tick, unit.entity_id, TrackedKind::Deploy, None, None);
+        log::info!(
+            "auto play: yard {} at {:?} packs and comes home",
+            ty.id,
+            unit.cell
+        );
+        out.command(Command::UndeployBuilding {
+            entity_id: unit.entity_id,
+        });
+        issued += 1;
+    }
+}
+
 /// Send an engineer into a `BridgeRepairHut=` whose span is down.
 ///
 /// Walking in is the only thing that rebuilds a bridge: the hut carries no
@@ -3764,6 +3842,67 @@ mod tests {
             Some(Goal::Capture { target: derrick }),
             "the derrick, not the {lab} the tank's gun covers the walk to"
         );
+    }
+
+    /// A captured yard packs and comes home; the house's own last one does not.
+    ///
+    /// The wishlist's "占领敌方建造场以后…打包撤离到己方基地". A captured yard
+    /// stands where the enemy built it, and its type is `BuildConst=` eligible so
+    /// the sale step refuses it by name: without this it is a second base the
+    /// enemy shells at leisure and the house can never move.
+    #[test]
+    fn a_captured_yard_packs_and_the_last_one_does_not() {
+        let Some((mut sim, rules)) = snapshot(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        // Two yards, so packing one still leaves the house a base.
+        let home = sim
+            .spawn_object("GACNST", "Americans", 20, 20, 255, &rules)
+            .expect("the home yard");
+        let far = sim
+            .spawn_object("GACNST", "Americans", 40, 40, 255, &rules)
+            .expect("a captured yard");
+        // A base is its buildings, not one yard: the pack step tells the two
+        // yards apart by what stands around them, which is what a real base
+        // looks like and what two lone yards cannot express.
+        // A 3x3 yard at (20,20) covers 20..22, so the neighbours go clear of it.
+        for (name, cell) in [("GAPOWR", (25u16, 20u16)), ("GAREFN", (20, 26))] {
+            sim.spawn_object(name, "Americans", cell.0, cell.1, 255, &rules)
+                .unwrap_or_else(|| panic!("{name} beside the home yard"));
+        }
+        let mut brain = RetailBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let obs = Observation::new(&sim, owner);
+        let mut out = Outbox::default();
+        pack_captured_yard(&mut brain, &rules, &obs, &mut out);
+        let packed = |out: &Outbox| {
+            out.commands
+                .iter()
+                .any(|command| matches!(command, Command::UndeployBuilding { entity_id } if *entity_id == far))
+        };
+        // The far one packs.
+        if obs.can_repack_yard(&rules, far) {
+            assert!(
+                packed(&out),
+                "the captured yard is packed: {:?}",
+                out.commands
+            );
+        }
+        // The home one never does, whatever the wallet.
+        assert!(
+            !out
+                .commands
+                .iter()
+                .any(|command| matches!(command, Command::UndeployBuilding { entity_id } if *entity_id == home)),
+            "the house's own base yard is not packed: {:?}",
+            out.commands
+        );
+        let _ = sim.spawn_object("GACNST", "Russians", 10, 10, 255, &rules);
     }
 
     /// A dog's jaw is a `Parasite=yes` warhead, and the parasite arm takes only

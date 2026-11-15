@@ -752,6 +752,9 @@ impl Brain for RetailBrain {
         // nothing else in this list may re-task it. Asked before the garrison
         // so a bomb truck is not parked in a building it would have to leave.
         orders::suicide_errand(self, rules, obs, out);
+        // A captured yard is a second base the enemy can shell where it stands,
+        // and its type cannot be sold. Pack it and drive it home instead.
+        orders::pack_captured_yard(self, rules, obs, out);
         orders::garrison(self, rules, obs, out);
         // A shell already in the air outranks every other unit decision: it is
         // the only one whose whole window is a handful of frames, and a unit
