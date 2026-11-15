@@ -326,6 +326,13 @@ pub struct PhobosGlobals {
     /// `Misc/Hooks.Crates.cpp:46-61`).
     #[serde(default = "fifteen_hundred")]
     pub free_mcv_credits_threshold: i32,
+    /// `[General] Temporal.KillPoweredAnim=`, default `yes`
+    /// (`Ext/Rules/Body.cpp:585`, constructor `Body.h:993`): `no` freezes a
+    /// building's powered animation while it is being temporally warped
+    /// (`BuildingClass_UpdatePoweredAnim_Temporal @ 0x454BF1`,
+    /// `Misc/Hooks.BugFixes.cpp:3655-3664`).
+    #[serde(default = "true_bool")]
+    pub temporal_kill_powered_anim: bool,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1604,6 +1611,7 @@ impl Default for PhobosGlobals {
             crate_only_on_land: false,
             unit_crate_vehicle_cap: 50,
             free_mcv_credits_threshold: 1500,
+            temporal_kill_powered_anim: true,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1830,6 +1838,10 @@ impl PhobosGlobals {
         globals.free_mcv_credits_threshold = crate_rules.read_int(
             "FreeMCV.CreditsThreshold",
             globals.free_mcv_credits_threshold,
+        );
+        globals.temporal_kill_powered_anim = ini.section_or_empty("General").read_bool(
+            "Temporal.KillPoweredAnim",
+            globals.temporal_kill_powered_anim,
         );
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so

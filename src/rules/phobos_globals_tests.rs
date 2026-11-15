@@ -1128,3 +1128,11 @@ fn the_crate_globals_default_and_read_from_crate_rules() {
     assert_eq!(set.unit_crate_vehicle_cap, -1);
     assert_eq!(set.free_mcv_credits_threshold, 6000);
 }
+
+/// `[General] Temporal.KillPoweredAnim=` (`Ext/Rules/Body.cpp:585`,
+/// constructor `true` `Body.h:993`).
+#[test]
+fn the_temporal_kill_powered_anim_defaults_and_reads() {
+    assert!(PhobosGlobals::default().temporal_kill_powered_anim);
+    assert!(!read("[General]\nTemporal.KillPoweredAnim=no\n").temporal_kill_powered_anim);
+}

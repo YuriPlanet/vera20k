@@ -34,6 +34,20 @@ impl Simulation {
     /// Restore4545D0 clears SuperLowPower20 before ascending visits. Loss4547C0
     /// uses Powered/Light/Effect precedence and marks replay before scalar delete.
     pub(crate) fn apply_building_anim_power(&mut self, id: u64, restoring: bool, rules: &RuleSet) {
+        // Phobos `BuildingClass_UpdatePoweredAnim_Temporal` (`0x454BF1`,
+        // `Misc/Hooks.BugFixes.cpp:3655-3664`): a building being temporally
+        // warped skips the powered-anim update while
+        // `[General] Temporal.KillPoweredAnim=no` (constructor yes).
+        #[cfg(feature = "phobos")]
+        if !rules.phobos_globals.temporal_kill_powered_anim
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.temporal.is_warped())
+        {
+            return;
+        }
         if restoring {
             self.clear_building_anim_slot(id, 20);
         }
@@ -835,5 +849,59 @@ mod tests {
             .unwrap()
             .is_anim_delayed_fire = true;
         assert_ne!(base, rules.simulation_config_hash());
+    }
+
+    /// Phobos `BuildingClass_UpdatePoweredAnim_Temporal` (`0x454BF1`,
+    /// `Misc/Hooks.BugFixes.cpp:3655-3664`): a building being temporally
+    /// warped skips the powered-anim update under
+    /// `[General] Temporal.KillPoweredAnim=no`; the constructor default
+    /// `yes` keeps the update running.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_temporal_warp_skips_the_powered_anim_update_when_disabled() {
+        use crate::sim::temporal::TemporalState;
+
+        let mut rules = rules(100, "");
+        let entry = rules.art_entry_mut_for_test("B").unwrap();
+        entry.building_anim_power = [BuildingAnimPowerFlags {
+            powered: false,
+            ..Default::default()
+        }; 21];
+        entry.building_anim_power[3].powered = true;
+        let (mut sim, id) = building(100);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .building_art
+            .actually_placed = true;
+        sim.set_building_anim_slot(id, 3, false, false, 0, &rules)
+            .unwrap();
+        let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
+        let paused = |sim: &mut Simulation| {
+            sim.substrate
+                .anims
+                .get_mut(anim)
+                .unwrap()
+                .runtime_mut_for_test()
+                .paused
+        };
+        sim.apply_building_anim_power(id, false, &rules);
+        assert!(paused(&mut sim), "the online loss pauses the powered anim");
+
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_temporal_for_test(TemporalState::warped_by_for_test(99));
+        rules.phobos_globals.temporal_kill_powered_anim = false;
+        sim.apply_building_anim_power(id, true, &rules);
+        assert!(
+            paused(&mut sim),
+            "a warped building skips the resume while the key says no"
+        );
+        rules.phobos_globals.temporal_kill_powered_anim = true;
+        sim.apply_building_anim_power(id, true, &rules);
+        assert!(!paused(&mut sim), "the constructor default resumes it");
     }
 }
