@@ -8,10 +8,10 @@ group on unless the `test-focus` feature narrows the build to the named ones
 (src/test_group_cfgs.rs). tools.cargo_run picks the group from a test filter.
 See tools/README.md ("Test groups"). Standard library only; Python >= 3.11.
 
-    python -m tools.test_groups check    every test module names its own group
-    python -m tools.test_groups tag      write each test module's group cfg
-    python -m tools.test_groups list     groups, prefixes and test module counts
-    python -m tools.test_groups lend MODULE GROUP
+    python -m tools.group_tests check    every test module names its own group
+    python -m tools.group_tests tag      write each test module's group cfg
+    python -m tools.group_tests list     groups, prefixes and test module counts
+    python -m tools.group_tests lend MODULE GROUP
                                          let GROUP's build compile test module MODULE
                                          too; GROUP `all` is every test build
 """
@@ -266,7 +266,7 @@ def problems(root: Path, crates: dict[str, Crate] | None = None) -> list[str]:
                 found.append(f'{where}: shared test module {mod.module} also names a group')
         elif mod.named[:1] != [cfg_name(group)] or not set(mod.named) <= known:
             found.append(f'{where}: test module {mod.module} belongs to {cfg_name(group)} but names '
-                         f'{", ".join(mod.named) or "no group"}; run python -m tools.test_groups tag')
+                         f'{", ".join(mod.named) or "no group"}; run python -m tools.group_tests tag')
     for crate in crates.values():
         for group in sorted(set(crate.groups) - used[crate.package]):
             found.append(f'{crate.package}: test group {group} owns no test module')

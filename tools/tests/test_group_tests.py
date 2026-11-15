@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools import test_groups
+from tools import group_tests
 
 CORE_MANIFEST = '''
 [package]
@@ -62,7 +62,7 @@ class TestGroupTests(unittest.TestCase):
         return (self.root / name).read_text(encoding='utf-8')
 
     def test_a_filter_names_every_group_its_tests_can_be_in(self):
-        crate = test_groups.load(self.root)['vera20k-core']
+        crate = group_tests.load(self.root)['vera20k-core']
         self.assertEqual(crate.groups_for_filter('sim::combat::armor'), ['sim-combat'])
         self.assertEqual(crate.groups_for_filter('sim::ammo::tests::reloads'), ['sim'])
         # A filter that stops inside a longer prefix reaches that group's tests too.
@@ -71,13 +71,13 @@ class TestGroupTests(unittest.TestCase):
         self.assertEqual(crate.groups_for_filter('reloads'), [])
 
     def test_tag_writes_each_group_and_keeps_borrowers_shared_modules_and_other_terms(self):
-        untagged = test_groups.problems(self.root)
+        untagged = group_tests.problems(self.root)
         self.assertEqual(len(untagged), 2, untagged)
         self.assertIn('src/sim/ammo.rs:1: test module sim::ammo::tests belongs to tests_sim', untagged[0])
         # The third is the hand-wrapped borrower list, rewritten on one line.
-        self.assertEqual(test_groups.tag(self.root), 3)
-        self.assertEqual(test_groups.tag(self.root), 0)
-        self.assertEqual(test_groups.problems(self.root), [])
+        self.assertEqual(group_tests.tag(self.root), 3)
+        self.assertEqual(group_tests.tag(self.root), 0)
+        self.assertEqual(group_tests.problems(self.root), [])
         self.assertTrue(self.read('src/sim/ammo.rs').startswith('#[cfg(all(test, tests_sim))]\nmod tests {'))
         self.assertTrue(self.read('src/sim/combat/mod.rs').startswith(
             '    #[cfg(all(test, tests_sim_combat, feature = "phobos"))]\n    #[path'))
@@ -86,19 +86,19 @@ class TestGroupTests(unittest.TestCase):
         self.assertEqual(self.read('src/sim/mod.rs'), SOURCES['src/sim/mod.rs'])
 
     def test_lend_lets_another_group_or_every_test_build_compile_a_module(self):
-        test_groups.tag(self.root)
-        test_groups.lend(self.root, 'sim::world::tests', 'sim-combat')
+        group_tests.tag(self.root)
+        group_tests.lend(self.root, 'sim::world::tests', 'sim-combat')
         self.assertEqual(self.read('src/sim/world/mod.rs'),
                          '#[cfg(all(test, any(tests_sim_world, tests_sim_combat)))]\nmod tests;\n')
-        test_groups.lend(self.root, 'sim::world::tests', 'all')
+        group_tests.lend(self.root, 'sim::world::tests', 'all')
         self.assertEqual(self.read('src/sim/world/mod.rs'), '#[cfg(test)] // shared by test groups\nmod tests;\n')
-        self.assertEqual(test_groups.problems(self.root), [])
+        self.assertEqual(group_tests.problems(self.root), [])
         with self.assertRaisesRegex(ValueError, 'no test group'):
-            test_groups.lend(self.root, 'sim::ammo::tests', 'combat')
+            group_tests.lend(self.root, 'sim::ammo::tests', 'combat')
 
     def test_a_long_borrower_list_is_written_the_way_rustfmt_writes_it(self):
         terms = ['test', 'any(tests_sim_world_c_o, tests_sim_world_a_b, tests_sim_world_p_s, tests_sim_world_t_z)']
-        self.assertEqual(test_groups.attribute(terms, ''), (
+        self.assertEqual(group_tests.attribute(terms, ''), (
             '#[cfg(all(\n'
             '    test,\n'
             '    any(\n'

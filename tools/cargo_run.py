@@ -208,7 +208,7 @@ def test_features(command: str, options: list[str], focus: tuple[str, list[str]]
     if command == 'test' and packages == ['vera20k-core'] and not feature_options:
         names += WORKSPACE_CORE_FEATURES
     if focus:
-        from tools.test_groups import FOCUS_FEATURE, feature
+        from tools.group_tests import FOCUS_FEATURE, feature
         names += [FOCUS_FEATURE, *map(feature, focus[1])]
     return ['--features', ','.join(names)] if names else []
 
@@ -246,7 +246,7 @@ def focused_groups(root: Path, args: list[str]) -> tuple[str, list[str]] | None:
 
     A test run of one workspace crate whose filters all start inside one or two
     test groups builds with `test-focus` and those groups' features, so only
-    their tests (and the shared test code) compile: tools/test_groups.py. Any
+    their tests (and the shared test code) compile: tools/group_tests.py. Any
     other run, and one that chooses `test-focus` or `--all-features` itself,
     stays as the caller wrote it.
     """
@@ -258,7 +258,7 @@ def focused_groups(root: Path, args: list[str]) -> tuple[str, list[str]] | None:
     if (len(packages) != 1 or not filters or {'--workspace', '--all', '--all-features'} & set(options)
             or any('test-focus' in names for names in feature_options)):
         return None
-    from tools.test_groups import load
+    from tools.group_tests import load
     try:
         crate = load(root).get(packages[0])
     except (OSError, ValueError):
@@ -567,7 +567,7 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         status = _run(root, args, label, timeout, policy, times, all_tests)
         if status is FOCUS_OUTGROWN:
             print('Test groups: the group uses test code that only another group compiles (the errors '
-                  'above); compiling every test instead. To repair the group: python -m tools.test_groups '
+                  'above); compiling every test instead. To repair the group: python -m tools.group_tests '
                   'lend <test module> <group> (tools/README.md, "Test groups")', file=sys.stderr, flush=True)
             status = _run(root, args, label, timeout, policy, times, True)
         return status
@@ -590,9 +590,9 @@ def _run(root: Path, args: list[str], label: str | None, timeout: float, policy,
     if focus:
         print(f'Test groups: {", ".join(focus[1])} of {focus[0]}; no other tests compile '
               '(tools/README.md, "Test groups")', file=sys.stderr, flush=True)
-        from tools.test_groups import problems
+        from tools.group_tests import problems
         if stale := problems(root):
-            print(f'Test groups: {len(stale)} out of step (python -m tools.test_groups check), first: {stale[0]}',
+            print(f'Test groups: {len(stale)} out of step (python -m tools.group_tests check), first: {stale[0]}',
                   file=sys.stderr, flush=True)
     if label:
         validate_label(label)

@@ -135,10 +135,10 @@ A test run that names one part of one crate compiles only that part's tests:
 python -m tools.cargo_run -- test -p vera20k-core --lib sim::combat::gattling
 python -m tools.cargo_run -- test -p vera20k --lib app::input::camera::
 python -m tools.cargo_run --all-tests -- test -p vera20k-core --lib sim::combat::gattling
-python -m tools.test_groups list
-python -m tools.test_groups check
-python -m tools.test_groups tag
-python -m tools.test_groups lend sim::deploy_tests sim-movement
+python -m tools.group_tests list
+python -m tools.group_tests check
+python -m tools.group_tests tag
+python -m tools.group_tests lend sim::deploy_tests sim-movement
 ```
 
 Each crate's test modules belong to groups. A group is a `tests-<group>` feature
@@ -185,7 +185,7 @@ Test code that more than one group uses:
   compiles in every test build.
 - A test module another group's tests use lists that group after its own:
   `#[cfg(all(test, any(tests_sim_h_o, tests_sim_movement)))]`.
-  `python -m tools.test_groups lend <test module path> <group>` writes it, and
+  `python -m tools.group_tests lend <test module path> <group>` writes it, and
   `lend <test module path> all` marks the module shared. Lend the smallest module
   that holds the helper: every lent line compiles in the borrower's builds.
 
@@ -195,7 +195,7 @@ every test instead, in the same run, and says so; `lend` the module the error
 names to repair the group.
 
 A new `#[cfg(test)] mod tests` works without a group: it compiles in every test
-build. `python -m tools.test_groups tag` writes each test module's group, `check`
+build. `python -m tools.group_tests tag` writes each test module's group, `check`
 lists the modules that are out of step, and a focused run prints the first of
 them. To add or split a group, edit the table and the features in the crate's
 Cargo.toml, then run `tag` and build the new groups once.

@@ -38,7 +38,7 @@ path = "src/bin/telemetry-serve.rs"
 required-features = ["telemetry-dashboard"]
 
 # Test groups: the module path prefixes each one owns; the longest prefix
-# decides. `python -m tools.test_groups check` holds the test modules to it.
+# decides. `python -m tools.group_tests check` holds the test modules to it.
 [package.metadata.test-groups]
 app = ["app"]
 app-frontend = ["app::frontend"]

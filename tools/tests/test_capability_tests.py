@@ -15,7 +15,7 @@ from unittest import mock
 
 from tools import capability_tests
 from tools.capability_tests import BY_NAME, CAPABILITIES, COMBINATIONS, features_of
-from tools.test_groups import is_group_feature
+from tools.group_tests import is_group_feature
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "Cargo.toml"
@@ -24,7 +24,7 @@ CORE_MANIFEST = ROOT / "src" / "Cargo.toml"
 
 def manifest_features() -> dict[str, list[str]]:
     """The client's features, less the test groups: those only choose which tests a
-    focused run compiles (tools/test_groups.py), and every other build compiles them all."""
+    focused run compiles (tools/group_tests.py), and every other build compiles them all."""
     with MANIFEST.open("rb") as handle:
         features = tomllib.load(handle)["features"]
     return {name: values for name, values in features.items() if not is_group_feature(name)}
