@@ -48,7 +48,7 @@ content, each tile file a theater reads whose bytes differ from the ones a retai
 reads, variants included, since map loading picks each cell's variant by how many its tile
 has. A theater MIX that takes a retail one's place counts even if it does not open. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
-folder but `mod.ini`, by path and content, so players whose copies of a mod differ are
+folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The files are read once, starting when the player
 opens Network or Internet, and nothing more is exchanged. A game from before the mod
 files, the theater INIs or their tiles were compared is another version and is

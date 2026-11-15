@@ -39,7 +39,7 @@ pub(crate) struct ProcessAssets {
     /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
     /// lease reads the same files.
     mod_dir: Option<std::path::PathBuf>,
-    /// That folder's files as one digest (`app::mods::files_digest`), taken
+    /// That folder's files as one digest (`app::mod_files::files_digest`), taken
     /// once: the pre-match check compares it.
     mod_files: std::sync::Arc<std::sync::OnceLock<Result<[u8; 32], String>>>,
     /// [`ProcessAssets::read_mod_files_ahead`] has started its thread.
@@ -88,7 +88,7 @@ pub(crate) struct ProcessAssets {
 }
 
 fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
-    crate::app::mods::files_digest(dir).map_err(|error| {
+    crate::app::mod_files::files_digest(dir).map_err(|error| {
         log::warn!("Could not read the mod in {}: {error}", dir.display());
         format!("the mod's files could not be read: {error}")
     })

@@ -104,6 +104,7 @@ run it.
 | Maps | Adds them to the map list while the mod is in use. |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Says what the mod is called, who made it and what it is. Optional. |
+| `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
 
 #### mod.ini
 
@@ -152,6 +153,26 @@ says. Put it on a shortcut to start a mod with one click:
 | --- | --- |
 | `--mod MyMod` | Plays with the mod in `Mods/MyMod`. |
 | `--no-mod` | Plays the original game. |
+
+#### Check a mod's files
+
+Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
+mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
+Two copies of a mod with the same code hold the same files, so if a friend can't join
+your game, compare codes to see whether your copies differ.
+
+A mod can carry a list of its files, `mod-files.txt`. With one, Check Files also says
+whether your copy is the mod as its maker listed it. If it isn't, it says how many files
+are changed, missing or not in the list, and `logs/ra2.log` names each one. Get the mod
+again to fix your copy.
+
+If you made the mod, press **Make File List** in that box before you share it, and
+**Update File List** after you change the mod. The list has one line for each file: the
+SHA-256 of what the file holds, its size in bytes and its path. `mod.ini`, `veraui.ini`
+and the list itself are not in it. Don't edit it by hand.
+
+Playing online never trusts the list: the game still compares the files themselves, as
+[Playing with others](#playing-with-others) says.
 
 #### If a mod doesn't start
 
@@ -242,7 +263,7 @@ A match starts only if everyone has the same VERA20k version and build, the same
 the same `rulesmd.ini`, `artmd.ini`, `aimd.ini`, theater INIs (such as `snowmd.ini`),
 terrain tiles and `VERARULES.INI`. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
-its name and what it holds, except `mod.ini` and `veraui.ini`. The folder's own name
+its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
 the file holds. Terrain tiles you put in the game folder itself, such as `clear01.sno` or
 an `isosnomd.mix`, are compared with the original game's, because they decide how high the
@@ -262,6 +283,8 @@ loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left the
   it in their own `Mods` folder and pick it in the Mods menu. A `VERARULES.INI` goes in
   their VERA20k folder.
 - Say in `mod.ini`'s `Terms=` what others may do with your work. The Mods menu shows it.
+- Make a file list first ([Check a mod's files](#check-a-mods-files)), so people can
+  check that their copy is complete.
 - Everyone needs their own copy of the game. Don't share VERA20k together with the game's
   files.
 - If you share a changed VERA20k program, you must share its source code too and give it

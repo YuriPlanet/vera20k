@@ -80,6 +80,7 @@ pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod mod_files;
 pub(crate) mod mods;
 pub(crate) mod movie_playback;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]

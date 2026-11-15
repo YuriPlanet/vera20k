@@ -289,14 +289,16 @@ pub(crate) struct ShellMessageBox {
 }
 
 impl ShellMessageBox {
-    /// VERA's Esc menu and the Mods page's restart question ask over the
-    /// page that is showing, so an answer that changes nothing leaves the
+    /// VERA's Esc menu and the Mods page's boxes ask over the page that is
+    /// showing, so an answer that changes nothing leaves the
     /// page as it was. gamemd's callers destroy their dialog first and ask
     /// over the empty backdrop.
     pub(crate) fn keeps_page(&self) -> bool {
         matches!(
             self.purpose,
-            ShellMessageBoxPurpose::ShellMenu(_) | ShellMessageBoxPurpose::ModRestart(_)
+            ShellMessageBoxPurpose::ShellMenu(_)
+                | ShellMessageBoxPurpose::ModRestart(_)
+                | ShellMessageBoxPurpose::ModFiles(_)
         )
     }
 
@@ -349,4 +351,18 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// The Mods page's Use This Mod: Restart keeps this folder, or the
     /// original game, for the next start and starts the game again.
     ModRestart(Option<String>),
+    /// The Mods page's Check Files (`App::check_picked_mod`).
+    ModFiles(ModFilesBox),
+}
+
+/// The boxes of the Mods page's Check Files, in the order they come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModFilesBox {
+    /// The mod's files are being read; the button stops the wait.
+    Reading,
+    /// What the check found, or what came of writing the list: OK.
+    Found,
+    /// The mod has no list, or differs from it: the first button writes the
+    /// folder's files as the mod's list, the second closes.
+    Offer,
 }
