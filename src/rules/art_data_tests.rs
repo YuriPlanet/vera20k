@@ -941,8 +941,10 @@ impl Drop for AnimDimTestRoot {
 
 /// `End=`/`LoopEnd=` past the SHP's frames bind as written: ReadINI stores
 /// them (`0x00427FE8`, `0x0042801C`) and the loader fills only zero values
-/// (`0x00427C1C..0x00427C5C`). Retail GAWEAP_3D has this shape on a 4-frame
-/// SHP; its frames past the end draw nothing (`CC_Draw_Shape`, `0x0069E7F3`).
+/// (`0x00427C1C..0x00427C5C`), as for retail GAWEAP_3D's LoopStart=10 and
+/// LoopEnd=19 on 4 frames; frames past the SHP draw nothing (`CC_Draw_Shape`,
+/// `0x0069E7F3`). A 0-frame SHP binds with End, LoopEnd and Middle at 0
+/// (`0x00427C2D`).
 #[test]
 fn animation_bounds_past_the_shp_frames_bind_as_written() {
     use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
@@ -973,6 +975,24 @@ fn animation_bounds_past_the_shp_frames_bind_as_written() {
             over.middle_frame
         ),
         (9, 10, 19, Some(4), Some(2))
+    );
+
+    std::fs::write(root.path().join("OVER.SHP"), [0_u8; 8]).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[OVER]\nRate=1\n");
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN")
+        .unwrap();
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (0, 0, Some(0), Some(0))
     );
 }
 

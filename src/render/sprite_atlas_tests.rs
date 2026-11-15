@@ -3937,3 +3937,56 @@ fn an_object_shp_frame_count_is_found_by_any_case_of_its_name() {
     assert_eq!(atlas.object_shp_frame_count(&long), Some(3));
     assert_eq!(atlas.object_shp_frame_count("GAPILE"), None);
 }
+
+/// A fogged building's slot anim records `current_frame + Start` as it is,
+/// which an `End=`/`LoopEnd=` past the SHP can carry beyond the last frame.
+/// gamemd draws nothing for it (`CC_Draw_Shape`, `0x0069E7F3`); no key is
+/// requested, so the atlas cannot stand frame 0 in.
+#[test]
+fn a_fogged_anim_frame_past_its_shp_requests_no_sprite() {
+    use crate::sim::vision::{
+        FoggedDrawKind, FoggedDrawRecord, FoggedObjectFootprintRecord, FrozenBuilding,
+    };
+    let art_ini = crate::rules::ini_parser::IniFile::from_str("[OVER]\nLoopStart=10\nLoopEnd=19\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::rules::ini_parser::IniFile::from_str("[Animations]\n0=OVER\n"),
+        &art_ini,
+    )
+    .expect("rules");
+    let mut art = ArtRegistry::from_ini(&art_ini);
+    art.bind_anim_frame_count_for_test("OVER", 4);
+    rules.install_art_data(art);
+    let mut interner = crate::sim::intern::StringInterner::new();
+    let over = interner.intern("OVER");
+    let owner = interner.intern("HOUSE");
+    let record = |frame| FoggedDrawRecord {
+        kind: FoggedDrawKind::Animation,
+        type_ref: over,
+        frame,
+        no_zshape: false,
+        z_adjust: 0,
+    };
+    let fogged = FoggedObjectFootprintRecord {
+        id: 1,
+        viewer: owner,
+        source_entity_id: 1,
+        occupied_cells: vec![(10, 10)],
+        drawing: Some(FrozenBuilding {
+            owner,
+            location: crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 },
+            level: 0,
+            visible: true,
+            records: vec![record(3), record(12)],
+        }),
+    };
+    let frames: Vec<u16> = fogged_sprite_keys(
+        std::iter::once(&fogged),
+        &interner,
+        &rules,
+        &HouseColorMap::new(),
+    )
+    .into_iter()
+    .map(|key| key.frame)
+    .collect();
+    assert_eq!(frames, [3]);
+}

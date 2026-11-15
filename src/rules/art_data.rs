@@ -1187,7 +1187,10 @@ fn resolve_loaded_bounds(
     explicit_end: Option<i32>,
     explicit_loop_end: Option<i32>,
 ) -> Result<(i32, i32), AnimAssetBindError> {
-    if raw_count <= 0 {
+    // A count of 0 binds as gamemd writes it (`0x00427C2D`): End, LoopEnd
+    // and Middle are 0. A negative signed count (header word 0x8000 and up)
+    // would send gamemd's unsigned frame checks past the table; refuse it.
+    if raw_count < 0 {
         return Err(AnimAssetBindError::InvalidFrameCount {
             name: name.to_string(),
             count: raw_count,

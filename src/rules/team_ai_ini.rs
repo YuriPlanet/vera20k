@@ -315,7 +315,7 @@ impl TeamAiIniRegistry {
     /// low 16 bits index. Loading binds these names tolerantly: native loads
     /// each image in `AnimTypeClass::ReadINI` (`0x00427D00`) or on demand
     /// (`0x00428C30`) and never fails the scenario, so art VERA cannot bind
-    /// (retail `GAWEAP_3`'s LoopEnd passes its frames) must not fail the map.
+    /// must not fail the map.
     /// Bound names join the scheduler closure that saved resources rebind.
     pub fn script_anim_class_roots(&self, rules: &crate::rules::ruleset::RuleSet) -> Vec<String> {
         self.scripts
