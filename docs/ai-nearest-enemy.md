@@ -27,12 +27,12 @@ frames down to one, and equal anger again goes to the earlier house
 (`HouseClass::UpdateAngerNodes`, `0x00504790`). The computer players rarely
 turn on each other, and the human who shoots back keeps the lead.
 
-Where the mode allows alliances (`AlliesAllowed=yes`, as in Battle) and no
-computer player was given a team, there is more: each time a computer player
-deploys its Construction Yard, and when one is defeated, every computer
-player allies with every other and takes an anger point against each human
-(`HouseClass::Computer_Paranoid`, `0x00501640`). The computer players then
-fight the humans only.
+Where the mode allows alliances (`AlliesAllowed=yes`, as in Battle), or in
+Cooperative, and no computer player was given a team, there is more: each
+time a computer player deploys its Construction Yard, and when one is
+defeated, every computer player allies with every other and takes an anger
+point against each human (`HouseClass::Computer_Paranoid`, `0x00501640`).
+The computer players then fight the humans only.
 
 ## What the option changes
 
