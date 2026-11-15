@@ -837,7 +837,11 @@ impl Simulation {
             start_frame: 0,
             ping_pong: false,
         };
-        self.allocate_building_anim_slot(id, 9, &turret_name, false, 0, Some(config), rules);
+        let registered = rules.anim_type_names.contains(&turret_name.to_ascii_uppercase());
+        let anim = self.allocate_building_anim_slot(id, 9, &turret_name, false, 0, Some(config), rules);
+        log::debug!(
+            "building {id}: SHP turret anim {turret_name:?} registered={registered} -> slot 9 anim {anim:?}"
+        );
     }
 
     /// Original451890: synchronize other slots, construct new AnimClass, copy
