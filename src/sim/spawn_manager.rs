@@ -75,6 +75,9 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::{PlacementEvidence, RevealRequest, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
 
+#[cfg(feature = "phobos")]
+use crate::map::entities::EntityCategory;
+
 #[cfg(test)]
 #[path = "spawn_manager_oracle_tests.rs"]
 mod oracle_tests;
@@ -842,6 +845,14 @@ trait SpawnHost {
     #[cfg(feature = "phobos")]
     fn use_turret_facing(&self) -> bool {
         false
+    }
+    /// `[CombatDamage] MissileSpawnAttackCell=` (`Ext/Rules/Body.cpp:449`,
+    /// constructed default true; `Ext/Rules/Body.h:359,864`).
+    /// `SpawnManagerClass_AI_SetDestinationForMissiles @ 0x006B75AC`
+    /// (`Misc/Hooks.BugFixes.cpp:840-870`) reads it.
+    #[cfg(feature = "phobos")]
+    fn missile_spawn_attack_cell(&self) -> bool {
+        true
     }
     /// Case 0's launch (`0x006B73FC..0x006B7505`): GetFLH with the owner's
     /// CurrentBurstIndex (`+0x3B8`), which a burst launch sets to the slot's
@@ -1806,6 +1817,11 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         })
     }
 
+    #[cfg(feature = "phobos")]
+    fn missile_spawn_attack_cell(&self) -> bool {
+        self.context.rules().phobos_globals.missile_spawn_attack_cell
+    }
+
     /// Phobos `SpawnManagerClass_Update_RecycleSpawned @ 0x6B77B4`
     /// (`Ext/Techno/Hooks.Misc.cpp:240-278`): the spawner is close enough to
     /// the carrier's `Spawner.RecycleCoord` point (or the carrier itself) per
@@ -2073,7 +2089,36 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             // The Foot setter hands a missile's target coordinate to Rocket
             // Move_To (`rocket_movement::move_to`).
             SpawnDestination::Target(target) => {
-                target.map(crate::sim::components::NavTargetRef::from)
+                // `SpawnManagerClass_AI_SetDestinationForMissiles
+                // @ 0x006B75AC` (`Misc/Hooks.BugFixes.cpp:840-870`): with
+                // `[CombatDamage] MissileSpawnAttackCell=` on, a missile's
+                // destination is the target's centre Cell
+                // (`GetCenterCoords` -> `MapClass::TryGetCellAt`), except for
+                // a Building target, which keeps the object so its own
+                // footprint stays the aim point.
+                let attack_cell = {
+                    #[cfg(feature = "phobos")]
+                    {
+                        self.phobos_hooks() && self.missile_spawn_attack_cell()
+                    }
+                    #[cfg(not(feature = "phobos"))]
+                    {
+                        false
+                    }
+                };
+                let target_cell = match (attack_cell, target) {
+                    (true, Some(TargetKind::Entity(id))) => self
+                        .sim
+                        .substrate
+                        .entities
+                        .get(id)
+                        .filter(|entity| entity.category() != EntityCategory::Structure)
+                        .map(|entity| (entity.position.rx(), entity.position.ry())),
+                    _ => None,
+                };
+                target_cell
+                    .map(|(rx, ry)| crate::sim::components::NavTargetRef::cell(rx, ry))
+                    .or_else(|| target.map(crate::sim::components::NavTargetRef::from))
             }
             SpawnDestination::Adjacent(direction) => {
                 let Some(owner) = self.sim.substrate.entities.get(self.owner_id) else {
