@@ -552,10 +552,11 @@ pub struct PhobosGlobals {
     #[serde(default)]
     pub ai_forbid_conyard: bool,
     /// `[AI] AINodeWallsOnly=` (`Valueable<bool>`, false;
-    /// `Ext/Rules/Body.cpp:374`, `Body.h:279,798`): the wall node fill stops
-    /// after the first direction that holds the house's own wall of that type
+    /// `Ext/Rules/Body.cpp:374`, `Body.h:279,798`): an AI house that has placed
+    /// no wall yet in this fill call only expands a direction whose first cell
+    /// is one of its own base nodes of that wall type
     /// (`0x005885D1` FirestormWall, `0x005887C1` Wall;
-    /// `Ext/BuildingType/Hooks.Placing.cpp:140,166`).
+    /// `Ext/BuildingType/Hooks.Placing.cpp:139-189`).
     #[serde(default)]
     pub ai_node_walls_only: bool,
     /// `[AI] AICleanWallNode=` (`Valueable<bool>`, false;
