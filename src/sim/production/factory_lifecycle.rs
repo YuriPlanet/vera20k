@@ -1475,10 +1475,12 @@ pub fn validate_restored_factory_state(
                 return Err(fail(owner, "queued type disagrees with factory category"));
             }
         }
+        // A queued tail without an object is live state: HouseAbandon4FAA10
+        // -> StartNext4CA5A0 pops one type, and its forced Begin (4CA60A,
+        // 4FA350) refuses while the only factory building sells. Factory
+        // Save4CA3C0/Load4CA270 keep the tail; Update_Factory_Queue 509140
+        // prunes it later.
         let Some(held) = &factory.object() else {
-            if !factory.queue().is_empty() {
-                return Err(fail(owner, "queued tail has no active object"));
-            }
             continue;
         };
         let object = sim
