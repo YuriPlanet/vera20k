@@ -795,11 +795,11 @@ pub(crate) fn finish_presentation_assets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_buildup_tests.rs"]
 mod retail_buildup_tests;
 
@@ -828,7 +828,7 @@ fn voxel_palette_demand(
     colors
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail
@@ -1005,10 +1005,11 @@ mod tests {
         let mut rules =
             RuleSet::from_ini(&IniFile::from_str("[General]\nDamageFireTypes=\n")).expect("rules");
         let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[CUSTOM_TOP]\nLoopCount=-1\nStartSound=WaterfallLoop\n\
+            "[CUSTOM_TOP]\nLoopCount=-1\n\
              [CUSTOM_GROUND]\nLayer=ground\nLoopCount=-1\nYSortAdjust=1000\n",
         ));
         art.bind_anim_frame_count_for_test("CUSTOM_TOP", 16);
+        art.set_anim_sounds_for_test("CUSTOM_TOP", Some("WaterfallLoop"), None);
         art.bind_anim_frame_count_for_test("CUSTOM_GROUND", 2);
         rules.replace_art_registry_for_test(art);
 

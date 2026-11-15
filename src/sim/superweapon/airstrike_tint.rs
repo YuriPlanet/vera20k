@@ -111,6 +111,6 @@ impl AirstrikeTintState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "airstrike_tint_tests.rs"]
 mod tests;

@@ -793,6 +793,6 @@ fn depth_view(device: &wgpu::Device, [width, height]: [u32; 2]) -> wgpu::Texture
         .create_view(&Default::default())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "voxel_gpu_tests.rs"]
 mod tests;

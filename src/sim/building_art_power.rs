@@ -167,7 +167,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};

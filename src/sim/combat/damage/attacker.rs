@@ -75,7 +75,7 @@ pub(crate) fn fire_damage(damage: i32, zeroed: bool, stages: &FireDamageStages) 
     damage
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::object_type::Ability;

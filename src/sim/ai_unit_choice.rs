@@ -541,6 +541,6 @@ fn pick(
     most_needed.get(usize::try_from(slot).ok()?).copied()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_unit_choice_tests.rs"]
 mod tests;

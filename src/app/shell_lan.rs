@@ -107,6 +107,11 @@ pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
     /// The single-OK box's label, a CSF or `VERA:` one ([`crate::i18n::label`]).
     pub(crate) modal: Option<&'static str>,
+    /// VERA: the box's text when it says more than its label: why the host
+    /// refused a join whose rules differ ([`agreement::rules_differ_text`]).
+    ///
+    /// [`agreement::rules_differ_text`]: crate::app::shell_network_setup::agreement::rules_differ_text
+    pub(crate) modal_body: Option<String>,
     /// VERA's Create Game box while it is up: the room's limits.
     pub(crate) create: Option<RoomLimitsPicker>,
     pending_join: Option<PendingJoin>,
@@ -119,6 +124,7 @@ impl LanShellRuntime {
         Self {
             lobby: LanLobbyState::new(name, observer),
             modal: None,
+            modal_body: None,
             create: None,
             pending_join: None,
             rejoin: None,
@@ -370,6 +376,7 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
 fn show_modal(state: &mut AppState, key: &'static str) {
     let runtime = state.frontend.lan.as_mut().expect("active BB");
     runtime.modal = Some(key);
+    runtime.modal_body = None;
     runtime.lobby.cancel_pointer();
     state.frontend.shell_controller.push(MODAL, true);
 }
@@ -660,6 +667,14 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             if let Some(message) = message {
                 show_modal(state, message);
             }
+            // VERA: the host compared the rules hash, and retail's text for
+            // it sends the player to Westwood. Say what this game changes.
+            if reason == 6 {
+                let body = crate::app::shell_network_setup::agreement::rules_differ_text(state);
+                if let Some(runtime) = state.frontend.lan.as_mut() {
+                    runtime.modal_body = Some(body);
+                }
+            }
         }
         LanServiceEvent::JoinAccepted(accepted) => {
             if !runtime
@@ -815,6 +830,7 @@ fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGame
 fn acknowledge(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.modal = None;
+        runtime.modal_body = None;
         runtime.lobby.cancel_pointer();
     }
     state.frontend.shell_controller.pop();
@@ -1206,7 +1222,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     deadline
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

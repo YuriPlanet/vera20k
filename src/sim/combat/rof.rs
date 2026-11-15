@@ -263,7 +263,7 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
     rof
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

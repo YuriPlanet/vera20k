@@ -545,6 +545,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_mark_tests.rs"]
 mod tests;

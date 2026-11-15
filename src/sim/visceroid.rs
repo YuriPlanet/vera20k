@@ -284,6 +284,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "visceroid_tests.rs"]
 mod tests;

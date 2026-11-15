@@ -30,10 +30,10 @@ impl Simulation {
     /// Foot's cell click constructs MoveFlash before it issues the unit order
     /// (4D7EB5..4D8065), outside EventClass. In LAN/WOL the native flash joins
     /// a local unsynced list (4D7F28..4D8062). Keep that local action off the
-    /// packet FIFO while using the existing ingress and animation owners.
-    /// `spawn_move_flash` still declines network animation construction until
-    /// that local visual owner exists. Offline flashes retain their established
-    /// tail timing, including animation identities and any constructor RNG.
+    /// packet FIFO while using the existing ingress and animation owners:
+    /// `spawn_move_flash` makes the network flash a local anim. Offline
+    /// flashes retain their established tail timing, including animation
+    /// identities and any constructor RNG.
     fn command_uses_frame_ingress(command: &Command, is_network: bool) -> bool {
         command.uses_frame_ingress() || is_network && matches!(command, Command::MoveFlash { .. })
     }
@@ -1520,18 +1520,18 @@ fn within_spread_band(target_height: i32, candidate_height: i32) -> bool {
     (candidate_height - target_height).abs() <= 2
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "group_spread_gate_tests.rs"]
 mod group_spread_gate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "command_admission_tests.rs"]
 mod command_admission_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "move_flash_ingress_tests.rs"]
 mod move_flash_ingress_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "control_group_ingress_tests.rs"]
 mod control_group_ingress_tests;

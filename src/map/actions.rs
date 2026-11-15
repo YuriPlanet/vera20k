@@ -302,7 +302,7 @@ pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<Str
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
@@ -512,8 +512,9 @@ mod tests {
 
     #[test]
     fn retail_map_whose_action_41_names_unbindable_art_still_loads() {
-        // Retail GAWEAP_3's LoopEnd passes its frames, so VERA cannot bind it.
-        // Native never fails a scenario on anim art; neither may the load.
+        // Retail GAWEAP_3's LoopEnd passes its frames; it binds as written
+        // (`0x00427FE8`). Native never fails a scenario on anim art; neither
+        // may the load.
         use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
         let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;

@@ -214,7 +214,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

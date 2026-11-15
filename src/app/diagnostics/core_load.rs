@@ -221,7 +221,7 @@ mod platform {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{CoreTicks, core_loads, core_ticks_from_proc_stat};
 

@@ -605,7 +605,7 @@ impl<'de> de::VariantAccess<'de> for &mut Deserializer<'de> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use std::collections::BTreeMap;
 

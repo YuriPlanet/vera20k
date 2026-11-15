@@ -2082,10 +2082,10 @@ fn read_target(record: &CommandRecord, offset: usize) -> Option<MegaMissionTarge
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "planning_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "planning_mission_tests.rs"]
 mod mission_tests;

@@ -1759,7 +1759,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 
@@ -1971,14 +1971,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_path_marker_integration_tests.rs"]
 mod marker_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_path_threat_integration_tests.rs"]
 mod threat_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_path_code2_chain_tests.rs"]
 mod code2_chain_tests;

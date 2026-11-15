@@ -2614,11 +2614,11 @@ fn status_entity_visible_plain(
         && !fog.is_cell_gap_covered(local_owner, pos.rx(), pos.ry())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "mind_control_pip_tests.rs"]
 mod mind_control_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
     /// owner sees its repairing building's wrench, an enemy only with

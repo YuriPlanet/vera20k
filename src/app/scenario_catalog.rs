@@ -283,7 +283,7 @@ impl Drop for RecordsMut<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::map::skirmish_scenarios::SkirmishScenarioSource;

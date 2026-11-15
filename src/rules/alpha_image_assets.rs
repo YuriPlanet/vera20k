@@ -120,7 +120,7 @@ impl AlphaImageCatalog {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::{AlphaImage, AlphaImageCatalog};
     use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};

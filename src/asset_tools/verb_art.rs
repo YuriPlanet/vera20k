@@ -391,7 +391,7 @@ fn resolve_candidate(asset_manager: &AssetManager, name: &str) -> (ArtCandidate,
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     use crate::map::theater::theater_extension;

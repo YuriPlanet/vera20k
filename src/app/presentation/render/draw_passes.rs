@@ -1734,7 +1734,7 @@ pub(crate) fn draw_bridge_shadows(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::{CellBodyAtlas, CellBodyDraw, RenderZPolicy, cell_body_runs};
     const SOURCE: &str = include_str!("draw_passes.rs");
@@ -1989,6 +1989,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "tmp_clear_gpu_tests.rs"]
 mod tmp_clear_gpu_tests;

@@ -21,7 +21,7 @@ pub mod bridge_orchestrator;
 pub mod bridge_test_evidence;
 mod building_after_destruction;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
@@ -32,9 +32,9 @@ mod crash;
 mod death_frames;
 mod disk_laser;
 pub use disk_laser::DiskLaserObservation;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod disk_laser_tests;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
@@ -42,7 +42,7 @@ mod idle_sleep;
 // A build that still carries Ares behind its feature sleeps nothing
 // (`Simulation::extension_steps_unsorted`), so these run once that
 // feature is gone.
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_c_o, not(feature = "ares")))]
 mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
@@ -51,7 +51,7 @@ mod quiet_units;
 // A build that still carries Ares behind its feature sleeps nothing
 // (`Simulation::extension_steps_unsorted`), so these run once that
 // feature is gone.
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_p_s, not(feature = "ares")))]
 mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;
@@ -71,9 +71,9 @@ pub use network_commands::{
     NetworkQueuePass,
 };
 pub(crate) use type_tech_levels::TypeTechLevels;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod unit_follows_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
@@ -81,7 +81,7 @@ mod gap_generator;
 pub(crate) use gap_generator::GapGeneratorRuntime;
 pub(crate) use gap_generator::LastOperational;
 mod house_base;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::{HouseBlowupSubset, PlayerOutcomeRequest};
@@ -102,7 +102,7 @@ mod aircraft_move;
 pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub use building_working_sound::working_sound_building;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod civilian_evacuation_tests;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
@@ -130,9 +130,9 @@ pub(crate) use playfield_membership::PlayfieldMembership;
 pub(crate) use selection_voice::DeployVoiceSuppression;
 pub(crate) use turret_rotate_sound::TurretRotateLatch;
 pub use turret_rotate_sound::turret_rotate_sound_techno;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod main_sound_identity_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod move_sound_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod native_cell_input_test_fixture;
@@ -157,7 +157,7 @@ mod substrate;
 mod techno_ai;
 mod track_cell_recalc;
 mod trigger_camera;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
@@ -189,77 +189,77 @@ pub use planning::{
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod wall_autofill_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod wall_restore_tests;
 mod world_commands;
 mod world_hash;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod custom_foundation_tests;
 mod world_orders;
 mod world_spawn;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod aegis_distributed_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod aircraft_deployment_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod area_rocker_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod brute_smash_debris_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_discovery_services_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_fatal_lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_power_roster_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod crash_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod damage_consequence_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod drone_rocking_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod engineer_building_repair_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod engineer_power_consumer_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod finite_ammo_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod gap_generator_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod gap_supercharge_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod gsi_04_18_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod house_ai_activation_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod jumpjet_infantry_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod mastermind_overload_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod projectile_degenerates_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod projectile_trailer_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod squid_grapple_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod suicide_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod overlay_explodes_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod team_script_vm_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_sim_trigger)))]
 pub(in crate::sim) mod voxel_meteor_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
@@ -4559,7 +4559,14 @@ impl Simulation {
     /// build the pre-resolved rule handles beside them. Call once at sim init
     /// AFTER `intern_rule_type_ids`, and again after load once the RuleSet is
     /// available. Idempotent: the warhead names are already interned on every
-    /// re-resolution path, so serialized interner state cannot grow or reorder.
+    /// re-resolution path, so serialized interner state cannot grow or reorder
+    /// (a save made before MoveFlash's name was interned here gains it at the
+    /// end on load).
+    ///
+    /// MoveFlash (Rules+0xBB4) enters the interner here, after the rules
+    /// types, as it does in every game of a match: a LAN or online flash only
+    /// looks its name up (`spawn_move_flash`), since a name only the clicking
+    /// game added would renumber that game's later names.
     ///
     /// [`StringInterner::bind_types`]: crate::sim::intern::StringInterner::bind_types
     pub fn resolve_type_handles(&mut self, rules: &RuleSet) {
@@ -4568,6 +4575,9 @@ impl Simulation {
             rules,
             &mut self.interner,
         ));
+        if !rules.general.move_flash.name.is_empty() {
+            self.interner.intern(&rules.general.move_flash.name);
+        }
     }
 
     /// Intern every rules type id (infantry, vehicle, aircraft, building,
@@ -8262,6 +8272,16 @@ impl Simulation {
     /// (`0x005F4EC0`) stores it through `AnimTypeClass` vt+0x6C (`0x0041CF80`,
     /// unchanged) and `SetLocation` (`0x005F6940`), so a Hover's wake starts
     /// at its hovering hull, not on the water below.
+    ///
+    /// RESIDUAL: this one pass builds every wake after movement, where Drive
+    /// (`0x004B078C..0x004B0823`), Hover (`0x00514A21..0x00514AC3`) and Ship
+    /// (`0x0069FE97..0x0069FEEB`) build theirs inside each unit's Process. A
+    /// wake draws no random number, so three things differ, none visible:
+    /// its creation order (its AbstractClass ID) relative to objects made
+    /// later in the same frame; the gate (alive, moving now, cell, bridge)
+    /// is read after the whole LogicVector, not in the unit's own Process;
+    /// and its first AI comes a frame late, since a native wake made
+    /// mid-walk joins that frame's walk.
     pub(crate) fn spawn_wakes_for_frame(&mut self, rules: &RuleSet) {
         if !self.session.binary_frame().is_multiple_of(10)
             && !self.session.binary_frame().is_multiple_of(8)
@@ -8411,109 +8431,136 @@ impl ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_net, tests_sim_t_z)))]
 #[path = "world_tests.rs"]
 pub(crate) mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "smudge_integration_tests.rs"]
 mod smudge_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "harvest_attack_return_oracle_tests.rs"]
 mod harvest_attack_return_oracle_tests;
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_c_o,
+        tests_sim_world_a_b,
+        tests_sim_world_p_s,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "harvest_field_oracle_tests.rs"]
 mod harvest_field_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_continuation_tests.rs"]
 mod refinery_dock_continuation_tests;
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_p_s,
+        tests_sim_world_a_b,
+        tests_sim_world_c_o,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "refinery_dock_oracle_tests.rs"]
 mod refinery_dock_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_retail_tests.rs"]
 mod refinery_dock_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "harvest_field_cycle_tests.rs"]
 mod harvest_field_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_p_s, tests_sim_world_a_b)))]
 #[path = "slave_manager_oracle_tests.rs"]
 mod slave_manager_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slave_manager_cycle_tests.rs"]
 mod slave_manager_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod slave_manager_reentrancy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_sale_oracle_tests.rs"]
 mod building_sale_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod ai_captured_building_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_repair_oracle_tests.rs"]
 mod building_repair_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_cycle_tests.rs"]
 mod refinery_dock_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_c_o,
+        tests_sim_world_a_b,
+        tests_sim_world_p_s,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "cmin_dock_oracle_tests.rs"]
 mod cmin_dock_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "cmin_dock_cycle_tests.rs"]
 mod cmin_dock_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "passenger_escape_oracle_tests.rs"]
 mod passenger_escape_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "vehicle_passenger_escape_oracle_tests.rs"]
 mod vehicle_passenger_escape_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod bunker_entry_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "world_orders_bridge_repair_tests.rs"]
 mod world_orders_bridge_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "rng_routing_tests.rs"]
 mod rng_routing_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slice6_retask_tests.rs"]
 mod slice6_retask_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(tests_sim_world_c_o, tests_sim_world_a_b, tests_sim_world_p_s)
+))]
 #[path = "global_parity_harness_tests.rs"]
 mod global_parity_harness_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "production_shadow_tests.rs"]
 mod production_shadow_tests;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod factory_infantry_output_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod factory_jumpjet_output_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "radar_dirty_ack_tests.rs"]
 mod radar_dirty_ack_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_parity_harness_tests.rs"]
 mod bridge_parity_harness_tests;
 
@@ -8566,23 +8613,23 @@ pub(crate) fn wake_anchor_for(
     Some(crate::sim::movement::ground_pose::object_location(entity, terrain).into())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "tibtre_oracle_tests.rs"]
 mod tibtre_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ore_spread_oracle_tests.rs"]
 mod ore_spread_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod drop_as_bomb_integration_tests;
 
 mod airstrike_aircraft;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod radiation_overlap_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_occupant_storage_tests;
 
 /// The parts of the world its presentation copy takes only where they changed

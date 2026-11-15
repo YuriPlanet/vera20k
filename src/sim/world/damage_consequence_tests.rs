@@ -29,11 +29,11 @@ fn consequence_rules() -> RuleSet {
     ))
     .unwrap();
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-        "[DEATHFX]\nReport=DeathReport\nEnd=80\n\
-         [DESTROYFX]\nReport=DestroyReport\nEnd=80\n",
+        "[DEATHFX]\nEnd=80\n[DESTROYFX]\nEnd=80\n",
     ));
-    for name in ["DEATHFX", "DESTROYFX"] {
+    for (name, report) in [("DEATHFX", "DeathReport"), ("DESTROYFX", "DestroyReport")] {
         art.bind_anim_frame_count_for_test(name, 80);
+        art.set_anim_sounds_for_test(name, Some(report), None);
     }
     rules.replace_art_registry_for_test(art);
     rules

@@ -187,7 +187,7 @@ impl Hasher for StateHasher {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::{StateHasher, hash_indices, hash_records};
     use std::hash::{Hash, Hasher};

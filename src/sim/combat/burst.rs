@@ -83,7 +83,7 @@ impl WeaponBurst {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
     use crate::sim::combat::TargetKind;

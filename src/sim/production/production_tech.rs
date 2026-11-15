@@ -13,7 +13,7 @@ use super::can_build::{
 };
 use super::production_types::*;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "construction_options_tests.rs"]
 mod construction_options_tests;
 
@@ -479,7 +479,7 @@ pub fn building_movement_blocking_cells(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod footprint_tests {
     use super::*;
 

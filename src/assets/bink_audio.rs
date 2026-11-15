@@ -21,7 +21,7 @@ use crate::assets::error::AssetError;
 const MAX_CHANNELS: usize = 2;
 const MAX_BANDS: usize = 26;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "bink_audio_tests.rs"]
 mod oracle_tests;
 
@@ -599,7 +599,7 @@ fn inverse_dct_ii(input: &[f32], output: &mut [f32], fft: &Fft) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

@@ -1335,7 +1335,7 @@ fn average_rgb(a: [u8; 3], b: [u8; 3]) -> [u8; 3] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::{
         AssetManager, COOP_SETUP_PALETTE, COOP_SETUP_SHAPE, ChromePiece,

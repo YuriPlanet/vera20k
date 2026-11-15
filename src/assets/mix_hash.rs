@@ -148,7 +148,7 @@ pub fn crc32(data: &[u8]) -> u32 {
     crc ^ 0xFFFFFFFF
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

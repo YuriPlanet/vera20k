@@ -1361,7 +1361,7 @@ pub(crate) fn render_shell_first_paint_slide(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1StaticReveal};

@@ -284,7 +284,7 @@ fn validate_ini_basename(family: &str, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

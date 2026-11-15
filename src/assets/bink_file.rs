@@ -440,7 +440,7 @@ impl BinkFile {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

@@ -403,7 +403,7 @@ fn abs_modulo(raw: i32, divisor: i32) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::super::floor_constructor_coords_with;
     use super::*;

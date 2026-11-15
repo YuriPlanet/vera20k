@@ -240,22 +240,11 @@ def command_focus(capability_name: str, extra: Sequence[str]) -> int:
     if not spec.focus:
         print(f"{capability_name} has no dedicated module selectors; use `test`")
         return 0
-    status = 0
-    for package in (CORE, CLIENT):
-        current = run_cargo(
-            [
-                "test",
-                "-p",
-                package,
-                "--lib",
-                "--features",
-                spec.flag,
-                "--",
-                *spec.focus,
-                *extra,
-            ]
-        )
-        status = status or current
+    # One run over both crates: a selector may name tests in only one of them,
+    # and tools/cargo_run.py fails a run in which no test matched at all.
+    status = run_cargo(
+        ["test", "--workspace", "--lib", "--features", spec.flag, "--", *spec.focus, *extra]
+    )
     if status == 0:
         print(f"focused {capability_name} on {', '.join(spec.focus)}")
     return status

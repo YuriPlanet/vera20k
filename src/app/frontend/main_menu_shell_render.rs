@@ -1089,7 +1089,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     Some(draw)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

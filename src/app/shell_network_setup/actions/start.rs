@@ -460,7 +460,7 @@ fn mode_start(
     Ok(true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

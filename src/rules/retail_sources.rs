@@ -237,12 +237,9 @@ impl RetailRulesSources {
     }
 
     /// VERA-only source composition; physical source identities remain intact.
-    /// No extra native Rules pass is introduced by a personal override.
+    /// No extra native Rules pass is introduced by a personal override: the
+    /// owner composes it over each scenario's root and LANGRULE.
     pub fn with_personal_rules(mut self, personal_rules: PersonalRules) -> Self {
-        personal_rules.apply_root(&mut self.rulesmd.ini);
-        if let Some(langrule) = self.langrule.as_mut() {
-            personal_rules.apply_base_layer(&mut langrule.ini);
-        }
         self.personal_rules = personal_rules;
         self
     }
@@ -469,11 +466,11 @@ pub fn load_startup_rules(
         .ok()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ini_root_tests.rs"]
 mod ini_root_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;

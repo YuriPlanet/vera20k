@@ -1958,7 +1958,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

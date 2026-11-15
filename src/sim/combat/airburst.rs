@@ -408,6 +408,6 @@ fn map_cell_target(world: &Simulation, cell: (i16, i16)) -> Option<ProjectileTar
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "airburst_tests.rs"]
 mod tests;

@@ -640,7 +640,7 @@ fn canonical_asset_id(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_ascii_uppercase())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use std::hash::{Hash, Hasher};
     use std::path::{Path, PathBuf};
@@ -1076,7 +1076,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod anim_class_root_tests {
     use super::anim_class_roots;
     use crate::rules::ini_parser::IniFile;

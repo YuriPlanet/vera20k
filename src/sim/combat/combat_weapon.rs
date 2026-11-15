@@ -1408,7 +1408,7 @@ pub(crate) fn get_weapon_record<'r>(
     weapon_for_index(obj, entity.veterancy.rank(), index)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

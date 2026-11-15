@@ -860,7 +860,7 @@ pub fn reduce_tiberium(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1114,7 +1114,15 @@ mod tests {
              [Animations]\n0=FIRE01\n[OverlayTypes]\n0=ORE\n\
              [ORE]\nTiberium=yes\nLand=Road\nCellAnim=FIRE01\n",
         ));
-        let mut cold = RuleSet::from_ini_with_fixed_art_for_test(&cold, &art).unwrap();
+        // FIRE01's Start plays its StartSound only when SOUNDMD knows it.
+        let sounds =
+            crate::rules::sound_ini::SoundRegistry::from_ini(&retail_ini("soundmd.ini").unwrap());
+        let mut cold = RuleSet::from_processed_rules(
+            &RulesLayerStack::new(cold)
+                .process_with_fixed_art_and_sounds(&art, &sounds)
+                .unwrap(),
+        )
+        .unwrap();
         cold.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
         assert_eq!(
             cold.bind_anim_class_assets(&["FIRE01".into()], &assets, "TEM", "TEMPERATE"),

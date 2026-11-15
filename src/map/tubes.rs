@@ -235,7 +235,7 @@ fn parse_allocated_tube_entry(value: &str) -> Result<TubeFact, AllocatedTubePars
     Ok(TubeFact::explicit(entry, exit, direction, path_steps))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

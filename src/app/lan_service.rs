@@ -1115,7 +1115,13 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         }
     };
     if expected != actual {
-        reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanClientsDiffer"));
+        // VERA: with the same build, say what this game changes.
+        let message = if expected.version == actual.version {
+            super::shell_network_setup::agreement::rules_differ_text(state)
+        } else {
+            crate::i18n::tr("VERA:LanClientsDiffer")
+        };
+        reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
     Ok(())
@@ -4560,7 +4566,7 @@ pub(crate) fn loading_test_pair() -> (
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};

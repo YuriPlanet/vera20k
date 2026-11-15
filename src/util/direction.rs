@@ -174,7 +174,7 @@ pub fn direction_from_projected(from: (i32, i32), to: (i32, i32)) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

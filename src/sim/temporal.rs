@@ -1701,10 +1701,10 @@ fn location_coord(entity: &GameEntity) -> AnimWorldCoord {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "temporal_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "temporal_cargo_disposal_tests.rs"]
 mod cargo_disposal_tests;

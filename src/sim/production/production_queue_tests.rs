@@ -552,10 +552,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
 
-    let data: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/unit_unlimbo.json",
-    ))
-    .unwrap();
+    let data = crate::test_fixture::json("tools/spatial_oracle/anytown_damage/unit_unlimbo.json");
     assert_eq!(data["schema_version"], 1);
     let rows = data["factory_busy_redirect_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 6);

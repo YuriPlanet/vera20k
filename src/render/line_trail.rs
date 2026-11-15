@@ -69,6 +69,6 @@ pub(crate) fn rasterize(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 #[path = "line_trail_tests.rs"]
 mod tests;

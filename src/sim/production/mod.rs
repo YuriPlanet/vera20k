@@ -113,45 +113,45 @@ pub(crate) use self::wall_placement::{
     autofill_walls, linked_overlay_id as linked_wall_overlay_id,
 };
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "production_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod industrial_plant_retail_tests;
 
 // Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
 // Area_Guard instead (`production_placement_tests`).
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_production, not(feature = "ares")))]
 mod free_unit_harvest_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod production_start_price_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_queue_tests.rs"]
 mod queue_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_placement_tests.rs"]
 mod placement_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_replay_tests.rs"]
 mod replay_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "factory_lifecycle_tests.rs"]
 mod lifecycle_tests;
 
 #[cfg(test)]
 pub(crate) use lifecycle_tests::prerequisite_loss_cancellation_fixture;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod manual_primary_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod native_event_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod typed_identity_tests;

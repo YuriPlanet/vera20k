@@ -1048,7 +1048,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::bridge_facts::{BRIDGE_FLAG_FORWARD_SIDE, BRIDGE_FLAG_STRUCTURAL};

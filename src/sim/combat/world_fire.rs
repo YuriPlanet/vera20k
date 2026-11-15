@@ -3233,11 +3233,11 @@ pub(crate) fn tick_combat(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "house_firepower_tests.rs"]
 mod house_firepower_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod reveal_on_fire_tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
@@ -3593,7 +3593,7 @@ mod reveal_on_fire_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_once_tests.rs"]
 mod fire_once_tests;
 
@@ -3749,14 +3749,14 @@ pub(crate) fn estimated_damage_on(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "welding_native_tests.rs"]
 mod welding_native_tests;
 
 /// Ares 3.0 InfantryClass_UpdateFiringState_Heal (1004E420, hook 0x520731):
 /// a healing infantryman keeps a damaged vehicle as its target, where the
 /// stock ILLEGAL arm keeps infantry only.
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod ares_heal_drop_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

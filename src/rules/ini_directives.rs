@@ -748,6 +748,6 @@ fn inherit(
     Ok(success)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ini_directives_tests.rs"]
 mod tests;

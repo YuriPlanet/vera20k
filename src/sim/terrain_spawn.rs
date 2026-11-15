@@ -599,7 +599,7 @@ pub fn seed_terrain_animations(
     seed_terrain_spawner_animation(&sim.interner, &mut sim.terrain_objects, &sim.session, rules)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
 
     use super::*;

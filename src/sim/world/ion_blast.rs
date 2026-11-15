@@ -409,6 +409,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ion_blast_tests.rs"]
 mod tests;

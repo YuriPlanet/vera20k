@@ -856,7 +856,7 @@ pub(super) fn area_near_center_ic_isolation_armed(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod house_damage_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

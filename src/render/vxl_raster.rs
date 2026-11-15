@@ -572,7 +572,7 @@ pub fn building_gun_screen_offsets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "vxl_building_tests.rs"]
 mod building_tests;
 
@@ -1506,7 +1506,7 @@ pub fn hva_to_mat4(raw: &[f32; 12], limb_scale: f32) -> Mat4 {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::assets::vxl_file::{VxlLimb, VxlVoxel};
@@ -2324,6 +2324,13 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_render_s_z,
+        tests_app_presentation_instances,
+        tests_app_presentation_render
+    )
+))]
 #[path = "ship_pose_tests.rs"]
 pub(crate) mod ship_pose_tests;

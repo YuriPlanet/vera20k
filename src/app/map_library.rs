@@ -866,7 +866,7 @@ mod fetch {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, tests_app))]
     mod tests {
         use super::*;
 
@@ -906,7 +906,7 @@ mod fetch {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use base64::Engine;

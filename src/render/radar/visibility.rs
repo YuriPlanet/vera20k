@@ -481,7 +481,7 @@ fn radar_edge_cell_in_playfield(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};

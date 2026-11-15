@@ -2199,7 +2199,7 @@ fn controlled_ten_country_roster() -> Vec<CooperativeCountryRosterEntry> {
 
 const _: [(); SKIRMISH_PERSISTED_SLOT_COUNT] = [(); crate::skirmish_launch::SKIRMISH_AI_SLOT_COUNT];
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::map::preview::PreviewSection;

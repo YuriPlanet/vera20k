@@ -116,6 +116,6 @@ impl GameEntity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "gunner_tests.rs"]
 mod tests;

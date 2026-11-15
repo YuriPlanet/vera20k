@@ -20,15 +20,15 @@ use crate::assets::error::AssetError;
 use crate::assets::mix_archive::{MixArchive, SharedBytes};
 use crate::assets::mix_hash::mix_hash;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "asset_manager_ares_sidebar_tests.rs"]
 mod ares_sidebar_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "asset_manager_audio_bags_tests.rs"]
 mod audio_bags_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "asset_manager_install_tests.rs"]
 mod install_inspection_tests;
 
@@ -2059,7 +2059,7 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::test_support::{
         TestDirectory, audio_test_install, make_new_format_mix_bytes, write_audio_archive,

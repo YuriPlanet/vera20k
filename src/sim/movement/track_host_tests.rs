@@ -1996,10 +1996,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         }
     }
 
-    let golden: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/building_repair.depot_service.json",
-    ))
-    .unwrap();
+    let golden =
+        crate::test_fixture::json("tools/spatial_oracle/building_repair.depot_service.json");
     let arrival = &golden["arrival_terminal"];
     let controls = arrival["controls"].as_array().unwrap();
     assert_eq!(controls.len(), 7);

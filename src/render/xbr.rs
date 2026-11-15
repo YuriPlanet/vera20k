@@ -313,6 +313,6 @@ fn toward(a: u32, b: u32, m: u32, s: u32) -> u32 {
     channels(0x00FF_00FF) | channels(0x0000_FF00)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "xbr_tests.rs"]
 mod tests;

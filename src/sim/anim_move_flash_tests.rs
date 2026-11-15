@@ -124,3 +124,67 @@ fn network_modes_keep_the_move_flash_off_the_synchronized_anims() {
         );
     }
 }
+
+/// LAN and online games make the flash a local anim (`0x004D7F28..0x004D8062`):
+/// it draws in the clicking game, runs to its end and leaves, while the hash,
+/// the save and every shared counter stay as in a game that never clicked.
+#[test]
+fn a_network_move_flash_draws_only_in_the_clicking_game() {
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::sim::world::display_layers::DisplayLayer;
+    for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+        let Some((mut sim, rules)) = retail_arena(mode) else {
+            return;
+        };
+        set_cell(&mut sim, (12, 9), 2, 0);
+        // A match admits its MaxAhead before the first frame.
+        sim.install_network_timing(15);
+        let mut other = sim.clone();
+        assert!(flash(&mut sim, &rules, (12, 9)).is_empty(), "{mode:?}");
+        let commands = other.take_due_commands();
+        other.advance_tick(&commands, Some(&rules), None, None, 33);
+
+        let [ring] = sim.substrate.anims.local_ids()[..] else {
+            panic!("{mode:?}: one local flash");
+        };
+        let anim = sim.anim(ring).unwrap();
+        assert_eq!(sim.interner.resolve(anim.type_id()), "RING");
+        assert_eq!(
+            anim.world_coord(),
+            AnimWorldCoord {
+                x: 12 * 256 + 128,
+                y: 9 * 256 + 128,
+                z: 208,
+            }
+        );
+        assert_eq!(anim.native_unique_id(), -2);
+        // RING's `Layer=` is unset, so the AnimType default, Air
+        // (`AnimClass::GetLayer @ 0x00424CB0`); Unlimbo (`0x005F4EC0`)
+        // leaves id -2 out of Logic.
+        assert_eq!(sim.display_layers().layer_of(ring), Some(DisplayLayer::AIR));
+        assert!(!sim.substrate.logic.as_slice().contains(&ring));
+        // The presentation places the anims it draws by these.
+        assert!(
+            sim.anim_absolute_coords()
+                .any(|(id, at)| id == ring && at == anim.world_coord())
+        );
+        assert_eq!(sim.state_hash(), other.state_hash(), "{mode:?}");
+        assert_eq!(
+            GameSnapshot::save(&sim, 0, 0, "flash", 0),
+            GameSnapshot::save(&other, 0, 0, "flash", 0),
+            "{mode:?}"
+        );
+
+        let mut frames = 0;
+        while sim.anim(ring).is_some() {
+            frames += 1;
+            assert!(frames < 300, "{mode:?}: the flash never ended");
+            sim.advance_tick(&[], Some(&rules), None, None, 33);
+            other.advance_tick(&[], Some(&rules), None, None, 33);
+            assert_eq!(sim.state_hash(), other.state_hash(), "{mode:?}");
+        }
+        assert!(frames > 1, "{mode:?}: the flash played its frames");
+        assert!(sim.substrate.anims.local_ids().is_empty());
+        assert_eq!(sim.display_layers().layer_of(ring), None);
+    }
+}

@@ -287,7 +287,7 @@ pub fn finish(result: Result<i32>) -> Result<()> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::run_with_args;
     use std::ffi::OsString;

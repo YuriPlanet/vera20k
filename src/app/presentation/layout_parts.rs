@@ -359,7 +359,7 @@ pub(crate) fn instances(
     (boxes, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

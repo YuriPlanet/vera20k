@@ -492,7 +492,7 @@ pub fn snap_button_biased_truncate(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

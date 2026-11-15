@@ -349,7 +349,7 @@ pub fn handle_option_mouse_wheel(
     wheel_opponents(state, maps, lines)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod bounds_tests {
     use super::*;
 

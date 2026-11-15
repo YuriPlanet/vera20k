@@ -627,7 +627,7 @@ pub(super) fn radar_foundation_brush(
     pixels
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::render::radar::visibility::RadarMobileVisibilityFacts;

@@ -67,7 +67,7 @@ use crate::sim::world::Simulation;
 
 use super::super_actions::ChronoshiftTarget;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "idle_animation_tests.rs"]
 mod idle_animation_tests;
 use super::team_ai::member_is_live_joined;
@@ -81,19 +81,19 @@ use crate::sim::world::ObjectSubstrate;
 #[path = "scout_houses.rs"]
 mod scout_houses;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "scout_tests.rs"]
 mod scout_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "scout_houses_tests.rs"]
 mod scout_houses_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "result_tests.rs"]
 mod result_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "spy_waypoint_tests.rs"]
 mod spy_waypoint_tests;
 
@@ -3462,23 +3462,23 @@ pub(super) fn target_building_pick(
     if only_enemy { enemy_best } else { any_best }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "force_facing_tests.rs"]
 mod force_facing_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "removal_actions_tests.rs"]
 mod removal_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "actions_tests.rs"]
 mod tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "transport_actions_tests.rs"]
 mod transport_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "unpanic_tests.rs"]
 mod unpanic_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "world_actions_tests.rs"]
 mod world_actions_tests;

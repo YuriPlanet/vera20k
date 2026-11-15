@@ -277,7 +277,7 @@ fn apply(state: &mut AppState, next: Shown) {
     super::mac_pointer::set_arrow_hidden(next == Shown::Hidden);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::render::upscale_pass::{FrameShape, ZoomGeometry};

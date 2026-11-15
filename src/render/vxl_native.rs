@@ -819,7 +819,7 @@ impl PreparedDraw {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use serde_json::Value;

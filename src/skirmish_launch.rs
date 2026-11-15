@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::rules::personal_rules::PersonalRules;
 use crate::rules::skirmish_colors::SkirmishColorMode;
 use crate::sim::game_options::{GameOptions, RoomBans};
 use crate::sim::rng::SimRng;
@@ -443,6 +444,78 @@ pub struct SkirmishLaunchOptions {
     /// waits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<String>,
+    /// VERA's room rules: the host's Terrain Deformation and personal
+    /// rules, which every player's match plays. Left out while the room has
+    /// neither.
+    #[serde(default, skip_serializing_if = "HostRules::is_empty")]
+    pub host_rules: HostRules,
+}
+
+/// VERA: the rules a network room plays besides its options, which only its
+/// host sets: the host's Terrain Deformation box, Superweapon Limit and
+/// the host's VERARULES.INI when it changes the game and fits. Every player's
+/// match plays these instead of their own; offline games play the player's own
+/// (`ProcessAssets::use_personal_rules`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostRules {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub terrain_deformation: bool,
+    /// The Superweapon Limit, 0 while off. Left out while off, so a room
+    /// without it sends the rules it sent before the setting; a guest plays
+    /// another value as [`admitted_superweapon_limit`] reads it.
+    ///
+    /// [`admitted_superweapon_limit`]: crate::rules::personal_rules::admitted_superweapon_limit
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub superweapon_limit: u8,
+    /// The host's VERARULES.INI in base64, at most
+    /// [`SHARE_LIMIT`](crate::rules::personal_rules::SHARE_LIMIT) bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub personal_rules: Option<String>,
+}
+
+impl HostRules {
+    pub fn is_empty(&self) -> bool {
+        !self.terrain_deformation && self.superweapon_limit == 0 && self.personal_rules.is_none()
+    }
+
+    /// The host's own rules as its room shares them: its Terrain Deformation
+    /// box and Superweapon Limit, and its VERARULES.INI when the file changes
+    /// the game and fits.
+    pub fn from_own(own: &PersonalRules) -> Self {
+        let fits = own.source().len() <= crate::rules::personal_rules::SHARE_LIMIT;
+        Self {
+            terrain_deformation: own.terrain_deformation(),
+            superweapon_limit: own.superweapon_limit(),
+            personal_rules: (!own.is_empty() && fits)
+                .then(|| crate::util::base64::base64_encode(own.source())),
+        }
+    }
+
+    /// The rules every player's match plays. Another game sent them, so a
+    /// file that is not base64, is too long or does not read is refused.
+    pub fn personal_rules(&self) -> Result<PersonalRules, String> {
+        let mut rules = match self.personal_rules.as_deref() {
+            None => PersonalRules::default(),
+            Some(text) => {
+                if text.len() > crate::rules::personal_rules::SHARE_LIMIT.div_ceil(3) * 4 {
+                    return Err(format!("{} characters of personal rules", text.len()));
+                }
+                let bytes = crate::util::base64::base64_decode(text)?;
+                if bytes.len() > crate::rules::personal_rules::SHARE_LIMIT {
+                    return Err(format!("{} bytes of personal rules", bytes.len()));
+                }
+                PersonalRules::from_bytes(&bytes).map_err(|error| error.to_string())?
+            }
+        };
+        rules.set_terrain_deformation(self.terrain_deformation);
+        rules.set_superweapon_limit(i32::from(self.superweapon_limit));
+        Ok(rules)
+    }
+}
+
+fn is_zero(value: &u8) -> bool {
+    *value == 0
 }
 
 /// The Teams counts a VERA room offers besides Off: up to 15, two seats a
@@ -479,6 +552,7 @@ impl Default for SkirmishLaunchOptions {
             teams: None,
             auto_balance: false,
             queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 }
@@ -515,6 +589,7 @@ impl SkirmishLaunchOptions {
             teams: None,
             auto_balance: false,
             queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 
@@ -1229,9 +1304,60 @@ pub enum LaunchValidationError {
     },
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_room_shares_its_hosts_rules_and_refuses_what_cannot_be_them() {
+        use crate::rules::personal_rules::{PersonalRules, SHARE_LIMIT};
+        let mut own = PersonalRules::from_bytes(b"[E1]\nCost=75\n").unwrap();
+        own.set_terrain_deformation(true);
+        let played = HostRules::from_own(&own).personal_rules().unwrap();
+        assert_eq!(played.compatibility_crc(), own.compatibility_crc());
+        // A file of comments has nothing to share, and a room sharing
+        // nothing sends the options as before.
+        let comments = PersonalRules::from_bytes(b"; [E1]\n; Cost=75\n").unwrap();
+        assert_eq!(HostRules::from_own(&comments), HostRules::default());
+        // A host's file past the limit stays home; its box still counts.
+        let mut big = b"[E1]\nCost=75\n".to_vec();
+        big.resize(SHARE_LIMIT + 1, b';');
+        let mut big = PersonalRules::from_bytes(&big).unwrap();
+        big.set_terrain_deformation(true);
+        let shared = HostRules::from_own(&big);
+        assert!(shared.terrain_deformation && shared.personal_rules.is_none());
+        let options = serde_json::to_value(SkirmishLaunchOptions::default()).unwrap();
+        assert!(options.get("host_rules").is_none());
+        // Another game's file past the limit is refused, not played.
+        let long = HostRules {
+            personal_rules: Some(crate::util::base64::base64_encode(&[b';'; SHARE_LIMIT + 1])),
+            ..HostRules::default()
+        };
+        assert!(long.personal_rules().is_err());
+    }
+
+    /// A room sends its host's Superweapon Limit as the number, and a guest
+    /// plays one past the slider's end at the most it allows.
+    #[test]
+    fn a_room_carries_its_hosts_superweapon_limit_as_a_number() {
+        let mut own = crate::rules::personal_rules::PersonalRules::default();
+        own.set_superweapon_limit(7);
+        let shared = HostRules::from_own(&own);
+        assert_eq!(
+            serde_json::to_value(&shared).unwrap(),
+            serde_json::json!({"superweapon_limit": 7})
+        );
+        assert_eq!(shared.personal_rules().unwrap().superweapon_limit(), 7);
+        let past_the_end = HostRules {
+            superweapon_limit: 200,
+            ..HostRules::default()
+        };
+        let played = past_the_end.personal_rules().unwrap();
+        assert_eq!(
+            played.superweapon_limit(),
+            crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX
+        );
+    }
 
     #[test]
     fn ordered_humans_observers_and_ai_match_executed_native_assignments() {

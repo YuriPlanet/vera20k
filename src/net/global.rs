@@ -555,6 +555,6 @@ impl GlobalChannel {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "global_tests.rs"]
 mod tests;

@@ -188,7 +188,7 @@ fn seat_value(seat: SkirmishSetupSeat) -> String {
     format!("{country},{color},{start},{}", seat.team)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::skirmish_launch::LaunchCountry;

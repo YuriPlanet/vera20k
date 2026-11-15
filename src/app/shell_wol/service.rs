@@ -1473,7 +1473,7 @@ pub(super) fn poll_wait(state: &mut AppState) -> Option<Instant> {
     [limit, reveal].into_iter().flatten().min()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

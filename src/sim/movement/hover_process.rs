@@ -21,7 +21,13 @@
 //!   comes from the shared wake pass (`Simulation::spawn_wakes_for_frame`,
 //!   gated on the Hover's Is_Moving_Now), not from this Process tail. WAKE1
 //!   draws no RNG; the residual is the anim's creation order (its AbstractClass
-//!   ID) relative to the objects after this one.
+//!   ID) relative to the objects after this one. Process also returns before
+//!   the wake when the unit is dead after its speed update
+//!   (`0x00514342..0x0051435E`), dead, in limbo or falling after its cell
+//!   step (`0x00514640..0x00514664` to `0x005149F4`, and
+//!   `0x005146D3..0x005146F9`), and once it is in a tube (Foot `+0x684` >= 0,
+//!   `0x00514705..0x00514717`); the shared pass does not check those, which
+//!   no player sees.
 //! - The vein tag (0x00486920) is not ported: the vein cell has no retail
 //!   user.
 //! - Hover's own tube entry (0x0051503B..0x005152CE: Mark(UP) 0x0051508B, the
@@ -1468,7 +1474,7 @@ enum Arrival {
     Step,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

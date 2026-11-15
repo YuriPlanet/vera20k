@@ -414,6 +414,6 @@ pub(super) fn commit(
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "object_health_tests.rs"]
 mod tests;

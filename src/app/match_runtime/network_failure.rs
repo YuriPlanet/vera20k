@@ -266,7 +266,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

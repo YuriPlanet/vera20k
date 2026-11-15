@@ -371,7 +371,9 @@ pub(crate) fn render_lan_lobby(
             );
             overlay.texts.push(shell_text::draw_in_rect(
                 font,
-                &crate::i18n::label(state.process_assets.csf.as_ref(), key, key),
+                &runtime.modal_body.clone().unwrap_or_else(|| {
+                    crate::i18n::label(state.process_assets.csf.as_ref(), key, key)
+                }),
                 rect_to_text_rect(modal.body),
                 SHELL_LABEL_TEXT_RGB,
                 super::text::validation_modal_body_text_align(),

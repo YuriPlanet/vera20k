@@ -988,6 +988,6 @@ pub(crate) fn is_native_none_type_name(value: &str) -> bool {
     value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("<none>")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ini_parser_tests.rs"]
 mod tests;

@@ -1471,7 +1471,7 @@ pub(super) fn fresh_heading_ready(body_facing: u16, direction: u8) -> bool {
     body_facing == u16::from(direction) << 13
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::sim::mission::MissionId;

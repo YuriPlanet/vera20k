@@ -37,6 +37,28 @@ name = "telemetry-serve"
 path = "src/bin/telemetry-serve.rs"
 required-features = ["telemetry-dashboard"]
 
+# Test groups: the module path prefixes each one owns; the longest prefix
+# decides. `python -m tools.group_tests check` holds the test modules to it.
+[package.metadata.test-groups]
+app = ["app"]
+app-frontend = ["app::frontend"]
+app-input-a-c = ["app::input::a", "app::input::b", "app::input::c"]
+app-input-d-z = ["app::input"]
+app-match = ["app::match_runtime"]
+app-presentation = ["app::presentation"]
+app-presentation-instances = ["app::presentation::instances"]
+app-presentation-render = ["app::presentation::render"]
+asset-tools = ["asset_tools"]
+audio = ["audio"]
+render-a-r = [
+    "render::a", "render::b", "render::c", "render::d", "render::e", "render::f", "render::g",
+    "render::h", "render::i", "render::j", "render::k", "render::l", "render::m", "render::n",
+    "render::o", "render::p", "render::q", "render::r",
+]
+render-s-z = ["render"]
+root = ["i18n", "web", "entry", "architecture_guards", "browser_"]
+ui = ["ui"]
+
 [features]
 # Browser host support; target selection still controls every platform implementation.
 wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "getrandom/wasm_js", "sys-locale/js"]
@@ -71,6 +93,25 @@ telemetry-dashboard = ["vera20k-core/telemetry", "dep:sha1"]
 # Explicit offline trainer and per-unit event hooks. Never enabled by the
 # dashboard alone or the default/shipping feature set.
 debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"]
+# A focused test build (tools/README.md, "Test groups"): with `test-focus` only
+# the test groups whose `tests-*` feature is on compile. Without it every test
+# compiles, so a plain `cargo test` is always the full suite. Neither reaches
+# `vera20k-core`, whose own tests have their own groups.
+test-focus = []
+tests-app = []
+tests-app-frontend = []
+tests-app-input-a-c = []
+tests-app-input-d-z = []
+tests-app-match = []
+tests-app-presentation = []
+tests-app-presentation-instances = []
+tests-app-presentation-render = []
+tests-asset-tools = []
+tests-audio = []
+tests-render-a-r = []
+tests-render-s-z = []
+tests-root = []
+tests-ui = []
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.

@@ -1353,7 +1353,7 @@ fn push_terrain_aoe_damage(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
 

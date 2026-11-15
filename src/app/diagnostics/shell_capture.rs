@@ -3443,7 +3443,7 @@ struct EntrySequenceFrameManifest {
     byte_length: u64,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

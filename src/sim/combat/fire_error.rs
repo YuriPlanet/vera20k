@@ -1344,6 +1344,6 @@ fn facing_off(current: u16, desired: u16, tolerance: i32) -> bool {
     i32::from(current.wrapping_sub(desired) as i16).abs() > tolerance
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_error_tests.rs"]
 mod tests;

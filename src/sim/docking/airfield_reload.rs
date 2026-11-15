@@ -362,6 +362,6 @@ impl ReloadHost for WorldReload<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "airfield_reload_tests.rs"]
 mod tests;

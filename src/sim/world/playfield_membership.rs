@@ -145,6 +145,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "playfield_membership_tests.rs"]
 mod tests;

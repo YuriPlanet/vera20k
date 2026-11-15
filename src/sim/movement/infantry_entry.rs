@@ -158,7 +158,7 @@ pub(crate) fn adjust_height_and_list(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
 

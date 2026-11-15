@@ -366,7 +366,7 @@ impl FoundationLatch {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "ready_building_placement_tests.rs"]
 mod ready_building_placement_tests;
 
@@ -993,23 +993,23 @@ impl MatchInputState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "pointer_resolution_tests.rs"]
 mod pointer_resolution_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "saved_local_view_tests.rs"]
 mod saved_local_view_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "house_cheer_tests.rs"]
 mod house_cheer_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "house_cheer_retail_tests.rs"]
 mod house_cheer_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod pause_resync_tests {
     use super::*;
 

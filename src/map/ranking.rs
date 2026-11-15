@@ -75,7 +75,7 @@ pub fn parse_ranking_section(ini: &IniFile) -> RankingSection {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

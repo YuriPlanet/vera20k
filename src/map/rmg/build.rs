@@ -560,7 +560,7 @@ fn generate_once(
     (generated, output.fairness)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::RmgConstructionOutcome;
@@ -2103,7 +2103,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod bridge_enable_coin_tests {
     use super::*;
 
@@ -2137,7 +2137,7 @@ mod bridge_enable_coin_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod send_check {
     /// The worker that generation is about to move onto needs to own its
     /// inputs, so every one of them has to cross a thread boundary.

@@ -69,23 +69,23 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "pack_voice_tests.rs"]
 mod pack_voice_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "building_upgrade_sale_tests.rs"]
 mod building_upgrade_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "captured_building_sale_tests.rs"]
 mod captured_building_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "building_sale_trigger_tests.rs"]
 mod building_sale_trigger_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "unit_sale_tests.rs"]
 mod unit_sale_tests;
 

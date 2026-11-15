@@ -42,7 +42,7 @@ pub fn drop_on_pool<T: Send + 'static>(value: T) {
     drop(value);
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, tests_sim_p_s, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::sim::parallel as native;

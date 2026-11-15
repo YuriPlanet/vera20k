@@ -167,11 +167,6 @@ pub struct ArtEntry {
     pub standing_frames: Option<u16>,
     /// SHP vehicle: number of facing directions (from `Facings=`, default 8).
     pub shp_facings: u8,
-    /// Animation `Report=` sound ID. Used as a fallback when `StartSound=`
-    /// is absent.
-    pub report: Option<String>,
-    /// Animation `StartSound=` sound ID. Takes priority over `Report=`.
-    pub start_sound: Option<String>,
     /// Signed building brightness addition (ExtraLight= in art.ini).
     /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness
     /// for the body and Buildup alike; the gate branch 0043D644 omits it. It
@@ -407,7 +402,8 @@ pub struct AnimTypeRuntimeConfig {
     /// Constructor default `0x402E0000_00000000` = **15.0**.
     pub max_xy_vel: NativeF64Bits,
     /// art.ini `IsMeteor=`, `AnimTypeClass+0x356`. Shares the constructor's
-    /// `BounceClass` fork with `Bouncer=`. Not consumed yet (M11b).
+    /// `BounceClass` fork with `Bouncer=`, launched as a meteor
+    /// (`sim::anim_class::anim_constructor_draws`).
     pub is_meteor: bool,
     /// art.ini `IsVeins=`, `AnimTypeClass+0x355`. Zero stock sections author it.
     pub is_veins: bool,
@@ -470,7 +466,7 @@ pub struct AnimTypeRuntimeConfig {
     pub expire_anim: Option<String>,
     pub trailer_anim: Option<String>,
     pub trailer_seperation: i32,
-    pub random_loop_delay: Option<(u16, u16)>,
+    pub random_loop_delay: Option<(i32, i32)>,
     pub random_rate_logic_frames: Option<(u16, u16)>,
     pub y_draw_offset: i32,
     pub z_adjust: i32,
@@ -514,7 +510,10 @@ pub struct AnimTypeRuntimeConfig {
     pub shadow: bool,
     pub ping_pong: bool,
     pub reverse: bool,
-    pub report: Option<String>,
+    /// The sound `AnimClass::Start @ 0x00424CE0` plays (AnimType +2F8),
+    /// and the one `AnimClass::UnInit @ 0x004255B0` plays (+2FC). Only the
+    /// rules processor sets them (`AnimTypeReferences`), from `StartSound=`
+    /// else `Report=`, and `StopSound=`, resolved against SOUNDMD.
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
 }
@@ -604,7 +603,6 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
             shadow,
             ping_pong,
             reverse,
-            report,
             start_sound,
             stop_sound,
         } = self;
@@ -682,7 +680,6 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
         shadow.hash(state);
         ping_pong.hash(state);
         reverse.hash(state);
-        report.hash(state);
         start_sound.hash(state);
         stop_sound.hash(state);
         if *ares_make_infantry_owner != crate::rules::ares_warhead::HouseSelector::Invoker
@@ -709,15 +706,6 @@ pub enum AnimAssetBindError {
     MissingAnimType(String),
     #[error("animation SHP [{name}] has an invalid signed frame count {count}")]
     InvalidFrameCount { name: String, count: i32 },
-    #[error(
-        "animation type [{name}] has invalid loaded {field} value {value} for {raw_count} frames"
-    )]
-    InvalidLoadedBound {
-        name: String,
-        field: &'static str,
-        value: i32,
-        raw_count: i32,
-    },
 }
 
 /// Display layer used by native object submission.
@@ -1061,10 +1049,11 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         expire_anim: None,
         trailer_anim: None,
         trailer_seperation: section.read_int("TrailerSeperation", 0),
-        // ReadMinMax (`0x004280D4`); `None` marks an absent key.
+        // ReadMinMax (`0x004280D4`) stores both ints as written
+        // (+2DC/+2E0); `None` marks an absent key.
         random_loop_delay: section.is_present("RandomLoopDelay").then(|| {
             let [low, high] = section.read_minmax("RandomLoopDelay", [0, 0]);
-            (low.max(0) as u16, high.max(0) as u16)
+            (low, high)
         }),
         random_rate_logic_frames: read_random_rate(section),
         y_draw_offset: section.read_int("YDrawOffset", 0),
@@ -1085,15 +1074,8 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         shadow: section.read_bool("Shadow", false),
         ping_pong: section.read_bool("PingPong", false),
         reverse: section.read_bool("Reverse", false),
-        report: section
-            .read_name("Report", 0x80)
-            .map(str::to_ascii_uppercase),
-        start_sound: section
-            .read_name("StartSound", 0x80)
-            .map(str::to_ascii_uppercase),
-        stop_sound: section
-            .read_name("StopSound", 0x80)
-            .map(str::to_ascii_uppercase),
+        start_sound: None,
+        stop_sound: None,
     }
 }
 
@@ -1189,23 +1171,6 @@ pub struct ArtRegistry {
     damage_fire_offsets_valid: bool,
 }
 
-fn validate_loaded_bound(
-    name: &str,
-    field: &'static str,
-    value: i32,
-    raw_count: i32,
-) -> Result<(), AnimAssetBindError> {
-    if value < -1 || value > raw_count {
-        return Err(AnimAssetBindError::InvalidLoadedBound {
-            name: name.to_string(),
-            field,
-            value,
-            raw_count,
-        });
-    }
-    Ok(())
-}
-
 fn resolve_loaded_bounds(
     name: &str,
     raw_count: i32,
@@ -1213,7 +1178,10 @@ fn resolve_loaded_bounds(
     explicit_end: Option<i32>,
     explicit_loop_end: Option<i32>,
 ) -> Result<(i32, i32), AnimAssetBindError> {
-    if raw_count <= 0 {
+    // A count of 0 binds as gamemd writes it (`0x00427C2D`): End, LoopEnd
+    // and Middle are 0. A negative signed count (header word 0x8000 and up)
+    // would send gamemd's unsigned frame checks past the table; refuse it.
+    if raw_count < 0 {
         return Err(AnimAssetBindError::InvalidFrameCount {
             name: name.to_string(),
             count: raw_count,
@@ -1221,11 +1189,13 @@ fn resolve_loaded_bounds(
     }
     let header_end = header_end(raw_count, shadow);
     // Native copies the loader-derived End into LoopEnd before applying the
-    // explicit INI End and LoopEnd keys.
+    // explicit INI End and LoopEnd keys. ReadINI stores both as written
+    // (`0x00427FE8`, `0x0042801C`) and nothing checks them against the frame
+    // count (`0x00427C1C..0x00427C5C`, AnimClass::AI `0x0042468C`): a frame
+    // past the SHP draws nothing (`CC_Draw_Shape`, `0x0069E7F3`), as the
+    // atlas holds no key for it.
     let loaded_end = explicit_end.unwrap_or(header_end);
     let loaded_loop_end = explicit_loop_end.unwrap_or(header_end);
-    validate_loaded_bound(name, "End", loaded_end, raw_count)?;
-    validate_loaded_bound(name, "LoopEnd", loaded_loop_end, raw_count)?;
     Ok((loaded_end, loaded_loop_end))
 }
 
@@ -1396,8 +1366,6 @@ impl ArtRegistry {
             let firing_frames: Option<u16> = present_frames("FiringFrames");
             let standing_frames: Option<u16> = present_frames("StandingFrames");
             let shp_facings: u8 = section.read_int("Facings", 8).clamp(1, 32) as u8;
-            let report = section.read_name("Report", 0x80).map(str::to_owned);
-            let start_sound = section.read_name("StartSound", 0x80).map(str::to_owned);
             let anim_runtime_config = parse_anim_runtime_config(section);
             // ObjectType::ReadINI5F92D0 selects the one-hop Image25 ART.
             // This is a fresh AnimType: its base reader skips LoadSHP for
@@ -1550,8 +1518,6 @@ impl ArtRegistry {
                     firing_frames,
                     standing_frames,
                     shp_facings,
-                    report,
-                    start_sound,
                     extra_light,
                     terrain_palette: section.read_bool("TerrainPalette", false),
                     use_buffer: section.read_bool("UseBuffer", false),
@@ -1718,6 +1684,23 @@ impl ArtRegistry {
     /// scheduler-owned runtime.
     pub fn scheduler_anim_types(&self) -> &BTreeSet<String> {
         &self.scheduler_anim_types
+    }
+
+    /// The start (+2F8) and stop (+2FC) sound slots the rules processor
+    /// would publish, for a raw fixture that skips it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_anim_sounds_for_test(
+        &mut self,
+        name: &str,
+        start: Option<&str>,
+        stop: Option<&str>,
+    ) {
+        let config = self
+            .anim_runtime_configs
+            .get_mut(&name.to_ascii_uppercase())
+            .expect("test animation section must exist");
+        config.start_sound = start.map(str::to_ascii_uppercase);
+        config.stop_sound = stop.map(str::to_ascii_uppercase);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -2402,8 +2385,10 @@ pub fn object_shp_candidates(
 /// `FUN_005F96B0` (which replaces the second letter with the theater's, only
 /// for names matching `[GNCY][AT]`, and does nothing for theater `-1`, the
 /// value `ReadINI` passes), loads it, and on a miss lets `FUN_005F9710` force
-/// the second letter to `G` unconditionally and retries. The theater postpass
-/// at `0x00427A80` reloads images with the type's resolved `NewTheater` flag.
+/// the second letter to `G` unconditionally and retries. The theater pass at
+/// `0x00427940` (map load, `MouseClass::Load`, the random map generator)
+/// reloads a `NewTheater` image through the type's vt+0xA0 and a `Theater=yes`
+/// one as `<ID>.<theater extension>`, else `.SHP`. `0x00427A80` has no caller.
 /// Fresh types inherit `Theater`/`NewTheater` from the one-hop Image section
 /// in ObjectType::ReadINI5F92D0, then AnimType::ReadINI427D00 applies recognized
 /// own-section values. Missing, empty or invalid bools preserve the inherited
@@ -2853,7 +2838,7 @@ fn push_candidate(candidates: &mut Vec<String>, candidate: String) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod anim_runtime_metadata_tests {
     use super::*;
     use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -3355,15 +3340,6 @@ mod anim_runtime_metadata_tests {
     }
 
     #[test]
-    fn loaded_bounds_allow_native_sentinels_but_reject_out_of_range_values() {
-        assert!(validate_loaded_bound("FIRE", "End", -1, 30).is_ok());
-        assert!(validate_loaded_bound("FIRE", "End", 0, 30).is_ok());
-        assert!(validate_loaded_bound("FIRE", "End", 30, 30).is_ok());
-        assert!(validate_loaded_bound("FIRE", "End", -2, 30).is_err());
-        assert!(validate_loaded_bound("FIRE", "End", 31, 30).is_err());
-    }
-
-    #[test]
     fn loaded_bounds_apply_shadow_before_explicit_native_overrides() {
         assert_eq!(
             resolve_loaded_bounds("FIRE", 64, true, None, None).unwrap(),
@@ -3380,6 +3356,6 @@ mod anim_runtime_metadata_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "art_data_tests.rs"]
 mod tests;

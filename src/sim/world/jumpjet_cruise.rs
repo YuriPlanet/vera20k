@@ -914,19 +914,19 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "jumpjet_cruise_native_tests.rs"]
 mod native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "jumpjet_smooth_facing_tests.rs"]
 mod smooth_facing_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "jumpjet_land_nearby_tests.rs"]
 mod land_nearby_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::rules::jumpjet_params::JumpjetParams;

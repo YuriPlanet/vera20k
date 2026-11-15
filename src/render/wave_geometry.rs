@@ -217,7 +217,7 @@ pub(crate) fn polygon_spans(points: &[[i32; 2]]) -> PolygonSpans {
     spans
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::polygon_spans;
 

@@ -182,6 +182,6 @@ pub(crate) fn composite_mask_part(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "unit_shadow_tests.rs"]
 mod tests;

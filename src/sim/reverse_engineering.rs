@@ -30,7 +30,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::TechnoTypeReference;
 use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "reverse_engineering_tests.rs"]
 mod tests;
 

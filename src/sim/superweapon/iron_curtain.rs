@@ -55,7 +55,7 @@
 //!   sim/combat, sim/radar, sim/game_entity, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "iron_curtain_tests.rs"]
 mod tests;
 
@@ -207,8 +207,9 @@ pub(crate) fn at_waypoint(
         i32::from(cell.0),
         i32::from(cell.1),
     )
-    .center_coordinate()
-    .expect("IronCurtain waypoint requires a supported Cell slope");
+    // A slope byte past the table (a saved map) reads Z 0, as every cell
+    // looked up by coordinate does, rather than stopping the game.
+    .get_coords();
     super::spawn_super_anim(
         sim,
         rules,

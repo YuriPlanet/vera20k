@@ -576,6 +576,10 @@ pub(crate) struct AdmissionContext {
     pub(crate) vera_rooms: bool,
 }
 
+/// [`admit`]'s refusal of a VERA room whose rules hash differs: the caller
+/// says what this game changes (`agreement::rules_differ_text`).
+pub(crate) const RULES_DIFFER: &str = "VERA:RulesDiffer";
+
 /// `0x0079BA60`: may this game be joined (as an observer)? `Err(None)`
 /// rejects silently; `Err(Some(key))` names the chat line shown when the
 /// caller asks for messages. A room in VERA's lobby places a joiner itself,
@@ -592,8 +596,18 @@ pub(crate) fn admit(
         return Err(Some("TXT_NO_CLAN"));
     }
     let info = channel.ex_info();
-    if info.version != EX_INFO_VERSION || context.local_hash.is_some_and(|hash| hash != info.hash) {
+    if info.version != EX_INFO_VERSION {
         return Err(Some("TXT_MISMATCH"));
+    }
+    if context.local_hash.is_some_and(|hash| hash != info.hash) {
+        // VERA's rooms say what this game changes instead of retail's text,
+        // which sends the player to Westwood.
+        let vera_room = context.vera_rooms && !context.quick_match;
+        return Err(Some(if vera_room {
+            RULES_DIFFER
+        } else {
+            "TXT_MISMATCH"
+        }));
     }
     if observer && !context.vera_rooms {
         return if info.observer_free() {
@@ -733,7 +747,7 @@ pub(crate) fn insert_game_member(members: &mut Vec<WolMember>, member: WolMember
     members.insert(at, member);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -859,6 +873,18 @@ mod tests {
         };
         assert_eq!(admit(&open, true, context), Ok(()));
         assert_eq!(admit(&full, false, context), Err(Some("WOL:GameFull")));
+        // A different rules hash: VERA's rooms say what this game changes,
+        // where retail's text sends the player to Westwood.
+        let differs = AdmissionContext {
+            local_hash: Some(open.ex_info().hash.wrapping_add(1)),
+            ..context
+        };
+        assert_eq!(admit(&open, false, differs), Err(Some(RULES_DIFFER)));
+        let native = AdmissionContext {
+            vera_rooms: false,
+            ..differs
+        };
+        assert_eq!(admit(&open, false, native), Err(Some("TXT_MISMATCH")));
     }
 
     #[test]

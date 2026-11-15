@@ -142,6 +142,6 @@ pub(crate) fn append_line_strokes(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "control_links_tests.rs"]
 mod tests;

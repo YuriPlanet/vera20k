@@ -2791,7 +2791,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: &RuleS
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     use super::*;
     use crate::map::tube_facts::TubeId;
@@ -6352,45 +6352,45 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai_selfheal_tests.rs"]
 mod selfheal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai_selfheal_oracle_tests.rs"]
 mod selfheal_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/signed_health_tests.rs"]
 mod signed_health_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/ares_self_heal_tests.rs"]
 mod ares_self_heal_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "techno_ai/bridge_target_layer_tests.rs"]
 mod bridge_target_layer_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "techno_ai/bridge_engineer_entry_tests.rs"]
 mod bridge_engineer_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/bridge_low_repair_tests.rs"]
 mod bridge_low_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/mirage_disguise_tests.rs"]
 mod mirage_disguise_tests;
 
 #[cfg(any(test, feature = "test-support"))]
 use super::bridge_test_evidence;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/surface_conversion_tests.rs"]
 mod surface_conversion_tests;

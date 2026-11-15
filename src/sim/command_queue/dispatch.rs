@@ -606,7 +606,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use std::convert::Infallible;

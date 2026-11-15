@@ -315,7 +315,7 @@ fn play_gate_sound(
     sim.sound_events.emit(event);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::test_flat_ground_grid;

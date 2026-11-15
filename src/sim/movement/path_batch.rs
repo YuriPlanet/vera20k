@@ -1153,6 +1153,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "path_batch_tests.rs"]
 mod tests;

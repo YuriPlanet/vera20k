@@ -462,6 +462,11 @@ fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 const STRUCTURE_QUEUE_BADGES: bool = cfg!(feature = "phobos");
 
 fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {
+    // VERA's Superweapon Limit: a superweapon cameo counts its charged shots
+    // once more than one waits. gamemd's has no count.
+    if item.is_superweapon {
+        return item.queued_count > 1;
+    }
     let counts = !matches!(
         item.queue_category,
         crate::sim::production::ProductionCategory::Building
@@ -1034,7 +1039,7 @@ pub(crate) fn build_sidebar_text_instances(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::{
         build_gclock_instance, hovered_cameo_slot, place_canvas_crop_in_slot, push_rect_outline,
@@ -1185,6 +1190,7 @@ mod tests {
                 can_afford: true,
                 constraints_blocked: false,
                 ares_refusal: None,
+                ready_shots: 0,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);

@@ -196,7 +196,7 @@ pub(crate) fn receive_damage(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 pub(crate) mod tests {
     use super::*;
     use crate::sim::combat::damage::{DefenceDivisors, ImmunityInputs, TargetDamageView};

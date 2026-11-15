@@ -184,6 +184,6 @@ fn walk_overlays(
     false
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "repair_query_tests.rs"]
 mod tests;

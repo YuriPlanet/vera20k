@@ -1036,11 +1036,11 @@ fn reconstruct_zone_path(nodes: &[PrecheckNode], goal: usize) -> Vec<ZoneId> {
     path
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "zone_cost_native_tests.rs"]
 mod zone_cost_native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod tests {
     use super::*;
 

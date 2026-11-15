@@ -351,7 +351,7 @@ impl Simulation {
 /// replays of oracles that answer the Walk Process slot (`0x0075AC80`) as
 /// not moving: while installed, each Process is recorded and its body does
 /// not run.
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod answered_process {
     use std::cell::RefCell;
 
@@ -866,6 +866,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "infantry_scatter_tests.rs"]
 mod tests;

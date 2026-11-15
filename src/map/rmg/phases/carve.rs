@@ -1285,7 +1285,7 @@ pub fn try_carve_connector_at_cell(
     false
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};

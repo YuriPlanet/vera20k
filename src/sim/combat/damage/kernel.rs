@@ -105,6 +105,6 @@ pub(crate) fn apply_warhead_damage(
     scaled.min(max_damage)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "kernel_tests.rs"]
 mod native_tests;

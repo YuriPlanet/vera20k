@@ -512,7 +512,7 @@ pub(crate) fn sell_building_occupants(
     ejected
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 pub(crate) mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

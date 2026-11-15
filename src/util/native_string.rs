@@ -344,7 +344,7 @@ pub fn crt_wcstoul(units: &[u16], base: u32) -> u32 {
     crt_wcstoxl(units, base, true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

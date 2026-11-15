@@ -59,10 +59,10 @@ mod foot_approach;
 mod foot_coordinate;
 pub(crate) mod foot_mark;
 mod foot_path;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod foot_path_window_tests;
 pub(crate) use drive_locomotion::drive_do_turn;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod approach_oracle_seam;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_path::FindPathResult;
@@ -91,7 +91,7 @@ pub(crate) mod navcom;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use navcom::set_walk_destination_coord;
 pub(crate) use navcom::{building_dock_cell, building_dock_coordinate, nav_target_coordinate};
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod fresh_oracle_seam;
 pub(crate) mod path_batch;
 pub use path_batch::PathBatchStats;
@@ -106,7 +106,7 @@ mod scatter;
 pub(crate) use infantry_scatter::answered_process;
 pub(crate) use scatter::{DamageRetaliation, ScatterFlags};
 mod burrowing;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod burrowing_tests;
 mod scatter_cell;
 pub mod slope_transition;
@@ -120,7 +120,7 @@ pub(crate) use track_path::SetterForceReassign;
 pub mod track_process;
 pub mod tunnel_movement;
 mod tunnel_process;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tunnel_tests;
 mod track_speed;
 pub(crate) mod track_turn;
@@ -275,22 +275,22 @@ pub(crate) fn tick_movement_with_grid(
 // Internal helpers — shared across movement submodules
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod balloon_hover_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_h_o, tests_sim_combat_a_c)))]
 pub(crate) mod bridge_layer_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod ground_pose_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod movement_bridge_retail_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod movement_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod foot_timer_migration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod drop_as_bomb_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod paratrooper_crush_tests;

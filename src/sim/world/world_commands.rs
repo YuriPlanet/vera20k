@@ -3783,11 +3783,11 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "battle_opening_tests.rs"]
 mod battle_opening_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

@@ -516,7 +516,7 @@ fn next_deadline_after(deadline: Instant, now: Instant, interval: Duration) -> I
         .unwrap_or_else(|| now.checked_add(interval).unwrap_or(deadline))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 pub(crate) mod tests {
     use super::*;
 

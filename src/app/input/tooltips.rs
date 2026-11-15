@@ -994,7 +994,7 @@ pub(crate) fn size_tip_box(
     (layout, [box_w, box_h])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;

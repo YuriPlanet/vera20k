@@ -517,7 +517,7 @@ fn recruitment_flag(token: Option<&str>) -> bool {
     token.is_none_or(|token| crt_atoi(token) != 0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

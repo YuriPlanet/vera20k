@@ -429,7 +429,7 @@ fn local_house(state: &AppState) -> Option<InternedId> {
         .current_house()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
 

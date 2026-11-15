@@ -1539,10 +1539,10 @@ fn map_cell_offset(rx: u16, ry: u16, dx: i32, dy: i32) -> Option<(u16, u16)> {
     Some((x, y))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_building_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_perimeter_tests.rs"]
 mod perimeter_tests;

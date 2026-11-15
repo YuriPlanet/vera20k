@@ -232,7 +232,7 @@ fn peek_bits(r: &mut BitReader<'_>, n: u32) -> Result<u32, AssetError> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

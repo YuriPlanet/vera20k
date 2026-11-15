@@ -821,7 +821,7 @@ fn self_healing(state: &mut ShieldState, ty: &ShieldType, frame: i32) {
     }
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_p_s, feature = "phobos"))]
 #[path = "shield_tests.rs"]
 mod tests;
 

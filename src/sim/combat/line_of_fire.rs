@@ -616,7 +616,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
 
     Some(hit)
 }
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
 

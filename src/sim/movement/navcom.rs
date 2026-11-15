@@ -1072,7 +1072,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "track_destination_tests.rs"]
 mod native_destination_tests;
 

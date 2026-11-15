@@ -87,7 +87,7 @@ pub fn render_overlay_names(reg: &OverlayTypeRegistry) -> BTreeMap<u8, String> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

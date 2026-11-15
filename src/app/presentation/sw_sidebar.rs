@@ -330,7 +330,7 @@ pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
         .map(|entry| entry.rect)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -354,6 +354,7 @@ mod tests {
                 can_afford: false,
                 constraints_blocked: false,
                 ares_refusal: None,
+                ready_shots: 0,
             },
         }
     }
@@ -405,6 +406,7 @@ mod tests {
                 can_afford: false,
                 constraints_blocked: false,
                 ares_refusal: None,
+                ready_shots: 0,
             })
             .collect()
     }

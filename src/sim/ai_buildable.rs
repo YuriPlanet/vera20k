@@ -148,6 +148,6 @@ pub(crate) fn first_buildable_from_array<'a>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_buildable_parent_tests.rs"]
 mod parent_tests;

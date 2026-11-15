@@ -64,7 +64,7 @@ pub fn sanitise_name(name: &str, fallback: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::sanitise_name;
 

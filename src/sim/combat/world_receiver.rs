@@ -4756,19 +4756,19 @@ fn append_fixture_tiberium(world: &mut Simulation, out: &mut Vec<TiberiumReducti
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "ifv_area_receipt_tests.rs"]
 mod ifv_area_receipt_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "nuke_maker_tests.rs"]
 mod nuke_maker_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "building_hit_fire_tests.rs"]
 mod building_hit_fire_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "phobos_bullet_init_tests.rs"]
 mod phobos_bullet_init_tests;
 

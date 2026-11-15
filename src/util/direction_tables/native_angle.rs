@@ -167,7 +167,7 @@ pub fn facing8_from_delta(dx: i32, dy: i32) -> u8 {
     (facing16_from_delta(dx, dy) >> 8) as u8
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

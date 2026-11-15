@@ -1923,16 +1923,16 @@ fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod gunner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod allegiance_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 pub(crate) mod assault_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

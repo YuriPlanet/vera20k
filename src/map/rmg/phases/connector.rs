@@ -200,7 +200,7 @@ pub(crate) fn jitter(rng: &mut RmgRng) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

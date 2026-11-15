@@ -122,7 +122,7 @@ pub fn quad_cleanup(grid: &mut RmgGrid) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

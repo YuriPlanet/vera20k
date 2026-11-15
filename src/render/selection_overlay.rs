@@ -905,7 +905,7 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
     rgba
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

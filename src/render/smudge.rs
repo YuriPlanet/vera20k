@@ -27,7 +27,7 @@ use crate::render::palette_light::PaletteLight;
 use crate::rules::smudge_type::{SmudgeTypeDef, SmudgeTypeRegistry};
 use crate::sim::smudge_grid::{SmudgeCell, SmudgeGrid};
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "smudge_gpu_tests.rs"]
 mod gpu_tests;
 
@@ -230,7 +230,7 @@ fn visible_instances_in(
     instances
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

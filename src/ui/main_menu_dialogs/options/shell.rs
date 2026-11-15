@@ -19,15 +19,16 @@ use super::{
     HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
     HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
-    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
-    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MINIMAP_BEACONS_HELP,
+    MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL,
+    PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP,
+    SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP,
+    SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    SUPERWEAPON_LIMIT_HELP, SUPERWEAPON_LIMIT_LABEL, Setting, SidebarSize,
+    TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -717,6 +718,9 @@ impl OptionsDialogState {
             LauncherTrackbarId::HouseColorStrength => {
                 return Cow::Owned(tr(HOUSE_COLOR_STRENGTH_LABEL));
             }
+            LauncherTrackbarId::SuperweaponLimit => {
+                return Cow::Owned(tr(SUPERWEAPON_LIMIT_LABEL));
+            }
             LauncherTrackbarId::GameSpeed => &self.game_speed_caption,
         })
     }
@@ -746,6 +750,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
             LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
+            LauncherCheckboxId::MinimapBeacons => MINIMAP_BEACONS_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
             LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
@@ -825,6 +830,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => self.values.yr_original_style,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
+            LauncherCheckboxId::MinimapBeacons => self.values.minimap_beacons,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::HdRadar => self.values.hd_radar,
@@ -1079,6 +1085,9 @@ impl OptionsDialogState {
                 LauncherTrackbarId::HouseColorStrength => {
                     LauncherStatusHelp::Vera(HOUSE_COLOR_STRENGTH_HELP)
                 }
+                LauncherTrackbarId::SuperweaponLimit => {
+                    LauncherStatusHelp::Vera(SUPERWEAPON_LIMIT_HELP)
+                }
                 // Retail's string for the Game Options speed slider.
                 LauncherTrackbarId::GameSpeed => LauncherStatusHelp::Csf("STT:GameOptSliderSpeed"),
             });
@@ -1104,6 +1113,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::RightClickOrders => {
                     LauncherStatusHelp::Vera(RIGHT_CLICK_ORDERS_HELP)
+                }
+                LauncherCheckboxId::MinimapBeacons => {
+                    LauncherStatusHelp::Vera(MINIMAP_BEACONS_HELP)
                 }
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Vera(LOCK_CURSOR_HELP),
                 LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Vera(VERA_ICON_HELP),
@@ -1307,7 +1319,7 @@ fn list_caption(id: LauncherComboId) -> String {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::rules::house_colors::{STRENGTH_MAX, STRENGTH_RETAIL};
@@ -1742,6 +1754,7 @@ mod tests {
             Setting::Slider(Slider::Difficulty),
             Setting::Slider(Slider::HouseColorStrength),
             Setting::Checkbox(Check::TerrainDeformation),
+            Setting::Slider(Slider::SuperweaponLimit),
             Setting::Checkbox(Check::VeraIcon),
             Setting::Checkbox(Check::SmoothOnlineMenus),
             Setting::Checkbox(Check::HdMapPreviews),
@@ -2579,6 +2592,47 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
                 LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::AlwaysExceptFull)
+            ]
+        );
+    }
+
+    /// The Superweapon Limit slider reads Off at its left end and publishes
+    /// the limit, not the position: its first notch allows two.
+    #[test]
+    fn superweapon_limit_slider_publishes_off_then_two_up() {
+        use crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX;
+        let mut state = state();
+        let layout = page(Category::Gameplay);
+        let slider = layout
+            .trackbar_rect(LauncherTrackbarId::SuperweaponLimit)
+            .unwrap();
+        assert_eq!(
+            state.trackbar_plaque_text(LauncherTrackbarId::SuperweaponLimit),
+            tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_OFF)
+        );
+        state.set_trackbar_position(LauncherTrackbarId::SuperweaponLimit, 1);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::SuperweaponLimitChanged(2),
+            ]
+        );
+        state.shell_mouse_down(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
+        state.shell_mouse_up(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
+        assert_eq!(
+            state.trackbar_plaque_text(LauncherTrackbarId::SuperweaponLimit),
+            SUPERWEAPON_LIMIT_MAX.to_string()
+        );
+        state.shell_mouse_down(slider.x + 1, slider.y + slider.h - 3, &layout);
+        state.shell_mouse_up(slider.x + 1, slider.y + slider.h - 3, &layout);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::SuperweaponLimitChanged(SUPERWEAPON_LIMIT_MAX),
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::SuperweaponLimitChanged(0),
             ]
         );
     }

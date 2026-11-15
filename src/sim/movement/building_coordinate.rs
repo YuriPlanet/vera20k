@@ -153,6 +153,6 @@ pub(crate) fn exit_coordinate(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "building_coordinate_tests.rs"]
 mod tests;

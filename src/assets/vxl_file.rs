@@ -377,7 +377,7 @@ pub fn minimal_test_vxl() -> Vec<u8> {
     data
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

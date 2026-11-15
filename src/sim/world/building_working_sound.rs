@@ -154,6 +154,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_working_sound_tests.rs"]
 mod tests;

@@ -179,7 +179,7 @@ pub(crate) fn build_selection_bracket_lines(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;

@@ -53,19 +53,19 @@ pub(crate) mod target_lines;
 pub(crate) mod ui_overlays;
 pub(crate) mod window_ui;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_app_presentation, tests_app_presentation_render)))]
 mod passenger_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod ammo_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod spawn_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod absorber_pip_tests;
 
 pub(crate) mod lighting;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod lighting_gpu_tests;

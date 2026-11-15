@@ -651,6 +651,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "airstrike_tests.rs"]
 mod tests;

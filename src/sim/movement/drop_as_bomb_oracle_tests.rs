@@ -6,7 +6,7 @@
 //! production implementation. The caller module includes this file under
 //! `#[cfg(test)]`.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;

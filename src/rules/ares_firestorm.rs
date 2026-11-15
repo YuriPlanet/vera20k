@@ -140,7 +140,7 @@ pub(crate) const FIRESTORM_ANIM_KEYS: [&str; 4] = [
     "FirestormAirAnim",
 ];
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

@@ -622,6 +622,7 @@ impl TacticalOptions {
             teams: None,
             auto_balance: false,
             queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 }
@@ -754,7 +755,7 @@ fn validate_options(options: &TacticalOptions) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::path::PathBuf;

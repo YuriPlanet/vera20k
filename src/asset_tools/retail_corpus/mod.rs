@@ -12,15 +12,15 @@
 mod decoder_ratchets;
 mod manifest;
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod certify_audio;
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod certify_roundtrip;
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod certify_structural;
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod ratchet_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests;
 
 use std::collections::BTreeMap;

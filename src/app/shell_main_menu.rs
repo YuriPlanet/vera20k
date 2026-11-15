@@ -174,11 +174,20 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next logic frame's pass reads it; Options' accept writes it out.
         self.persistence.options_profile.auto_repair = enabled;
     }
+    fn store_minimap_beacons(&mut self, enabled: bool) {
+        // The next radar click reads it; Options' accept writes it out.
+        self.persistence.options_profile.minimap_beacons = enabled;
+    }
     fn store_terrain_deformation(&mut self, enabled: bool) {
         // The next game's rules and every later network agreement read it;
         // Options' accept writes it out.
         self.persistence.options_profile.terrain_deformation = enabled;
         self.process_assets.set_terrain_deformation(enabled);
+    }
+    fn store_superweapon_limit(&mut self, limit: u8) {
+        // As Terrain Deformation: the next game's rules read it.
+        self.persistence.options_profile.superweapon_limit = limit;
+        self.process_assets.set_superweapon_limit(i32::from(limit));
     }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
@@ -580,6 +589,10 @@ impl App {
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
     pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+        // VERA: setup screens start from the player's own personal rules,
+        // which a previous room's replaced; a room's agreement plays its
+        // host's.
+        state.process_assets.use_own_personal_rules();
         //6980D6→6722F0 and475540 read the same process INI each visit and
         // may allocate a Country before the52E123 body pass.
         state
@@ -2373,7 +2386,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod status_error_tests {
     use super::{CardHost, shell_error_card};
     use crate::app::initialize::{StartupFiles, StartupProblem};

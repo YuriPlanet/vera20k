@@ -979,7 +979,7 @@ fn present_settings(vsync: bool) -> (wgpu::PresentMode, u32) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};

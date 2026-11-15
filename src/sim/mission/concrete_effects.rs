@@ -16,11 +16,11 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "infantry_target_tests.rs"]
 mod infantry_target_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "building_destination_tests.rs"]
 mod building_destination_tests;
 

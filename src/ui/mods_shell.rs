@@ -146,7 +146,7 @@ pub(crate) fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ModsLay
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::list::{ListBoxState, ListMetrics};

@@ -14,7 +14,7 @@ use crate::sim::aircraft::attack_mission::{StrikeFacts, StrikeHost, strike_visit
 use crate::sim::aircraft::fire_at::{AircraftShot, FireAtHost};
 use crate::sim::projectile::ProjectileVelocity;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "aircraft_release_tests.rs"]
 mod tests;
 

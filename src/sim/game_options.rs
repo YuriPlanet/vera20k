@@ -294,7 +294,7 @@ impl GameOptions {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::{GameOptions, RoomBans};
     use crate::rules::ini_parser::IniFile;

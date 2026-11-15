@@ -432,7 +432,7 @@ fn format_campaign_score_time(total_seconds: i32) -> String {
     format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod campaign_score_model_tests {
     use super::build_campaign_score_screen_model_from_sources;
     use crate::assets::csf_file::test_csf;
@@ -3537,7 +3537,7 @@ pub(crate) fn screen_point_to_world_cell(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::{
         ExactStepError, ExactStepReceipt, frame_ticks_inline, upsert_overlay_entries,
@@ -3856,11 +3856,11 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "camera_cadence_tests.rs"]
 mod camera_cadence_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod modal_pump_tests {
     use super::{
         SessionMode, audio_pump_follows_main_tick, modal_pump_should_advance_sim,

@@ -193,7 +193,7 @@ pub(crate) fn delete_selected(state: &mut AppState) {
     beacons::delete_beacon(state, BeaconTarget::Selected);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::app::match_runtime::beacons::feedback_mode;

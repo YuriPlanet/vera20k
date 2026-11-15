@@ -2462,7 +2462,7 @@ fn radio_hello(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use crate::map::entities::EntityCategory;
     use crate::sim::combat::Health;

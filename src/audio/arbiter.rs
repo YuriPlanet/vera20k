@@ -1829,15 +1829,15 @@ impl PlaybackService for TestPlayback {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 #[path = "arbiter_move_sound_tests.rs"]
 mod move_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 #[path = "arbiter_coordinate_tests.rs"]
 pub(super) mod coordinate_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
 

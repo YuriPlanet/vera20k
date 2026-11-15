@@ -51,27 +51,27 @@ impl Default for SelfEffectState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "attach_speed_tests.rs"]
 mod speed_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "attach_firepower_tests.rs"]
 mod firepower_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "attach_decloak_tests.rs"]
 mod decloak_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "attach_self_cloak_tests.rs"]
 mod self_cloak_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "attach_armor_tests.rs"]
 mod armor_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "attach_rof_tests.rs"]
 mod rof_tests;
 
@@ -290,7 +290,7 @@ impl GameEntity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
