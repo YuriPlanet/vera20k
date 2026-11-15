@@ -230,6 +230,42 @@ fn retail_cell_anim_damage_reaches_terrain_only_after_the_due_timer_and_receiver
     }
 }
 
+/// AnimClass::AI `0x00424538..0x0042455E`: an anim owned by a Terrain object
+/// (WhatAmI 0x24) adds five times its Damage per damage step (`0x007E3568` =
+/// 5.0).
+#[test]
+fn a_tree_owned_anim_adds_five_times_its_damage() {
+    let accumulator = |scene: &Scene| {
+        f64::from_bits(
+            scene
+                .sim
+                .anim(scene.anim)
+                .unwrap()
+                .damage_accumulator
+                .bits(),
+        )
+    };
+    let mut gained = Vec::new();
+    for attach in [false, true] {
+        let Some(mut scene) = retail_scene("") else {
+            return;
+        };
+        if attach {
+            assert!(
+                scene
+                    .sim
+                    .set_anim_owner_object(scene.anim, Some(scene.tree), &scene.rules)
+            );
+        }
+        scene.sim.substrate.set_anim_no_effects(scene.anim, true);
+        let before = accumulator(&scene);
+        advance(&mut scene, 3);
+        gained.push(accumulator(&scene) - before);
+    }
+    assert!(gained[0] > 0.0, "{gained:?}");
+    assert!((gained[1] - 5.0 * gained[0]).abs() < 1e-9, "{gained:?}");
+}
+
 #[test]
 fn saved_cell_anim_keeps_its_debited_fraction_timer_and_type_reference() {
     let Some(mut scene) = retail_scene("[Fire2]\nCellSpread=1\nPercentAtMax=1\n") else {

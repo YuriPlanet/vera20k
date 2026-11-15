@@ -2507,9 +2507,10 @@ impl Simulation {
         if !(damage > 0.0) || anim.bounce.is_some() {
             return false;
         }
-        let terrain_owner = anim
-            .owner_entity
-            .is_some_and(|owner| self.terrain_objects.get(owner).is_some());
+        // 0x00424538..0x0042455E: an owner whose WhatAmI is Terrain (0x24)
+        // scales Damage by 5.0 (0x007E3568). A tree owner is kept in
+        // `owner_terrain`, never in `owner_entity`.
+        let terrain_owner = anim.owner_terrain.is_some();
         // Ares AnimClass_Update_DamageDelay1000B1AF..1000B1E7 passes the
         // animation's House, falling back to an attached Techno's owner.
         // Neither owner is an attacking object; keep RAD_NO_ATTACKER below.
