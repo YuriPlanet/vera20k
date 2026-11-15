@@ -141,6 +141,34 @@ fn the_warhead_prevent_scatter_fallback() {
     );
 }
 
+/// `[General] AIChronoSphereSW=` / `AIChronoWarpSW=` (`ValueableIdx`, i.e. a
+/// superweapon type ID, constructors the unset index `-1`,
+/// `Ext/Rules/Body.cpp:122-123`, `Body.h:41-42,581-582`): the supers
+/// `HouseExt::GetAIChronoshiftSupers` (`Ext/House/Body.cpp:333-368`) uses for
+/// the computer's Chronoshift actions.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_ai_chronoshift_supers_default_and_read_from_general() {
+    let defaults = PhobosGlobals::default();
+    assert_eq!(defaults.ai_chrono_sphere_sw, "");
+    assert_eq!(defaults.ai_chrono_warp_sw, "");
+    assert_eq!(read(""), defaults);
+
+    let set = read("[General]\nAIChronoSphereSW=EUCLSF\nAIChronoWarpSW=CAL001\n");
+    assert_eq!(set.ai_chrono_sphere_sw, "EUCLSF");
+    assert_eq!(set.ai_chrono_warp_sw, "CAL001");
+
+    // `none` is the read's blank: it stores the unset index, not a name.
+    let cleared = read("[General]\nAIChronoSphereSW=none\nAIChronoWarpSW=<none>\n");
+    assert_eq!(cleared, defaults);
+
+    assert_eq!(
+        read("[CombatDamage]\nAIChronoSphereSW=EUCLSF\nAIChronoWarpSW=CAL001\n"),
+        defaults,
+        "both keys live in `[General]`"
+    );
+}
+
 /// `[General] AnimCraterDestroyTiberium=` (`Ext/Rules/Body.cpp:418`,
 /// constructor `Ext/Rules/Body.h:844`) defaults yes and is the fallback for an
 /// AnimType's unset art `Crater.DestroyTiberium=` (`Ext/AnimType/Body.cpp:126`).

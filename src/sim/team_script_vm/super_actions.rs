@@ -33,7 +33,9 @@
 //!   [`Simulation::team_fire_super`]). A `[SuperWeaponTypes]` list shorter
 //!   than that value makes Fire_SW read past the Supers vector natively;
 //!   VERA fires nothing. Dormant: retail lists all twelve types in `Type=`
-//!   order.
+//!   order. Under Phobos the Chronoshift pair comes from
+//!   [`crate::sim::superweapon::ai_chronoshift_super_indices`], so an index at
+//!   another type fires that type's entry.
 //!
 //! Ledger: none of the three handlers draws a random number, writes a timer or detaches
 //! anything itself. Greatest_Threat's empty-scan latch is the shared scan's
@@ -45,7 +47,9 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::intern::InternedId;
-use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
+use crate::sim::superweapon::{
+    ai_chronoshift_super_indices, super_nearly_ready, super_types_with_type,
+};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
@@ -102,7 +106,7 @@ impl Simulation {
                     if let Some(centre) = self.team_centre_cell(team_id) {
                         self.team_fire_super(
                             owner,
-                            SuperWeaponKind::IronCurtain,
+                            SuperWeaponKind::IronCurtain.native_index(),
                             centre,
                             rules,
                             registry,
@@ -119,16 +123,20 @@ impl Simulation {
     }
 
     /// Script actions 56 (`0x006EFE60`) and 57 (`0x006F0130`): with the
-    /// leader's house's last Chronosphere (`Type=` 3) passing
-    /// [`Self::team_super_step`], action 56 selects a BuildingWithProperty
-    /// target as action 47 does, while 57 asks for its quarry as action 0
-    /// does ([`Self::team_quarry_threat`]). Finding one, the house fires the
-    /// Chronosphere at the cell of the team's centre and its last Chrono Warp
-    /// (`Type=` 4, whose charge is not read) at the target's cell, and the
-    /// target becomes the team's mission target (`Assign_Mission_Target @
-    /// 0x006E9050`). The action then finishes, target or not. It also
-    /// finishes without members, a Chronosphere or a Chrono Warp, and waits
-    /// while the Chronosphere nearly has its charge.
+    /// leader's house's Chronosphere passing [`Self::team_super_step`], action
+    /// 56 selects a BuildingWithProperty target as action 47 does, while 57
+    /// asks for its quarry as action 0 does ([`Self::team_quarry_threat`]).
+    /// Finding one, the house fires that Chronosphere at the cell of the
+    /// team's centre and its Chrono Warp (`Type=` 4, whose charge is not read)
+    /// at the target's cell, and the target becomes the team's mission target
+    /// (`Assign_Mission_Target @ 0x006E9050`). The action then finishes, target
+    /// or not. It also finishes without members, a Chronosphere or a Chrono
+    /// Warp, and waits while the Chronosphere nearly has its charge.
+    ///
+    /// The pair comes from [`ai_chronoshift_super_indices`]: natively the last
+    /// `Type=ChronoSphere` / `Type=ChronoWarp` entry of the house's Supers, and
+    /// under Phobos the `[General] AIChronoSphereSW=` / `AIChronoWarpSW=`
+    /// entries when those are authored.
     pub(super) fn team_action_chronoshift(
         &mut self,
         team_id: u64,
@@ -137,16 +145,34 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let checked = self.team_leader(team_id, rules).and_then(|leader| {
+        let (sphere_index, warp_index) = ai_chronoshift_super_indices(rules);
+        let checked = sphere_index.zip(warp_index).and_then(|(sphere, warp)| {
+            let leader = self.team_leader(team_id, rules)?;
             let owner = self.substrate.entities.get(leader)?.owner();
-            let sphere = super_types_with_type(rules, SuperWeaponKind::ChronoSphere.native_index())
-                .last()?;
-            super_types_with_type(rules, SuperWeaponKind::ChronoWarp.native_index()).last()?;
-            Some((leader, owner, self.team_super_step(owner, sphere, rules)))
+            let sphere_name = usize::try_from(sphere)
+                .ok()
+                .and_then(|index| rules.super_weapon_order.get(index))?;
+            // Fire_SW takes the Super's `Type=` value as its Supers index, so
+            // each call passes the selected entry's own type, not its
+            // position (`0x6F02B6`, `0x6F030D`).
+            let type_value = |index: i32| {
+                usize::try_from(index)
+                    .ok()
+                    .and_then(|index| rules.super_weapon_order.get(index))
+                    .and_then(|name| rules.super_weapon(name))
+                    .map_or(-1, |sw| sw.kind.native_index())
+            };
+            Some((
+                leader,
+                owner,
+                type_value(sphere),
+                type_value(warp),
+                self.team_super_step(owner, sphere_name, rules),
+            ))
         });
         match checked {
-            Some((_, _, SuperStep::Wait)) => return,
-            Some((leader, owner, SuperStep::Fire)) => {
+            Some((_, _, _, _, SuperStep::Wait)) => return,
+            Some((leader, owner, sphere, warp, SuperStep::Fire)) => {
                 // 56 at 6EFF5D..6EFFAF calls 6EEBD0 directly, with the selected
                 // leader (not the member-list head), its House's enemy and the
                 // TeamType's OnlyTargetHouseEnemy. No quarry/weapon/fog gate.
@@ -164,22 +190,8 @@ impl Simulation {
                     && let Some(centre) = self.team_centre_cell(team_id)
                     && let Some(TeamTarget::Cell { x, y }) = self.team_target_cell_of_coord(target)
                 {
-                    self.team_fire_super(
-                        owner,
-                        SuperWeaponKind::ChronoSphere,
-                        centre,
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
-                    self.team_fire_super(
-                        owner,
-                        SuperWeaponKind::ChronoWarp,
-                        (x, y),
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
+                    self.team_fire_super(owner, sphere, centre, rules, registry, frame_effects);
+                    self.team_fire_super(owner, warp, (x, y), rules, registry, frame_effects);
                     self.team_assign_mission_target(
                         team_id,
                         Some(target),
@@ -189,7 +201,7 @@ impl Simulation {
                     );
                 }
             }
-            Some((_, _, SuperStep::Finish)) | None => {}
+            Some((_, _, _, _, SuperStep::Finish)) | None => {}
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.advance_pending = true;
@@ -326,20 +338,22 @@ impl Simulation {
     }
 
     /// `Fire_SW(Type=, &cell)` (`0x006EFDB4`, `0x006F02B6`, `0x006F030D`):
-    /// the actions pass the Super's `Type=` value where Fire_SW takes an
-    /// index into the house's Supers, the `[SuperWeaponTypes]` entry at that
-    /// position. That is the Super itself when the list puts each type at
-    /// the index of its `Type=`, as retail does.
+    /// the actions pass the selected Super's `Type=` value where Fire_SW takes
+    /// an index into the house's Supers, the `[SuperWeaponTypes]` entry at
+    /// that position. That is the Super itself when the list puts each type at
+    /// the index of its `Type=`, as retail does. Under Phobos the selection is
+    /// [`ai_chronoshift_super_indices`]' pair, so indexing an entry of another
+    /// `Type=` passes that entry's type value.
     fn team_fire_super(
         &mut self,
         owner: InternedId,
-        kind: SuperWeaponKind,
+        sw_type_value: i32,
         (x, y): (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(name) = usize::try_from(kind.native_index())
+        let Some(name) = usize::try_from(sw_type_value)
             .ok()
             .and_then(|index| rules.super_weapon_order.get(index))
         else {

@@ -75,6 +75,8 @@ mod launch_sw_tests;
 #[cfg(feature = "phobos")]
 mod limbo;
 #[cfg(all(test, feature = "phobos"))]
+mod phobos_ai_chronoshift_tests;
+#[cfg(all(test, feature = "phobos"))]
 #[path = "phobos_convert_pairs_tests.rs"]
 mod phobos_convert_pairs_tests;
 #[cfg(feature = "phobos")]
@@ -1325,6 +1327,77 @@ pub(crate) fn super_types_with_type(
                 .is_some_and(|sw| type_value >= 0 && sw.kind.native_index() == type_value)
         })
         .map(String::as_str)
+}
+
+/// Phobos `HouseExt::GetAIChronoshiftSupers` (`Ext/House/Body.cpp:333-368`):
+/// the two Supers indices — positions in `[SuperWeaponTypes]`, which is the
+/// order of every house's Supers vector — that the computer's Chronoshift
+/// actions (`TMission::ChronoShiftToBuilding @ 0x006EFE60`, `ChronoShiftToTarget
+/// @ 0x006F0130`, whose Supers lookups Phobos replaces at `0x6EFEFB`,
+/// `0x6F0008`, `0x6F005F`, `0x6F01B0`, `0x6F02AD` and `0x6F0304`) fire.
+/// `[General] AIChronoSphereSW=` names the sphere and, when `AIChronoWarpSW=`
+/// is unset, that type's `SW.PostDependent` names the warp; `AIChronoWarpSW=`
+/// then replaces the warp. Unless both are held, the native loop over the
+/// house's Supers re-assigns each pointer from the last `Type=ChronoSphere` /
+/// `Type=ChronoWarp` entry it meets, so a scanned entry overwrites what the
+/// names chose — which is also the whole story without Phobos, where only that
+/// loop runs. A name matching no type is the read's unset index, so it counts
+/// as unfound here too.
+pub(crate) fn ai_chronoshift_super_indices(rules: &RuleSet) -> (Option<i32>, Option<i32>) {
+    #[cfg(feature = "phobos")]
+    let (globals_sphere, globals_warp) = {
+        let globals = &rules.phobos_globals;
+        let mut sphere = None;
+        let mut warp = super_index_of_type(rules, &globals.ai_chrono_warp_sw);
+        if !globals.ai_chrono_sphere_sw.is_empty() {
+            sphere = super_index_of_type(rules, &globals.ai_chrono_sphere_sw);
+            // `Ext/House/Body.cpp:343-349`: only an unset `AIChronoWarpSW`
+            // lets the sphere's `SW.PostDependent` name the warp.
+            if globals.ai_chrono_warp_sw.is_empty() {
+                let post = sphere
+                    .and_then(|index| rules.super_weapon(&rules.super_weapon_order[index as usize]))
+                    .map(|sw| sw.phobos_post_dependent.as_str());
+                if let Some(post) = post.filter(|name| !name.is_empty()) {
+                    warp = super_index_of_type(rules, post);
+                }
+            }
+        }
+        (sphere, warp)
+    };
+    #[cfg(not(feature = "phobos"))]
+    let (globals_sphere, globals_warp) = (None, None);
+
+    if globals_sphere.is_some() && globals_warp.is_some() {
+        return (globals_sphere, globals_warp);
+    }
+    let mut scanned_sphere = None;
+    let mut scanned_warp = None;
+    for (index, name) in rules.super_weapon_order.iter().enumerate() {
+        match rules.super_weapon(name).map(|sw| sw.kind) {
+            Some(crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere) => {
+                scanned_sphere = Some(index as i32)
+            }
+            Some(crate::rules::superweapon_type::SuperWeaponKind::ChronoWarp) => {
+                scanned_warp = Some(index as i32)
+            }
+            _ => {}
+        }
+    }
+    (
+        scanned_sphere.or(globals_sphere),
+        scanned_warp.or(globals_warp),
+    )
+}
+
+/// The `[SuperWeaponTypes]` position of a Phobos `ValueableIdx` type name: an
+/// empty name is the read's unset index and matches no type
+/// (`SuperWeaponTypeClass::FindIndex @ Utilities/Enumerable.h:21`).
+#[cfg(feature = "phobos")]
+fn super_index_of_type(rules: &RuleSet, name: &str) -> Option<i32> {
+    (!name.is_empty())
+        .then(|| rules.super_weapon_index(name))
+        .flatten()
+        .map(|index| index as i32)
 }
 
 /// `SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`: the first

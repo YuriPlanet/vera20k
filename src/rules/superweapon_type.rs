@@ -710,6 +710,16 @@ pub struct SuperWeaponType {
     /// (`SuperClass_Grant_ShowTimer @ 0x6CB5EB`, `Ext/SWType/Hooks.cpp:36-50`).
     #[cfg(feature = "phobos")]
     pub phobos_show_timer_priority: i32,
+    /// Phobos `SW.PostDependent=` read as `ValueableIdx` (`Ext/SWType/Body.cpp:146`,
+    /// `Body.h:55,155`, constructor the unset index `-1`): the superweapon type
+    /// whose entry `HouseExt::GetAIChronoshiftSupers` takes as the Chrono Warp
+    /// when `AIChronoSphereSW` is set and `AIChronoWarpSW` is not
+    /// (`Ext/House/Body.cpp:343-349`). Ares reads the same key as a type-name
+    /// string for the player's ChronoSphere click (`1006ED30`), so each feature
+    /// keeps its own field of the one authored name; VERA resolves the name to
+    /// the array index at the use site.
+    #[cfg(feature = "phobos")]
+    pub phobos_post_dependent: String,
     /// Phobos `ShowTimer.Percentage=` (`Ext/SWType/Body.cpp:177`,
     /// `Nullable<bool>` constructor set false `Ext/SWType/Body.h:79,184`):
     /// the Super's tactical timer prints its elapsed share instead of the
@@ -1025,6 +1035,10 @@ impl SuperWeaponType {
             show_designator_range: section.read_bool("ShowDesignatorRange", true),
             #[cfg(feature = "phobos")]
             phobos_show_timer_priority: section.read_int("ShowTimer.Priority", 0),
+            // `Ext/SWType/Body.cpp:146`: the same key Ares reads as a type
+            // name, kept as the name for the AI Chronoshift warp lookup.
+            #[cfg(feature = "phobos")]
+            phobos_post_dependent: section.read_phobos_type_name("SW.PostDependent", ""),
             #[cfg(feature = "phobos")]
             phobos_show_timer_percentage: section
                 .read_phobos_nullable_bool("ShowTimer.Percentage", Some(false)),
@@ -2876,5 +2890,35 @@ Type=BogusType
         let sw = rules.super_weapon("A").expect("A");
         assert_eq!(sw.phobos_show_timer_percentage, None);
         assert!(sw.phobos_show_timer_percentage(&rules));
+    }
+
+    /// Phobos reads `SW.PostDependent=` as a `ValueableIdx`
+    /// (`Ext/SWType/Body.cpp:146`, `Body.h:55,155`, constructor the unset index
+    /// `-1`): a superweapon **type ID**, whose array index
+    /// `HouseExt::GetAIChronoshiftSupers` (`Ext/House/Body.cpp:347`) takes when
+    /// only `AIChronoSphereSW=` is authored. `none` is that unset state, and a
+    /// name matching no type stays unfound at the use site.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_post_dependent_reads_the_superweapon_name() {
+        let read = |text: &str| {
+            let ini = crate::rules::ini_parser::IniFile::from_str(text);
+            SuperWeaponType::from_ini_section("A", ini.section("A").unwrap())
+        };
+        assert_eq!(read("[A]\nType=ChronoSphere\n").phobos_post_dependent, "");
+        assert_eq!(
+            read("[A]\nType=ChronoSphere\nSW.PostDependent=CAL001\n").phobos_post_dependent,
+            "CAL001"
+        );
+        assert_eq!(
+            read("[A]\nType=ChronoSphere\nSW.PostDependent=none\n").phobos_post_dependent,
+            "",
+            "`none` stores the unset index"
+        );
+        assert_eq!(
+            read("[A]\nType=ChronoSphere\nSW.PostDependent=4\n").phobos_post_dependent,
+            "4",
+            "a number is a type ID like any other, and matches no type"
+        );
     }
 }

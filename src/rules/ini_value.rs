@@ -914,6 +914,32 @@ impl IniSection {
         })
     }
 
+    /// Phobos `ValueableIdx<T>::Read` (`Utilities/TemplateDef.h:1814-1827`):
+    /// `INI_EX::ReadString` over the shared 2048 buffer (`Phobos::readBuffer`),
+    /// then `T::FindIndex` (`Utilities/Enumerable.h:21`) — an *array index from
+    /// a type ID*, not a number. `FindIndex` failing leaves the read to
+    /// `INIClass::IsBlank`: a `none` / `<none>` value stores the
+    /// unset index -1, and any other value keeps the current one, exactly as an
+    /// absent key or an all-blank value does because `ReadString` returns 0.
+    ///
+    /// VERA keeps the authored type name and takes the index where it is used
+    /// ([`crate::rules::ruleset::RuleSet::super_weapon_index]` and the other
+    /// type-index lookups), the same split as `DefaultLandingAnim`. The two
+    /// differ only if a layer names a type that does not exist while an earlier
+    /// layer named a real one: natively the earlier index survives, here the
+    /// broken name resolves to unfound.
+    #[cfg(feature = "phobos")]
+    pub fn read_phobos_type_name(&self, key: &str, current: &str) -> String {
+        let Some(name) = self.read_name(key, 2048) else {
+            return current.to_owned();
+        };
+        if crate::rules::ini_parser::is_native_none_type_name(name) {
+            String::new()
+        } else {
+            name.to_owned()
+        }
+    }
+
     /// Phobos `Nullable<DirType>` (the reused `nLandingDir` reader at
     /// `Ext/BuildingType/Body.cpp:292`): `Parser<int>` then `read<DirType>`'s
     /// check `DirType::North..=DirType::NorthWest` (`0..=224`; a `DirType` is
@@ -2259,7 +2285,6 @@ impl PhobosDynamicTeamDelayType {
         }
     }
 }
-
 
 fn parse_phobos_double(raw: &str) -> Option<f64> {
     let parsed = try_parse_leading_f64(raw, FloatScanRounding::Nearest)?;

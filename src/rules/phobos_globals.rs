@@ -1071,6 +1071,17 @@ pub struct PhobosGlobals {
     /// (`Misc/Hooks.Ares.cpp:273-281`, which returns `0x702D11`).
     #[serde(default)]
     pub warhead_prevent_scatter: bool,
+    /// `[General] AIChronoSphereSW=` / `AIChronoWarpSW=` (`ValueableIdx`,
+    /// constructors the unset index `-1`, `Ext/Rules/Body.h:41-42,581-582`;
+    /// reads `Ext/Rules/Body.cpp:122-123`): the superweapon **type ID** whose
+    /// House Super the computer's Chronoshift actions use instead of scanning
+    /// for the types (`HouseExt::GetAIChronoshiftSupers`,
+    /// `Ext/House/Body.cpp:333-368`). VERA keeps the name and resolves the
+    /// array index at the use site.
+    #[serde(default)]
+    pub ai_chrono_sphere_sw: String,
+    #[serde(default)]
+    pub ai_chrono_warp_sw: String,
     /// `[CombatDamage] CanTarget.IronCurtained=`, default **`yes`**
     /// (`Ext/Rules/Body.cpp:438`, constructor `Ext/Rules/Body.h:833`): the
     /// human fallback for an unset WeaponType `CanTarget.IronCurtained`; `no`
@@ -1714,6 +1725,8 @@ impl Default for PhobosGlobals {
             free_mcv_credits_threshold: 1500,
             temporal_kill_powered_anim: true,
             storage_tiberium_index: -1,
+            ai_chrono_sphere_sw: String::new(),
+            ai_chrono_warp_sw: String::new(),
             ivan_bomb_attach_to_center: false,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
@@ -1971,6 +1984,12 @@ impl PhobosGlobals {
         globals.ivan_bomb_attach_to_center = ini
             .section_or_empty("CombatDamage")
             .read_bool("IvanBombAttachToCenter", globals.ivan_bomb_attach_to_center);
+        // `Ext/Rules/Body.cpp:122-123`: the AI Chronoshift supers, by type ID.
+        let general = ini.section_or_empty("General");
+        globals.ai_chrono_sphere_sw =
+            general.read_phobos_type_name("AIChronoSphereSW", &globals.ai_chrono_sphere_sw);
+        globals.ai_chrono_warp_sw =
+            general.read_phobos_type_name("AIChronoWarpSW", &globals.ai_chrono_warp_sw);
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so
         // their relative order does not matter.
