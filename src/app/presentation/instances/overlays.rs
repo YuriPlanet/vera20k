@@ -432,7 +432,7 @@ pub(crate) fn build_display_effect_instances(
     );
     let admission = input.tactical_admission();
     // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type; Ares
-    // `[Side] Parachute.Anim=` adds its own attached type.
+    // Type/Country/Side `Parachute.Anim=` adds its own attached types.
     let mut parachute_names = vec![
         input.rules.general.parachute_shp.as_deref(),
         if crate::rules::NPATCH_ENABLED {
@@ -441,8 +441,9 @@ pub(crate) fn build_display_effect_instances(
             None
         },
     ];
-    #[cfg(feature = "ares")]
-    parachute_names.extend(input.rules.side_parachute_animations().map(Some));
+    if input.rules.ares_form() {
+        parachute_names.extend(input.rules.parachute_animations().map(Some));
+    }
     let parachute_types = parachute_names
         .into_iter()
         .flatten()

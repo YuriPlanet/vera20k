@@ -85,7 +85,6 @@ data.
 | Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Paradrop canopy: the dropped type's own `Parachute.Anim` before the Country's and Side's | `0x5F5ADD` (`10047C80`) | [ares-side-defaults.md](ares-side-defaults.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Hover `DeployToLand` landing | `0x513EAA`, `0x514A21`, `0x514DFE` | [ares-techno-hooks.md](ares-techno-hooks.md) |

@@ -217,7 +217,11 @@ impl crate::sim::world::Simulation {
             .get(&owner_house)
             .and_then(|house| house.country())
             .map(|country| self.interner.resolve(country));
-        let Some(canopy) = parachute_anim_name(rules, owner, side, country) else {
+        let object = self.interner.try_resolve(owner.type_ref()).and_then(|_| {
+            self.interner
+                .object_type_in_category(owner.type_ref(), owner.category().into(), rules)
+        });
+        let Some(canopy) = parachute_anim_name(rules, owner, object, side, country) else {
             self.substrate
                 .entities
                 .get_mut(owner_id)?
@@ -313,9 +317,21 @@ impl crate::sim::world::Simulation {
 fn parachute_anim_name<'r>(
     rules: &'r crate::rules::ruleset::RuleSet,
     entity: &crate::sim::game_entity::GameEntity,
+    object: Option<&'r crate::rules::object_type::ObjectType>,
     side: i32,
     country: Option<&str>,
 ) -> Option<&'r str> {
+    // ObjectClass_SpawnParachuted_Animation (installed Ares 3.0 DLL10047C60),
+    // hook5F5ADD replaces `mov edx,[ecx+0xBBC]`
+    // and resumes5F5AE3 with the chosen type in EDX. Foot types take
+    // TechnoTypeExt+F0 before Country's GetParachuteAnim1001BBC0.
+    if rules.ares_form()
+        && entity.category().is_foot()
+        && let Some(canopy) =
+            object.and_then(|object| object.techno_combat().presentation().parachute_anim())
+    {
+        return Some(canopy);
+    }
     // `GetParachuteAnim @ 0x1001BBC0` answers the country's own
     // `[Country] Parachute.Anim=` first; a never-set or `none` field is the
     // null pointer there and defers to the side.
@@ -328,12 +344,6 @@ fn parachute_anim_name<'r>(
     // NPSE non-infantry branch; an unset key leaves that existing owner, and
     // `none` falls through to `Find("PARACH")`
     // (`HouseTypeExt::GetParachuteAnim @ 0x1001BBC0`).
-    //
-    // RESIDUAL (Ares): the canopy hook `0x5F5ADD` -> `0x10047C80` first takes
-    // the dropped type's own `Parachute.Anim` (TechnoTypeExt `+0xF0`), before
-    // the Country layer above; VERA does not read that type key. Trigger: a
-    // mod setting it. Effect: another canopy art; no gameplay change. Never
-    // on retail data.
     if let Some(override_) = rules.side_parachute_override(side) {
         return Some(override_.unwrap_or("PARACH"));
     }
@@ -615,7 +625,7 @@ mod canopy_tests {
         let rules = RuleSet::from_processed_rules(&processed).expect("side projection");
         let entity = GameEntity::test_default(1, "E1", "Americans", 10, 11);
         assert_eq!(
-            parachute_anim_name(&rules, &entity, 3, None),
+            parachute_anim_name(&rules, &entity, None, 3, None),
             Some("PARACH")
         );
     }

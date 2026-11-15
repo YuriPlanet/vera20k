@@ -2597,8 +2597,9 @@ pub(crate) fn prepare_sprite_atlas(
         if crate::rules::NPATCH_ENABLED {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
         }
-        #[cfg(feature = "ares")]
-        parachutes.extend(rules.side_parachute_animations());
+        if rules.ares_form() {
+            parachutes.extend(rules.parachute_animations());
+        }
     }
     for shp_name in parachutes {
         let candidates = [

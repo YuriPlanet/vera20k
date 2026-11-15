@@ -11035,12 +11035,21 @@ impl RuleSet {
             .as_deref()
     }
 
-    /// Every distinct `[Side] Parachute.Anim=` identity, for the animation
-    /// asset preload and canopy owner scan.
-    pub fn side_parachute_animations(&self) -> impl Iterator<Item = &str> {
+    /// Configured Type, Country and Side canopy identities for the shared
+    /// animation asset closure (Ares ObjectClass hook5F5ADD/10047C60).
+    pub fn parachute_animations(&self) -> impl Iterator<Item = &str> {
         self.side_extensions
             .iter()
             .filter_map(|extension| extension.parachute_anim.as_ref()?.as_deref())
+            .chain(
+                self.countries
+                    .values()
+                    .filter_map(|country| country.paradrop.parachute_anim.as_deref()),
+            )
+            .chain(
+                self.all_objects()
+                    .filter_map(|object| object.techno_combat().presentation().parachute_anim()),
+            )
     }
 
     /// `[Side] GraphicalText.Image=` (SideExt `+0x1F8`) and

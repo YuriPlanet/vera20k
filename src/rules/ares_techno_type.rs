@@ -220,6 +220,10 @@ pub(crate) type ResolvedTechno =
 /// unset) and +0x648 `RadialIndicatorRadius` (Nullable<int>, unset).
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PresentationTypeRules {
+    /// TechnoTypeExt+0xF0, Valueable<AnimTypeClass*>; constructor 1003C884
+    /// initializes null. Missing fields in earlier saves keep that default.
+    #[serde(default)]
+    parachute_anim: Option<String>,
     /// Bound against the fixed sound catalog with the type's other sounds
     /// (`ObjectType::bind_scalar_sound_references`); `Some(None)` is an
     /// explicit silence.
@@ -230,6 +234,12 @@ pub(crate) struct PresentationTypeRules {
 }
 
 impl PresentationTypeRules {
+    /// ObjectClass_SpawnParachuted_Animation (Ares.dll 10047C60,
+    /// hook 0x5F5ADD): the type's canopy precedes its owner's country.
+    pub(crate) fn parachute_anim(&self) -> Option<&str> {
+        self.parachute_anim.as_deref()
+    }
+
     /// The voice an airstrike plays as it starts (`abort` false,
     /// AirstrikeClass_Fire_AirstrikeAttackVoice, Ares.dll 10048D60, hook
     /// 0x41D940) or is called off (`abort` true, AirstrikeClass_PointerGot
@@ -929,6 +939,12 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
+        // LoadFromINIFile1003E385..1003E396, after IsBomb and its sounds:
+        // Valueable::Read1000EB20 is Find-only, absent/empty/unknown
+        // retains, none clears (detail::read<AnimType*>1000C9C0).
+        if let Some(anim) = resolve("Parachute.Anim", TypeRef::Animation) {
+            self.presentation.parachute_anim = anim;
+        }
         // After Operator, InitialPayload.Types (1000EDD0) and .Nums
         // (ValueableVector<int> 1000ED00), then after the Chronoshift.* and
         // CameoPCX keys the reverse-engineering pair.
