@@ -1318,7 +1318,17 @@ fn fogged_sprite_keys<'a>(
                     context
                 }
                 FoggedDrawKind::Animation => {
-                    frozen_anim_palette_context(rules.art().anim_runtime_config(name))
+                    let config = rules.art().anim_runtime_config(name);
+                    // A frame past the SHP (End=/LoopEnd= beyond its frames)
+                    // draws nothing (`CC_Draw_Shape`, `0x0069E7F3`); the
+                    // atlas would stand frame 0 in for it.
+                    if config
+                        .and_then(|config| config.raw_shp_frame_count)
+                        .is_some_and(|count| record.frame >= count)
+                    {
+                        continue;
+                    }
+                    frozen_anim_palette_context(config)
                 }
             };
             keys.insert(ShpSpriteKey {
