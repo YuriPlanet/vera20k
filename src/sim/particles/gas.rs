@@ -236,10 +236,14 @@ fn apply_damage(
     context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
+    // RESIDUAL: a Damage particle with no Warhead= passes a null warhead
+    // (0x0062C2ED); this skips the call. Every retail Gas type names one.
     let Some(warhead) = pt.warhead.as_deref() else {
         return;
     };
     let warhead = sim.interner.intern(warhead);
+    // GetCellAt (0x00565738..0x00565754) truncates toward zero; the shift
+    // differs only at a negative coordinate, which no gas particle reaches.
     let cell = ((p.coords.x >> 8) as u16, (p.coords.y >> 8) as u16);
     let ares = rules.ares_form();
     if ares {
@@ -315,6 +319,10 @@ fn apply_damage(
                     );
                 }
                 CellObjectMember::Terrain(id) => {
+                    // RESIDUAL: under Ares, hook 0x62C2ED (1005CFE0) also
+                    // passes the attacker to a tree, which Ares Culling (hook
+                    // 0x5F5456) reads; the terrain receiver takes none, so a
+                    // Culling= Wood= gas warhead never culls one. Mod data only.
                     sim.commit_direct_terrain_damage_receiver(
                         rules,
                         context.registry(),
@@ -328,7 +336,8 @@ fn apply_damage(
                             warhead_ref: warhead,
                             near_center_ic_isolation_eligible: false,
                         },
-                        true,
+                        // 0x0062C2DC..0x0062C300 push IgnoreDefenses = 0.
+                        false,
                         context.effects(),
                     );
                 }
@@ -460,7 +469,8 @@ fn damage_in_range(
                         warhead_ref: warhead,
                         near_center_ic_isolation_eligible: false,
                     },
-                    true,
+                    // 100297C0's ReceiveDamage (vt+0x16C) passes 0 too.
+                    false,
                     context.effects(),
                 );
             }
