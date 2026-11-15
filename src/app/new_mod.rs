@@ -20,20 +20,45 @@ pub(crate) const COPIED: [&str; 6] = [
     "thememd.ini",
 ];
 
-/// The `mod.ini` a new mod starts with: every line `app::mods::ModInfo` reads,
-/// commented out, so the folder's name stays the mod's name until the player
-/// gives it one.
-const MOD_INI: (&str, &str) = (
-    "mod.ini",
-    "; What the Mods menu shows for this mod. Every line is optional.\r\n\
-     ; Take away the ; at the start of a line to use it.\r\n\
-     [Mod]\r\n\
-     ;Name=My Mod\r\n\
-     ;Version=1.0\r\n\
-     ;Author=Your name\r\n\
-     ;About=What the mod changes, in a line or two.\r\n\
-     ;Terms=What others may do with your work.\r\n",
-);
+/// The files New Mod writes for the player to fill in, every key commented
+/// out so that each changes nothing until the player takes a `;` away.
+const STARTERS: [(&str, &str); 2] = [
+    // Every line `app::mods::ModInfo` reads, so the folder's name stays the
+    // mod's name until the player gives it one.
+    (
+        "mod.ini",
+        "; What the Mods menu shows for this mod. Every line is optional.\r\n\
+         ; Take away the ; at the start of a line to use it.\r\n\
+         [Mod]\r\n\
+         ;Name=My Mod\r\n\
+         ;Version=1.0\r\n\
+         ;Author=Your name\r\n\
+         ;About=What the mod changes, in a line or two.\r\n\
+         ;Terms=What others may do with your work.\r\n",
+    ),
+    // `ui::match_layout`: with no `[Layouts]` every side keeps the original
+    // interface. The example is docs/interface-layout.md's own.
+    (
+        "veraui.ini",
+        "; The match screen's layout for this mod. While every line here starts\r\n\
+         ; with ; the game shows the original layout.\r\n\
+         ;\r\n\
+         ; The guide explains every part and key, and has a full sample:\r\n\
+         ; https://github.com/YuriPlanet/vera20k/blob/main/docs/interface-layout.md\r\n\
+         ;\r\n\
+         ; To try it, take away the ; at the start of the lines below. Every side\r\n\
+         ; then gets the sidebar on the left and the command bar on top.\r\n\
+         ;\r\n\
+         ;[Layouts]\r\n\
+         ;Default=Mine\r\n\
+         ;\r\n\
+         ;[Mine.Side]\r\n\
+         ;Hold=Left\r\n\
+         ;\r\n\
+         ;[Mine.Bar]\r\n\
+         ;Hold=Top\r\n",
+    ),
+];
 
 /// The name a translation that is no plain folder name gives way to.
 const FALLBACK_NAME: &str = "New Mod";
@@ -53,7 +78,7 @@ pub(crate) struct Made {
 
 /// Make a folder in `mods_dir` named `name`, or `name 2`, `name 3` and on
 /// while one of that name is there in any case, and copy into it each file of
-/// [`COPIED`] that `original` gives, with a `mod.ini` to fill in. Never writes
+/// [`COPIED`] that `original` gives, with the [`STARTERS`] to fill in. Never writes
 /// into a folder or over a file that was there; on a failure it takes away
 /// what it wrote.
 pub(crate) fn make(
@@ -97,11 +122,13 @@ pub(crate) fn make(
                 "the game gave none of the files New Mod copies",
             ));
         }
-        write_new(&dir.join(MOD_INI.0), MOD_INI.1.as_bytes())
+        STARTERS
+            .iter()
+            .try_for_each(|(file, text)| write_new(&dir.join(file), text.as_bytes()))
     })();
     if let Err(error) = filled {
         // Nothing else is in a folder made a moment ago.
-        for file in COPIED.iter().chain([&MOD_INI.0]) {
+        for file in COPIED.iter().chain(STARTERS.iter().map(|(file, _)| file)) {
             let _ = std::fs::remove_file(dir.join(file));
         }
         let _ = std::fs::remove_dir(&dir);
@@ -198,6 +225,28 @@ mod tests {
             ("New Mod 2".into(), None)
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The new veraui.ini keeps the original layout for every side, and its
+    /// example, once its lines are uncommented, is a layout with no problem.
+    #[test]
+    fn new_mods_layout_file_changes_nothing_until_its_example_is_uncommented() {
+        use crate::ui::match_layout::MatchLayoutFile;
+        let (_, text) = STARTERS[1];
+        let as_written = MatchLayoutFile::from_bytes(text.as_bytes());
+        assert!(as_written.for_side(Some("GDI")).is_none());
+        assert!(as_written.problems().is_empty());
+        let uncommented: String = text
+            .lines()
+            .map(|line| match line.strip_prefix(';') {
+                Some(rest) if rest.starts_with('[') || rest.contains('=') => rest,
+                _ => line,
+            })
+            .flat_map(|line| [line, "\n"])
+            .collect();
+        let example = MatchLayoutFile::from_bytes(uncommented.as_bytes());
+        assert!(example.for_side(Some("GDI")).is_some());
+        assert!(example.problems().is_empty(), "{:?}", example.problems());
     }
 
     /// A game that gives none of the files leaves no folder behind, and a

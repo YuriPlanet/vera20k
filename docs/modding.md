@@ -161,9 +161,14 @@ says. Put it on a shortcut to start a mod with one click:
 Press **New Mod** in the Mods menu. The game makes a folder in `Mods` called `New Mod`
 (`New Mod 2` and on if that name is taken) and copies these files from your original
 game into it: `rulesmd.ini`, `artmd.ini`, `aimd.ini`, `soundmd.ini`, `evamd.ini` and
-`thememd.ini`. It also writes a `mod.ini` with every line commented out, ready for you
-to fill in. The copies are what the game plays with no mod, so until you change them the
-new mod plays as the original game.
+`thememd.ini`. It also writes a `mod.ini` and a `veraui.ini` with every line commented
+out, ready for you to fill in: the mod's name and maker, and its
+[match screen layout](interface-layout.md), with an example to try. The copies are what
+the game plays with no mod, so until you change them the new mod plays as the original
+game.
+
+Your own `VERARULES.INI` still counts with a mod in use, and it wins: a key you set there
+beats the same key in the mod's `rulesmd.ini`.
 
 1. Press **Open Folder** in the box that comes up, or **Open Mods Folder**.
 2. Rename the folder if you like, and change the files.
@@ -272,6 +277,8 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 - Restart the game and start a new match. A loaded save keeps the rules it was saved with.
 - Check that the game uses your mod. The main menu shows its name, and near its start
   `logs/ra2.log` has a line beginning `Mod in use:`.
+- Check `VERARULES.INI` in the VERA20k folder. A key set there beats the same key in a
+  mod's `rulesmd.ini`.
 - Check your spelling. A wrong name is ignored with no error, and capitals count: `Cost=`
   works, `cost=` doesn't.
 - `;` starts a comment. `#` doesn't.
