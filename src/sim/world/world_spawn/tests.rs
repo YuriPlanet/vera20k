@@ -540,10 +540,7 @@ fn a_map_placed_chrono_miner_takes_its_authored_mission() {
 /// actual slots before any HELLO; the component prefix consumes no RNG.
 #[test]
 fn building_contact_constructor_matches_original_slots_before_hello() {
-    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/refinery_dock.json",
-    ))
-    .unwrap();
+    let native = crate::test_fixture::json("tools/spatial_oracle/refinery_dock.json");
     let rows = native["building_contact_constructor_controls"]
         .as_array()
         .unwrap();

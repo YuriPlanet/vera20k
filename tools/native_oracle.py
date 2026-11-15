@@ -534,14 +534,18 @@ def corpus_text(data, depth=0) -> str:
 RNG_STATE_KEYS = ["disabled", "index_a", "index_b", "state"]
 
 
-def shared_rng_states(data: dict) -> dict:
+def shared_rng_states(data: dict | list) -> dict:
     """The corpus with each distinct RNG stream state stored once, in `rng_states`.
 
     A corpus that records every stream before and after each row repeats a few
     250-word states thousands of times. Each state becomes `{"rng_state": n}`,
     numbered in the order first met. Rust tests read the corpus through
     `test_fixture::json`, which puts the states back, so they see the same data.
+    A corpus that is a bare list has no place for the table and becomes
+    `{"rows": list}`.
     """
+    if isinstance(data, list):
+        data = {"rows": data}
     if "rng_states" in data:
         raise OracleError("The corpus already stores its RNG states in rng_states")
     table, numbers = [], {}

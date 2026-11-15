@@ -538,10 +538,9 @@ fn retail_tank_attack_inputs_match_original_readers() {
     else {
         return;
     };
-    let original: Value = serde_json::from_str(crate::test_fixture::text(
+    let original = crate::test_fixture::json(
         "tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
-    ))
-    .unwrap();
+    );
     let input = &original["type_inputs"];
     let rules = &retail.rules;
     let object = rules.object("MTNK").unwrap();

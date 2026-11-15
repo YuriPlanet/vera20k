@@ -363,10 +363,7 @@ fn fire_once_tail_matches_12_original_retained_state_and_rng_boundaries() {
     else {
         return;
     };
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/projectile_oracle/fire_once.json",
-    ))
-    .unwrap();
+    let corpus = crate::test_fixture::json("tools/projectile_oracle/fire_once.json");
     assert_eq!(corpus["cases"].as_array().unwrap().len(), 13);
     let mut compared = 0;
     for row in corpus["cases"].as_array().unwrap() {
