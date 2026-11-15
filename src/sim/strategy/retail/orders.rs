@@ -202,7 +202,7 @@ pub(super) fn captures(
             if !spy_class_open(rules, ty, &brain.infiltrated) {
                 return None;
             }
-            Some((target, infiltration_value(rules, ty)))
+            Some((target, infiltration_value(rules, ty, obs.credits())))
         })
         .filter(|(target, _)| !spy_route_blocked(obs, rules, target.cell, &watchers))
         .collect();
@@ -756,14 +756,18 @@ pub(super) fn garrison(
 /// weight. A power plant blacks the enemy out, a refinery hands over its ore
 /// and a radar its map; a barracks or a war factory makes its army veteran; a
 /// lab is worth the walk and little more.
-fn infiltration_value(rules: &RuleSet, ty: &ObjectType) -> u8 {
+fn infiltration_value(rules: &RuleSet, ty: &ObjectType, free: i32) -> u8 {
     // The refinery first, and above everything else. A spy in a bay takes the
     // enemy's own bank, which is the one infiltration that pays for the walk in
     // the same minute it lands; a radar or a lab is worth more in kind but only
     // once the house has an army to use it with. It used to share value 3 with
     // the radar, and the spy walked to whichever came first.
     if ty.resource_destination {
-        5
+        // The refinery first, and above everything else — until the house is
+        // rich enough that the enemy's bank changes nothing. A spy is a walk
+        // into a base that does not screen for one, and the veteran classes are
+        // a permanent unlock where a theft is a one-off number.
+        if free >= SPY_RICH_CREDITS { 2 } else { 5 }
     } else if rules.build_power_types.iter().any(|name| *name == ty.id)
         || ty.super_weapon.is_some()
         || ty.super_weapon2.is_some()
@@ -1275,6 +1279,16 @@ pub(super) fn forces(
     // the same object that answers "who attacks". It is wider than the fist,
     // and that width is the lesson from wiring it to the fist's members: the
     // guards went with the spawned units and the match stopped finishing.
+    // When the base is under attack the guards converge on the attack instead of
+    // holding the cell they were built beside.
+    //
+    // The user's report: "基地挨打的时候有很多士兵还是在发呆，因为基地会越来越大，
+    // 所以发呆的越来越多". A base grows past the guard's reach, so a soldier on the
+    // far side of it never sees the fight at the gate and `Guard` keeps him where
+    // he stands for the whole match. `base_under_threat` is already the house's
+    // answer for "the enemy is close enough that the army belongs at home", so
+    // the same answer aims them.
+    let threatened = super::advance::threatened_cell(&brain.census);
     let guards = super::army::Army::guards(&brain.census);
     let mut issued = 0;
     for unit in &guards {
@@ -1305,7 +1319,11 @@ pub(super) fn forces(
         brain
             .tracked
             .record(tick, unit.entity_id, TrackedKind::Guard, None, None);
-        issue(brain, out, rules, obs, unit.entity_id, Goal::Guard);
+        let goal = match threatened {
+            Some(cell) => Goal::GuardAt { cell },
+            None => Goal::Guard,
+        };
+        issue(brain, out, rules, obs, unit.entity_id, goal);
         issued += 1;
     }
 }
@@ -1747,6 +1765,12 @@ fn spy_route_blocked(
         .iter()
         .any(|watcher| squared_distance(*watcher, cell) <= SPY_WATCH_CELLS * SPY_WATCH_CELLS)
 }
+
+/// The wallet above which a spy is not sent for the enemy's bank.
+///
+/// A theft is a one-off number; the veteran classes are a permanent unlock.
+/// Past this the house does not need the number.
+const SPY_RICH_CREDITS: i32 = 20_000;
 
 /// How near a spy's target a watcher may stand before the walk is refused, in
 /// cells: the reveal range plus a step, since the spy is seen on approach.

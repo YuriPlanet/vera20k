@@ -282,7 +282,11 @@ fn infantry_above_ceiling(census: &Census) -> bool {
 /// is gone. A spy is a raid that walks for minutes and is worth exactly one at
 /// a time: it does its work in a single building and does not come out.
 const ENGINEER_WANT: usize = 2;
-const SPY_WANT: usize = 1;
+// Three, not one. The user's report: "AI 不太会分辨间谍，偷钱几乎成功率很高" —
+// the enemy does not screen for a spy, so the walk usually lands. At one the
+// house could ever take one infiltration per match, and the veteran classes
+// (barracks, war factory, lab) are three separate prizes.
+const SPY_WANT: usize = 3;
 
 /// How many attack dogs the house keeps: one for the scan, a second behind it
 /// for the dog the enemy sends at the first.

@@ -676,6 +676,29 @@ pub(super) fn cell_distance(a: (u16, u16), b: (u16, u16)) -> i32 {
 /// the only thing the house has, and an army guarding rubble loses slowly
 /// instead of taking the base that would let it rebuild. Nothing standing
 /// means nothing to defend, so the push runs.
+/// The cell of the enemy standing closest to the house's base, when one is
+/// inside the threat ring.
+///
+/// [`base_under_threat`] answers whether the army belongs home; this answers
+/// *where*, which is what a guard on the far side of a growing base needs.
+pub(super) fn threatened_cell(census: &Census) -> Option<(u16, u16)> {
+    let base = census.base_cell?;
+    census
+        .enemies
+        .iter()
+        .filter(|enemy| {
+            let dx = i32::from(enemy.cell.0) - i32::from(base.0);
+            let dy = i32::from(enemy.cell.1) - i32::from(base.1);
+            dx * dx + dy * dy <= THREAT_RADIUS * THREAT_RADIUS
+        })
+        .min_by_key(|enemy| {
+            let dx = i32::from(enemy.cell.0) - i32::from(base.0);
+            let dy = i32::from(enemy.cell.1) - i32::from(base.1);
+            (dx * dx + dy * dy, enemy.cell)
+        })
+        .map(|enemy| enemy.cell)
+}
+
 fn base_under_threat(census: &Census) -> bool {
     let Some(base) = census.base_cell else {
         return false;
