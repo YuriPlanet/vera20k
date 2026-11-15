@@ -67,6 +67,15 @@ const RETRIEVE_ARRIVED_CELLS: i32 = 6;
 /// own ground is all ore, and the ground that is not ore is the other field.
 const EXPAND_SCAN_CELLS: i32 = 48;
 
+/// How far from an ore cell a yard may stand and still be the base that serves
+/// it, in cells.
+///
+/// A harvester's round trip is the ore, the refinery and back; a yard at the
+/// edge of this ring is a base whose trucks cross the whole field to unload.
+/// Twelve is past the ring the first base already covers
+/// ([`EXPAND_MIN_CELLS`] is ten) and short of a trip that eats the advantage.
+const EXPAND_ORE_RING: i32 = 12;
+
 /// How long a probe's answer is kept, in frames.
 ///
 /// The search asks the deploy's question cell by cell over the map, so it is
@@ -718,6 +727,13 @@ fn is_a_second_base_cell(home_cells: &[(u16, u16)], cell: (u16, u16)) -> bool {
 /// own base, on ground the yard fits, and clear of everything that stands
 /// there.
 ///
+/// Ore decides *where*, not whether. The wishlist's "占据矿脉，在矿脉附近建立
+/// 分基地": the search runs outward from the nearest ore the house does not
+/// already stand on, so the yard goes to the field it is meant to work. Only
+/// when the map carries no such ore does it fall back to the old answer —
+/// outward from the base, first patch that takes a yard — which is what a house
+/// on a map with no visible field should do.
+///
 /// The search asks the deploy's own question -- the foundation's origin and
 /// the clear-to-build test at that origin -- and not the sidebar's build-area
 /// adjacency: a second base is outside the first base's build area by
@@ -732,21 +748,61 @@ fn search_expansion_site(
     admits: &dyn Fn((u16, u16)) -> bool,
     space: &super::terrain::Space,
 ) -> Option<(u16, u16)> {
+    let aim = expansion_aim(rules, obs, home, home_cells);
+    if let Some(ore) = aim
+        && let Some(cell) = search_rings_from(obs, home_cells, ore, EXPAND_ORE_RING, admits, space)
+    {
+        return Some(cell);
+    }
+    search_rings_from(obs, home_cells, home, EXPAND_SCAN_CELLS, admits, space)
+}
+
+/// The ore cell a new base should be built beside: the nearest one the house
+/// does not already stand on.
+///
+/// A cell under an existing yard is ore the first base already works, so a
+/// second base aimed at it would be a second base for the same field. Beyond
+/// [`EXPAND_MIN_CELLS`] of every yard is the test, which is the same line the
+/// site itself has to clear.
+fn expansion_aim(
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    home: (u16, u16),
+    home_cells: &[(u16, u16)],
+) -> Option<(u16, u16)> {
+    obs.ore_cells(rules)
+        .into_iter()
+        .filter(|cell| is_a_second_base_cell(home_cells, *cell))
+        .min_by_key(|cell| (cell_distance(*cell, home), *cell))
+}
+
+/// The first admissible cell in rings out from `origin`, up to `max_ring`.
+///
+/// Rings are walked outwards and the first cell that clears every test wins, so
+/// the answer is the shortest walk from `origin` to ground that takes a yard.
+fn search_rings_from(
+    obs: &Observation<'_>,
+    home_cells: &[(u16, u16)],
+    origin: (u16, u16),
+    max_ring: i32,
+    admits: &dyn Fn((u16, u16)) -> bool,
+    space: &super::terrain::Space,
+) -> Option<(u16, u16)> {
     let (width, height) = obs.map_extent();
     // No map, no expansion: the headless harness and the fixtures run without
     // one, and a walk into cell (0, 0) is worse than staying put.
     if width == 0 || height == 0 {
         return None;
     }
-    for ring in EXPAND_MIN_CELLS..=EXPAND_SCAN_CELLS {
+    for ring in EXPAND_MIN_CELLS..=max_ring {
         for dy in -ring..=ring {
             for dx in -ring..=ring {
                 if dx.abs().max(dy.abs()) != ring {
                     continue;
                 }
                 let (Some(rx), Some(ry)) = (
-                    u16::try_from(i32::from(home.0) + dx).ok(),
-                    u16::try_from(i32::from(home.1) + dy).ok(),
+                    u16::try_from(i32::from(origin.0) + dx).ok(),
+                    u16::try_from(i32::from(origin.1) + dy).ok(),
                 ) else {
                     continue;
                 };
@@ -1095,6 +1151,101 @@ mod tests {
                 .any(|order| order.actor == maker && matches!(order.goal, Goal::Deploy)),
             "and it does not deploy where it was captured: {:?}",
             out.orders
+        );
+    }
+
+    /// A second base goes to the ore it is meant to work, not to whichever patch
+    /// happens to be first.
+    ///
+    /// The wishlist's "占据矿脉，在矿脉附近建立分基地". The search used to walk
+    /// outwards from the house and take the first cell that took a yard, so the
+    /// second base landed wherever the ring order put it and the field it was
+    /// built for was on the far side of the map.
+    ///
+    /// The map's own overlay carries the ore, so this plants a second field away
+    /// from the house and asserts the site lands beside it. Without the aim the
+    /// site is the ring's first cell, which is not the field.
+    #[test]
+    fn a_second_base_goes_to_the_ore_it_is_built_for() {
+        // A field is only "far" on a map with room for one: the shared arena is
+        // 32 cells square, and a ring-12 search around a cell 48 out would be
+        // off the map entirely.
+        let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            .expect("the retail rules snapshot");
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0xA17, 128);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        // `map_extent` reads the fog grid, which the fixture sizes separately
+        // from the session's map size; a search that cannot see the map refuses
+        // every cell.
+        let fog = sim.fog_mut_for_test();
+        fog.set_width_for_test(128);
+        fog.set_height_for_test(128);
+        let owner = sim.interner.intern("Americans");
+        // A patch of ore well away from the house's own ground. The overlay is
+        // the map's answer for "ore stands here", so this is the same fact the
+        // production reader sees in a real map.
+        let field = (60u16, 60u16);
+        let ore = rules
+            .overlay_registry()
+            .stock_flat_riparius_variant_ids()
+            .expect("retail names an ore overlay")[0];
+        // The arena fixture carries no overlay grid, so the map's own answer for
+        // "ore stands here" is installed the way a load does.
+        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+        for y in field.1..field.1 + 4 {
+            for x in field.0..field.0 + 4 {
+                sim.overlay_grid
+                    .as_mut()
+                    .expect("the installed overlay grid")
+                    .place_overlay(x, y, ore, 0);
+            }
+        }
+        // The yard is what makes (12, 12) the house's own ground. No maker is
+        // needed: the question is where the site search aims, and that is asked
+        // of the map and the ore rather than of a unit.
+        let yard = sim
+            .spawn_object("GACNST", "Americans", 12, 12, 255, &rules)
+            .expect("a construction yard");
+        let obs = Observation::new(&sim, owner);
+        let mut brain = RetailBrain::new(0xA17);
+        brain.rebuild_census(&rules, &obs);
+
+        // The aim is the ore, not the house's own ring.
+        let aim = expansion_aim(&rules, &obs, (12, 12), &[(12, 12)]);
+        assert_eq!(
+            aim.map(|cell| cell_distance(cell, field)),
+            Some(0),
+            "the aim is the far field, not the ground under the yard"
+        );
+
+        // And the search lands beside it rather than beside the house. The yard
+        // type is the spawned building's own, which is what `yard_type` resolves
+        // through the maker's `DeploysInto=`; read directly here so the test
+        // does not need a maker on the field.
+        let yard_ty = obs.entity_type(&rules, yard).expect("the yard's own type");
+        let found = search_expansion_site(
+            &rules,
+            &obs,
+            (12, 12),
+            &[(12, 12)],
+            yard_ty,
+            &|_| true,
+            &crate::sim::strategy::retail::terrain::Space::read(
+                &obs,
+                &rules,
+                &[(12, 12)],
+                Some((12, 12)),
+            ),
+        )
+        .expect("ground that takes a yard");
+        assert!(
+            cell_distance(found, field) <= EXPAND_ORE_RING,
+            "the site is beside the field: {found:?} against {field:?}"
+        );
+        assert!(
+            cell_distance(found, (12, 12)) >= EXPAND_MIN_CELLS,
+            "and still clear of the first base: {found:?}"
         );
     }
 }
