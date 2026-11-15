@@ -17,7 +17,7 @@ options file).
 - With the box on, the minimap shows the beacon cursor while Place Beacon mode
   is on and nothing is selected. A click places the beacon at that cell and
   ends the mode, exactly as a battlefield click does: the same three-beacon
-  limit, the same announcement, sound and help line, and your allies see it on
+  limit, the same announcement, sound and two help lines, and your allies see it on
   their battlefield and minimap.
 - It works with Right-Click Orders too: the beacon click stays on the left
   button there, as on the battlefield.
