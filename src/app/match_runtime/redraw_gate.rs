@@ -47,6 +47,23 @@ use crate::util::time::{Duration, Instant};
 /// a second, which a 60 Hz screen never reaches.
 const PICTURE_INTERVAL: Duration = FRAME_BUCKET;
 
+/// [`PICTURE_INTERVAL`] in step with a screen that refreshes `millihertz`
+/// thousandths of a time a second: the whole number of refreshes nearest to
+/// it, at least one. With VSync a picture shows at a refresh, so 62 draws a
+/// second land unevenly on a 120 or 144 Hz screen (two refreshes, then one or
+/// three) and scrolling judders; every second refresh is even, at about the
+/// same GPU load. A rate the window system does not report, or reports
+/// outside 30 to 1,000 Hz, keeps the plain interval.
+fn screen_picture_interval(millihertz: Option<u32>) -> Duration {
+    let Some(millihertz) = millihertz.filter(|rate| (30_000..=1_000_000).contains(rate)) else {
+        return PICTURE_INTERVAL;
+    };
+    let refresh_ns = 1_000_000_000_000 / u64::from(millihertz);
+    let picture_ns = PICTURE_INTERVAL.as_nanos() as u64;
+    let refreshes = ((picture_ns + refresh_ns / 2) / refresh_ns).max(1);
+    Duration::from_nanos(refreshes * refresh_ns)
+}
+
 /// The same on a menu or lobby page, about 33 draws a second. The pages' own
 /// timers step every 30 ms (`ui::shell::slide::WAVE_TICK_MS`,
 /// `ui::shell::static_reveal::KIND1_TIMER_INTERVAL`), so every step still gets
@@ -196,11 +213,27 @@ pub(crate) struct DrawLimits {
 /// new step of a status-line reveal.
 pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
     let (_, page) = crate::app::input::precedence::presented(state);
+    // In step with the screen only while the surface presents in step with
+    // it (`App::sync_present_mode`); a sealed capture keeps the plain limit.
+    let picture_interval = if state.persistence.options_profile.vsync
+        && state.platform.capture_client_size.is_none()
+    {
+        screen_picture_interval(
+            state
+                .platform
+                .window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz()),
+        )
+    } else {
+        PICTURE_INTERVAL
+    };
     page_limits(
         page,
         status_step,
         state.platform.hardware_cursor.on_cursor_plane(),
         super::network_match::game_frame_ms(state),
+        picture_interval,
     )
 }
 
@@ -209,13 +242,20 @@ fn page_limits(
     status_step: bool,
     os_cursor: bool,
     game_frame_ms: Option<f32>,
+    picture_interval: Duration,
 ) -> DrawLimits {
     let picture = match page {
         // Each pass runs one slice of the load.
         ScreenPage::Loading => Duration::ZERO,
         // A status line reveals one step per paint on a 15 ms timer.
-        _ if is_menu(page) && !status_step => MENU_INTERVAL,
-        _ => PICTURE_INTERVAL,
+        _ if is_menu(page) => {
+            if status_step {
+                PICTURE_INTERVAL
+            } else {
+                MENU_INTERVAL
+            }
+        }
+        _ => picture_interval,
     };
     let pointer = os_cursor.then(|| match page {
         // A game frame's own draw shows what the pointer hovers. The extra
@@ -792,8 +832,9 @@ mod tests {
 
     #[test]
     fn menus_battles_and_loads_have_their_own_limits() {
-        let limits =
-            |page, status_step, os_cursor| page_limits(page, status_step, os_cursor, Some(48.0));
+        let limits = |page, status_step, os_cursor| {
+            page_limits(page, status_step, os_cursor, Some(48.0), PICTURE_INTERVAL)
+        };
         assert_eq!(
             limits(ScreenPage::MainMenu, false, true),
             DrawLimits {
@@ -819,10 +860,41 @@ mod tests {
         );
         assert_eq!(limits(ScreenPage::Battlefield, false, false).pointer, None);
         assert_eq!(
-            page_limits(ScreenPage::Battlefield, false, true, None).pointer,
+            page_limits(ScreenPage::Battlefield, false, true, None, PICTURE_INTERVAL).pointer,
             Some(FRAME_BUCKET * 2),
             "unlimited speed has no game frame to wait for"
         );
+    }
+
+    /// With VSync the battlefield's limit is a whole number of refreshes, so
+    /// its pictures land evenly on the screen; menus keep their own limit.
+    #[test]
+    fn the_picture_limit_follows_the_screen_in_whole_refreshes() {
+        let refreshes = |millihertz: u32, count: u64| {
+            Duration::from_nanos(count * (1_000_000_000_000 / u64::from(millihertz)))
+        };
+        assert_eq!(screen_picture_interval(Some(60_000)), refreshes(60_000, 1));
+        assert_eq!(
+            screen_picture_interval(Some(120_000)),
+            refreshes(120_000, 2)
+        );
+        assert_eq!(
+            screen_picture_interval(Some(144_000)),
+            refreshes(144_000, 2)
+        );
+        assert_eq!(
+            screen_picture_interval(Some(240_000)),
+            refreshes(240_000, 4)
+        );
+        // A slow screen still gets a picture every refresh.
+        assert_eq!(screen_picture_interval(Some(50_000)), refreshes(50_000, 1));
+        assert_eq!(screen_picture_interval(None), PICTURE_INTERVAL);
+        assert_eq!(screen_picture_interval(Some(0)), PICTURE_INTERVAL);
+
+        let screen = screen_picture_interval(Some(144_000));
+        let limits = |page| page_limits(page, false, true, Some(48.0), screen).picture;
+        assert_eq!(limits(ScreenPage::Battlefield), screen);
+        assert_eq!(limits(ScreenPage::MainMenu), MENU_INTERVAL);
     }
 
     /// The audit counts a skipped pass whose pixels differ from the last
