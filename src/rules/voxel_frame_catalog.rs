@@ -42,11 +42,11 @@ pub enum VxlLayer {
 pub const NO_SPAWN_ALT_SUFFIX: &str = "WO";
 
 /// Every voxel model an object of `type_id` can select at presentation time:
-/// its own, its `UnloadingClass=` and its `%sWO`.
+/// its own, its `UnloadingClass=`, Ares `WaterImage=` and its `%sWO`.
 ///
 /// Initial atlas construction and incremental coverage checks must enumerate
 /// the same set. Otherwise an already-valid base model can hide a missing
-/// UnloadingClass or `%sWO` auxiliary model until the draw lookup fails.
+/// UnloadingClass, WaterImage or `%sWO` model until the draw lookup fails.
 pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String> {
     let object = rules.and_then(|rules| rules.object(type_id));
     let mut variants = vec![type_id.to_string()];
@@ -66,6 +66,22 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
         // (UnitClass_DrawVXL_NoSpawnAlt 10041460, hook 0x73B6E3), so a
         // Turret=yes type keeps its turret there; this composite omits it.
         variants.push(format!("{type_id}{NO_SPAWN_ALT_SUFFIX}"));
+    }
+
+    if rules.is_some_and(RuleSet::ares) {
+        // DrawIt73D29C temporarily makes a dock-unloading harvester's
+        // UnloadingClass its actual type before Ares10045340 asks WaterImage.
+        let unloading = object
+            .filter(|object| object.harvester)
+            .and_then(|object| object.unloading_class.as_deref())
+            .and_then(|id| rules?.object(id));
+        for model in [object, unloading].into_iter().flatten() {
+            if let Some(image) = model.water_image()
+                && !variants.iter().any(|variant| variant == image)
+            {
+                variants.push(image.to_owned());
+            }
+        }
     }
 
     variants
@@ -122,9 +138,10 @@ pub fn object_voxel_turret_index(object: Option<&ObjectType>, current: i32) -> i
     }
 }
 
-/// Unit DrawVoxelBody73B7A3..73B7C5 admits its gun arm on the drawn type's
-/// `Turret=` or on `TurretCount > 0` with a current index other than -1.
-/// The type may be UnloadingClass or a disguise. Aircraft draw only their
+/// Gun admission for a model drawn as its own type. Unit73B7A3 tests the
+/// selected type's Turret;70DC60/717880 tests the actual type's TurretCount
+/// with a current index other than -1. Mixed actual/selected indexed modes
+/// remain a presentation residual in unit_body_draw. Aircraft draw their
 /// main voxel (4144B0), and building voxel turrets have their own loader.
 pub fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current: i32) -> bool {
     object_draws_turret_parts(rules.and_then(|rules| rules.object(type_id)), current)

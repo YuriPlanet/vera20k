@@ -1229,6 +1229,8 @@ pub struct ObjectType {
     convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
     convert_water: Option<crate::rules::superweapon_type::DeliveryType>,
     convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
+    /// TechnoTypeExt+1DC, a registered UnitType used by Ares' water draw.
+    water_image: Option<String>,
     turret_rot_override: Option<i32>,
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
     driver: crate::rules::ares_driver::DriverTypeRules,
@@ -3033,6 +3035,15 @@ impl ObjectType {
         self.convert_land = land.cloned();
     }
 
+    /// Read-only projection of the retained WaterImage pointer.
+    pub fn water_image(&self) -> Option<&str> {
+        self.water_image.as_deref()
+    }
+
+    pub(crate) fn bind_water_image(&mut self, image: Option<&str>) {
+        self.water_image = image.map(str::to_owned);
+    }
+
     /// Retained TechnoType+C9E; building crew admission reads this input
     /// separately from the constructed Infantry's survivor marker.
     pub const fn nominal(&self) -> bool {
@@ -4787,6 +4798,7 @@ impl ObjectType {
             convert_script: None,
             convert_water: None,
             convert_land: None,
+            water_image: None,
             turret_rot_override: None,
             spotlight: Default::default(),
             driver: Default::default(),

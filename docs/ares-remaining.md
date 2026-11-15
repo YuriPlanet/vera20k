@@ -118,9 +118,36 @@ receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flag
 ([ares-country-presentation.md](ares-country-presentation.md)), and the side theme and
 dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 
+## WaterImage voxel path
+
+`[VehicleType] WaterImage=OtherVehicleType` retains a registered VehicleType
+through the Rules owner and saved scenario. The exact-case key alone selects the
+runtime Ares switch. The reader is Ares `TechnoTypeClass_LoadFromINI_EarlyReader`
+(`715320`, body `10041DC0`, resume `715326`), with an empty default and a 2048-byte
+Find-only read. Missing, empty or unknown values retain the pointer; `none` and
+`<none>` clear it.
+
+The VXL draw uses `GetUnitType10045340` through
+`UnitClass_DrawVXL_WaterType` (`73B4A0`, body `100481E0`, resume `73B4DA`). A water
+cell with OnBridge clear selects the alternate before deployed and disguise art.
+The ordinary type has already selected SHP/VXL dispatch. The shared atlas admits
+the alternate model, including an unloading harvester's alternate, before that
+model has its own unit. The current bounded chain is ordinary base-gun VXL art.
+RNG draws 0, simulation timer writes 0, detach calls 0.
+
+SHP image/frame hooks remain open. Mixed actual/alternate indexed-gun modes also
+remain open: native uses actual TurretCount/IsGattling to choose the selected
+model's base or indexed slots, while the current atlas keys derive this from the
+selected model. Custom combinations can show a different gun or omit it. These
+require separate physical slot identities through the existing voxel catalog and
+atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
+
+[Ares WaterImage specification](https://ares-developers.github.io/Ares-docs/restored/amphibiousimagechanges.html)
+
 ## Presentation and UI not ported
 
-- Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
+- Unit art: WaterImage's SHP path and mixed indexed-gun draws above, the SHP facings
+  and change-type draws (Ext/Techno/Hooks.Art.cpp),
   AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp) beyond a glow following its object
   (`sim/world/alpha_shape.rs` lists the rest), the ore-gather anim under EMP. Listed at
   the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and

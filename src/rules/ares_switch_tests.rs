@@ -125,3 +125,56 @@ fn ares_mix_turns_ares_on() {
         stock.simulation_config_hash()
     );
 }
+
+#[test]
+fn water_image_key_enables_ares_and_admits_the_unspawned_model() {
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let mut owner = installed(&assets);
+    let rules = skirmish(
+        &mut owner,
+        None,
+        &IniFile::from_str("[ROBO]\nWaterImage=mtnk\n"),
+    );
+    assert!(rules.ares(), "WaterImage alone selects the Ares draw hooks");
+    assert!(
+        crate::rules::voxel_frame_catalog::unit_atlas_variants("ROBO", Some(&rules))
+            .iter()
+            .any(|id| id == "MTNK"),
+        "an alternate model must be admitted before it has its own unit"
+    );
+}
+
+#[test]
+fn water_image_retains_find_only_bindings_through_layers_and_save() {
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let mut owner = installed(&assets);
+    let mode = IniFile::from_str(
+        "[ROBO]\nWaterImage=mtNk\n[CMIN]\nWaterImage=MTNK\n[CMON]\nWaterImage=MTNK\n",
+    );
+    let rules = skirmish(
+        &mut owner,
+        Some(&mode),
+        &IniFile::from_str(
+            "[ROBO]\nWaterImage=MISSING\n[CMIN]\nWaterImage=<none>\n[MTNK]\nwaterimage=ROBO\n",
+        ),
+    );
+    assert_eq!(rules.object("ROBO").unwrap().water_image(), Some("MTNK"));
+    assert_eq!(rules.object("CMIN").unwrap().water_image(), None);
+    assert_eq!(rules.object("MTNK").unwrap().water_image(), None);
+    assert!(
+        crate::rules::voxel_frame_catalog::unit_atlas_variants("CMIN", Some(&rules))
+            .iter()
+            .any(|id| id == "MTNK"),
+        "the dock-unloading type can itself select WaterImage"
+    );
+    assert!(rules.object("MISSING").is_none(), "Find never allocates");
+    let saved = crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+    let restored = crate::util::save_codec::deserialize(&saved).unwrap();
+    let restored = owner.project_saved_scenario_rules(&restored).unwrap();
+    assert_eq!(restored.object("ROBO").unwrap().water_image(), Some("MTNK"));
+    assert_eq!(restored.object("CMIN").unwrap().water_image(), None);
+}
