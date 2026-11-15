@@ -4281,10 +4281,6 @@ impl Simulation {
             .stop_sound
             .as_deref()
             .map(|sound| self.interner.intern(sound));
-        let constructor_reverse = self
-            .anim(id)
-            .is_some_and(|anim| anim.runtime.constructor_reverse);
-        let reverse = constructor_reverse || config.reverse;
         // A remapped anim's new type is a new atlas key.
         self.substrate.anims.note_look(id);
         if let Some(anim) = self.substrate.anims.get_mut(id) {
@@ -4293,12 +4289,12 @@ impl Simulation {
             anim.effective_end = effective_end;
             anim.effective_loop_end = effective_loop_end;
             anim.stop_sound_id = stop_sound_id;
-            anim.runtime.current_frame = if reverse {
-                effective_loop_end.wrapping_sub(1)
-            } else {
-                0
-            };
-            anim.runtime.frame_step = if reverse { -1 } else { 1 };
+            // 0x00424913..0x0042491F: Value (+0xAC) takes Next's Start as
+            // written, though it is otherwise relative to Start, so the first
+            // drawn frame is twice Start; the step (+0xC4) keeps the old
+            // type's direction. Retail Next targets all have Start=0 and no
+            // Reverse=, where this equals a fresh start.
+            anim.runtime.current_frame = config.start;
             anim.runtime.delay_remaining = 0;
             anim.runtime.rate_reload = rate_reload;
             anim.runtime.frame_timer = frame_timer;
@@ -4651,8 +4647,12 @@ fn ares_truncate_x87(value: crate::util::native_x87::X87Value) -> i32 {
         .unwrap_or(i32::MIN)
 }
 
+/// `0x004242CA..0x004242DF`: a separation of 1, else the signed frame count
+/// modulo the separation (IDIV), so a negative separation also spawns.
+/// RESIDUAL: gamemd faults dividing by a zero `TrailerSeperation=`; VERA
+/// spawns no trailer there.
 fn trailer_cadence_matches(binary_frame: u64, separation: i32) -> bool {
-    separation == 1 || (separation > 1 && (binary_frame as i32) % separation == 0)
+    separation == 1 || (separation != 0 && (binary_frame as i32).wrapping_rem(separation) == 0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5038,6 +5038,34 @@ mod tests {
         }
     }
 
+    /// AnimClass::AI's Next= switch (`0x004247F3..0x00424925`) sets Value to
+    /// the new type's Start (`0x0042491F`) and leaves the step as it was.
+    #[test]
+    fn next_takes_the_new_start_as_its_value_and_keeps_the_step() {
+        let rules = runtime_rules(
+            "[A]\nReverse=yes\nNext=A_NEXT\n[A_NEXT]\nStart=3\n",
+            &[("A", 10), ("A_NEXT", 10)],
+        );
+        let mut sim = Simulation::with_seed(0);
+        let type_id = sim.interner.intern("A");
+        let id = sim
+            .spawn_anim_at_world(
+                &rules,
+                runtime_descriptor(type_id, 0),
+                AnimWorldCoord {
+                    x: 2816,
+                    y: 2944,
+                    z: 0,
+                },
+            )
+            .unwrap();
+        assert_eq!(sim.anim(id).unwrap().runtime.frame_step, -1);
+        sim.switch_anim_type(id, "A_NEXT", &rules, None, FrameEffects::default())
+            .unwrap();
+        let runtime = &sim.anim(id).unwrap().runtime;
+        assert_eq!((runtime.current_frame, runtime.frame_step), (3, -1));
+    }
+
     #[test]
     fn animation_display_owner_histories_match_native_and_survive_save() {
         use crate::sim::snapshot::GameSnapshot;
@@ -5217,11 +5245,13 @@ mod tests {
     }
 
     #[test]
-    fn trailer_zero_separation_never_divides_or_spawns() {
+    fn trailer_separation_spawns_on_signed_multiples_and_never_divides_by_zero() {
         assert!(!trailer_cadence_matches(0, 0));
         assert!(trailer_cadence_matches(7, 1));
         assert!(trailer_cadence_matches(6, 3));
         assert!(!trailer_cadence_matches(7, 3));
+        assert!(trailer_cadence_matches(6, -3));
+        assert!(!trailer_cadence_matches(7, -3));
     }
 
     fn damage_fire_fixture(can_be_occupied: bool) -> (Simulation, RuleSet, u64) {
