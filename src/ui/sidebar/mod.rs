@@ -411,8 +411,16 @@ pub(crate) fn compute_layout_with_spec(
         strip_x: sidebar_x + spec.strip_x,
         cameo_grid_top: spec.strip_y,
         cameo_grid_bottom: spec.strip_y + (rows as i32 * row_height) as f32,
-        // Native 6A6C30 advances by the loaded SIDE2 canvas height.
-        side3_y: spec.strip_y + rows as f32 * spec.side2_height,
+        // Native 6A6C30 advances by the loaded SIDE2 canvas height. VERA's
+        // columns shrink the row, so there SIDE3 follows the row's own
+        // height instead; the original table sets both to the same 50.
+        side3_y: spec.strip_y
+            + rows as f32
+                * if spec.cameo_columns > 2.0 {
+                    row_height as f32
+                } else {
+                    spec.side2_height
+                },
         side2_tile_count: rows,
     }
 }

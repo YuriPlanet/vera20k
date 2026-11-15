@@ -14,7 +14,7 @@ use crate::ui::main_menu_dialogs::options::shell::{
 };
 use crate::ui::main_menu_dialogs::options::{
     ColorVisionMode, HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
-    SidebarSize, Zoom,
+    SidebarColumns, SidebarSize, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -252,6 +252,7 @@ pub(super) fn build_text(
                 dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
             ),
             LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label(),
+            LauncherComboId::SidebarColumns => dialog.shell_selected_sidebar_columns().label(),
             LauncherComboId::Display => dialog.shell_display_label(),
             LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label(),
             LauncherComboId::ColorVision => dialog.shell_selected_color_vision().label(),
@@ -324,6 +325,10 @@ pub(super) fn build_open_list(
             .sidebar_choices()
             .into_iter()
             .map(SidebarSize::label)
+            .collect(),
+        LauncherComboId::SidebarColumns => SidebarColumns::choices()
+            .into_iter()
+            .map(SidebarColumns::label)
             .collect(),
         LauncherComboId::Display => dialog.shell_display_rows(),
         LauncherComboId::HealthBars => HealthBarMode::choices()
