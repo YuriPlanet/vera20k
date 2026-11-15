@@ -66,6 +66,7 @@
 use crate::sim::world::FrameEffects;
 use serde::{Deserialize, Serialize};
 
+use crate::map::entities::EntityCategory;
 use crate::rules::missile_spawn::MissileFamily;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -74,9 +75,6 @@ use crate::sim::mission::MissionType;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{PlacementEvidence, RevealRequest, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
-
-#[cfg(feature = "phobos")]
-use crate::map::entities::EntityCategory;
 
 #[cfg(test)]
 #[path = "spawn_manager_oracle_tests.rs"]
@@ -1819,7 +1817,10 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     #[cfg(feature = "phobos")]
     fn missile_spawn_attack_cell(&self) -> bool {
-        self.context.rules().phobos_globals.missile_spawn_attack_cell
+        self.context
+            .rules()
+            .phobos_globals
+            .missile_spawn_attack_cell
     }
 
     /// Phobos `SpawnManagerClass_Update_RecycleSpawned @ 0x6B77B4`

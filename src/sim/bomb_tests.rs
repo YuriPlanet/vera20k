@@ -1624,3 +1624,63 @@ fn ares_clock_frame_counts_stages_over_the_image() {
     bomb.death_bomb = true;
     assert_eq!(clock(&bomb, 75, 13, 8), Some(12));
 }
+
+/// Phobos `BombClass_Detonate_SetContext` (`0x43878E`,
+/// `Misc/Hooks.BugFixes.cpp:550-561`): `IvanBombAttachToCenter=yes` moves
+/// the detonation coordinate to the target's `GetCenterCoords()` — a 2x2
+/// building's foundation centre — while unset keeps the carrier's Location.
+#[cfg(feature = "phobos")]
+#[test]
+fn ivan_bomb_attach_to_center_moves_the_blast_off_the_buildings_location() {
+    let rules_with = |extra: &str| {
+        rules_from(&RULES.replace(
+            "IvanWarhead=IvanWH",
+            &format!("IvanWarhead=IvanWH\n{extra}"),
+        ))
+    };
+    let blast_at = |rules: &RuleSet| {
+        let mut sim = sim(7);
+        let ivan = spawn(&mut sim, rules, "IVAN", "Americans", 30, 10);
+        let building = spawn(&mut sim, rules, "GAPOWR", "Russians", 10, 10);
+        // Ordinary construction stamps the type's `Foundation=2x2`; the raw
+        // spawn fixture below does not run that step.
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test("2x2".to_string().into());
+        let before = entity(&sim, building);
+        let stock = object_location(before, sim.resolved_terrain.as_ref());
+        let center = object_get_coords(before, sim.resolved_terrain.as_ref());
+        sim.bomb_attach(ivan, Some(building), None, rules);
+        let blast = Simulation::take_bomb_blast(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            &mut sim.bombs,
+            &mut sim.sound_events,
+            building,
+            rules,
+        )
+        .expect("the blast");
+        (
+            (blast.location.x, blast.location.y),
+            (stock.x, stock.y),
+            (center.x, center.y),
+        )
+    };
+
+    let ((x, y), stock, center) = blast_at(&rules_with("IvanBombAttachToCenter=yes\n"));
+    assert_eq!((x, y), center, "the centre coordinate is used");
+    assert_eq!(
+        center,
+        (stock.0.wrapping_add(128), stock.1.wrapping_add(128)),
+        "a 2x2 foundation's centre is one cell past its Location"
+    );
+
+    let ((x, y), stock, center) = blast_at(&rules_with(""));
+    assert_eq!((x, y), stock, "unset keeps the carrier Location");
+    assert_ne!(stock, center);
+}

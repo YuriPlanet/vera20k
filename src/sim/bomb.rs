@@ -961,6 +961,18 @@ impl Simulation {
             rules.combat_damage.ivan_damage,
             rules.combat_damage.ivan_warhead.clone(),
         );
+        // Phobos `BombClass_Detonate_SetContext` (`0x43878E`,
+        // `Misc/Hooks.BugFixes.cpp:550-561`): `IvanBombAttachToCenter`
+        // replaces the detonation coordinate with the target's
+        // `GetCenterCoords()` (a building's foundation centre; a mobile's
+        // Location), which the blast, its anim and the hut's bridge all use.
+        #[cfg(feature = "phobos")]
+        let location = if rules.phobos_globals.ivan_bomb_attach_to_center {
+            object_get_coords(entity, resolved_terrain.as_ref())
+        } else {
+            object_location(entity, resolved_terrain.as_ref())
+        };
+        #[cfg(not(feature = "phobos"))]
         let location = object_location(entity, resolved_terrain.as_ref());
         Some(BombBlast {
             source: bomb.planter.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),

@@ -340,6 +340,13 @@ pub struct PhobosGlobals {
     /// (`UnitClass_Unload_Storage @ 0x73E474`, `Ext/House/Hooks.cpp:61-79`).
     #[serde(default = "minus_one")]
     pub storage_tiberium_index: i32,
+    /// `[CombatDamage] IvanBombAttachToCenter=`, default `no`
+    /// (`Ext/Rules/Body.cpp:447`, constructor `Body.h:862`): the Ivan bomb
+    /// detonates at its target's `GetCenterCoords()` instead of the
+    /// carrier's `Location` (`BombClass_Detonate_SetContext @ 0x43878E`,
+    /// `Misc/Hooks.BugFixes.cpp:550-561`).
+    #[serde(default)]
+    pub ivan_bomb_attach_to_center: bool,
     /// `[AudioVisual] HeightShadowScaling=`, default `no` (`Ext/Rules/Body.cpp:186`,
     /// constructor `Ext/Rules/Body.h:630`): a drawing unit scales its voxel
     /// shadow by its live height (`Ext/TechnoType/Hooks.MatrixOp.cpp:677`).
@@ -1700,6 +1707,7 @@ impl Default for PhobosGlobals {
             free_mcv_credits_threshold: 1500,
             temporal_kill_powered_anim: true,
             storage_tiberium_index: -1,
+            ivan_bomb_attach_to_center: false,
             height_shadow_scaling: false,
             height_shadow_scaling_min_scale: NativeF64Bits::from_bits(0.0f64.to_bits()),
             air_shadow_base_scale_log: NativeF64Bits::from_bits(0.693_376_137f64.to_bits()),
@@ -1756,7 +1764,8 @@ impl Default for PhobosGlobals {
             falling_down_targeting_fix: false,
             balloon_hover_pathing_fix: false,
             // `Ext/Rules/Body.cpp:606`, `Body.h:1007`.
-            team_delays_dynamic_type: crate::rules::ini_value::PhobosDynamicTeamDelayType::StartingPoint,
+            team_delays_dynamic_type:
+                crate::rules::ini_value::PhobosDynamicTeamDelayType::StartingPoint,
             aircraft_weapon_kick_out_passengers: true,
             secondary_fire_sequence_land_only: true,
             damaged_speed: default_damaged_speed(),
@@ -1951,6 +1960,9 @@ impl PhobosGlobals {
         globals.storage_tiberium_index = ini
             .section_or_empty("General")
             .read_int("Storage.TiberiumIndex", globals.storage_tiberium_index);
+        globals.ivan_bomb_attach_to_center = ini
+            .section_or_empty("CombatDamage")
+            .read_bool("IvanBombAttachToCenter", globals.ivan_bomb_attach_to_center);
         // `RulesExt::LoadFromINIFile` reads this block in the same pass
         // (`Ext/Rules/Body.cpp:291-304`); the two sections share no key, so
         // their relative order does not matter.
@@ -2262,10 +2274,8 @@ impl PhobosGlobals {
             "FallingDownTargetingFix",
             globals.falling_down_targeting_fix,
         );
-        globals.balloon_hover_pathing_fix = general.read_bool(
-            "BalloonHoverPathingFix",
-            globals.balloon_hover_pathing_fix,
-        );
+        globals.balloon_hover_pathing_fix =
+            general.read_bool("BalloonHoverPathingFix", globals.balloon_hover_pathing_fix);
         globals.team_delays_dynamic_type = general.read_phobos_valueable_dynamic_team_delay_type(
             "TeamDelays.DynamicType",
             globals.team_delays_dynamic_type,

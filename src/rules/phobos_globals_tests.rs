@@ -1148,6 +1148,14 @@ fn the_storage_tiberium_index_defaults_and_reads() {
     );
 }
 
+/// `[CombatDamage] IvanBombAttachToCenter=` (`Ext/Rules/Body.cpp:447`,
+/// constructor `false` `Body.h:862`).
+#[test]
+fn the_ivan_bomb_attach_to_center_defaults_and_reads() {
+    assert!(!PhobosGlobals::default().ivan_bomb_attach_to_center);
+    assert!(read("[CombatDamage]\nIvanBombAttachToCenter=yes\n").ivan_bomb_attach_to_center);
+}
+
 /// The rest of batch 56a's readers (`Ext/Rules/Body.cpp:323,370-375,449,451,
 /// 540,606`): defaults from the constructor, `[AI]` for the placement
 /// switches, `[CombatDamage]` for the missile spawn cell, and the enum's
