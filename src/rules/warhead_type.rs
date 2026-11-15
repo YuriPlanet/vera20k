@@ -256,6 +256,14 @@ pub struct WarheadType {
     pub phobos_temporal_apply_multiplier: Option<bool>,
     #[cfg(feature = "phobos")]
     pub phobos_temporal_apply_versus: Option<bool>,
+    /// Phobos `PreventScatter=` (`Nullable<bool>`, constructor unset,
+    /// `Ext/WarheadType/Body.cpp:491` in the Ares-tag block, `Body.h:283,521`):
+    /// whether a hit with this warhead suppresses the victim's
+    /// `FootClass::Scatter`. Phobos re-hooks the native scatter call site
+    /// (`Misc/Hooks.Ares.cpp:273-281`, returns `0x702D11`) and falls back to
+    /// the `[CombatDamage] Warhead.PreventScatter=` global when unset.
+    #[cfg(feature = "phobos")]
+    pub phobos_prevent_scatter: Option<bool>,
     /// Instantly destroys any wall. `WarheadTypeClass+0x145`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d522` from the key string at
     /// `0x00847e1c`. (`+0x151` is `CLDisableRed=`, not this.)
@@ -819,6 +827,35 @@ impl WarheadType {
         }
     }
 
+    /// Whether a hit with this warhead leaves the damaged object in place
+    /// instead of running `FootClass::Scatter` at the native call site
+    /// `0x702CFE`. Phobos re-hooks that site with
+    /// `AresPreventScatter_Override` (`src/Misc/Hooks.Ares.cpp:273-281`,
+    /// returns `0x702D11`) and reads `PreventScatter=` as `Nullable<bool>`
+    /// (`Ext/WarheadType/Body.cpp:491`), so an authored `no` scatters whatever
+    /// the `[CombatDamage] Warhead.PreventScatter=` global
+    /// (`Ext/Rules/Body.cpp:648`, false) says and only an absent key consults
+    /// it. Ares alone keeps its plain bool, and Phobos' hook replaces Ares'
+    /// wherever both features are on.
+    pub fn prevents_scatter(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        #[cfg(feature = "phobos")]
+        {
+            self.phobos_prevent_scatter
+                .unwrap_or(rules.phobos_globals.warhead_prevent_scatter)
+        }
+        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        {
+            let _ = rules;
+            self.ares_combat()
+                .is_some_and(|combat| combat.prevent_scatter())
+        }
+        #[cfg(not(any(feature = "phobos", feature = "ares")))]
+        {
+            let _ = rules;
+            false
+        }
+    }
+
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
     }
@@ -1065,6 +1102,11 @@ impl WarheadType {
             #[cfg(feature = "phobos")]
             phobos_temporal_apply_versus: section
                 .read_phobos_nullable_bool("Temporal.ApplyVersus", None),
+            // Phobos reads this Ares tag as a `Nullable<bool>` at
+            // `Ext/WarheadType/Body.cpp:491`, so an authored `no` differs from
+            // an absent key: only an absent one consults the global.
+            #[cfg(feature = "phobos")]
+            phobos_prevent_scatter: section.read_phobos_nullable_bool("PreventScatter", None),
             #[cfg(feature = "phobos")]
             decloak_damaged_targets: section
                 .read_phobos_nullable_bool("DecloakDamagedTargets", None),
@@ -1661,9 +1703,9 @@ AffectsInvokerOnly.Reverse=yes
     }
 
     /// Package 45 G1 warhead gates through the production reader
-    /// (`Ext/WarheadType/Body.cpp:190-191,408`): `CellSpread.Cylinder` is a
-    /// `Valueable<bool>` (default no), the two `Temporal.Apply*` are
-    /// `Nullable<bool>`. An explicit `no` must stay `Some(false)` so a
+    /// (`Ext/WarheadType/Body.cpp:190-191,408,491`): `CellSpread.Cylinder` is a
+    /// `Valueable<bool>` (default no), `Temporal.Apply*` and `PreventScatter`
+    /// are `Nullable<bool>`. An explicit `no` must stay `Some(false)` so a
     /// warhead can refuse a `yes` `[CombatDamage]` global.
     #[cfg(feature = "phobos")]
     #[test]
@@ -1671,9 +1713,9 @@ AffectsInvokerOnly.Reverse=yes
         let ini = IniFile::from_str(
             "[PLAIN]\nFixtureOnly=1\n\
              [SET]\nCellSpread.Cylinder=yes\nTemporal.ApplyMultiplier=yes\n\
-             Temporal.ApplyVersus=yes\n\
+             Temporal.ApplyVersus=yes\nPreventScatter=yes\n\
              [OFF]\nCellSpread.Cylinder=no\nTemporal.ApplyMultiplier=no\n\
-             Temporal.ApplyVersus=no\n",
+             Temporal.ApplyVersus=no\nPreventScatter=no\n",
         );
         let read = |id: &str| WarheadType::from_ini_section(id, ini.section(id).unwrap());
 
@@ -1681,15 +1723,25 @@ AffectsInvokerOnly.Reverse=yes
         assert!(!plain.phobos_cell_spread_cylinder);
         assert_eq!(plain.phobos_temporal_apply_multiplier, None);
         assert_eq!(plain.phobos_temporal_apply_versus, None);
+        assert_eq!(
+            plain.phobos_prevent_scatter, None,
+            "an unset warhead consults the `[CombatDamage]` global"
+        );
 
         let set = read("SET");
         assert!(set.phobos_cell_spread_cylinder);
         assert_eq!(set.phobos_temporal_apply_multiplier, Some(true));
         assert_eq!(set.phobos_temporal_apply_versus, Some(true));
+        assert_eq!(set.phobos_prevent_scatter, Some(true));
 
         let off = read("OFF");
         assert!(!off.phobos_cell_spread_cylinder);
         assert_eq!(off.phobos_temporal_apply_multiplier, Some(false));
         assert_eq!(off.phobos_temporal_apply_versus, Some(false));
+        assert_eq!(
+            off.phobos_prevent_scatter,
+            Some(false),
+            "an authored `no` still scatters whatever the global says"
+        );
     }
 }

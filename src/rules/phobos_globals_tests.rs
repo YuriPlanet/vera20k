@@ -78,6 +78,69 @@ ApplyModifiersOnNegativeDamage=yes
     }
 }
 
+/// `[CombatDamage] Warhead.PreventScatter=` (`Ext/Rules/Body.cpp:648`,
+/// constructor false `Body.h:1042`) is the fallback for the warhead
+/// `Nullable<bool>` key (`Ext/WarheadType/Body.cpp:491`) in Phobos' re-hook of
+/// the native `FootClass::Scatter` call site (`Misc/Hooks.Ares.cpp:273-281`,
+/// returns `0x702D11`). An authored `no`, like a `<default>` reset, is a read
+/// value and therefore outranks a `yes` global.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_warhead_prevent_scatter_fallback() {
+    let global_yes = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nWarhead.PreventScatter=yes\n\
+         [Warheads]\n0=UNSET\n1=OFF\n2=ON\n\
+         [UNSET]\n[OFF]\nPreventScatter=no\n[ON]\nPreventScatter=yes\n",
+    ))
+    .unwrap();
+    assert!(
+        global_yes
+            .warhead("UNSET")
+            .unwrap()
+            .prevents_scatter(&global_yes),
+        "an absent key consults the global"
+    );
+    assert!(
+        !global_yes
+            .warhead("OFF")
+            .unwrap()
+            .prevents_scatter(&global_yes),
+        "an authored no scatters even under a yes global"
+    );
+    assert!(
+        global_yes
+            .warhead("ON")
+            .unwrap()
+            .prevents_scatter(&global_yes)
+    );
+
+    let global_off = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nWarhead.PreventScatter=no\n\
+         [Warheads]\n0=UNSET\n1=RESET\n2=ON\n\
+         [UNSET]\n[RESET]\nPreventScatter=<default>\n[ON]\nPreventScatter=yes\n",
+    ))
+    .unwrap();
+    assert!(
+        !global_off
+            .warhead("UNSET")
+            .unwrap()
+            .prevents_scatter(&global_off)
+    );
+    assert!(
+        !global_off
+            .warhead("RESET")
+            .unwrap()
+            .prevents_scatter(&global_off),
+        "`<default>` clears the nullable back to the global"
+    );
+    assert!(
+        global_off
+            .warhead("ON")
+            .unwrap()
+            .prevents_scatter(&global_off)
+    );
+}
+
 /// `[General] AnimCraterDestroyTiberium=` (`Ext/Rules/Body.cpp:418`,
 /// constructor `Ext/Rules/Body.h:844`) defaults yes and is the fallback for an
 /// AnimType's unset art `Crater.DestroyTiberium=` (`Ext/AnimType/Body.cpp:126`).
@@ -542,6 +605,22 @@ fn the_g1_combat_damage_gates_construct_and_read_from_their_own_section() {
     assert!(wrong_section.arcing_allow_elevation_inaccuracy);
     assert!(!wrong_section.temporal_apply_multiplier);
     assert!(!wrong_section.temporal_apply_versus);
+}
+
+/// `[CombatDamage] Warhead.PreventScatter` (`Ext/Rules/Body.cpp:648`,
+/// constructed false at `Body.h:1042`): the global fallback Phobos' re-hook of
+/// the native scatter call site (`Misc/Hooks.Ares.cpp:278`) uses for a warhead
+/// that does not author `PreventScatter=`.
+#[cfg(feature = "phobos")]
+#[test]
+fn warhead_prevent_scatter_constructs_false_and_reads_from_combat_damage() {
+    assert!(!PhobosGlobals::default().warhead_prevent_scatter);
+    assert!(read("[CombatDamage]\nWarhead.PreventScatter=yes\n").warhead_prevent_scatter);
+    assert!(!read("[CombatDamage]\nWarhead.PreventScatter=no\n").warhead_prevent_scatter);
+    assert!(
+        !read("[General]\nWarhead.PreventScatter=yes\n").warhead_prevent_scatter,
+        "the key lives in `[CombatDamage]`, so a `[General]` spelling is invisible"
+    );
 }
 
 /// `[General] AIGuardAreaTargetingDelay` (`Nullable<int>`, unset) and

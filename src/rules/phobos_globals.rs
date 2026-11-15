@@ -1064,6 +1064,13 @@ pub struct PhobosGlobals {
     pub temporal_apply_multiplier: bool,
     #[serde(default)]
     pub temporal_apply_versus: bool,
+    /// `[CombatDamage] Warhead.PreventScatter=` (`Valueable<bool>`, constructor
+    /// `false`, `Ext/Rules/Body.h:542,1042`; read `Ext/Rules/Body.cpp:648`): the
+    /// global fallback of the WarheadType `PreventScatter=` nullable when a hit
+    /// reaches the native `FootClass::Scatter` call site
+    /// (`Misc/Hooks.Ares.cpp:273-281`, which returns `0x702D11`).
+    #[serde(default)]
+    pub warhead_prevent_scatter: bool,
     /// `[CombatDamage] CanTarget.IronCurtained=`, default **`yes`**
     /// (`Ext/Rules/Body.cpp:438`, constructor `Ext/Rules/Body.h:833`): the
     /// human fallback for an unset WeaponType `CanTarget.IronCurtained`; `no`
@@ -1841,6 +1848,7 @@ impl Default for PhobosGlobals {
             debris_conventional: false,
             temporal_apply_multiplier: false,
             temporal_apply_versus: false,
+            warhead_prevent_scatter: false,
             can_target_iron_curtained: true,
             can_target_ai_iron_curtained: false,
             auto_target_iron_curtained: true,
@@ -2961,6 +2969,9 @@ fn section_settings(section: &crate::rules::ini_parser::IniSection) -> PhobosGlo
         ),
         temporal_apply_versus: section
             .read_bool("Temporal.ApplyVersus", defaults.temporal_apply_versus),
+        // `Ext/Rules/Body.cpp:648`.
+        warhead_prevent_scatter: section
+            .read_bool("Warhead.PreventScatter", defaults.warhead_prevent_scatter),
         can_target_ai_iron_curtained: section.read_bool(
             "CanTargetAI.IronCurtained",
             defaults.can_target_ai_iron_curtained,

@@ -2189,14 +2189,12 @@ pub(crate) fn commit_entities(
             // Ares TechnoClass_ReceiveDamage_PreventScatter (hook 0x702CFE)
             // replaces the Scatter call itself: a `PreventScatter=yes`
             // warhead leaves the admitted object in place. The admission
-            // before it only reads.
-            #[cfg(feature = "ares")]
+            // before it only reads. Phobos re-hooks the same site with its
+            // nullable-plus-global decision, so both features go through
+            // `WarheadType::prevents_scatter`.
             let prevent_scatter = rules
                 .warhead(world.interner.resolve(event.warhead_ref))
-                .and_then(WarheadType::ares_combat)
-                .is_some_and(|combat| combat.prevent_scatter());
-            #[cfg(not(feature = "ares"))]
-            let prevent_scatter = false;
+                .is_some_and(|warhead| warhead.prevents_scatter(rules));
             if !prevent_scatter {
                 match world.receive_damage_scatter(
                     target_id,
