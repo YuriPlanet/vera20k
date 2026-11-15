@@ -157,6 +157,34 @@ fn allow_berzerk_on_allies_constructs_false_and_reads_from_combat_damage() {
     );
 }
 
+/// `[General] ReadyToNextMission.MovingCheck=` (`Ext/Rules/Body.cpp:646`,
+/// constructor `no` `Body.h:538,1040`): restores the stock always-ask
+/// `Is_Moving_Now` for a human owner (`0x7442D6`/`0x521BA7`).
+#[cfg(feature = "phobos")]
+#[test]
+fn the_ready_to_next_mission_moving_check_defaults_false() {
+    assert!(!PhobosGlobals::default().ready_to_next_mission_moving_check);
+    assert!(
+        read("[General]
+ReadyToNextMission.MovingCheck=yes
+")
+            .ready_to_next_mission_moving_check
+    );
+    assert!(
+        !read("[General]
+ReadyToNextMission.MovingCheck=no
+")
+            .ready_to_next_mission_moving_check
+    );
+    assert!(
+        !read("[CombatDamage]
+ReadyToNextMission.MovingCheck=yes
+")
+            .ready_to_next_mission_moving_check,
+        "the key is a `[General]` read"
+    );
+}
+
 /// `[General] AIChronoSphereSW=` / `AIChronoWarpSW=` (`ValueableIdx`, i.e. a
 /// superweapon type ID, constructors the unset index `-1`,
 /// `Ext/Rules/Body.cpp:122-123`, `Body.h:41-42,581-582`): the supers

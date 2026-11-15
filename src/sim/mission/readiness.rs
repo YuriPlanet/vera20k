@@ -16,6 +16,7 @@ const MISSION_MOVE: MissionId = MissionId::from_raw(2);
 const MISSION_GUARD: MissionId = MissionId::from_raw(5);
 const MISSION_STICKY: MissionId = MissionId::from_raw(6);
 const MISSION_ENTER: MissionId = MissionId::from_raw(7);
+const MISSION_UNLOAD: MissionId = MissionId::from_raw(16);
 const MISSION_HUNT: MissionId = MissionId::from_raw(15);
 const MISSION_RESCUE: MissionId = MissionId::from_raw(21);
 const MISSION_AIRCRAFT_ACTION_EXCEPTION: MissionId = MissionId::from_raw(0x1e);
@@ -101,6 +102,12 @@ pub(crate) struct UnitReadyView<'a, W: UnitReadyWorld + ?Sized> {
     pub(crate) locomotor: Option<LocomotorReadyState>,
     pub(crate) attack_target_present: bool,
     pub(crate) position: ReadyLeptonPoint,
+    /// `Owner->IsControlledByHuman()`: a computer owner always asks the
+    /// locomotor's `Is_Moving_Now` (`0x7442D6`).
+    pub(crate) owner_is_human: bool,
+    /// `[General] ReadyToNextMission.MovingCheck=`: restores the stock
+    /// always-ask behavior for a human owner (Phobos hook `0x7442D6`).
+    pub(crate) moving_check: bool,
     pub(crate) world: &'a W,
 }
 
@@ -111,6 +118,10 @@ pub(crate) struct InfantryReadyView<'a> {
     pub(crate) object_is_falling_down: u8,
     pub(crate) locomotor: Option<LocomotorReadyState>,
     pub(crate) attack_target_present: bool,
+    /// See [`UnitReadyView::owner_is_human`] (hook `0x521BA7`).
+    pub(crate) owner_is_human: bool,
+    /// See [`UnitReadyView::moving_check`].
+    pub(crate) moving_check: bool,
 }
 
 /// Complete borrowed inputs for the Aircraft leaf.
@@ -151,10 +162,16 @@ pub(crate) fn unit_ready_to_commence<W: UnitReadyWorld + ?Sized>(
 
     let queued = view.mission.queued();
     if queued != MISSION_ENTER {
-        let moving = view
-            .locomotor
-            .ok_or(ReadyUnavailable::Locomotor)?
-            .is_moving_now();
+        // Phobos `FootClass_ReadyToNextMission_MovingCheck` (`0x7442D6`): the
+        // locomotor is asked only with the key on, a queued Unload, or a
+        // computer owner.
+        let moving = if view.moving_check || queued == MISSION_UNLOAD || !view.owner_is_human {
+            view.locomotor
+                .ok_or(ReadyUnavailable::Locomotor)?
+                .is_moving_now()
+        } else {
+            false
+        };
         if moving {
             if view.world.signed_height() >= 0 {
                 let effective = view.mission.effective();
@@ -210,10 +227,18 @@ pub(crate) fn infantry_ready_to_commence(view: InfantryReadyView<'_>) -> ReadyRe
         return Ok(false);
     }
 
-    let moving = view
-        .locomotor
-        .ok_or(ReadyUnavailable::Locomotor)?
-        .is_moving_now();
+    // Phobos `FootClass_ReadyToNextMission_MovingCheck` (`0x521BA7`): the same
+    // gate as the Unit arm.
+    let moving = if view.moving_check
+        || view.mission.queued() == MISSION_UNLOAD
+        || !view.owner_is_human
+    {
+        view.locomotor
+            .ok_or(ReadyUnavailable::Locomotor)?
+            .is_moving_now()
+    } else {
+        false
+    };
     let effective = view.mission.effective();
     if moving && effective != MISSION_GUARD && effective != MISSION_HUNT {
         if effective != MISSION_ATTACK {
@@ -353,6 +378,8 @@ mod tests {
             locomotor: Some(stopped()),
             attack_target_present: false,
             position: ReadyLeptonPoint::new(40 * 256, 51 * 256),
+            owner_is_human: true,
+            moving_check: true,
             world,
         }
     }
@@ -367,6 +394,8 @@ mod tests {
             object_is_falling_down: 0,
             locomotor: Some(stopped()),
             attack_target_present: false,
+            owner_is_human: true,
+            moving_check: true,
         }
     }
 
@@ -382,6 +411,32 @@ mod tests {
             tracker_byte_18,
             tracker_byte_19,
         )
+    }
+
+    /// Phobos `FootClass_ReadyToNextMission_MovingCheck` (`0x7442D6` Unit /
+    /// `0x521BA7` Infantry): a human owner skips the locomotor query unless the
+    /// key is on or the queued mission is Unload; a computer owner always asks.
+    #[test]
+    fn the_ready_to_next_mission_moving_gate_follows_phobos() {
+        let leaf_state = unit_leaf(0, 0, 0, 0);
+        let world = TestWorld::default();
+        let run = |queued: MissionId, human: bool, key: bool, locomotor| {
+            let mission = mission_fixture(MISSION_MOVE.raw(), queued.raw(), 0);
+            let mut view = unit_view(&mission, leaf_state.as_unit().expect("Unit leaf"), &world);
+            view.locomotor = locomotor;
+            view.owner_is_human = human;
+            view.moving_check = key;
+            unit_ready_to_commence(view)
+        };
+        // Human, no queued Unload, key off: the moving unit stays ready and a
+        // missing locomotor is not an error, because the query never runs.
+        assert_eq!(run(MissionId::NONE, true, false, Some(moving())), Ok(true));
+        assert_eq!(run(MissionId::NONE, true, false, None), Ok(true));
+        // The key restores the stock always-ask behavior.
+        assert_eq!(run(MissionId::NONE, true, true, Some(moving())), Ok(false));
+        // A queued Unload always asks, and so does a computer owner.
+        assert_eq!(run(MISSION_UNLOAD, true, false, Some(moving())), Ok(false));
+        assert_eq!(run(MissionId::NONE, false, false, Some(moving())), Ok(false));
     }
 
     #[test]

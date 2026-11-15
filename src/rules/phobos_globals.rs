@@ -1149,6 +1149,13 @@ pub struct PhobosGlobals {
     /// `Team`, `Ext/Rules/Body.cpp:711`, constructor `Body.h:1063`): which
     /// players a techno's sight reveals to when neither its type nor its
     /// country overrides (`Ext/Techno/Hooks.cpp:2562-2596`).
+    /// `[General] ReadyToNextMission.MovingCheck=`, default `no`
+    /// (`Ext/Rules/Body.cpp:646`, constructor `Body.h:538,1040`): stock
+    /// `FootClass::ReadyToNextMission` always asks the locomotor's
+    /// `Is_Moving_Now`; Phobos asks it only for a computer owner, a queued
+    /// Unload, or this key on (hooks `0x7442D6` Unit / `0x521BA7` Infantry).
+    #[serde(default)]
+    pub ready_to_next_mission_moving_check: bool,
     #[serde(default = "reveal_houses_default")]
     pub reveal_houses: AffectedHouse,
     /// `[CombatDamage] BerzerkTargeting=`, default `all` (`:420`, constructor
@@ -1926,6 +1933,7 @@ impl Default for PhobosGlobals {
             cylinder_rangefinding: false,
             recount_burst: false,
             ai_superweapon_delay: None,
+            ready_to_next_mission_moving_check: false,
             reveal_houses: AffectedHouse::TEAM,
             berzerk_targeting: AffectedHouse::ALL,
             allow_berzerk_on_allies: false,
@@ -2666,6 +2674,13 @@ impl PhobosGlobals {
             general.read_int("ChronoSphereDelay", globals.chrono_sphere_delay);
         globals.mind_control_threat_delay =
             general.read_int("MindControl.ThreatDelay", globals.mind_control_threat_delay);
+        // `Ext/Rules/Body.cpp:646`.
+        globals.ready_to_next_mission_moving_check = ini
+            .section_or_empty("General")
+            .read_bool(
+                "ReadyToNextMission.MovingCheck",
+                globals.ready_to_next_mission_moving_check,
+            );
         globals.jumpjet_rotate_on_crash = ini
             .section_or_empty("JumpjetControls")
             .read_bool("RotateOnCrash", globals.jumpjet_rotate_on_crash);

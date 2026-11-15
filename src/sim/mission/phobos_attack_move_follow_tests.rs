@@ -15,7 +15,10 @@ use super::MegaMission;
 /// ordinary attack-mover. Both are armed so `Can_Attack_Move` admits them.
 fn rules_with(follow_body: &str) -> RuleSet {
     RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
-        "[General]\n\
+        // The hand-off's `QueueMission(Area_Guard, 1)` keeps its queued order
+        // only while readiness still consults the locomotor; these fixtures
+        // are human-owned, and Phobos' default skips that query.
+        "[General]\nReadyToNextMission.MovingCheck=yes\n\
          [VehicleTypes]\n0=FOLLOW\n1=LEAD\n\
          [FOLLOW]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\n\
          CanPassiveAquire=yes\n{follow_body}\
