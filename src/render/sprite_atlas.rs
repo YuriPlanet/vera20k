@@ -2586,19 +2586,18 @@ pub(crate) fn prepare_sprite_atlas(
         }
     }
 
-    // Step 1e: Pre-load both retained canopy types. NPSE Paradrop
+    // Step 1e: Pre-load the General canopy fallbacks. NPSE Paradrop
     // C2FA75/C2F939 substitutes VehicleParachute for non-infantry.
     // This registers the no-remap GlobalAnim/colour-0 fallback. The live
     // AnimClass remap closure adds SelectedScheme variants for remapped canopies;
     // both use the unit palette here because PARACH sets `AltPalette=`.
+    // Configured Ares canopies enter Step 1d through the bound animation roots.
+    // That owner supplies their Image=/Theater=/Shadow= bindings.
     let mut parachutes: Vec<&str> = Vec::new();
     if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
         parachutes.extend(rules.general.parachute_shp.as_deref());
         if crate::rules::NPATCH_ENABLED {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
-        }
-        if rules.ares() {
-            parachutes.extend(rules.parachute_animations());
         }
     }
     for shp_name in parachutes {
