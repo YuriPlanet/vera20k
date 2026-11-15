@@ -191,19 +191,21 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         owner_id: u64,
     ) -> Option<crate::sim::anim_class::AnimId> {
+        let owner = self.substrate.entities.get(owner_id)?;
+        let object = self.interner.try_resolve(owner.type_ref()).and_then(|_| {
+            self.interner
+                .object_type_in_category(owner.type_ref(), owner.category().into(), rules)
+        });
         // Ares 3.0 10047C60 (hook 0x5F5ADD), before the canopy type: an
         // `IsBomb` Foot sets IsABomb (+8F), so it lands as a bomb.
         if rules.ares_form()
-            && let Some(owner) = self.substrate.entities.get(owner_id)
             && owner.category().is_foot()
-            && self
-                .interner
-                .try_resolve(owner.type_ref())
-                .and_then(|_| self.interner.object_type(owner.type_ref(), rules))
-                .is_some_and(|object| object.techno_combat().roles().is_bomb())
-            && let Some(owner) = self.substrate.entities.get_mut(owner_id)
+            && object.is_some_and(|object| object.techno_combat().roles().is_bomb())
         {
-            owner.mark_parachuted_bomb();
+            self.substrate
+                .entities
+                .get_mut(owner_id)?
+                .mark_parachuted_bomb();
         }
         let owner = self.substrate.entities.get(owner_id)?;
         let owner_house = owner.owner();
@@ -217,10 +219,6 @@ impl crate::sim::world::Simulation {
             .get(&owner_house)
             .and_then(|house| house.country())
             .map(|country| self.interner.resolve(country));
-        let object = self.interner.try_resolve(owner.type_ref()).and_then(|_| {
-            self.interner
-                .object_type_in_category(owner.type_ref(), owner.category().into(), rules)
-        });
         let Some(canopy) = parachute_anim_name(rules, owner, object, side, country) else {
             self.substrate
                 .entities
@@ -325,7 +323,7 @@ fn parachute_anim_name<'r>(
     // hook5F5ADD replaces `mov edx,[ecx+0xBBC]`
     // and resumes5F5AE3 with the chosen type in EDX. Foot types take
     // TechnoTypeExt+F0 before Country's GetParachuteAnim1001BBC0.
-    if rules.ares_form()
+    if rules.ares()
         && entity.category().is_foot()
         && let Some(canopy) =
             object.and_then(|object| object.techno_combat().presentation().parachute_anim())

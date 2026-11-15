@@ -431,24 +431,6 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[1] as f32 / z2,
     );
     let admission = input.tactical_admission();
-    // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type; Ares
-    // Type/Country/Side `Parachute.Anim=` adds its own attached types.
-    let mut parachute_names = vec![
-        input.rules.general.parachute_shp.as_deref(),
-        if crate::rules::NPATCH_ENABLED {
-            input.rules.general.vehicle_parachute.as_deref()
-        } else {
-            None
-        },
-    ];
-    if input.rules.ares_form() {
-        parachute_names.extend(input.rules.parachute_animations().map(Some));
-    }
-    let parachute_types = parachute_names
-        .into_iter()
-        .flatten()
-        .filter_map(|name| sim.interner().get(name))
-        .collect::<Vec<_>>();
     let local_owner = input.local_owner;
     // Only the members this loop draws, filed once for the frame; Display
     // still supplies the order. Particles have their own AIR registrations,
@@ -506,10 +488,7 @@ pub(crate) fn build_display_effect_instances(
         };
         // Paradrop creates a retained Anim, whose GetCoords resolves its
         // owner-relative75-lepton lift. Draw it at its own Display encounter.
-        let is_parachute = parachute_types
-            .iter()
-            .copied()
-            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
+        let is_parachute = parachute_canopy_owner(anim, input.frame).is_some();
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let AnimTypeArt {
             config,
@@ -844,15 +823,14 @@ pub(super) fn presentation_anim_frame_count(
     })
 }
 
-/// The object a canopy hangs on: an owner-attached anim of the
-/// retained `Parachute=` or NPSE `VehicleParachute=` type.
+/// Paradrop5F5AF1 retains the canopy at Object+88. Ares10047C60 changes
+/// its type, and another attached effect can share that type's art.
 fn parachute_canopy_owner(
     anim: &crate::sim::anim_class::AnimObject,
-    parachute_type: crate::sim::intern::InternedId,
+    frame: &crate::app::presentation::frame::PresentationFrame,
 ) -> Option<u64> {
-    (anim.type_id() == parachute_type)
-        .then_some(anim.owner_entity())
-        .flatten()
+    let owner = anim.owner_entity()?;
+    (frame.object(owner)?.parachute_animation() == Some(anim.stable_id())).then_some(owner)
 }
 
 /// `UpdateConditionalAnimDrawingLogic`'s offset for one attach-effect

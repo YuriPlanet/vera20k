@@ -8890,6 +8890,15 @@ impl RulesPassProcessor {
                     self.families.get_mut(&family).unwrap()[index]
                         .ares_cursors
                         .read_techno_pass(&raw, &self.ares_mouse_cursors);
+                } else {
+                    // The isolated Find-only canopy read also admits a game
+                    // whose rules/map names this Ares key without ares.mix.
+                    let mut retained =
+                        std::mem::take(&mut self.family_mut(family)[index].techno_combat);
+                    retained.read_parachute_anim(|key| {
+                        self.resolve_existing_type_from(&raw, key, RulesTypeFamily::Animation)
+                    });
+                    self.family_mut(family)[index].techno_combat = retained;
                 }
                 if ares_way {
                     self.process_factory_owners(family, index, &raw);

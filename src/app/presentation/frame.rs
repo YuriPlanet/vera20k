@@ -70,6 +70,7 @@ pub(crate) struct ObjectRecord {
     owner: InternedId,
     is_voxel: bool,
     on_bridge: bool,
+    parachute_animation: Option<u64>,
     ion_blast_lift: i8,
     pub(crate) position: crate::sim::components::Position,
     /// The barrel's facing and elevation are the pose's `turret` and
@@ -596,6 +597,7 @@ impl ObjectRecord {
             owner: entity.owner(),
             is_voxel: entity.is_voxel(),
             on_bridge: entity.on_bridge(),
+            parachute_animation: entity.parachute_animation(),
             ion_blast_lift: entity.ion_blast_lift_pixels(),
             position: entity.position.clone(),
             body_facing: entity.body_facing.clone(),
@@ -736,6 +738,10 @@ impl ObjectRecord {
 
     pub(crate) fn is_falling_down(&self) -> bool {
         self.answers.is_falling_down
+    }
+
+    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+        self.parachute_animation
     }
 
     pub(crate) fn is_warped_out(&self) -> bool {

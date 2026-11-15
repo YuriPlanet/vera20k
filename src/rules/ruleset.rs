@@ -5604,6 +5604,12 @@ impl RuleSet {
                 );
             }
         }
+        // The retained canopy key can enable Ares in a stock-way game too.
+        for (category, name, retained) in processed.techno_combat_states() {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
+                rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
+            }
+        }
         if crate::rules::ares_switch::ares_way() {
             for (category, name, enabled, options) in processed.ares_spotlight_states() {
                 if let Some(handle) = rules.object_category_index.get(category, name) {
@@ -5633,11 +5639,6 @@ impl RuleSet {
             for (category, name, crew) in processed.crew_states() {
                 if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_crew_rules(crew);
-                }
-            }
-            for (category, name, retained) in processed.techno_combat_states() {
-                if let Some(handle) = rules.object_category_index.get(category, name) {
-                    rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
                 }
             }
             for (name, infiltration) in processed.infiltration_states() {

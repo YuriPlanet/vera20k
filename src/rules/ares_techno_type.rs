@@ -221,7 +221,7 @@ pub(crate) type ResolvedTechno =
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PresentationTypeRules {
     /// TechnoTypeExt+0xF0, Valueable<AnimTypeClass*>; constructor 1003C884
-    /// initializes null. Missing fields in earlier saves keep that default.
+    /// initializes null. An omitted structured field uses that default.
     #[serde(default)]
     parachute_anim: Option<String>,
     /// Bound against the fixed sound catalog with the type's other sounds
@@ -878,6 +878,16 @@ impl CustomMissileRules {
 }
 
 impl AresTechnoTypeRules {
+    /// LoadFromINIFile1003E385 -> Valueable::Read1000EB20 ->
+    /// detail::read<AnimType*>1000C9C0. This Find-only key also reads in a
+    /// stock-way pass, so its presence can enable the run-time Ares switch.
+    pub(crate) fn read_parachute_anim(&mut self, resolve: impl FnOnce(&str) -> Resolved) {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        if let Some(anim) = resolve("Parachute.Anim") {
+            self.presentation.parachute_anim = anim;
+        }
+    }
+
     /// One reached `LoadFromINIFile` pass. `type_name` is the type's ID,
     /// `aircraft` whether it is an AircraftType, and `resolve` the Find-only
     /// pointer read of a key (called in read order), `resolve_techno` and
@@ -939,12 +949,8 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
-        // LoadFromINIFile1003E385..1003E396, after IsBomb and its sounds:
-        // Valueable::Read1000EB20 is Find-only, absent/empty/unknown
-        // retains, none clears (detail::read<AnimType*>1000C9C0).
-        if let Some(anim) = resolve("Parachute.Anim", TypeRef::Animation) {
-            self.presentation.parachute_anim = anim;
-        }
+        // After IsBomb and its sounds, in the DLL's read order.
+        self.read_parachute_anim(|key| resolve(key, TypeRef::Animation));
         // After Operator, InitialPayload.Types (1000EDD0) and .Nums
         // (ValueableVector<int> 1000ED00), then after the Chronoshift.* and
         // CameoPCX keys the reverse-engineering pair.

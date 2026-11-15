@@ -62,6 +62,8 @@ the pointer to null (`1003C884`), and its per-layer reader (`1003E385`,
 `ObjectClass_SpawnParachuted_Animation` hook (`5F5ADD`, Ares.dll `10047C60`)
 replaces the stock Rules+BBC load and resumes at `5F5AE3` with this selection.
 The shared canopy asset closure binds all three layers for simulation and drawing.
+The type-level key also enables its reader and Ares behavior when supplied by
+itself in a rules or map layer.
 
 - `sim::superweapon::paradrop::ares_launch` (SW_ParaDrop::Activate
   `0x10073CD0`, through the Ares redirect in `superweapon::fire`) resolves the

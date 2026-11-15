@@ -2597,7 +2597,7 @@ pub(crate) fn prepare_sprite_atlas(
         if crate::rules::NPATCH_ENABLED {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
         }
-        if rules.ares_form() {
+        if rules.ares() {
             parachutes.extend(rules.parachute_animations());
         }
     }

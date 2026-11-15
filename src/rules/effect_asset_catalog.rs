@@ -413,7 +413,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     }
     // Ares Type/Country/Side `Parachute.Anim=`: an attached canopy needs the same
     // physical animation bounds before the simulator creates it.
-    if ares_way {
+    if rules.ares() {
         for name in rules.parachute_animations() {
             insert(name);
         }
@@ -801,6 +801,53 @@ mod tests {
         assert_eq!(
             rules.art().scheduler_anim_types().contains("VEHCHUTE"),
             capability
+        );
+    }
+
+    #[test]
+    fn ares_canopy_key_alone_activates_its_reader_and_asset_root() {
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let art = IniFile::from_str("[TYPECHUTE]\nLoopCount=-1\n");
+        let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(
+            "[Animations]\n0=TYPECHUTE\n[InfantryTypes]\n0=E1\n\
+             [E1]\nParachute.Anim=TYPECHUTE\n",
+        ))
+        .process_with_fixed_art(&art)
+        .unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert!(rules.ares());
+        assert_eq!(
+            rules
+                .object("E1")
+                .unwrap()
+                .techno_combat()
+                .presentation()
+                .parachute_anim(),
+            Some("TYPECHUTE")
+        );
+        assert!(
+            anim_class_roots(&rules)
+                .iter()
+                .any(|name| name == "TYPECHUTE")
+        );
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
+        rules.bind_anim_frame_count_for_test("TYPECHUTE", 6);
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.substrate.entities.insert(
+            crate::sim::game_entity::GameEntity::test_default_of_category(
+                1,
+                "E1",
+                "Americans",
+                10,
+                11,
+                crate::map::entities::EntityCategory::Infantry,
+            ),
+        );
+        sim.interner = crate::sim::intern::test_interner();
+        let anim = sim.attach_parachute_anim(&rules, 1).unwrap();
+        assert_eq!(
+            sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
+            "TYPECHUTE"
         );
     }
 
