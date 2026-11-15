@@ -58,6 +58,7 @@ simulation, session and network command owners.
 ## Feature docs
 
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
+- [Autosave](autosave.md): `[VERA] AutosaveMinutes=` saves an offline match every few minutes.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.

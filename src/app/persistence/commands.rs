@@ -44,8 +44,19 @@ pub(crate) fn save_game(
     )
 }
 
+/// The opt-in autosave (`persistence::autosave`): the match under
+/// `description` in the one autosave slot.
+pub(crate) fn autosave_game(
+    state: &mut AppState,
+    description: &str,
+) -> Result<PathBuf, SaveCommandError> {
+    save(state, Some(description), SaveDestination::Autosave)
+}
+
 enum SaveDestination<'a> {
     New,
+    /// `autosave::FILE_NAME`, replacing the previous autosave.
+    Autosave,
     Existing(&'a Path),
     InitialCampaign(&'a str),
 }
@@ -347,6 +358,7 @@ impl PreparedSave<'_> {
             SaveDestination::InitialCampaign(filename) => {
                 repository.write_initial_campaign(filename, &bytes)
             }
+            SaveDestination::Autosave => repository.write_autosave(&bytes),
             SaveDestination::New => {
                 let filename = match self.sanitized {
                     Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
