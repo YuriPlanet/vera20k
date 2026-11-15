@@ -1331,12 +1331,8 @@ mod tests {
         assert_eq!(e.infantry.unwrap().fear_level, 0);
     }
 
-    fn idle_corpus() -> serde_json::Value {
-        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/anytown_damage/foot_missions.json",
-        ))
-        .unwrap();
-        native
+    fn idle_corpus() -> &'static serde_json::Value {
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json")
     }
 
     fn native_rng_state(rng: &crate::sim::rng::SimRng) -> serde_json::Value {

@@ -1424,10 +1424,8 @@ fn raw_infantry_atlas_covers_saved_native_signed_remainders() {
     // in-asset remainders must be included by cache membership; a narrow marker
     // asset never grows to the declared sequence count. This is not a complete
     // native frame-selection comparison.
-    let receipt: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let receipt =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let rows = receipt["draw_stage_modulo_receipt"]["rows"]
         .as_array()
         .unwrap();
