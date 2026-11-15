@@ -18,6 +18,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, SpriteInstance};
 use crate::render::palette_light::PaletteLight;
 use crate::render::selection_overlay::CenteredShapeStrip;
+use crate::render::sidebar_chrome::side_mix_file;
 
 /// One beacon a client draws, in the House-major order of the native loops
 /// (`0x00430AC0`, `0x00431700`).
@@ -50,12 +51,13 @@ impl BeaconArt {
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         assets: &AssetManager,
+        side_index: i32,
+        ares: bool,
         ramps: &[[Color; 16]],
     ) -> Self {
-        let shape = |name| ShpFile::from_bytes(assets.get_ref(name)?).ok();
-        let base = assets
-            .get_ref("temperat.pal")
-            .and_then(|bytes| Palette::from_bytes(bytes).ok());
+        let file = |name| side_mix_file(assets, side_index, ares, name);
+        let shape = |name| ShpFile::from_bytes(file(name)?).ok();
+        let base = file("temperat.pal").and_then(|bytes| Palette::from_bytes(bytes).ok());
         let palettes: Vec<Palette> = base
             .map(|base| {
                 ramps
@@ -89,10 +91,19 @@ impl BeaconArt {
                 })
             })
             .collect();
+        let radar = shape("rdrbeacn.shp");
+        // 0x00430A2D and 0x00430A97 report each missing shape to the debug
+        // log; play goes on without it.
+        if tactical_shape.is_none() {
+            log::warn!("Failed to load BeaconArt");
+        }
+        if radar.is_none() {
+            log::warn!("Failed to load RadarBeaconArt");
+        }
         Self {
             tactical,
             tactical_frames: tactical_shape.map_or(0, |shp| shp.frames.len() as u32),
-            radar: shape("rdrbeacn.shp"),
+            radar,
             radar_colors,
         }
     }
@@ -177,5 +188,25 @@ mod tests {
         assert_eq!(radar_frame(5, 24), Some(4));
         assert_eq!(radar_frame(5, 25), None);
         assert_eq!(radar_frame(5, 40), Some(0));
+    }
+
+    /// Retail ships PBEACON.SHP and RDRBEACN.SHP only in sidec01.mix and
+    /// sidec02.mix, the side MIX groups Full_Init mounts before
+    /// Init_BeaconArt.
+    #[test]
+    fn retail_beacon_art_comes_from_each_sides_mix_group() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        for side in 0..3 {
+            for name in ["pbeacon.shp", "rdrbeacn.shp"] {
+                let shape = side_mix_file(&assets, side, false, name)
+                    .and_then(|bytes| ShpFile::from_bytes(bytes).ok());
+                assert!(
+                    shape.is_some_and(|shp| !shp.frames.is_empty()),
+                    "side {side} {name}"
+                );
+            }
+        }
     }
 }

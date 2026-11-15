@@ -476,6 +476,29 @@ impl SidebarChromeSet {
     }
 }
 
+/// A file as Full_Init finds it once `InitSideMixFiles` (`0x00534FA0`, from
+/// `0x0068781F`) has mounted the side's MIX group at the tail of the search
+/// list: the ordinary search first, then the group. Side 2 reads side 1's
+/// group (`0x00534FB1`). Stock VERA keeps every side's group off the ordinary
+/// search and reads it by side, so a file only the group carries, such as
+/// PBEACON.SHP, is found here.
+pub(crate) fn side_mix_file<'a>(
+    asset_manager: &'a AssetManager,
+    side_index: i32,
+    ares: bool,
+    name: &str,
+) -> Option<&'a [u8]> {
+    if let Some(bytes) = asset_manager.get_ref(name) {
+        return Some(bytes);
+    }
+    let route = if ares {
+        SidebarSideRoute::for_registered_group(asset_manager)
+    } else {
+        SidebarSideRoute::for_theme(asset_manager, sidebar_theme_for_side(side_index, false))
+    };
+    route.resolve(name).map(|resolved| resolved.bytes)
+}
+
 /// Sidebar geometry6A5090 is side-zero versus nonzero. The Yuri label keeps
 /// existing stock provenance; with `ares`, the arm of
 /// [`build_sidebar_chrome_set`] that drew the side's own Side MIX group
