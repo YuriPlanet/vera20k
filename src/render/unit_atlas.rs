@@ -31,6 +31,7 @@ use crate::assets::vxl_file::VxlFile;
 use crate::map::voxel_pose::VxlSlopeBlend;
 use crate::render::atlas_growth::{self, GrowthShelf, SPRITE_PADDING};
 use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::vxl_normals;
 use crate::render::vxl_raster::{self, VxlRenderParams, VxlSprite};
 use crate::rules::ruleset::RuleSet;
 
@@ -606,8 +607,9 @@ fn render_unit_key(
     key: &UnitSpriteKey,
     vpl: Option<&VplFile>,
     pose: &mut Option<PoseParts>,
+    light: vxl_normals::VoxelLight,
 ) -> Option<RenderedKey> {
-    let (sprite, native_draw_bounds) = model.render(key, vpl, None, pose)?;
+    let (sprite, native_draw_bounds) = model.render_lit(key, vpl, None, pose, light)?;
     // One companion per facing and slope, beside the flight template that
     // the ground draw's key falls back to.
     let legacy_shadow = (key.layer == VxlLayer::Shadow
@@ -617,7 +619,7 @@ fn render_unit_key(
     .then(|| {
         let mut fallback_key = key.clone();
         fallback_key.frame = LEGACY_SHADOW_FRAME;
-        let (fallback, _) = model.render(&fallback_key, vpl, None, pose)?;
+        let (fallback, _) = model.render_lit(&fallback_key, vpl, None, pose, light)?;
         Some(CachedUnitSprite::from_rendered(RenderedSprite {
             key: fallback_key,
             sprite: fallback,
@@ -959,6 +961,8 @@ pub(crate) struct UnitRasterWork {
     models: Vec<(UnitModel, Vec<UnitSpriteKey>)>,
     vpl: Option<VplFile>,
     failed: BTreeMap<String, usize>,
+    /// The rules-driven voxel lighting every sprite of this bake is lit by.
+    light: vxl_normals::VoxelLight,
 }
 
 pub(crate) struct UnitRasterOutput {
@@ -1022,6 +1026,7 @@ pub(crate) fn prepare_unit_atlas(
                 models: Vec::new(),
                 vpl: None,
                 failed: BTreeMap::new(),
+                light: vxl_normals::VoxelLight::for_rules(rules),
             },
             UnitAtlasUpload {
                 started,
@@ -1101,6 +1106,7 @@ pub(crate) fn prepare_unit_atlas(
             models,
             vpl,
             failed,
+            light: vxl_normals::VoxelLight::for_rules(rules),
         },
         UnitAtlasUpload {
             started,
@@ -1155,6 +1161,7 @@ impl UnitRasterWork {
                 })
                 .collect();
             let (model, vpl) = (&model, self.vpl.as_ref());
+            let light = self.light;
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             let results: Vec<Option<RenderedKey>> = {
                 let mut pose = None;
@@ -1162,7 +1169,7 @@ impl UnitRasterWork {
                     .iter()
                     .flat_map(|keys| keys.iter())
                     .take_while(|_| !cancelled.load(std::sync::atomic::Ordering::Relaxed))
-                    .map(|key| render_unit_key(model, key, vpl, &mut pose))
+                    .map(|key| render_unit_key(model, key, vpl, &mut pose, light))
                     .collect()
             };
             #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -1178,7 +1185,7 @@ impl UnitRasterWork {
                                 .take_while(|_| {
                                     !cancelled.load(std::sync::atomic::Ordering::Relaxed)
                                 })
-                                .map(|key| render_unit_key(model, key, vpl, &mut pose))
+                                .map(|key| render_unit_key(model, key, vpl, &mut pose, light))
                                 .collect::<Vec<_>>()
                         })
                     })
@@ -1486,7 +1493,25 @@ impl UnitModel {
         slope_blend: Option<VxlSlopeBlend>,
         pose: &mut Option<PoseParts>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_styled(key, vpl, slope_blend, pose, self.use_buffer, None)
+        self.render_lit(
+            key,
+            vpl,
+            slope_blend,
+            pose,
+            vxl_normals::VoxelLight::default(),
+        )
+    }
+
+    /// [`Self::render`] with the bake's rules-driven voxel lighting.
+    pub(crate) fn render_lit(
+        &self,
+        key: &UnitSpriteKey,
+        vpl: Option<&VplFile>,
+        slope_blend: Option<VxlSlopeBlend>,
+        pose: &mut Option<PoseParts>,
+        light: vxl_normals::VoxelLight,
+    ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+        self.render_styled(key, vpl, slope_blend, pose, self.use_buffer, None, light)
     }
 
     /// A stable key's sprite as a draw renders it while 0xB43180 is set
@@ -1500,7 +1525,15 @@ impl UnitModel {
         vpl: Option<&VplFile>,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
-        self.render_styled(key, vpl, None, &mut None, true, depth)
+        self.render_styled(
+            key,
+            vpl,
+            None,
+            &mut None,
+            true,
+            depth,
+            vxl_normals::VoxelLight::default(),
+        )
     }
 
     /// `depth` rasterizes the requested part, or each part of a Composite,
@@ -1514,6 +1547,7 @@ impl UnitModel {
         pose: &mut Option<PoseParts>,
         use_buffer: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
+        light: vxl_normals::VoxelLight,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
         let (turret, barrel) = self.gun_parts(key.turret_index);
         if (key.layer == VxlLayer::Turret && turret.is_none())
@@ -1531,6 +1565,7 @@ impl UnitModel {
             slope_type: key.slope_type,
             slope_blend,
             use_buffer,
+            voxel_light: light,
             ..VxlRenderParams::default()
         };
         // Aircraft templates are unmasked: the original4148A0->4DB0D0->

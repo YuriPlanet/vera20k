@@ -171,6 +171,12 @@ pub struct PhobosGlobals {
     /// also be on.
     #[serde(default = "true_bool")]
     pub show_designator_range: bool,
+    /// `[AudioVisual] UseFixedVoxelLighting=` (`Valueable<bool>`, constructor
+    /// **no**, `Ext/Rules/Body.cpp:368`, `Body.h:273,793`): the Blinn-Phong
+    /// voxel initializer zeroes its stock `{0,0,1}` secondary light vector
+    /// (`VoxelCalcNormals_NullAdditionalVector`, hook `0x753D86`).
+    #[serde(default)]
+    pub use_fixed_voxel_lighting: bool,
     /// `[AudioVisual] SuperWeaponTimer.Percentage=`, `Valueable<bool>` default
     /// **no** (`Ext/Rules/Body.cpp:144`, `Ext/Rules/Body.h:605`): the fallback
     /// for a Super whose `ShowTimer.Percentage=` is cleared; a timed Super
@@ -1729,6 +1735,7 @@ impl Default for PhobosGlobals {
             overload_particle_sys_count: 5,
             affects_invoker_only_ignore_invoker_state: true,
             show_designator_range: true,
+            use_fixed_voxel_lighting: false,
             super_weapon_timer_percentage: false,
             tooltip_background_color: [0, 0, 0],
             tooltip_background_opacity: 100,
@@ -2041,6 +2048,8 @@ impl PhobosGlobals {
         // switch, read in the same `[AudioVisual]` pass as the income labels.
         globals.show_designator_range =
             audio_visual.read_bool("ShowDesignatorRange", globals.show_designator_range);
+        globals.use_fixed_voxel_lighting =
+            audio_visual.read_bool("UseFixedVoxelLighting", globals.use_fixed_voxel_lighting);
         globals.super_weapon_timer_percentage = audio_visual.read_bool(
             "SuperWeaponTimer.Percentage",
             globals.super_weapon_timer_percentage,

@@ -924,6 +924,40 @@ fn the_chrono_sphere_pre_delay_defaults_to_sixty() {
     );
 }
 
+/// `[AudioVisual] UseFixedVoxelLighting=` (`Ext/Rules/Body.cpp:368`,
+/// constructor **no** `Body.h:273,793`): the voxel initializer's secondary
+/// light vector becomes `{0,0,0}` (hook `0x753D86`) instead of `{0,0,1}`.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_fixed_voxel_lighting_defaults_false_and_reads_from_audio_visual() {
+    assert!(!PhobosGlobals::default().use_fixed_voxel_lighting);
+    assert!(
+        read(
+            "[AudioVisual]
+UseFixedVoxelLighting=yes
+"
+        )
+        .use_fixed_voxel_lighting
+    );
+    assert!(
+        !read(
+            "[AudioVisual]
+UseFixedVoxelLighting=no
+"
+        )
+        .use_fixed_voxel_lighting
+    );
+    assert!(
+        !read(
+            "[General]
+UseFixedVoxelLighting=yes
+"
+        )
+        .use_fixed_voxel_lighting,
+        "the key is an `[AudioVisual]` read"
+    );
+}
+
 /// `[JumpjetControls] RotateOnCrash=` (`Ext/Rules/Body.cpp:1355`,
 /// constructor **true** `Body.h:596`).
 #[test]

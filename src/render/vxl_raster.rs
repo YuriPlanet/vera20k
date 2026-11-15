@@ -312,10 +312,10 @@ pub enum VxlLighting {
 }
 
 impl VxlLighting {
-    fn pages(self, mode: u8, rotation: Mat3) -> [u8; 256] {
+    fn pages(self, mode: u8, rotation: Mat3, light: vxl_normals::VoxelLight) -> [u8; 256] {
         match self {
-            Self::BlinnPhong => vxl_normals::blinn_phong_pages(mode, rotation),
-            Self::Diffuse => vxl_normals::diffuse_pages(mode, rotation),
+            Self::BlinnPhong => vxl_normals::blinn_phong_pages(mode, rotation, light),
+            Self::Diffuse => vxl_normals::diffuse_pages(mode, rotation, light),
         }
     }
 }
@@ -629,6 +629,10 @@ pub struct VxlRenderParams {
     pub diffuse: f32,
     /// Light direction for fallback shading (when no VPL).
     pub light_dir: Vec3,
+    /// Voxel lighting inputs: the world light and the secondary-vector switch
+    /// (`[AudioVisual] VoxelLightSource=`/`UseFixedVoxelLighting=` under
+    /// Phobos, the startup constants otherwise).
+    pub voxel_light: vxl_normals::VoxelLight,
 }
 
 impl Default for VxlRenderParams {
@@ -653,6 +657,7 @@ impl Default for VxlRenderParams {
             ambient: 0.6,
             diffuse: 0.4,
             light_dir,
+            voxel_light: vxl_normals::VoxelLight::default(),
         }
     }
 }
@@ -947,7 +952,10 @@ pub fn prepare_limb_data(
         // camera * locomotor to TechnoClass::Render, so lighting includes
         // the camera but precedes the HVA transform. See the executable
         // vectors in tools/voxel_oracle/lighting.py and vxl_normals.rs.
-        let vpl_pages: [u8; 256] = params.lighting.pages(limb.normals_mode, draw_rotation);
+        let vpl_pages: [u8; 256] =
+            params
+                .lighting
+                .pages(limb.normals_mode, draw_rotation, params.voxel_light);
 
         // Section scale: maps grid coordinates to model-space units.
         let sx: f32 = if limb.size_x > 0 {
