@@ -234,6 +234,16 @@ pub(crate) fn render_diplomacy_shell(
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::NONE,
     );
+    // VERA house control: who plays each House, and new AI Houses.
+    for (cell, rect) in crate::app::input::house_control::cells(state, &layout, &view) {
+        text(
+            &mut texts,
+            &crate::app::input::house_control::text(state, &cell),
+            rect,
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::NONE,
+        );
+    }
     if let Some(key) = interaction.hovered.and_then(|control| control.help_key()) {
         text(
             &mut texts,

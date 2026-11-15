@@ -150,6 +150,12 @@ fn event_payload_len(opcode: u8) -> Option<u8> {
         }
         crate::sim::command::VERA_EJECT_BUNKER_OPCODE => Some(5),
         crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE => Some(1),
+        crate::sim::house_control::VERA_ADD_HOUSE_OPCODE => {
+            Some(crate::sim::house_control::VERA_ADD_HOUSE_PAYLOAD_LEN)
+        }
+        crate::sim::house_control::VERA_HOUSE_CONTROL_OPCODE => {
+            Some(crate::sim::house_control::VERA_HOUSE_CONTROL_PAYLOAD_LEN)
+        }
         // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
         // a game Ares plays in raises one (`context_order`'s trench Enter).
         crate::sim::command::ARES_TRENCH_REDIRECT_OPCODE => {

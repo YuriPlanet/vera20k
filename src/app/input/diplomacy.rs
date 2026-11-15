@@ -107,7 +107,7 @@ pub(crate) struct ResolvedRows {
 
 /// The House array index row `row` shows. Init 0x00657E8B: the player's
 /// own slot shows House 0 and row 0 the player.
-fn house_for_row(row: usize, player_index: usize) -> usize {
+pub(crate) fn house_for_row(row: usize, player_index: usize) -> usize {
     match row {
         0 => player_index,
         row if row == player_index => 0,
@@ -367,6 +367,15 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if button != MouseButton::Left {
         return;
+    }
+    // VERA house control: who plays each House, and new AI Houses.
+    if pressed {
+        let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+        if super::house_control::click(state, x, y) {
+            App::play_main_menu_button_sound(state);
+            state.platform.window.request_redraw();
+            return;
+        }
     }
     let over = control_under_pointer(state);
     state.match_state.match_presentation.diplomacy.hovered = over;

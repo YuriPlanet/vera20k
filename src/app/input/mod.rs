@@ -14,6 +14,7 @@ pub(crate) mod cursor;
 pub(crate) mod hardware_cursor;
 pub(crate) mod connection;
 pub(crate) mod diplomacy;
+pub(crate) mod house_control;
 pub(crate) mod restate;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;

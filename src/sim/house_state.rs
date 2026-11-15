@@ -1218,6 +1218,16 @@ impl HouseState {
         self.player_control = controlled;
     }
 
+    /// VERA house control (`sim::house_control`): a House handed to players
+    /// or nobody is human (`+0x1EC`); one handed to the computer is not.
+    pub(crate) fn make_human(&mut self) {
+        self.is_human = true;
+    }
+
+    pub(crate) fn make_computer(&mut self) {
+        self.is_human = false;
+    }
+
     /// `68AD0C/68AD18`: the campaign's selected House becomes human
     /// (`+0x1EC`) and player-controlled (`+0x1ED`).
     pub(crate) fn make_campaign_player(&mut self) {

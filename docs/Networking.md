@@ -296,6 +296,18 @@ anyone waits. A lobby from before the queue refuses the field; the host's game s
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Balance automatically and Teams then turns those off too.
 
+## House control mid-match
+
+Two VERA events change who plays during a match ([House control](house-control.md)):
+`0x33` hands a House (index) to a player sender, the computer at a level or nobody, and
+`0x34` adds a computer House of a country, allied to one House or to none. Both travel and
+execute like any other order, at the same frame on every peer, and any sender may issue them.
+A sender whose House went to the computer or to nobody is muted: its frames still keep the
+lockstep going, but its gameplay orders are dropped at execution on every peer alike; leaving
+(EXIT, REMOVEPLAYER) and the two control events still pass. A build from before these events is
+another version and is refused by the build check; a rollback takes the Diplomacy lines away and
+nothing sends them.
+
 ## Native behavior and deliberate bounds
 
 The following native scheduling/reliability details apply to LAN and legacy routing;
