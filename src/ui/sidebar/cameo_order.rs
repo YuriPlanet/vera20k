@@ -101,6 +101,12 @@ pub(crate) struct Cameo {
 pub(crate) enum CameoKey {
     SuperWeapon {
         recharge_frames: i32,
+        /// `SuperWeaponTypeClass::Name` (the INI section), the `strcmp` input
+        /// of Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:249-267`).
+        internal_name: String,
+        /// Phobos `RulesExt::Global()->SortCameoByName`, projected with the
+        /// other comparison inputs; both keys of one comparison share it.
+        sort_by_name: bool,
         name: String,
     },
     Techno {
@@ -110,6 +116,10 @@ pub(crate) enum CameoKey {
         naval: bool,
         tech_level: i32,
         cost: i32,
+        /// `TechnoTypeClass::Name` (the INI section), the `strcmp` input of
+        /// Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:269-287`).
+        internal_name: String,
+        sort_by_name: bool,
         name: String,
     },
 }
@@ -121,25 +131,37 @@ impl CameoKey {
         }
     }
 
+    fn sort_by_name(&self) -> bool {
+        match self {
+            Self::SuperWeapon { sort_by_name, .. } | Self::Techno { sort_by_name, .. } => {
+                *sort_by_name
+            }
+        }
+    }
+
     /// Native returns true on an equal name, so this is an insertion
     /// predicate, not a Rust sorting comparator. Both vehicle flags being
     /// set also makes the relation non-strict before the numeric keys.
     pub(crate) fn inserts_before(&self, other: &Self) -> bool {
-        let (left_name, right_name) = match (self, other) {
+        let (left_name, right_name, left_internal, right_internal) = match (self, other) {
             (
                 Self::SuperWeapon {
                     recharge_frames: a,
+                    internal_name: ai,
+                    sort_by_name: _,
                     name: an,
                 },
                 Self::SuperWeapon {
                     recharge_frames: b,
+                    internal_name: bi,
+                    sort_by_name: _,
                     name: bn,
                 },
             ) => {
                 if a != b {
                     return a < b;
                 }
-                (an, bn)
+                (an, bn, ai, bi)
             }
             (Self::SuperWeapon { .. }, Self::Techno { .. }) => return true,
             (Self::Techno { .. }, Self::SuperWeapon { .. }) => return false,
@@ -150,6 +172,8 @@ impl CameoKey {
                     naval: a_naval,
                     tech_level: a_level,
                     cost: a_cost,
+                    internal_name: ai,
+                    sort_by_name: _,
                     name: an,
                 },
                 Self::Techno {
@@ -158,6 +182,8 @@ impl CameoKey {
                     naval: b_naval,
                     tech_level: b_level,
                     cost: b_cost,
+                    internal_name: bi,
+                    sort_by_name: _,
                     name: bn,
                 },
             ) => {
@@ -186,9 +212,19 @@ impl CameoKey {
                 if a_cost != b_cost {
                     return a_cost < b_cost;
                 }
-                (an, bn)
+                (an, bn, ai, bi)
             }
         };
+        // Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:249-287`) replaces the
+        // UIName comparison with the section name's `strcmp`; only an exact
+        // match falls through to the stock `wcscmp(...) <= 0`.
+        if self.sort_by_name() {
+            match left_internal.as_bytes().cmp(right_internal.as_bytes()) {
+                std::cmp::Ordering::Less => return true,
+                std::cmp::Ordering::Greater => return false,
+                std::cmp::Ordering::Equal => {}
+            }
+        }
         // CRT wcscmp 7CA5D3 compares Windows UTF-16 code units, stopping at
         // the first NUL. Unicode scalar-value / UTF-8 order differs for
         // supplementary characters versus BMP characters above D7FF.
@@ -809,6 +845,8 @@ impl CameoStrips {
             available: true,
             key: CameoKey::SuperWeapon {
                 recharge_frames: 0,
+                internal_name: String::new(),
+                sort_by_name: false,
                 name: item.display_name.clone(),
             },
         }));
@@ -835,6 +873,8 @@ impl CameoStrips {
                         own_side: true,
                         considered_aircraft: false,
                         naval: false,
+                        internal_name: String::new(),
+                        sort_by_name: false,
                         tech_level: 0,
                         cost,
                         name: name.to_owned(),

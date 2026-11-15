@@ -122,7 +122,21 @@ pub(crate) fn select<'a>(
                 && sw.sw_sidebar_significance >= required_significance)
                 .then(|| {
                     let priority = (priority_mask(rules, type_id) & owner_mask) != 0;
-                    let key = crate::app::sidebar_projection::super_weapon_cameo_key(sw, csf);
+                    let sort_by_name = {
+                        #[cfg(feature = "phobos")]
+                        {
+                            rules.phobos_globals.sort_cameo_by_name
+                        }
+                        #[cfg(not(feature = "phobos"))]
+                        {
+                            false
+                        }
+                    };
+                    let key = crate::app::sidebar_projection::super_weapon_cameo_key(
+                        sw,
+                        csf,
+                        sort_by_name,
+                    );
                     (priority, key, view)
                 })
         })

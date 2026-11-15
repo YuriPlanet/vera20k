@@ -29,6 +29,9 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
 - `RadialIndicatorVisibility`：`app/presentation/radial_indicators.rs` 按
   `0x456776` 的 owner/observer/allied/enemy 分支过滤他人建筑的指示环。
 
+2026-11-16 稍后：`SortCameoByName` 已接线——`CameoKey` 两种变体携带类型内部名
+（INI 段名）与开关投影，`inserts_before` 在 UI 名比较前按 `strcmp` 比较内部名
+（`Misc/Hooks.UI.cpp:249-287`）；右侧栏、左超武栏和存档恢复共用同一比较。
 ToolTips 7 键已于 2026-11-16 完成（见 §1.1），仍未实现的键及阻塞原因见 §1.7。
 
 ### 1.1 ToolTips / uimd.ini（7）——已完成（2026-11-16）
@@ -101,11 +104,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 13 项（15 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 12 项（14 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
-| `SortCameoByName` | `CameoKey` 只存 UIName，无内部 `Name`；Phobos `0x6A84DB/0x6A86ED` 先 `strcmp(Name)` 再 `wcscmp(UIName)`。需给 Techno/SuperWeapon 键补内部名并改 `inserts_before`，约 20 个构造点。 |
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `DisplayIncome.AllowAI` | VERA 尚未实现 `DisplayIncome` 收益累积/周期标签（全仓无消费者）；单实现 AllowAI 无意义，需先补整条 DisplayIncome 链。 |
 | `EnablePowerSurplus` / `PowerSurplus.ScaleToDrainAmount` | 未定位 VERA 电力盈余显示消费者；需先从 `Ext/House/Body.cpp` 的 `PowerSurplus` 链找等价 owner。 |

@@ -135,6 +135,8 @@ fn pending_clock_strip() -> (CameoStrips, CameoId) {
             own_side: true,
             considered_aircraft: false,
             naval: false,
+            internal_name: String::new(),
+            sort_by_name: false,
             tech_level: 1,
             cost: 100,
             name: "E2".into(),
@@ -471,6 +473,8 @@ impl Fixture {
                         available: true,
                         key: CameoKey::SuperWeapon {
                             recharge_frames: item.recharge_frames,
+                            internal_name: String::new(),
+                            sort_by_name: false,
                             name: item.ui_name.clone(),
                         },
                     }
@@ -490,6 +494,8 @@ impl Fixture {
                             own_side: item.side == self.side,
                             considered_aircraft: vehicle && item.considered_aircraft,
                             naval: vehicle && item.naval,
+                            internal_name: String::new(),
+                            sort_by_name: false,
                             tech_level: item.tech_level,
                             cost: self
                                 .rules
@@ -739,6 +745,8 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
             own_side: true,
             considered_aircraft: false,
             naval: false,
+            internal_name: String::new(),
+            sort_by_name: false,
             tech_level: 1,
             cost: 100,
             name: "Test Type".to_string(),
@@ -903,6 +911,8 @@ fn eleven_vehicle_strips() -> CameoStrips {
                 own_side: true,
                 considered_aircraft: false,
                 naval: false,
+                internal_name: String::new(),
+                sort_by_name: false,
                 tech_level: 1,
                 cost: 100,
                 name: format!("U{i}"),
@@ -979,6 +989,8 @@ fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
             own_side: true,
             considered_aircraft: false,
             naval: false,
+            internal_name: String::new(),
+            sort_by_name: false,
             tech_level: 1,
             cost: 100,
             name: "Test Type".to_string(),
@@ -1018,6 +1030,8 @@ fn costed_vehicle_cameos(count: usize) -> Vec<Cameo> {
                 own_side: true,
                 considered_aircraft: false,
                 naval: false,
+                internal_name: String::new(),
+                sort_by_name: false,
                 tech_level: 1,
                 cost: 100 + i as i32,
                 name: format!("U{i}"),
@@ -1040,6 +1054,8 @@ fn an_equal_key_enters_before_the_existing_cameo_unless_ares_lower_bounds_it() {
             own_side: true,
             considered_aircraft: false,
             naval: false,
+            internal_name: String::new(),
+            sort_by_name: false,
             tech_level: 1,
             cost: 100,
             name: "Twin".to_string(),
@@ -1083,4 +1099,45 @@ fn ares_recalculate_keeps_the_top_cameo_row_where_native_jumps() {
     };
     assert_eq!(after("U11"), later);
     assert_eq!(after("U0"), earlier);
+}
+
+/// Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:249-287`): the section name's
+/// `strcmp` runs before the UIName comparison and only an exact match falls
+/// through to the stock UTF-16 order.
+#[test]
+fn sort_cameo_by_name_compares_the_section_name_first() {
+    let key = |internal: &str, ui: &str, sort: bool| CameoKey::Techno {
+        own_side: true,
+        considered_aircraft: false,
+        naval: false,
+        tech_level: 1,
+        cost: 100,
+        internal_name: internal.to_string(),
+        sort_by_name: sort,
+        name: ui.to_string(),
+    };
+    // The UIName order says Alpha before Zulu; the section names say the
+    // opposite, so the switch flips the comparison.
+    assert!(!key("ZEBRA", "Alpha", true).inserts_before(&key("APPLE", "Zulu", true)));
+    assert!(key("APPLE", "Zulu", true).inserts_before(&key("ZEBRA", "Alpha", true)));
+    // Off keeps the stock UIName ordering.
+    assert!(key("ZEBRA", "Alpha", false).inserts_before(&key("APPLE", "Zulu", false)));
+    // Equal section names fall through to the UIName comparison.
+    assert!(key("SAME", "Alpha", true).inserts_before(&key("SAME", "Zulu", true)));
+    // `strcmp` is case-sensitive; upper-case bytes sort first.
+    assert!(key("ABC", "Zulu", true).inserts_before(&key("abd", "Alpha", true)));
+}
+
+/// The superweapon arm reads the same switch once its recharge frames tie
+/// (`Misc/Hooks.UI.cpp:249-267`).
+#[test]
+fn sort_cameo_by_name_orders_superweapons_by_section_name_ties() {
+    let key = |internal: &str, ui: &str| CameoKey::SuperWeapon {
+        recharge_frames: 900,
+        internal_name: internal.to_string(),
+        sort_by_name: true,
+        name: ui.to_string(),
+    };
+    assert!(key("ALPHA_SW", "Zulu").inserts_before(&key("BETA_SW", "Alpha")));
+    assert!(!key("BETA_SW", "Alpha").inserts_before(&key("ALPHA_SW", "Zulu")));
 }
