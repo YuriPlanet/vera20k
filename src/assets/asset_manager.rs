@@ -548,6 +548,16 @@ impl AssetManager {
 
         manager.select_audio_pair();
 
+        // Init_Game's 0x0052C307 pass wildcard-mounts `ECACHE*.MIX` and then
+        // `ELOCAL*.MIX` (FindFirstFileA/FindNextFileA over the literals at
+        // `0x826620` and `0x826614`), after the `EXPANDMD%02d` slots and the
+        // audio selection and ahead of the named bulk archives at 0x0052C59C.
+        // Mods ship extra art inside these families; omitting them left that
+        // art unresolvable (a total-conversion install keeps its tech-oil-derrick
+        // SHPs in `ecachemd97.mix`).
+        manager.mount_wildcard_archives(None, "ecache")?;
+        manager.mount_wildcard_archives(None, "elocal")?;
+
         // Init_Mix_Files constructs only these named core archives. Optional
         // constructors are allowed to fail exactly where retail does not gate
         // startup on their result.
@@ -2746,6 +2756,35 @@ mod tests {
         assert_eq!(
             manager.registered_archive_names(),
             ["temperat.mix", "isotemmd.mix"]
+        );
+    }
+
+    /// Init_Game's `0x0052C307` pass wildcard-mounts `ECACHE*.MIX` then
+    /// `ELOCAL*.MIX` (the `0x826620` / `0x826614` literals driven by
+    /// FindFirstFileA/FindNextFileA). A total-conversion install keeps its
+    /// tech-oil-derrick SHPs in `ecachemd97.mix`, so a missing family left the
+    /// building body unresolvable.
+    #[test]
+    fn startup_mounts_the_ecache_and_elocal_wildcard_families() {
+        let dir = audio_test_install("ecache-elocal-mounts");
+        dir.write_mix("ecachemd97.mix", "ZAOILD.SHP", b"ecache-md-art");
+        dir.write_mix("ecache97.mix", "ECACHE97.BIN", b"ecache-art");
+        dir.write_mix("elocal01.mix", "ELOCAL.BIN", b"elocal-art");
+        dir.write_mix("ecache.mix", "ECACHE.BIN", b"bare-ecache");
+        let manager =
+            AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).expect("startup");
+        assert_eq!(
+            manager.get("ZAOILD.SHP").as_deref(),
+            Some(&b"ecache-md-art"[..])
+        );
+        assert_eq!(
+            manager.get("ECACHE97.BIN").as_deref(),
+            Some(&b"ecache-art"[..])
+        );
+        assert_eq!(manager.get("ELOCAL.BIN").as_deref(), Some(&b"elocal-art"[..]));
+        assert_eq!(
+            manager.get("ECACHE.BIN").as_deref(),
+            Some(&b"bare-ecache"[..])
         );
     }
 }
