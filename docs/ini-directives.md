@@ -99,6 +99,8 @@ Optional layers retain their existing error policy: an unavailable or failed
 `langrule.ini`, `soundmd.ini` or `evamd.ini` is skipped with a warning, so a
 fatal Phobos include error inside one of those optional files does not abort
 startup. Required Rules, ART, AI and map selections propagate it.
+Original/No mod skips `langrule.ini` entirely; its optional selection and
+expansion apply only to selected mods.
 
 ## Production integration
 

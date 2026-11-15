@@ -1814,6 +1814,21 @@ mod tests {
         changes.install_native_ini_hashes(&game, &[]);
         assert!(changes.changed_game_files().is_empty());
         assert_eq!(original_game_refusal(false, &changes), None);
+        // Original mode also skips an installed LANGRULE, even without a
+        // valid Digest; it must not prevent Quick Match from queuing.
+        std::fs::write(
+            dir.path().join("langrule.ini"),
+            b"[General]\nBuildSpeed=9\n",
+        )
+        .unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(false, &changes), None);
         // A selected mod remains ineligible for Quick Match.
         assert_eq!(
             original_game_refusal(true, &changes),

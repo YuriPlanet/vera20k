@@ -199,9 +199,10 @@ pub fn select_mode_ini(
 }
 
 /// Transient selected inputs, consumed when the process authority is constructed.
-/// `langrule` contains a successfully selected optional source; a physical
-/// absence and a selection/expansion failure are recorded separately. Present
-/// empty and unverified files retain their physical byte count and parsed root
+/// `langrule` contains a selected mod's optional source; with no mod selected,
+/// VERA ignores it so localized installations share the original rules.
+/// A physical absence and a selection/expansion failure are recorded separately.
+/// Present empty and unverified files retain their physical byte count and parsed root
 /// for the process owner's native Digest gate. ART is fixed and never enters
 /// the scenario layer stack. Audio definitions are separately selected and
 /// injected before Rules construction.
@@ -219,12 +220,19 @@ pub struct RetailRulesSources {
 impl RetailRulesSources {
     pub fn select(assets: &AssetManager) -> Result<Self, String> {
         let rulesmd = select_ini(assets, assets.ini_roots().rules())?;
-        let (langrule, langrule_selection_failure) =
-            match select_optional_ini(assets, "langrule.ini") {
-                OptionalIniSelection::Absent => (None, None),
-                OptionalIniSelection::Selected(selected) => (Some(selected), None),
-                OptionalIniSelection::SelectionFailed(error) => (None, Some(error)),
-            };
+        // VERA's Original mode deliberately omits the optional LANGRULE pass
+        // of Load_Game_Rules (0x0052CD70) and Reset (0x00668B05). A selected
+        // mod keeps it, including its native Digest validation and layering.
+        let langrule = if assets.mod_selected() {
+            select_optional_ini(assets, "langrule.ini")
+        } else {
+            OptionalIniSelection::Absent
+        };
+        let (langrule, langrule_selection_failure) = match langrule {
+            OptionalIniSelection::Absent => (None, None),
+            OptionalIniSelection::Selected(selected) => (Some(selected), None),
+            OptionalIniSelection::SelectionFailed(error) => (None, Some(error)),
+        };
         let artmd = select_ini(assets, assets.ini_roots().art())?;
         Ok(Self {
             rulesmd,
@@ -561,11 +569,22 @@ mod tests {
 
     #[test]
     fn optional_langrule_selection_preserves_absent_empty_and_bad_digest_sources() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
+        let install = audio_test_install("langrule-mod-install");
         let directory = TestDirectory::new("optional-langrule-physical-source");
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
 
-        let absent_assets = AssetManager::from_loose_root_for_test(directory.path());
+        let open = || {
+            AssetManager::with_mod(
+                install.path(),
+                Some(directory.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap()
+        };
+        let absent_assets = open();
         assert!(
             RetailRulesSources::select(&absent_assets)
                 .expect("required sources")
@@ -575,7 +594,7 @@ mod tests {
         );
 
         directory.write("langrule.ini", b"");
-        let empty_assets = AssetManager::from_loose_root_for_test(directory.path());
+        let empty_assets = open();
         let empty = RetailRulesSources::select(&empty_assets)
             .expect("required sources")
             .langrule
@@ -585,7 +604,7 @@ mod tests {
 
         let invalid = b"[General]\nBuildSpeed=.58\n[Digest]\n1=AAAAAAAAAAAAAAAAAAAAAAAAAAA=\n";
         directory.write("langrule.ini", invalid);
-        let invalid_assets = AssetManager::from_loose_root_for_test(directory.path());
+        let invalid_assets = open();
         let selected = RetailRulesSources::select(&invalid_assets)
             .expect("required sources")
             .langrule
@@ -642,7 +661,10 @@ mod tests {
 
     #[test]
     fn langrule_selection_expands_ares_includes_and_keeps_physical_root_for_digest() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
         let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let install = audio_test_install("langrule-include-install");
         let directory = TestDirectory::new("langrule-ares-include");
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
@@ -654,7 +676,12 @@ mod tests {
             "lang-extra.ini",
             b"[General]\nBuildSpeed=.4\n[ColorAdd]\nLANG0=7,8,9\n",
         );
-        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(directory.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         let selected = RetailRulesSources::select(&assets)
             .expect("required sources")
             .langrule
@@ -830,6 +857,9 @@ mod tests {
 
     #[test]
     fn random_map_catalog_uses_retained_root_langrule_and_fixed_art() {
+        use crate::assets::asset_manager::{MediaArchiveMode, test_support::audio_test_install};
+
+        let install = audio_test_install("rmg-langrule-install");
         let directory = TestDirectory::new("rmg-retained-rules");
         // TECH2 is registered so that Ares's Find-only list read (Buf_AI
         // 1005B830, hook 0x672B0E) resolves the langrule list too.
@@ -844,7 +874,12 @@ mod tests {
             b"[AI]\nNeutralTechBuildings=TECH2\n[Digest]\n1=CGLFHoNX2UiC0RYwRTmgBnJVpec=\n",
         );
         directory.write("artmd.ini", b"[TECH2]\nFoundation=2x3\n");
-        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(directory.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         let (_, _, owner) = load_startup_rules(&assets, Arc::default(), Default::default())
             .expect("startup")
             .into_parts();

@@ -41,7 +41,12 @@ load an installed `ares.mix` with No mod selected, are refused by the existing
 build check. A rollback restores that build's earlier selection and INI reading.
 
 The rules agreement is one digest of the process's rules sources
-(`ProcessAssets::multiplayer_rules_digest`) and of each theater's INI as the theater
+(`ProcessAssets::multiplayer_rules_digest`). With **No mod** selected, the
+optional `langrule.ini` is neither loaded nor included in agreement or changed-file
+checks, even when it comes from a language archive. Selected mods retain that
+layer and compare it. Translated `.csf` text still loads. Mixed builds are refused
+by the existing build check; a rollback restores that build's LANGRULE selection.
+The agreement also covers each theater's INI as the theater
 loader reads it (`map::theater::theater_ini_names`: the file
 [`theater_suffix`](ini-roots.md) selects, else the stock name such as `snowmd.ini`),
 whose tilesets decide each cell's land and height. It also covers the theater tiles the
@@ -59,7 +64,7 @@ on that build. Quick Match plays the original game, and the matchbot pairs witho
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
 YR's; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
-LANGRULE, the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
+the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another

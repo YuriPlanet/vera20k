@@ -94,6 +94,10 @@ game folder works the same from its own folder.
 
 With **No mod** selected, an `ares.mix` already in the game folder is ignored.
 A selected mod can use that copy or provide its own, which takes precedence.
+The optional `langrule.ini` rules override is also skipped with **No mod**,
+whether loose or inside an archive. Selected mods keep that layer, from the
+installation or the mod, and its normal Digest check. This does not skip the
+`.csf` files used for translated text.
 Other changed rules and terrain files still need to match between players.
 
 A mod is only data files, and VERA20k never runs a program from one. If a mod you

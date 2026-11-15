@@ -494,6 +494,11 @@ impl AssetManager {
         &self.ini_roots
     }
 
+    /// Whether this game overlays a selected mod on the installation.
+    pub fn mod_selected(&self) -> bool {
+        self.mod_dir.is_some()
+    }
+
     /// Whether the selected mod mounted Ares's `ares.mix`, its own copy or
     /// the installation's. With no mod selected, it is ignored (`rules::ares_switch`).
     pub fn ships_ares(&self) -> bool {
@@ -613,7 +618,7 @@ impl AssetManager {
         // supply it or inherit the installation's copy. Decide before any
         // mount: Ares changes source priority as well as INI parsing. Until
         // its build feature is deleted, that feature still forces Ares order.
-        let ares = mod_dir.is_some() && manager.loose_path("ares.mix").is_some();
+        let ares = manager.mod_selected() && manager.loose_path("ares.mix").is_some();
         let ares_order = cfg!(feature = "ares") || ares;
         if !ares_order {
             manager.mount_language_archives(&mut policy)?;
