@@ -275,8 +275,9 @@ impl Simulation {
         // RESIDUAL: VERA runs the tail after a true idle entry too. Its rest
         // write needs empty class coordinates, which the taken waypoint
         // fills, and FootClass::AI ignores Process's result (4DA877). The
-        // tail's Wake (4B078C..4B0823) is `spawn_wakes_for_frame` here, which
-        // does not depend on this return: at most one invisible wake differs.
+        // tail's Wake (4B078C..4B0823; Ship's 69FE97..69FEEB) is
+        // `spawn_wakes_for_frame` here, which does not depend on this return:
+        // at most one invisible wake differs.
         if entity.in_playfield() && mission != Some(MissionType::Enter) && moving {
             let destination = super::track_path::track_destination_or_null(entity);
             // Unrepresented precheck inputs (no zone topology or bounds in a

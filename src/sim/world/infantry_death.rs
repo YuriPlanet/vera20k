@@ -386,7 +386,12 @@ impl Simulation {
     /// on retail. An ignoreDefenses kill of a `Cyborg=` (`+0xEAC`)
     /// type raises a flag (`0x0051815B`) that takes the Die1, Die2,
     /// NotHuman and refused InfDeath 9 arms on to UnInit (`0x005185E5`); a
-    /// prone Cyborg builds InfantryExplode (`0x005182B4`). Retail sets no
+    /// prone Cyborg builds InfantryExplode (`0x005182B4`), and so does one
+    /// dropped as a bomb (`+0x8F`, `0x00518155..0x005181B0`). A Cyborg's
+    /// first lethal hit without ignoreDefenses never reaches here:
+    /// `ObjectClass::ReceiveDamage` (`0x005F5509..0x005F55E8`) builds
+    /// InfantryExplode, sets its health to a quarter of `Strength=` (at least
+    /// 1) and leaves it crawling with its legs gone (`+0x6DB`). Retail sets no
     /// `Cyborg=`. The preceding low DropAsBomb water arm is ported here
     /// (`0x005181B5..0x005182AF`; original `tools.native_inspect` instructions).
     ///

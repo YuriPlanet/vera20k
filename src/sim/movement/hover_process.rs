@@ -21,7 +21,10 @@
 //!   comes from the shared wake pass (`Simulation::spawn_wakes_for_frame`,
 //!   gated on the Hover's Is_Moving_Now), not from this Process tail. WAKE1
 //!   draws no RNG; the residual is the anim's creation order (its AbstractClass
-//!   ID) relative to the objects after this one.
+//!   ID) relative to the objects after this one. Process also returns before
+//!   the wake when Per_Cell_Process left the unit dead, in limbo or falling
+//!   (`0x005146D3..0x005146F9`) and at `0x00514717`; the shared pass does not
+//!   check those, which no player sees.
 //! - The vein tag (0x00486920) is not ported: the vein cell has no retail
 //!   user.
 //! - Hover's own tube entry (0x0051503B..0x005152CE: Mark(UP) 0x0051508B, the

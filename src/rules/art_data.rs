@@ -407,7 +407,8 @@ pub struct AnimTypeRuntimeConfig {
     /// Constructor default `0x402E0000_00000000` = **15.0**.
     pub max_xy_vel: NativeF64Bits,
     /// art.ini `IsMeteor=`, `AnimTypeClass+0x356`. Shares the constructor's
-    /// `BounceClass` fork with `Bouncer=`. Not consumed yet (M11b).
+    /// `BounceClass` fork with `Bouncer=`, launched as a meteor
+    /// (`sim::anim_class::anim_constructor_draws`).
     pub is_meteor: bool,
     /// art.ini `IsVeins=`, `AnimTypeClass+0x355`. Zero stock sections author it.
     pub is_veins: bool,

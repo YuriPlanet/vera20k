@@ -3,10 +3,12 @@
 //!
 //! The object stays registered during constructors and damage callbacks.
 //! Bounce owns physics; Object.Location advances only at the flight tail.
-//! Remaining native paths: StartSound749F43 maintenance, Trailer74A70E's
-//! distinct height conversion and AttachedSystem construction. No retail
-//! [VoxelAnims] type authors StartSound, TrailerAnim or AttachedSystem;
-//! authored types which do still miss those effects.
+//! Remaining native paths: `StartSound=`, which the constructor plays into
+//! the anim's sound handle (`0x00749838`, +0x114) and the AI keeps at the
+//! anim's position (`0x00749F43`), Trailer74A70E's distinct height
+//! conversion and AttachedSystem construction. No retail [VoxelAnims] type
+//! authors StartSound, TrailerAnim or AttachedSystem; authored types which
+//! do still miss those effects.
 
 use glam::IVec3;
 
@@ -200,6 +202,11 @@ impl Simulation {
                     if let Some(name) = kind.bounce_anim.as_deref() {
                         self.spawn_named_anim(rules, name, anim_coord(old_location), 0, 0x600, 0);
                     }
+                    // RESIDUAL: native walks the cell's objects within
+                    // DamageRadius with no `Warhead=` too, handing
+                    // ReceiveDamage a null warhead (`0x0074A884..0x0074A92E`);
+                    // VERA skips the walk. Every retail VoxelAnim with
+                    // `Damage=` names a `Warhead=`.
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
                         // 1005D640: a negative DamageRadius or a Damage of
