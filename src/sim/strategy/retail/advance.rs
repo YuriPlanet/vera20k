@@ -130,6 +130,23 @@ const PUSH_LOCK_FRAMES: u64 = 1_800;
 /// it instead of waiting for a comparison it can only lose by arithmetic.
 const MOP_UP_OBJECTS: usize = 8;
 
+/// Whether the enemy is a clean-up job: too little mobile mass left to be a
+/// fight, whatever the arithmetic says about the fist.
+///
+/// The wishlist's stalemate — "最后消灭了大部分敌人，但Autoplay也不发起进攻，然后就
+/// 僵持在这了。发动攻击后总会剩下敌人的建筑不再打了". The absolute
+/// [`ARMY_TO_ATTACK`] floor is an opening number, and it had no bypass: a house
+/// with nine fighters and an enemy holding two buildings sat at `too-small` for
+/// the rest of a nine-hour match while the buildings stood.
+///
+/// The comparison is the enemy's own mobile mass, the same `threat` vector
+/// [`outnumbered`] reads, so "nothing left to fight with" means one thing in
+/// this file.
+fn mop_up(census: &Census) -> bool {
+    let theirs: usize = census.threat.iter().map(|count| *count as usize).sum();
+    theirs < MOP_UP_OBJECTS
+}
+
 /// Whether the fist is too small for what it can see, in a multi-house match.
 ///
 /// Only 1vN asks this. In a duel the enemy's visible mass is the whole enemy, and
@@ -245,7 +262,7 @@ pub(super) fn advance(
     // Which gate holds the army home, for the census line: seven gates that
     // all answer "not this frame" are indistinguishable in a log that only
     // counts what the house has.
-    let gate = if fighters.len() < super::squads::ARMY_TO_ATTACK {
+    let gate = if fighters.len() < super::squads::ARMY_TO_ATTACK && !mop_up(&brain.census) {
         "too-small"
     } else if !super::build::can_replace_units(rules, obs, &brain.census) {
         "cannot-replace"
@@ -675,6 +692,36 @@ mod tests {
     use super::*;
     use crate::rules::unit_role::RoleTable;
     use crate::sim::world::Simulation;
+
+    /// A small army still goes at an enemy that has nothing left to fight with.
+    ///
+    /// The wishlist's stalemate: "最后消灭了大部分敌人，但Autoplay也不发起进攻，然后
+    /// 就僵持在这了。发动攻击后总会剩下敌人的建筑不再打了". `ARMY_TO_ATTACK` is an
+    /// opening number and had no bypass, so nine fighters against two buildings
+    // read `too-small` for the rest of the match.
+    #[test]
+    fn a_household_army_finishes_an_enemy_with_nothing_left() {
+        let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            .expect("the repository's own rules");
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        let mut census = Census::default();
+        census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        // Two enemy objects left: a clean-up job, not a fight.
+        census.threat = [2, 0, 0, 0, 0, 0, 0];
+        census.enemy_houses = 3;
+        assert!(mop_up(&census), "two objects left is a clean-up job");
+        // And a field army is not, whatever the fist's size.
+        census.threat = [20, 10, 0, 0, 0, 0, 0];
+        assert!(!mop_up(&census), "thirty objects is a fight");
+        let _ = &rules;
+    }
 
     /// A push that has taken nothing for a minute stops waiting for a
     /// favourable comparison. The gate is a group reading on purpose: no
