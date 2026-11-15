@@ -1738,6 +1738,14 @@ impl App {
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
             }
+            ShellMessageBoxPurpose::ModMade(dir) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_made(
+                    state,
+                    &dir,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
         }
     }
 

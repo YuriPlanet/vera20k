@@ -1,8 +1,10 @@
 //! VERA's Mods page (`ui::mods_shell`), opened by the Mods button of Options:
 //! the list of what is in the `Mods` folder, and the buttons that switch to
-//! one after a restart, open the folder, or check a mod's files against its
-//! file list. gamemd has no such page. The list, the choice and its place in
-//! config.toml are `app::mods`'; the file list is `app::mod_files`'.
+//! one after a restart, open the folder, check a mod's files against its
+//! file list, or make a new mod from the original game's files. gamemd has no
+//! such page. The list, the choice and its place in config.toml are
+//! `app::mods`'; the file list is `app::mod_files`'; a new mod's folder is
+//! `app::new_mod`'s.
 
 use crate::util::time::Instant;
 
@@ -31,12 +33,7 @@ impl App {
         let rows = Self::installed_mods(state);
         let selected = rows.iter().position(|row| state.frontend.mods.in_use(row));
         let mut page = ListBoxState::new(rows, selected);
-        let layout = Self::mods_layout(state);
-        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        page.top = selected
-            .unwrap_or(0)
-            .saturating_sub(geometry.visible_rows.saturating_sub(1))
-            .min(geometry.max_top);
+        Self::show_selected_mod(&mut page, &Self::mods_layout(state));
         state.frontend.mods.page = Some(page);
         state.frontend.shell_route = ShellRoute::Mods;
         state
@@ -69,6 +66,16 @@ impl App {
         let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
         page.top = page.top.min(geometry.max_top);
         state.platform.window.request_redraw();
+    }
+
+    /// Scroll the list so its selected row, or else its first, is in view.
+    fn show_selected_mod(page: &mut ListBoxState<crate::app::mods::Listed>, layout: &ModsLayout) {
+        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
+        page.top = page
+            .selected
+            .unwrap_or(0)
+            .saturating_sub(geometry.visible_rows.saturating_sub(1))
+            .min(geometry.max_top);
     }
 
     pub(super) fn mods_page_active(state: &AppState) -> bool {
@@ -193,6 +200,7 @@ impl App {
             Some(mods_shell::USE) => Self::use_picked_mod(state),
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(state),
             Some(mods_shell::CHECK) => Self::check_picked_mod(state),
+            Some(mods_shell::NEW) => Self::make_new_mod(state),
             Some(mods_shell::BACK) => Self::leave_shell_dialog(state, ShellExitThen::ModsBack),
             _ => {}
         }
@@ -407,6 +415,86 @@ impl App {
                 Self::open_mod_files_found(state, text);
             }
             _ => {}
+        }
+    }
+
+    /// New Mod: a folder in `Mods` with the original game's main INI files
+    /// (`app::new_mod`), picked in the list, under a box that says what it
+    /// holds and offers to show it.
+    fn make_new_mod(state: &mut AppState) {
+        let Some(paths) = state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| &config.paths)
+        else {
+            return;
+        };
+        let mods_dir = paths.mods_dir();
+        crate::app::mods::prepare_folder(&mods_dir);
+        // The game folder with no mod on it, whatever this run plays: the
+        // run's own archives may hold a mod's copies.
+        let made = crate::assets::asset_manager::AssetManager::inspect_install(
+            &paths.ra2_dir,
+            state.process_assets.media_archive_mode(),
+        )
+        .map_err(std::io::Error::other)
+        .and_then(|(original, _)| {
+            crate::app::new_mod::make(&mods_dir, &crate::i18n::tr("VERA:ModNewFolder"), |file| {
+                original.get(file)
+            })
+        });
+        let made = match made {
+            Ok(made) => made,
+            Err(error) => {
+                log::warn!("Mods: no new mod made in {}: {error}", mods_dir.display());
+                Self::open_shell_notice(
+                    state,
+                    crate::i18n::tr_fill("VERA:ModNotMade", &[("folder", &mods_dir.display())]),
+                );
+                return;
+            }
+        };
+        log::info!(
+            "Mods: made {} with {}",
+            made.dir.display(),
+            made.copied.join(", ")
+        );
+        Self::refresh_mods_page(state);
+        let layout = Self::mods_layout(state);
+        if let Some(page) = state.frontend.mods.page.as_mut() {
+            page.selected = page
+                .rows
+                .iter()
+                .position(|row| row.folder.as_deref() == Some(made.folder.as_str()));
+            Self::show_selected_mod(page, &layout);
+        }
+        Self::open_shell_message_box(
+            state,
+            ShellMessageBox {
+                labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels {
+                    title: crate::i18n::tr_fill(
+                        "VERA:ModMade",
+                        &[("mod", &made.folder), ("files", &made.copied.join(", "))],
+                    ),
+                    confirm: crate::i18n::tr("VERA:ModOpenItsFolder"),
+                    third: String::new(),
+                    cancel: crate::i18n::tr("VERA:Close"),
+                },
+                purpose: ShellMessageBoxPurpose::ModMade(made.dir),
+            },
+        );
+    }
+
+    /// New Mod's box: Open Folder shows the new mod's folder, or says where it
+    /// is when no file manager starts.
+    pub(super) fn answer_mod_made(state: &mut AppState, dir: &std::path::Path, open: bool) {
+        state.platform.window.request_redraw();
+        if open && !crate::app::web_link::open_folder(dir) {
+            Self::open_shell_notice(
+                state,
+                crate::i18n::tr_fill("VERA:ModsFolderIsHere", &[("folder", &dir.display())]),
+            );
         }
     }
 

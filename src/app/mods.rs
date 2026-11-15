@@ -778,7 +778,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
 
 /// Make `Mods` and its README. The folder is the player's: nothing else in
 /// it is touched, and a failure only goes to the log.
-fn prepare_folder(mods_dir: &Path) {
+pub(crate) fn prepare_folder(mods_dir: &Path) {
     let mut text = crate::i18n::tr("VERA:ModsFolderReadme");
     if cfg!(windows) {
         // Notepad before Windows 10 1809 needs both to show the text.

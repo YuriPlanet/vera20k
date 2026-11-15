@@ -420,7 +420,8 @@ impl ProcessAssets {
         self.campaigns.as_ref()
     }
 
-    #[cfg(test)]
+    /// The media choice startup resolved: New Mod opens the game folder again
+    /// with it (`App::make_new_mod`).
     pub(crate) fn media_archive_mode(&self) -> MediaArchiveMode {
         self.media_archive_mode
     }

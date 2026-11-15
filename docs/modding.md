@@ -84,6 +84,8 @@ sign-in.
 with a `README.txt` in it.
 
 1. Make a folder inside `Mods` and give it your mod's name, such as `Mods/MyMod`.
+   Or press **New Mod** in the Mods menu, which makes one with the original game's
+   files in it: see [Start a new mod](#start-a-new-mod).
 2. Put the mod's files in it, under the same names as in the original game.
 3. [Pick the mod](#pick-a-mod).
 
@@ -154,6 +156,22 @@ says. Put it on a shortcut to start a mod with one click:
 | `--mod MyMod` | Plays with the mod in `Mods/MyMod`. |
 | `--no-mod` | Plays the original game. |
 
+#### Start a new mod
+
+Press **New Mod** in the Mods menu. The game makes a folder in `Mods` called `New Mod`
+(`New Mod 2` and on if that name is taken) and copies these files from your original
+game into it: `rulesmd.ini`, `artmd.ini`, `aimd.ini`, `soundmd.ini`, `evamd.ini` and
+`thememd.ini`. It also writes a `mod.ini` with every line commented out, ready for you
+to fill in. The copies are what the game plays with no mod, so until you change them the
+new mod plays as the original game.
+
+1. Press **Open Folder** in the box that comes up, or **Open Mods Folder**.
+2. Rename the folder if you like, and change the files.
+3. [Pick the mod](#pick-a-mod).
+
+To start over, delete the folder and press **New Mod** again. New Mod never writes into
+a folder that is already there, and your original game isn't changed.
+
 #### Check a mod's files
 
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
@@ -201,8 +219,10 @@ the original game, is used with every mod and without one.
 
 Mods change the settings in the game's INI files, so start by reading them. Most of what
 you'll want is in `rulesmd.ini` (units, buildings and weapons) and `artmd.ini` (how they
-look). They're packed in the game's `.mix` files: `rulesmd.ini` is usually in
-`expandmd01.mix`, and `artmd.ini` is in `localmd.mix`, inside `ra2md.mix`.
+look). [New Mod](#start-a-new-mod) copies these and four more into a mod folder for you.
+
+They're packed in the game's `.mix` files: `rulesmd.ini` is usually in `expandmd01.mix`,
+and `artmd.ini` is in `localmd.mix`, inside `ra2md.mix`. For other files:
 
 - **On Windows,** XCC Mixer can open these and copy files out.
 - **On macOS or Linux,** [build VERA20k](../README.md#build-and-run), then run

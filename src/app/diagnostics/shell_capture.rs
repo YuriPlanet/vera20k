@@ -52,6 +52,7 @@ const CHECKPOINT_MODS_RESTART_QUESTION: &str = "mods-restart-question";
 /// The same after a press on a mod's row and on Check Files, once the files
 /// are read: what the check found, over the page.
 const CHECKPOINT_MODS_CHECK_FILES: &str = "mods-check-files";
+const CHECKPOINT_MODS_NEW_MOD: &str = "mods-new-mod";
 const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
@@ -234,6 +235,7 @@ pub enum ShellCaptureCheckpoint {
     ModsRestartQuestion,
     /// The Mods page's Check Files answer, after a mod's row and Check Files.
     ModsCheckFiles,
+    ModsNewMod,
     /// Single Player -> New Campaign: campaign selection `0x94` settled.
     Campaign0x94Steady,
     /// The same after a press on the difficulty slider's left or right end.
@@ -627,6 +629,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MODS_STEADY => Ok(Self::ModsSteady),
             CHECKPOINT_MODS_RESTART_QUESTION => Ok(Self::ModsRestartQuestion),
             CHECKPOINT_MODS_CHECK_FILES => Ok(Self::ModsCheckFiles),
+            CHECKPOINT_MODS_NEW_MOD => Ok(Self::ModsNewMod),
             CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
@@ -810,6 +813,7 @@ impl ShellCaptureCheckpoint {
             Self::ModsSteady => CHECKPOINT_MODS_STEADY,
             Self::ModsRestartQuestion => CHECKPOINT_MODS_RESTART_QUESTION,
             Self::ModsCheckFiles => CHECKPOINT_MODS_CHECK_FILES,
+            Self::ModsNewMod => CHECKPOINT_MODS_NEW_MOD,
             Self::Campaign0x94Steady => CHECKPOINT_CAMPAIGN_0X94_STEADY,
             Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
@@ -1045,6 +1049,9 @@ impl ShellCaptureCheckpoint {
             },
             Self::ModsCheckFiles => movies::MoviesTarget::Mods {
                 press: movies::ModsPress::Check,
+            },
+            Self::ModsNewMod => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::New,
             },
             Self::Campaign0x94Steady => movies::MoviesTarget::Campaign0x94 {
                 press: None,

@@ -62,6 +62,9 @@ pub(super) enum ModsPress {
     Use,
     /// A mod's row, then Check Files.
     Check,
+    /// New Mod, which makes a folder in the run's `Mods`: run it from a
+    /// settings folder of its own.
+    New,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,24 +340,30 @@ impl MoviesCapture {
             crate::ui::shell::list::ListMetrics::scaled(layout.page.scale),
         );
         // The list opens with the row in use in view: pick from what shows.
-        let visible = page
-            .rows
-            .iter()
-            .skip(page.top)
-            .take(geometry.visible_rows)
-            .position(|row| match press {
-                ModsPress::Check => row.folder.is_some(),
-                _ => !mods.in_use(row) && row.needs.is_none(),
+        // New Mod needs no row.
+        let row = (press != ModsPress::New)
+            .then(|| {
+                page.rows
+                    .iter()
+                    .skip(page.top)
+                    .take(geometry.visible_rows)
+                    .position(|row| match press {
+                        ModsPress::Check => row.folder.is_some(),
+                        _ => !mods.in_use(row) && row.needs.is_none(),
+                    })
+                    .map(|visible| geometry.row(visible))
+                    .context("the Mods list shows no row to pick")
             })
-            .context("the Mods list shows no row to pick")?;
+            .transpose()?;
         let button = layout
             .page
             .button_rect(match press {
                 ModsPress::Check => crate::ui::mods_shell::CHECK,
+                ModsPress::New => crate::ui::mods_shell::NEW,
                 _ => crate::ui::mods_shell::USE,
             })
             .context("the Mods page lacks the button to press")?;
-        for rect in [geometry.row(visible), button] {
+        for rect in row.into_iter().chain([button]) {
             state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
             state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
             App::handle_mods_mouse_down(state);
@@ -1091,7 +1100,7 @@ impl MoviesCapture {
             (Phase::Mods, PresentedShell::Mods) => {
                 if Self::slide_settled(state, ShellSlideKind::Mods) {
                     if let MoviesTarget::Mods {
-                        press: press @ (ModsPress::Use | ModsPress::Check),
+                        press: press @ (ModsPress::Use | ModsPress::Check | ModsPress::New),
                     } = self.target
                     {
                         Self::press_mod_row_and(state, press)?;
@@ -1533,7 +1542,7 @@ impl MoviesCapture {
         let heading_settled = match self.target {
             // The box covers the page's statics.
             MoviesTarget::Mods {
-                press: ModsPress::Use | ModsPress::Check,
+                press: ModsPress::Use | ModsPress::Check | ModsPress::New,
             } => true,
             MoviesTarget::Page0x101
             | MoviesTarget::Mods {

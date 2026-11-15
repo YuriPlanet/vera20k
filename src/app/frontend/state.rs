@@ -299,6 +299,7 @@ impl ShellMessageBox {
             ShellMessageBoxPurpose::ShellMenu(_)
                 | ShellMessageBoxPurpose::ModRestart(_)
                 | ShellMessageBoxPurpose::ModFiles(_)
+                | ShellMessageBoxPurpose::ModMade(_)
         )
     }
 
@@ -353,6 +354,9 @@ pub(crate) enum ShellMessageBoxPurpose {
     ModRestart(Option<String>),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),
+    /// The Mods page's New Mod made this folder: Open Folder shows it, Close
+    /// closes.
+    ModMade(std::path::PathBuf),
 }
 
 /// The boxes of the Mods page's Check Files, in the order they come.
