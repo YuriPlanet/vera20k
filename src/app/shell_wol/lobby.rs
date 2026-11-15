@@ -421,7 +421,7 @@ fn buddy_runner(state: &AppState) -> bool {
 }
 
 /// The Quick Match runner holds the records.
-pub(super) fn quick_match_runner(state: &AppState) -> bool {
+pub(crate) fn quick_match_runner(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.runner == Runner::QuickMatch)
 }
 
@@ -1278,8 +1278,17 @@ pub(super) fn quick_match_join(state: &mut AppState, channel: WolChannel, key: &
 /// RESIDUAL: `DL=0`'s internals are not traced; the Quick Match game has
 /// no key and no resolution bits, so neither popup can follow.
 pub(super) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
-    if admit(&channel, false, admission_context(state)).is_err() {
-        super::quick_match::game_joined(state, false);
+    let context = admission_context(state);
+    if let Err(reason) = admit(&channel, false, context) {
+        // VERA: the log keeps what was compared; gamemd records nothing.
+        log::warn!(
+            "WOL Quick Match: {} refused the join ({}); local rules hash {:?}, host exInfo {:?}",
+            channel.name,
+            reason.unwrap_or("no message"),
+            context.local_hash,
+            channel.ex_info,
+        );
+        super::quick_match::game_refused(state, reason);
         return;
     }
     join_channel(state, channel, "", true, false);
@@ -1553,7 +1562,11 @@ fn admit_row(state: &mut AppState, row: usize, observer: bool, show: bool) -> bo
         Ok(()) => true,
         Err(key) => {
             if let (true, Some(key)) = (show, key) {
-                let text = csf(state, key);
+                let text = if key == crate::ui::wol_lobby::RULES_DIFFER {
+                    crate::app::shell_network_setup::agreement::rules_differ_text(state)
+                } else {
+                    csf(state, key)
+                };
                 message_line(state, text);
             }
             false
@@ -4444,7 +4457,7 @@ fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
     help
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

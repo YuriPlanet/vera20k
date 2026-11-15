@@ -2735,19 +2735,28 @@ fn finish_concrete_death(
     // Ares TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020, hook
     // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
     // FootClass_Destroyed (10049080) and BuildingClass_Destroyed_UnitLost
-    // (10013F10) then stay silent.
-    // Still on the feature: it moves with the unit-lost event, whose Ares
-    // fields (`UnitLostEvent`, `SimSoundEvent::UnitLost`) the app reads.
-    #[cfg(feature = "ares")]
-    let unit_lost_suppressed = damage_events
-        .iter()
-        .rfind(|event| event.target_id == dead_id)
-        .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
-        .and_then(WarheadType::ares_combat)
-        .is_some_and(|combat| combat.unit_lost_suppress());
-    #[cfg(not(feature = "ares"))]
-    let unit_lost_suppressed = false;
-    if let Some(obj) = world.interner.object_type(type_id, rules) {
+    // (10013F10) then stay silent. The unit-lost announcement takes its Ares
+    // form when the Rules were read the Ares way.
+    let ares_form = rules.ares_form();
+    let unit_lost_suppressed = if ares_form {
+        damage_events
+            .iter()
+            .rfind(|event| event.target_id == dead_id)
+            .and_then(|event| world.interner.warhead_type(event.warhead_ref, rules))
+            .and_then(WarheadType::ares_combat)
+            .is_some_and(|combat| combat.unit_lost_suppress())
+    } else {
+        false
+    };
+    // `UnitClass::ReceiveDamage` `0x00737DA7..0x00737DDD`: an art
+    // `DeathFrames=` type defers its death to its count (`world::death_frames`),
+    // and only the hit that starts the count announces the loss.
+    let deferred_death = world.defer_unit_death(dead_id, rules);
+    if let Some(obj) = world
+        .interner
+        .object_type(type_id, rules)
+        .filter(|_| deferred_death != Some(false))
+    {
         // `TechnoClass::Death_Announcement @ 0x004D98C0` runs at the
         // Aircraft/Infantry/Unit `ReceiveDamage` kill sites (vtable
         // `+0x3B8`; stock `BuildingClass::ReceiveDamage` makes no such call)
@@ -2755,7 +2764,8 @@ fn finish_concrete_death(
         // (`0x0050B6F0`) and the `CreateRadarEvent(7)` dedupe (`0x004D98FE`)
         // need the house table and radar queue, which the world owns.
         if !unit_lost_suppressed
-            && let Some(event) = death_announcement_event(obj, type_id, category, rx, ry, owner)
+            && let Some(event) =
+                death_announcement_event(obj, type_id, category, rx, ry, owner, ares_form)
         {
             effects.unit_lost_events.push(event);
         }
@@ -2809,6 +2819,8 @@ fn finish_concrete_death(
     // (`get_xrefs_to 0x00738680`; the `type+0x73C` operand scan), and
     // infantry death anims come from `InfDeath`/`DeathAnims`.
     match category {
+        // The deferred death jumps past all three (`0x00737DDD`).
+        EntityCategory::Unit if deferred_death.is_some() => {}
         EntityCategory::Unit => {
             if world.unit_sinks_on_death(rules, dead_id) {
                 world.begin_ship_sinking(dead_id, rules, frame_effects);
@@ -2934,6 +2946,7 @@ fn finish_concrete_death(
         concrete_smudge_plans.push(ConcreteDeathSmudgePlan::Infantry(postlude));
         effects.despawned_ids.push(dead_id);
     } else if has_animation
+        && deferred_death.is_none()
         && !world
             .substrate
             .entities
@@ -3026,7 +3039,8 @@ fn finish_concrete_death(
     {
         // `UnitClass::ReceiveDamage` (`0x00738457..0x00738475`): an airborne
         // `Crashable=` unit crashes (`Crash(0)`, no attacker) instead of its
-        // UnInit, and falls to its impact (a Jumpjet: `jumpjet_crash_impact`).
+        // UnInit, and falls to its impact (a Jumpjet: `jumpjet_crash_impact`)
+        // or the end of its death count.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Unit
         && !crashable
@@ -3127,9 +3141,7 @@ fn finish_concrete_death(
                 // Ares 3.0 10014520 (hook 0x44266B): after DestructionEffects
                 // the building runs Destroyed(Attacker) (vt+0x3B8, Death_
                 // Announcement 0x0044D760), which stock ReceiveDamage skips.
-                // Still on the feature with the unit-lost event above.
-                #[cfg(feature = "ares")]
-                {
+                if ares_form {
                     let attacker = killing_attacker(world, damage_events, dead_id);
                     world.building_death_announcement(
                         dead_id,
@@ -3756,6 +3768,7 @@ fn ares_damage_occupants(
                 entity.position.rx(),
                 entity.position.ry(),
                 entity.owner(),
+                rules.ares_form(),
             )
         }) {
             world.dispatch_unit_lost_events(&[event]);
@@ -4743,19 +4756,19 @@ fn append_fixture_tiberium(world: &mut Simulation, out: &mut Vec<TiberiumReducti
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "ifv_area_receipt_tests.rs"]
 mod ifv_area_receipt_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "nuke_maker_tests.rs"]
 mod nuke_maker_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "building_hit_fire_tests.rs"]
 mod building_hit_fire_tests;
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_d_z, feature = "phobos"))]
 #[path = "phobos_bullet_init_tests.rs"]
 mod phobos_bullet_init_tests;
 

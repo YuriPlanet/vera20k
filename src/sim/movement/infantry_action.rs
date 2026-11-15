@@ -1197,14 +1197,14 @@ impl DoActionType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "infantry_action_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "infantry_water_action_tests.rs"]
 mod water_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "infantry_unreachable_navcom_tests.rs"]
 mod unreachable_navcom_tests;

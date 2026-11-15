@@ -110,7 +110,7 @@ pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<
     Ok(pixels)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

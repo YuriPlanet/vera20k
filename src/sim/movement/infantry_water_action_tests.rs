@@ -4,7 +4,7 @@
 //! whole InfantryAI or audible playback. Wet death cleanup uses the existing
 //! production sequencer's native20/21 UnInit arm, not a second action port.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -20,15 +20,11 @@ use crate::sim::timer::CdTimer;
 use crate::sim::world::SimSoundEvent;
 
 fn oracle() -> &'static [Value] {
-    static NATIVE: OnceLock<Vec<Value>> = OnceLock::new();
-    NATIVE.get_or_init(|| {
-        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/infantry_water_action.json",
-        ))
+    let rows = crate::test_fixture::json("tools/spatial_oracle/infantry_water_action.json")["rows"]
+        .as_array()
         .unwrap();
-        assert_eq!(rows.len(), 356);
-        rows
-    })
+    assert_eq!(rows.len(), 356);
+    rows
 }
 
 fn signed(value: &Value) -> i32 {

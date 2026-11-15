@@ -53,9 +53,10 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
     // Installed Ares CanBuild10024090 (hook 0x4F7870) -> PrereqValidate10021B00
     // asks HasFactory for computer houses too, where stock 0x004F7B5C answers
     // them 1 before any factory; the replacement GI needs a real barracks.
-    #[cfg(feature = "ares")]
-    sim.spawn_object("GAPILE", "Americans", 20, 20, 0, &rules)
-        .unwrap();
+    if rules.ares_form() {
+        sim.spawn_object("GAPILE", "Americans", 20, 20, 0, &rules)
+            .unwrap();
+    }
     // Physical AIMD: Allied Base Guard - Refine needs three E1 and three GGI.
     let team_type = sim.interner.get("06175EFC-G").unwrap();
     sim.create_team(team_type, Some(owner), &rules).unwrap();
@@ -179,10 +180,11 @@ fn a_class_no_team_needs_still_draws_once() {
         .expect("no Max= limit");
     let mut expected = sim.scenario_rng.clone();
     // Ares 100216A0 draws `RandomRanged(0, 99)` instead.
-    #[cfg(feature = "ares")]
-    expected.next_range_i32_inclusive(0, 99);
-    #[cfg(not(feature = "ares"))]
-    expected.next_range_i32_inclusive(0, 0x7FFF_FFFE);
+    if rules.ares_form() {
+        expected.next_range_i32_inclusive(0, 99);
+    } else {
+        expected.next_range_i32_inclusive(0, 0x7FFF_FFFE);
+    }
 
     choose(&mut sim, &rules, owner, UnitChoiceKind::Aircraft);
 
@@ -265,7 +267,7 @@ fn the_choosers_match_the_original() {
         assert_eq!(asked_can_build, native_can_build, "{context}: CanBuild");
         let fill = dword(&row["fill"][index(&row["difficulty"])]);
         let mut draws = Draws::new(row);
-        let choice = pick(&candidates, fill, |low, high| draws.draw(low, high));
+        let choice = pick(&candidates, fill, false, |low, high| draws.draw(low, high));
         assert_eq!(draws.asked, native_draws(row), "{context}: draws");
         assert_eq!(choice.unwrap_or(-1), dword(&row["choice"]), "{context}");
     }
@@ -295,7 +297,7 @@ fn the_fill_earliest_gate_takes_the_native_draws() {
         let fill = dword(&row["fill_percent"]);
         let roll = dword(&row["draw"]);
         let mut draws = [roll, 0].into_iter();
-        let choice = pick(&candidates, fill, |_, _| draws.next().unwrap());
+        let choice = pick(&candidates, fill, false, |_, _| draws.next().unwrap());
         let earliest = row["earliest"].as_bool().unwrap();
         assert_eq!(
             choice,
@@ -328,26 +330,28 @@ fn the_harvester_branch_matches_the_original() {
             human: house.is_controlled_by_human(dword(&row["game_mode"]) != 0),
             tech_level: house.tech_level(),
         };
-        // Ares 10023410 compares the TechLevels signed.
-        #[cfg(feature = "ares")]
-        if let Some((_, harvester_tech)) = facts.harvester
-            && ((harvester_tech as u32) <= (facts.tech_level as u32))
-                != (harvester_tech <= facts.tech_level)
-        {
-            continue;
+        for ares in [false, true] {
+            // Ares 10023410 compares the TechLevels signed.
+            if ares
+                && let Some((_, harvester_tech)) = facts.harvester
+                && ((harvester_tech as u32) <= (facts.tech_level as u32))
+                    != (harvester_tech <= facts.tech_level)
+            {
+                continue;
+            }
+            let decision = harvester_decision(&facts, ares);
+            assert_eq!(
+                decision.unwrap_or(-1),
+                dword(&row["choice"]),
+                "harvester row {number}, ares {ares}"
+            );
+            // Past the branch, the team pass (no candidates here) draws once.
+            assert_eq!(
+                native_draws(row).len(),
+                usize::from(decision.is_none()),
+                "harvester row {number}: draws"
+            );
         }
-        let decision = harvester_decision(&facts);
-        assert_eq!(
-            decision.unwrap_or(-1),
-            dword(&row["choice"]),
-            "harvester row {number}"
-        );
-        // Past the branch, the team pass (no candidates here) draws once.
-        assert_eq!(
-            native_draws(row).len(),
-            usize::from(decision.is_none()),
-            "harvester row {number}: draws"
-        );
     }
 }
 
@@ -355,9 +359,9 @@ fn the_harvester_branch_matches_the_original() {
 /// `FillEarliestTeamProbability` the earliest team's type (4), else a second
 /// draw among the most needed (7); and 10023410 admits a harvester with a
 /// negative TechLevel, which gamemd's unsigned compare refuses.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_the_choice_draws_a_percent() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let candidates = [
         Candidate {
             index: 4,
@@ -373,7 +377,7 @@ fn ares_the_choice_draws_a_percent() {
     for (roll, choice) in [(49, 4), (50, 7)] {
         let mut asked = Vec::new();
         let mut draws = [roll, 0].into_iter();
-        let picked = pick(&candidates, 50, |low, high| {
+        let picked = pick(&candidates, 50, true, |low, high| {
             asked.push((low, high));
             draws.next().unwrap()
         });
@@ -393,7 +397,7 @@ fn ares_the_choice_draws_a_percent() {
         human: false,
         tech_level: 10,
     };
-    assert_eq!(harvester_decision(&facts), Some(7));
+    assert_eq!(harvester_decision(&facts, true), Some(7));
 }
 
 /// A state saved before the NPSE naval slot existed keeps its land channel and

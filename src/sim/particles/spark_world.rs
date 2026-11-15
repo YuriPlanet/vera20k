@@ -417,12 +417,13 @@ pub(super) fn ares_spark_dies(
             overlay.map_or(-1, i32::from),
             -1,
             Some(rules.overlay_registry()),
+            rules.ares_form(),
         ),
         crate::sim::cell_kernel::WallConnectionStep::Return(true)
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 pub(super) mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

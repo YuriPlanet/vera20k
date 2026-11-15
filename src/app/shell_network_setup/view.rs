@@ -737,6 +737,18 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             enabled: host && grouped,
             visible: dialog.modern && host,
         },
+        // The Superweapon Limit, in VERA's Game Options: 1 is Off.
+        SetupTrackbar {
+            id: SUPERWEAPON_LIMIT,
+            value: i32::from(options.host_rules.superweapon_limit.max(1)),
+            range: TrackbarRange::new(
+                1,
+                i32::from(crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX),
+                1,
+            ),
+            enabled: host,
+            visible: dialog.modern,
+        },
     ];
     // 7A0E50 from 5EA3E0: rows without a node show no ping image.
     let ping_icons = std::array::from_fn(|position| {
@@ -780,6 +792,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             options.bans.france,
             options.bans.spy,
             options.bans.stolen_tech,
+            options.host_rules.terrain_deformation,
         ],
         row_icons,
         headers,
@@ -951,7 +964,7 @@ fn profile_is_wol(state: &AppState) -> bool {
     state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

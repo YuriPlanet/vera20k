@@ -141,7 +141,7 @@ fn join(key: &str, first: &str, second: &str) -> Option<String> {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

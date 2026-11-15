@@ -95,7 +95,7 @@ pub(crate) fn pose(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

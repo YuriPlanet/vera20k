@@ -1,7 +1,7 @@
 # Optional Ares superweapon common keys, Battery, Protect and SonarPulse
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
+other games keep the original superweapons.
 
 ```ini
 [SuperWeaponTypes]
@@ -37,7 +37,7 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
 
 - `SW.ChargeToDrainRatio` replaces `[General] ChargeToDrainRatio=` for the type in
   the charge-drain ClickFire (`0x10035130`) and the cameo AnimStage (`0x10035420`).
-  Ares builds also clamp the stage at 54 (`0x100354C0`) and let computer Houses
+  Ares games also clamp the stage at 54 (`0x100354C0`) and let computer Houses
   toggle a drain like human ones.
 - `Money.DrainAmount` / `Money.DrainDelay` transact while a drain runs, every
   `DrainDelay` frames left on its timer; an unaffordable amount ends the drain

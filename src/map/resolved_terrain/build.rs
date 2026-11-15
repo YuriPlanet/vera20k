@@ -1480,7 +1480,7 @@ pub(super) fn height_in_pixels_from_tmp(tile_height: u32, relative_extra_y: i32)
 }
 
 /// The last record of the 21-row ground slope tables.
-const MAX_TMP_RAMP_TYPE: u8 = 20;
+pub(super) const MAX_TMP_RAMP_TYPE: u8 = 20;
 
 pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.subtile_entry_valid = Some(true);

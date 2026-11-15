@@ -178,7 +178,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
     let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[]);
     let additions = production::initial_construction_options(&sim, &rules);
-    projection.reconcile_cameos(owner, &candidates, 12, &additions);
+    projection.reconcile_cameos(owner, &candidates, 12, &additions, false);
     let starting_credits = production::credits_for_owner(&sim, "Americans");
     let total_cost: i32 = ["GAPOWR", "GAPILL"]
         .iter()
@@ -267,9 +267,13 @@ fn refresh_fixture_sidebar(
         .needs_cameo_seed(fixture.owner)
         .then(|| production::initial_construction_options(&fixture.sim, &fixture.rules))
         .unwrap_or_default();
-    fixture
-        .projection
-        .reconcile_cameos(fixture.owner, &candidates, visible_rows, &seed_additions);
+    fixture.projection.reconcile_cameos(
+        fixture.owner,
+        &candidates,
+        visible_rows,
+        &seed_additions,
+        false,
+    );
     fixture
         .projection
         .reconcile_factory_links(&fixture.sim, fixture.owner);
@@ -2434,6 +2438,63 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
 /// cell invalid when that flag is zero, before its own IsClearToBuild call.
 /// This regression covers that production decision and queued refusal/input
 /// cleanup, not native terrain production, cursor projection or PLACE raster.
+/// `UpdateFoundationCenter @ 0x004A91B0` writes the whole-foundation
+/// visibility (`+0x1181`, `0x004A94DA`) only when the foundation moves
+/// (`0x004A9356..0x004A936E`): a Cell revealed under a still foundation, or a
+/// call that leaves the centre (the tactical gadget's, off the map), keeps it
+/// hidden until the foundation moves.
+#[test]
+fn a_still_foundation_keeps_its_visibility_until_it_moves() {
+    let Some(mut fixture) = paid_ready_fixture() else {
+        return;
+    };
+    fn preview_at(
+        fixture: &Fixture,
+    ) -> impl FnOnce((u16, u16)) -> Option<production::BuildingPlacementPreview> + '_ {
+        move |(rx, ry)| {
+            production::placement_preview_for_owner_with_overlays(
+                &fixture.sim,
+                &fixture.rules,
+                "Americans",
+                "GAPOWR",
+                rx,
+                ry,
+                Some(&fixture.overlays),
+            )
+        }
+    }
+    let owner = fixture.owner;
+    let (near, far) = ((8, 4), (25, 25));
+    let mut latch = super::FoundationLatch::default();
+    let fog = |fixture: &mut Fixture, bits| {
+        fixture
+            .sim
+            .fog_mut_for_test()
+            .set_ground_bits_for_test(owner, near.0, near.1, bits);
+    };
+    fog(&mut fixture, 0);
+    let hidden = latch.place(Some(near), preview_at(&fixture)).unwrap();
+    assert!(!hidden.foundation_visible);
+    fog(&mut fixture, 0x18);
+    for still in [Some(near), None] {
+        let kept = latch.place(still, preview_at(&fixture)).unwrap();
+        assert_eq!((kept.rx, kept.ry), near);
+        assert!(!kept.foundation_visible, "{still:?}");
+    }
+    assert!(
+        latch
+            .place(Some(far), preview_at(&fixture))
+            .unwrap()
+            .foundation_visible
+    );
+    assert!(
+        latch
+            .place(Some(near), preview_at(&fixture))
+            .unwrap()
+            .foundation_visible
+    );
+}
+
 #[test]
 fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
     let Some(mut fixture) = paid_ready_fixture() else {

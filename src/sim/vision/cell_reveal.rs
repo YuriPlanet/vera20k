@@ -13,7 +13,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ROW_NEIGHBORS};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "cell_reveal_tests.rs"]
 pub(crate) mod tests;
 
@@ -380,14 +380,31 @@ impl OwnerVisibility {
             return;
         };
         if self.shroud_knowledge[index].leave_reshrouded() {
-            self.set_ground_bits(
-                index,
-                self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
-            );
-            self.set_cell_initialized(VisibilityCell::Real(index), false);
-            self.map_cell_edge_cache[index].fog_open = false;
+            self.clear_mapped_ground(index);
         }
         self.publish_knowledge(index);
+    }
+
+    /// `MapClass::Reset_Shroud @ 0x00577BB0`'s per-cell store
+    /// (`0x00577C2E..0x00577C48`): Cell `+0x12C &= ~0x18` and Cell
+    /// `+0x140 &= ~3` on every cell, leaving the shroud and gap counters
+    /// (`+0x130`/`+0x134`) as they are.
+    pub(super) fn store_cleared_map_cell(&mut self, cell: (u16, u16)) {
+        let Some(index) = self.index(cell.0, cell.1) else {
+            return;
+        };
+        self.shroud_knowledge[index].clear_mapped();
+        self.clear_mapped_ground(index);
+        self.publish_knowledge(index);
+    }
+
+    fn clear_mapped_ground(&mut self, index: usize) {
+        self.set_ground_bits(
+            index,
+            self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
+        );
+        self.set_cell_initialized(VisibilityCell::Real(index), false);
+        self.map_cell_edge_cache[index].fog_open = false;
     }
 
     /// Original bulk577D90/577AB0 stores, including Cell12C bits18 and

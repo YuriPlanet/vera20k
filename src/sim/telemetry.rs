@@ -150,7 +150,7 @@ pub const TELEMETRY_MAX_BASE_PLAN: usize = 32;
 /// Byte limit, shortened only at UTF-8 character boundaries.
 pub const TELEMETRY_MAX_NAME_BYTES: usize = 64;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "telemetry_tests.rs"]
 mod tests;
 

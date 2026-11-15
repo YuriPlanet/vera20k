@@ -42,6 +42,7 @@ fn inputs(rules: &RuleSet, object: &ObjectType, output: i32, drain: i32) -> Time
 /// WallBuildSpeedCoefficient; an ordinary wall (2000 x 0.5) still takes it.
 #[test]
 fn build_time_overrides_replace_cost_and_speed_and_exempt_walls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     for (name, base, full) in [("FASTWALL", 900, 900), ("WALL", 900, 450)] {
         let object = rules.object(name).unwrap();
@@ -60,6 +61,7 @@ fn build_time_overrides_replace_cost_and_speed_and_exempt_walls() {
 /// replace the [General] values.
 #[test]
 fn low_power_speed_floor_and_overrides() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let plain = rules.object("PLAIN").unwrap();
     // Half power: 1 - 0.5 x 2.0 is zero; a tenth: -0.8.
@@ -83,6 +85,7 @@ fn low_power_speed_floor_and_overrides() {
 /// multiplier at the stock 750.
 #[test]
 fn factory_plant_multiplier_scales_the_discount() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules();
     let mut factors = HouseCostFactors {
         country: [NativeF32Bits::ONE; 5],

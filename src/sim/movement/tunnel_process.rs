@@ -15,9 +15,6 @@
 //! never runs.
 //!
 //! Residuals:
-//! - Move_To asks the owner's vt+0x37C, Unit `0x00746C90`: the EMP counter
-//!   (Techno `+0x504`) or the Unit's death-frame counter (`+0x6D8`). VERA has
-//!   no producer of the second, so only the EMP counter refuses.
 //! - Move_To's type adjustment is UnitType's (`0x00747EB0`, the Z raised to
 //!   the ground). The Foot setter reaches this Move_To only for a Unit; an
 //!   Infantry Tunnel owner (InfantryType `0x005247D0`) has no represented
@@ -198,16 +195,15 @@ impl Simulation {
             rules.general.dig_sound.clone(),
             rules.general.dig_anim.clone(),
         );
-        #[cfg(feature = "ares")]
-        if let Some(object) = self.object_type(entity.type_ref(), rules) {
+        if rules.ares_form()
+            && let Some(object) = self.object_type(entity.type_ref(), rules)
+        {
             let [sound, anim] = object.techno_combat().dig_effects(effects.dig_in);
             return (
                 sound.map_or(stock.0, |sound| sound.map(str::to_owned)),
                 anim.map_or(stock.1, |anim| anim.map(str::to_owned)),
             );
         }
-        #[cfg(not(feature = "ares"))]
-        let _ = (entity, effects);
         stock
     }
 
@@ -231,7 +227,7 @@ impl Simulation {
             return;
         };
         if self.tunnel_runtime(id).is_none()
-            || actor.emp_remaining() > 0
+            || actor.is_under_emp()
             || actor.parasite.is_paralyzed(frame)
             || actor.is_warped_out()
             || actor.is_warping_in()
@@ -512,8 +508,7 @@ impl Simulation {
         // Ares 3.0 TunnelLocomotionClass_Turning (Ares.dll 1005D500, hook
         // 0x0072920C): a null Destination ends the dig (State 7) instead of
         // turning toward the map origin.
-        #[cfg(feature = "ares")]
-        if destination == NULL_COORD {
+        if rules.ares_form() && destination == NULL_COORD {
             self.tunnel_set_state(id, TunnelState::DugOut);
             return;
         }

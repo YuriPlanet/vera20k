@@ -42,12 +42,12 @@ pub(super) fn ion_blast_draws(
         viewport[0] as i32,
         viewport[1] as i32 - CLIP_BOTTOM_ROWS,
     ];
-    let corner = [camera[0] + origin[0], camera[1] + origin[1]];
+    let admission = super::instances::TacticalAdmission::at(camera, origin, viewport);
     blasts
         .rev()
         .filter_map(|([x, y, z], frame)| {
             let (px, py) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
-            if !super::instances::projection_admitted([px, py], corner, viewport) {
+            if !super::instances::projection_admitted([px, py], admission) {
                 return None;
             }
             let point = [
@@ -92,10 +92,10 @@ pub(super) fn draws(state: &crate::app::AppState) -> Vec<IonBlastDraw> {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "ion_blasts_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "ion_blasts_gpu_tests.rs"]
 mod gpu_tests;

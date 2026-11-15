@@ -1525,7 +1525,7 @@ fn signed_div_1000(value: i64) -> i32 {
     (value / i64::from(LIGHT_UNIT)) as i32
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;

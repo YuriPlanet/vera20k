@@ -332,18 +332,18 @@ pub(super) fn process_miner(
     // Ares 3.0 1004D6C0 (hook 0x73E66D) jumps over the Dock= loop to
     // 0x73E6CF: only a computer house's harvester with no Dock= at all
     // (0x73E638..0x73E660) still queues Guard.
-    #[cfg(feature = "ares")]
-    let sleeps = sim
-        .interner
-        .object_type(snap.type_id, rules)
-        .is_some_and(|object| {
-            object.dock.is_empty()
-                && !sim.houses.get(&snap.owner).is_some_and(|house| {
-                    house.is_controlled_by_human(sim.session.game_mode_nonzero())
-                })
-        });
-    #[cfg(not(feature = "ares"))]
-    let sleeps = !house_owns_dock_instance(sim, rules, snap);
+    let sleeps = if rules.ares_form() {
+        sim.interner
+            .object_type(snap.type_id, rules)
+            .is_some_and(|object| {
+                object.dock.is_empty()
+                    && !sim.houses.get(&snap.owner).is_some_and(|house| {
+                        house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                    })
+            })
+    } else {
+        !house_owns_dock_instance(sim, rules, snap)
+    };
     if sleeps {
         queue_guard_from_harvest(sim, snap, rules);
         snap.dispatch_delay = DISPATCH_NEXT_FRAME;
@@ -1022,7 +1022,6 @@ fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot, rules: &
 /// rules entry).
 ///
 /// [`HouseTracking::owns_any_building`]: crate::sim::house_tracking::HouseTracking::owns_any_building
-#[cfg(not(feature = "ares"))]
 fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> bool {
     let Some(harvester) = sim.interner.object_type(snap.type_id, rules) else {
         return true;

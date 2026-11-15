@@ -1,10 +1,15 @@
-# Optional Ares mouse cursors
+# Ares mouse cursors
 
-Build with `--features ares` to draw the software cursor through the Ares
-`[MouseCursors]` list and to let types name the cursors of their actions.
-Default builds keep the compiled cursor table (`0x0082D028`) and its action
-switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`); INI keys cannot
-enable the extension there.
+While Ares plays in a game (`RuleSet::ares`), every build draws the software
+cursor through the Ares `[MouseCursors]` list and lets types name the cursors
+of their actions. The superweapon cursors are superweapon code and follow the
+Ares superweapons (`RuleSet::ares_form`, how the Rules were read).
+Only Rules read the Ares way hold the list's lines and the `Cursor.*` keys, so
+a game whose Rules were read the stock way draws the list's defaults. A game
+with neither switch keeps the compiled cursor table (`0x0082D028`) and its
+action switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`). A build
+with the `ares` feature reads every game the Ares way, so there the
+superweapon cursors and the list stay on with retail data too.
 
 ```ini
 [MouseCursors]                          ; rulesmd.ini, every Rules pass

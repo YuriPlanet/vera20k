@@ -724,7 +724,7 @@ fn split_frontier_cost(
     x87::store_f32(cost)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::TheaterCliffRanges;

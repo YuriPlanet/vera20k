@@ -306,6 +306,6 @@ pub(crate) fn occupier_admitted(
     passenger.owner() == building.owner() || passive || (ext.bunker_raidable && occupants == 0)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_garrison_tests.rs"]
 mod tests;

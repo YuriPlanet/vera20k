@@ -133,8 +133,6 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, actor: u64) {
     );
 }
 
-// Runs again once the crates' pickup eligibility moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn temporary_cloak_keeps_permanent_crate_eligibility_and_respects_type_prohibition() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

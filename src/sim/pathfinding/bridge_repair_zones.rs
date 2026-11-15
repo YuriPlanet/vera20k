@@ -137,6 +137,6 @@ impl ZoneGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "bridge_repair_zones_tests.rs"]
 mod tests;

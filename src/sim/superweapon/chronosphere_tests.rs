@@ -298,7 +298,7 @@ fn retail_chrono_rules() {
     let warp = rules.super_weapon("ChronoWarpSpecial").unwrap();
     // Ares LoadFromINIFile (10033370's tail) writes -1 for a handled type;
     // Fire_SW pairs it with the House's last Super (hook 4FAE72).
-    let pre_dependent = if cfg!(feature = "ares") { -1 } else { 3 };
+    let pre_dependent = if rules.ares() { -1 } else { 3 };
     assert_eq!(
         (
             warp.kind,
@@ -360,7 +360,7 @@ fn retail_chrono_warp_moves_the_source_block() {
     // Case 3 lifts the cell 5 leptons and CreateChronoAnim 5 more
     // (`0x006CC423`, `0x006CB43B`); Ares's Activate (1006ED30) lifts it by
     // SW.AnimationHeight (Initialize 5) only.
-    let lift = if cfg!(feature = "ares") { 5 } else { 10 };
+    let lift = if rules.ares() { 5 } else { 10 };
     assert_eq!(
         anim.world_coord().z,
         super::deck_coords(&sim, SOURCE)[2] + lift
@@ -1033,9 +1033,9 @@ fn retail_chrono_warp_onto_the_iron_curtain_kills_the_warper() {
 /// Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush (10037BC0, hook
 /// 0x7187DA): a warper that came under the Iron Curtain during its warp is
 /// not crushed by its own curtain on the landing cell.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_iron_curtained_warper_survives_its_own_landing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some((rules, mut sim, americans)) = retail_world() else {
         return;
     };
@@ -1061,9 +1061,9 @@ fn ares_iron_curtained_warper_survives_its_own_landing() {
 /// 0x7188F2): a Robot Tank offline for want of power does not float on a
 /// water landing, though its AmphibiousDestroyer zone floats it otherwise
 /// (SinkOrSwim, 0x718871).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_chrono_warp_sinks_an_offline_robot_tank_on_water() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
     let Some(rules) = retail_rules() else {
         return;

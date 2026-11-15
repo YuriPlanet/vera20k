@@ -362,7 +362,7 @@ fn place(surface: &ScaledSurface, gpu: &GpuContext, geometry: ZoomGeometry) {
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

@@ -212,10 +212,10 @@ impl std::hash::Hash for GunnerTurrets {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "gunner_turret_rules_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_gunner_tests.rs"]
 mod extended_tests;

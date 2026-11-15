@@ -4790,7 +4790,7 @@ fn unit_atlas_statistics(
     atlas.map_or_else(|| Ok(Default::default()), |atlas| atlas.statistics())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

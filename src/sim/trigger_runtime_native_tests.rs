@@ -2986,6 +2986,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         .iter()
         .find(|row| row["input"]["name"] == "reverse_chain")
         .unwrap()["input"];
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     let mut sim = Simulation::with_seed(31);
     sim.trigger_runtime.definitions = supplied_definitions(input);
     sim.trigger_runtime.definitions_prepared = true;
@@ -3021,7 +3022,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     sim.trigger_runtime
         .replace_cell_trigger_tag(cell, Some(tag));
     sim.trigger_runtime.logic_tags.push(tag);
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(ares).unwrap();
     let owner = sim.trigger_runtime.clone();
     let corruptions: [(&str, fn(&mut Simulation)); 9] = [
         ("definition link", |sim| {
@@ -3062,7 +3063,10 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     for (name, corrupt) in corruptions {
         sim.trigger_runtime = owner.clone();
         corrupt(&mut sim);
-        assert!(sim.validate_restored_trigger_runtime().is_err(), "{name}");
+        assert!(
+            sim.validate_restored_trigger_runtime(ares).is_err(),
+            "{name}"
+        );
     }
     sim.trigger_runtime = owner;
     crate::sim::world::Simulation::mark_live_tag_for_delete(
@@ -3070,7 +3074,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         &mut sim.trigger_runtime,
         tag,
     );
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(ares).unwrap();
     // The Tag deleting destructor leaves its Triggers in the common queue.
     // This valid saved intermediate state must not reconstruct or reject them.
     sim.substrate
@@ -3082,7 +3086,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         0,
         false,
     );
-    sim.validate_restored_trigger_runtime().unwrap();
+    sim.validate_restored_trigger_runtime(ares).unwrap();
 }
 
 #[test]
@@ -3625,7 +3629,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
             .map(|(index, typ)| {
                 json!({ "id": typ.id, "repeat": typ.repeat,
                 "trigger": typ.trigger.map(|id| &runtime.definitions.trigger_types[id].id),
-                "flags": runtime.definitions.classification(index) })
+                "flags": runtime.definitions.classification(index, rules.ares_form()) })
             })
             .collect();
         assert_eq!(json!(tag_definitions), row["definitions"]);
@@ -4412,7 +4416,8 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                 // Original destruction keeps Tag+2C after the last object
                 // is gone. Preserve it across restore without retaining a
                 // Rust attachment to vanished object storage.
-                sim.validate_restored_trigger_runtime().unwrap();
+                sim.validate_restored_trigger_runtime(rules.ares_form())
+                    .unwrap();
             }
         }
         if let Some(states) = row.get("full_rng_after_history") {

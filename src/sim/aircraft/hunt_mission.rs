@@ -43,7 +43,7 @@ use crate::sim::combat::{ScanMission, TargetKind};
 use crate::sim::mission::MissionType;
 use crate::sim::world::{ObjectAiCtx, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "hunt_mission_tests.rs"]
 mod tests;
 

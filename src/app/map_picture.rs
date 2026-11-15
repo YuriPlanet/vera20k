@@ -271,7 +271,7 @@ fn read_png(path: &Path) -> Option<crate::map::preview::DecodedPreview> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

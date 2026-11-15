@@ -53,7 +53,7 @@ impl MapGenRngContinuation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod tests {
     use super::MapGenRngContinuation;
     use crate::map::rmg::RmgRng;

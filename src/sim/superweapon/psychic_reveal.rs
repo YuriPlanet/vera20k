@@ -34,7 +34,7 @@
 //! - Part of sim/ — depends on rules/, sim/vision, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "psychic_reveal_tests.rs"]
 mod tests;
 

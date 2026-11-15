@@ -879,7 +879,7 @@ fn summarise_indices(indices: &[usize]) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

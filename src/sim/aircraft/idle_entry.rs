@@ -74,7 +74,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::sim::world::display_layers::DisplayLayer;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "idle_entry_tests.rs"]
 mod tests;
 

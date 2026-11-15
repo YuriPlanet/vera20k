@@ -159,6 +159,6 @@ impl LineTrails {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "line_trail_tests.rs"]
 mod tests;

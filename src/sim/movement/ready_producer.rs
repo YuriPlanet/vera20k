@@ -229,6 +229,6 @@ fn hover(locomotor: &LocomotorState) -> LocomotorReadyState {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "ready_producer_tests.rs"]
 mod ready_producer_tests;

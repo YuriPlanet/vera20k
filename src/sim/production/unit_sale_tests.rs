@@ -57,6 +57,7 @@ fn scene(depot: &str, tank: &str, general: &str, dx: i32) -> (Simulation, RuleSe
 /// The distance is measured to the dock coordinate and must stay below 0x80.
 #[test]
 fn a_unit_on_a_depot_can_be_sold_within_0x80_leptons_of_its_dock() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (dx, sellable) in [(0x7F, true), (0x80, false)] {
         let (sim, rules, tank) = scene("UnitRepair=yes", "", "", dx);
         assert_eq!(foot_can_be_sold(&sim, &rules, tank), sellable, "dx {dx}");
@@ -67,6 +68,7 @@ fn a_unit_on_a_depot_can_be_sold_within_0x80_leptons_of_its_dock() {
 /// `[General] UnitsUnsellable`.
 #[test]
 fn unit_sell_and_unsellable_decide_whether_the_unit_sells() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (depot, tank, general, sellable) in [
         ("UnitRepair=yes\nUnitSell=no", "", "", false),
         ("UnitSell=yes", "", "", true),
@@ -92,6 +94,7 @@ fn unit_sell_and_unsellable_decide_whether_the_unit_sells() {
 /// Off the building it does nothing.
 #[test]
 fn the_sell_event_sells_a_unit_standing_on_a_building() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (dx, sold) in [(0, true), (0x200, false)] {
         let (mut sim, rules, tank) = scene("UnitRepair=yes", "", "", dx);
         let owner = sim.interner.get("Americans").unwrap();

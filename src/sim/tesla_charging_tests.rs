@@ -235,7 +235,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     let rng = f.sim.scenario_rng.logical_state();
     f.sim
         .substrate
-        .electric_assault_detonation(a, Some(f.coil), crate::rules::ARES_BUILD);
+        .electric_assault_detonation(a, Some(f.coil), f.rules.ares());
     assert_eq!(f.sim.scenario_rng.logical_state(), rng);
     assert_eq!(f.sim.substrate.entities.get(a).unwrap().rearm_timer, rearm);
 
@@ -248,7 +248,7 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     f.hit(a, tank); // wrong target class, still no ordinary area damage
     // Ares BulletClass_Fire_Overpower (1005C650, hook 0x4693B0) admits a
     // Unit firer too.
-    if cfg!(feature = "ares") {
+    if f.rules.ares() {
         assert_eq!(f.charge().chargers(), &[b, c, a, tank]);
     } else {
         assert_eq!(f.charge().chargers(), &[b, c, a]);
@@ -825,6 +825,7 @@ fn freezing_a_retail_charger_clears_its_intent_before_release() {
         &mut f.sim.houses,
         &mut f.sim.power_states,
         cleg,
+        f.rules.ares_form(),
     );
     assert!(!f.sim.substrate.entities.get(source).unwrap().ai_frozen());
     f.dispatch(source, MissionType::Attack);

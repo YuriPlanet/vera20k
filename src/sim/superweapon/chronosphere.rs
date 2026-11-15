@@ -397,7 +397,7 @@ fn arm_chrono_warp(
     let [x, y, z] = deck_coords(sim, (cx as u16, cy as u16));
     let mut destination = DriveCoord { x, y, z };
     if category == EntityCategory::Unit {
-        sim.locomotor_mark_all_occupation_bits(id, false);
+        sim.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
         let _ = sim.force_track(id, -1, destination, rules, overlay_registry, frame_effects);
         Simulation::object_raw_receiver_at(
             &mut sim.substrate,
@@ -406,6 +406,7 @@ fn arm_chrono_warp(
             id,
             destination,
             false,
+            rules.ares_form(),
         );
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.foot_occupation_enabled.resume();
@@ -494,7 +495,6 @@ fn arm_chrono_warp(
 /// excludes. The player's click selects [`ares_chrono_warp_for`] for the next
 /// click (the client, from the launch event). It reports activation even when
 /// uncharged.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch_source(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -537,7 +537,6 @@ pub(super) fn ares_launch_source(
 /// The ChronoWarp type a ChronoSphere's player click selects (Ares
 /// `1006ED30`): the `[SuperWeaponTypes]` entry `SW.PostDependent` names when
 /// its `Type=` is ChronoWarp, else the first ChronoWarp in list order.
-#[cfg(feature = "ares")]
 pub fn ares_chrono_warp_for<'r>(
     rules: &'r RuleSet,
     sphere: &crate::rules::superweapon_type::SuperWeaponType,
@@ -574,7 +573,6 @@ pub fn ares_chrono_warp_for<'r>(
 /// 3. every Techno on its GetRange (`1006EEB0`: `SW.Range`, else a 3x3
 ///    rectangle) around the source, once and in UniqueID order, goes through
 ///    [`ares_chronoport`].
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch_warp(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -675,7 +673,6 @@ pub(super) fn ares_launch_warp(
 
 /// What SW_ChronoWarp::Activate's lambda reads of its launch: the Super's
 /// owner, the source's cell (`+0x62`) and the clicked target.
-#[cfg(feature = "ares")]
 struct AresChronoWarp {
     owner: InternedId,
     source: (u16, u16),
@@ -705,7 +702,6 @@ struct AresChronoWarp {
 ///   EmptyBunker `0x004595C0`), sends OVER_OUT to each contact, has its
 ///   passengers killed under `KillCargo` and starts its chronoshift
 ///   ([`ares_begin_building_chronoshift`]), joining `buildings`.
-#[cfg(feature = "ares")]
 #[allow(clippy::too_many_arguments)]
 fn ares_chronoport(
     sim: &mut Simulation,
@@ -935,7 +931,6 @@ impl AresChronoWarps {
 /// power, and its temporal goes offline (`0x004521C0`: the online latch
 /// and slot anims). The redraw (`UpdatePlacement(Redraw)`) is presentation.
 /// Its target is its cell moved by the target's offset from the source.
-#[cfg(feature = "ares")]
 fn ares_begin_building_chronoshift(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -953,7 +948,8 @@ fn ares_begin_building_chronoshift(
     let (rx, ry) = (entity.position.rx() as i16, entity.position.ry() as i16);
     sim.houses.request_house_tech_tree_recheck(owner);
     Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, false);
-    sim.substrate.set_building_online_for_temporal(id, false);
+    sim.substrate
+        .set_building_online_for_temporal(id, false, rules.ares_form());
     let entity = sim.substrate.entities.get(id)?;
     let origin =
         crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
@@ -974,7 +970,6 @@ fn ares_begin_building_chronoshift(
 /// SWStateMachine::UpdateAll's ChronoWarp entries (inlined in the
 /// LogicClass::Update hook 0x55AFB3, Ares 3.0 `1006E140`): each machine runs
 /// [`ares_chrono_warp_update`], then leaves once its clock has run out.
-#[cfg(feature = "ares")]
 pub(super) fn ares_tick_chrono_warps(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1010,7 +1005,6 @@ pub(super) fn ares_tick_chrono_warps(
 ///   the source's `Chronosphere.BlowUnplaceable`, takes its Strength as
 ///   `C4Warhead=` damage, ignoring defenses, credited to the Super's owner;
 /// - its duration: the owner rechecks power, radar and tech tree.
-#[cfg(feature = "ares")]
 fn ares_chrono_warp_update(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1066,7 +1060,6 @@ fn ares_chrono_warp_update(
 }
 
 /// One building's return in [`ares_chrono_warp_update`].
-#[cfg(feature = "ares")]
 fn ares_chrono_warp_put_back(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1161,7 +1154,8 @@ fn ares_chrono_warp_put_back(
     let building_owner = entity.owner();
     Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, building_owner, false);
     sim.houses.request_house_tech_tree_recheck(building_owner);
-    sim.substrate.set_building_online_for_temporal(id, true);
+    sim.substrate
+        .set_building_online_for_temporal(id, true, rules.ares_form());
     if !success && (item.is_vehicle || blow_unplaceable) {
         let Some(strength) = sim
             .substrate
@@ -1207,7 +1201,6 @@ fn ares_chrono_warp_put_back(
 /// (`0x00719EE0`) or the Foot AI tail resets the stashed locomotor, and its
 /// next Process (`0x004B0500`, Process_Movement `0x004B2630`) asks Find_Path
 /// for the source cell: the Unit drives back unless it cannot reach it.
-#[cfg(feature = "ares")]
 fn ares_arm_chrono_warp(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1242,7 +1235,7 @@ fn ares_arm_chrono_warp(
             .z
             .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
     }
-    sim.locomotor_mark_all_occupation_bits(id, false);
+    sim.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
     let _ = sim.force_track(id, -1, here, rules, overlay_registry, frame_effects);
     Simulation::object_raw_receiver_at(
         &mut sim.substrate,
@@ -1251,6 +1244,7 @@ fn ares_arm_chrono_warp(
         id,
         here,
         false,
+        rules.ares_form(),
     );
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.foot_occupation_enabled.resume();

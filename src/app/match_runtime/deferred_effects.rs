@@ -283,7 +283,7 @@ const _: () = {
     assert_send::<DeferredClientEffects>();
 };
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

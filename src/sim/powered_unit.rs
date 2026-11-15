@@ -58,7 +58,8 @@
 //! - The three EVA sites also require the game to be active (`0x00A8E9A0`)
 //!   and no scenario initialization under way (`0x00A8E7AC`,
 //!   `0x0050E088..0x0050E0C4`); the walks push the line without them.
-//!   Inaudible: retail `evamd.ini` has no entries for either line.
+//!   Retail `evamd.ini` has both lines, but no retail campaign gives such a
+//!   house a center (`app::match_runtime::sound_dispatch`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -303,6 +304,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
+        let ares = rules.ares_form();
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -317,7 +319,6 @@ impl Simulation {
             return;
         }
         let foot = entity.category().is_foot();
-        #[cfg(feature = "ares")]
         let was_offline = entity.deactivated.is_offline();
         self.reset_orders_to_guard(id, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -341,8 +342,7 @@ impl Simulation {
             quiet,
             rules,
         );
-        #[cfg(feature = "ares")]
-        if !was_offline {
+        if ares && !was_offline {
             // Ares Deactivate1004CE21..1004CE72 removes the owned light
             // only on the transition. The parent and its cargo survive.
             self.destroy_spotlight_for_parent(
@@ -475,6 +475,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
+        let ares = rules.ares_form();
         let Some(foot) = self
             .substrate
             .entities
@@ -486,12 +487,11 @@ impl Simulation {
         // Installed Ares Activate1004CCB0 replaces70FBE0 and vetoes before
         // ResetOrders/Power_On/sound. Keep this admission in the shared owner:
         // House50E010's power-center recovery also calls this function.
-        #[cfg(feature = "ares")]
-        {
+        if ares {
             let entity = self.substrate.entities.get(id).expect("same receiver");
-            // Selected live Drive/Walk path: Techno70EFD0 tests signed>0.
-            // Unit746C90's separate DeathFrame override remains outside this chain.
-            if entity.emp_remaining() > 0 {
+            // vt+0x37C: Techno70EFD0 tests signed +504 > 0, Unit746C90 also
+            // a running DeathFrames= counter.
+            if entity.is_under_emp() {
                 return;
             }
             //100454F0: a PoweredUnit= center or the PoweredBy source.
@@ -503,7 +503,6 @@ impl Simulation {
                 return;
             }
         }
-        #[cfg(feature = "ares")]
         let was_offline = self
             .substrate
             .entities
@@ -529,8 +528,7 @@ impl Simulation {
             quiet,
             rules,
         );
-        #[cfg(feature = "ares")]
-        if was_offline {
+        if ares && was_offline {
             // Ares Activate1004CD1E..1004CD85 recreates the light after
             // clearing Deactivated, through the same construction owner.
             self.construct_spotlight(id, rules);
@@ -631,8 +629,7 @@ impl Simulation {
         // Ares UnitClass_Update_Deactivated1004CFD0 (hook736135) skips the
         // draws and the sparks while IsPowered100454F0 holds: EMP and
         // Operator victims do not sparkle.
-        #[cfg(feature = "ares")]
-        if self.ares_is_powered(id, rules) {
+        if rules.ares_form() && self.ares_is_powered(id, rules) {
             return;
         }
         let dy = self.scenario_rng.next_range_i32_inclusive(-100, 100);
@@ -661,6 +658,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "powered_unit_tests.rs"]
 mod tests;

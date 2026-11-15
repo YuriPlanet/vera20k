@@ -733,6 +733,15 @@ pub enum LifecycleOutput {
         owner: InternedId,
         message: super::planning::PlanningAppendMessage,
     },
+    /// MPlayer_Defeated 0x004FC0B0 for `owner`, after its Defeated flag and
+    /// Computer_Paranoid. The app runs PlayerPtr's local branch (beacons,
+    /// command bar, chat mask: 0x004FC1BD..0x004FC23E) and, when
+    /// `match_decided` (the decision at 0x004FC3DE..0x004FC6B7), reopens a
+    /// command bar that branch closed (0x004FC591..0x004FC59F).
+    MultiplayerHouseDefeated {
+        owner: InternedId,
+        match_decided: bool,
+    },
     /// HouseBegin4FA41C clears the category prediction gate before builder
     /// admission, including a refused Begin. The strip's request survives.
     /// Source: tools/sidebar_oracle/pending_production.md.
@@ -841,12 +850,6 @@ pub enum LifecycleOutput {
     ObjectPointerExpired {
         stable_id: u64,
     },
-    RevealDisplay {
-        stable_id: u64,
-    },
-    DisplayRemove {
-        stable_id: u64,
-    },
     DetachAttachedAnims {
         stable_id: u64,
     },
@@ -857,12 +860,6 @@ pub enum LifecycleOutput {
         stable_id: u64,
     },
     ClearRedraw {
-        stable_id: u64,
-    },
-    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
-    /// Display membership. Presentation must re-resolve that object's model
-    /// without pretending that another object spawned or entered Display.
-    ObjectTypeChanged {
         stable_id: u64,
     },
 }
@@ -1819,8 +1816,6 @@ impl Simulation {
                 context.rules,
                 context.terrain(),
             );
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::RevealDisplay { stable_id });
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RevealDisplayBoundary);
 
@@ -2452,6 +2447,7 @@ impl Simulation {
                         &foundation,
                         profile,
                         Some((self.session.map_width(), self.session.map_height())),
+                        context.rules.ares_form(),
                     )
                 })
             {
@@ -2839,6 +2835,7 @@ impl Simulation {
                         &foundation,
                         profile,
                         Some((self.session.map_width(), self.session.map_height())),
+                        context.rules.ares_form(),
                     )
                 })
             {
@@ -2958,7 +2955,7 @@ impl Simulation {
             let moving = crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false);
             let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
             if moving {
-                self.locomotor_mark_all_occupation_bits(stable_id, false);
+                self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
             } else {
                 Self::object_raw_receiver_at(
                     &mut self.substrate,
@@ -2967,6 +2964,7 @@ impl Simulation {
                     stable_id,
                     coord,
                     false,
+                    rules.ares_form(),
                 );
             }
         }
@@ -3508,6 +3506,7 @@ impl Simulation {
         // and Display. Its independent19B byte can still be zero, so it cannot
         // be resurrected through Reveal before the common deferred drain.
         if self.substrate.pending_delete.contains_object(&stable_id)
+            || self.substrate.anims.local_delete_queued(stable_id)
             || !self
                 .substrate
                 .anims
@@ -3519,6 +3518,12 @@ impl Simulation {
         self.substrate.mark_anim_display(stable_id, true);
         if submit {
             self.submit_anim_display(stable_id, rules);
+        }
+        // `ObjectClass::Unlimbo @ 0x005F4EC0` leaves an object with id -2 out
+        // of Logic in LAN and online games: the local list runs it instead
+        // (`FrameStep::LocalAnims`).
+        if crate::sim::anim_class::is_local_anim_id(stable_id) {
+            return false;
         }
         self.register_logic_object(stable_id)
     }
@@ -3613,7 +3618,11 @@ impl Simulation {
         let joins_logic = rules
             .terrain_object_type_case_insensitive(self.interner.resolve(terrain.type_ref()))
             .is_some_and(|terrain_type| {
-                terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+                terrain.joins_logic_on_unlimbo(
+                    terrain_type,
+                    self.session.game_mode(),
+                    rules.ares_form(),
+                )
             });
         // Terrain ctor71BC76 reveals at the retained type-adjusted coordinate;
         // Object5F4260 selects Ground even on elevated cells.
@@ -4003,14 +4012,6 @@ impl Simulation {
         }
 
         self.substrate.display.remove(stable_id);
-        // The app consumes this projection to refresh entity/Anim atlases.
-        // Particles draw from the retained Display registry directly; their
-        // removal cannot introduce atlas entries and must not trigger a
-        // whole-world atlas coverage scan for every child retirement.
-        if self.substrate.entities.contains(stable_id) {
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::DisplayRemove { stable_id });
-        }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealDisplayBoundary);
         self.lifecycle_outputs
@@ -4271,7 +4272,7 @@ impl Simulation {
         // the entry admission across Stop_Driver's synchronous callbacks.
         // Native Hover5171C0 itself has no InLimbo gate and retains its head.
         if first_foot_limbo {
-            self.locomotor_mark_all_occupation_bits(stable_id, false);
+            self.locomotor_mark_all_occupation_bits(stable_id, false, rules.ares_form());
         }
         // FootClass::Limbo (0x004DB260) then Locks the locomotor (+0xB0) on
         // the first Limbo, so a boarded or stored man keeps no Walk
@@ -4913,7 +4914,11 @@ impl Simulation {
                 FrameEffects::default(),
             );
         } else if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+            crate::sim::mission::concrete_effects::represented_assign_target(
+                entity,
+                None,
+                context.rules.ares_form(),
+            );
         }
         self.assign_null_destination(
             stable_id,
@@ -7485,6 +7490,7 @@ impl Simulation {
             }
         }
         self.substrate.pending_delete.finish_drain();
+        self.substrate.anims.drain_local_deletes();
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.
@@ -7513,10 +7519,10 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "foot_archive_expiry_tests.rs"]
 mod foot_archive_expiry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
 mod ares_prerequisite_lifecycle_tests;

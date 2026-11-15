@@ -749,6 +749,6 @@ pub fn udp_checksum(connection_frame: &[u8]) -> u32 {
     checksum.value()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "reliable_tests.rs"]
 mod tests;

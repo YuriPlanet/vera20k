@@ -1024,7 +1024,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             let anim = sim.substrate.anims.get_mut(id).unwrap();
             anim.runtime_mut_for_test().current_frame = int(&runtime["current_frame"]);
             anim.runtime_mut_for_test().frame_step = int(&runtime["frame_step"]);
-            anim.runtime_mut_for_test().delay_remaining = int(&runtime["delay_remaining"]) as u16;
+            anim.runtime_mut_for_test().delay_remaining = int(&runtime["delay_remaining"]);
             anim.runtime_mut_for_test().rate_reload = int(&runtime["rate_reload"]) as u16;
             anim.runtime_mut_for_test().frame_timer = CdTimer::from_raw(
                 int(&runtime["frame_timer"][0]),

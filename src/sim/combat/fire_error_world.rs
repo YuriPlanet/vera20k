@@ -366,6 +366,7 @@ impl<'a> FireSubject<'a> {
                     != crate::sim::timer::PAUSED_START_FRAME
                 && firer.ares.ares_disable_weapons.remaining(frame as i32) > 0,
             emp_remaining: firer.emp_remaining(),
+            death_frame_counter: firer.unit_death_counter.get(),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -1187,11 +1188,11 @@ impl WorldQuery<'_, '_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_error_world_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod terrain_target_tests {
     use super::*;
 

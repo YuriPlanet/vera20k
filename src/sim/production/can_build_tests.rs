@@ -8,7 +8,6 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::production::ProductionCategory;
 use serde_json::{Value, json};
 
-#[cfg(feature = "ares")]
 #[path = "can_build_ares_tests.rs"]
 mod ares_tests;
 
@@ -539,10 +538,11 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         sim.houses
             .register(HouseState::new(id, 0, Some(country), human, 1000, 10));
     }
-    #[cfg(feature = "ares")]
-    crate::sim::production::tests::spawn_structure(
-        &mut sim, &rules, 10000, "Self", "FACTORY", 20, 20,
-    );
+    if rules.ares_form() {
+        crate::sim::production::tests::spawn_structure(
+            &mut sim, &rules, 10000, "Self", "FACTORY", 20, 20,
+        );
+    }
     let lab = sim.spawn_object("LAB", "Other", 12, 5, 0, &rules).unwrap();
     let product = rules.object("Q").unwrap();
     assert_eq!(
@@ -623,16 +623,17 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
         .register(HouseState::new(yuri, 2, None, true, 0, 10));
     on_map(&mut sim, yuri, EntityCategory::Structure, "YABRCK", 1);
     on_map(&mut sim, yuri, EntityCategory::Structure, "YACNST", 1);
-    #[cfg(feature = "ares")]
-    crate::sim::production::tests::spawn_structure(
-        &mut sim,
-        rules,
-        10000,
-        "YuriCountry",
-        "YACNST",
-        20,
-        20,
-    );
+    if rules.ares_form() {
+        crate::sim::production::tests::spawn_structure(
+            &mut sim,
+            rules,
+            10000,
+            "YuriCountry",
+            "YACNST",
+            20,
+            20,
+        );
+    }
     let yaweap = rules.object("YAWEAP").unwrap();
     assert_eq!(
         can_build(&sim, rules, yuri, yaweap, false, true),
@@ -655,7 +656,7 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
     // a usable factory, and this house owns no airfield.
     assert_eq!(
         check_build_limit(&sim, rules, americans, orca),
-        crate::rules::ARES_BUILD
+        rules.ares_form()
     );
     on_map(&mut sim, americans, EntityCategory::Aircraft, "BEAG", 1);
     assert!(check_build_limit(&sim, rules, americans, orca));

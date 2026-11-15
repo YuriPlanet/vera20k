@@ -789,7 +789,7 @@ fn render_shp_entry(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::{
         CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,
@@ -800,9 +800,9 @@ mod tests {
     };
     use crate::assets::pal_file::{Color, Palette};
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_country_loading_background_consumes_frozen_palette_and_late_shape() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let Some((_, mut retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };

@@ -240,7 +240,7 @@ impl InfantryInfiltration {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_infiltration_tests.rs"]
 mod infiltration_tests;
 
@@ -1331,6 +1331,11 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
+    /// VERA's `SuperWeaponPerBuilding=` (default no; `docs/superweapon-limit.md`):
+    /// each building of this type charges its own shot of the Supers it
+    /// provides, rather than the house's one charge alone. gamemd has no such
+    /// key; the Superweapon Limit sets it.
+    pub super_weapon_per_building: bool,
     /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` lists, retained per
@@ -4832,6 +4837,7 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
+            super_weapon_per_building: section.read_bool("SuperWeaponPerBuilding", false),
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: PhobosOreGathering::default(),
@@ -5565,27 +5571,27 @@ fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> b
     category == ObjectCategory::Building && section.read_bool(key, false)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "vehicle_speed_type_tests.rs"]
 mod vehicle_speed_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_pip_tests.rs"]
 mod infantry_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ammo_pip_tests.rs"]
 mod ammo_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "absorber_pip_tests.rs"]
 mod absorber_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn fly_bank_rules_read_stock_values_and_keep_each_pass_sentinels() {
@@ -7572,7 +7578,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod simple_deploy_reader_tests {
     use crate::rules::{
         ini_parser::IniFile,

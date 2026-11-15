@@ -35,9 +35,6 @@
 //! `genetic_converter_tests.rs`.
 //!
 //! RESIDUALS:
-//! - The EVA line is skipped natively while `0x00A8B538` is set
-//!   (`HouseClass::MPlayer_Defeated @ 0x004FC205`), on every client after the
-//!   local player's multiplayer defeat; VERA always plays it.
 //! - A null `IonBlast=` or warhead reaches AnimClass or the receivers as a
 //!   null type natively; VERA builds or damages nothing. Retail sets RING1,
 //!   Mutate and MutateExplosion.
@@ -54,14 +51,13 @@
 //!   sim/radar, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "genetic_converter_tests.rs"]
 mod tests;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-#[cfg(feature = "ares")]
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::combat::RAD_NO_ATTACKER;
 use crate::sim::combat::world_receiver::apply_area_damage;
@@ -206,7 +202,6 @@ pub(crate) fn launch(
 /// `SW.Warhead`, else `[SpecialWeapons] MutateExplosionWarhead=` under its
 /// `Mutate.Explosion` (unset: `[General] MutateExplosion=`), else
 /// `MutateWarhead=`.
-#[cfg(feature = "ares")]
 fn ares_warhead<'r>(rules: &'r RuleSet, sw: &SuperWeaponType) -> Option<&'r str> {
     let launch = rules.super_weapon_metadata(&sw.id)?.launch();
     if let Some(warhead) = launch.warhead().flatten() {
@@ -243,7 +238,6 @@ fn ares_warhead<'r>(rules: &'r RuleSet, sw: &SuperWeaponType) -> Option<&'r str>
 /// The IonBlast anim, the sound and the radar event are the common Launch's
 /// (GetAnim `10071F30`, GetSound `10072000`). It reports activation even
 /// when uncharged.
-#[cfg(feature = "ares")]
 pub(super) fn ares_launch(
     sim: &mut Simulation,
     rules: &RuleSet,

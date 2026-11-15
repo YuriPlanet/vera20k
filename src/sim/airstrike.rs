@@ -393,18 +393,17 @@ impl Simulation {
         } else {
             rules.general.airstrike_attack_voice.as_deref()
         };
-        #[cfg(feature = "ares")]
-        let general = [first, designator].into_iter().fold(general, |voice, id| {
+        if !rules.ares_form() {
+            return general;
+        }
+        [first, designator].into_iter().fold(general, |voice, id| {
             self.substrate
                 .entities
                 .get(id)
                 .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
                 .and_then(|object| object.techno_combat().presentation().airstrike_voice(abort))
                 .unwrap_or(voice)
-        });
-        #[cfg(not(feature = "ares"))]
-        let _ = (first, designator);
-        general
+        })
     }
 
     fn airstrike_sound(
@@ -533,7 +532,9 @@ impl Simulation {
     /// Tactical6D47FB..6D48D4 reads the owning manager and current Building
     /// target, irrespective of active/busy or remaining aircraft. Source is
     /// GetFLH(0,zero); target is GetCoords(+48), without TargetCoordOffset.
-    /// Presentation owns the planning/Health gate and clock-driven wobble.
+    /// Presentation owns the planning gate and clock-driven wobble. A Techno
+    /// with no Health skips only the CaptureManager links (`0x006D47A4`
+    /// jumps to `0x006D47FB`), so its beam still draws.
     /// No RNG draw, timer write or detach; isolate the shared fallback Cell.
     ///
     /// Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` ("Allow airstrike flare
@@ -650,6 +651,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "airstrike_tests.rs"]
 mod tests;

@@ -297,10 +297,10 @@ impl Simulation {
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
         if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
-            // Ares' sale rate moves to the switch with production's sale
-            // (`BuildingBody` folds it into every building's hash).
-            #[cfg(feature = "ares")]
-            ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
+            // Ares' sale rate, which the body folds into its hash once bound.
+            if rules.ares_form() {
+                ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
+            }
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
@@ -512,6 +512,11 @@ fn stamp_scoring_flags(
     rules: &RuleSet,
 ) {
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
+    if let Some(multiplier) =
+        crate::sim::house_tracking::retained_plant_multiplier(ge.category(), obj, rules)
+    {
+        ge.ares.factory_plant_multiplier = Some(multiplier);
+    }
 }
 
 fn stamp_building_cell_profile(
@@ -868,7 +873,7 @@ fn should_construct_locomotor(category: EntityCategory, object: &ObjectType) -> 
             && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "perma_disguise_tests.rs"]
 mod perma_disguise_tests;
 

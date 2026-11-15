@@ -129,7 +129,7 @@ pub(crate) fn pack_chrome_atlas(
     Some((texture, entries))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

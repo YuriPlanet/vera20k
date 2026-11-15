@@ -158,12 +158,16 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
+    rules_with_art(text, ART)
+}
+
+fn rules_with_art(text: &str, art_text: &str) -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(text),
-        &IniFile::from_str(ART),
+        &IniFile::from_str(art_text),
     )
     .expect("death anim rules");
-    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(ART));
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(art_text));
     for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
         art.bind_anim_frame_count_for_test(name, 10);
     }
@@ -185,7 +189,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, rx: u16, ry: u16) ->
 }
 
 /// Every anim in creation order: (type, coordinate, delay, flags, zAdjust).
-fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, u16, u32, i32)> {
+fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, i32, u32, i32)> {
     sim.substrate
         .anims
         .iter()
@@ -238,7 +242,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -337,6 +341,25 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         );
         assert_eq!(sim.scenario_rng.state(), replay.state());
     }
+}
+
+/// Art `DeathFrames=` (`UnitClass::ReceiveDamage`, `0x00737DA7..0x00737DDD`)
+/// jumps past `Death_Explosion`: the vehicle dies with no anim and, not
+/// being `Crashable=`, is UnInit at once.
+#[test]
+fn a_death_frames_vehicle_dies_without_its_explosion() {
+    let rules = rules_with_art(RULES, &format!("{ART}[PLAIN]\nDeathFrames=4\n"));
+    let mut sim = sim(1);
+    let unit = spawn(&mut sim, &rules, "PLAIN", 12, 12);
+    kill(&mut sim, &rules, unit);
+    assert_eq!(anims(&sim), vec![]);
+    assert!(
+        sim.substrate
+            .entities
+            .get(unit)
+            .is_none_or(|entity| !entity.lifecycle.object_alive()),
+        "UnInit at the killing hit"
+    );
 }
 
 /// `0x007386C3..0x007386FF`: an `Explodes=` vehicle (the Apocalypse, the
@@ -550,14 +573,15 @@ fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
             "death weapon: {case}"
         );
         // The +8F passenger kill (7380AF) is in the stock Unit tail Ares replaces.
-        #[cfg(not(feature = "ares"))]
-        assert!(
-            sim.substrate
-                .entities
-                .get(rider)
-                .is_none_or(|rider| !rider.lifecycle.object_alive()),
-            "passenger: {case}"
-        );
+        if !rules.ares() {
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(rider)
+                    .is_none_or(|rider| !rider.lifecycle.object_alive()),
+                "passenger: {case}"
+            );
+        }
     }
 }
 
@@ -862,7 +886,7 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
                 0x40,
                 super::super::inviso_scatter::RandomDirectionSnap::Preserve,
             );
-            let delay = replay.next_range_u32_inclusive(0, 3) as u16;
+            let delay = replay.next_range_u32_inclusive(0, 3) as i32;
             let anim = pick(&mut replay, &["EXPA", "EXPB"]);
             let coord = AnimWorldCoord {
                 x,
@@ -1426,7 +1450,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             assert_eq!(
                 (anim.2, anim.3, anim.4),
                 (
-                    ctor["delay"].as_u64().unwrap() as u16,
+                    ctor["delay"].as_u64().unwrap() as i32,
                     ctor["flags"].as_u64().unwrap() as u32,
                     0
                 ),
@@ -1485,7 +1509,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 (
                     event["type"].as_str().unwrap().to_string(),
                     ints(&event["coord"]),
-                    event["delay"].as_u64().unwrap() as u16,
+                    event["delay"].as_u64().unwrap() as i32,
                     event["flags"].as_u64().unwrap() as u32,
                 )
             })

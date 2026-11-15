@@ -51,6 +51,7 @@ fn effects(sim: &mut Simulation) -> Vec<InfiltrationEffect> {
 /// (by `Factory=`) and naval veterancy.
 #[test]
 fn custom_infiltration_takes_the_ares_arms_instead_of_the_original() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, spy) = fixture(
         "[General]\nSpyPowerBlackout=1000\nC4Delay=.03\n\
          [BuildingTypes]\n0=B\n\
@@ -105,6 +106,7 @@ fn custom_infiltration_takes_the_ares_arms_instead_of_the_original() {
 /// only) would black its power out.
 #[test]
 fn an_allied_spy_leaves_the_building_alone() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = "[General]\nSpyPowerBlackout=1000\n\
                [BuildingTypes]\n0=B\n[B]\nStrength=800\nPower=100\n";
     let blackout = |allied: bool| {
@@ -130,6 +132,7 @@ fn an_allied_spy_leaves_the_building_alone() {
 /// (charged at once) unless `SpyEffect.SuperWeaponPermanent`.
 #[test]
 fn custom_infiltration_resets_and_grants_supers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = |permanent: bool| {
         format!(
             "[SuperWeaponTypes]\n0=SW0\n1=SW1\n[SW0]\nType=MultiMissile\nRechargeTime=5\n\
@@ -184,6 +187,7 @@ fn custom_infiltration_resets_and_grants_supers() {
 /// war factory's.
 #[test]
 fn spy_veterancy_makes_new_naval_units_aircraft_and_buildings_veteran() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _, spy) = fixture(
         "[VehicleTypes]\n0=BOAT\n1=TANK\n[BOAT]\nStrength=300\nNaval=yes\n\
          [TANK]\nStrength=300\n[AircraftTypes]\n0=JET\n[JET]\nStrength=100\n\
@@ -247,6 +251,7 @@ fn sabotage_arena() -> (Simulation, RuleSet) {
 /// that is neither (`Infiltrate=` or not) into a `Capturable=` one.
 #[test]
 fn the_infiltrate_action_follows_the_ares_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::world::InfiltrateAction as A;
     let (mut sim, rules) = sabotage_arena();
     let spawn = |sim: &mut Simulation, kind: &str, owner: &str, rx: u16| {
@@ -327,6 +332,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64) -> bool {
 /// may not blow up.
 #[test]
 fn a_saboteur_plants_one_charge_and_is_spent() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules) = sabotage_arena();
     let plant = sim
         .spawn_object("PLANT", "Russians", 10, 10, 0, &rules)
@@ -379,6 +385,7 @@ fn a_saboteur_plants_one_charge_and_is_spent() {
 /// (hooks `0x00448312`/`0x00448D95`).
 #[test]
 fn reveal_production_marks_the_building_until_the_spy_owns_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, _, spy) = fixture(
         "[BuildingTypes]\n0=B\n[B]\nStrength=800\nSpyEffect.Custom=yes\n\
          SpyEffect.RevealProduction=yes\n",
@@ -419,6 +426,7 @@ fn reveal_production_marks_the_building_until_the_spy_owns_it() {
 /// needs (RequirementsMet `10021FF0`), and its tech tree is rechecked.
 #[test]
 fn stolen_tech_index_feeds_prerequisite_stolen_techs() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::production::{RequirementStatus, requirements_met};
     let (mut sim, rules, _owner, spy) = fixture(
         "[BuildingTypes]\n0=B\n[VehicleTypes]\n0=Q\n\

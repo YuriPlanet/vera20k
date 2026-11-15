@@ -37,8 +37,9 @@ here, and a mod that changes the program doesn't.
   tooltips, and add buttons, text and more grids of build pictures. Players can drag
   the parts in a match and keep their own layout. You can't yet add other kinds of
   parts.
-- Ares and Phobos. Only some of their keys work, and only in a build you make yourself.
-  See [More detail](#more-detail).
+- Ares and Phobos. Only some of their keys work. A game with Ares keys turns Ares on by
+  itself, but the downloads hold only part of Ares so far; a build you make yourself has
+  the rest, and Phobos needs one. See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work
   as a whole.
 
@@ -97,8 +98,8 @@ run it.
 | What you can put in a mod's folder | What it does |
 | --- | --- |
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
-| An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. An Ares build reads the `expandmd` archives before those two as well, as Ares does. The number can be 00 to 99, and higher numbers win. An archive with the same name as one in the game folder takes that archive's place, so pick a number the game doesn't use unless you mean that. |
-| `ares.mix` (Ares builds) | Read after the `expandmd` archives and before the game's own, as Ares reads it. The string tables `ares.csf` and `ares_<language>.csf` in it add to the game's text. |
+| An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. A game with `ares.mix` reads the `expandmd` archives before those two as well, as Ares does. The number can be 00 to 99, and higher numbers win. An archive with the same name as one in the game folder takes that archive's place, so pick a number the game doesn't use unless you mean that. |
+| `ares.mix` | Makes the game an [Ares](ares.md) game: its INIs load with Ares' syntax and `[#include]`, and its rules are read the Ares way. Read after the `expandmd` archives and before the game's own, as Ares reads it. The string tables `ares.csf` and `ares_<language>.csf` in it add to the game's text. |
 | An archive whose name starts with `ecache` or `elocal`, such as `ecachemd01.mix` | Adds the files inside it, as the original game does. All `ecache` archives load before all `elocal` ones, each group by name. They load after the `expandmd` archives and the game's main, cache and local archives, which keep a file name they share, and before the game's art, cameo and theater archives, whose copies they replace. |
 | Maps | Adds them to the map list while the mod is in use. |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
@@ -223,6 +224,8 @@ VERA20k adds two things. Open the map in a text editor to set them:
 - **More players:** under `[Basic]`, add `MaxPlayers=` with a number from 9 to 30. The
   map needs a start waypoint for every player, numbered from 0.
 
+If you write a map editor or tool, the [map format](map-format.md) has the details.
+
 ### If a change doesn't work
 
 - Restart the game and start a new match. A loaded save keeps the rules it was saved with.
@@ -236,23 +239,31 @@ VERA20k adds two things. Open the map in a text editor to set them:
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same `rulesmd.ini`, `artmd.ini`, `aimd.ini` and `VERARULES.INI`. With a mod in use,
+the same `rulesmd.ini`, `artmd.ini`, `aimd.ini`, theater INIs (such as `snowmd.ini`) and
+terrain tiles. Your `VERARULES.INI` and **Terrain Deformation** don't need to match: a room
+plays its host's. With a mod in use,
 everyone also needs the same files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini` and `veraui.ini`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
-the file holds. Pictures and sounds you put in the game folder itself aren't compared.
+the file holds. Terrain tiles you put in the game folder itself, such as `clear01.sno` or
+an `isosnomd.mix`, are compared with the original game's, because they decide how high the
+ground is and where units can go. Other pictures and sounds there aren't compared.
 Players who don't have your map are asked whether to download it when they join your
-online room.
+online room. When a match can't start because the files differ, each player's game says
+what it changes from the original game (its mod, or files such as a loose `rulesmd.ini`),
+or that it plays the original, so the difference is in another player's game.
 
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
-game. With a mod in use it tells you to pick **No mod** in the Mods menu first. Put `;`
-in front of your changes in `VERARULES.INI` too.
+game, without anyone's `VERARULES.INI` or Terrain Deformation. With a mod in use it tells
+you to pick **No mod** in the Mods menu first. It also names
+any files in the game folder that change the original rules or terrain tiles, such as a
+loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.
 
 ## Sharing your mod
 
 - Give people your mod's folder, with only the files you made or changed in it. They put
   it in their own `Mods` folder and pick it in the Mods menu. A `VERARULES.INI` goes in
-  their VERA20k folder.
+  their VERA20k folder; to play one online, host the room, and every player plays yours.
 - Say in `mod.ini`'s `Terms=` what others may do with your work. The Mods menu shows it.
 - Everyone needs their own copy of the game. Don't share VERA20k together with the game's
   files.
@@ -265,8 +276,8 @@ in front of your changes in `VERARULES.INI` too.
 - [INI profiles](ini-roots.md): use your own rules, art and AI files under other names.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to build VERA20k with it. The official downloads don't
-  include them, and no INI file can add them.
+  each extension covers and how to build VERA20k with it. The official downloads hold
+  part of Ares, which a game's Ares keys turn on, and none of the others.
 
 ## Something wrong?
 

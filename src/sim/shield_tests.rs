@@ -290,6 +290,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         &mut sim.houses,
         &mut sim.power_states,
         warper,
+        rules.ares_form(),
     );
     sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(359);

@@ -247,7 +247,7 @@ impl<Id: Copy> ComboPopupInteraction<Id> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

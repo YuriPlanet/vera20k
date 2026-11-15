@@ -175,7 +175,6 @@ fn retail_reload_rate_services_every_270_frames() {
 
 /// A scripted host for Ares' per-docker visit: each contact keeps its own
 /// mission and answers, and the visit's calls are logged.
-#[cfg(feature = "ares")]
 struct AresDock {
     frame: i32,
     contacts: Vec<Option<u64>>,
@@ -185,7 +184,6 @@ struct AresDock {
     calls: Vec<String>,
 }
 
-#[cfg(feature = "ares")]
 impl ReloadHost for AresDock {
     fn capacity(&mut self) -> usize {
         self.contacts.len()
@@ -226,7 +224,6 @@ impl ReloadHost for AresDock {
     }
 }
 
-#[cfg(feature = "ares")]
 impl AresReloadHost for AresDock {
     fn frame(&mut self) -> i32 {
         self.frame
@@ -244,9 +241,9 @@ impl AresReloadHost for AresDock {
 
 /// Ares 10014190 (hook 0x44C844): each docker sleeps on arrival, then
 /// reloads on its own type's timer, and the airfield revisits every frame.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_dockers_reload_on_their_own_timers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut dock = AresDock {
         frame: 100,
         contacts: vec![Some(0), Some(1)],

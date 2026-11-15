@@ -132,17 +132,19 @@ pub mod phobos_airburst;
 pub mod phobos_crit;
 #[cfg(feature = "phobos")]
 pub mod phobos_fly_wobble;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
 pub mod phobos_parallel_ai_queues;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_infantry_deploy_tests.rs"]
 #[cfg(feature = "phobos")]
 pub mod phobos_pause_menu;
 #[cfg(feature = "phobos")]
 pub mod phobos_placement_preview;
 #[cfg(feature = "phobos")]
 pub mod phobos_power_plant_enhancer;
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_prone_speed_tests.rs"]
 mod phobos_prone_speed_tests;
 pub mod phobos_radiation;
@@ -198,7 +200,9 @@ pub mod ares_switch;
 mod ares_switch_tests;
 pub(crate) mod ares_techno_type;
 pub(crate) mod ares_tiberium;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
+#[cfg(all(test, tests_rules_a_n))]
+#[cfg(all(test, tests_rules_a_n))]
 mod ares_type_selection_tests;
 pub(crate) mod ares_veterancy;
 pub(crate) mod ares_warhead;
@@ -212,7 +216,7 @@ pub mod building_rubble;
 pub mod building_upgrade;
 pub mod buildup_asset_catalog;
 pub mod campaign_loading;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod campaign_start_tests;
 pub mod campaigns;
 pub mod color_add;
@@ -220,9 +224,9 @@ pub mod color_scheme;
 pub mod combat_damage;
 pub mod compatibility;
 pub mod country_loading;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod country_parent_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod country_veterancy_tests;
 pub mod crate_rules;
 pub mod effect_asset_catalog;
@@ -260,7 +264,7 @@ pub mod prerequisite;
 pub mod process_owner;
 pub mod projectile_type;
 pub mod radar_event_config;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod radial_indicator_tests;
 pub mod recoil;
 pub mod retail_sources;
@@ -286,7 +290,7 @@ pub mod voxel_asset_catalog;
 pub mod voxel_frame_catalog;
 mod voxel_model_plan;
 pub mod warhead_type;
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_rules_o_z, not(feature = "ares")))]
 mod warhead_verses_tests;
 pub mod weapon_type;
 
@@ -296,17 +300,19 @@ mod allow_shrouded_subterannean_moves_tests;
 pub mod area_guard_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod deploy_voice_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod disk_laser_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod ini_token_readers_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_rules_a_n, tests_rules_o_z)))]
 mod mirage_disguise_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod move_sound_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod path_delay_rules_tests;
 #[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
+#[cfg(all(test, tests_rules_o_z))]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod retail_ini_fixture;

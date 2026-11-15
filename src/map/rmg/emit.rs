@@ -206,7 +206,7 @@ pub fn populate_urban(map_file: &mut MapFile, objects: &[super::phases::urban_ar
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

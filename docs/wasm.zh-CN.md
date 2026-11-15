@@ -66,7 +66,7 @@ python3 tools/wasm/serve.py
 所有浏览器实现都要求同时启用 `wasm` Cargo feature 和 `wasm32-unknown-unknown` 目标。在桌面目标上启用 `wasm` 仍会选择桌面实现。未启用 `wasm` 的浏览器构建会被拒绝。
 
 - `util::time` 在桌面端重新导出现有标准时钟，在浏览器端导出 `web-time`；模拟 tick 和 RNG 算法不变。
-- `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
+- `util::file_system` 在桌面端重新导出标准文件操作。浏览器导入资源位于 `/retail`，Mod 位于 `/mods/<文件夹>`，存档位于 `/saves`，配置位于 `/saves/profile`；MIX 归档共享导入字节，不使用内存映射。
 - 浏览器通过现有并行工作接口串行执行工作。桌面端仍选择原生 Rayon 和工作线程路径。
 - GPU 获取通过现有初始化任务让出执行。渲染使用离屏 sRGB 帧和 canvas 呈现 pass。浏览器纹理上传不会阻塞等待 GPU 完成。
 - 没有可用的 WebGPU 适配器时，浏览器构建回退到 WebGL2。WebGL2 没有存储缓冲、计算着色器和重解释格式的纹理视图，因此用到这些能力的渲染器只在该设备上改用等价的渲染目标实现（`render::webgl`、`gpu::webgl_fallback`）；其他设备的路径不变。原生测试会把这些着色器翻译为 GLSL ES 3.00，设置 `VERA20K_TEST_WEBGL_FALLBACK=1` 可在原生设备上让 GPU 基准测试走回退路径。
@@ -127,6 +127,17 @@ finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，�
 文件在退出时删除。`can_start_spawn()` 表示能否再次启动；对局运行中、`start_game`
 之后和 panic 之后都为 false，这些情况需要新页面/实例。线性内存不会缩小，宿主可在
 `memory.buffer.byteLength` 接近 4 GiB 上限时改用新页面。
+
+### Mod 和分块导入
+
+浏览器构建和桌面一样使用 Mod（`app::mods`、docs/modding.md）：Mod 的文件像复制到游戏目录上一样被读取。页面没有玩家自己的 Mods 文件夹，由页面导入一局要用的 Mod：
+
+- `import_mod_file(folder, name, bytes)` 把 Mod 的一个文件放到 `/mods/<folder>/<name>`，和 `import_spawn_file` 一样只能在两局之间调用。
+- `set_mod(folder)` 指定下一次 `start_spawn`、`start_game` 或 `probe` 用哪个 Mod（`null` 为不用）。它相当于桌面 config.toml 的 `[paths] mod`：文件夹不存在或 `Needs=` 高于当前版本时，按原版开局并说明原因。`probe` 会报告该 Mod 的规则摘要和战役。
+- `remove_mod(folder)` 在导入下一个 Mod 前把它的文件移出引擎内存。线性内存不会缩小，但下一次导入会复用。
+- 同一页面这一局用一个 Mod，下一局可以换另一个或不用。每次启动都会重新设置 Mod 的地图目录（`map::source::set_mod_dir`）。浏览器不保留桌面的启动记录（`mod-start.txt`）：启动失败会结束整个页面。
+
+任何文件也可以分块导入，大文件就不必在页面和引擎里各存一份完整副本：`import_begin(kind, name, length)` 在引擎内存里预留空间，`kind` 为 `"retail"`、`"spawn"` 或 `"mod:<folder>"`，规则与对应的三个导入函数相同；`import_part(bytes)` 按顺序填入，最后一块写完后返回 `true`。页面可以在块与块之间让出主线程，自己的进度显示就能继续刷新。
 
 回调内再次启动会被拒绝。JS 回调抛错不阻止退出，Rust 不等待回调返回的 Promise。
 

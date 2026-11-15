@@ -28,19 +28,48 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
-and map, and, in a build with Ares, whether the game ships `ares.mix`, which the
-rules agreement covers. Released builds have no Ares and always play stock.
+and map, and whether the game ships `ares.mix`, which the rules agreement
+covers. Every build mounts `ares.mix` when the game or its mod holds it, and
+reads such a game's INIs and rules the Ares way; without it Ares plays only
+from Ares keys in the rules, mode or map, read the stock way ([Ares](ares.md)).
+A game with `ares.mix` adds one byte to the rules digest, so its digest differs
+from the same files read without it; a game without it adds nothing.
+Players on one version reach the same answer; a game from before this decides
+differently, is another version and is refused by the build check first, and a
+rollback returns everyone on that build to the earlier reading.
 
 The rules agreement is one digest of the process's rules sources
-(`ProcessAssets::multiplayer_rules_digest`). With a mod in use
-([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
+(`ProcessAssets::multiplayer_rules_digest`) and of each theater's INI as the theater
+loader reads it (`map::theater::theater_ini_names`: the file
+[`theater_suffix`](ini-roots.md) selects, else the stock name such as `snowmd.ini`),
+whose tilesets decide each cell's land and height. It also covers the theater tiles the
+game folder changes (`map::theater::changed_tiles`, found once per process): by name and
+content, each tile file a theater reads whose bytes differ from the ones a retail install
+reads, variants included, since map loading picks each cell's variant by how many its tile
+has. A theater MIX that takes a retail one's place counts even if it does not open. With a
+mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The files are read once, starting when the player
-opens Network or Internet. Nothing more is exchanged, and without a mod the digest is the
-same bytes as before. A game from before this is another version and is
+opens Network or Internet, and nothing more is exchanged. A game from before the mod
+files, the theater INIs or their tiles were compared is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
-on that build. Quick Match plays the original game: a client with a mod in use ends its
-search with a message that says to pick No mod.
+on that build. Quick Match plays the original game, and the matchbot pairs without the
+rules hash, so a client ends its search before it queues with a message saying what to
+turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
+YR's; `ares.mix` in the
+game folder, which makes it an Ares game; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+LANGRULE, the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
+archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
+the original, another INI is compared with the retail archives' own entry, else
+`ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
+tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
+startup; the message names three and counts the rest, which the log lists. Personal
+rules, Terrain Deformation and the Superweapon Limit need nothing: Quick Match's room has no
+[room rules](#room-rules), so its match plays without them. A difference none of
+these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
+status page says the games differ (`VERA:MatchStartMismatch`), the log records both
+hashes, and the search goes on after the stage timeout; the host only times out. This
+adds nothing to what game, lobby and relay exchange.
 
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
 `ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
@@ -268,6 +297,41 @@ anyone waits. A lobby from before the queue refuses the field; the host's game s
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Balance automatically and Teams then turns those off too.
 
+### Room rules
+
+A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
+Terrain Deformation box and [Superweapon Limit](superweapon-limit.md) and the host's
+`VERARULES.INI` when it changes anything and holds at most 8 KB. The box and the limit
+open as the host's Options have them and the host can change them in Game Options; the
+file has no control. They travel with the host's options, online as
+`launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
+`host_rules` beside VERA's room options. Every player's game, the host's too, plays
+them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
+Personal rules compose over the root and LANGRULE each scenario reads, never over the
+cold start or the shell's Country reads, so every player's one rules registry is the
+same whichever rules a room plays. Offline games play the player's own, a network
+replay the room's it recorded. A Quick Match room has none: the guest's game drops
+any its host sends, and the lobby refuses them there. A launcher's network game
+(`tools/spawn`) has no host to share them, so each player plays their own, which its
+`ExpectedRulesDigest` compares. So the room's door, the native rules hash (LAN's join
+check, online the room's `ex_info`), leaves personal rules out, while the rules
+digest compares the ones each game plays, with their `OverrideMapRules=`. A file
+that does not read, or is longer than 8 KB, is refused, never played. When the door
+still refuses a join because the rules files differ, or the digest a start, each game
+says what it changes from the original game, its mod, `config.toml`'s INI roots and
+changed game files, or that it plays the original (`agreement::rules_differ_text`);
+retail's text for it sends the player to Westwood. Nothing more is exchanged for
+that. A game of another build is refused at the build check first, so no released
+game reads `host_rules`; a lobby from before it refuses the field with 400
+`invalid_options`, and the host's game drops the room's rules, says so, and its room
+plays without them. A rollback past it plays every room without them, and each
+player needs the same personal rules again. The Superweapon Limit came later, as
+`host_rules.superweapon_limit` (2 to 20): an older guest cannot read options that carry
+it, in a room that cannot start as its players' versions differ, and an older LAN guest
+is refused at the build check. A lobby from before it refuses the field; the host's game
+turns the limit off, says so and sends its options again with its other rules. A
+rollback past it plays every room without it, as offline games then do.
+
 ## Native behavior and deliberate bounds
 
 The following native scheduling/reliability details apply to LAN and legacy routing;
@@ -314,6 +378,11 @@ modern online ordering above is an intentional adaptation.
   [extra lobby colours](skirmish-colors.md). The LAN fields and the online slot
   already carried that range, so no packet changed, and a room keeps each colour to
   one player while it lists at least as many colours as it has players.
+- LAN chat in the lobby and setup rooms carries gamemd's fixed chat colour,
+  `0x0000F0F0` (`5DE360`), not the player's colour number; match chat carries the
+  number, and co-op's score screen the fixed colour. Different builds meet only in
+  the lobby, where older ones already sent the fixed colour; they show others'
+  lines as `name: text` and their own lobby lines twice. The packet is unchanged.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.

@@ -111,7 +111,7 @@ fn frame_count_interval(frames: usize) -> Duration {
     Duration::from_millis(frames as u64)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

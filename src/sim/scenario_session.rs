@@ -182,10 +182,10 @@ impl NukeFlash {
     /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
     /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
-        #[cfg(feature = "ares")]
+        // Ares' test runs in every game: without Ares the duration is only
+        // -1, 15 or 30, where it is stock's `!= -1`; another one comes only
+        // from Ares' impact hook (`start_nuke_flash_for`).
         let running = self.duration >= 0;
-        #[cfg(not(feature = "ares"))]
-        let running = self.duration != -1;
         running && self.start.wrapping_add(self.duration) < frame
     }
 }
@@ -221,7 +221,6 @@ pub struct ScenarioLightingState {
     /// Ares UpdateLightingColor's `Light.Ambient`/`.Red`/`.Green`/`.Blue`
     /// over the selected profile (SWTypeExt of the active superweapon), set
     /// by [`Self::select_ares`]; `None` after a stock [`Self::select`].
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_light: Option<[Option<i32>; 4]>,
 }
@@ -316,7 +315,6 @@ impl ScenarioLightingState {
             nuke_change_rate,
             nuke_flash: NukeFlash::OFF,
             ambient_change_overrides: [None; 2],
-            #[cfg(feature = "ares")]
             ares_light: None,
         }
     }
@@ -467,10 +465,7 @@ impl ScenarioLightingState {
     pub fn select(&mut self, profile: ScenarioLightingProfile) {
         self.selected_profile = profile;
         self.target_ambient = self.profile(profile).ambient_percent;
-        #[cfg(feature = "ares")]
-        {
-            self.ares_light = None;
-        }
+        self.ares_light = None;
     }
 
     /// Ares SWTypeExt::GetLightingColor (hook 53C280, 10037B50) for a special
@@ -479,7 +474,6 @@ impl ScenarioLightingState {
     /// normal ambient, RecalcLighting restores); otherwise the type's set,
     /// nonnegative overrides replace the profile's ambient (x1) and RGB
     /// (x10 in RecalcLighting).
-    #[cfg(feature = "ares")]
     pub(crate) fn select_ares(
         &mut self,
         profile: ScenarioLightingProfile,
@@ -573,9 +567,7 @@ impl ScenarioLightingState {
     /// (`-1, -1, -1`).
     pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
         (self.selected_profile != ScenarioLightingProfile::Normal).then(|| {
-            #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
             let mut rgb = self.profile(self.selected_profile).alternate_rgb();
-            #[cfg(feature = "ares")]
             if let Some([_, red, green, blue]) = self.ares_light {
                 for (slot, value) in rgb.iter_mut().zip([red, green, blue]) {
                     if let Some(value) = value {
@@ -1285,6 +1277,11 @@ impl ScenarioSession {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn install_observer_houses_for_test(&mut self, observers: Vec<InternedId>) {
+        self.observer_houses = observers;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_scenario_side_for_test(&mut self, side: i32) {
         self.install_scenario_side(side);
     }
@@ -1693,6 +1690,9 @@ impl ScenarioSession {
             .expect("the admitted menu row has a complementary computer row");
         // External launch input enters before House/terrain constructors. The
         // existing session remains the sole live owner of per-match options.
+        // RESIDUAL: gamemd's BuildOffAlly (0x00A8B264) is a process global that only
+        // option setup writes (e.g. `0x0052D20D`, the skirmish dialog's `0x006AD803`),
+        // so a campaign inherits the last game's value; VERA keeps this session's.
         if let Some(options) = game_options {
             self.game_options = options.clone();
         } else {
@@ -1977,7 +1977,6 @@ impl ScenarioSession {
             0x1668u16.hash(hasher);
             lighting.ambient_change_overrides.hash(hasher);
         }
-        #[cfg(feature = "ares")]
         if let Some(light) = lighting.ares_light {
             b"ares-sw-light-v1".hash(hasher);
             light.hash(hasher);
@@ -2127,7 +2126,7 @@ impl ScenarioSession {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::sim::world::Simulation;

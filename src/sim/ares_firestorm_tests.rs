@@ -85,8 +85,6 @@ fn firestorm(sim: &mut Simulation, rules: &RuleSet, owner: &str, active: bool) {
 /// that is not a straight piece. A powered section refuses entry (hook
 /// `0x51C4C8`) and sale (hook `0x449518`); an unpowered one is ignored by
 /// entry and may be sold.
-// Runs again once production's wall sale moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn a_raised_firestorm_powers_its_sections_which_then_block_and_cannot_be_sold() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

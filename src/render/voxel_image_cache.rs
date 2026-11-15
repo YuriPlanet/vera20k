@@ -64,7 +64,7 @@
 //!   No stock voxel spans 248 pixels.
 //!
 
-use std::collections::HashMap;
+use crate::util::lookup_hash::LookupMap;
 
 use super::unit_atlas::{UnitSpriteEntry, UnitSpriteKey};
 use super::vxl_raster::DepthMap;
@@ -145,7 +145,7 @@ pub struct VoxelImageCache {
     use_buffer: bool,
     /// Pool bytes the stored images take.
     pool_used: u32,
-    images: HashMap<VoxelImageKey, CachedDraw>,
+    images: LookupMap<VoxelImageKey, CachedDraw>,
     /// Pool flushes so far; derived image stores keyed on it drop older fills.
     flushes: u32,
     /// `0xB1D5E0`.
@@ -162,7 +162,7 @@ impl Default for VoxelImageCache {
         Self {
             use_buffer: false,
             pool_used: 0,
-            images: HashMap::new(),
+            images: Default::default(),
             flushes: 0,
             depth: vec![0; 65536]
                 .into_boxed_slice()
@@ -399,6 +399,6 @@ fn row_bytes(row: &[u8]) -> u32 {
     bytes
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "voxel_image_cache_tests.rs"]
 mod tests;

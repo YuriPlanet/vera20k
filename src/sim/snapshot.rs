@@ -79,21 +79,31 @@ pub enum SavedCameoId {
 ///
 /// SidebarClass Save 6AC5E0 / Load 6AC5D0 only forward to RadarClass; Mouse
 /// Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
-/// four strips at +1544, stride F94. Load5BDF70 reads it at5BE089..5BE092;
-/// no-init5BE9B0->6A4F20 resets progress6AC7C0, preserving count/type/order.
+/// four strips at +1544, stride F94, and ActiveTab at +539C. Load5BDF70 reads
+/// it at5BE089..5BE092; no-init5BE9B0->6A4F20 resets progress6AC7C0,
+/// preserving count/type/order and the open tab.
 /// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
 /// 6D03A0 at 67E68F, whose SidebarClass Init 6A5310 hides and shows the shown
 /// sidebar, and ToggleSidebar 6A7D70 zeroes every strip's TopRow on the show.
+/// Residual: each strip's PendingScroll, saved inside the same object, is not
+/// carried, so a scroll still rolling at the save does not finish after the
+/// load. Trigger: saving within the few frames after an arrow or wheel
+/// scroll; a player cannot see it.
 /// This neutral transport does not introduce a sim dependency on a UI owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
+    /// Each strip's record flash deadlines (+0x88): one per entry, then the
+    /// empty records up to the last one a cameo flash lit (at most 75 records).
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],
     factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
     prediction_categories: Vec<crate::sim::production::ProductionCategory>,
+    /// The open strip's index (Sidebar `ActiveTab`, `+0x539C`), part of the
+    /// same 0x556C object Mouse Save/Load write and read.
+    active_tab: u8,
     /// Phobos `ScenarioExt::SWSidebar_Enable`, false while the left sidebar is
     /// collapsed. Companion state to this local presentation envelope.
     #[cfg(feature = "phobos")]
@@ -113,6 +123,7 @@ impl SavedSidebarOrder {
             request_states,
             factory_links,
             prediction_categories: Vec::new(),
+            active_tab: 0,
             // `ScenarioExt::SWSidebar_Enable { true }` in Phobos's constructor.
             #[cfg(feature = "phobos")]
             sw_sidebar_expanded: true,
@@ -181,6 +192,15 @@ impl SavedSidebarOrder {
 
     pub fn prediction_categories(&self) -> &[crate::sim::production::ProductionCategory] {
         &self.prediction_categories
+    }
+
+    pub fn with_active_tab(mut self, index: u8) -> Self {
+        self.active_tab = index;
+        self
+    }
+
+    pub fn active_tab(&self) -> u8 {
+        self.active_tab
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -345,7 +365,6 @@ pub enum SnapshotError {
 pub enum SnapshotRestoreError {
     #[error(transparent)]
     Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
-    #[cfg(feature = "ares")]
     #[error("object {object_id} has invalid attached stats: {reason}")]
     InvalidAttachedStatsState {
         object_id: u64,
@@ -359,7 +378,6 @@ pub enum SnapshotRestoreError {
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
     InvalidPaidSuperWeaponSelection(&'static str),
-    #[cfg(feature = "ares")]
     #[error("invalid superweapon launch history: {0}")]
     InvalidSuperWeaponLaunchHistory(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
@@ -427,7 +445,6 @@ pub enum SnapshotRestoreError {
     InvalidFrameContinuation { reason: &'static str },
     #[error("invalid saved multiplayer session: {reason}")]
     InvalidMultiplayerSession { reason: &'static str },
-    #[cfg(feature = "ares")]
     #[error("invalid saved factory-source Country reference: {reason}")]
     InvalidFactoryCountry { reason: &'static str },
     #[error("entity {object_id} is a live infantryman with the dying mark")]
@@ -1789,15 +1806,21 @@ impl Simulation {
         }
     }
 
-    /// Saved Ares state (a delivery base override, an attached superweapon)
-    /// loads only into a game Ares plays in; the player load checks it with
-    /// the loading game's switch before restoring.
+    /// Saved Ares state (a delivery base override, an attached superweapon,
+    /// a pending unit delivery, a paid superweapon selection) loads only into
+    /// a game Ares plays in; the player load checks it with the loading
+    /// game's switch before restoring.
     pub fn validate_ares_state_for_load(&self, ares: bool) -> Result<(), SnapshotRestoreError> {
         for (_, entity) in self.substrate.entities.iter_sorted() {
             entity
                 .validate_ares_build_compatibility(ares)
                 .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         }
+        self.unit_deliveries
+            .validate_ares_build_compatibility(ares)
+            .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
+        self.validate_paid_super_weapon_selections_for_load(ares)
+            .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
         Ok(())
     }
 
@@ -1819,7 +1842,6 @@ impl Simulation {
         }
         self.validate_paid_super_weapon_selections()
             .map_err(SnapshotRestoreError::InvalidPaidSuperWeaponSelection)?;
-        #[cfg(feature = "ares")]
         self.super_weapons
             .validate_ares_launch_history()
             .map_err(SnapshotRestoreError::InvalidSuperWeaponLaunchHistory)?;
@@ -2185,7 +2207,11 @@ impl Simulation {
                 }
             })?;
             if !terrain.in_logic_vector()
-                && terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+                && terrain.joins_logic_on_unlimbo(
+                    terrain_type,
+                    self.session.game_mode(),
+                    rules.ares_form(),
+                )
             {
                 return Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
                     registry: "TerrainObjectStore",
@@ -2193,17 +2219,18 @@ impl Simulation {
                 });
             }
         }
-        #[cfg(feature = "ares")]
-        self.validate_attached_stats_after_restore(rules)
-            .map_err(
-                |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
-                    object_id,
-                    reason,
-                },
-            )?;
-        #[cfg(feature = "ares")]
-        self.validate_factory_country_references(rules)
-            .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
+        let ares = rules.ares_form();
+        if ares {
+            self.validate_attached_stats_after_restore(rules)
+                .map_err(
+                    |(object_id, reason)| SnapshotRestoreError::InvalidAttachedStatsState {
+                        object_id,
+                        reason,
+                    },
+                )?;
+            self.validate_factory_country_references(rules)
+                .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;
+        }
         self.validate_disk_lasers_after_restore(rules)
             .map_err(
                 |(object_id, reason)| SnapshotRestoreError::InvalidDiskLaserState {
@@ -2361,8 +2388,9 @@ impl Simulation {
 
         // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
         // Impassable class is a Recalc product the template lacks.
-        #[cfg(feature = "ares")]
-        self.ares_firestorm_restore_zone_classes(rules);
+        if ares {
+            self.ares_firestorm_restore_zone_classes(rules);
+        }
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }
@@ -2377,7 +2405,7 @@ impl Simulation {
         // CellTag identities are meaningful only after the canonical Cell
         // allocation is restored. Keep their final owner validation in this
         // shared admission seam, before an app can publish the candidate.
-        self.validate_restored_trigger_runtime()
+        self.validate_restored_trigger_runtime(rules.ares_form())
             .map_err(|reason| SnapshotRestoreError::InvalidTriggerRuntime { reason })?;
         Ok(SnapshotMapRestoreOutput {
             occupied_overlays,
@@ -2449,7 +2477,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -6702,6 +6730,7 @@ mod tests {
             &"4x3".into(),
             profile,
             Some((32, 32)),
+            false,
         );
         assert_ne!(sim.state_hash(), expected_hash);
         sim.substrate.hidden_occupation.enter_building(
@@ -6709,6 +6738,7 @@ mod tests {
             &"4x3".into(),
             profile,
             Some((32, 32)),
+            false,
         );
         let mut stored = profile;
         stored.occupy_height = 4;

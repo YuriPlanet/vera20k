@@ -39,7 +39,6 @@ fn stock_index_keeps_version1_and_strict_version_admission() {
     );
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_index_layout_sort_and_rejection_match_native_open() {
     for row in vectors()["open"].as_array().unwrap() {
@@ -83,7 +82,6 @@ fn ares_index_layout_sort_and_rejection_match_native_open() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_merge_and_exact_find_match_native_metadata_and_file_tokens() {
     for control in vectors()["merge"].as_array().unwrap() {

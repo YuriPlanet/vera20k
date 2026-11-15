@@ -121,8 +121,6 @@ fn firepower_crate(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> bool {
     .is_empty()
 }
 
-// Runs again once the crates' stat recompute moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn attached_firepower_two_native_histories_reach_live_shot_and_estimate() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

@@ -753,7 +753,7 @@ pub(crate) fn render(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

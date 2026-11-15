@@ -902,7 +902,7 @@ pub(crate) fn is_on_bridge_for_firing(entity: &GameEntity, terrain: &ResolvedTer
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "in_range_cell_tests.rs"]
 mod cell_query_tests;
 
@@ -1127,7 +1127,7 @@ pub fn mapless_in_range(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};

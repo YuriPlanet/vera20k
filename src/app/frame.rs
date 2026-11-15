@@ -48,6 +48,10 @@ pub(super) enum FrameRenderOutcome {
     /// A probe drew nothing: the presented picture still stands, or the draw
     /// limits hold the next one.
     Unchanged,
+    /// The match was serviced, but the hand-off thread is still taking the
+    /// window's next picture: a draw would wait for the screen. Its wake
+    /// brings the draw (`GpuContext::screen_busy`).
+    ScreenBusy,
 }
 
 /// What one pass of `render_frame` may do once the match is serviced.
@@ -1002,6 +1006,12 @@ impl App {
         ) {
             return Ok(FrameRenderOutcome::Deferred);
         }
+        // The game never waits for the screen: with VSync on, the wait for a
+        // free picture is the hand-off thread's, and the ticks that come due
+        // meanwhile run in the passes its wake and the simulation's bring.
+        if state.renderer.gpu.screen_busy() {
+            return Ok(FrameRenderOutcome::ScreenBusy);
+        }
         let draw_started = Instant::now();
         state.diag.frame_timer.sample(draw_started);
 
@@ -1948,7 +1958,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

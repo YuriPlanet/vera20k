@@ -231,6 +231,6 @@ fn invalidate_zone_edge(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "precheck_retry_tests.rs"]
 mod precheck_retry_tests;

@@ -128,7 +128,7 @@ impl IndexMut<usize> for TerrainCells {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

@@ -26,9 +26,9 @@ pub(crate) const EVA_TRAINING: &str = "EVA_Training";
 pub(crate) const EVA_ON_HOLD: &str = "EVA_OnHold";
 pub(crate) const EVA_CANCELED: &str = "EVA_Canceled";
 pub(crate) const EVA_UNABLE_TO_COMPLY: &str = "EVA_UnableToComply";
-/// gamemd's literal at `0x006AAF9D`; Ares builds play the type's
-/// `EVA.SelectTarget` instead, whose constructor default is this name.
-#[cfg(not(feature = "ares"))]
+/// gamemd's literal at `0x006AAF9D`; when the Rules were read the Ares way
+/// (`RuleSet::ares_form`), Ares plays the type's `EVA.SelectTarget` instead,
+/// whose constructor default is this name.
 pub(crate) const EVA_SELECT_TARGET: &str = "EVA_SelectTarget";
 pub(crate) const EVA_NEW_CONSTRUCTION_OPTIONS: &str = "EVA_NewConstructionOptions";
 pub(crate) const EVA_CANNOT_DEPLOY_HERE: &str = "EVA_CannotDeployHere";
@@ -66,6 +66,11 @@ pub(crate) struct CameoClick {
     pub sound: bool,
     pub eva: Option<&'static str>,
     pub order: Option<CameoOrder>,
+    /// After a pending request's SUSPEND, the queued-copy arm also runs
+    /// (`0x006AB18D..0x006AB22A`): a copy of this type queued behind the
+    /// category's build is abandoned too, after a second GUIBuildSound and
+    /// with no line. `Some(all)`: ABANDON, or ABANDON_ALL with Shift.
+    pub then_abandon: Option<bool>,
 }
 
 /// `SelectClass::Action @ 0x006AAD00` for a build cameo of `type_id` in
@@ -96,9 +101,10 @@ pub(crate) struct CameoClick {
 ///   (`0x006AB69D..0x006AB6C9`) and PRODUCE (`0x006AB76E`).
 ///
 /// With no Factory link, pending request1 takes the sound/OnHold/SUSPEND
-/// arm6AB0AC..6AB12B before the queued-copy query. Request2 alone is silent.
-/// Shift does not alter that SUSPEND. The combined pending1+queued-copy arm
-/// and saturated native OutList are outside the ordinary input domain here.
+/// arm6AB0AC..6AB12B, then the queued-copy query as well
+/// ([`CameoClick::then_abandon`]). Request2 alone is silent. Shift does not
+/// alter that SUSPEND. A saturated native OutList stays outside the ordinary
+/// input domain here.
 ///
 /// `own` resolves the retained strip's Factory link, including an older
 /// cameo linked to a rearmed Factory. Right with that link first attempts to
@@ -147,6 +153,7 @@ pub(crate) fn cameo_click_with_queue(
         sound: true,
         eva,
         order: Some(order),
+        then_abandon: None,
     };
     let mut result = match (press, own) {
         (CameoPress::Right { .. }, Some(BuildQueueState::Building)) => {
@@ -159,7 +166,10 @@ pub(crate) fn cameo_click_with_queue(
             let queued = in_category()
                 .any(|item| item.state == BuildQueueState::Queued && Some(item.type_id) == type_id);
             if request == Some(CameoRequestState::Started) {
-                click(Some(EVA_ON_HOLD), CameoOrder::Suspend)
+                CameoClick {
+                    then_abandon: queued.then_some(shift),
+                    ..click(Some(EVA_ON_HOLD), CameoOrder::Suspend)
+                }
             } else if queued {
                 click(None, CameoOrder::Abandon { all: shift })
             } else {
@@ -174,10 +184,9 @@ pub(crate) fn cameo_click_with_queue(
             let busy = in_category().next().is_some();
             if busy && is_structure_strip(category) && !building_production_queue {
                 CameoClick {
-                    clear_building_placement: false,
                     sound: false,
                     eva: Some(EVA_UNABLE_TO_COMPLY),
-                    order: None,
+                    ..CameoClick::default()
                 }
             } else if at_build_limit {
                 CameoClick::default()
@@ -204,6 +213,7 @@ pub(crate) fn shift_right_cancels_running(click: CameoClick, press: CameoPress) 
         CameoClick {
             eva: Some(EVA_CANCELED),
             order: Some(CameoOrder::Abandon { all: true }),
+            then_abandon: None,
             ..click
         }
     } else {
@@ -318,15 +328,15 @@ pub(crate) fn shift_queue_repeat_with_queue(
 
 /// Copies of the PRODUCE event Ares 3.0 queues for a Shift press:
 /// `((modifier & 1) << 2) | 1`.
-#[cfg(feature = "ares")]
 pub(crate) const ARES_SHIFT_PRODUCE_COPIES: u32 = 5;
 
 /// How many PRODUCE events a left press on a build cameo queues, from the
 /// press's Shift state and the player's `[VERA] ShiftQueue=` options.
 ///
-/// In a default build Shift repeats only when the player ticked Shift-Click
-/// Batch Queue (`vera_shift_queue`), `vera_count` times. An `ares` build also
-/// queues copies without the option: Ares 3.0
+/// Without Ares, Shift repeats only when the player ticked Shift-Click
+/// Batch Queue (`vera_shift_queue`), `vera_count` times. When Ares plays in the
+/// game (`ares`, `RuleSet::ares`), it also queues copies without the option:
+/// Ares 3.0
 /// `SelectClass_ProcessInput_ProduceUnsuspended` (Ares.dll 10064520, hook
 /// 0x6AB773) replaces the single insertion of `SelectClass::Action` 0x006AAD00's
 /// fresh/append PRODUCE event (the one after `CheckBuildLimit`) with a loop of
@@ -341,18 +351,20 @@ pub(crate) fn produce_copies(
     vera_shift_queue: bool,
     vera_count: u32,
     building_production_queue: bool,
+    ares: bool,
 ) -> u32 {
-    #[cfg(feature = "ares")]
-    let (shift_repeats, count) = (
-        shift,
-        if vera_shift_queue {
-            vera_count
-        } else {
-            ARES_SHIFT_PRODUCE_COPIES
-        },
-    );
-    #[cfg(not(feature = "ares"))]
-    let (shift_repeats, count) = (shift && vera_shift_queue, vera_count);
+    let (shift_repeats, count) = if ares {
+        (
+            shift,
+            if vera_shift_queue {
+                vera_count
+            } else {
+                ARES_SHIFT_PRODUCE_COPIES
+            },
+        )
+    } else {
+        (shift && vera_shift_queue, vera_count)
+    };
     shift_queue_repeat_with_queue(
         category,
         own,
@@ -372,7 +384,7 @@ pub(crate) fn start_line_for(category: ProductionCategory) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::sim::intern::StringInterner;
@@ -413,32 +425,74 @@ mod tests {
             assert!(right.sound);
             assert_eq!(right.eva, Some(EVA_ON_HOLD));
             assert!(!right.clear_building_placement);
+            assert_eq!(right.then_abandon, None);
+        }
+
+        // A copy already queued behind the category's build: the same press
+        // abandons it after the SUSPEND (6AB18D..6AB22A), ABANDON_ALL with
+        // Shift.
+        let dog = interner.intern("DOG");
+        let item = |type_id, state| QueueItemView {
+            type_id,
+            display_name: String::new(),
+            queue_category: ProductionCategory::Infantry,
+            state,
+            progress: 0,
+        };
+        let queue = [
+            item(dog, BuildQueueState::Building),
+            item(e2, BuildQueueState::Queued),
+        ];
+        for shift in [false, true] {
+            let right = cameo_click(
+                &queue,
+                ProductionCategory::Infantry,
+                Some(e2),
+                None,
+                Some(CameoRequestState::Started),
+                CameoPress::Right { shift },
+                false,
+            );
+            assert_eq!(right.order, Some(CameoOrder::Suspend));
+            assert_eq!(right.then_abandon, Some(shift));
         }
     }
 
-    /// Without the Options tick a default build never repeats; an `ares` build
-    /// queues Ares' five on Shift (Ares.dll 10064520), in the same arms only.
+    /// Without the Options tick a game without Ares never repeats; when Ares
+    /// plays in the game (`RuleSet::ares`) Shift queues Ares' five
+    /// (Ares.dll 10064520), in the same arms only.
     #[test]
-    fn shift_queues_without_the_option_only_in_an_ares_build() {
-        let copies = |category, own, shift| produce_copies(category, own, shift, false, 8, false);
-        let expected = if cfg!(feature = "ares") { 5 } else { 1 };
-        assert_eq!(copies(ProductionCategory::Infantry, None, true), expected);
-        assert_eq!(copies(ProductionCategory::Infantry, None, false), 1);
-        // A held build resumes and a structure strip never appends.
-        assert_eq!(
-            copies(
-                ProductionCategory::Vehicle,
-                Some(BuildQueueState::Paused),
-                true
-            ),
-            1
-        );
-        assert_eq!(copies(ProductionCategory::Building, None, true), 1);
-        // The ticked option keeps the player's own count in every build.
-        assert_eq!(
-            produce_copies(ProductionCategory::Vehicle, None, true, true, 8, false),
-            8
-        );
+    fn shift_queues_without_the_option_only_when_ares_plays() {
+        for ares in [false, true] {
+            let copies =
+                |category, own, shift| produce_copies(category, own, shift, false, 8, false, ares);
+            let expected = if ares { 5 } else { 1 };
+            assert_eq!(copies(ProductionCategory::Infantry, None, true), expected);
+            assert_eq!(copies(ProductionCategory::Infantry, None, false), 1);
+            // A held build resumes and a structure strip never appends.
+            assert_eq!(
+                copies(
+                    ProductionCategory::Vehicle,
+                    Some(BuildQueueState::Paused),
+                    true
+                ),
+                1
+            );
+            assert_eq!(copies(ProductionCategory::Building, None, true), 1);
+            // The ticked option keeps the player's own count either way.
+            assert_eq!(
+                produce_copies(
+                    ProductionCategory::Vehicle,
+                    None,
+                    true,
+                    true,
+                    8,
+                    false,
+                    ares
+                ),
+                8
+            );
+        }
     }
 
     /// VERA's Shift repeat is an app convenience layered after the native

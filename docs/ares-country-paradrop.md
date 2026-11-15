@@ -1,6 +1,7 @@
 # Ares paradrop overrides
 
-Build with `--features ares`. Ares hands both paradrop Types (`ParaDrop`,
+A game that ships `ares.mix` reads these keys in every build ([Ares](ares.md)).
+Ares hands both paradrop Types (`ParaDrop`,
 `AmerParaDrop`) to its SW_ParaDrop handler, which reads planes of its own per
 superweapon and falls back to a paradrop block for every country, in front of
 the SideExt values, so a house that sets these keys paradrops its own list,

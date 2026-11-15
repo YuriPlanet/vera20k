@@ -81,10 +81,13 @@ impl crate::sim::world::Simulation {
     /// override (`0x00516BF0`, [`Self::hover_power_off`]) or the base
     /// (`0x0055A910`).
     ///
-    /// RESIDUAL: Fly's override (`0x004CFD20`: a spin of `Random(20, 30)`
-    /// steps and a stop while moving) is not ported. None of the callers
-    /// reaches it: they are a Unit's dock and depot service and Deactivate,
-    /// which the stock `PoweredUnit=` type (a Hover) alone reaches.
+    /// RESIDUAL: Fly's override (`0x004CFD20`) is not ported: while moving
+    /// it sets a spin of Scenario `RandomRanged(20, 30)`, negated when a
+    /// second `RandomRanged(0, 99)` is below 50, stops and zeroes the fall
+    /// speed. Stock play never reaches it (the callers are a Unit's dock and
+    /// depot service and Deactivate, which the stock `PoweredUnit=` type, a
+    /// Hover, alone reaches). Ares EMP deactivates an aircraft at height 0,
+    /// so a moving one there skips those two draws.
     pub(crate) fn locomotor_power_off(
         scenario_rng: &mut SimRng,
         substrate: &mut ObjectSubstrate,
@@ -104,7 +107,7 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;

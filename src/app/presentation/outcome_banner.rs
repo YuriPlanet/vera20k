@@ -49,7 +49,6 @@ impl OutcomeBannerArt {
     /// and the draw resolves each slot through `0x1002DF10` / `0x1002DF00`,
     /// which answer InitGame's literal surface whenever that slot is unset or
     /// never loaded. Each slot therefore falls back on its own.
-    #[cfg(feature = "ares")]
     pub(crate) fn build_for_side(
         gpu: &GpuContext,
         batch: &BatchRenderer,
@@ -433,7 +432,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

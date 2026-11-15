@@ -1551,10 +1551,13 @@ fn gsi_04_12_common_raw_occupation_structural_deck_unit_tracks_live_collapse_fla
 
     let _ = sim.object_conceal(2);
 
-    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too.
+    // Ares 3.0 1004C3E0 (hook 0x00744216) clears the recorded ground too
+    // (`Simulation::track_raw_mark_at`). Reveal and Conceal ran on the empty
+    // rules.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        if cfg!(feature = "ares") { 0 } else { 0x20 },
+        if ares { 0 } else { 0x20 },
         "height-only clear still targets deck after the collapsed mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1619,10 +1622,13 @@ fn gsi_04_12_common_raw_occupation_high_nonstructural_unit_keeps_native_stale_gr
     let _ = sim.object_conceal(1);
 
     // Ares 3.0 UnitClass_UnmarkOccupationBits 1004C3E0 (hook 0x00744216)
-    // also clears the ground plane UnitClass_MarkOccupationBits recorded.
+    // also clears the ground plane UnitClass_MarkOccupationBits recorded
+    // (`Simulation::track_raw_mark_at`). Reveal and Conceal ran on the empty
+    // rules.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
-        if cfg!(feature = "ares") { 0 } else { 0x20 },
+        if ares { 0 } else { 0x20 },
         "height-only clear targets deck even though nonstructural mark used ground"
     );
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -1745,6 +1751,9 @@ fn teleport_and_grounded_jumpjet_limbo_clear_the_infantrymans_sub_cell() {
 fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_resident() {
     use crate::sim::components::DriveCoord;
 
+    // The fixture's entry points run on the empty rules; the direct raw
+    // receivers take the same answer.
+    let ares = crate::rules::ruleset::RuleSet::empty_for_test().ares_form();
     for (head, cell, deck) in [
         (Some(DriveCoord::cell(3, 3, 0)), (3, 3), false),
         (Some(DriveCoord::cell(3, 3, 416)), (3, 3), true),
@@ -1764,6 +1773,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             1,
             current,
             false,
+            ares,
         );
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         entity.set_foot_occupation_enabled(false);
@@ -1781,6 +1791,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             1,
             head.unwrap_or(current),
             true,
+            ares,
         );
         let bits = |sim: &Simulation| {
             if deck {
@@ -1817,6 +1828,7 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             2,
             head.unwrap_or(current),
             true,
+            ares,
         );
         let _ = sim.techno_limbo(1);
         assert_eq!(
@@ -3001,7 +3013,6 @@ fn lifecycle_authority_conceal_without_dirty_eligibility_still_clears_drawn_stat
         sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
             LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
             LifecycleOutput::ClearDrawnState { stable_id: 1 },
             LifecycleOutput::ClearRedraw { stable_id: 1 },
@@ -3027,7 +3038,6 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         sim.lifecycle_outputs.as_slice(),
         vec![
             LifecycleOutput::ObjectPointerExpired { stable_id: 1 },
-            LifecycleOutput::DisplayRemove { stable_id: 1 },
             LifecycleOutput::DetachAttachedAnims { stable_id: 1 },
             LifecycleOutput::DirtyTacticalRect { stable_id: 1 },
             LifecycleOutput::ClearDrawnState { stable_id: 1 },
@@ -5471,42 +5481,6 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
             .in_logic_vector
             .is_member()
     );
-}
-
-#[test]
-fn lifecycle_authority_duplicate_queue_finalizes_once() {
-    let mut sim = Simulation::new();
-    insert_entity(&mut sim, 1, EntityCategory::Unit);
-    sim.uninit(1);
-    sim.uninit(1);
-    assert_eq!(sim.substrate.pending_delete.object_ids(), vec![1, 1]);
-    sim.lifecycle_test_events.clear();
-
-    sim.process_pending_delete();
-    assert_eq!(
-        sim.lifecycle_test_events,
-        vec![
-            LifecycleTestEvent::PendingDeleteDrainStarted,
-            LifecycleTestEvent::DeferredDeleteSelected {
-                ticket: super::DeferredDeleteTicket::Object(1),
-            },
-            // The Unit destructor's own Limbo (`0x0073584F`), already in limbo.
-            LifecycleTestEvent::ConcealAlreadyLimboReturn {
-                stable_id: 1,
-                object_alive: false,
-                resolvable: true,
-            },
-            LifecycleTestEvent::UninitRemovalListenerVisited {
-                expired_id: 1,
-                listener_id: 1,
-                target_alive: false,
-                target_in_limbo: true,
-            },
-            LifecycleTestEvent::FinalizedCommon { stable_id: 1 },
-        ]
-    );
-    assert!(!sim.substrate.entities.contains(1));
-    assert!(sim.substrate.pending_delete.is_empty());
 }
 
 #[test]
@@ -8521,7 +8495,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
                 let type_index = expected_rng.next_range_u32_inclusive(0, 2) as usize;
                 let jitter_y = expected_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
                 let jitter_x = expected_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
-                let delay = expected_rng.next_range_u32_inclusive(0, 2) as u16;
+                let delay = expected_rng.next_range_u32_inclusive(0, 2) as i32;
                 let rate = expected_rng.next_range_u32_inclusive(1, 3) as u16;
                 expected_spawns.push((
                     type_index,

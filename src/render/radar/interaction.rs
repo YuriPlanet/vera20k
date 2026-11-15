@@ -412,7 +412,7 @@ impl MinimapRenderer {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::render::radar::geometry::NativeRadarSurfaceGeometry;
@@ -429,7 +429,6 @@ mod tests {
             origin: (40, 60),
             event_source_cell: None,
             enemy_sensed_prefilter: true,
-            #[cfg(feature = "ares")]
             sensor_array_warn: true,
             foundation,
             radar_scale: 1.0,

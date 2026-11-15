@@ -136,7 +136,6 @@ fn inspection_reports_optional_corruption_and_both_cd_media_boundaries() {
 
 /// Startup mounting `ares.mix` (Load_Bootstrap_AresMIX, 0x0053029E) makes
 /// Ares play in every game (`rules::ares_switch`).
-#[cfg(feature = "ares")]
 #[test]
 fn a_mounted_ares_mix_ships_ares() {
     let directory = audio_test_install("ships-ares");
@@ -149,17 +148,31 @@ fn a_mounted_ares_mix_ships_ares() {
 
 /// Ares Expand_MIX_Reorg (0x006BD7E3) runs Init_Base_Mix_Files ahead of
 /// LANGMD.MIX, and Load_Bootstrap_AresMIX (0x0053029E) registers ares.mix
-/// after the expansions and before RA2MD.MIX: each later file below wins.
-#[cfg(feature = "ares")]
+/// after the expansions and before RA2MD.MIX. A game without `ares.mix` keeps
+/// gamemd's order, LANGMD.MIX first.
 #[test]
-fn ares_base_mixes_and_ares_mix_resolve_ahead_of_langmd() {
+fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
     let directory = audio_test_install("ares-mix");
-    for archive in ["langmd.mix", "ra2md.mix", "ares.mix", "expandmd00.mix"] {
-        directory.write_mix(archive, "probe.csf", archive.as_bytes());
+    let source = |name: &str| {
         let assets = AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        assert_eq!(
-            assets.resolve_ref("probe.csf").unwrap().source_archive,
-            archive
-        );
+        assets.resolve_ref(name).unwrap().source_archive.to_owned()
+    };
+    for archive in ["langmd.mix", "ra2md.mix"] {
+        directory.write_mix(archive, "probe.csf", archive.as_bytes());
+    }
+    // A build with the `ares` feature takes Ares' order in every game.
+    assert_eq!(
+        source("probe.csf"),
+        if cfg!(feature = "ares") {
+            "ra2md.mix"
+        } else {
+            "langmd.mix"
+        }
+    );
+    directory.write_mix("ares.mix", "other.csf", b"ares.mix");
+    assert_eq!(source("probe.csf"), "ra2md.mix");
+    for archive in ["ares.mix", "expandmd00.mix"] {
+        directory.write_mix(archive, "probe.csf", archive.as_bytes());
+        assert_eq!(source("probe.csf"), archive);
     }
 }

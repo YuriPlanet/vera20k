@@ -810,7 +810,7 @@ impl Source for RingSource {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::super::tests::build_test_wav;
     use super::super::{SoundRegistry, decode_wav};

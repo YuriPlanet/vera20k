@@ -491,10 +491,17 @@ Commands that only work while a key is held, like `CameraUp`, do nothing from a 
 
 A player can move the parts in a match without writing a file.
 
-1. In a match, press the **Edit Layout** key: Ctrl+Alt+E, unless you changed it on the
-   keyboard options page. Every part that can move gets an outline and its name.
+1. In a match, press the **Edit Layout** key: Ctrl+Alt+E (Control+Option+E on a Mac),
+   unless you changed it on the keyboard options page. Every part that can move gets an
+   outline and its name, and a **Save** and a **Reset** button show in the middle of
+   the battlefield.
 2. Drag a part with the left mouse button. It follows the cursor.
-3. Press the key again to finish. Until then the mouse only moves parts.
+3. Click **Save** to keep what you moved. Until then the mouse only moves parts.
+
+- **Reset** puts your side's parts back where the mod has them, or where the original
+  game has them without a mod. Click **Save** to keep that too.
+- Pressing the key again, or Esc, ends without saving: everything goes back to how it
+  was when you pressed the key.
 
 What can be dragged: the sidebar's `Credits`, `Top`, `Radar`, `Middle`, `Cameos` and
 `Power`; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
@@ -512,8 +519,10 @@ mod's, so you can also write it by hand, with any key on this page.
   without one, those changes simply aren't used.
 - A side the mod leaves as the original gets a layout of your own, named `Own` and the
   side: `[OwnGDI.Radar]`.
-- To undo a change, delete its section from your file. To undo everything, delete the
-  file.
+- Reset and Save take your side's layout out of your file: its sections and the
+  `[Layouts]` lines that name it, so another side that uses the same layout is reset
+  too. When nothing is left, the file is deleted. You can also delete a section, or the
+  whole file, by hand.
 - Putting the sidebar or the command bar on another edge isn't done by dragging:
   write `Hold=` in your file.
 

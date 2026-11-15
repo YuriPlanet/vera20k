@@ -685,8 +685,8 @@ pub(crate) fn finish_presentation_assets(
     // 0x1002ECC0 on every game load, freeing the previous match's surfaces
     // first. Only a side that names one of the two keys differs from the
     // process InitGame art, so the override atlas belongs to this world.
-    #[cfg(feature = "ares")]
-    let outcome_banner_side_art = {
+    // Only when Ares plays in the game (`RuleSet::ares`).
+    let outcome_banner_side_art = if rules.ares() {
         let (image, palette) = rules
             .side_graphical_text(simulation.session().scenario_side())
             .unwrap_or((None, None));
@@ -701,9 +701,9 @@ pub(crate) fn finish_presentation_assets(
         } else {
             None
         }
+    } else {
+        None
     };
-    #[cfg(not(feature = "ares"))]
-    let outcome_banner_side_art = None;
     // `[EndGameScreens]` may name the local player's own country a win/lose
     // card. It takes the retail `GRFXTXT` banner's slot in the tactical
     // viewport, so it is built with the world like the banner art above; the
@@ -745,16 +745,16 @@ pub(crate) fn finish_presentation_assets(
     }
     // Ares draws every cursor through the scenario's [MouseCursors] list
     // (`render::cursor_atlas`, hook 0x5BDC8C).
-    #[cfg(feature = "ares")]
-    let software_cursor = crate::render::cursor_atlas::build_ares_software_cursor(
-        gpu,
-        batch,
-        asset_manager,
-        rules.ares_mouse_cursors(),
-    );
-    #[cfg(not(feature = "ares"))]
-    let software_cursor =
-        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager);
+    let software_cursor = if crate::app::input::ares_cursor::draws_through_list(rules) {
+        crate::render::cursor_atlas::build_ares_software_cursor(
+            gpu,
+            batch,
+            asset_manager,
+            rules.ares_mouse_cursors(),
+        )
+    } else {
+        crate::render::cursor_atlas::build_software_cursor(gpu, batch, asset_manager)
+    };
     if software_cursor.is_some() {
         log::info!("Software cursor loaded from mouse.sha — OS cursor will be hidden");
     } else {
@@ -795,11 +795,11 @@ pub(crate) fn finish_presentation_assets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_buildup_tests.rs"]
 mod retail_buildup_tests;
 
@@ -828,7 +828,7 @@ fn voxel_palette_demand(
     colors
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail
@@ -1005,10 +1005,11 @@ mod tests {
         let mut rules =
             RuleSet::from_ini(&IniFile::from_str("[General]\nDamageFireTypes=\n")).expect("rules");
         let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[CUSTOM_TOP]\nLoopCount=-1\nStartSound=WaterfallLoop\n\
+            "[CUSTOM_TOP]\nLoopCount=-1\n\
              [CUSTOM_GROUND]\nLayer=ground\nLoopCount=-1\nYSortAdjust=1000\n",
         ));
         art.bind_anim_frame_count_for_test("CUSTOM_TOP", 16);
+        art.set_anim_sounds_for_test("CUSTOM_TOP", Some("WaterfallLoop"), None);
         art.bind_anim_frame_count_for_test("CUSTOM_GROUND", 2);
         rules.replace_art_registry_for_test(art);
 

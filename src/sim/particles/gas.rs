@@ -232,7 +232,7 @@ fn apply_damage(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_house: Option<InternedId>,
-    #[cfg_attr(not(feature = "ares"), allow(unused_variables))] owner: Option<u64>,
+    owner: Option<u64>,
     context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
@@ -241,8 +241,8 @@ fn apply_damage(
     };
     let warhead = sim.interner.intern(warhead);
     let cell = ((p.coords.x >> 8) as u16, (p.coords.y >> 8) as u16);
-    #[cfg(feature = "ares")]
-    {
+    let ares = rules.ares_form();
+    if ares {
         let range = f64::from_bits(pt.ares_damage_range.bits());
         if range > 0.0 {
             damage_in_range(p, sim, rules, owner_house, warhead, range, context);
@@ -287,15 +287,13 @@ fn apply_damage(
             );
             // Ares 3.0 ParticleClass_Update_Gas (1005CFE0, hook 0x62C2ED):
             // a Techno system owner is the attacker and its house the source.
-            #[cfg(feature = "ares")]
             let (attacker, owner_house) = match owner
+                .filter(|_| ares)
                 .and_then(|id| sim.entities().get(id).map(|techno| (id, techno.owner())))
             {
                 Some((id, house)) => (id, Some(house)),
                 None => (RAD_NO_ATTACKER, owner_house),
             };
-            #[cfg(not(feature = "ares"))]
-            let attacker = RAD_NO_ATTACKER;
             match member {
                 CellObjectMember::Entity(id) => {
                     sim.commit_direct_damage_receiver(
@@ -347,7 +345,6 @@ fn apply_damage(
 /// then each that is still alive with Health above zero takes the type's
 /// Damage at the vanilla `|dY| + |dX|` distance adjusted for Z, with no
 /// attacker and the system's owner House.
-#[cfg(feature = "ares")]
 fn damage_in_range(
     p: &Particle,
     sim: &mut Simulation,

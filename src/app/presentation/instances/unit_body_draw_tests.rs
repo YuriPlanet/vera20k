@@ -568,10 +568,13 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         let parent = NativeDisplayOrder::from_display(sim.display_layers())
             .object_draw(plane.stable_id(), SpriteEncoding::Voxel)
             .unwrap();
-        let record = crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime)
-            .object(plane.stable_id())
-            .cloned()
-            .unwrap();
+        let record = crate::app::presentation::frame::PresentationFrame::capture(
+            &scene.runtime,
+            &Default::default(),
+        )
+        .object(plane.stable_id())
+        .cloned()
+        .unwrap();
         samples.push((
             plane.clone(),
             band,
@@ -1135,6 +1138,7 @@ fn retail_mirage_body_frame_matches_original_unit_shp() {
             set,
             (input["facing_u16"].as_u64().unwrap() >> 8) as u8,
             input["body_counter"].as_u64().unwrap() as u32,
+            -1,
             -1,
             input["is_moving"].as_bool().unwrap(),
             true,

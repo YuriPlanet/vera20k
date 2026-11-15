@@ -3,7 +3,8 @@
 //! Display membership is independent of Logic membership and cell occupation.
 //! Crate effects read Ground directly, so rebuilding or fully sorting these
 //! lists in presentation changes simulation state. Only the ordered vectors
-//! are serialized/hashed; the ID-to-layer index is derived and never iterated
+//! are serialized/hashed, without the local anims only this game draws (a
+//! LAN or online MoveFlash); the ID-to-layer index is derived and never iterated
 //! to decide gameplay. The Ground members' kept sort keys (`ground_keys`) are
 //! derived too. Native comparisons: crate_ground_membership.json.
 
@@ -193,8 +194,22 @@ impl DisplayLayers {
             .aligned_with(&self.layers[usize::from(DisplayLayer::GROUND.0)])
     }
 
+    /// The layers as the hash and saves see them: without the local anims
+    /// (`crate::sim::anim_class::is_local_anim_id`), which only this game
+    /// draws. Borrowed as they are when none is a member.
+    fn shared_layers(&self) -> std::borrow::Cow<'_, [Vec<u64>; 5]> {
+        use crate::sim::anim_class::is_local_anim_id;
+        if !self.layers.iter().flatten().any(|&id| is_local_anim_id(id)) {
+            return std::borrow::Cow::Borrowed(&self.layers);
+        }
+        std::borrow::Cow::Owned(self.layers.clone().map(|mut members| {
+            members.retain(|&id| !is_local_anim_id(id));
+            members
+        }))
+    }
+
     pub(crate) fn fold_hash(&self, hasher: &mut impl Hasher) {
-        self.layers.hash(hasher);
+        self.shared_layers().hash(hasher);
     }
 }
 
@@ -218,7 +233,7 @@ fn position_of(members: &[u64], id: u64) -> Option<usize> {
 
 impl Serialize for DisplayLayers {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.layers.serialize(serializer)
+        self.shared_layers().serialize(serializer)
     }
 }
 
@@ -247,7 +262,7 @@ impl<'de> Deserialize<'de> for DisplayLayers {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
 

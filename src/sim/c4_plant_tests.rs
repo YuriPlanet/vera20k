@@ -958,9 +958,9 @@ fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
 /// Ares 10025730 (hook 0x51A4D2): a veteran whose rank holds the C4 ability
 /// plants on a Sabotage arrival though its type is not `C4=`; a rookie of
 /// the same type does not.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_veteran_c4_ability_plants_the_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = IniFile::from_str(ART);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(&RULES.replace(

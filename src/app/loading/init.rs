@@ -98,7 +98,7 @@ fn connect_startup_crate_overlays(
     synced
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod map_wall_owner_candidate_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1747,7 +1747,7 @@ fn construction_trace_after_fill(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod fresh_transport_tests {
     use super::*;
 
@@ -2443,7 +2443,10 @@ pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
-        crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
+        crate::assets::csf_file::CsfFile::load_active(asset_manager.ares_form(), |name| {
+            asset_manager.get_ref(name)
+        })
+        .map_err(
             // The startup error card shows these, before any string table.
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
@@ -2802,7 +2805,7 @@ fn generated_overlay_grid(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod generated_overlay_grid_tests {
     use super::*;
     use crate::map::rmg::{RmgGrid, RmgOptions, emit};
@@ -2929,7 +2932,7 @@ pub(crate) fn load_map_from_initial(
     runtime_color_scheme_count: usize,
     the_team_enabled: bool,
     native_rules_owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
-    #[cfg(feature = "ares")] prepared_noncampaign_prefix: &mut Option<
+    prepared_noncampaign_prefix: &mut Option<
         crate::rules::process_owner::NativeNonCampaignPrefixPreparation,
     >,
     audio: Option<&crate::app::process_assets::ProcessAudioCatalog>,
@@ -2953,7 +2956,6 @@ pub(crate) fn load_map_from_initial(
             asset_manager,
             native_rules_owner,
             the_team_enabled,
-            #[cfg(feature = "ares")]
             prepared_noncampaign_prefix,
             audio,
             themes,
@@ -3080,14 +3082,13 @@ fn load_map_first_step(
             // is missing keeps an empty layer (0x005D67B0) instead of aborting.
             let asset_manager = &mut *services.asset_manager;
             let native_rules_owner = &mut *services.native_rules_owner;
-            #[cfg(feature = "ares")]
+            // Only the Ares Country loading path binds this prefix; `None` is the stock prefix.
             let prepared_prefix = services.prepared_noncampaign_prefix.take();
             let prepared_rules = if let Some(generated_rules) = generated_rules {
                 anyhow::ensure!(
                     materialization == FreshMapMaterialization::AcceptedGenerated,
                     "authored map carried generated Full_Init Rules"
                 );
-                #[cfg(feature = "ares")]
                 assert!(
                     prepared_prefix.is_none(),
                     "generated loading cannot consume an ordinary prefix"
@@ -3114,7 +3115,6 @@ fn load_map_first_step(
                     services.the_team_enabled,
                 )?;
                 let rules_prefix = if game_mode_nonzero {
-                    #[cfg(feature = "ares")]
                     if let Some(preparation) = prepared_prefix {
                         crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
                             preparation,
@@ -3125,12 +3125,7 @@ fn load_map_first_step(
                             mode_override_ini.as_ref(),
                         )
                     }
-                    #[cfg(not(feature = "ares"))]
-                    crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                        mode_override_ini.as_ref(),
-                    )
                 } else {
-                    #[cfg(feature = "ares")]
                     assert!(
                         prepared_prefix.is_none(),
                         "campaign loading cannot consume an ordinary prefix"
@@ -3737,11 +3732,12 @@ fn load_map_first_step(
                                                         // resolution must happen before any combat tick.
                                                         staged_simulation
                                                             .resolve_type_handles(&rules);
-                                                        staged_simulation
-        .install_team_ai_registry(
-            &team_ai_registry,
-            team_ai_rules_at_read.as_ref().unwrap_or(&rules),
-        );
+                                                        staged_simulation.install_team_ai_registry(
+                                                            &team_ai_registry,
+                                                            team_ai_rules_at_read
+                                                                .as_ref()
+                                                                .unwrap_or(&rules),
+                                                        );
 
                                                         if let (Some(launch), Some(projection)) = (
                                                             match_launch_descriptor.as_ref(),
@@ -4034,6 +4030,9 @@ fn load_map_first_step(
         if let Some([x, y, z]) = opening_view_coord {
             crate::util::lepton::absolute_leptons_to_screen(x, y, z)
         } else if let Some((rx, ry)) = opening_view_cell {
+            // RESIDUAL: native raises the HomeCell centre to its ground height
+            // (`0x00578080` at `0x00684D2F`), slope included; this takes the cell's
+            // base level, so on a ramp HomeCell the opening view sits a few pixels off.
             let z = resolved_terrain.cell(rx, ry).map_or(0, |cell| cell.level);
             crate::app::input::camera::cell_centre_world_point(rx, ry, z)
         } else if let Some(start_wp) = waypoints::first_multiplayer_start(&map_data.waypoints) {
@@ -4203,12 +4202,26 @@ pub(super) const fn should_read_tmcj4f(
     ) && the_team_enabled
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod full_init_rules_gate_tests {
     use super::*;
 
     #[test]
     fn generated_rules_are_read_before_generation_and_carried_once_through_failure() {
+        // The game loads a map on its main thread, which has 8 MiB on every
+        // platform (build.rs links `/STACK` on Windows), as the simulation
+        // thread has. Unoptimized, the frames from here to RuleSet::project
+        // hold about 2.2 MiB of Rules copies, past libtest's 2 MiB thread.
+        let test = std::thread::Builder::new()
+            .stack_size(8 << 20)
+            .spawn(generated_rules_read_before_generation_and_carried)
+            .unwrap();
+        if let Err(panic) = test.join() {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    fn generated_rules_read_before_generation_and_carried() {
         use crate::app::match_runtime::session::SessionMode;
         use crate::map::source::test_support::TestDirectory;
         use crate::rules::ini_parser::IniFile;
@@ -4608,7 +4621,7 @@ mod full_init_rules_gate_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_retail_tests {
     //! Retail-input pass over the real `.SED` load path.
     //!
@@ -4804,7 +4817,7 @@ mod random_map_retail_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod milestone_order_tests {
     /// A source-order guard. gamemd raises the bar in call order (45 -> 50 ->
     /// 55/58/60 -> 63/65/67 -> 68/69 -> 70, `0x00687847`,
@@ -4829,7 +4842,7 @@ mod milestone_order_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod network_seed_source_tests {
     use super::*;
     #[test]

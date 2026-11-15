@@ -1641,7 +1641,7 @@ fn decode_batch(bytes: &[u8], house: i8, frame: u32) -> Result<Vec<CommandRecord
     Ok(records)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod service_clock_tests {
     use super::service_due;
 
@@ -1656,7 +1656,7 @@ mod service_clock_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod desync_tests {
     use super::*;
 
@@ -1719,7 +1719,7 @@ mod desync_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod restore_tests {
     use super::*;
     use vera20k_relay_protocol::OrderStatus;
@@ -1825,7 +1825,7 @@ mod restore_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod stall_tests {
     use super::*;
 
@@ -1928,7 +1928,7 @@ mod stall_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod delivery_counter_tests {
     use super::*;
 
@@ -1965,7 +1965,7 @@ mod delivery_counter_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod departure_tests {
     use super::*;
     use crate::sim::command::EXIT_OPCODE;
@@ -2237,7 +2237,7 @@ mod departure_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod pace_tests {
     use super::*;
 

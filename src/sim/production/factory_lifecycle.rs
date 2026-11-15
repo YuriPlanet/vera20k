@@ -1155,8 +1155,7 @@ pub(in crate::sim) fn update_factory_queue(
     // Ares 3.0 HouseClass_Update_Factories_Queues 10025100 (hook 0x00509140)
     // first runs the BuildingType/DontCare call again for BuildCat::Combat,
     // so the defense strip's queue follows its construction yards too.
-    #[cfg(feature = "ares")]
-    if category == ProductionCategory::Building {
+    if rules.ares_form() && category == ProductionCategory::Building {
         update_factory_queue(sim, rules, owner, ProductionCategory::Defense, effects);
     }
     let queued: Vec<_> = sim
@@ -1386,8 +1385,8 @@ pub(in crate::sim) fn step_factories(sim: &mut Simulation) {
 ///
 /// Residual: native sidebar entry order remains separate from the retained
 /// Factory build-type order used here. TAction106 requests this same House
-/// recheck. Other unported trigger writers and unpowered-factory cameo
-/// admission remain separate existing gaps.
+/// recheck, as every other native +1FC writer does. Unpowered-factory cameo
+/// admission remains a separate existing gap.
 pub(in crate::sim) fn recalculate_strips(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1531,10 +1530,12 @@ pub fn validate_restored_factory_state(
                 return Err(fail(owner, "queued type disagrees with factory category"));
             }
         }
+        // A queued tail without an object is live state: HouseAbandon4FAA10
+        // -> StartNext4CA5A0 pops one type, and its forced Begin (4CA60A,
+        // 4FA350) refuses while the only factory building sells. Factory
+        // Save4CA3C0/Load4CA270 keep the tail; Update_Factory_Queue 509140
+        // prunes it later.
         let Some(held) = &factory.object() else {
-            if !factory.queue().is_empty() {
-                return Err(fail(owner, "queued tail has no active object"));
-            }
             continue;
         };
         let object = sim

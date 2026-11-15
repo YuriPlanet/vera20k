@@ -723,7 +723,7 @@ pub(crate) fn right_release(state: &mut AppState) {
     state.match_state.input.planning.right_release(empty, point);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

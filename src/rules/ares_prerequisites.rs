@@ -175,6 +175,6 @@ impl GenericPrerequisites {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_prerequisites_tests.rs"]
 mod tests;

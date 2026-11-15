@@ -43,6 +43,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
+    /// The changed looks the tick's tail checks the atlases against.
+    pub(crate) atlas_check: crate::render::entity_atlas_growth::EntityAtlasCheck,
     /// An atlas refresh asked beside a lent tick, which the tick's tail runs
     /// (`sim_tick::refresh_entity_atlases`).
     pub(crate) atlas_refresh_owed: bool,
@@ -55,6 +57,11 @@ pub(crate) struct MatchPresentationState {
     /// process InitGame GRFXTXT art.
     pub(crate) outcome_banner_side_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
+    /// This match's Ares `Text.*` superweapon status labels (hook 6CC2B0),
+    /// resolved once with the incoming world: its Rules and the process
+    /// string table stay fixed for the match. `None` unless Ares plays in
+    /// the game (`RuleSet::ares`).
+    pub(crate) ares_status_texts: Option<crate::app::presentation::sidebar_build::AresStatusTexts>,
     /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
@@ -106,6 +113,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) superweapon_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
+    /// The water and ore sparkles' per-cell PixelFX and clock.
+    pub(crate) pixel_fx: std::cell::RefCell<crate::render::pixel_fx_sparkles::PixelFxCells>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
     /// (`match_runtime::super_selection`): hidden anims, by id.
     pub(crate) hidden_super_anims: std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
@@ -143,6 +152,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) radar_content_insets: Option<[u32; 4]>,
     /// Whether the local player currently has operational radar (power-gated).
     pub(crate) has_radar: bool,
+    /// A loaded game's radar housing, held until the radar is built for it.
+    pub(crate) loaded_radar_housing:
+        Option<crate::sim::snapshot::saved_local_view::SavedRadarHousing>,
     /// Selection overlay renderer — highlights and drag rectangle.
     pub(crate) selection_overlay: Option<SelectionOverlay>,
     /// Phobos `[Phobos] DigitalDisplay.Enable` from the imported client
@@ -198,7 +210,7 @@ pub(crate) struct MatchPresentationState {
     /// Animated power bar — segment-by-segment transition matching original PowerClass.
     pub(crate) power_bar_anim: crate::ui::sidebar::PowerBarAnimState,
     /// Persistent flash + mode state for in-game sidebar gadgets. Ticked from
-    /// `sidebar_gadgets::update_sidebar_gadget_state` once per sim tick;
+    /// `sidebar_gadgets::update_sidebar_gadget_state` on every pass;
     /// read each frame by the sidebar view builder to pick SHP frame indices.
     pub(crate) sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState,
     /// In-game gadget substrate (study §6.1): retained sidebar button list +
@@ -366,7 +378,7 @@ pub(crate) fn relation_house_colors(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod relation_colour_tests {
     use super::*;
     use crate::rules::house_colors::HouseColorIndex;

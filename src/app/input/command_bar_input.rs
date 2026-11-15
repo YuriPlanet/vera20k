@@ -208,7 +208,7 @@ pub(super) fn publish(state: &mut AppState) {
     out.command_thumb_pressed = pressed[11];
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::ui::sidebar::command_bar::CommandBarLayout;

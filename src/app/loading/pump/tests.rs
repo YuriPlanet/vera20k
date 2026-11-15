@@ -808,6 +808,8 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
         )
         .unwrap();
     }
+    // Still on the feature: this test opens no scope, so its owner reads the
+    // Ares way only in a build with it (`ares_switch::reading_mode`).
     #[cfg(feature = "ares")]
     {
         retail_assets.register_loading_archives().unwrap();
@@ -906,9 +908,9 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn loading_rows_draw_their_own_country_insignia_file() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules =
         crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[Countries]\n0=Americans\n1=Custom\n[Custom]\nFile.Flag=MyFlag.PCX\n",
@@ -1472,7 +1474,7 @@ fn loading_assignments_keep_gather_table_slots_separate_from_sparse_waypoint_ind
     // The compositor still reads original Scenario geometry. Native's odd
     // sparse-prefix rule visits raw waypoint 2 and colors it from table[2],
     // not from the retained Gather vector entry at position 1.
-    let raw_prefix = native_loading_waypoint_prefix(&map.waypoints);
+    let raw_prefix = native_loading_waypoint_prefix(&map.waypoints, 8);
     let markers = build_mmpb_marker_records(
         &raw_prefix,
         &assignments,

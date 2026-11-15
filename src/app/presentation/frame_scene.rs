@@ -105,12 +105,16 @@ fn psi_warnings_detected(at: &Capture<'_>) -> HashSet<u64> {
     let Some(viewer) = at.observer_id else {
         return HashSet::new();
     };
+    // Each type's `PsiWarning=` is asked once, not once per Anim by name.
+    let mut psi_warning = crate::util::lookup_hash::LookupMap::default();
     sim.anims()
         .filter(|(_, anim)| {
-            rules
-                .art()
-                .anim_runtime_config(sim.interner().resolve(anim.type_id()))
-                .is_some_and(|config| config.psi_warning)
+            *psi_warning.entry(anim.type_id()).or_insert_with(|| {
+                rules
+                    .art()
+                    .anim_runtime_config(sim.interner().resolve(anim.type_id()))
+                    .is_some_and(|config| config.psi_warning)
+            })
         })
         .filter(|(_, anim)| sim.psi_warning_detected_by(viewer, anim, rules))
         .map(|(&id, _)| id)

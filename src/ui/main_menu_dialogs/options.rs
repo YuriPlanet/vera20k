@@ -70,6 +70,9 @@ pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "VERA:MouseWheelZoom";
 pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "VERA:MouseWheelZoomHelp";
 pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "VERA:RightClickOrders";
 pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str = "VERA:RightClickOrdersHelp";
+/// VERA's beacon box (`docs/minimap-beacons.md`).
+pub(crate) const MINIMAP_BEACONS_LABEL: &str = "VERA:MinimapBeacons";
+pub(crate) const MINIMAP_BEACONS_HELP: &str = "VERA:MinimapBeaconsHelp";
 pub(crate) const LOCK_CURSOR_LABEL: &str = "VERA:LockCursor";
 pub(crate) const LOCK_CURSOR_HELP: &str = "VERA:LockCursorHelp";
 pub(crate) const VERA_ICON_LABEL: &str = "VERA:VeraIcon";
@@ -80,6 +83,11 @@ pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
 pub(crate) const SMOOTH_ONLINE_MENUS_LABEL: &str = "VERA:SmoothOnlineMenus";
 pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
+/// The Display page's VSync (`GpuContext::set_vsync`). The browser presents
+/// with the page's own refresh, so its build has no box.
+pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
+pub(crate) const VSYNC_LABEL: &str = "VERA:VSync";
+pub(crate) const VSYNC_HELP: &str = "VERA:VSyncHelp";
 /// The Interface page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -113,11 +121,19 @@ pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp
 /// VERA's accessibility box: retail's string table has nothing for it.
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
+/// VERA's timer box: retail's string table has nothing for it.
+pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
+pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
 /// VERA's terrain deformation box (`docs/terrain-deformation.md`).
 pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
 pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
+/// VERA's Superweapon Limit slider (`docs/superweapon-limit.md`).
+pub(crate) const SUPERWEAPON_LIMIT_LABEL: &str = "VERA:SuperweaponLimit";
+pub(crate) const SUPERWEAPON_LIMIT_HELP: &str = "VERA:SuperweaponLimitHelp";
+/// Its plaque at the left end.
+pub(crate) const SUPERWEAPON_LIMIT_OFF: &str = "VERA:SuperweaponLimitOff";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
@@ -636,6 +652,11 @@ pub(crate) enum LauncherTrackbarId {
     /// the level minus [`crate::rules::house_colors::STRENGTH_MIN`], so the
     /// retail strength is position 0 and the strongest is position 9.
     HouseColorStrength,
+    /// VERA's own slider: how many of each superweapon a player may build,
+    /// each building charging its own shot. Position 0 is off, position `n`
+    /// a limit of `n + 1`, so the first notch allows two. Saved; the next
+    /// game's rules read it, as Terrain Deformation's do.
+    SuperweaponLimit,
     /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
     /// (`0xBBB` control `0x529`). No main-menu page has it and the profile
     /// pack leaves it out: the menu sets it up with
@@ -654,6 +675,7 @@ impl LauncherTrackbarId {
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
             }
+            Self::SuperweaponLimit => crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX - 1,
         }
     }
 
@@ -662,7 +684,11 @@ impl LauncherTrackbarId {
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
-            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
+            Self::Score
+            | Self::Sound
+            | Self::Voice
+            | Self::HouseColorStrength
+            | Self::SuperweaponLimit => 50,
         }
     }
 
@@ -706,6 +732,9 @@ pub(crate) enum LauncherCheckboxId {
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
     RightClickOrders,
+    /// VERA's own box: in Place Beacon mode a left click on the radar
+    /// places the beacon there (`app::input::radar`). It applies at once.
+    MinimapBeacons,
     /// VERA's cursor lock: the pointer stays inside the game window. It
     /// applies at once and is saved.
     LockCursor,
@@ -726,6 +755,10 @@ pub(crate) enum LauncherCheckboxId {
     /// smoothed (`BatchRenderer::draw_chrome`). Saved; the next frame follows
     /// it.
     SmoothOnlineMenus,
+    /// VERA's own box: the window presents in step with the display
+    /// (`GpuContext::set_vsync`). On by default; saved, and the next frame
+    /// follows it.
+    VSync,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -758,6 +791,9 @@ pub(crate) enum LauncherCheckboxId {
     CustomEndGameMovie,
     /// VERA-only accessibility box: detailed EVA text rows, default off.
     DetailedEvaText,
+    /// VERA's box: the super weapon timer list shows six lines and pages the
+    /// rest. Default off; the next timer draw reads it.
+    CompactSuperTimers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -804,11 +840,13 @@ pub(crate) enum LauncherOptionsEvent {
     TerrainDeformationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
+    MinimapBeaconsChanged(bool),
     LockCursorChanged(bool),
     VeraIconChanged(bool),
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
     SmoothOnlineMenusChanged(bool),
+    VSyncChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
     ShowStringKeysChanged(bool),
@@ -817,8 +855,11 @@ pub(crate) enum LauncherOptionsEvent {
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
     DetailedEvaTextChanged(bool),
+    CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
+    /// VERA's Superweapon Limit as the profile stores it, 0 while off.
+    SuperweaponLimitChanged(u8),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -869,9 +910,11 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
     pub(crate) smooth_online_menus: bool,
+    pub(crate) vsync: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
+    pub(crate) minimap_beacons: bool,
     pub(crate) terrain_deformation: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
@@ -889,6 +932,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) custom_end_game_movie: bool,
     /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
     pub(crate) detailed_eva_text: bool,
+    /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
+    pub(crate) compact_super_timers: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
@@ -900,6 +945,9 @@ pub(crate) struct LauncherOptionsValues {
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
     pub(crate) house_color_position: u8,
+    /// VERA's Superweapon Limit as the slider's position
+    /// ([`LauncherTrackbarId::SuperweaponLimit`]).
+    pub(crate) superweapon_limit_position: u8,
     pub(crate) score_position: u8,
     pub(crate) sound_position: u8,
     pub(crate) voice_position: u8,
@@ -924,9 +972,11 @@ impl Default for LauncherOptionsValues {
             hd_radar: false,
             smooth_sidebar: false,
             smooth_online_menus: false,
+            vsync: true,
             hd_map_previews: true,
             shift_queue: false,
             auto_repair: false,
+            minimap_beacons: false,
             terrain_deformation: false,
             performance_stats: false,
             show_string_keys: false,
@@ -935,10 +985,12 @@ impl Default for LauncherOptionsValues {
             custom_end_game_score: false,
             custom_end_game_movie: false,
             detailed_eva_text: false,
+            compact_super_timers: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
             color_vision: ColorVisionMode::Off,
             house_color_position: 0,
+            superweapon_limit_position: 0,
             score_position: 4,
             sound_position: 7,
             voice_position: 7,
@@ -1092,6 +1144,9 @@ impl OptionsDialogState {
         values.house_color_position = values
             .house_color_position
             .min(LauncherTrackbarId::HouseColorStrength.maximum());
+        values.superweapon_limit_position = values
+            .superweapon_limit_position
+            .min(LauncherTrackbarId::SuperweaponLimit.maximum());
         // The 0x497 init sets each trackbar's range and position; every change
         // sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose handler
         // (0x0055FF68) names the position (tables 0x0082A248 / 0x0082A254 /
@@ -1223,6 +1278,16 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => self.values.sound_position,
             LauncherTrackbarId::Voice => self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => self.values.house_color_position,
+            LauncherTrackbarId::SuperweaponLimit => self.values.superweapon_limit_position,
+        }
+    }
+
+    /// The Superweapon Limit the slider stands at, as the profile stores
+    /// it: 0 at the left end, then 2 up.
+    pub(crate) const fn superweapon_limit(&self) -> u8 {
+        match self.values.superweapon_limit_position {
+            0 => 0,
+            position => position + 1,
         }
     }
 
@@ -1239,6 +1304,10 @@ impl OptionsDialogState {
     pub(crate) fn trackbar_plaque_text(&self, id: LauncherTrackbarId) -> String {
         match id {
             LauncherTrackbarId::HouseColorStrength => self.house_color_strength().to_string(),
+            LauncherTrackbarId::SuperweaponLimit => match self.superweapon_limit() {
+                0 => crate::i18n::tr(SUPERWEAPON_LIMIT_OFF),
+                limit => limit.to_string(),
+            },
             _ => self.trackbar_position(id).to_string(),
         }
     }
@@ -1259,6 +1328,7 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => &mut self.values.sound_position,
             LauncherTrackbarId::Voice => &mut self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => &mut self.values.house_color_position,
+            LauncherTrackbarId::SuperweaponLimit => &mut self.values.superweapon_limit_position,
         };
         if *slot == position {
             return;
@@ -1307,6 +1377,13 @@ impl OptionsDialogState {
                     .push(LauncherOptionsEvent::HouseColorStrengthChanged(
                         position + crate::rules::house_colors::STRENGTH_MIN,
                     ))
+            }
+            LauncherTrackbarId::SuperweaponLimit => {
+                self.pending_events
+                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
+                let limit = self.superweapon_limit();
+                self.pending_events
+                    .push(LauncherOptionsEvent::SuperweaponLimitChanged(limit));
             }
         }
     }
@@ -1381,11 +1458,13 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
+            LauncherCheckboxId::MinimapBeacons => &mut self.values.minimap_beacons,
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
+            LauncherCheckboxId::VSync => &mut self.values.vsync,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
@@ -1394,6 +1473,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
             LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
+            LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1424,6 +1504,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::RightClickOrders => self
                 .pending_events
                 .push(LauncherOptionsEvent::RightClickOrdersChanged(checked)),
+            LauncherCheckboxId::MinimapBeacons => self
+                .pending_events
+                .push(LauncherOptionsEvent::MinimapBeaconsChanged(checked)),
             LauncherCheckboxId::LockCursor => self
                 .pending_events
                 .push(LauncherOptionsEvent::LockCursorChanged(checked)),
@@ -1439,6 +1522,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothOnlineMenus => self
                 .pending_events
                 .push(LauncherOptionsEvent::SmoothOnlineMenusChanged(checked)),
+            LauncherCheckboxId::VSync => self
+                .pending_events
+                .push(LauncherOptionsEvent::VSyncChanged(checked)),
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
@@ -1463,6 +1549,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::DetailedEvaText => self
                 .pending_events
                 .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
+            LauncherCheckboxId::CompactSuperTimers => self
+                .pending_events
+                .push(LauncherOptionsEvent::CompactSuperTimersChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1654,12 +1743,22 @@ impl Category {
         use LauncherComboId as List;
         use LauncherTrackbarId as Slider;
         match self {
+            Self::Display if !HAS_VSYNC => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::List(List::ColorVision),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::YrOriginalStyle),
+            ],
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
                 Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
             ],
@@ -1671,6 +1770,7 @@ impl Category {
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::TerrainDeformation),
+                Setting::Slider(Slider::SuperweaponLimit),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
@@ -1680,6 +1780,7 @@ impl Category {
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
@@ -1691,6 +1792,7 @@ impl Category {
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
@@ -1706,6 +1808,7 @@ impl Category {
             Self::Controls => &[
                 Setting::Slider(Slider::Scroll),
                 Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::MinimapBeacons),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
@@ -1750,11 +1853,26 @@ impl Category {
             Self::Gameplay => &[
                 Setting::Slider(Slider::Detail),
                 Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::CompactSuperTimers),
                 Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::MinimapBeacons),
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
+            ],
+            Self::Display if !HAS_VSYNC => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::List(List::Sidebar),
+                Setting::List(List::ColorVision),
+                Setting::List(List::Language),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::YrOriginalStyle),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::PerformanceStats),
             ],
             Self::Display => &[
                 Setting::List(List::Zoom),
@@ -1763,6 +1881,7 @@ impl Category {
                 Setting::List(List::ColorVision),
                 Setting::List(List::Language),
                 Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::YrOriginalStyle),
                 Setting::Checkbox(Check::HdRadar),
@@ -1801,7 +1920,7 @@ pub(crate) enum Setting {
     Checkbox(LauncherCheckboxId),
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::assets::csf_file::CsfFile;
@@ -2387,6 +2506,7 @@ mod tests {
                 Slider::Sound,
                 Slider::Voice,
                 Slider::HouseColorStrength,
+                Slider::SuperweaponLimit,
             ]
             .map(Setting::Slider),
         )
@@ -2400,11 +2520,13 @@ mod tests {
                 Check::YrOriginalStyle,
                 Check::MouseWheelZoom,
                 Check::RightClickOrders,
+                Check::MinimapBeacons,
                 Check::LockCursor,
                 Check::VeraIcon,
                 Check::HdRadar,
                 Check::SmoothSidebar,
                 Check::SmoothOnlineMenus,
+                Check::VSync,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::AutoRepair,
@@ -2416,6 +2538,7 @@ mod tests {
                 Check::CustomEndGameScore,
                 Check::CustomEndGameMovie,
                 Check::DetailedEvaText,
+                Check::CompactSuperTimers,
             ]
             .map(Setting::Checkbox),
         )

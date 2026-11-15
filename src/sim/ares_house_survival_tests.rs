@@ -3,7 +3,6 @@
 //! or downstream Blowup_All parity.
 
 use super::HouseTracking;
-use crate::rules::ARES_BUILD;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
@@ -34,8 +33,8 @@ fn keep_alive_physical_reader_matches_executed_nullable_histories() {
                 IniFile::from_str(step["physical_ini"].as_str().unwrap()),
             );
             let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
-            let expected =
-                (ARES_BUILD && step["after"]["is_set"] == 1).then(|| step["after"]["value"] == 1);
+            let expected = (rules.ares_form() && step["after"]["is_set"] == 1)
+                .then(|| step["after"]["value"] == 1);
             assert_eq!(
                 rules.object("CONTROL").unwrap().keep_alive(),
                 expected,
@@ -46,10 +45,10 @@ fn keep_alive_physical_reader_matches_executed_nullable_histories() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn keep_alive_tracking_matches_executed_defaults_overrides_and_wrapping() {
     use crate::map::entities::EntityCategory;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for row in native_corpus()["tracking_histories"].as_array().unwrap() {
         let input = &row["input"];
         let building = input["class"] == "building";
@@ -127,9 +126,9 @@ fn keep_alive_tracking_matches_executed_defaults_overrides_and_wrapping() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn short_game_gate_matches_executed_full_vector_and_nonzero_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = native_corpus();
     for row in corpus["survival_cases"].as_array().unwrap() {
         let input = &row["input"];
@@ -161,7 +160,7 @@ fn short_game_gate_matches_executed_full_vector_and_nonzero_controls() {
             .map(|index| Some(ids[index.as_u64().unwrap() as usize]))
             .collect();
         assert_eq!(
-            tracking.game_alive(true, base, None, |_| panic!(
+            tracking.game_alive(true, true, base, None, |_| panic!(
                 "short game must not inspect Foot arrays"
             )),
             row["events"].as_array().unwrap().is_empty(),
@@ -201,20 +200,20 @@ fn keep_alive_retains_nullable_input_through_rules_registry_save() {
     assert_eq!(absent.object("CONTROL").unwrap().keep_alive(), None);
     assert_eq!(
         yes.object("CONTROL").unwrap().keep_alive(),
-        ARES_BUILD.then_some(true)
+        yes.ares_form().then_some(true)
     );
     assert_eq!(
         no.object("CONTROL").unwrap().keep_alive(),
-        ARES_BUILD.then_some(false)
+        no.ares_form().then_some(false)
     );
     assert_eq!(
         yes.simulation_config_hash() != no.simulation_config_hash(),
-        ARES_BUILD,
+        yes.ares_form(),
         "identical current layers retain the earlier effective input",
     );
     assert_eq!(
         absent.simulation_config_hash() != no.simulation_config_hash(),
-        ARES_BUILD,
+        absent.ares_form(),
         "unset and explicit false are distinct type state",
     );
 }
@@ -236,21 +235,22 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
     let beacon = sim
         .spawn_object_limbo_at_height("BEACON", "First", 10, 10, 0, 0, &rules)
         .unwrap();
-    let survives = |tracking: &HouseTracking| tracking.game_alive(true, [], None, |_| false);
-    assert_eq!(survives(sim.houses[&first].tracking()), ARES_BUILD);
+    let ares = rules.ares_form();
+    let survives = |tracking: &HouseTracking| tracking.game_alive(ares, true, [], None, |_| false);
+    assert_eq!(survives(sim.houses[&first].tracking()), ares);
     assert_eq!(sim.houses[&first].tracking().units_for_test(), 0);
-    #[cfg(feature = "ares")]
-    assert_eq!(
-        sim.houses[&first].tracking().keep_alive as i64,
-        native_corpus()["capture"]["before"]["old"]["keep_alive"]
-            .as_i64()
-            .unwrap()
-    );
+    if ares {
+        assert_eq!(
+            sim.houses[&first].tracking().keep_alive as i64,
+            native_corpus()["capture"]["before"]["old"]["keep_alive"]
+                .as_i64()
+                .unwrap()
+        );
+    }
     sim.change_owner(beacon, second);
     assert!(!survives(sim.houses[&first].tracking()));
-    assert_eq!(survives(sim.houses[&second].tracking()), ARES_BUILD);
-    #[cfg(feature = "ares")]
-    {
+    assert_eq!(survives(sim.houses[&second].tracking()), ares);
+    if ares {
         let capture = &native_corpus()["capture"]["after"];
         assert_eq!(
             sim.houses[&first].tracking().keep_alive as i64,
@@ -268,7 +268,7 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
     let mut restored = GameSnapshot::load(&saved).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), before);
-    assert_eq!(survives(restored.houses[&second].tracking()), ARES_BUILD);
+    assert_eq!(survives(restored.houses[&second].tracking()), ares);
     for candidate in [&mut sim, &mut restored] {
         candidate.uninit_with_rules(beacon, &rules);
         candidate.flush_pending_delete();
@@ -277,11 +277,11 @@ fn keep_alive_limbo_capture_reload_and_destruction_use_the_tracking_owner() {
     assert_eq!(sim.state_hash(), restored.state_hash());
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn keep_alive_counter_and_future_removal_input_are_hashed_independently() {
     use crate::util::state_hasher::StateHasher;
     use std::hash::Hasher;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
 
     let hash = |tracking: &HouseTracking| {
         let mut hasher = StateHasher::new();
@@ -303,7 +303,7 @@ fn keep_alive_counter_and_future_removal_input_are_hashed_independently() {
         stream["restored"]["keep_alive_count"].as_i64().unwrap()
     );
     assert_eq!(hash(&restored), negative);
-    assert!(restored.game_alive(true, [], None, |_| panic!("KeepAlive precedes scans")));
+    assert!(restored.game_alive(true, true, [], None, |_| panic!("KeepAlive precedes scans")));
 
     let input_hash = |keep_alive| {
         let mut hasher = StateHasher::new();
@@ -317,9 +317,9 @@ fn keep_alive_counter_and_future_removal_input_are_hashed_independently() {
     assert_ne!(input_hash(true), input_hash(false));
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn keep_alive_precedes_normal_class_total_and_presence_queries() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let corpus = native_corpus();
     let row = corpus["survival_cases"]
         .as_array()
@@ -333,7 +333,7 @@ fn keep_alive_precedes_normal_class_total_and_presence_queries() {
     };
     tracking.set_active_units_for_test(row["input"]["active_units"].as_i64().unwrap() as i32);
     assert_eq!(
-        tracking.game_alive(false, [], None, |_| panic!(
+        tracking.game_alive(true, false, [], None, |_| panic!(
             "KeepAlive must precede object scans"
         )),
         row["events"].as_array().unwrap().is_empty()

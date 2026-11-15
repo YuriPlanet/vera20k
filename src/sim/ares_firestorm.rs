@@ -1206,6 +1206,6 @@ impl crate::sim::pathfinding::zone_incremental::ZoneBatchHost for FirestormZoneB
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_firestorm_tests.rs"]
 mod tests;

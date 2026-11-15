@@ -1257,7 +1257,6 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
 
 /// SW_ParaDrop::Activate (Ares.dll 10073CD0) for `owner`'s Super `sw_type`
 /// at [`TARGET`].
-#[cfg(feature = "ares")]
 fn ares_launch(
     rules: &RuleSet,
     sim: &mut Simulation,
@@ -1277,7 +1276,6 @@ fn ares_launch(
 }
 
 /// The type IDs aboard each plane, head first.
-#[cfg(feature = "ares")]
 fn cargo_types(sim: &Simulation) -> Vec<Vec<&str>> {
     planes(sim)
         .into_iter()
@@ -1300,9 +1298,9 @@ fn cargo_types(sim: &Simulation) -> Vec<Vec<&str>> {
 /// last built at the cargo's head. A `.Plane2.Types` without `.Num` loses
 /// both lists, so plane 2 takes the default plane's; the Side's own plane 3
 /// beats both.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_super_paradrop_planes_carry_every_type() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let text = rules_text("AllyParaDropInf=E1\nAllyParaDropNum=6\n", true, 1024)
         .replacen("[VehicleTypes]\n", "[VehicleTypes]\n0=MTNK\n", 1)
         .replacen(
@@ -1331,7 +1329,6 @@ fn ares_super_paradrop_planes_carry_every_type() {
 /// which is the Side's SideExt lists, and a `none` plane falls back to
 /// PDPLANE (`HouseTypeExt::GetParadropPlane @ 0x1001BCB0`) instead of
 /// cancelling.
-#[cfg(feature = "ares")]
 fn ares_fourth_side_rules(lists: &str, fourth: &str) -> RuleSet {
     let text = format!(
         "{}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}\n",
@@ -1343,9 +1340,9 @@ fn ares_fourth_side_rules(lists: &str, fourth: &str) -> RuleSet {
     RuleSet::from_processed_rules(&processed).expect("fourth-side paradrop projection")
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_fourth_side_paradrop_uses_side_lists_and_none_plane_falls_back() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner) = paradrop_world(ares_fourth_side_rules(
         "AllyParaDropInf=E1\nAllyParaDropNum=6\n",
         "ParaDrop.Types=E2\nParaDrop.Num=2\nParaDrop.Aircraft=none\n",
@@ -1375,7 +1372,6 @@ fn ares_fourth_side_paradrop_uses_side_lists_and_none_plane_falls_back() {
 /// SendPDPlane (100741A0) sends nothing for types without counts. The
 /// country's side is the house's: the Super's list for it counts as many
 /// planes as its Side's (10073F70).
-#[cfg(feature = "ares")]
 fn ares_country_paradrop_rules(country: &str) -> RuleSet {
     let text = format!(
         "{}
@@ -1409,7 +1405,6 @@ AllyParaDropNum=6
     RuleSet::from_processed_rules(&processed).expect("country paradrop projection")
 }
 
-#[cfg(feature = "ares")]
 fn ares_country_paradrop_world(country: &str) -> (RuleSet, Simulation, InternedId) {
     let (rules, mut sim, owner) = paradrop_world(ares_country_paradrop_rules(country));
     let country = sim.interner.intern("Greece");
@@ -1419,9 +1414,9 @@ fn ares_country_paradrop_world(country: &str) -> (RuleSet, Simulation, InternedI
     (rules, sim, owner)
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_paradrop_lists_beat_the_side_lists() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner) = ares_country_paradrop_world(
         "ParaDrop.Types=E1
 ParaDrop.Num=5
@@ -1443,9 +1438,9 @@ ParaDrop.Num=5
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_types_without_counts_send_nothing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner) = ares_country_paradrop_world(
         "ParaDrop.Types=E1
 ",

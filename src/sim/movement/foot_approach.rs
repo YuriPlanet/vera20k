@@ -32,15 +32,15 @@ const OFFSETS: [i16; 25] = [
     0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64,
 ]; // original signed table8224DC
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_approach_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "approach_crush_tests.rs"]
 mod approach_crush_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "mission_approach_tests.rs"]
 mod mission_approach_tests;
 
@@ -135,10 +135,9 @@ impl Simulation {
             object: true,
             // Ares UnitClass_ApproachTarget_OmniCrusher (Ares.dll 1004BC10,
             // hook 0x741613): `OmniCrusher.Aggressive=no` skips the arm.
-            #[cfg(feature = "ares")]
-            omni: object.omni_crusher && object.techno_combat().combat().omni_crusher_aggressive(),
-            #[cfg(not(feature = "ares"))]
-            omni: object.omni_crusher,
+            omni: object.omni_crusher
+                && (!rules.ares_form()
+                    || object.techno_combat().combat().omni_crusher_aggressive()),
             is_human: self
                 .houses
                 .get(&actor.owner())
@@ -568,10 +567,7 @@ impl Simulation {
         // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
         // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
         // either.
-        #[cfg(feature = "ares")]
-        let passive_target = actor.passive_scan.acquired();
-        #[cfg(not(feature = "ares"))]
-        let passive_target = false;
+        let passive_target = rules.ares_form() && actor.passive_scan.acquired();
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()

@@ -1347,7 +1347,7 @@ pub fn check(file_name: &str, text: &str) -> CheckReport {
     report
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::*;
     use crate::assets::csf_file::test_csf;

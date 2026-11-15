@@ -96,11 +96,11 @@ impl AllianceWalks {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "shroud_refresh_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "paranoid_walks_tests.rs"]
 mod paranoid_walks_tests;
 
@@ -111,11 +111,11 @@ thread_local! {
     static WALK_EVERY_MAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "reveal_to_all_tests.rs"]
 mod reveal_to_all_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "sight_cadence_tests.rs"]
 mod sight_cadence_tests;
 
@@ -1328,6 +1328,38 @@ impl Simulation {
         }
     }
 
+    /// `MapClass::Reset_Shroud @ 0x00577BB0` with no House, as team script
+    /// action 35 calls it (`0x006E9B6B`). With no House it writes no
+    /// House+241 and logs (`0x00577BE9`), then on the current player's map
+    /// clears every allocated cell's mapped bits without touching its shroud
+    /// or gap counters ([`vision::FogState::store_cleared_map`]); unlike
+    /// `0x00577AB0` it releases no sight or gap first.
+    /// `RefreshTechnoShroud @ 0x004ADFF0(0, 0)` then re-sees around the
+    /// player's discovered objects, as after [`Self::grow_shroud`], and only
+    /// then is PlayerPtr's House+240 cleared (`0x00577C6F`). As for a NULL
+    /// [`Self::reveal_entire_map`], a network game does this on every
+    /// represented player's map, in House order. The radar refresh
+    /// (`0x00657CE0`) and redraw (`vt+0x38`) are presentation. No RNG draw,
+    /// timer write or detach.
+    pub(crate) fn reset_shroud_keeping_counters(&mut self, context: UninitContext<'_>) {
+        let viewers = self.represented_player_maps();
+        let mut cells = Vec::new();
+        self.for_each_allocated_map_cell(context, |_, cell| cells.push(cell));
+        for &viewer in &viewers {
+            self.fog.store_cleared_map(viewer, cells.clone());
+        }
+        if self.session.game_mode().is_network() {
+            for &viewer in &viewers {
+                self.refresh_techno_shroud(false, false, Some(viewer), context);
+            }
+        } else {
+            self.refresh_techno_shroud(false, false, None, context);
+        }
+        for viewer in viewers {
+            self.fog.invalidate_whole_map_reveal_for_owner(viewer);
+        }
+    }
+
     /// LogicClass::AI55B20B..55B27B, before the pending-shroud/fog rungs.
     /// gamemd.exe tests ShroudGrow and ordered nonzero ShroudRate, then the
     /// Scenario timer; neither FogOfWar nor a mode/editor flag gates it.
@@ -1402,6 +1434,9 @@ impl Simulation {
                         |viewer| entity.owner() == viewer,
                     );
                 if human {
+                    // RESIDUAL (dormant in stock play, which leaves FogOfWar off): `0x004ADFF0`
+                    // admits a human object by its discovered byte (Techno+0x41B); outside
+                    // network games the fog regrowth pass asks whether its sight is latched.
                     let discovered = only_viewer.map_or_else(
                         || entity.discovery.discovered_by_current_house(),
                         |viewer| {

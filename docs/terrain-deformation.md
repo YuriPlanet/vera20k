@@ -2,8 +2,9 @@
 
 Explosions can dent the ground, as in Tiberian Sun. It is off by default. Tick **Options → Game
 Options → Terrain Deformation** to switch it on for the next game; a nuke then leaves a crater too.
-In an online game every player needs the same setting, which the rules compatibility check
-compares, and a save keeps the rules it was started with.
+A LAN or online room plays its host's setting, which the host can change in the room's Game
+Options, and a save keeps the rules it was started with. Quick Match plays the original game,
+without it.
 
 The box switches on this rules key for each new game. A mod, a map or your
 [personal rules](personal-rules.md) (`VERARULES.INI`) can set it as well, and a map can switch it

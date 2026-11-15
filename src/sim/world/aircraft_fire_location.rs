@@ -11,11 +11,11 @@ use crate::sim::combat::combat_weapon;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::movement::{ground_pose, target_cell_coord};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "aircraft_fire_location_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "aircraft_approach_tests.rs"]
 mod approach_tests;
 

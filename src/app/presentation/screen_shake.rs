@@ -80,7 +80,7 @@ fn decay_axis(value: i32) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::ScreenShakeState;
     use crate::sim::combat::ScreenShakeUpdate;

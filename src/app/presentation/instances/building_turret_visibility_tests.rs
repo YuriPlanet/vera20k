@@ -113,7 +113,10 @@ impl Patriot {
         let lighting = CellLightGrid::new();
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let colors = HouseColorMap::default();
-        let frame = crate::app::presentation::frame::PresentationFrame::capture(&self.runtime);
+        let frame = crate::app::presentation::frame::PresentationFrame::capture(
+            &self.runtime,
+            &Default::default(),
+        );
         let input = ShpInputs {
             runtime: &self.runtime,
             frame: &frame,
@@ -170,9 +173,12 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
     );
     assert!(
         building_voxel_turret_visible(
-            crate::app::presentation::frame::PresentationFrame::capture(&scene.runtime)
-                .object(scene.id)
-                .unwrap(),
+            crate::app::presentation::frame::PresentationFrame::capture(
+                &scene.runtime,
+                &Default::default()
+            )
+            .object(scene.id)
+            .unwrap(),
             true
         ),
         "native Artillary bypasses the construction visibility gate"

@@ -539,6 +539,6 @@ impl crate::sim::world::Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "gattling_tests.rs"]
 mod tests;

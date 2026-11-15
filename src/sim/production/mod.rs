@@ -44,7 +44,8 @@ pub use self::factory_lifecycle::{
 };
 pub(crate) use self::production_placement::place_production_with_overlays;
 pub use self::production_placement::{
-    cycle_active_producer_for_owner_category, is_within_build_area,
+    build_area_reach_cells, cycle_active_producer_for_owner_category,
+    is_within_build_area,
     placement_preview_for_owner_with_overlays,
 };
 #[cfg(any(test, feature = "test-support"))]
@@ -63,7 +64,6 @@ pub use self::production_repair::{buildings_wanting_repair, can_repair_building}
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
-#[cfg(feature = "ares")]
 pub use self::production_sell::foot_can_be_sold;
 pub(crate) use self::production_sell::foot_on_sold;
 pub(crate) use self::production_sell::sell_back;
@@ -77,8 +77,8 @@ pub(crate) use self::production_sell::{
 };
 pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::production_tech::{
-    CameoDrawState, all_build_options_for_owner, cameo_draw_state, construction_options_for_owner,
-    initial_construction_options,
+    CameoDrawState, all_build_options_for_owner, build_options_for_types, cameo_draw_state,
+    construction_options_for_owner, initial_construction_options,
 };
 pub use self::production_tech::{
     building_base_foundation_cells, building_movement_blocking_cells,
@@ -88,11 +88,9 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-#[cfg(feature = "ares")]
 pub(crate) use self::can_build::ares_build_limit_remaining;
-#[cfg(feature = "ares")]
 pub(crate) use self::can_build::owns_prerequisites;
-pub use self::can_build::{CanBuild, can_build};
+pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
 pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
@@ -115,45 +113,45 @@ pub(crate) use self::wall_placement::{
     autofill_walls, linked_overlay_id as linked_wall_overlay_id,
 };
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "production_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod industrial_plant_retail_tests;
 
 // Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
 // Area_Guard instead (`production_placement_tests`).
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_production, not(feature = "ares")))]
 mod free_unit_harvest_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod production_start_price_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_queue_tests.rs"]
 mod queue_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_placement_tests.rs"]
 mod placement_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_replay_tests.rs"]
 mod replay_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "factory_lifecycle_tests.rs"]
 mod lifecycle_tests;
 
 #[cfg(test)]
 pub(crate) use lifecycle_tests::prerequisite_loss_cancellation_fixture;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod manual_primary_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod native_event_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod typed_identity_tests;

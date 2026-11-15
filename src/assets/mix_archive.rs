@@ -357,6 +357,11 @@ impl MixArchive {
         Some(&data[start..end])
     }
 
+    /// Whether the index lists `id`, readable or not.
+    pub fn contains_id(&self, id: i32) -> bool {
+        self.entries.binary_search_by_key(&id, |e| e.id).is_ok()
+    }
+
     /// [`Self::get_by_id`] as a share of the archive storage.
     pub fn get_shared_by_id(&self, id: i32) -> Option<SharedBytes> {
         let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;

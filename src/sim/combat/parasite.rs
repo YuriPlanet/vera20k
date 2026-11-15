@@ -457,7 +457,11 @@ impl Simulation {
                 if clear_archive {
                     entity.set_archive_target(None);
                 }
-                crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    entity,
+                    None,
+                    rules.ares_form(),
+                );
             }
             self.assign_null_destination(owner, rules, effects.overlay_registry(), effects);
         }
@@ -586,6 +590,10 @@ impl Simulation {
                     rules,
                 );
             }
+            // RESIDUAL: native reads Anim[dir8] of any non-empty list
+            // without a bound check (`0x0062A11D..0x0062A138`), so a list
+            // under eight entries reads past its end; VERA plays none there.
+            // Retail parasite weapons list eight or none.
             if let Some(name) = anims
                 .get(usize::from(dir_from_facing16(raw)))
                 .filter(|_| !anims.is_empty())
@@ -1377,7 +1385,11 @@ impl Simulation {
         if sonic {
             self.parasite_exit_unit(eater, rules, effects);
             if let Some(source) = source.and_then(|id| self.substrate.entities.get_mut(id)) {
-                crate::sim::mission::concrete_effects::represented_assign_target(source, None);
+                crate::sim::mission::concrete_effects::represented_assign_target(
+                    source,
+                    None,
+                    rules.ares_form(),
+                );
             }
             return;
         }
@@ -1456,6 +1468,6 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "parasite_tests.rs"]
 mod tests;

@@ -42,7 +42,7 @@ pub(super) fn is_pinned(path: &Path) -> bool {
     pins().lock().expect("browser cache pins").is_pinned(path)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

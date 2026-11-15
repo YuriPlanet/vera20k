@@ -1046,10 +1046,10 @@ fn ares_repair_ifv_selects_a_sound_ally_and_under_alt() {
 /// Infantry and UnitRepair (0x5B) over a vehicle, unless Alt is held. Here two
 /// unarmed civilians carry `Heal` (Organic, which no retail type allocates
 /// before the map pass, so the patch restates it) and `RepairBullet`.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_healer_infantry_heal_what_their_warhead_reaches() {
     use crate::sim::world::{AresHeal, HealArmKeys};
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "XMP03T4.MAP",
         &crate::rules::ini_parser::IniFile::from_str(

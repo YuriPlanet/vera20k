@@ -554,10 +554,6 @@ impl ScenarioElapsedClock {
     }
 
     /// Sample the retail raw accumulator without changing clock state.
-    #[cfg(any(
-        test,
-        all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
-    ))]
     fn elapsed_buckets(&self, now_ms: u64) -> u32 {
         self.accumulated_buckets
             .wrapping_add(if self.start_bucket != ELAPSED_CLOCK_STOPPED {
@@ -570,11 +566,8 @@ impl ScenarioElapsedClock {
     /// gamemd provenance: Score elapsed-time formatting; verified
     /// ScoreDialog__WndProc @ 0x005C9B10 reads ScenarioClass+0x614/+0x61C,
     /// treats the wrapped accumulator as signed, and divides it by 60.
-    /// The browser match report reads it after abort/outcome stopped the clock.
-    #[cfg(any(
-        test,
-        all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
-    ))]
+    /// The browser match report reads it after abort/outcome stopped the
+    /// clock; the observer's credits counter reads it while it runs.
     pub(crate) fn elapsed_seconds(&self, now_ms: u64) -> i32 {
         (self.elapsed_buckets(now_ms) as i32) / SCORE_BUCKETS_PER_SECOND
     }
@@ -867,6 +860,12 @@ impl LocalFramePacer {
         self.render_deferred = false;
     }
 
+    /// The recent battlefield draw time ([`Self::record_presented`]), zero
+    /// before the first one.
+    pub(crate) fn draw_cost(&self) -> Duration {
+        self.draw_cost.unwrap_or_default()
+    }
+
     /// Read the same interval used by `should_admit`, for diagnostics.
     pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
         pacing_timer(game_speed, network_fps).map(PacingTimer::length_ms)
@@ -1049,7 +1048,7 @@ pub(crate) fn wall_clock_bucket() -> u32 {
     frame_bucket(wall_clock_ms())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

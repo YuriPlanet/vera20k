@@ -302,6 +302,9 @@ impl MinimapPlayfieldProjection {
                 native_cells,
                 native_overrides,
                 terrain_brightness,
+                resolved_terrain
+                    .map(super::terrain::RadarShroudLattice::new)
+                    .unwrap_or_default(),
             )
         });
         if native_radar_terrain.is_some() {

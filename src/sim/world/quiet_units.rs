@@ -124,8 +124,10 @@ pub(crate) fn rests(
         // frozen tests after it: neither warped nor warping in.
         && !entity.is_warped_out()
         && !entity.is_warping_in()
-        // The tube tests (`UnitClass::AI @ 0x007360C0`).
+        // The tube tests (`UnitClass::AI @ 0x007360C0`) and the death count
+        // (`0x0073635B`).
         && entity.low_bridge_tube_state.is_none()
+        && !entity.unit_death_counter.running()
         // Both drain steps.
         && entity.drain.is_idle()
         // The tint step: no curtain, or a spent one at stage 0.

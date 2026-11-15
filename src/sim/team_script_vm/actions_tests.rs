@@ -1671,8 +1671,12 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
         let house = sim.houses.get_mut(&russians).unwrap();
         house.clear_spatial_threat();
         if threat {
-            house.adjust_spatial_threat((5, 21), 1000).unwrap();
-            house.adjust_spatial_threat((29, 21), 400).unwrap();
+            house
+                .adjust_spatial_threat((5, 21), 1000, rules.ares_form())
+                .unwrap();
+            house
+                .adjust_spatial_threat((29, 21), 400, rules.ares_form())
+                .unwrap();
         }
         let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
         assert_eq!(
@@ -1708,7 +1712,7 @@ fn ares_threat_index_moves_a_pillbox_s_threat_off_its_cell() {
     let russians = sim.interner.get("Russians").unwrap();
     assert!(sim.house_threat_at_cell(russians, (20, 12)).unwrap() > 0);
     let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
-    let pick = if cfg!(feature = "ares") { 1 } else { 0 };
+    let pick = if rules.ares_form() { 1 } else { 0 };
     assert_eq!(target, Some(TeamTarget::Object(pillboxes[pick])));
 }
 
@@ -2160,9 +2164,10 @@ fn script_action_51_binds_the_art_of_an_anim_only_a_script_names() {
 }
 
 #[test]
-fn script_action_51_naming_unbindable_art_still_loads_the_map() {
-    // Retail GAWEAP_3's LoopEnd passes its frames, so VERA cannot bind it;
-    // natively the scenario still loads. The step completes without an Anim.
+fn script_action_51_plays_art_whose_loop_passes_its_frames() {
+    // Retail GAWEAP_3's LoopEnd=9 passes its 4 frames. Native stores it as
+    // written (`0x0042801C`) and action 51 (`0x006EF610`) builds the Anim on
+    // the member; its frames past the SHP draw nothing.
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
     else {
         return;
@@ -2183,7 +2188,7 @@ fn script_action_51_naming_unbindable_art_still_loads_the_map() {
     let sim = scene.sim();
     assert!(sim.team_script_vm.team(team).unwrap().cursor() >= 1);
     assert!(
-        !sim.anims()
+        sim.anims()
             .any(|(_, anim)| anim.owner_entity() == Some(member)
                 && sim.interner.resolve(anim.type_id()) == "GAWEAP_3")
     );

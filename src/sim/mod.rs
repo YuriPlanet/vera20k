@@ -100,7 +100,7 @@ pub(crate) mod vehicle_theft;
     path = "parallel_web.rs"
 )]
 pub mod parallel; // order-preserving work over scoped threads
-#[cfg(all(test, feature = "wasm", not(target_arch = "wasm32")))]
+#[cfg(all(test, tests_sim_p_s, feature = "wasm", not(target_arch = "wasm32")))]
 #[path = "parallel_web.rs"]
 mod parallel_web_tests;
 pub mod rng;
@@ -118,7 +118,7 @@ pub mod temporal;
 pub(crate) mod tesla_charging;
 pub mod timer; // signed frame-anchored countdown primitive
 pub(crate) mod touch_log; // which stored objects were handed out mutably, per reader
-pub use touch_log::live_read_check_enabled;
+pub use touch_log::{Touched, live_read_check_enabled};
 pub mod type_handle_table; // InternedId -> TypeHandle, one-hop entity->type resolution
 
 // --- Pure read-only deterministic engine-data services (gamemd-exact lookup tables) ---
@@ -242,30 +242,38 @@ pub(crate) mod ai_team_creation;
 pub(crate) mod ai_unit_choice;
 pub(crate) mod naval_base_placement;
 pub mod replay;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod replay_determinism_tests;
 pub mod runtime;
 pub mod selection;
 
 // --- Snapshot serialization (mid-match save/load) ---
 pub mod snapshot;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod stable_identity_tests;
 
 // --- Particle systems (visual + damage particle effects: smoke, gas, fire) ---
 pub mod particles;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_c_g,
+        tests_sim_h_o,
+        tests_sim_world_techno,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "deploy_tests.rs"]
 mod deploy_tests;
 // Ares 3.0 Misc/Bugfixes.cpp gameplay fixes through their owners.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_bugfixes_tests;
 // Ares 3.0 Misc/Bugfixes.Buffer.cpp list reads.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_bugfixes_buffer_tests;
 // Ares 3.0 AnimTypeExt damage.
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 mod ares_anim_type_tests;
 
 pub(crate) mod airstrike;

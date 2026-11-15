@@ -610,8 +610,10 @@ impl SlotScene {
         let sim = self.scene.sim();
         let rules = &self.scene.runtime.resources.rules;
         let building = sim.entities().get(self.plant).unwrap();
-        let frame =
-            crate::app::presentation::frame::PresentationFrame::capture(&self.scene.runtime);
+        let frame = crate::app::presentation::frame::PresentationFrame::capture(
+            &self.scene.runtime,
+            &Default::default(),
+        );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
         let viewer = viewer_id.map(|id| sim.interner().resolve(id));
@@ -661,7 +663,8 @@ impl SlotScene {
             &frame,
             viewer_id,
             record,
-            &|_| true,
+            &super::every_slot_anim(sim, record),
+            &mut super::super::overlays::AnimTypeArts::new(rules, atlas),
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,
             crate::render::batch::DepthAxis::NONE.world_height,

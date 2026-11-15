@@ -215,7 +215,6 @@ const fn last_attacker_house_index_default() -> i32 {
 }
 
 /// Ares HouseExt constructor's SWLastIndex.
-#[cfg(feature = "ares")]
 fn no_super_index() -> i32 {
     -1
 }
@@ -492,7 +491,6 @@ impl std::hash::Hash for SpyGains {
 /// The veterancy one Ares infiltration gives its house
 /// (`BuildingExt::ExtData::InfiltratedBy @ 10012000`): the House bytes
 /// `+0x2BF`/`+0x2C0` and the HouseExt bytes `+0x48..+0x4A`.
-#[cfg(feature = "ares")]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AresSpyVeterancy {
     pub(crate) infantry: bool,
@@ -654,9 +652,15 @@ pub struct HouseState {
     /// mutable `HouseClass` bytes — gamemd keeps this one on the house type.
     #[serde(default)]
     multiplay_passive: bool,
+    /// This house's decisions are owned by an external command-layer
+    /// controller, so the native AI rungs stand down for it. Not a gamemd
+    /// port: native `HouseClass` has no such byte, and it stays out of the
+    /// retail-state concerns entirely.
+    #[serde(default)]
+    command_driven: bool,
     /// The HouseType's `Cost*Mult=`, projected from the rules at creation.
-    /// Like the flag above it is the type's, so it is left out of the state
-    /// hash.
+    /// Like `multiplay_passive` it is the type's, so it is left out of the
+    /// state hash.
     #[serde(default)]
     country_cost_mults: CountryCostMults,
     /// The HouseType's `Speed*Mult=`, projected with the cost factors and
@@ -884,7 +888,6 @@ pub struct HouseState {
     /// (`BuildingExt::ExtData::InfiltratedBy @ 10012000`), which
     /// `Prerequisite.StolenTechs=` asks (RequirementsMet `10021FF0`).
     /// Nothing clears it.
-    #[cfg(feature = "ares")]
     #[serde(default)]
     ares_stolen_tech: u32,
     /// Ares HouseExt `+0x14` SWLastIndex (constructor -1): the
@@ -893,7 +896,6 @@ pub struct HouseState {
     /// 10032ED0). Fire_SW's PostClick pairing (hook 4FAE72, 10034C90), the
     /// ChronoWarp's source (1006FB60) and the PostClick presentation of the
     /// common Launch read it.
-    #[cfg(feature = "ares")]
     #[serde(default = "no_super_index")]
     ares_last_super: i32,
     /// House+2D8: how many of this house's `PowersUnit=` buildings are
@@ -978,7 +980,10 @@ pub struct HouseState {
     /// Native `[0x00A8F040]`, the `EVA_LowPower` one-shot guard
     /// (`0x004F8D02` test, `0x004F8D61` set, `0x004F8DAB` clear). It is a
     /// process global gated behind `this == PlayerPtr`, so one flag per human
-    /// house is the same state. Persisted and hashed (schema v133).
+    /// house is the same state. Persisted and hashed (schema v133). RESIDUAL
+    /// (kept by the maintainer, 2026-11-15): nothing saves, loads or resets
+    /// the global, so after a load gamemd warns again if still short, and a
+    /// match that ended short leaves the next one silent until power returns.
     #[serde(default)]
     eva_low_power_guard: bool,
     /// Native `HouseClass+0x245`: a building's auto-repair start sets it
@@ -990,7 +995,9 @@ pub struct HouseState {
     /// Native `HouseClass+0x280` timer: the auto-repair start of a house no
     /// human controls arms it (`0x00450764..0x00450779`), and the latch holds
     /// until it expires. The constructor starts it at the construction frame
-    /// with no time left. Persisted and hashed (schema v216).
+    /// with no time left. Persisted and hashed (schema v216). RESIDUAL
+    /// (invisible): native Load's NoInit restarts it (0x004F5327..0x004F5339),
+    /// so a loaded computer may repair 36-90 frames sooner there.
     repair_latch_timer: CdTimer,
     /// House+57E4..+15FF3: native retained 130x130 padded spatial threat map.
     /// Constructor4F61EF/4F6312 clears it. Save504093 and Load5031C9 retain
@@ -1196,6 +1203,18 @@ impl HouseState {
     /// native write changes it later.
     pub fn make_multiplay_passive(&mut self) {
         self.multiplay_passive = true;
+    }
+
+    /// Hand this house's decisions to an external command-layer controller:
+    /// the native AI rungs stand down for it (no in-tree caller sets this).
+    pub fn make_command_driven(&mut self) {
+        self.command_driven = true;
+    }
+
+    /// The external-driver-ownership flag (see the field's docs): the native
+    /// AI rungs read this to stand down for a command-layer-driven house.
+    pub const fn command_driven(&self) -> bool {
+        self.command_driven
     }
 
     /// Player control (`+0x1ED`): Create_Houses (`688109..10F`) grants it to
@@ -2172,7 +2191,6 @@ impl HouseState {
 
     /// Inputs for Ares `IsTargetConstraintsEligible`10032110: the house's
     /// chosen enemy (`+0x5600`) and its scripted offensive cell (`+0x54F0`).
-    #[cfg(feature = "ares")]
     pub fn target_constraints_observations(
         &self,
     ) -> crate::rules::superweapon_targeting::HouseTargetingObservations {
@@ -2191,8 +2209,8 @@ impl HouseState {
 
     /// House50DA50, reached by TAction1416E44C0: clear the alert and restore
     /// its constructor frame (-100). Original Steam gamemd,
-    /// instruction reading. Native also clears +54F8, which currently retains
-    /// its constructor zero here (ai_fire's secondary-cell residual).
+    /// instruction reading. Native also clears +54F8, which nothing in gamemd
+    /// sets (see `superweapon::ai_fire`), so it stays zero here.
     pub(crate) fn clear_super_weapon_defense(&mut self) {
         self.super_weapon_targets.defense_cell = (0, 0);
         self.super_weapon_targets.defense_frame = -100;
@@ -2316,7 +2334,6 @@ impl HouseState {
 
     /// The veterancy arms of Ares' infiltration (`10012000`): set each
     /// granted byte, then House+1FC once any was. Answers whether any was.
-    #[cfg(feature = "ares")]
     pub(crate) fn grant_ares_spy_veterancy(&mut self, gains: AresSpyVeterancy) -> bool {
         let gains_any = gains != AresSpyVeterancy::default();
         let spy = &mut self.spy_gains;
@@ -2408,7 +2425,6 @@ impl HouseState {
             std::hash::Hash::hash(&self.ares_reverse_engineered, hasher);
         }
         // The technology bits its spies stole, folded once it has any.
-        #[cfg(feature = "ares")]
         if self.ares_stolen_tech != 0 {
             std::hash::Hash::hash(b"ares-house-stolen-tech-v1", hasher);
             std::hash::Hash::hash(&self.ares_stolen_tech, hasher);
@@ -2418,7 +2434,6 @@ impl HouseState {
     /// The StolenTech arm of Ares' infiltration (`10012000`): OR the
     /// building type's `SpyEffect.StolenTechIndex` bits into HouseExt
     /// `+0x40`, then set House+1FC.
-    #[cfg(feature = "ares")]
     pub(crate) fn steal_ares_tech(&mut self, bits: u32) {
         self.ares_stolen_tech |= bits;
         self.request_tech_recheck();
@@ -2426,7 +2441,6 @@ impl HouseState {
 
     /// Whether this house holds every StolenTech bit of `required`
     /// (`Prerequisite.StolenTechs`); an empty set is met (`10021FF0`).
-    #[cfg(feature = "ares")]
     pub(crate) fn has_ares_stolen_techs(&self, required: u32) -> bool {
         self.ares_stolen_tech & required == required
     }
@@ -2460,7 +2474,6 @@ impl HouseState {
 
     /// `SpyEffect.UndoReverseEngineer` (`BuildingExt::ExtData::InfiltratedBy
     /// @ 10012000`): empty the list, then set House+1FC.
-    #[cfg(feature = "ares")]
     pub(crate) fn undo_ares_reverse_engineering(&mut self) {
         self.ares_reverse_engineered.clear();
         self.request_tech_recheck();
@@ -2485,14 +2498,12 @@ impl HouseState {
     }
 
     /// Ares HouseExt SWLastIndex, -1 when no Super set it.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_last_super(&self) -> i32 {
         self.ares_last_super
     }
 
     /// The common Launch's write (10032F99): the House remembers the Super
     /// it launched last.
-    #[cfg(feature = "ares")]
     pub(crate) fn remember_ares_last_super(&mut self, index: i32) {
         self.ares_last_super = index;
     }
@@ -2500,9 +2511,6 @@ impl HouseState {
     /// Folded only once a launch set it, so other houses hash as earlier
     /// schemas did.
     pub(crate) fn hash_ares_last_super(&self, hasher: &mut impl std::hash::Hasher) {
-        #[cfg(not(feature = "ares"))]
-        let _ = hasher;
-        #[cfg(feature = "ares")]
         if self.ares_last_super != no_super_index() {
             std::hash::Hash::hash(b"ares-house-last-super-v1", hasher);
             std::hash::Hash::hash(&self.ares_last_super, hasher);
@@ -2571,12 +2579,15 @@ impl HouseState {
         self.spatial_threat.at_padded_index(index)
     }
 
+    /// `ares` is the caller's `rules.ares_form()`, for the index the writers
+    /// take (`HouseSpatialThreat::caller_index`).
     pub(crate) fn adjust_spatial_threat(
         &mut self,
         cell: (i16, i16),
         delta: i32,
+        ares: bool,
     ) -> Result<(), String> {
-        self.spatial_threat.adjust(cell, delta)
+        self.spatial_threat.adjust(cell, delta, ares)
     }
 
     pub(crate) fn clear_spatial_threat(&mut self) {
@@ -3005,6 +3016,7 @@ impl HouseState {
             difficulty_biases: HouseDifficultyBiases::default(),
             personality: None,
             multiplay_passive: false,
+            command_driven: false,
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,
@@ -3043,9 +3055,7 @@ impl HouseState {
             spy_gains: SpyGains::default(),
             ares_academies: Vec::new(),
             ares_reverse_engineered: Vec::new(),
-            #[cfg(feature = "ares")]
             ares_stolen_tech: 0,
-            #[cfg(feature = "ares")]
             ares_last_super: no_super_index(),
             powered_unit_centers: 0,
             discovered_by_current_house: false,
@@ -3118,7 +3128,7 @@ pub struct MatchStatistics {
     built: u32,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_statistics_tests.rs"]
 mod statistics_tests;
 
@@ -3156,14 +3166,35 @@ impl MatchStatistics {
         *counter = counter.wrapping_add(1);
     }
 
-    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table.
-    /// The existing total projection keeps their sum, rather than a second
-    /// per-house table. Both callers share its mutation and numeric semantics.
-    pub(crate) fn record_kill(&mut self, category: crate::map::entities::EntityCategory) {
-        let counter = if category == crate::map::entities::EntityCategory::Structure {
-            &mut self.buildings_killed
-        } else {
-            &mut self.units_killed
+    /// RecordKill7030AC/7031DC and ChangeOwner70164D increment the kill table
+    /// entry at the victim owner's House index (`TechnoClass::
+    /// GetOwningHouseIndex @ 0x006F9DB0`, read before ChangeOwner's owner
+    /// store). The score screen (`0x005C996D..0x005C9995`) and the Diplomacy
+    /// dialog (`0x00658330`) sum the 20 entries of each table, so the totals
+    /// kept here are those sums. Each table is followed by its loss counter:
+    /// units `+0x53E4`, UnitsLost `+0x5434`, buildings `+0x5438`,
+    /// BuildingsLost `+0x5488`, then WhoLastHurtMe `+0x548C`, so a kill of
+    /// House 20 or later lands past its table. Both callers share its
+    /// mutation and numeric semantics.
+    pub(crate) fn record_kill(
+        &mut self,
+        category: crate::map::entities::EntityCategory,
+        victim_house: Option<usize>,
+    ) {
+        let structure = category == crate::map::entities::EntityCategory::Structure;
+        let base = if structure { 21 } else { 0 };
+        let counter = match victim_house.map_or(base, |house| house.saturating_add(base)) {
+            0..=19 => &mut self.units_killed,
+            20 => &mut self.units_lost,
+            21..=40 => &mut self.buildings_killed,
+            41 => &mut self.buildings_lost,
+            // WhoLastHurtMe, which only `HouseClass::ComputeCRC @ 0x0050300D`
+            // reads, the sync check VERA's state hash replaces. RESIDUAL: a
+            // 23rd House, beyond gamemd's 8 players and retail's 14
+            // countries (a map adding countries, or a VERA game with more
+            // players), would reach ComputedBaseCenter (`+0x5490`) and later
+            // AI fields; VERA leaves them.
+            _ => return,
         };
         *counter = counter.wrapping_add(1);
     }
@@ -3190,7 +3221,7 @@ impl MatchStatistics {
         }
     }
 
-    /// Score-screen Kills column: units + buildings destroyed.
+    /// Score-screen and Diplomacy Kills: the sum of both kill tables.
     pub const fn kills(&self) -> u32 {
         self.units_killed.wrapping_add(self.buildings_killed)
     }
@@ -3343,7 +3374,7 @@ pub(crate) fn determine_waypoint_edge(anchor: (u16, u16), bounds: PlayfieldBound
     best_edge
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod ai_activation_latch_tests {
     use super::{HouseAiActivationLatches, HouseDifficulty, HouseState};
 
@@ -3519,7 +3550,7 @@ mod ai_activation_latch_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
 
@@ -3650,7 +3681,7 @@ mod outcome_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod difficulty_tests {
     use super::{HouseDifficulty, HouseState, NativeF64Bits};
 
@@ -3775,7 +3806,7 @@ mod difficulty_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod multiplay_passive_tests {
     use super::resolve_multiplay_passive;
     use crate::rules::ini_parser::IniFile;
@@ -3828,7 +3859,7 @@ mod multiplay_passive_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod waypoint_edge_tests {
     use super::*;
 
@@ -3865,7 +3896,7 @@ mod waypoint_edge_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod signed_country_side_tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
@@ -3889,7 +3920,7 @@ mod signed_country_side_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod produced_total_tests {
     use super::*;
     use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};

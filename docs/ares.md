@@ -1,10 +1,27 @@
-# Optional Ares compatibility
+# Ares compatibility
 
-VERA20K can build in partial, Rust-native support for some Ares extensions. It does not load the
+VERA20K has partial, Rust-native support for some Ares extensions. It does not load the
 Ares DLL and is not general mod support.
 
-Default builds use the retail readers and dispatch; an INI or client setting cannot enable omitted
-extensions. Build the supported extensions explicitly:
+Ares switches on from a game's data, in every build: a game whose rules or map hold an Ares
+key plays with Ares, and any other game plays as the original (`src/rules/ares_switch.rs`).
+No option or client setting turns it on.
+
+The official downloads do not hold all of Ares yet. Its code is moving out of the `ares`
+build feature area by area. Every build mounts `ares.mix` when the game's folder or the mod
+in use holds it, and reads such a game the Ares way: its INIs load with Ares' syntax (`+=`
+keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
+with every Ares key VERA20K reads, Ares' sound bags and string tables are added, and the
+whole simulation, the Country loading screen, the sidebar and superweapon targeting take their
+Ares form. A download still
+misses what is behind the feature: most of Ares' own messages, the flying credits and
+`IvanBomb.Image`; in a skirmish, Ares' random country weights (a
+Random player draws as in the original) and the spawn file's larger Country and Side
+limits; and the random map generator's urban areas. A game with Ares keys but no `ares.mix` is
+read the stock way and plays only the world, unit and combat parts and the sidebar's Ares
+behaviour (no cameo limit, Ares' cameo order, Shift-click queuing five, `EnemyUIName`) with
+the original sidebar art, so it can play unlike both the original and Ares: a mod that needs Ares ships `ares.mix`, as Ares mods do. For
+all the Ares support VERA20K has, build with the feature:
 
 ```sh
 cargo run --release --bin vera20k --features ares

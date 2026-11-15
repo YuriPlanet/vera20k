@@ -963,7 +963,7 @@ pub(crate) fn fallback_5x7_glyphs() -> Vec<(char, [&'static str; 7])> {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

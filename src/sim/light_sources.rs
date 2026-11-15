@@ -337,17 +337,14 @@ impl Simulation {
         // (CurrentLightningStorm) and the active Dominator's (CurrentPsyDom)
         // answer their Light.*; CurrentNukeType is kept only for the flash's
         // own ChangeLighting.
-        #[cfg(feature = "ares")]
-        {
-            let light = match profile {
-                ScenarioLightingProfile::Ion => self.lightning_storm.ares_light(),
-                ScenarioLightingProfile::Dominator => self.psychic_dominator.ares_light(),
-                _ => None,
-            };
-            self.session.lighting_mut().select_ares(profile, light);
-        }
-        #[cfg(not(feature = "ares"))]
-        self.session.lighting_mut().select(profile);
+        // No Ares storm or Dominator is current in a game without Ares, so
+        // there the stock profile is selected alone.
+        let light = match profile {
+            ScenarioLightingProfile::Ion => self.lightning_storm.ares_light(),
+            ScenarioLightingProfile::Dominator => self.psychic_dominator.ares_light(),
+            _ => None,
+        };
+        self.session.lighting_mut().select_ares(profile, light);
         self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting()));
     }
 

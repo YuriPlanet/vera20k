@@ -277,7 +277,7 @@ pub(super) fn asked_for(place: usize) -> bool {
     fetches.iter().any(|&(known, _)| known == place)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use std::collections::BTreeSet;
 

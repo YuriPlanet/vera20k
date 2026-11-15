@@ -425,8 +425,7 @@ fn push_placement_rings(
     };
     let center = (cell_x as i16, cell_y as i16);
     let nearby: Vec<_> = frame
-        .objects()
-        .filter(|entity| entity.category() == EntityCategory::Structure)
+        .structures()
         .filter_map(|entity| {
             if entity.owner() != player || !entity.lifecycle.object_alive() {
                 return None;
@@ -496,10 +495,10 @@ fn screen_center(viewport: SurfaceLineViewport, x: i32, y: i32, z: i32) -> [i32;
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radial_indicator_app_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "radial_indicator_gpu_tests.rs"]
 mod gpu_tests;

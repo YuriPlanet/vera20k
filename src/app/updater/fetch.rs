@@ -220,7 +220,7 @@ fn save_to(
         .with_context(|| format!("cannot write {}", path.display()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use std::net::TcpListener;
     use std::sync::Arc;

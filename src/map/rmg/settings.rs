@@ -276,7 +276,7 @@ fn int_list<const N: usize>(general: &IniSection, key: &str) -> Option<[i32; N]>
     (parsed.len() >= N).then(|| std::array::from_fn(|i| parsed[i]))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

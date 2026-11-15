@@ -305,10 +305,6 @@ fn the_superweapon_script_actions_match_native() {
             continue;
         }
         replayed += 1;
-        // Ares replaces action 55 (hook 6EFC70); its own regression covers it.
-        if cfg!(feature = "ares") && int(&row["action"]) == 55 {
-            continue;
-        }
         let Replay {
             mut sim,
             rules,
@@ -316,6 +312,10 @@ fn the_superweapon_script_actions_match_native() {
             plant,
             ..
         } = replay(row, !row["target"].is_null());
+        // Ares replaces action 55 (hook 6EFC70); its own regression covers it.
+        if rules.ares_form() && int(&row["action"]) == 55 {
+            continue;
+        }
         if let Some(plant) = plant {
             assert_eq!(
                 sim.team_target_cell_of_coord(TeamTarget::Object(plant)),
@@ -493,9 +493,9 @@ mod chronoshift_building_tests;
 /// `SW.AITargeting` is IronCurtain and whose `SW.Group` is the argument, and
 /// fires it by its own index; the native firing row's group-0 Iron Curtain
 /// does not match argument 9, so the step completes without a launch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_iron_curtain_action_matches_ai_mode_and_group() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let row = rows()
         .into_iter()
         .find(|row| int(&row["action"]) == 55 && replayable(row) && !events(row, "fire").is_empty())

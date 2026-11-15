@@ -350,6 +350,7 @@ fn retreat_building_selection_matches_original_controls() {
                     .adjust_spatial_threat(
                         ((coords[0] / 256) as i16, (coords[1] / 256) as i16),
                         threat,
+                        rules.ares_form(),
                     )
                     .unwrap();
             }

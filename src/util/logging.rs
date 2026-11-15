@@ -352,7 +352,7 @@ fn normalize_crlf(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\n', "\r\n")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::{Duration, UNIX_EPOCH};

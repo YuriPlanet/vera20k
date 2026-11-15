@@ -469,7 +469,7 @@ fn trim_line_ends(units: &[u16]) -> &[u16] {
     &units[..end]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

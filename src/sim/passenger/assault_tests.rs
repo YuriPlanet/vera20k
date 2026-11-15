@@ -158,10 +158,11 @@ fn an_assaulter_kills_the_occupants_of_an_enemy_building() {
         .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "UCBLOOD")
         .count();
     assert_eq!(splashes, 2);
-    #[cfg(not(feature = "ares"))]
-    let (russians, americans) = ((2, 0), (0, 2));
-    #[cfg(feature = "ares")]
-    let (russians, americans) = ((0, 2), (2, 0));
+    let (russians, americans) = if scene.rules.ares_form() {
+        ((0, 2), (2, 0))
+    } else {
+        ((2, 0), (0, 2))
+    };
     assert_eq!(scene.stats("Russians"), russians);
     assert_eq!(scene.stats("Americans"), americans);
 }
@@ -169,9 +170,9 @@ fn an_assaulter_kills_the_occupants_of_an_enemy_building() {
 /// Ares `Assaulter.Level` (`10016FD0`, hook `0x00457DB7`): a bunker of
 /// level 1 refuses a level-0 assaulter, who is turned away at its door
 /// (the conscripts inside keep shooting him) and kills nobody.
-#[cfg(feature = "ares")]
 #[test]
 fn a_higher_assaulter_level_keeps_the_assaulter_out() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(mut scene) = ordered_assault("[NABNKR]\nAssaulter.Level=1\n") else {
         return;
     };

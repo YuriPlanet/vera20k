@@ -53,6 +53,32 @@ fn scene() -> Simulation {
     sim
 }
 
+/// Action 8's toggle needs the first selected House to be the player's
+/// (0x004ABD35..0x004ABD57). A lone selected enemy makes the click action 7,
+/// which unselects all (0x004ABE4A) before T's batch (0x004ABE67).
+#[test]
+fn shift_t_click_on_a_selected_enemy_replaces_it_with_the_players_type() {
+    let sim = scene();
+    let click = compute_type_select_click_mutation_with_playfield(
+        sim.entities(),
+        &[1, 2, 3, 4, 5, 6],
+        &[5],
+        5,
+        true,
+        Some("me"),
+        Some(&rules("no")),
+        Some(sim.interner()),
+        false,
+    );
+    assert!(click.clear && click.deselect.is_empty());
+    let grouped = if cfg!(feature = "ares") {
+        vec![1, 2, 3]
+    } else {
+        vec![1]
+    };
+    assert_eq!(click.select, grouped);
+}
+
 #[test]
 fn type_selection_group_reaches_tap_click_band_and_deploy_gate() {
     let sim = scene();

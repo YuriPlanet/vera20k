@@ -442,7 +442,6 @@ pub(super) fn build_radar_object_update(
         origin,
         event_source_cell,
         enemy_sensed_prefilter,
-        #[cfg(feature = "ares")]
         sensor_array_warn: object.is_none_or(|object| object.sensor_array_warn()),
         foundation,
         radar_scale: projection.cell_axis_scale(),
@@ -482,7 +481,7 @@ fn radar_edge_cell_in_playfield(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};

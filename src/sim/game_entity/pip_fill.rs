@@ -110,6 +110,6 @@ impl GameEntity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "pip_fill_tests.rs"]
 mod tests;

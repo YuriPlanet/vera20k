@@ -68,7 +68,7 @@ fn byte_offset(text: &str, utf16: u32) -> usize {
     text.len()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_root))]
 mod tests {
     use super::*;
 

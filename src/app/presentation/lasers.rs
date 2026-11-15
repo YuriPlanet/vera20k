@@ -174,6 +174,6 @@ impl Lasers {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "laser_lifetime_tests.rs"]
 mod tests;

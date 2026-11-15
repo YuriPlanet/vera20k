@@ -486,7 +486,7 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
             if index == -1 {
                 entity.set_unit_simple_deploy_for_test(true, false, false);
             } else {
-                entity.set_gunner_weapon(index as i32, object, crate::rules::ARES_BUILD);
+                entity.set_gunner_weapon(index as i32, object, rules.ares());
             }
         }
         let target = if input["null_target"] == true {

@@ -28,7 +28,7 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "tesla_charging_tests.rs"]
 mod tests;
 
@@ -115,12 +115,10 @@ impl Simulation {
         // stock sample below and for every building: a `Battery.Overpower`
         // type of an active battery is overpowered. Nothing clears it again
         // for a type that is not Overpowerable.
-        #[cfg(feature = "ares")]
-        let battery = power_states
-            .get(&building.owner())
-            .is_some_and(|state| state.overpowers(&object.id));
-        #[cfg(not(feature = "ares"))]
-        let battery = false;
+        let battery = rules.ares_form()
+            && power_states
+                .get(&building.owner())
+                .is_some_and(|state| state.overpowers(&object.id));
         if object.overpowerable {
             Self::sample_tesla_charge(substrate, power_states, id);
         }

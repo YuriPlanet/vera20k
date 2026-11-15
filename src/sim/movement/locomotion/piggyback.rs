@@ -334,7 +334,7 @@ pub fn suspend_effect_for_test(
     effect
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::rules::locomotor_type::SpeedType;

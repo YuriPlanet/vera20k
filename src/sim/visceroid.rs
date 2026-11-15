@@ -220,7 +220,6 @@ impl Simulation {
     /// threat (`TechnoClass::UpdateThreatInCell`) and leaves the game itself
     /// (UnInit, no death or kill); Per_Cell_Process ends there
     /// (`0x0073B0A5`). Answers whether it merged.
-    #[cfg(feature = "ares")]
     pub(crate) fn ares_visceroid_merge(
         &mut self,
         id: u64,
@@ -266,6 +265,10 @@ impl Simulation {
             return false;
         }
         self.store_techno_type(other, large, rules);
+        // Health at the new type's Strength (`+0x6C`).
+        if let Some(entity) = self.substrate.entities.get_mut(other) {
+            entity.health.set(large.strength);
+        }
         self.refresh_spatial_threat(other, rules, None);
         self.uninit_with_context(
             id,
@@ -281,6 +284,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 #[path = "visceroid_tests.rs"]
 mod tests;

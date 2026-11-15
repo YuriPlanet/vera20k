@@ -366,7 +366,7 @@ pub(crate) fn text_origin(
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

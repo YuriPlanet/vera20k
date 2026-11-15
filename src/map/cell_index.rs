@@ -131,7 +131,7 @@ pub(crate) fn square_ring_cells(center: (i32, i32), r: i32) -> impl Iterator<Ite
     rows.chain(columns)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

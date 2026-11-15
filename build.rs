@@ -1,8 +1,11 @@
 #[path = "src/util/sha256.rs"]
 mod sha256;
+#[path = "src/test_group_cfgs.rs"]
+mod test_group_cfgs;
 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
+    test_group_cfgs::emit();
     multiplayer_build_identity();
     source_location();
     shipped_languages();
@@ -72,8 +75,15 @@ fn multiplayer_build_identity() {
         input.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
         input.extend_from_slice(&bytes);
     }
+    // The test group features choose which tests compile, not how the game
+    // plays (src/test_group_cfgs.rs): they stay out of the identity.
     let mut features: Vec<_> = std::env::vars()
-        .filter_map(|(key, _)| key.starts_with("CARGO_FEATURE_").then_some(key))
+        .filter_map(|(key, _)| {
+            (key.starts_with("CARGO_FEATURE_")
+                && !key.starts_with("CARGO_FEATURE_TEST_FOCUS")
+                && !key.starts_with("CARGO_FEATURE_TESTS_"))
+            .then_some(key)
+        })
         .collect();
     features.sort();
     for feature in features {

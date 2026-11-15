@@ -1103,7 +1103,7 @@ fn native_deploy_rules(input: &serde_json::Value) -> RuleSet {
     // Ares 3.0 tests IsDesolator where the stock deploy shim tests
     // ImmuneToRadiation (hooks 0x5215F9/0x52138C); a type other than DESO
     // authors it from the row's immune bit so the executions keep their gate.
-    let desolator = if cfg!(feature = "ares") && type_name != "DESO" {
+    let desolator = if crate::rules::ares_switch::ares_way() && type_name != "DESO" {
         format!("IsDesolator={}\n", input["immune"].as_i64().unwrap_or(0))
     } else {
         String::new()
@@ -1658,7 +1658,7 @@ fn infantry_unload_full_original_handler_matches52_supplied_controls() {
         let deployed_arm = input["kind"] == "unload"
             && input["deployer"].as_i64().unwrap_or(1) != 0
             && (27..=30).contains(&input["doing"].as_i64().unwrap_or(-1));
-        let expected = if cfg!(feature = "ares") && deployed_arm {
+        let expected = if rules.ares() && deployed_arm {
             1
         } else {
             row["return_eax"].as_u64().unwrap() as u32
@@ -1942,9 +1942,9 @@ fn a_chaos_drone_deploy_fires_its_weapon_at_its_own_cell() {
 /// Ares 3.0 TechnoClass_CanDeploySlashUnload_NoManualUnload (10049E70, hook
 /// 0x700EEC): a `NoManualUnload` transport outside a tank bunker refuses at
 /// the bridge test, though the stock transport arm admits it.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_no_manual_unload_refuses_an_unbunkered_transport() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=LCRF\n1=SEALED\n[LCRF]\nPassengers=5\n\
          [SEALED]\nPassengers=5\nNoManualUnload=yes\n",

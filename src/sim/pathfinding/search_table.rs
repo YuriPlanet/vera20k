@@ -76,7 +76,7 @@ impl<T: Copy> SearchTable<T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod tests {
     use super::SearchTable;
 

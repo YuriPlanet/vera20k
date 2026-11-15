@@ -270,7 +270,7 @@ fn held_session_mode(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::{
         elapsed_clock_pause_for_screen, held_session_mode, multiplayer_pause_reached,

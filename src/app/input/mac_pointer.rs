@@ -159,7 +159,7 @@ pub(crate) fn strip_above_full_screen(window: &Window) -> f64 {
     f64::from(corner.y - screen.position().y) / window.scale_factor()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

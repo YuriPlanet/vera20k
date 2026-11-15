@@ -482,8 +482,9 @@ pub(crate) fn foot_set_location(
         // Ares 3.0 FootClass_SetLocation_Parasite (1005CA50, hook 0x4DB87E),
         // ahead of the riders: the parasite eating this Foot takes the new
         // Location through its own SetLocation.
-        #[cfg(feature = "ares")]
-        if let Some(eater) = entities.get(id).and_then(|victim| victim.parasite.eater()) {
+        if rules.ares_form()
+            && let Some(eater) = entities.get(id).and_then(|victim| victim.parasite.eater())
+        {
             foot_set_location(entities, eater, coord, rules, interner);
         }
         crate::sim::passenger::open_topped_riders_follow(entities, id, rules, interner);

@@ -201,7 +201,8 @@ fn gate_piece(
     use std::cell::RefCell;
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
-    let presented = crate::app::presentation::frame::PresentationFrame::capture(runtime);
+    let presented =
+        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default());
     let input = ShpInputs {
         runtime,
         frame: &presented,

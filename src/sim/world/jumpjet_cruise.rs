@@ -192,6 +192,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 z: location[2],
             },
             false,
+            self.rules.ares_form(),
         );
         self.sim
             .substrate
@@ -486,6 +487,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 z: destination[2],
             },
             true,
+            self.rules.ares_form(),
         );
     }
     fn deploy_latched(&self) -> bool {
@@ -912,19 +914,19 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "jumpjet_cruise_native_tests.rs"]
 mod native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "jumpjet_smooth_facing_tests.rs"]
 mod smooth_facing_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "jumpjet_land_nearby_tests.rs"]
 mod land_nearby_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::rules::jumpjet_params::JumpjetParams;

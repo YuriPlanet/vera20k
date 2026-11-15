@@ -1,7 +1,7 @@
 # Superweapon Money.Amount
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+A game that ships `ares.mix` reads and plays these keys in every build ([Ares](ares.md));
+other games keep the original superweapons.
 
 ```ini
 [SuperWeaponTypes]

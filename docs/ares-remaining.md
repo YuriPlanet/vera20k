@@ -121,7 +121,8 @@ dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 ## Presentation and UI not ported
 
 - Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
-  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp), the ore-gather anim under EMP. Listed at
+  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp) beyond a glow following its object
+  (`sim/world/alpha_shape.rs` lists the rest), the ore-gather anim under EMP. Listed at
   the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
   `AlternateTheaterArt` (`0x5F9634`, read for Load2DArt `0x5F9070`) are residuals in
   [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported

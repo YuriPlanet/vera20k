@@ -21,7 +21,7 @@ pub mod bridge_orchestrator;
 pub mod bridge_test_evidence;
 mod building_after_destruction;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
@@ -29,11 +29,12 @@ mod building_upgrade_art;
 mod camera_home;
 mod cell_content;
 mod crash;
+mod death_frames;
 mod disk_laser;
 pub use disk_laser::DiskLaserObservation;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod disk_laser_tests;
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
@@ -41,7 +42,7 @@ mod idle_sleep;
 // A build that still carries Ares behind its feature sleeps nothing
 // (`Simulation::extension_steps_unsorted`), so these run once that
 // feature is gone.
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_c_o, not(feature = "ares")))]
 mod idle_sleep_tests;
 mod network_commands;
 mod object_entry;
@@ -50,7 +51,7 @@ mod quiet_units;
 // A build that still carries Ares behind its feature sleeps nothing
 // (`Simulation::extension_steps_unsorted`), so these run once that
 // feature is gone.
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_world_p_s, not(feature = "ares")))]
 mod quiet_units_tests;
 mod sinking;
 mod terrain_deformation;
@@ -70,9 +71,9 @@ pub use network_commands::{
     NetworkQueuePass,
 };
 pub(crate) use type_tech_levels::TypeTechLevels;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod unit_follows_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
@@ -80,7 +81,7 @@ mod gap_generator;
 pub(crate) use gap_generator::GapGeneratorRuntime;
 pub(crate) use gap_generator::LastOperational;
 mod house_base;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::{HouseBlowupSubset, PlayerOutcomeRequest};
@@ -101,7 +102,7 @@ mod aircraft_move;
 pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub use building_working_sound::working_sound_building;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod civilian_evacuation_tests;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
@@ -129,9 +130,9 @@ pub(crate) use playfield_membership::PlayfieldMembership;
 pub(crate) use selection_voice::DeployVoiceSuppression;
 pub(crate) use turret_rotate_sound::TurretRotateLatch;
 pub use turret_rotate_sound::turret_rotate_sound_techno;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod main_sound_identity_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod move_sound_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod native_cell_input_test_fixture;
@@ -156,7 +157,7 @@ mod substrate;
 mod techno_ai;
 mod track_cell_recalc;
 mod trigger_camera;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
@@ -188,9 +189,9 @@ pub use planning::{
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod wall_autofill_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod wall_restore_tests;
 mod world_commands;
 mod world_hash;
@@ -209,69 +210,70 @@ pub(crate) fn deploy_origin(
 }
 
 #[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod custom_foundation_tests;
 mod world_orders;
 mod world_spawn;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod aegis_distributed_fire_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod aircraft_deployment_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod area_rocker_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod brute_smash_debris_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_discovery_services_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_fatal_lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_power_roster_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod crash_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod damage_consequence_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod drone_rocking_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod engineer_building_repair_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod engineer_power_consumer_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod finite_ammo_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod gap_generator_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod gap_supercharge_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod gsi_04_18_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod house_ai_activation_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod jumpjet_infantry_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod lifecycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod mastermind_overload_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod projectile_degenerates_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod projectile_trailer_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod squid_grapple_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod suicide_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod overlay_explodes_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod team_script_vm_tests;
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_sim_trigger)))]
 pub(in crate::sim) mod voxel_meteor_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
@@ -381,13 +383,22 @@ pub struct TickResult {
     /// A structure was destroyed (combat, sell, crush); the frame finalizer
     /// rebuilds navigation to unblock the footprint.
     pub destroyed_structure: bool,
-    /// An entity's owner changed (garrison reconciliation, engineer capture) — sprite
-    /// atlas needs rebuild for the new house color.
+    /// An entity's owner changed (garrison reconciliation, engineer capture).
+    /// The atlases learn of it from [`Simulation::take_looks`].
     pub ownership_changed: bool,
     /// Bridge state changed this tick. Mutation owners publish navigation at
     /// their synchronous reader boundary; the frame finalizer also rebuilds
     /// the projection before committing the frame for subsequent ticks.
     pub bridge_state_changed: bool,
+}
+
+/// What [`Simulation::take_looks`] reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedLooks {
+    /// Entities stored since, or given a new owner, type or disguise.
+    pub entities: crate::sim::Touched,
+    /// Anims stored since, or given a new colour remap or type.
+    pub anims: crate::sim::Touched,
 }
 
 /// The master spine retains its admitted command batch for the live recorder.
@@ -594,6 +605,18 @@ pub struct AresTechCaptureLines {
     pub lost_eva_event: Option<InternedId>,
     pub message_lost: Option<InternedId>,
     pub message_capture: Option<InternedId>,
+}
+
+/// What Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+/// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760) add to
+/// [`SimSoundEvent::UnitLost`]. A game without Ares carries none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AresUnitLostLine {
+    /// The victim type's `EVA.Lost`, spoken whether or not the event's
+    /// `radar` is admitted.
+    pub eva: InternedId,
+    /// A Foot creates the radar event; a building creates none.
+    pub radar_event: bool,
 }
 
 /// A sound event produced during simulation (combat, death, production).
@@ -873,15 +896,9 @@ pub enum SimSoundEvent {
         owner: InternedId,
         radar: RadarEventRequest,
         type_id: InternedId,
-        /// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
-        /// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): the
-        /// victim type's `EVA.Lost`, spoken whether or not `radar` is
-        /// admitted.
-        #[cfg(feature = "ares")]
-        eva: InternedId,
-        /// Ares: a Foot creates the radar event; a building creates none.
-        #[cfg(feature = "ares")]
-        radar_event: bool,
+        /// The Ares announcement, when Ares plays: the app then speaks its
+        /// line instead, whatever `radar` answers. `None` is the stock event.
+        ares: Option<AresUnitLostLine>,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -1150,7 +1167,6 @@ pub enum SimSoundEvent {
     /// Ares SPECIAL_PLACE10038ECA..10038EE0: automatic selection for a
     /// manual event failed. Only the owning client prints Message.CannotFire;
     /// its existing message-list transport owns the insert sound.
-    #[cfg(feature = "ares")]
     AresSuperWeaponRefused {
         owner: InternedId,
         sw_type: InternedId,
@@ -1160,7 +1176,6 @@ pub enum SimSoundEvent {
     /// (10033153), which a handler's NoMessage Flag skips. `sw_type` is the
     /// type whose SWTypeExt the Launch read (a PostClick Super's source); a
     /// handler whose Flags hold both NoMessage and NoCleanup sends none.
-    #[cfg(feature = "ares")]
     AresSuperWeaponFinished {
         owner: InternedId,
         sw_type: InternedId,
@@ -1169,11 +1184,9 @@ pub enum SimSoundEvent {
     /// Common Ares Launch10032FC3: every client plays `sw_type`'s
     /// `EVA_Activated` (the PostClick source's for a PostClick Super),
     /// unless the handler's Flags hold NoEVA.
-    #[cfg(feature = "ares")]
     AresSuperWeaponActivatedEva { sw_type: InternedId },
     /// A new type's AbortFire refused a click (SW_PsychicDominator
     /// 10070780): the owner's client prints the type's `Message.Abort`.
-    #[cfg(feature = "ares")]
     AresSuperWeaponAborted {
         owner: InternedId,
         sw_type: InternedId,
@@ -1181,7 +1194,6 @@ pub enum SimSoundEvent {
     /// A type-13 radar event only the clients whose player `owner` counts as
     /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
     /// the target location before the enemy does").
-    #[cfg(feature = "ares")]
     AresAlliedRadarEvent {
         owner: InternedId,
         radar: RadarEventRequest,
@@ -1189,7 +1201,6 @@ pub enum SimSoundEvent {
     /// Ares SuperClass_Update_DrainMoney100358A0 refused a draining Super's
     /// money for a ControlledByHuman House: every client plays
     /// EVA.InsufficientFunds and prints the label in the player's colour.
-    #[cfg(feature = "ares")]
     AresSuperWeaponDrainRefused {
         owner: InternedId,
         sw_type: InternedId,
@@ -1197,7 +1208,6 @@ pub enum SimSoundEvent {
     /// A new type's deferred activation (UnitDelivery's state machine
     /// Update10075DE0, the Ares Lightning Storm's start 10036B00): every
     /// client prints Message.Activate.
-    #[cfg(feature = "ares")]
     AresSuperWeaponActivated {
         owner: InternedId,
         sw_type: InternedId,
@@ -1205,7 +1215,6 @@ pub enum SimSoundEvent {
     /// An Ares Lightning Storm's countdown reached a multiple of 225 under
     /// `Lightning.PrintText` (hook 53A6CF, 10037330): every client prints
     /// the type's Message.Launch, with no EVA line.
-    #[cfg(feature = "ares")]
     AresLightningStormApproaching {
         owner: InternedId,
         sw_type: InternedId,
@@ -1555,9 +1564,9 @@ pub struct Simulation {
     /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
     mission_spawned_entities: bool,
-    /// Presentation invalidation from the shared ownership chokepoint. Drained
-    /// into frame outputs, including changes outside the live object pass.
-    /// The restored match rebuilds its atlases; this is not saved or hashed.
+    /// The shared ownership chokepoint's report, drained into the tick's
+    /// `ownership_changed`, including changes outside the live object pass.
+    /// Not saved or hashed.
     #[serde(skip)]
     ownership_changed_since_output: bool,
     /// Ordered occupied-cell identities finalized at the authoritative frame
@@ -3475,16 +3484,17 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
-            #[cfg(feature = "ares")]
-            let eva = self.interner.intern(&event.eva);
+            // Only the Ares event interns its line. A game without Ares must
+            // not intern one here: a new ID changes later hashes.
+            let ares = event.ares.as_ref().map(|ares| AresUnitLostLine {
+                eva: self.interner.intern(&ares.eva),
+                radar_event: ares.radar_event,
+            });
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
                 type_id: event.type_id,
-                #[cfg(feature = "ares")]
-                eva,
-                #[cfg(feature = "ares")]
-                radar_event: event.radar_event,
+                ares,
             });
         }
     }
@@ -3714,6 +3724,13 @@ impl Simulation {
 
     pub fn houses(&self) -> &crate::sim::houses::Houses {
         &self.houses
+    }
+
+    /// Trigger-runtime read access for external observers. Every mutation
+    /// stays with the trigger owners; see [`TriggerRuntime`]'s view
+    /// accessors.
+    pub fn trigger_runtime(&self) -> &TriggerRuntime {
+        &self.trigger_runtime
     }
 
     pub fn zone_grid(&self) -> Option<&ZoneGrid> {
@@ -4556,7 +4573,14 @@ impl Simulation {
     /// build the pre-resolved rule handles beside them. Call once at sim init
     /// AFTER `intern_rule_type_ids`, and again after load once the RuleSet is
     /// available. Idempotent: the warhead names are already interned on every
-    /// re-resolution path, so serialized interner state cannot grow or reorder.
+    /// re-resolution path, so serialized interner state cannot grow or reorder
+    /// (a save made before MoveFlash's name was interned here gains it at the
+    /// end on load).
+    ///
+    /// MoveFlash (Rules+0xBB4) enters the interner here, after the rules
+    /// types, as it does in every game of a match: a LAN or online flash only
+    /// looks its name up (`spawn_move_flash`), since a name only the clicking
+    /// game added would renumber that game's later names.
     ///
     /// [`StringInterner::bind_types`]: crate::sim::intern::StringInterner::bind_types
     pub fn resolve_type_handles(&mut self, rules: &RuleSet) {
@@ -4565,6 +4589,9 @@ impl Simulation {
             rules,
             &mut self.interner,
         ));
+        if !rules.general.move_flash.name.is_empty() {
+            self.interner.intern(&rules.general.move_flash.name);
+        }
     }
 
     /// Intern every rules type id (infantry, vehicle, aircraft, building,
@@ -4860,6 +4887,16 @@ impl Simulation {
         &self.substrate.entities
     }
 
+    /// The objects that may draw differently since the last take, leaving
+    /// none: for the presentation's atlas check, which then checks only
+    /// those. The simulation never reads these logs.
+    pub fn take_looks(&mut self) -> ChangedLooks {
+        ChangedLooks {
+            entities: self.substrate.entities.take_looks(),
+            anims: self.substrate.anims.take_looks(),
+        }
+    }
+
     /// The copy of the world drawing reads while this one ticks elsewhere
     /// (docs/sim-thread.md). It shares no storage with this world:
     ///
@@ -5069,12 +5106,7 @@ impl Simulation {
     }
 
     /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
-    /// amount. Map57B790..57B860 tests121 offsets with sqrtApprox/ftol and
-    /// always reduces the unchanged centre pointer, never the candidate.
-    /// Seven original executions (Steam gamemd, real and Dummy,
-    /// signed extremes) each observed109 ordered calls480A80(receiver,1).
-    /// Packed subtraction leaves offsets independent of the centre, so reuse
-    /// that constant count without adding another floating distance kernel.
+    /// amount, and reduces around it ([`Self::reduce_tiberium_in_radius`]).
     pub(crate) fn trigger_reduce_tiberium_at_waypoint(
         terrain_objects: &TerrainObjectStore,
         ore_growth_config: &OreGrowthConfig,
@@ -5095,10 +5127,53 @@ impl Simulation {
         if resolved_terrain.is_none() || overlay_grid.is_none() {
             return false;
         }
-        // Keep every call, including after depletion. The shared owner
-        // performs each native lookup and owns RNG/queues/radar/cleanup.
+        if let Err(error) = Self::reduce_tiberium_in_radius(
+            terrain_objects,
+            ore_growth_config,
+            ore_growth_state,
+            session,
+            scenario_rng,
+            substrate,
+            resolved_terrain,
+            overlay_grid,
+            dirty_cells,
+            (cell.0 as u16, cell.1 as u16),
+            rules,
+            Some(overlay_registry),
+        ) {
+            log::error!("Tiberium trigger action failed: {error}");
+            return false;
+        }
+        true
+    }
+
+    /// `MapClass::Reduce_Tiberium_In_Radius @ 0x0057B790`, called by trigger
+    /// action 59 and team script action 28. Map57B790..57B860 tests121
+    /// offsets with sqrtApprox/ftol and always reduces the unchanged centre
+    /// pointer, never the candidate. Seven original executions (Steam
+    /// gamemd, real and Dummy, signed extremes) each observed109 ordered
+    /// calls480A80(receiver,1). Packed subtraction leaves offsets
+    /// independent of the centre, so reuse that constant count without
+    /// adding another floating distance kernel. Every call is kept, even
+    /// after depletion; the shared owner performs each native lookup and
+    /// owns RNG/queues/radar/cleanup. A malformed native Image stops the
+    /// remaining calls: prior reductions stay, no later RNG is replayed.
+    pub(crate) fn reduce_tiberium_in_radius(
+        terrain_objects: &TerrainObjectStore,
+        ore_growth_config: &OreGrowthConfig,
+        ore_growth_state: &mut OreGrowthState,
+        session: &ScenarioSession,
+        scenario_rng: &mut SimRng,
+        substrate: &ObjectSubstrate,
+        resolved_terrain: &mut Option<ResolvedTerrainGrid>,
+        overlay_grid: &mut Option<OverlayGrid>,
+        dirty_cells: &mut DirtyCells,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> Result<(), crate::rules::overlay_types::TiberiumImageError> {
         for _ in 0..109 {
-            if let Err(error) = Self::reduce_tiberium_at_with_native_context(
+            Self::reduce_tiberium_at_with_native_context(
                 terrain_objects,
                 ore_growth_config,
                 ore_growth_state,
@@ -5108,18 +5183,13 @@ impl Simulation {
                 resolved_terrain,
                 overlay_grid,
                 dirty_cells,
-                (cell.0 as u16, cell.1 as u16),
+                cell,
                 1,
                 rules,
-                Some(overlay_registry),
-            ) {
-                // A malformed native Image stops this trigger action. Prior
-                // reductions remain; no later reduction or RNG is replayed.
-                log::error!("Tiberium trigger action failed: {error}");
-                return false;
-            }
+                overlay_registry,
+            )?;
         }
-        true
+        Ok(())
     }
 
     pub(crate) fn reduce_tiberium_at_with_native_context<A: Into<i32>>(
@@ -6928,13 +6998,14 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        let old_house = self.houses.index_of(old_owner);
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && let Some(house) = self.houses.get_mut(&new_owner)
         {
             //701607..70164D: DontScore suppresses this captured-object
             //count, not the preceding old-House price addition.
             if !entity.tracking_facts.dont_score() {
-                house.stats_mut().record_kill(category);
+                house.stats_mut().record_kill(category, old_house);
             }
         }
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
@@ -6956,7 +7027,7 @@ impl Simulation {
         }
         //Techno701701..719 removes from the old owner using the retained
         //Cell. The same Cell survives the owner write for701774..780.
-        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id);
+        let spatial_threat_cell = self.spatial_threat_before_owner_change(stable_id, rules);
         // Techno70172F: `ReReveal(0, 0, 0, 0)` before the owner store takes
         // the sight off every map the old owner's reveal wrote. A building
         // released it at 448BD9 and an object in limbo at its Limbo, so for
@@ -8242,6 +8313,16 @@ impl Simulation {
     /// (`0x005F4EC0`) stores it through `AnimTypeClass` vt+0x6C (`0x0041CF80`,
     /// unchanged) and `SetLocation` (`0x005F6940`), so a Hover's wake starts
     /// at its hovering hull, not on the water below.
+    ///
+    /// RESIDUAL: this one pass builds every wake after movement, where Drive
+    /// (`0x004B078C..0x004B0823`), Hover (`0x00514A21..0x00514AC3`) and Ship
+    /// (`0x0069FE97..0x0069FEEB`) build theirs inside each unit's Process. A
+    /// wake draws no random number, so three things differ, none visible:
+    /// its creation order (its AbstractClass ID) relative to objects made
+    /// later in the same frame; the gate (alive, moving now, cell, bridge)
+    /// is read after the whole LogicVector, not in the unit's own Process;
+    /// and its first AI comes a frame late, since a native wake made
+    /// mid-walk joins that frame's walk.
     pub(crate) fn spawn_wakes_for_frame(&mut self, rules: &RuleSet) {
         if !self.session.binary_frame().is_multiple_of(10)
             && !self.session.binary_frame().is_multiple_of(8)
@@ -8391,109 +8472,136 @@ impl ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_t_z, tests_net, tests_sim_t_z)))]
 #[path = "world_tests.rs"]
 pub(crate) mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "smudge_integration_tests.rs"]
 mod smudge_integration_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "harvest_attack_return_oracle_tests.rs"]
 mod harvest_attack_return_oracle_tests;
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_c_o,
+        tests_sim_world_a_b,
+        tests_sim_world_p_s,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "harvest_field_oracle_tests.rs"]
 mod harvest_field_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_continuation_tests.rs"]
 mod refinery_dock_continuation_tests;
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_p_s,
+        tests_sim_world_a_b,
+        tests_sim_world_c_o,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "refinery_dock_oracle_tests.rs"]
 mod refinery_dock_oracle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_retail_tests.rs"]
 mod refinery_dock_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "harvest_field_cycle_tests.rs"]
 mod harvest_field_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_world_p_s, tests_sim_world_a_b)))]
 #[path = "slave_manager_oracle_tests.rs"]
 mod slave_manager_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slave_manager_cycle_tests.rs"]
 mod slave_manager_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod slave_manager_reentrancy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_sale_oracle_tests.rs"]
 mod building_sale_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod ai_captured_building_sale_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "building_repair_oracle_tests.rs"]
 mod building_repair_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "refinery_dock_cycle_tests.rs"]
 mod refinery_dock_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_sim_world_c_o,
+        tests_sim_world_a_b,
+        tests_sim_world_p_s,
+        tests_sim_world_t_z
+    )
+))]
 #[path = "cmin_dock_oracle_tests.rs"]
 mod cmin_dock_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "cmin_dock_cycle_tests.rs"]
 mod cmin_dock_cycle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "passenger_escape_oracle_tests.rs"]
 mod passenger_escape_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "vehicle_passenger_escape_oracle_tests.rs"]
 mod vehicle_passenger_escape_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod bunker_entry_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "world_orders_bridge_repair_tests.rs"]
 mod world_orders_bridge_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "rng_routing_tests.rs"]
 mod rng_routing_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "slice6_retask_tests.rs"]
 mod slice6_retask_tests;
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(tests_sim_world_c_o, tests_sim_world_a_b, tests_sim_world_p_s)
+))]
 #[path = "global_parity_harness_tests.rs"]
 mod global_parity_harness_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "production_shadow_tests.rs"]
 mod production_shadow_tests;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod factory_infantry_output_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod factory_jumpjet_output_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "radar_dirty_ack_tests.rs"]
 mod radar_dirty_ack_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_parity_harness_tests.rs"]
 mod bridge_parity_harness_tests;
 
@@ -8546,23 +8654,23 @@ pub(crate) fn wake_anchor_for(
     Some(crate::sim::movement::ground_pose::object_location(entity, terrain).into())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_t_z))]
 #[path = "tibtre_oracle_tests.rs"]
 mod tibtre_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ore_spread_oracle_tests.rs"]
 mod ore_spread_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod drop_as_bomb_integration_tests;
 
 mod airstrike_aircraft;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod radiation_overlap_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod building_occupant_storage_tests;
 
 /// The parts of the world its presentation copy takes only where they changed

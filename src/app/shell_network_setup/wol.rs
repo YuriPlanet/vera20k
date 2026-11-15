@@ -1060,7 +1060,7 @@ pub(super) fn ping(state: &mut AppState, name: String, ping: i32) -> anyhow::Res
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

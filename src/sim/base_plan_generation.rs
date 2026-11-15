@@ -92,6 +92,7 @@ pub(crate) fn recalc_base_plan(
     debug_assert!(
         preflight_recalc(rules, country_name, side_index, difficulty, super_weapons).is_ok()
     );
+    let ares = rules.ares_form();
 
     let country = CountryBuildMasks::for_country(rules, country_name);
     let mut eligible: Vec<&ObjectType> = rules
@@ -169,30 +170,29 @@ pub(crate) fn recalc_base_plan(
     while remaining > 0 {
         let pass_start_len = priority.len();
         let mut progressed = false;
-        let mut last_unselected = None;
+        // Only an unselected GAPLUG is the stuck pass's fallback: the index
+        // resets each pass (0x00505890) and only the GAPLUG name match writes
+        // it (0x005058C1..0x005058CD). With none, the loop ends
+        // (0x00505951..0x00505954) and buildings whose prerequisites never
+        // come are left out of the plan. The pass runs to the list's end even
+        // past remaining 0 (0x00505935..0x00505947); 0x005059B7 then ends it.
+        let mut gaplug_fallback = None;
         for index in 0..eligible.len() {
             if selected[index] {
                 continue;
             }
-            last_unselected = Some(index);
             let candidate = eligible[index];
-            if !candidate.id.eq_ignore_ascii_case("GAPLUG")
-                && prerequisites_satisfied(candidate, &priority[..pass_start_len], rules)
-            {
+            if candidate.id.eq_ignore_ascii_case("GAPLUG") {
+                gaplug_fallback = Some(index);
+            } else if prerequisites_satisfied(candidate, &priority[..pass_start_len], rules) {
                 priority.push(candidate);
                 selected[index] = true;
                 remaining = remaining.wrapping_sub(1);
                 progressed = true;
-                if remaining == 0 {
-                    break;
-                }
             }
         }
-        if remaining == 0 {
-            break;
-        }
         if !progressed {
-            let Some(index) = last_unselected else {
+            let Some(index) = gaplug_fallback else {
                 break;
             };
             priority.push(eligible[index]);
@@ -238,8 +238,7 @@ pub(crate) fn recalc_base_plan(
     // AIBuildCounts/AIExtraCounts copies for the House difficulty (+0x184),
     // each inserted at RandomRanged(i + 1, Count). The count is re-read as
     // the list grows, so inserted copies are visited (and skipped) too.
-    #[cfg(feature = "ares")]
-    {
+    if ares {
         let mut index = 1;
         while index < priority.len() {
             let candidate = priority[index];
@@ -289,7 +288,6 @@ pub(crate) fn recalc_base_plan(
     // campaign GameOptions never turn SuperWeapons off (`match_bootstrap`
     // copies only GameSpeed and BuildOffAlly), so `super_weapons` is already
     // true there.
-    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
     let mut defense_count = match rules.side_base_defense_counts(side_index) {
         Some(counts) => counts.get(difficulty.table_index()).copied().unwrap_or(0),
         None => match side_index {
@@ -305,8 +303,7 @@ pub(crate) fn recalc_base_plan(
     // nodes (-1) at its end until it holds four, each counting as one of the
     // defenses and drawing no RNG; the count can go negative. The rest are
     // inserted as below.
-    #[cfg(feature = "ares")]
-    if defense_count > 0 {
+    if ares && defense_count > 0 {
         while final_values.len() < 4 {
             final_values.push(-1);
             defense_count = defense_count.wrapping_sub(1);
@@ -390,9 +387,9 @@ pub(crate) fn prerequisites_satisfied(
     present: &[&ObjectType],
     rules: &RuleSet,
 ) -> bool {
+    let ares = rules.ares_form();
     let listed = |entry: &Prerequisite| {
-        #[cfg(feature = "ares")]
-        if let Some(group) = rules.ares_prerequisite_group(*entry) {
+        if ares && let Some(group) = rules.ares_prerequisite_group(*entry) {
             // Ares3.0 hook505360 -> ListContainsAll10008370 inspects only
             // immediate building members. Runtime alternates are unread;
             // a negative member code cannot match a BuildingType index.
@@ -425,18 +422,20 @@ pub(crate) fn prerequisites_satisfied(
             Prerequisite::GenericGroup(_) => false,
         }
     };
-    #[cfg(feature = "ares")]
-    let mut lists = candidate.ares_prerequisite_lists();
-    #[cfg(not(feature = "ares"))]
-    let mut lists = std::iter::once(candidate.prerequisite.as_slice());
-    lists.any(|list| list.iter().all(&listed))
+    if ares {
+        candidate
+            .ares_prerequisite_lists()
+            .any(|list| list.iter().all(&listed))
+    } else {
+        candidate.prerequisite.iter().all(&listed)
+    }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "base_plan_generation_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -577,9 +576,9 @@ mod tests {
     /// defense as a fourth node without a draw; the second then has the one
     /// slot `RandomRanged(3, 3)`, which draws nothing either. Stock draws
     /// `RandomRanged(3, 2)` for the first.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_short_plan_pads_defense_nodes_without_drawing() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[General]\nHarvesterUnit=HARV\nAIExtraRefineries=0,0,0\n\
              AISlaveMinerNumber=1,1,1\nAlliedBaseDefenseCounts=2,2,2\n\
@@ -605,9 +604,9 @@ mod tests {
     /// Ares 10023940: `AIBuildCounts=3` plans a type three times (two extra
     /// nodes after its first), `AIExtraCounts` adds up to its value more, and
     /// a difficulty without an entry keeps the single node and draws nothing.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_ai_build_counts_add_copies_after_the_first_node() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let rules = basic_rules(
             "7=TEST\n",
             "[TEST]\nOwner=Americans,Russians,YuriCountry\n\
@@ -784,17 +783,31 @@ mod tests {
     }
 
     #[test]
-    fn recalc_withholds_gaplug_and_breaks_cycle_with_last_unselected() {
+    fn recalc_falls_back_only_to_gaplug_and_drops_an_unmeetable_building() {
         // BLOCK waits on a BuildingType the planner never selects; a name no
         // BuildingType has would be dropped by the parser and block nothing.
+        // GAPLUG skips the prerequisite test and enters only as the first
+        // stuck pass's fallback; the next has no GAPLUG and ends, so BLOCK
+        // never enters the plan (0x00505951..0x00505954).
         let rules = basic_rules(
             "7=BLOCK\n8=GAPLUG\n9=NEVER",
             "[BLOCK]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
-             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             [GAPLUG]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nPrerequisite=NEVER\nFoundation=1x1\n\
              [NEVER]\nOwner=Americans\nTechLevel=1\nFoundation=1x1\n",
         );
         let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 11);
-        assert_eq!(&values(&plan)[6..], [8, 7]);
+        assert_eq!(&values(&plan)[6..], [8]);
+    }
+
+    /// With no eligible yard to preselect (0x0050571D..0x00505731), the count
+    /// runs out one candidate early; the pass still reaches the list's end
+    /// and plans that last one, the second POW.
+    #[test]
+    fn recalc_pass_continues_past_remaining_zero() {
+        let mut rules = basic_rules("", "");
+        rules.build_const_types = vec!["RAD".to_owned()];
+        let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Hard, 9);
+        assert_eq!(values(&plan), [1, 3, 4, 2, 0, 1]);
     }
 
     #[test]

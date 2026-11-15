@@ -280,6 +280,7 @@ fn scene(input: &Value) -> Scene {
                 sim.substrate.entities.get_mut(id).unwrap(),
                 Some(TargetKind::Entity(attacker)),
                 stored,
+                rules.ares_form(),
             );
         }
     }

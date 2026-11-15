@@ -80,11 +80,19 @@ enum HandleSource {
 
 /// Direct launch adapters bypass PrepareSession52E11E/123. Share its Country
 /// allocation/body #1 without cached shell settings or the PortPool RNG draw.
-#[cfg(feature = "ares")]
+/// Only Ares' Country loading screen reads that Country before Full_Init
+/// (`loading::pump`), so this runs only when the Rules are read the Ares way;
+/// any other game keeps the direct launch as it was.
 pub(crate) fn prepare_external_skirmish_countries(
     assets: &mut crate::app::process_assets::ProcessAssets,
     session: &SkirmishLaunchSession,
 ) {
+    if !assets
+        .native_rules()
+        .is_some_and(|owner| owner.reads_ares_way())
+    {
+        return;
+    }
     assets.read_multiplayer_country(
         &IniFile::empty(),
         i32::from(session.local_slot().country.raw_index()),
@@ -2191,7 +2199,7 @@ fn controlled_ten_country_roster() -> Vec<CooperativeCountryRosterEntry> {
 
 const _: [(); SKIRMISH_PERSISTED_SLOT_COUNT] = [(); crate::skirmish_launch::SKIRMISH_AI_SLOT_COUNT];
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::map::preview::PreviewSection;

@@ -163,7 +163,8 @@ fn place(sim: &mut Simulation, rules: &RuleSet, id: u64, (x, y): (i32, i32)) {
             &sim.resolved_terrain,
             id,
             old,
-            false
+            false,
+            rules.ares_form()
         ));
     }
     assert!(sim.foot_mark_remove(id, rules, None, crate::sim::world::FrameEffects::default()));
@@ -183,7 +184,8 @@ fn place(sim: &mut Simulation, rules: &RuleSet, id: u64, (x, y): (i32, i32)) {
             &sim.resolved_terrain,
             id,
             coord,
-            true
+            true,
+            rules.ares_form()
         ));
     }
 }
@@ -288,9 +290,7 @@ fn native_bomb(fields: &serde_json::Value) -> Bomb {
         end_frame: int("end"),
         ticking_sound: None,
         seen_by: 0,
-        #[cfg(feature = "ares")]
         weapon: None,
-        #[cfg(feature = "ares")]
         death_bomb: false,
     }
 }
@@ -523,14 +523,14 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
     match section {
         // Ares BombListClass_Plant_AllTechnos (hook 0x438E86) admits any
         // Techno planter, so the stock refusal of another has no Ares row.
-        #[cfg(feature = "ares")]
         "attach"
-            if input["planter"].as_u64().is_some_and(|n| {
-                input["technos"][n as usize]["rtti"]
-                    .as_u64()
-                    .unwrap_or(0x0F)
-                    != 0x0F
-            }) => {}
+            if rules.ares_form()
+                && input["planter"].as_u64().is_some_and(|n| {
+                    input["technos"][n as usize]["rtti"]
+                        .as_u64()
+                        .unwrap_or(0x0F)
+                        != 0x0F
+                }) => {}
         "attach" => {
             let planter = index(&input["planter"]).unwrap_or(u64::MAX);
             let target = index(&input["target"]);
@@ -995,7 +995,7 @@ fn removal_and_capture_defuse_silently() {
     // Ares hook 0x448277 (100163B0) resumes past the defuse.
     assert_eq!(
         bomb(&sim, captured).is_some(),
-        cfg!(feature = "ares"),
+        rules.ares(),
         "an engineer's capture defuses in stock"
     );
     sim.change_owner_with_rules(
@@ -1018,7 +1018,7 @@ fn removal_and_capture_defuse_silently() {
     );
     assert!(bomb(&sim, tank).is_some(), "a unit changing hands keeps it");
     let mut carriers = vec![garrison, tank];
-    if cfg!(feature = "ares") {
+    if rules.ares() {
         carriers.insert(0, captured);
     }
     assert_eq!(
@@ -1452,7 +1452,6 @@ fn bomb_rules_keys() {
 /// TankBomber (IvanBomb.Delay/Damage), SCOUT3's DeathBomber
 /// (IvanBomb.DeathBomb, not Detachable) and SIVAN's SpreadBomber (a
 /// CellSpread 1 IvanBomb warhead), and a 1x1 BOX.
-#[cfg(feature = "ares")]
 fn ares_rules() -> RuleSet {
     let text = RULES
         .replace("2=SCOUT3\n", "2=SCOUT3\n3=SIVAN\n")
@@ -1475,13 +1474,13 @@ fn ares_rules() -> RuleSet {
     rules
 }
 
-/// Ares builds: a Unit plants (BombListClass_Plant_AllTechnos, hook
+/// When Ares plays: a Unit plants (BombListClass_Plant_AllTechnos, hook
 /// 0x438E86), PlantBomb (10055AE0) fuses the bomb its weapon's
 /// IvanBomb.Delay out, and the blast deals IvanBomb.Damage
 /// (BombClass_Detonate1, hook 0x438799).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_tank_plants_with_its_weapons_delay_and_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = ares_rules();
     let (mut sim, grid) = arena(41, &rules);
     let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
@@ -1508,9 +1507,9 @@ fn ares_a_tank_plants_with_its_weapons_delay_and_damage() {
 /// A CellSpread 1 IvanBomb warhead plants on every Techno one ring around
 /// its target's cell but its planter (Ares.dll 10056AF0 walking
 /// CellSpreadIterator 10056550).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_spread_warhead_bombs_the_technos_around_its_target() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = ares_rules();
     let (mut sim, grid) = arena(42, &rules);
     let target = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
@@ -1532,9 +1531,9 @@ fn ares_a_spread_warhead_bombs_the_technos_around_its_target() {
 /// off; DeathBombOnAllies=no keeps a bomb on an ally timed. A bomb that is
 /// not IvanBomb.Detachable refuses the Engineer's BombDisarm shot (hook
 /// 0x6FCBAD, Ares.dll 10056C60).
-#[cfg(feature = "ares")]
 #[test]
 fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = ares_rules();
     let mut sim = sim(43);
     let enemy = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
@@ -1582,9 +1581,9 @@ fn ares_death_bombs_wait_for_their_carrier_and_resist_engineers() {
 /// A sold building's bomb goes off (IvanBomb.DetonateOnSell, on by default;
 /// BuildingClass_Mi_Selling_DetonatePostBuildup, hook 0x44A1FF) before the
 /// sale completes.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_a_sold_buildings_bomb_goes_off() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = ares_rules();
     let mut sim = sim(44);
     let sold = spawn(&mut sim, &rules, "BOX", "Americans", 10, 10);
@@ -1602,7 +1601,6 @@ fn ares_a_sold_buildings_bomb_goes_off() {
 /// two-frame stages of `delay / 6`, the second frame in the blink half; a
 /// rate below 1 counts single frames up to the last stage index; a death
 /// bomb shows the last frame; an image of one frame shows frame 0.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_clock_frame_counts_stages_over_the_image() {
     let mut bomb = native_bomb(&serde_json::json!({"start": 0, "end": 450}));

@@ -513,7 +513,7 @@ impl ProjectileType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -729,6 +729,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "projectile_line_trail_tests.rs"]
 mod line_trail_tests;

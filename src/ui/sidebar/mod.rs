@@ -7,7 +7,7 @@
 //! from the loaded assets and fixed 60×48 cameo hit zones (`6A8220`).
 
 pub(crate) mod cameo_order;
-#[cfg(test)]
+#[cfg(all(test, any(tests_ui, tests_app_presentation)))]
 mod cameo_order_tests;
 pub mod command_bar;
 mod frame;
@@ -25,6 +25,7 @@ pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
 pub(crate) use sidebar_view::build_sidebar_view;
 pub(crate) use sidebar_view::append_added_grids;
+pub(crate) use sidebar_view::apply_observer_strip;
 pub(crate) use sidebar_view::build_sidebar_view_with_spec;
 pub(crate) use sidebar_view::{CameoFactoryStatus, ObjectCameoDrawInputs, draw_object_cameo};
 
@@ -184,10 +185,11 @@ pub struct SidebarItem {
     pub queued_count: usize,
     /// True when this cameo's linked Factory is actively producing.
     pub is_building_this_type: bool,
-    /// True when the linked Factory's held product IS this entry's type,
-    /// finished or not. `StripClass::Draw` reads `Factory+0x58` and compares its
-    /// type index with the requested one at `0x006A9CBF..0x006A9CC3` to decide
-    /// whether a count of one is the held product rather than a queued copy.
+    /// True when the House's primary Factory for this type's kind holds this
+    /// entry's type, finished or not. `StripClass::Draw` reads that Factory's
+    /// `+0x58` and compares its type with the requested one at
+    /// `0x006A9CBF..0x006A9CC3` to decide whether a count of one is the held
+    /// product rather than a queued copy.
     pub is_held_this_type: bool,
     pub is_ready: bool,
     /// True when the linked Factory has no rate or is suspended. A cash stall
@@ -303,11 +305,34 @@ pub struct AddedGridView {
     pub max_scroll_rows: usize,
 }
 
+/// One House on the observer's strip (`StripClass::Draw @ 0x006A9540`,
+/// `0x006AA043..0x006AA59B`), two cameo rows tall.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObserverEntry {
+    /// Its background's top left, in the sidebar's layout pixels: the cameo
+    /// grid's origin, two rows a House.
+    pub origin: [f32; 2],
+    /// The country's side (`HouseType+0xBC`): 0, 1 and 2 draw `OBSALLI`,
+    /// `OBSSOVI` and `OBSYURI`, any other none.
+    pub side: i32,
+    /// The country's index (`HouseType+0xB8`), which picks the flag.
+    pub country: i32,
+    pub name: String,
+    pub rgb: [u8; 3],
+    /// Rank (online only), then kills, units and credits, a line each.
+    pub lines: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarView {
     pub panel_rect: Rect,
     pub layout: SidebarLayout,
+    /// The credits counter's value; the observer's elapsed seconds while
+    /// [`Self::observer`] is set (`CreditsClass::AI @ 0x004A2600`).
     pub credits: i32,
+    /// The observer's strip, drawn over the cameo grid while the local
+    /// player is an observer: the Houses its rows show.
+    pub observer: Option<Vec<ObserverEntry>>,
     pub power_produced: i32,
     pub power_drained: i32,
     pub low_power: bool,
@@ -317,6 +342,9 @@ pub struct SidebarView {
     /// The cameos of the sidebar's own grid, then those of each grid a
     /// layout adds ([`Self::added_grids`]).
     pub items: Vec<SidebarItem>,
+    /// Empty slots of the sidebar's own grid that a cameo flash darkens this
+    /// frame ([`cameo_order::CameoStrips::empty_slot_flash_darkened`]).
+    pub flash_empty_slots: Vec<Rect>,
     pub added_grids: Vec<AddedGridView>,
     /// Repair button (toggle mode). Rendered from the per-theme atlas's
     /// `repair_frames[frame_index]`. Hit-test routes to
@@ -360,7 +388,8 @@ pub(crate) fn compute_layout_with_spec(
     // the next strip's buttons, and the Vehicle strip runs past the array's
     // end at B0B300 (a static coordinate, then the R-DN ShapeButton at B0B328).
     // Activate 6A8330 then adds that vtable-less memory as gadgets. Native has
-    // no defined result here, so VERA keeps a working uncapped grid.
+    // no defined result here, so VERA keeps a working uncapped grid; the
+    // maintainer chose to keep it (2026-11-15).
     // GetVisibleSlotCount 6AC430 and StripClass Activate 6A8330 count 2 * rows
     // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set,
     // plus 7, which the table carries as one height.
@@ -452,5 +481,5 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
 // retained list (one order = hit + draw, R7 complete). `hit_test_item` (the cameo
 // click→action map) stays public for the driver.
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod native_geometry_tests;

@@ -598,7 +598,7 @@ impl HeadlessScenario {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod retail_construction_tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -3713,7 +3713,7 @@ mod retail_construction_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_special_flags_tests {
     use super::*;
 
@@ -3765,7 +3765,7 @@ mod launch_special_flags_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_scenario))]
 mod launch_alliance_tests {
     use super::{battle_session, load_session};
 

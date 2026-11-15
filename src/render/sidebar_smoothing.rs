@@ -342,6 +342,6 @@ impl SidebarPieces {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "sidebar_smoothing_tests.rs"]
 mod tests;

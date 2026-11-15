@@ -376,7 +376,7 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
         );
         // Installed Ares (SW_NuclearMissile::Activate 10072FF0) drops the
         // granted payload at exactly (0, 0, -100).
-        let velocity = if cfg!(feature = "ares") {
+        let velocity = if rules.ares_form() {
             [0, 0, 0xc059000000000000]
         } else {
             [0xb9be6aaf04000000, 0xbd0b936000000000, 0xc059000000000000]

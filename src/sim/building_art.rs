@@ -14,13 +14,13 @@ use crate::util::native_x87::MaskedX87Ordering::Greater;
 
 #[path = "building_art_admission.rs"]
 mod admission;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_depot_tests.rs"]
 mod depot_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_expiry_tests.rs"]
 mod expiry_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "building_art_garrison_tests.rs"]
 mod garrison_tests;
 #[path = "building_art_power.rs"]
@@ -205,7 +205,6 @@ impl BuildingArt {
 
     /// Ares ChronoWarpStateMachine::Update (`10070230`) drops +6E4 when it
     /// removes a chronoshifted building, so its next Place opens it again.
-    #[cfg(feature = "ares")]
     pub(crate) fn clear_actually_placed(&mut self) {
         self.actually_placed = false;
     }
@@ -393,8 +392,8 @@ impl Simulation {
         // Ares445F80 entry hook100100B0 ->10013700 (a SecretLab type's roll)
         // ->100449D0 precedes the vanilla ActuallyPlaced early return,
         // including repeated and capture calls.
-        #[cfg(feature = "ares")]
-        {
+        let ares = rules.ares_form();
+        if ares {
             self.ares_update_secret_lab(id, rules);
             self.grant_factory_plans(id, rules);
         }
@@ -413,7 +412,7 @@ impl Simulation {
         let owner = entity.owner();
         let cell = (entity.position.rx(), entity.position.ry());
         let refinery = object.refinery;
-        let powered = Self::anim_power_policy(object, entity);
+        let powered = Self::anim_power_policy(object, entity, rules);
         let damaged = requested_damage_state(
             entity.health,
             object.strength,
@@ -422,8 +421,7 @@ impl Simulation {
         let garrisoned = !entity.passenger_role.occupants().is_empty();
         // Ares BuildingClass_Place_Academy (hook 0x00446366 -> 10023750),
         // inside the first-opening block: an academy joins its owner's list.
-        #[cfg(feature = "ares")]
-        if first_opening {
+        if ares && first_opening {
             self.update_ares_academy_membership(id, true, rules);
         }
         // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
@@ -895,7 +893,7 @@ impl Simulation {
         let enabled = self.substrate.entities.get(id)?.building_art.stuff_enabled
             && self.building_operational_state(id, rules) == Some(true);
         if !enabled
-            && Self::anim_power_policy(object, self.substrate.entities.get(id)?)
+            && Self::anim_power_policy(object, self.substrate.entities.get(id)?, rules)
             && self.building_anim_power_flags(id, slot, rules).powered
         {
             self.substrate.anims.get_mut(new_id)?.pause();
@@ -1274,14 +1272,10 @@ pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
 /// of a stock `FirestormWall=` type, whose only writer is gone from YR (the
 /// constructor's 0); the Ares hook replaces the test
 /// ([`crate::sim::ares_firestorm::firewall_body_frame`]).
-fn firestorm_body_frame(entity: &GameEntity, object: &ObjectType) -> Option<i32> {
-    #[cfg(feature = "ares")]
-    {
+fn firestorm_body_frame(entity: &GameEntity, object: &ObjectType, rules: &RuleSet) -> Option<i32> {
+    if rules.ares_form() {
         crate::sim::ares_firestorm::firewall_body_frame(entity, object)
-    }
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = entity;
+    } else {
         object.firestorm_wall.then_some(0)
     }
 }
@@ -1304,7 +1298,7 @@ pub fn current_body_frame(
             state: entity.building_body_state().unwrap_or(1),
             base_frame: entity.construction_stage_value(),
             laser_frame: object.laser_fence.then_some(0),
-            firestorm_frame: firestorm_body_frame(entity, object),
+            firestorm_frame: firestorm_body_frame(entity, object, rules),
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
@@ -1349,7 +1343,7 @@ pub(crate) fn receiver_body_frame(
             },
             base_frame: 0,
             laser_frame: object.laser_fence.then_some(0),
-            firestorm_frame: firestorm_body_frame(entity, object),
+            firestorm_frame: firestorm_body_frame(entity, object, rules),
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |art| art.building_gate_stages)),
@@ -1371,7 +1365,7 @@ pub(crate) fn receiver_body_frame(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod body_tests {
     use super::*;
     use serde::Deserialize;
@@ -1478,11 +1472,12 @@ pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleS
     let art_ini = IniFile::from_str(
         "[B]\nActiveAnim=N\nActiveAnimDamaged=D\nActiveAnimGarrisoned=G\n[N]\nLoopCount=-1\nRate=150\nRandomRate=450,150\nStopSound=OLDSTOP\n[D]\nLoopCount=-1\nRate=300\nRandomRate=900,300\n[G]\nLoopCount=-1\nRate=450\n",
     );
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+    let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
         &IniFile::from_str(&format!(
             "[BuildingTypes]\n0=B\n[B]\nStrength=100\n{building_rules}[Animations]\n0=N\n1=D\n2=G\n"
         )),
         &art_ini,
+        &["OLDSTOP"],
     )
     .unwrap();
     let mut art = ArtRegistry::from_ini(&art_ini);
@@ -1508,7 +1503,7 @@ pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleS
     (sim, rules, id)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod slot_tests {
     use super::*;
 
@@ -2118,7 +2113,7 @@ mod slot_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod native_slot_tests {
     use super::*;
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};

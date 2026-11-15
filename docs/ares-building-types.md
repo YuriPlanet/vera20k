@@ -78,9 +78,9 @@ EngineerAlwaysCaptureTech=yes
 
 - A rubble pair with different foundations stops Ares with a fatal error;
   VERA logs it and drops the link.
-- Ares' RepairTrench (`0x5E`) and EngineerDamage (`0x57`) cursors: the
-  ordinary repair and damage cursors show. The fogged-building cell arm of
-  `EngineerRepairable` (`0x51FA82`) has no VERA counterpart.
+- The fogged-building cell arm of `EngineerRepairable` (`0x51FA82`) has no
+  VERA counterpart. The RepairTrench (`0x5E`) and EngineerDamage (`0x57`)
+  cursors are in [ares-cursors.md](ares-cursors.md).
 - `KickOutOfRubble` restores the selection the sim keeps; nothing else of
   the client's selection.
 - The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it).

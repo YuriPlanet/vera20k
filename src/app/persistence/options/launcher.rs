@@ -41,10 +41,14 @@ pub(crate) fn launcher_values_from_profile(
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
         smooth_online_menus: profile.smooth_online_menus,
+        vsync: profile.vsync,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         auto_repair: profile.auto_repair,
+        minimap_beacons: profile.minimap_beacons,
         terrain_deformation: profile.terrain_deformation,
+        // Off at the left end, then 2 at the first notch.
+        superweapon_limit_position: profile.superweapon_limit.saturating_sub(1),
         performance_stats: false,
         show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
@@ -52,6 +56,7 @@ pub(crate) fn launcher_values_from_profile(
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
         detailed_eva_text: profile.detailed_eva_text,
+        compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
         color_vision: profile.color_vision,
@@ -126,6 +131,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_smooth_sidebar(&mut self, enabled: bool);
     /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
     fn store_smooth_online_menus(&mut self, enabled: bool);
+    /// Present in step with the display, or as soon as a frame is drawn
+    /// (`[VERA] VSync=`).
+    fn store_vsync(&mut self, vsync: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
@@ -133,9 +141,14 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_shift_queue(&mut self, shift_queue: bool);
     /// Send the Repair order for damaged buildings by itself (`[VERA] AutoRepair=`).
     fn store_auto_repair(&mut self, enabled: bool);
+    /// Place a beacon with a radar click in Place Beacon mode (`[VERA] MinimapBeacons=`).
+    fn store_minimap_beacons(&mut self, enabled: bool);
     /// Let explosions dent the ground from the next game on
     /// (`[VERA] TerrainDeformation=`).
     fn store_terrain_deformation(&mut self, enabled: bool);
+    /// Allow `limit` of each superweapon, each charging its own shot, from
+    /// the next game on; 0 is off (`[VERA] SuperweaponLimit=`).
+    fn store_superweapon_limit(&mut self, limit: u8);
     fn set_performance_stats(&mut self, shown: bool);
     /// Show each label's string-table key instead of its text.
     fn set_show_string_keys(&mut self, shown: bool);
@@ -148,6 +161,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_custom_end_game_movie(&mut self, enabled: bool);
     /// VERA-only accessibility text rows; default off.
     fn store_detailed_eva_text(&mut self, enabled: bool);
+    /// VERA's six-line super weapon timer list; default off.
+    fn store_compact_super_timers(&mut self, enabled: bool);
     /// VERA's team-colour strength, as the level the profile stores.
     fn store_house_color_strength(&mut self, strength: u8);
 }
@@ -195,6 +210,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
             operations.store_smooth_online_menus(enabled);
         }
+        LauncherOptionsEvent::VSyncChanged(vsync) => operations.store_vsync(vsync),
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }
@@ -204,8 +220,14 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::AutoRepairChanged(enabled) => {
             operations.store_auto_repair(enabled);
         }
+        LauncherOptionsEvent::MinimapBeaconsChanged(enabled) => {
+            operations.store_minimap_beacons(enabled);
+        }
         LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
             operations.store_terrain_deformation(enabled);
+        }
+        LauncherOptionsEvent::SuperweaponLimitChanged(limit) => {
+            operations.store_superweapon_limit(limit);
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
@@ -227,6 +249,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
             operations.store_detailed_eva_text(enabled);
+        }
+        LauncherOptionsEvent::CompactSuperTimersChanged(enabled) => {
+            operations.store_compact_super_timers(enabled);
         }
         LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
             operations.store_house_color_strength(strength);
@@ -361,7 +386,7 @@ pub(crate) fn dispatch_launcher_parent_result(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

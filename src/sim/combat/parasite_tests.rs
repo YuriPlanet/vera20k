@@ -598,6 +598,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
         facing,
         actor.body_frame_counter.get(),
         actor.unit_firing_counter.get(),
+        actor.unit_death_counter.get(),
         crate::sim::movement::motion_query::is_moving(actor) == Some(true),
         false,
     );
@@ -629,6 +630,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
             actor.body_facing_byte(arena.frame()),
             actor.body_frame_counter.get(),
             counter,
+            -1,
             crate::sim::movement::motion_query::is_moving(actor) == Some(true),
             false,
         )

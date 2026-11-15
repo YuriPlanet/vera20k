@@ -20,7 +20,7 @@ SmallVisceroid=VISC_SML        ; stock key: what a tiberium death becomes
 LargeVisceroid=VISC_LRG        ; stock key: what two small ones merge into
 TiberiumTransmogrify=40        ; stock key: its percent chance
 [CombatDamage]
-TiberiumExplosive=yes          ; stock key, now a harvester blast
+TiberiumExplosive=yes          ; stock key, now a harvester blast (needs Explosion=)
 TiberiumExplosiveWarhead=HE    ; the blast's warhead (none)
 [AudioVisual]
 TiberiumExplosiveAnim=TWLT070  ; played at the blast (none)
@@ -76,7 +76,8 @@ Message.SilosNeeded=MSG:Silos  ; read; its print is a client residual
 - `sim/ares_tiberium.rs`: the Foot damage (`10049280`, hook `4D85E4`, from
   `FootClass::Per_Cell_Process`), the Foot heal (`10014BA0`, hook `4DA53E`,
   from the Foot AI after TechnoAI) and the TiberiumExplosive blast
-  (`1004BD90`, hook `738749`, from `Death_Explosion`). Tiberium is placed
+  (`1004BD90`, hook `738749`, inside `Death_Explosion`'s `Explosion=` block:
+  a unit with no `Explosion=` entry never blasts). Tiberium is placed
   through `Simulation::increase_tiberium_cells`, the live map's
   `CellClass::IncreaseTiberium @ 0x00487190` the Tiberium crate also uses.
 - `sim/miner/`: `Harvester.*` replace the Rules scans in Mission_Harvest

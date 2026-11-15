@@ -192,14 +192,6 @@ fn the_production_mode_steps_as_native() {
 fn the_building_choice_handles_nodes_as_native() {
     let oracle = oracle();
     for row in oracle["chooser"].as_array().unwrap() {
-        // The rows that splice a plant run the stock choice Ares replaces
-        // (`0x004FE782..0x004FE893`); its gates still apply.
-        #[cfg(feature = "ares")]
-        if row["nodes_after"].as_array().unwrap().len()
-            == row["nodes"].as_array().unwrap().len() + 1
-        {
-            continue;
-        }
         let prerequisite = match row["advanced_prereqs"].as_array().unwrap().as_slice() {
             [] => "",
             [index] => match int(index) {
@@ -211,6 +203,14 @@ fn the_building_choice_handles_nodes_as_native() {
             more => panic!("no fixture for prerequisites {more:?}"),
         };
         let rules = rules(prerequisite);
+        // The rows that splice a plant run the stock choice Ares replaces
+        // (`0x004FE782..0x004FE893`); its gates still apply.
+        if rules.ares_form()
+            && row["nodes_after"].as_array().unwrap().len()
+                == row["nodes"].as_array().unwrap().len() + 1
+        {
+            continue;
+        }
         let (mut sim, owner) = computer_house(true);
         // `0x0042E820`'s answers: the house's buildings on those nodes.
         let node_buildings = row["node_buildings"].as_array().unwrap();
@@ -775,9 +775,9 @@ fn a_naval_producer_reads_its_own_vehicle_choice() {
 /// Ares hook body `0x1001DDC0`: when no candidate passes CanBuild and the
 /// prerequisite filter (this house has no Construction Yard), the splice takes
 /// the country's first listed plant (`0x1001DEA2..0x1001DEC6`) without a draw.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_power_plants_fall_back_to_the_first_candidate_without_a_draw() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[Countries]\n0=Greece\n[Greece]\nAI.PowerPlants=NAAPWR,NAPOWR\n\
          [BuildingTypes]\n0=GAPOWR\n1=NAAPWR\n2=NAPOWR\n3=RADAR\n\
@@ -809,9 +809,9 @@ fn ares_power_plants_fall_back_to_the_first_candidate_without_a_draw() {
 /// (NANRCT's `Prerequisite=NATECH,NACNST`) both pass, and one
 /// `Randomizer(0, 1)` on Scenario+0x218 picks the reactor. Stock gamemd
 /// always splices NAPOWR here.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_retail_soviet_computer_draws_between_both_nod_plants() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };

@@ -56,8 +56,6 @@ fn americans_radar(sim: &Simulation, rules: &RuleSet, only: u64) -> bool {
     crate::sim::power_system::has_active_radar(&[(owner, state)].into_iter().collect(), owner)
 }
 
-// Runs again once power's radar provider moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_jammer_registers_with_enemy_radar_in_range_and_unjams_when_deactivated() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

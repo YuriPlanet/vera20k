@@ -55,6 +55,7 @@ fn scene(extra: &str, late: &str) -> (RuleSet, Simulation, InternedId, InternedI
 
 #[test]
 fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw, _, target) = scene("[Strike]\nMoney.Amount=-1\n", "");
     crate::sim::credit_income::add_credits(&mut sim.houses, owner, 1);
     let view = |sim: &Simulation| {
@@ -166,6 +167,7 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
 
 #[test]
 fn use_ai_place_ignores_click_and_keeps_first_eligible_maximum_after_invalid_later_rules() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw, _, first) = scene(
         "",
         "[Strike]\n\
@@ -220,6 +222,7 @@ fn use_ai_place_ignores_click_and_keeps_first_eligible_maximum_after_invalid_lat
 
 #[test]
 fn human_auto_fire_uses_house_strategy_hook_and_manual_switch_requires_auto_fire() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for automatic in [false, true] {
         let (rules, mut sim, owner, sw, _, target) = scene(
             &format!(
@@ -249,6 +252,7 @@ fn human_auto_fire_uses_house_strategy_hook_and_manual_switch_requires_auto_fire
 
 #[test]
 fn no_target_selector_bypasses_designators_and_uses_empty_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (rules, mut sim, owner, sw, _, _) = scene(
         "[Strike]\nSW.AITargeting=NoTarget\nSW.Designators=TARGET\n",
         "",

@@ -39,7 +39,7 @@ pub fn generate_type16_mask(radius: i32, stage: u8) -> Option<Vec<u8>> {
     }
     Some(mask)
 }
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     #[test]

@@ -239,7 +239,8 @@ pub(crate) fn resolve_rows(
                 insignia,
                 name: sources.ui_name(sim, house, state.country(), &country_name),
                 rgb,
-                // Σ of the two per-victim kill tables (+0x53E4, +0x5438), `%d`.
+                // Σ of the two 20-entry per-victim kill tables (+0x53E4,
+                // +0x5438), `%d`.
                 kills: Some(state.stats().kills() as i32),
                 // 0x00658330 hides a defeated House's box; nothing re-shows it.
                 allies: allies.filter(|_| !state.is_defeated()),
@@ -577,6 +578,6 @@ fn toggle_taunts_box(state: &mut AppState) {
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "diplomacy_tests.rs"]
 mod tests;

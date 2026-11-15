@@ -246,7 +246,7 @@ pub(crate) fn fullscreen_for(displays: &[MonitorChoice], target: &DisplayTarget)
     Fullscreen::Borderless(screen_for(displays, target))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

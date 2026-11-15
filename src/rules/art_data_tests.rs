@@ -269,20 +269,33 @@ fn declared_cameo_comes_from_the_rules_image_section_before_the_type_section() {
     );
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
 
-    assert_eq!(reg.resolve_declared_cameo_id("MTNK", "GTNK"), "GTNKICON");
-    assert_eq!(reg.resolve_declared_cameo_id("MTNK", "MTNK"), "MTNKICON");
+    assert_eq!(
+        reg.resolve_declared_cameo_id("MTNK", "GTNK").as_deref(),
+        Some("GTNKICON")
+    );
+    assert_eq!(
+        reg.resolve_declared_cameo_id("MTNK", "MTNK").as_deref(),
+        Some("MTNKICON")
+    );
     // The art section's own `Image=` redirect never selects the cameo section.
-    assert_eq!(reg.resolve_declared_cameo_id("BFRT", "BFRT"), "BFRTICON");
-    assert_eq!(reg.resolve_declared_cameo_id("E1", "E1"), "E1CAMEO");
+    assert_eq!(
+        reg.resolve_declared_cameo_id("BFRT", "BFRT").as_deref(),
+        Some("BFRTICON")
+    );
+    assert_eq!(
+        reg.resolve_declared_cameo_id("E1", "E1").as_deref(),
+        Some("E1CAMEO")
+    );
     // Savegame-reload fallback: the image section has no `Cameo=`, so the
     // type-ID section is consulted.
-    assert_eq!(reg.resolve_declared_cameo_id("E1", "NOCAMEO"), "E1CAMEO");
-    // `AltCameo=` is a separate field, never a substitute for `Cameo=`.
     assert_eq!(
-        reg.resolve_declared_cameo_id("NOCAMEO", "NOCAMEO"),
-        "NOCAMEO"
+        reg.resolve_declared_cameo_id("E1", "NOCAMEO").as_deref(),
+        Some("E1CAMEO")
     );
-    assert_eq!(reg.resolve_declared_cameo_id("UNKNOWN", "FOO"), "FOO");
+    // `AltCameo=` is a separate field, never a substitute for `Cameo=`, and
+    // the image id is not one either: gamemd loads the stock `XXICON.SHP`.
+    assert_eq!(reg.resolve_declared_cameo_id("NOCAMEO", "NOCAMEO"), None);
+    assert_eq!(reg.resolve_declared_cameo_id("UNKNOWN", "FOO"), None);
 }
 
 #[test]
@@ -316,7 +329,10 @@ fn retail_sidebar_cameos_follow_the_rules_image_section() {
             .object(type_id)
             .map(|object| object.image.clone())
             .unwrap_or_else(|| type_id.to_string());
-        rules.art().resolve_declared_cameo_id(type_id, &rules_image)
+        rules
+            .art()
+            .resolve_declared_cameo_id(type_id, &rules_image)
+            .unwrap_or_default()
     };
     assert_eq!(cameo("MTNK"), "GTNKICON");
     assert_eq!(cameo("HTNK"), "HTNKICON");
@@ -921,6 +937,63 @@ impl Drop for AnimDimTestRoot {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+/// `End=`/`LoopEnd=` past the SHP's frames bind as written: ReadINI stores
+/// them (`0x00427FE8`, `0x0042801C`) and the loader fills only zero values
+/// (`0x00427C1C..0x00427C5C`), as for retail GAWEAP_3D's LoopStart=10 and
+/// LoopEnd=19 on 4 frames; frames past the SHP draw nothing (`CC_Draw_Shape`,
+/// `0x0069E7F3`). A 0-frame SHP binds with End, LoopEnd and Middle at 0
+/// (`0x00427C2D`).
+#[test]
+fn animation_bounds_past_the_shp_frames_bind_as_written() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let mut header = vec![0_u8; 8];
+    header[2..4].copy_from_slice(&1_u16.to_le_bytes());
+    header[4..6].copy_from_slice(&1_u16.to_le_bytes());
+    header[6..8].copy_from_slice(&4_i16.to_le_bytes());
+    std::fs::write(root.path().join("OVER.SHP"), header).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[OVER]\nEnd=9\nLoopStart=10\nLoopEnd=19\n");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\nMetallicDebris=OVER\n"))
+        .process_with_fixed_art(&ini)
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN")
+        .unwrap();
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_start,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (9, 10, 19, Some(4), Some(2))
+    );
+
+    std::fs::write(root.path().join("OVER.SHP"), [0_u8; 8]).unwrap();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let ini = IniFile::from_str("[OVER]\nRate=1\n");
+    let mut art = ArtRegistry::from_ini(&ini);
+    art.apply_anim_type_read_states(rules.anim_type_art_read_states());
+    art.bind_scheduler_anim_assets(&rules.general.metallic_debris, &assets, "URB", "URBAN")
+        .unwrap();
+    let over = art.anim_runtime_config("OVER").unwrap();
+    assert_eq!(
+        (
+            over.end,
+            over.loop_end,
+            over.raw_shp_frame_count,
+            over.middle_frame
+        ),
+        (0, 0, Some(0), Some(0))
+    );
 }
 
 #[test]

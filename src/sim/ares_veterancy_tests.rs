@@ -193,8 +193,6 @@ fn elite_ifv_kill_promotes_its_gunner_immediately() {
 /// A placed academy raises its owner's new trainable infantry to its
 /// Academy.InfantryVeterancy unless Academy.Ignore lists the type; a
 /// capture moves the bonus to the captor, and a Limbo takes it away.
-// Runs again once building placement's academy membership moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn academy_bonus_follows_placement_capture_and_limbo() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

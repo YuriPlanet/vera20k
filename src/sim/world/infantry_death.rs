@@ -386,7 +386,12 @@ impl Simulation {
     /// on retail. An ignoreDefenses kill of a `Cyborg=` (`+0xEAC`)
     /// type raises a flag (`0x0051815B`) that takes the Die1, Die2,
     /// NotHuman and refused InfDeath 9 arms on to UnInit (`0x005185E5`); a
-    /// prone Cyborg builds InfantryExplode (`0x005182B4`). Retail sets no
+    /// prone Cyborg builds InfantryExplode (`0x005182B4`), and so does one
+    /// dropped as a bomb (`+0x8F`, `0x00518155..0x005181B0`). A Cyborg's
+    /// first lethal hit without ignoreDefenses never reaches here:
+    /// `ObjectClass::ReceiveDamage` (`0x005F5509..0x005F55E8`) builds
+    /// InfantryExplode, sets its health to a quarter of `Strength=` (at least
+    /// 1) and leaves it crawling with its legs gone (`+0x6DB`). Retail sets no
     /// `Cyborg=`. The preceding low DropAsBomb water arm is ported here
     /// (`0x005181B5..0x005182AF`; original `tools.native_inspect` instructions).
     ///
@@ -461,7 +466,15 @@ impl Simulation {
             ),
         };
         let on_bridge = entity.on_bridge();
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, false);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            location,
+            false,
+            rules.ares_form(),
+        );
         let (rx, ry) = ((x / 256) as u16, (y / 256) as u16);
         let building = substrate
             .occupancy
@@ -493,7 +506,15 @@ impl Simulation {
         {
             return false;
         }
-        Self::object_raw_receiver_at(substrate, path_grid, resolved_terrain, id, location, true);
+        Self::object_raw_receiver_at(
+            substrate,
+            path_grid,
+            resolved_terrain,
+            id,
+            location,
+            true,
+            rules.ares_form(),
+        );
         true
     }
 
@@ -738,7 +759,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod corpse_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -944,7 +965,7 @@ mod corpse_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod dead_body_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

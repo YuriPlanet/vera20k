@@ -187,7 +187,7 @@ fn a_gate_outside_the_general_list_stands_on_a_wall_only_under_ares() {
     a.overlay((10, 10), "GASAND", 0, Some(americans));
     assert_eq!(
         a.cell_clear((10, 10), "NAGATE", Some(americans)),
-        cfg!(feature = "ares")
+        a.rules.ares_form()
     );
     assert!(!a.cell_clear((10, 10), "NAGATE", Some(soviets)));
     // CYCL is no wall.

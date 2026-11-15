@@ -64,7 +64,7 @@ pub(crate) enum LanServiceRequest {
     Refresh,
     SelectGame { game_id: Option<u64>, changed: bool },
     NameChanged(String),
-    Chat { text: Vec<u16>, color: u32 },
+    Chat { text: Vec<u16> },
     Join { game_id: u64, observe: bool },
     CancelJoin { game_id: u64 },
 }
@@ -107,6 +107,11 @@ pub(crate) struct LanShellRuntime {
     pub(crate) lobby: LanLobbyState,
     /// The single-OK box's label, a CSF or `VERA:` one ([`crate::i18n::label`]).
     pub(crate) modal: Option<&'static str>,
+    /// VERA: the box's text when it says more than its label: why the host
+    /// refused a join whose rules differ ([`agreement::rules_differ_text`]).
+    ///
+    /// [`agreement::rules_differ_text`]: crate::app::shell_network_setup::agreement::rules_differ_text
+    pub(crate) modal_body: Option<String>,
     /// VERA's Create Game box while it is up: the room's limits.
     pub(crate) create: Option<RoomLimitsPicker>,
     pending_join: Option<PendingJoin>,
@@ -119,6 +124,7 @@ impl LanShellRuntime {
         Self {
             lobby: LanLobbyState::new(name, observer),
             modal: None,
+            modal_body: None,
             create: None,
             pending_join: None,
             rejoin: None,
@@ -370,6 +376,7 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
 fn show_modal(state: &mut AppState, key: &'static str) {
     let runtime = state.frontend.lan.as_mut().expect("active BB");
     runtime.modal = Some(key);
+    runtime.modal_body = None;
     runtime.lobby.cancel_pointer();
     state.frontend.shell_controller.push(MODAL, true);
 }
@@ -592,7 +599,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 state,
                 LanChatLine {
                     text: display,
-                    //5DDEB9..5DDECA: echo uses7EEF44, outgoing uses7EEF2C.
+                    // `0x005DDEB9..0x005DDECA`: the echo uses `[0x7EEF44]`;
+                    // the packet's `[0x7EEF2C]` is `lan_service::chat_packet`'s.
                     color: 0x0040_FFFF,
                 },
             );
@@ -602,10 +610,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .as_mut()
                 .unwrap()
                 .requests
-                .push(LanServiceRequest::Chat {
-                    text: message,
-                    color: 0x0000_F0F0,
-                });
+                .push(LanServiceRequest::Chat { text: message });
         }
         LanLobbyAction::SelectGame { game_id, changed } => {
             let runtime = state.frontend.lan.as_mut().unwrap();
@@ -661,6 +666,14 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             report_error(state, "TXT_REQUEST_DENIED");
             if let Some(message) = message {
                 show_modal(state, message);
+            }
+            // VERA: the host compared the rules hash, and retail's text for
+            // it sends the player to Westwood. Say what this game changes.
+            if reason == 6 {
+                let body = crate::app::shell_network_setup::agreement::rules_differ_text(state);
+                if let Some(runtime) = state.frontend.lan.as_mut() {
+                    runtime.modal_body = Some(body);
+                }
             }
         }
         LanServiceEvent::JoinAccepted(accepted) => {
@@ -817,6 +830,7 @@ fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGame
 fn acknowledge(state: &mut AppState) {
     if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.modal = None;
+        runtime.modal_body = None;
         runtime.lobby.cancel_pointer();
     }
     state.frontend.shell_controller.pop();
@@ -1208,7 +1222,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     deadline
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -922,6 +922,12 @@ fn techno_ai_shell(
     if temporal_frozen {
         return;
     }
+    // Unit73635B..7363A3: the art `DeathFrames=` count, which may end it.
+    if category == EntityCategory::Unit
+        && sim.unit_death_count(id, rules, ctx.overlay_registry, ctx.effects)
+    {
+        return;
+    }
     // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
     // Tube, death and Temporal entry gates. Limboed Units have no Logic visit.
     if category == EntityCategory::Unit
@@ -2785,7 +2791,7 @@ fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, rules: &RuleS
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod tests {
     use super::*;
     use crate::map::tube_facts::TubeId;
@@ -2827,9 +2833,9 @@ mod tests {
         };
         let grid = &mut sim.substrate.hidden_occupation;
         if enter {
-            grid.enter_building(cell, &"1x1".into(), profile, Some((32, 32)));
+            grid.enter_building(cell, &"1x1".into(), profile, Some((32, 32)), false);
         } else {
-            grid.exit_building(cell, &"1x1".into(), profile, Some((32, 32)));
+            grid.exit_building(cell, &"1x1".into(), profile, Some((32, 32)), false);
         }
     }
 
@@ -4993,8 +4999,8 @@ mod tests {
                 .set_for_test(Some(TargetKind::Entity(2)));
             sim
         };
-        #[cfg(not(feature = "ares"))]
-        {
+        // The step itself, which the visit runs only without Ares.
+        if !RuleSet::empty_for_test().ares() {
             let kept = |altitude: i32| {
                 let mut sim = pair(altitude);
                 let dropped = drop_airborne_target_step(
@@ -6346,45 +6352,45 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai_selfheal_tests.rs"]
 mod selfheal_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai_selfheal_oracle_tests.rs"]
 mod selfheal_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/signed_health_tests.rs"]
 mod signed_health_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/ares_self_heal_tests.rs"]
 mod ares_self_heal_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "techno_ai/bridge_target_layer_tests.rs"]
 mod bridge_target_layer_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "techno_ai/bridge_engineer_entry_tests.rs"]
 mod bridge_engineer_entry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/bridge_low_repair_tests.rs"]
 mod bridge_low_repair_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/mirage_disguise_tests.rs"]
 mod mirage_disguise_tests;
 
 #[cfg(any(test, feature = "test-support"))]
 use super::bridge_test_evidence;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/promotion_sound_tests.rs"]
 mod promotion_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "techno_ai/surface_conversion_tests.rs"]
 mod surface_conversion_tests;

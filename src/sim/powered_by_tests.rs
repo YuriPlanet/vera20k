@@ -89,8 +89,6 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
     );
 }
 
-// Runs again once the powered-unit code's spark step moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_deactivated_units_spark_only_without_power() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

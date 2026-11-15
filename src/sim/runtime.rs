@@ -306,7 +306,7 @@ impl SimRuntime {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -355,10 +355,13 @@ mod tests {
                 .expect("bound production frame")
                 .trigger_effects
         };
-        let expected = vec![TriggerEffect::InputLockChanged {
-            locked: true,
-            was_locked: false,
-        }];
+        let expected = vec![
+            TriggerEffect::CancelPlacementModes,
+            TriggerEffect::InputLockChanged {
+                locked: true,
+                was_locked: false,
+            },
+        ];
         assert_eq!(run(&mut runtime), expected);
         let after_first_frame = GameSnapshot::save(&runtime.simulation, 0, 0, "trigger_owner", 0);
 

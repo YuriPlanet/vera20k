@@ -160,11 +160,11 @@ pub fn build_visible_instances(
     instances
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "bridge_pavement_caller_tests.rs"]
 mod pavement_caller_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

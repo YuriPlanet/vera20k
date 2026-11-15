@@ -397,6 +397,7 @@ impl Simulation {
             &mut self.houses,
             &mut self.power_states,
             id,
+            rules.ares_form(),
         );
         if self
             .substrate
@@ -526,6 +527,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "powered_by_tests.rs"]
 mod tests;

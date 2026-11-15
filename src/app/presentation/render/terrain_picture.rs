@@ -477,7 +477,7 @@ impl TerrainPicture {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::*;
     use crate::render::gpu::block_on;

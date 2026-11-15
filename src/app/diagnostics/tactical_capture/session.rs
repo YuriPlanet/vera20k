@@ -323,7 +323,6 @@ impl TacticalCaptureSession {
                 bail!("sealed tactical launch was not accepted: {reason:?}")
             }
         };
-        #[cfg(feature = "ares")]
         crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
             &mut state.process_assets,
             &launch,
@@ -1788,7 +1787,7 @@ fn validate_houses_and_slots(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::derive_rate;
 

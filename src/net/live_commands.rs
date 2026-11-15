@@ -1166,6 +1166,6 @@ fn probe_due(start: u32, now: u32, interval: i32) -> bool {
     (now.wrapping_sub(start) as i32) >= interval
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "live_commands_tests.rs"]
 mod tests;

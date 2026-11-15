@@ -1886,8 +1886,7 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
         .set_for_test(100);
     // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
     // is civilian (TechLevel -1).
-    #[cfg(not(feature = "ares"))]
-    {
+    if !rules.ares_form() {
         assert!(!garrison_seek(&mut sim, &rules, infantry));
         assert!(!entity(&sim, infantry).building_entry.seeking());
     }
@@ -2866,9 +2865,9 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
 /// kicks its first passenger out through ExitObject, and Ares 10014100
 /// (hook 0x444D26) gives a human Armory's trainee the exit post's
 /// Area_Guard as a Hospital's patient gets.
-#[cfg(feature = "ares")]
 #[test]
 fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(&format!(
             "{}[ARMORY]\nStrength=500\nArmory=yes\nPassengers=5\n",

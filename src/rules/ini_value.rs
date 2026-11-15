@@ -1052,7 +1052,7 @@ impl IniSection {
         default: u32,
         mut find_house: impl FnMut(&str) -> Option<usize>,
     ) -> u32 {
-        let capacity = if crate::rules::ARES_BUILD {
+        let capacity = if crate::rules::ares_switch::ares_way() {
             0x800
         } else {
             0x80
@@ -2089,7 +2089,7 @@ fn leading_float_token(s: &str) -> Option<&str> {
     Some(&s[..end])
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
@@ -2631,7 +2631,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod pcx_cameo_tests {
     #[test]
     fn filename_projection_matches_original_ares_reader_controls() {

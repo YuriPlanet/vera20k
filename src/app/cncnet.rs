@@ -372,7 +372,13 @@ impl App {
                 .as_deref()
                 .unwrap_or_default()
         );
-        let request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
+        let mut request = request.admit_loaded_modes(&state.frontend.skirmish_modes)?;
+        if let SpawnGame::Network(network) = &mut request.game {
+            // VERA: a launcher's room has no host to share rules: each
+            // player plays their own, which its ExpectedRulesDigest compares.
+            network.session.options.host_rules =
+                crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
+        }
         if let SpawnGame::Network(network) = &request.game {
             match &network.transport {
                 // Browsers cannot open the UDP sockets direct play needs.
@@ -427,7 +433,6 @@ impl App {
         let mut clock = SpawnSeedClock { seed: request.seed };
         match request.game {
             SpawnGame::Skirmish(session) => {
-                #[cfg(feature = "ares")]
                 crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
                     &mut state.process_assets,
                     &session,
@@ -875,7 +880,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::frontend::cncnet_spawn::{SpawnGame, SpawnRequest};

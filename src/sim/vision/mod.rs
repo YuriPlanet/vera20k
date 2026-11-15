@@ -1953,9 +1953,9 @@ impl FogState {
         })
     }
 
-    /// Aircraft FindFireLocation419986 reads Cell+12C bit16 directly. This is
-    /// independent of bit8.
-    pub(crate) fn is_ground_open(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
+    /// Aircraft FindFireLocation419986 and the PixelFX sparkles (`0x006D7A4F`)
+    /// read Cell+12C bit16 directly. This is independent of bit8.
+    pub fn is_ground_open(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
         self.by_owner.get(&owner).is_some_and(|view| {
             view.index(rx, ry)
                 .and_then(|i| view.ground_flags.get(i))
@@ -2961,14 +2961,14 @@ const REVEAL_MIRROR: [(i8, i8); 309] = [
     (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1), (0, -1),
 ];
 
-/// `MapClass::IsShrouded @ 0x00586360`: the Cell under `point`, projected up
-/// by its height level, is not yet mapped (`open` answers the Cell's
-/// ground-open bit, `+0x12C & 0x08`); an odd level also tests the next cell
-/// (`0x00481810(3)`).
-pub(crate) fn coordinate_is_shrouded(
+/// The lattice `MapClass::IsShrouded @ 0x00586360` and `IsFogged @
+/// 0x005864A0` share: `test` holds for the Cell under `point` projected up
+/// by half its height level and, for an odd level, also for the next Cell
+/// (`0x00481810(3)`), which is looked up only once the first passes.
+fn raised_cells_all(
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
     point: crate::sim::components::DriveCoord,
-    open: &impl Fn(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
+    mut test: impl FnMut(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
 ) -> Result<bool, String> {
     let level = point.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
     let shift = level / 2 + i32::from(level & 1 != 0);
@@ -2976,15 +2976,50 @@ pub(crate) fn coordinate_is_shrouded(
         ((point.x / 256) as i16).wrapping_sub(shift as i16),
         ((point.y / 256) as i16).wrapping_sub(shift as i16),
     ));
-    if open(first)? {
+    if !test(first)? {
         return Ok(false);
     }
     if level & 1 != 0 {
         let (x, y) = cells.coord(first);
-        let next = cells.lookup((x.wrapping_add(1), y.wrapping_add(1)));
-        return open(next).map(|open| !open);
+        return test(cells.lookup((x.wrapping_add(1), y.wrapping_add(1))));
     }
     Ok(true)
+}
+
+/// `MapClass::IsShrouded @ 0x00586360`: the Cell under `point`, projected up
+/// by its height level, is not yet mapped (`open` answers the Cell's
+/// ground-open bit, `+0x12C & 0x08`); an odd level also tests the next cell.
+pub(crate) fn coordinate_is_shrouded(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    point: crate::sim::components::DriveCoord,
+    open: &impl Fn(crate::map::cell_index::NativeCellIdentity) -> Result<bool, String>,
+) -> Result<bool, String> {
+    raised_cells_all(cells, point, |cell| open(cell).map(|open| !open))
+}
+
+/// The Cells `IsShrouded` and `IsFogged` test for the centre of the Cell at
+/// `cell` raised to its floor, as [`cell_is_shrouded`] asks them: the raised
+/// Cell, and for an odd level the next one too. `cells` should be an
+/// isolated query: a miss stamps its fallback Cell.
+pub fn cell_shroud_lattice(
+    cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    cell: (u16, u16),
+) -> (
+    crate::map::cell_index::NativeCellIdentity,
+    Option<crate::map::cell_index::NativeCellIdentity>,
+) {
+    use crate::map::cell_index::NativeCellIdentity;
+    let point = crate::sim::movement::target_cell_coord(cell.0, cell.1, Some(cells));
+    let (mut first, mut next) = (None, None);
+    let _ = raised_cells_all(cells, point, |cell| {
+        *if first.is_none() {
+            &mut first
+        } else {
+            &mut next
+        } = Some(cell);
+        Ok(true)
+    });
+    (first.unwrap_or(NativeCellIdentity::Dummy), next)
 }
 
 /// `0x00487950`: `viewer`'s map shrouds the centre of the Cell at `cell`,
@@ -3411,16 +3446,16 @@ pub(crate) fn publish_gap_generator_event(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tracked_cells_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod vision_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod reveal_area_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod adjust_for_z_tests {
     use super::{height_lift_px, iso_height_shift_cells};
 

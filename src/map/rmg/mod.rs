@@ -20,7 +20,7 @@ pub mod rng;
 pub mod saved_seeds;
 pub mod scratch;
 pub mod settings;
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 pub mod sqrt_table;
 pub mod tech_catalog;
 pub mod theater_blocks;
@@ -302,7 +302,7 @@ pub fn executed_stages(options: &RmgOptions) -> Vec<Stage> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

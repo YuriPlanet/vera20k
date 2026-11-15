@@ -2024,15 +2024,16 @@ pub(super) fn emit_admitted_fire(
             .with_damage_multiplier(damage_multiplier);
             // Ares TechnoClass_Fire_CreateBullet (1001ADE0, hook 0x6FE53F):
             // the bullet's Range is the weapon's ProjectileRange, which only
-            // a `Ranged=` type spends. Still behind the feature: the bullet's
-            // Range field and the Update_Ranged spender that reads it move
-            // with `sim::projectile`.
-            #[cfg(feature = "ares")]
-            let payload = payload.with_ares_range(
-                projectile_type
-                    .filter(|kind| kind.ranged)
-                    .map(|_| weapon.ares_projectile_range),
-            );
+            // a `Ranged=` type spends, in a game read the Ares way.
+            let payload = if rules.ares_form() {
+                payload.with_ares_range(
+                    projectile_type
+                        .filter(|kind| kind.ranged)
+                        .map(|_| weapon.ares_projectile_range),
+                )
+            } else {
+                payload
+            };
             #[cfg(feature = "phobos")]
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
@@ -2682,13 +2683,14 @@ fn commit_fire_bookkeeping(
             &mut world.power_states,
             drainer_id,
             victim_id,
+            rules.ares_form(),
         ) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
             world.leave_team(drainer_id, true, rules, effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
-            represented_assign_target(drainer, None);
+            represented_assign_target(drainer, None, rules.ares_form());
         }
     }
 }
@@ -3231,11 +3233,11 @@ pub(crate) fn tick_combat(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "house_firepower_tests.rs"]
 mod house_firepower_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod reveal_on_fire_tests {
     use super::*;
     use crate::sim::game_entity::GameEntity;
@@ -3591,7 +3593,7 @@ mod reveal_on_fire_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_once_tests.rs"]
 mod fire_once_tests;
 
@@ -3747,14 +3749,14 @@ pub(crate) fn estimated_damage_on(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "welding_native_tests.rs"]
 mod welding_native_tests;
 
 /// Ares 3.0 InfantryClass_UpdateFiringState_Heal (1004E420, hook 0x520731):
 /// a healing infantryman keeps a damaged vehicle as its target, where the
 /// stock ILLEGAL arm keeps infantry only.
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod ares_heal_drop_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

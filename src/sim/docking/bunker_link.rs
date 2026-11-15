@@ -609,7 +609,7 @@ fn at_or_below_condition_yellow(current: i32, strength: i32, condition_yellow: f
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1379,7 +1379,10 @@ mod tests {
             let held = stored(&sim, 3, &rules);
             let receiver = sim.substrate.entities.get_mut(3).unwrap();
             crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                receiver, tank, held,
+                receiver,
+                tank,
+                held,
+                rules.ares_form(),
             );
             assert_eq!(receiver.attack_target.target(), Some(TargetKind::Entity(2)));
         }
@@ -1683,6 +1686,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "bunker_release_tests.rs"]
 mod release_tests;

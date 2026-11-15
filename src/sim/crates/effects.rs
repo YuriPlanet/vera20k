@@ -129,14 +129,14 @@ pub(crate) fn apply_cloak_crate(
     center: DriveCoord,
     radius: i32,
 ) {
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
+    let ares = rules.ares_form();
     for id in ground_members_in_radius(substrate, center, radius) {
         if let Some(entity) = substrate.entities.get_mut(id) {
             entity.stealth_ability.grant();
             // Installed Cloak2@1005F920 writes permanent Ext+98 then aggregates.
-            #[cfg(feature = "ares")]
-            entity.recompute_ares_attached_stats(rules, interner);
+            if ares {
+                entity.recompute_ares_attached_stats(rules, interner);
+            }
         }
     }
 }
@@ -155,8 +155,7 @@ pub(crate) fn apply_multiplier_crate(
     magnitude: NativeF64Bits,
     which: Multiplier,
 ) -> Vec<InternedId> {
-    #[cfg(not(feature = "ares"))]
-    let _ = (rules, interner);
+    let ares = rules.ares_form();
     let mut changed_owners = Vec::new();
     for id in ground_members_in_radius(substrate, center, radius) {
         let Some(entity) = substrate.entities.get_mut(id) else {
@@ -176,8 +175,9 @@ pub(crate) fn apply_multiplier_crate(
         // Ext+80 at 1005F997. Both store the magnitude into a 1.0 slot, the
         // product above, and aggregate before the recipient callback/next
         // actor (Ares Crates.cpp).
-        #[cfg(feature = "ares")]
-        entity.recompute_ares_attached_stats(rules, interner);
+        if ares {
+            entity.recompute_ares_attached_stats(rules, interner);
+        }
         let owner = entity.owner();
         if !changed_owners.contains(&owner) {
             changed_owners.push(owner);
@@ -314,14 +314,12 @@ pub(super) fn money_crate_amount(
     let base = magnitude_amount(magnitude);
     // Ares 3.0 1002C8A0 (hook 0x48248D): `base + RandomRanged(0,
     // [CrateRules] RandomCrateMoney)`; its default 900 draws the same span.
-    #[cfg(feature = "ares")]
-    return base
-        .wrapping_add(scenario_rng.next_range_i32_inclusive(0, rules.ares_random_crate_money()));
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = rules;
-        scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+    if rules.ares_form() {
+        return base.wrapping_add(
+            scenario_rng.next_range_i32_inclusive(0, rules.ares_random_crate_money()),
+        );
     }
+    scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
 }
 
 /// `Math__ftol` of one `[Powerups]` magnitude double, the damage base the Gas

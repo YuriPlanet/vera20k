@@ -46,7 +46,7 @@ impl PendingBridgeCells {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_moving_collapse_tests.rs"]
 mod moving_collapse_tests;
 

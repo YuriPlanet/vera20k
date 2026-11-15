@@ -712,7 +712,7 @@ impl FailureCapture {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::net::live_commands::LiveCommandMode;

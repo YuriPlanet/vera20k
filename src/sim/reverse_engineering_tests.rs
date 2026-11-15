@@ -86,8 +86,6 @@ fn eva_lines(sim: &mut Simulation) -> Vec<&'static str> {
 /// The first `ReversedAs=HEAVY` tank ground records HEAVY (not TANK) for
 /// the grinder's owner, sets House+1FC and speaks the two lines for its
 /// player; the second finds HEAVY listed and does neither.
-// Runs again once building entry's grinder step moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn a_grinder_reverse_engineers_a_vehicle_once_as_its_reversed_type() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -136,8 +134,6 @@ fn a_plain_grinder_or_an_irreversible_victim_records_nothing() {
 
 /// #368: a vehicle with a captor InfantryType (Techno+0x338) also refunds
 /// that type (CIV, Soylent 75) to the grinder's owner, after its own 300.
-// Runs again once building entry's grinder step moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn a_ground_hijacked_vehicle_refunds_its_hijacker() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

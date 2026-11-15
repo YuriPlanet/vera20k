@@ -229,7 +229,7 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -24,6 +24,10 @@ thread_local! {
     static SPAWN_ACTIONS: RefCell<std::collections::VecDeque<crate::app::SpawnAction>> =
         const { RefCell::new(std::collections::VecDeque::new()) };
     static MUSIC: RefCell<Option<crate::audio::music::MusicPlayer>> = const { RefCell::new(None) };
+    /// The mod folder the next launch plays (`set_mod`); `None` is the original game.
+    static MOD: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// A file arriving in parts (`import_begin`, `import_part`).
+    static PENDING: RefCell<Option<PendingImport>> = const { RefCell::new(None) };
     static SFX: RefCell<Option<crate::audio::sfx::SfxPlayer>> = const { RefCell::new(None) };
 }
 
@@ -250,6 +254,166 @@ pub fn import_spawn_file(name: &str, bytes: Vec<u8>) -> Result<(), JsValue> {
     Ok(())
 }
 
+/// A mod's folder name in the in-memory Mods folder, as config.toml's
+/// `[paths] mod` names it: one plain folder, nothing a TOML string or a path
+/// would read differently.
+fn mod_folder(folder: &str) -> Result<(), JsValue> {
+    if folder.is_empty()
+        || folder.len() > 64
+        || folder.starts_with('.')
+        || folder.contains(['/', '\\', ':', '"', '\0'])
+        || folder.chars().any(char::is_control)
+    {
+        return Err(JsValue::from_str("Expected a mod folder name"));
+    }
+    Ok(())
+}
+
+fn idle(what: &str) -> Result<(), JsValue> {
+    if LIFECYCLE.with(|slot| slot.borrow().idle()) {
+        Ok(())
+    } else {
+        Err(JsValue::from_str(&format!(
+            "{what} before starting or after the engine exited"
+        )))
+    }
+}
+
+fn mod_path(folder: &str, name: &str) -> String {
+    format!("{}/{folder}/{name}", crate::util::config::WEB_MODS_DIR)
+}
+
+/// Import one file of a mod into the in-memory Mods folder, as `name` inside
+/// its folder. Between launches, as launch files are: a page plays one mod
+/// in one game and another in the next (`set_mod`, `remove_mod`).
+#[wasm_bindgen]
+pub fn import_mod_file(folder: &str, name: &str, bytes: Vec<u8>) -> Result<(), JsValue> {
+    mod_folder(folder)?;
+    relative_path(name)?;
+    idle("Import mod files")?;
+    crate::util::file_system::import_file(mod_path(folder, name), bytes);
+    Ok(())
+}
+
+/// Drop a mod's files from engine memory, before importing another. Returns
+/// how many went. wasm memory does not shrink, but the next import reuses it.
+#[wasm_bindgen]
+pub fn remove_mod(folder: &str) -> Result<u32, JsValue> {
+    mod_folder(folder)?;
+    idle("Remove mod files")?;
+    if MOD.with(|slot| slot.borrow().as_deref() == Some(folder)) {
+        MOD.with(|slot| *slot.borrow_mut() = None);
+    }
+    let path = format!("{}/{folder}", crate::util::config::WEB_MODS_DIR);
+    Ok(crate::util::file_system::forget_tree(path) as u32)
+}
+
+/// The mod the next `start_spawn`, `start_game` or `probe` plays: a folder
+/// imported with `import_mod_file`, or none for the original game. It reads
+/// as config.toml's `[paths] mod` does on the desktop (app::mods).
+#[wasm_bindgen]
+pub fn set_mod(folder: Option<String>) -> Result<(), JsValue> {
+    if let Some(folder) = &folder {
+        mod_folder(folder)?;
+    }
+    idle("Choose the mod")?;
+    MOD.with(|slot| *slot.borrow_mut() = folder);
+    Ok(())
+}
+
+/// A file being imported in parts: its place and its bytes so far.
+struct PendingImport {
+    path: String,
+    bytes: std::sync::Arc<[std::mem::MaybeUninit<u8>]>,
+    filled: usize,
+}
+
+/// The largest file `import_begin` takes: under 2 GiB, as no game or mod
+/// file comes near.
+const MAX_IMPORT_BYTES: f64 = 2_147_483_647.0;
+
+/// Begin importing a file in parts, so a large one need not be held whole in
+/// the page as well: `kind` is "retail" (as `import_file`), "spawn" (as
+/// `import_spawn_file`) or "mod:<folder>" (as `import_mod_file`). The engine
+/// sets aside `length` bytes at once; `import_part` fills them in order and
+/// the last part stores the file. A new begin drops an unfinished one.
+#[wasm_bindgen]
+pub fn import_begin(kind: &str, name: &str, length: f64) -> Result<(), JsValue> {
+    relative_path(name)?;
+    if !length.is_finite() || length < 0.0 || length > MAX_IMPORT_BYTES || length.fract() != 0.0 {
+        return Err(JsValue::from_str("Expected a file length"));
+    }
+    let path = match kind {
+        "retail" => {
+            if LIFECYCLE.with(|slot| slot.borrow().started()) {
+                return Err(JsValue::from_str("Reload before replacing game resources"));
+            }
+            format!("/retail/{name}")
+        }
+        "spawn" => {
+            idle("Import launch files")?;
+            format!("{SPAWN_DIRECTORY}/{name}")
+        }
+        _ => {
+            let folder = kind
+                .strip_prefix("mod:")
+                .ok_or_else(|| JsValue::from_str("Expected retail, spawn or mod:<folder>"))?;
+            mod_folder(folder)?;
+            idle("Import mod files")?;
+            mod_path(folder, name)
+        }
+    };
+    PENDING.with(|slot| *slot.borrow_mut() = None);
+    let pending = PendingImport {
+        path,
+        bytes: std::sync::Arc::new_uninit_slice(length as usize),
+        filled: 0,
+    };
+    if pending.bytes.is_empty() {
+        finish_import(pending);
+    } else {
+        PENDING.with(|slot| *slot.borrow_mut() = Some(pending));
+    }
+    Ok(())
+}
+
+/// The next part of the file `import_begin` started. Returns whether the
+/// file is now whole and imported.
+#[wasm_bindgen]
+pub fn import_part(bytes: &[u8]) -> Result<bool, JsValue> {
+    let done = PENDING.with(|slot| -> Result<bool, JsValue> {
+        let mut slot = slot.borrow_mut();
+        let pending = slot
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("No import begun"))?;
+        let end = pending.filled + bytes.len();
+        let Some(target) = std::sync::Arc::get_mut(&mut pending.bytes)
+            .and_then(|all| all.get_mut(pending.filled..end))
+        else {
+            *slot = None;
+            return Err(JsValue::from_str("A part runs past the file's length"));
+        };
+        for (to, from) in target.iter_mut().zip(bytes) {
+            to.write(*from);
+        }
+        pending.filled = end;
+        Ok(end == pending.bytes.len())
+    })?;
+    if done {
+        if let Some(pending) = PENDING.with(|slot| slot.borrow_mut().take()) {
+            finish_import(pending);
+        }
+    }
+    Ok(done)
+}
+
+fn finish_import(pending: PendingImport) {
+    debug_assert_eq!(pending.filled, pending.bytes.len());
+    // SAFETY: every byte was written, in order, before the import finished.
+    let bytes = unsafe { pending.bytes.assume_init() };
+    crate::util::file_system::import_shared(pending.path, bytes);
+}
+
 /// One launch's map and spawn.ini, which holds its tokens, end with it.
 fn remove_spawn_files() {
     let Ok(entries) = crate::util::file_system::read_dir(SPAWN_DIRECTORY) else {
@@ -436,17 +600,25 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
-        None,
+        // The mod `set_mod` chose, as config.toml names it on the desktop.
+        crate::app::mods::launch_dir(&config.paths, None),
     )
     .map_err(error)?;
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
 fn install_config() {
-    crate::util::file_system::import_file(
-        "/config.toml",
-        b"[paths]\nra2_dir = \"/retail\"\n".to_vec(),
-    );
+    crate::util::file_system::import_file("/config.toml", config_text().into_bytes());
+}
+
+/// The config.toml the next launch reads: the imported game folder, and the
+/// mod `set_mod` chose (its name holds nothing to escape: `mod_folder`).
+fn config_text() -> String {
+    let mut text = String::from("[paths]\nra2_dir = \"/retail\"\n");
+    if let Some(folder) = MOD.with(|slot| slot.borrow().clone()) {
+        text.push_str(&format!("mod = \"{folder}\"\n"));
+    }
+    text
 }
 
 fn run(

@@ -219,8 +219,6 @@ fn factory_qualification_uses_one_candidate_for_both_lists_and_requires_a_matchi
     ));
 }
 
-// Runs again once building placement's factory plans moves to the switch.
-#[cfg(feature = "ares")]
 #[test]
 fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

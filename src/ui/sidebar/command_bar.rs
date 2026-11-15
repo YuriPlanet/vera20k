@@ -197,7 +197,7 @@ pub fn spacer_pieces(cap_x: u32, spacer_w: u32) -> [Option<SpacerPiece>; 2] {
     ]
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     #[test]

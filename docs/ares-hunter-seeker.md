@@ -1,7 +1,7 @@
 # Ares HunterSeeker launch
 
-Requires an explicit `--features ares` build. Default builds do not recognize
-`Type=HunterSeeker` or read its extension keys.
+A game that ships `ares.mix` recognizes `Type=HunterSeeker` and reads its extension
+keys in every build ([Ares](ares.md)); other games do not.
 
 The launch handler follows installed Ares `SW_HunterSeeker::Activate`
 (`0x10072850`) and its building callback (`0x10072190`). Configuration stays
