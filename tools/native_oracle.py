@@ -535,7 +535,7 @@ RNG_STATE_KEYS = ["disabled", "index_a", "index_b", "state"]
 
 
 def shared_rng_states(data: dict | list) -> dict:
-    """The corpus with each distinct RNG stream state stored once, in `rng_states`.
+    """The corpus with each distinct RNG stream state stored once, in `shared_rng_states`.
 
     A corpus that records every stream before and after each row repeats a few
     250-word states thousands of times. Each state becomes `{"rng_state": n}`,
@@ -546,8 +546,8 @@ def shared_rng_states(data: dict | list) -> dict:
     """
     if isinstance(data, list):
         data = {"rows": data}
-    if "rng_states" in data:
-        raise OracleError("The corpus already stores its RNG states in rng_states")
+    if "shared_rng_states" in data:
+        raise OracleError("The corpus already stores its RNG states in shared_rng_states")
     table, numbers = [], {}
 
     def share(value):
@@ -566,7 +566,7 @@ def shared_rng_states(data: dict | list) -> dict:
         return value
 
     shared = share(data)
-    shared["rng_states"] = table
+    shared["shared_rng_states"] = table
     return shared
 
 
