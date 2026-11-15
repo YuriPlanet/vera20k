@@ -6901,9 +6901,10 @@ impl RulesPassProcessor {
         if name.is_empty() {
             return current;
         }
-        let index = self
-            .find_or_allocate(RulesTypeFamily::Side, &name)
-            .expect("a nonempty Side name is a valid factory input");
+        // `None` only past VERA's Side bound (`find_or_allocate`).
+        let Some(index) = self.find_or_allocate(RulesTypeFamily::Side, &name) else {
+            return current;
+        };
         i32::try_from(index).expect("native Side index exceeds i32")
     }
 
@@ -6914,6 +6915,22 @@ impl RulesPassProcessor {
         if incoming.is_empty()
             || (family != RulesTypeFamily::Side && is_native_none_type_name(incoming))
         {
+            return None;
+        }
+        // VERA indexes Sides in one byte and Countries in two (`SideIdx`,
+        // `CountryIdx`); gamemd's arrays have no bound. A new name past that
+        // bound allocates nothing, so outside data never grows the retained
+        // registry past what every later scenario can project.
+        let limit = match family {
+            RulesTypeFamily::Side => Some(usize::from(u8::MAX) + 1),
+            RulesTypeFamily::Country => Some(usize::from(u16::MAX) + 1),
+            _ => None,
+        };
+        if let Some(limit) = limit
+            && self.families.get(&family).map_or(0, Vec::len) >= limit
+            && self.find_existing(family, incoming).is_none()
+        {
+            log::warn!("{family:?} {incoming} not allocated: VERA20k supports at most {limit}");
             return None;
         }
         Some(self.find_or_construct(family, incoming))
@@ -9577,7 +9594,11 @@ impl RulesPassProcessor {
         // 0x0071287E between WeaponCount and ClearAllWeapons, is GunnerTurrets'.
         let mut slots = std::mem::take(&mut self.family_mut(family)[index].weapon_slots);
         slots.turret_count = raw.read_int("TurretCount", slots.turret_count);
-        slots.weapon_count = raw.read_int("WeaponCount", slots.weapon_count);
+        // Clamped to VERA's bound (`WEAPON_COUNT_LIMIT`): the slot loop below
+        // and the Ares way's vectors grow with it.
+        slots.weapon_count = raw
+            .read_int("WeaponCount", slots.weapon_count)
+            .min(crate::rules::object_type::WEAPON_COUNT_LIMIT);
         slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
         if slots.turret_count > 0 {
             if ares_way {
