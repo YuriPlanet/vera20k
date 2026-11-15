@@ -1369,6 +1369,31 @@ fn prepare_session_for_loading(
     }
 }
 
+/// VERA: a network match plays the rules its room took from its host
+/// (`HostRules`), which the room's agreement already compared, and so does
+/// a replay that recorded them; every other game, offline replays included,
+/// plays the player's own personal rules.
+fn play_startup_personal_rules(
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    startup: &LoadingStartup,
+) {
+    let room = match startup {
+        LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
+        LoadingStartup::Replay { session, .. } if !session.options.host_rules.is_empty() => {
+            &session.options.host_rules
+        }
+        _ => return process_assets.use_own_personal_rules(),
+    };
+    let played = room
+        .personal_rules()
+        .and_then(|rules| process_assets.use_personal_rules(rules));
+    if let Err(error) = played {
+        // A network room refused these before its start; a replay plays on
+        // and its check reports the difference.
+        log::error!("The room's personal rules do not load: {error}");
+    }
+}
+
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     state
         .frontend
@@ -1377,6 +1402,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
+    play_startup_personal_rules(&mut state.process_assets, request.startup());
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());

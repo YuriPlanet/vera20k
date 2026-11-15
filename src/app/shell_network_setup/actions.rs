@@ -201,6 +201,22 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         NO_FRANCE => options.bans.france = !options.bans.france,
         NO_SPY => options.bans.spy = !options.bans.spy,
         NO_STOLEN_TECH => options.bans.stolen_tech = !options.bans.stolen_tech,
+        TERRAIN_DEFORMATION => {
+            let rules = &mut options.host_rules;
+            rules.terrain_deformation = !rules.terrain_deformation;
+        }
+        HOST_PERSONAL_RULES => {
+            options.host_rules.personal_rules = match options.host_rules.personal_rules {
+                Some(_) => None,
+                None => {
+                    crate::skirmish_launch::HostRules::from_own(
+                        state.process_assets.personal_rules(),
+                        true,
+                    )
+                    .personal_rules
+                }
+            };
+        }
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;

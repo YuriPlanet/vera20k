@@ -4,9 +4,14 @@
 //! another pass can reset omitted fields and repeat native postprocessing.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
+
+/// The most VERARULES.INI bytes a network room's host shares, so the room's
+/// options stay well inside the online lobby's 24 KiB.
+pub const SHARE_LIMIT: usize = 8 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct PersonalRules {
@@ -15,6 +20,8 @@ pub struct PersonalRules {
     /// The Options page's Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
     terrain_deformation: bool,
+    /// The file as read, which a network room's host shares.
+    source: Arc<[u8]>,
 }
 
 impl Default for PersonalRules {
@@ -23,6 +30,7 @@ impl Default for PersonalRules {
             patch: IniFile::empty(),
             override_map_rules: false,
             terrain_deformation: false,
+            source: Arc::from(&[][..]),
         }
     }
 }
@@ -38,7 +46,23 @@ impl PersonalRules {
             patch,
             override_map_rules,
             terrain_deformation: false,
+            source: Arc::from(bytes),
         })
+    }
+
+    /// The VERARULES.INI bytes these rules were read from; empty without one.
+    pub fn source(&self) -> &[u8] {
+        &self.source
+    }
+
+    /// Both change the game's rules the same way, whatever their Options
+    /// switches: a file that changes nothing matches none.
+    pub fn same_changes(&self, other: &Self) -> bool {
+        match (self.is_empty(), other.is_empty()) {
+            (true, true) => true,
+            (false, false) => self.changes_crc() == other.changes_crc(),
+            _ => false,
+        }
     }
 
     pub fn set_terrain_deformation(&mut self, on: bool) {
@@ -54,7 +78,7 @@ impl PersonalRules {
     }
 
     /// The file or an Options switch changes the game: what
-    /// [`Self::compatibility_crc`] adds to the network rules hash.
+    /// [`Self::compatibility_crc`] adds to the network rules digest.
     pub fn in_effect(&self) -> bool {
         !self.is_empty() || self.terrain_deformation
     }
@@ -110,21 +134,30 @@ impl PersonalRules {
         Cow::Owned(root)
     }
 
-    /// Network admission must compare the precedence policy and the Options
+    /// The network rules digest must compare the precedence policy and the Options
     /// switches as well as values. A comment-only file with the switches off
     /// has no effect, including on the compatibility hash.
     pub fn compatibility_crc(&self) -> Option<u32> {
         if !self.in_effect() {
             return None;
         }
+        Some(self.crc_with(self.terrain_deformation))
+    }
+
+    /// The file's changes and precedence policy without the Options switches.
+    fn changes_crc(&self) -> u32 {
+        self.crc_with(false)
+    }
+
+    fn crc_with(&self, terrain_deformation: bool) -> u32 {
         let policy = if self.override_map_rules { "yes" } else { "no" };
         let mut header = format!("[VERA]\nPersonalRulesVersion=1\nOverrideMapRules={policy}\n");
-        if self.terrain_deformation {
+        if terrain_deformation {
             header.push_str("TerrainDeformation=yes\n");
         }
         let mut input = IniFile::from_str(&header);
         input.merge_source_sections(&self.patch, true);
-        Some(input.native_crc())
+        input.native_crc()
     }
 }
 

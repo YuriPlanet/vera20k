@@ -757,6 +757,7 @@ fn skirmish(
         teams: None,
         auto_balance: false,
         queue: Vec::new(),
+        host_rules: Default::default(),
     };
     let mut session = SkirmishLaunchSession {
         mode,

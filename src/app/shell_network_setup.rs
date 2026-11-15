@@ -777,7 +777,7 @@ impl App {
                 Default::default()
             },
         );
-        let (launch, vacancies) = match result {
+        let (mut launch, vacancies) = match result {
             Ok(value) => value,
             Err(error) => {
                 log::error!("Could not restore network setup: {error:#}");
@@ -785,6 +785,15 @@ impl App {
                 return false;
             }
         };
+        // VERA: the room plays its host's rules, the Options page's Terrain
+        // Deformation box and VERARULES.INI, which the host can turn off in
+        // Game Options. Quick Match plays the original game.
+        if !(dialog.wol() && crate::app::shell_wol::lobby::quick_match_runner(state)) {
+            launch.options.host_rules = crate::skirmish_launch::HostRules::from_own(
+                state.process_assets.personal_rules(),
+                true,
+            );
+        }
         if let Err(error) = install_setup(
             state,
             launch,

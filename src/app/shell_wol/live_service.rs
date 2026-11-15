@@ -2258,14 +2258,21 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 return;
             }
             cancel_pending(state, service);
-            fail_start(
-                state,
-                &tr(if retryable {
-                    "VERA:StartLobbyBusy"
-                } else {
-                    "VERA:StartRefusedSetup"
-                }),
-            );
+            let mut text = tr(if retryable {
+                "VERA:StartLobbyBusy"
+            } else {
+                "VERA:StartRefusedSetup"
+            });
+            // VERA: the lobby does not say which player differs; this game
+            // can say what it changes.
+            if let Some(own) = (!retryable)
+                .then(|| crate::app::shell_network_setup::agreement::own_changes_text(state))
+                .flatten()
+            {
+                text.push(' ');
+                text.push_str(&own);
+            }
+            fail_start(state, &text);
         }
         http::Response::Authenticated {
             attempt,
