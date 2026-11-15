@@ -3596,6 +3596,7 @@ fn continue_area_damage(
                     position,
                     inline,
                     &mut death.voxel_debris,
+                    rules,
                 ) {
                     log::warn!("barrel debris did not construct: {error}");
                 }
@@ -4209,6 +4210,7 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for WarheadDebrisHost<'_, '_> {
             origin,
             admit_inline,
             self.voxels,
+            self.rules,
         )
     }
 }

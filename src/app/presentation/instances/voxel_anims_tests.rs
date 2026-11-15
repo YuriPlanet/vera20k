@@ -244,6 +244,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         IVec3::new(12 * 256 + 128, 12 * 256 + 128, 0),
         true,
         &mut Vec::new(),
+        rules,
     )
     .unwrap();
     let ids = sim.voxel_anims().ids();

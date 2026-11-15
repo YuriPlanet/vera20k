@@ -749,16 +749,20 @@ fn update_smoke(
     rules: &RuleSet,
 ) {
     // 10027966..100279CB: any owner object (Ares tests the Object flag, not
-    // the stock Foot one) moves the system to its GetCoords plus the
-    // constructor's offset.
-    if let Some(owner) = sys
-        .owner_entity
-        .and_then(|owner| sim.substrate.entities.get(owner))
-    {
-        let origin = crate::sim::movement::ground_pose::object_get_coords(
-            owner,
-            sim.resolved_terrain.as_ref(),
-        );
+    // the stock Foot one), a VoxelAnim too, moves the system to its GetCoords
+    // plus the constructor's offset.
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    let origin = sys.owner_entity.and_then(|owner| {
+        crate::sim::movement::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Entity(owner),
+            sim,
+            cells.as_ref(),
+        )
+    });
+    if let Some(origin) = origin {
         sys.coords = IVec3::new(
             sys.offset.x.wrapping_add(origin.x),
             sys.offset.y.wrapping_add(origin.y),

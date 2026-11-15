@@ -359,8 +359,16 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .find(|c| c["name"] == name)
             .unwrap();
         let mut sim = fixture(case);
-        sim.emit_debris_voxel(type_id, kind, None, IVec3::ZERO, true, &mut Vec::new())
-            .unwrap();
+        sim.emit_debris_voxel(
+            type_id,
+            kind,
+            None,
+            IVec3::ZERO,
+            true,
+            &mut Vec::new(),
+            &rules,
+        )
+        .unwrap();
         let id = sim.substrate.voxel_anims.ids()[0];
         // This terrain-consumer fixture supplies the independently captured
         // Bounce body after the ordinary constructor has admitted the object.
