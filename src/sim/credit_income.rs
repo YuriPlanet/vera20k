@@ -802,7 +802,7 @@ pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: &R
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

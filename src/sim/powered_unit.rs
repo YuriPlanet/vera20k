@@ -58,7 +58,8 @@
 //! - The three EVA sites also require the game to be active (`0x00A8E9A0`)
 //!   and no scenario initialization under way (`0x00A8E7AC`,
 //!   `0x0050E088..0x0050E0C4`); the walks push the line without them.
-//!   Inaudible: retail `evamd.ini` has no entries for either line.
+//!   Retail `evamd.ini` has both lines, but no retail campaign gives such a
+//!   house a center (`app::match_runtime::sound_dispatch`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -657,6 +658,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "powered_unit_tests.rs"]
 mod tests;

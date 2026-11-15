@@ -1599,7 +1599,7 @@ pub(crate) fn cell_top_height(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;

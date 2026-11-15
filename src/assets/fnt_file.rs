@@ -294,7 +294,7 @@ fn decode_glyph_bitmap(bitmap: &[u8], width: u32, bitmap_rows: u32, bytes_per_ro
     rgba
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
 

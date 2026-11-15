@@ -376,7 +376,7 @@ impl DiplomacyView {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::shell::in_game_shell::allied_fixture_layout as shell;

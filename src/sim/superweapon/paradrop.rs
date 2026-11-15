@@ -66,7 +66,7 @@
 //!   sim/team_script_vm (FNPC), sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "paradrop_tests.rs"]
 mod tests;
 

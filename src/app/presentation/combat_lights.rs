@@ -252,7 +252,7 @@ fn scaled_surface_index(base_size: i32, stage: u8) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -725,7 +725,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod spotlight_tests {
     use super::*;
     #[test]

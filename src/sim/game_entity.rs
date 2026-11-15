@@ -2612,7 +2612,9 @@ impl GameEntity {
         self.fall.set_attached_anim_flag(attached);
     }
 
-    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+    /// Object+88, the held canopy identity published by Paradrop5F5AF1.
+    /// Presentation reads this identity with the object's other frame facts.
+    pub fn parachute_animation(&self) -> Option<u64> {
         self.fall.parachute_animation()
     }
 
@@ -3018,7 +3020,7 @@ impl GameEntity {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
 
@@ -3129,7 +3131,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod lifecycle_tests {
     use super::*;
 
@@ -3165,7 +3167,7 @@ mod lifecycle_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod mission_shadow_tests {
     use super::*;
     use crate::sim::mission::state::MissionTestFixture;

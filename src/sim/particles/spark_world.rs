@@ -423,7 +423,7 @@ pub(super) fn ares_spark_dies(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 pub(super) mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

@@ -539,7 +539,7 @@ pub fn binding_for(asset_name: &str, source_archive: &str) -> Option<&'static Pr
     best.map(|(_, rule)| &rule.binding)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

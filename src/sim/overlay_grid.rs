@@ -2170,7 +2170,7 @@ impl OverlayGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
 

@@ -107,6 +107,60 @@ impl App {
         crate::app::frontend::shell_layout::choose_map_layout(state)
     }
 
+    /// The Choose Map search line takes keys only while its page is active.
+    /// Its visible rectangle also anchors the platform's IME candidate UI.
+    pub(super) fn choose_map_search_ime_rect(
+        state: &AppState,
+    ) -> Option<crate::ui::shell::geom::RectPx> {
+        use crate::app::input::precedence::{InputLayer, ScreenPage};
+        if !matches!(
+            crate::app::input::precedence::input_layer(state),
+            InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+        ) {
+            return None;
+        }
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
+        let layout = Self::skirmish_choose_map_layout(state);
+        Some(
+            crate::app::frontend::skirmish_shell_render::choose_map_search_ime_area(
+                state,
+                &layout,
+                &modal.search,
+            ),
+        )
+    }
+
+    /// Apply committed input-method text to Choose Map through the modal's
+    /// search owner, matching the ordinary key path.
+    pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
+        if Self::choose_map_search_ime_rect(state).is_none() {
+            return false;
+        }
+        let layout = Self::skirmish_choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let Some(modal) = frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
+        else {
+            return false;
+        };
+        modal.append_search_text(
+            text,
+            &frontend.skirmish_modes,
+            frontend.scenario_catalog.records(),
+            &layout,
+        );
+        state.platform.window.request_redraw();
+        true
+    }
+
     fn validation_modal_dialog_id() -> crate::ui::shell::descriptor::DialogId {
         crate::ui::shell::descriptor::DialogId(0x00CE)
     }
@@ -1142,6 +1196,9 @@ impl App {
         if !event.state.is_pressed() {
             return false;
         }
+        if Self::choose_map_search_ime_rect(state).is_none() {
+            return false;
+        }
         let layout = Self::skirmish_choose_map_layout(state);
         let frontend = &mut state.frontend;
         let Some(modal) = frontend
@@ -1168,7 +1225,7 @@ impl App {
             if typed.is_empty() {
                 return false;
             }
-            text.push_str(&typed);
+            return Self::choose_map_search_text(state, &typed);
         }
         modal.set_search(
             text,
@@ -1840,7 +1897,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

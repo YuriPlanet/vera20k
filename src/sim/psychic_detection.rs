@@ -152,6 +152,6 @@ pub fn psychic_sensor_watch_fixture(rules: &RuleSet) -> (Simulation, u64, Intern
     (sim, tank, americans)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "psychic_detection_tests.rs"]
 mod tests;

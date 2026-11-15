@@ -520,7 +520,7 @@ fn category_label(category: EntityCategory) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;

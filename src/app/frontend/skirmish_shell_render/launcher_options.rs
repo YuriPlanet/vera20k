@@ -665,7 +665,7 @@ pub(crate) fn render_launcher_options(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::{LauncherOptionsLayout, without_text_under, zoom_label};
     use crate::ui::main_menu_dialogs::options::shell::PageLabel;

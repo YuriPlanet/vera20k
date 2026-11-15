@@ -4,7 +4,7 @@
 //! that path nor this value boundary runs authored Fill/Recalc, Tube or Anim
 //! constructors. Process identity and resident catalogs are supplied separately.
 
-use super::build::load_native_tmp_draw_heights;
+use super::build::{MAX_TMP_RAMP_TYPE, load_native_tmp_draw_heights};
 use super::cliffs::build_destroyable_cliff_catalog;
 use super::*;
 use crate::assets::asset_manager::AssetManager;
@@ -86,6 +86,8 @@ pub enum SavedTerrainError {
     },
     #[error("saved terrain cell {index} references missing Tube {tube}")]
     TubeReference { index: usize, tube: u16 },
+    #[error("saved terrain cell {index} has slope {slope}, past the slope tables")]
+    Slope { index: usize, slope: u8 },
     #[error("saved terrain animation {index} has no allocated cell at {cell:?}")]
     AnimationCell { index: usize, cell: (u16, u16) },
     #[error("saved terrain resident assets: {0}")]
@@ -247,6 +249,16 @@ impl SavedTerrainTemplate {
                 return Err(SavedTerrainError::TubeReference {
                     index,
                     tube: tube.0,
+                });
+            }
+            // Map building flattens a ramp past the 21-record slope tables
+            // (`merge_tmp_metadata`), so only a damaged save holds one; the
+            // Cell coordinate readers (`CellRef::center_coordinate`) expect
+            // one inside.
+            if cell.slope_type > MAX_TMP_RAMP_TYPE {
+                return Err(SavedTerrainError::Slope {
+                    index,
+                    slope: cell.slope_type,
                 });
             }
         }

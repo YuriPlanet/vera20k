@@ -856,7 +856,7 @@ fn command_from_name(name: &str) -> Option<HotkeyCommand> {
         .map(|row| row.command)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -1841,7 +1841,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod modifier_owner_tests {
     use super::*;
 

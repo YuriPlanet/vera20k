@@ -477,6 +477,9 @@ pub(crate) fn all_to_hunt(
             continue;
         }
         if techno.category() == EntityCategory::Structure {
+            // RESIDUAL (invisible): native sells only a building with
+            // occupants (0x005014F9); this also clears an empty building's
+            // CurrentFireIdx.
             crate::sim::passenger::garrison_eject::sell_building_occupants(
                 sim,
                 rules,
@@ -615,6 +618,6 @@ pub(crate) fn all_to_hunt_score_override(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_strategy_tests.rs"]
 mod tests;

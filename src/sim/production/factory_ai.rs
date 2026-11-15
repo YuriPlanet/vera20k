@@ -539,6 +539,6 @@ pub(crate) fn detach_all(
     );
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "factory_ai_tests.rs"]
 mod tests;

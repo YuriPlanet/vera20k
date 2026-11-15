@@ -398,7 +398,7 @@ fn resize_constructor_count(map_width: u32, map_height: u32) -> u32 {
         .wrapping_add(1)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use super::{
         MAP_READ_NATIVE_ID_RESERVATION, NativeFreshIdPrefixCheckpoints,

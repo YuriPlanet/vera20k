@@ -39,7 +39,7 @@ const IDX_HEADER_SIZE: usize = 12;
 /// V1 entries are 32 bytes, V2 entries are 36 bytes (extra chunk_size field).
 const IDX_ENTRY_SIZE_V1: usize = 32;
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 #[path = "audio_bag_native_tests.rs"]
 mod native_tests;
 const IDX_ENTRY_SIZE_V2: usize = 36;
@@ -394,7 +394,7 @@ pub mod test_support {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::test_support::build_idx;
     use super::*;

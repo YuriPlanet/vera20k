@@ -250,7 +250,7 @@ pub(crate) fn read_vote(
     Ok(Some(control))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

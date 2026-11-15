@@ -360,6 +360,6 @@ fn store(value: X87Value) -> NativeF64Bits {
     X87Chop53::store_f64(value).expect("Hover doubles stay finite")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "hover_tests.rs"]
 mod tests;

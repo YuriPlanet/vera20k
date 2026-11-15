@@ -240,7 +240,7 @@ impl InfantryInfiltration {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_infiltration_tests.rs"]
 mod infiltration_tests;
 
@@ -321,6 +321,17 @@ pub const HIDDEN_OCCUPY_SLOT_COUNT: usize = 8;
 /// `0 <= idx < 18`, and `EliteWeapon[]` (`+0xA94`) sits `18 * 0x1C` (+4)
 /// bytes after `Weapon[]` (`+0x898`).
 pub const WEAPON_SLOT_COUNT: usize = 18;
+
+/// VERA's bound on `WeaponCount=`. gamemd loops and Ares sizes its weapon,
+/// turret, label and insignia vectors by the raw signed value, so a value near
+/// `i32::MAX` freezes or exhausts memory there. Outside data never stops the
+/// game: the read clamps here, far above any weapon list a mod authors.
+pub const WEAPON_COUNT_LIMIT: i32 = 1024;
+
+/// VERA's bound on the radio contacts (dock slots) one building allocates.
+/// Native allocates `max(NumberOfDocks, 1)` contacts (`0x0043BCBD..0x0043BCD0`),
+/// which for a value near `i32::MAX` exhausts memory; no dock layout needs more.
+pub const DOCK_CONTACT_LIMIT: i32 = 256;
 
 /// Weapon-array slot the `Primary=` / `ElitePrimary=` keys name
 /// (`TechnoTypeClass+0x898` / `+0xA94`).
@@ -1318,6 +1329,11 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
+    /// VERA's `SuperWeaponPerBuilding=` (default no; `docs/superweapon-limit.md`):
+    /// each building of this type charges its own shot of the Supers it
+    /// provides, rather than the house's one charge alone. gamemd has no such
+    /// key; the Superweapon Limit sets it.
+    pub super_weapon_per_building: bool,
     /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` lists, retained per
@@ -1430,7 +1446,8 @@ pub struct ObjectType {
     ///
     /// After the art→rules merge:
     /// - If art declared at least one `DockingOffset%d`, the vec is sized to
-    ///   `number_of_docks` (zero-padding any indices missing in art, truncating excess).
+    ///   `number_of_docks` (zero-padding any indices missing in art, truncating excess),
+    ///   at most [`DOCK_CONTACT_LIMIT`].
     /// - If art declared none, the vec is left empty — consumers fall back to
     ///   their own anchor (e.g. `refinery_pad_cell`'s rightmost-column default).
     ///
@@ -4132,8 +4149,9 @@ impl ObjectType {
 
     /// Building43BCBD..43BCD0 allocates at least one radio contact even when
     /// the signed type count is nonpositive. This is not the coordinate-query count.
+    /// VERA clamps it to [`DOCK_CONTACT_LIMIT`].
     pub fn dock_contact_capacity(&self) -> u32 {
-        self.number_of_docks.max(1) as u32
+        self.number_of_docks.clamp(1, DOCK_CONTACT_LIMIT) as u32
     }
 
     /// BuildingType virtual used by the Building receive-damage prelude and
@@ -4467,8 +4485,9 @@ impl ObjectType {
             // (the live consumer executes IDIV without a zero guard).
             walk_rate: section.read_int("WalkRate", 1),
             idle_rate: section.read_int("IdleRate", 0),
-            // Double fields (`0x007124A3..0x007124E5`).
-            weight: SimFixed::from_num(section.read_double("Weight", 1.0) as f32),
+            // Double fields (`0x007124A3..0x007124E5`). Saturating: an
+            // out-of-range literal scans as infinity.
+            weight: SimFixed::saturating_from_num(section.read_double("Weight", 1.0) as f32),
             accel_factor: section.read_double_bits(
                 "AccelerationFactor",
                 NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
@@ -4536,7 +4555,9 @@ impl ObjectType {
                     if degrees == -1.0 {
                         current
                     } else {
-                        SimFixed::from_num((degrees as f32) * (std::f32::consts::PI / 180.0))
+                        SimFixed::saturating_from_num(
+                            (degrees as f32) * (std::f32::consts::PI / 180.0),
+                        )
                     }
                 },
             ),
@@ -4819,6 +4840,7 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
+            super_weapon_per_building: section.read_bool("SuperWeaponPerBuilding", false),
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: PhobosOreGathering::default(),
@@ -5552,27 +5574,27 @@ fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> b
     category == ObjectCategory::Building && section.read_bool(key, false)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "vehicle_speed_type_tests.rs"]
 mod vehicle_speed_type_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "infantry_pip_tests.rs"]
 mod infantry_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ammo_pip_tests.rs"]
 mod ammo_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "absorber_pip_tests.rs"]
 mod absorber_pip_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn fly_bank_rules_read_stock_values_and_keep_each_pass_sentinels() {
@@ -5893,9 +5915,10 @@ mod tests {
             } else {
                 object.number_of_docks = row.count;
             }
+            // VERA bounds the native capacity (`DOCK_CONTACT_LIMIT`).
             assert_eq!(
                 object.dock_contact_capacity(),
-                row.capacity,
+                row.capacity.min(DOCK_CONTACT_LIMIT as u32),
                 "{:?}",
                 row.raw
             );
@@ -6677,6 +6700,17 @@ mod tests {
         let noslots = obj("NOSLOTS");
         assert_eq!(noslots.primary(), None);
         assert!(noslots.weapon_list.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn weapon_count_stops_at_the_vera_bound() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=GUN\n[GUN]\nTurretCount=1\nWeaponCount=5000\nWeapon1=AG1\n",
+        ))
+        .unwrap();
+        let gun = rules.object("GUN").unwrap();
+        assert_eq!(gun.weapon_count, WEAPON_COUNT_LIMIT);
+        assert_eq!(gun.weapon_list[0].as_deref(), Some("AG1"));
     }
 
     #[test]
@@ -7559,7 +7593,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod simple_deploy_reader_tests {
     use crate::rules::{
         ini_parser::IniFile,

@@ -186,7 +186,7 @@ impl<T: LocalCommandEvent, const CAPACITY: usize> LocalCommandStage<T, CAPACITY>
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::sim::command::{Command, CommandEnvelope};

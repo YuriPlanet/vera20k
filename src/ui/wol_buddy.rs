@@ -628,7 +628,7 @@ impl WolBuddyLayout {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::wol_lobby::{CHANNEL_KEYED, EX_INFO_VERSION, GAME_CHANNEL, GAME_LIMIT_800};

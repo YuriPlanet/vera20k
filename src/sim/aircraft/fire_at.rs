@@ -55,7 +55,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::projectile::launch::{AircraftBulletCourse, aircraft_bullet_velocity};
 use crate::sim::projectile::{ProjectileCoord, ProjectileVelocity};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "fire_at_tests.rs"]
 mod tests;
 

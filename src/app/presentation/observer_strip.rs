@@ -131,7 +131,7 @@ pub(crate) fn observer_entries(
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

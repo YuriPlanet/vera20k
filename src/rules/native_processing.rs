@@ -289,8 +289,9 @@ impl RulesLayerStack {
         self.process_with_fixed_art(&IniFile::empty())
     }
 
-    /// Apply every Rules pass against fixed ARTMD with an empty EVA catalog.
-    /// Production uses the process owner to supply its fixed EVAMD catalog.
+    /// Apply every Rules pass against fixed ARTMD with empty EVA and SOUNDMD
+    /// catalogs, so no type sound resolves. Production uses the process owner
+    /// to supply its fixed EVAMD and SOUNDMD.
     ///
     /// Retail provenance: `Load_Game_Rules @ 0x0052CD70` selects ARTMD before
     /// the first `RulesClass::Process @ 0x00668BF0`; `ReadTypeData @ 0x00679A10`
@@ -303,6 +304,24 @@ impl RulesLayerStack {
             fixed_art,
             NativeRulesRegistryState::new(self.ships_ares),
         )
+    }
+
+    /// [`Self::process_with_fixed_art`] against a fixed SOUNDMD, which the
+    /// process owner always supplies outside tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn process_with_fixed_art_and_sounds(
+        &self,
+        fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        self.process_with_fixed_art_and_registry_state_recovering(
+            fixed_art,
+            NativeRulesRegistryState::new(self.ships_ares),
+            RulesProcessContext::Ordinary,
+            &EvaRegistry::default(),
+            fixed_sounds,
+        )
+        .map_err(NativeRulesProcessingFailure::into_error)
     }
 
     /// Continue Process calls against an already-live process registry.
@@ -5820,7 +5839,7 @@ impl TechnoTypeReferences {
 /// fixed ART section (`0x00428045..0x00428735`), retained on the live type:
 /// `RuleSet` hands them to its ART registry. Each is a ReadString into 0x80
 /// bytes whose empty read keeps the field; `Next=` (+2C8, `0x00428045`) and
-/// `Spawns=` (+34C, `0x004281DE`) go through `AnimTypeClass::FindOrCreate @
+/// `Spawns=` (+2F0, `0x004281DE..0x00428216`) go through `AnimTypeClass::FindOrCreate @
 /// 0x00428F70`, `BounceAnim=` (`0x0042840D`), `ExpireAnim=` (`0x004284C4`)
 /// and `TrailerAnim=` (`0x00428588`) through the inlined AnimType factory,
 /// `TiberiumSpawnType=` (+338, `0x0042828A`) through OverlayType's
@@ -5845,6 +5864,14 @@ pub(crate) struct AnimTypeReferences {
     /// sets it.
     #[serde(default)]
     weapon: Option<String>,
+    /// The one sound slot (+2F8, constructor -1) `AnimTypeClass::Start @
+    /// 0x00424CE0` plays: `StartSound=` resolved through VocClass::FindIndex
+    /// (`0x007514D0`), else `Report=` (`0x00428344..0x004283BC`).
+    start_sound: Option<String>,
+    /// The sound slot `AnimClass::UnInit @ 0x004255B0` plays (+2FC,
+    /// constructor -1): `StopSound=` read the same way, without a fallback
+    /// (`0x004283C2..0x00428415`).
+    stop_sound: Option<String>,
 }
 
 // A stock-way read never sets `weapon`, so a stock game's hash folds the
@@ -5859,6 +5886,8 @@ impl Hash for AnimTypeReferences {
         self.trailer_anim.hash(state);
         self.warhead.hash(state);
         self.spawns_particle.hash(state);
+        self.start_sound.hash(state);
+        self.stop_sound.hash(state);
         if self.weapon.is_some() {
             self.weapon.hash(state);
         }
@@ -5880,6 +5909,8 @@ impl AnimTypeReferences {
         config.spawns_particle = upper(&self.spawns_particle);
         // Ares AnimTypeExt `Weapon`; None unless read the Ares way.
         config.ares_weapon = self.weapon.clone();
+        config.start_sound = upper(&self.start_sound);
+        config.stop_sound = upper(&self.stop_sound);
     }
 }
 
@@ -6870,9 +6901,10 @@ impl RulesPassProcessor {
         if name.is_empty() {
             return current;
         }
-        let index = self
-            .find_or_allocate(RulesTypeFamily::Side, &name)
-            .expect("a nonempty Side name is a valid factory input");
+        // `None` only past VERA's Side bound (`find_or_allocate`).
+        let Some(index) = self.find_or_allocate(RulesTypeFamily::Side, &name) else {
+            return current;
+        };
         i32::try_from(index).expect("native Side index exceeds i32")
     }
 
@@ -6883,6 +6915,22 @@ impl RulesPassProcessor {
         if incoming.is_empty()
             || (family != RulesTypeFamily::Side && is_native_none_type_name(incoming))
         {
+            return None;
+        }
+        // VERA indexes Sides in one byte and Countries in two (`SideIdx`,
+        // `CountryIdx`); gamemd's arrays have no bound. A new name past that
+        // bound allocates nothing, so outside data never grows the retained
+        // registry past what every later scenario can project.
+        let limit = match family {
+            RulesTypeFamily::Side => Some(usize::from(u8::MAX) + 1),
+            RulesTypeFamily::Country => Some(usize::from(u16::MAX) + 1),
+            _ => None,
+        };
+        if let Some(limit) = limit
+            && self.families.get(&family).map_or(0, Vec::len) >= limit
+            && self.find_existing(family, incoming).is_none()
+        {
+            log::warn!("{family:?} {incoming} not allocated: VERA20k supports at most {limit}");
             return None;
         }
         Some(self.find_or_construct(family, incoming))
@@ -8597,6 +8645,23 @@ impl RulesPassProcessor {
                 let member = &mut self.family_mut(RulesTypeFamily::Animation)[index];
                 member.read_object_sound(section, fixed_sounds);
                 member.anim_art_read = true;
+                // 0x00428344..0x004283BC: StartSound= is a ReadString128 and
+                // VocClass::FindIndex (0x007514D0) that keeps the current ID
+                // on an empty or unknown name. While the slot is still -1,
+                // Report= is read the same way, but its miss stores -1.
+                member.anim_references.start_sound = fixed_sounds
+                    .read_rules_reference(
+                        section,
+                        "StartSound",
+                        member.anim_references.start_sound.take(),
+                    )
+                    .or_else(|| fixed_sounds.read_rules_reference(section, "Report", None));
+                // 0x004283C2..0x00428415: StopSound= the same way, no fallback.
+                member.anim_references.stop_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "StopSound",
+                    member.anim_references.stop_sound.take(),
+                );
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
                 // This retains the existing fresh/unowned read projection;
@@ -8890,6 +8955,15 @@ impl RulesPassProcessor {
                     self.families.get_mut(&family).unwrap()[index]
                         .ares_cursors
                         .read_techno_pass(&raw, &self.ares_mouse_cursors);
+                } else {
+                    // The isolated Find-only canopy read also admits a game
+                    // whose rules/map names this Ares key without ares.mix.
+                    let mut retained =
+                        std::mem::take(&mut self.family_mut(family)[index].techno_combat);
+                    retained.read_parachute_anim(|key| {
+                        self.resolve_existing_type_from(&raw, key, RulesTypeFamily::Animation)
+                    });
+                    self.family_mut(family)[index].techno_combat = retained;
                 }
                 if ares_way {
                     self.process_factory_owners(family, index, &raw);
@@ -9529,7 +9603,11 @@ impl RulesPassProcessor {
         // 0x0071287E between WeaponCount and ClearAllWeapons, is GunnerTurrets'.
         let mut slots = std::mem::take(&mut self.family_mut(family)[index].weapon_slots);
         slots.turret_count = raw.read_int("TurretCount", slots.turret_count);
-        slots.weapon_count = raw.read_int("WeaponCount", slots.weapon_count);
+        // Clamped to VERA's bound (`WEAPON_COUNT_LIMIT`): the slot loop below
+        // and the Ares way's vectors grow with it.
+        slots.weapon_count = raw
+            .read_int("WeaponCount", slots.weapon_count)
+            .min(crate::rules::object_type::WEAPON_COUNT_LIMIT);
         slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
         if slots.turret_count > 0 {
             if ares_way {
@@ -11061,90 +11139,90 @@ impl RulesPassProcessor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_processing_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_veterancy_tests.rs"]
 mod ares_country_veterancy_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_factory_owners_tests.rs"]
 mod ares_factory_owners_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "side_registry_tests.rs"]
 mod side_registry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_sidebar_tests.rs"]
 mod ares_side_sidebar_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_paradrop_tests.rs"]
 mod ares_country_paradrop_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_power_plants_tests.rs"]
 mod ares_country_power_plants_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_presentation_tests.rs"]
 mod ares_country_presentation_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_defaults_tests.rs"]
 mod ares_side_defaults_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_tech_level_tests.rs"]
 mod native_tech_level_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "projectile_art_tests.rs"]
 mod projectile_art_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "weapon_speed_tests.rs"]
 mod weapon_speed_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "weapon_registry_tests.rs"]
 mod weapon_registry_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "guided_controls_tests.rs"]
 mod guided_controls_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "select_anim_rules_tests.rs"]
 mod select_anim_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "approach_rules_tests.rs"]
 mod approach_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "chrono_beam_rules_tests.rs"]
 mod chrono_beam_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "control_line_rules_tests.rs"]
 mod control_line_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "disguise_cursor_rules_tests.rs"]
 mod disguise_cursor_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "native_type_reader_tests.rs"]
 mod native_type_reader_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_side_eva_tests.rs"]
 mod ares_side_eva_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 #[path = "ares_country_loading_tests.rs"]
 mod ares_country_loading_tests;

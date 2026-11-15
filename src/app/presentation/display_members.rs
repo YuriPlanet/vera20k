@@ -193,6 +193,6 @@ impl DisplayMembers {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "display_members_tests.rs"]
 mod tests;

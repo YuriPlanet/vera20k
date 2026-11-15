@@ -489,7 +489,7 @@ pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     (mm_x, mm_y, mm_w, mm_h)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod terrain_pixel_tests {
     use super::*;
 
@@ -523,7 +523,7 @@ mod terrain_pixel_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod radar_color_tests {
     use super::*;
     use crate::map::terrain::TerrainCell;

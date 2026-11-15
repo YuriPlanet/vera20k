@@ -44,7 +44,7 @@ pub(crate) fn reset(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
     defaults
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::app::input::hotkeys::HotkeyCommand;

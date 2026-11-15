@@ -537,7 +537,7 @@ pub struct CoopScorePage {
     pub campaign_end: Option<crate::ui::campaign_score_shell::CampaignEndModel>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

@@ -41,7 +41,7 @@ const MENU_THEME_SECTION: &str = "INTRO";
 /// `Next_Song` shuffle rejection budget (`CMP EDI,0x3E8` @ `0x00720AC6`).
 const SHUFFLE_TRIES: u32 = 1_000;
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 #[path = "theme_saved_tests.rs"]
 mod saved_tests;
 
@@ -989,11 +989,36 @@ fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrac
             u32::from(header.sample_rate),
         ));
     }
-    log::warn!("Music track not found: resolved='{track_name}'");
+    if first_report_of_missing_track(track_name) {
+        log::warn!("Music track not found: resolved='{track_name}'");
+    }
     None
 }
 
+/// Whether `track_name`'s absence is new to the log. A repeating theme whose
+/// file is missing retries every frame, as gamemd does (`0x00720CF2` ignores
+/// the failed play); one warning per track keeps that out of the log.
+fn first_report_of_missing_track(track_name: &str) -> bool {
+    static REPORTED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+        std::sync::Mutex::new(std::collections::BTreeSet::new());
+    REPORTED
+        .lock()
+        .is_ok_and(|mut reported| reported.insert(track_name.to_ascii_lowercase()))
+}
+
 #[cfg(test)]
+mod missing_track_tests {
+    use super::first_report_of_missing_track;
+
+    #[test]
+    fn a_missing_track_is_reported_once() {
+        assert!(first_report_of_missing_track("vera_test_absent_track"));
+        assert!(!first_report_of_missing_track("vera_test_absent_track"));
+        assert!(!first_report_of_missing_track("VERA_TEST_ABSENT_TRACK"));
+    }
+}
+
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;

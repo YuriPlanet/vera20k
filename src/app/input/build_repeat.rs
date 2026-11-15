@@ -141,7 +141,7 @@ pub(crate) fn top_up(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::*;
     use crate::sim::intern::InternedId;

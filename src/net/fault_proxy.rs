@@ -346,7 +346,7 @@ fn run_sockets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod tests {
     use super::*;
     use crate::net::event_packet::{EventPacketCodec, EventPacketHeader};

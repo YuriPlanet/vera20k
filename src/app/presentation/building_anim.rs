@@ -681,7 +681,7 @@ fn registry_facts_for_owner(
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 

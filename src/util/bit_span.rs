@@ -12,7 +12,7 @@ pub(crate) fn span_words(first: usize, last: usize) -> impl Iterator<Item = (usi
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::span_words;
 

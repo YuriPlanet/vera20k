@@ -92,6 +92,7 @@ Thumbs.db
 !/docs/modding.md
 !/docs/map-format.md
 !/docs/terrain-deformation.md
+!/docs/superweapon-limit.md
 !/docs/dormant-stock-rules.md
 !/docs/_config.yml
 !/docs/index.md
@@ -110,6 +111,7 @@ Thumbs.db
 !/docs/formation-line.md
 !/docs/ferry.md
 !/docs/auto-repair.md
+!/docs/minimap-beacons.md
 !/docs/primary-rotation.md
 !/docs/relation-colours.md
 !/docs/random-map-extras.md

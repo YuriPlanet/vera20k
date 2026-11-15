@@ -98,7 +98,7 @@ fn connect_startup_crate_overlays(
     synced
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod map_wall_owner_candidate_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1747,7 +1747,7 @@ fn construction_trace_after_fill(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod fresh_transport_tests {
     use super::*;
 
@@ -2209,14 +2209,12 @@ impl MapLoadInitial {
             &overlay_registry,
             resolved_terrain.tile_animations(),
         );
-        rules
-            .bind_scheduler_anim_assets(
-                &scheduler_roots,
-                asset_manager,
-                theater_ext,
-                &map_data.header.theater,
-            )
-            .expect("retail scheduler animation closure");
+        rules.bind_scheduler_anim_assets(
+            &scheduler_roots,
+            asset_manager,
+            theater_ext,
+            &map_data.header.theater,
+        );
         // Every other AnimClass producer and the building animations: tolerant
         // pass, after the strict one, which rewrites the scheduler-owned set
         // wholesale.
@@ -2805,7 +2803,7 @@ fn generated_overlay_grid(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod generated_overlay_grid_tests {
     use super::*;
     use crate::map::rmg::{RmgGrid, RmgOptions, emit};
@@ -3415,8 +3413,8 @@ fn load_map_first_step(
                             let variant_table_draws = variant_selector.raw_draw_count();
                             drop(variant_draw);
                             // Bind the complete scheduler closure only after theater Tile##Anim rows
-                            // have resolved, but before any atlas or AnimClass construction. Missing
-                            // tile art is a load error rather than a silently invisible map feature.
+                            // have resolved, but before any atlas or AnimClass construction. A tile
+                            // name no AnimType holds becomes an unread type that draws nothing.
                             let roots = scheduler_anim_roots(
                                 &rules,
                                 &overlay_registry,
@@ -4202,12 +4200,26 @@ pub(super) const fn should_read_tmcj4f(
     ) && the_team_enabled
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod full_init_rules_gate_tests {
     use super::*;
 
     #[test]
     fn generated_rules_are_read_before_generation_and_carried_once_through_failure() {
+        // The game loads a map on its main thread, which has 8 MiB on every
+        // platform (build.rs links `/STACK` on Windows), as the simulation
+        // thread has. Unoptimized, the frames from here to RuleSet::project
+        // hold about 2.2 MiB of Rules copies, past libtest's 2 MiB thread.
+        let test = std::thread::Builder::new()
+            .stack_size(8 << 20)
+            .spawn(generated_rules_read_before_generation_and_carried)
+            .unwrap();
+        if let Err(panic) = test.join() {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    fn generated_rules_read_before_generation_and_carried() {
         use crate::app::match_runtime::session::SessionMode;
         use crate::map::source::test_support::TestDirectory;
         use crate::rules::ini_parser::IniFile;
@@ -4607,7 +4619,7 @@ mod full_init_rules_gate_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_retail_tests {
     //! Retail-input pass over the real `.SED` load path.
     //!
@@ -4803,7 +4815,7 @@ mod random_map_retail_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod milestone_order_tests {
     /// A source-order guard. gamemd raises the bar in call order (45 -> 50 ->
     /// 55/58/60 -> 63/65/67 -> 68/69 -> 70, `0x00687847`,
@@ -4828,7 +4840,7 @@ mod milestone_order_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod network_seed_source_tests {
     use super::*;
     #[test]

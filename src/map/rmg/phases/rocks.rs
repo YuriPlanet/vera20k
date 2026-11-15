@@ -132,7 +132,7 @@ fn is_sand_lat_transition(ids: &TileIds, tile: i32) -> bool {
     tile >= ids.sand_lat && tile < ids.sand_lat + LAT_SPAN
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::TheaterCliffRanges;

@@ -407,7 +407,7 @@ pub(crate) fn close(state: &mut AppState) -> Option<NetworkQualityReport> {
     Some(report)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

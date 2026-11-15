@@ -20,32 +20,32 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod anim_translucency_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod bridge_shadow_gpu_tests;
 mod build_instances;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_bracket_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_shadow_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_slot_native_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod building_viewport_bounds_tests;
 mod draw_passes;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod magnetic_wave_gpu_tests;
 mod object_extras;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod parachute_native_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod parachute_owner_color_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod placement_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod status_gpu_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod target_laser_gpu_tests;
 pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
@@ -54,7 +54,7 @@ pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
 mod object_stages;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod object_stages_gpu_tests;
 pub(crate) mod terrain_picture;
 
@@ -1002,6 +1002,10 @@ fn upload_to_gpu(
             None => ui.software_cursor.as_slice().into(),
         };
 
+    // BeaconClass::Draw's label boxes (`beacon_labels`), in frame pixels.
+    let (beacon_label_fill, beacon_label_outline, beacon_label_text) =
+        crate::app::presentation::beacon_labels::instances(state);
+
     #[cfg(feature = "ares")]
     let bounty_text = {
         let presentation = &state.match_state.match_presentation;
@@ -1080,6 +1084,9 @@ fn upload_to_gpu(
     for (house, beacons) in ui.beacons.iter().enumerate() {
         pool.upload_page("beacons", house, beacons);
     }
+    pool.upload("beacon_label_fill", &beacon_label_fill);
+    pool.upload("beacon_label_outline", &beacon_label_outline);
+    pool.upload("beacon_label_text", &beacon_label_text);
     pool.upload("drag", &ui.drag);
     pool.upload("ground_marks", &ui.ground_marks);
     pool.upload_strokes("ground_strokes", &ui.ground_strokes);
@@ -1131,7 +1138,7 @@ fn upload_to_gpu(
     pool.upload("tooltip_text", &tooltip_text);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     include!("../render_tests.rs");
 }

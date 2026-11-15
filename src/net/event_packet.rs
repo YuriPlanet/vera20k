@@ -670,6 +670,6 @@ fn decode_error(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "event_packet_tests.rs"]
 mod tests;

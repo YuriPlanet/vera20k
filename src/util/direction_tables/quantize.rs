@@ -34,7 +34,7 @@ pub fn muzzle_anim_index_8way(f16: u16) -> u8 {
     (dir_from_facing16(f16) + 1) & 7
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

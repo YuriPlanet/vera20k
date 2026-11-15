@@ -104,7 +104,7 @@ pub(crate) fn open_in_browser(url: &str) {
     log::warn!("Cannot open {url}");
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

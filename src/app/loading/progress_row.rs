@@ -294,7 +294,7 @@ pub(crate) fn layout_loading_progress_row(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

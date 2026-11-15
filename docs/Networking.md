@@ -48,7 +48,7 @@ content, each tile file a theater reads whose bytes differ from the ones a retai
 reads, variants included, since map loading picks each cell's variant by how many its tile
 has. A theater MIX that takes a retail one's place counts even if it does not open. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
-folder but `mod.ini`, by path and content, so players whose copies of a mod differ are
+folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The files are read once, starting when the player
 opens Network or Internet, and nothing more is exchanged. A game from before the mod
 files, the theater INIs or their tiles were compared is another version and is
@@ -63,8 +63,9 @@ archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`)
 the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
 tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
-startup; the message names three and counts the rest, which the log lists; or personal
-rules and Terrain Deformation. A difference none of
+startup; the message names three and counts the rest, which the log lists. Personal
+rules, Terrain Deformation and the Superweapon Limit need nothing: Quick Match's room has no
+[room rules](#room-rules), so its match plays without them. A difference none of
 these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
 status page says the games differ (`VERA:MatchStartMismatch`), the log records both
 hashes, and the search goes on after the stage timeout; the host only times out. This
@@ -220,8 +221,8 @@ accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must match;
 recorded state hashes are checked during playback. Generated maps, campaigns and
 restored mid-match segments currently lack standalone replay startup; a skirmish or
-network match that cannot be recorded says why in the log. `--replay-verify` loads no personal rules (`VERARULES.INI`)
-and no mod, so it refuses a match played with either as a rules mismatch.
+network match that cannot be recorded says why in the log. `--replay-verify` loads no mod,
+so it refuses a match played with one as a rules mismatch.
 Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.
@@ -295,6 +296,45 @@ older guest is refused at LAN's build check and online cannot read the options w
 anyone waits. A lobby from before the queue refuses the field; the host's game stops
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Balance automatically and Teams then turns those off too.
+
+### Room rules
+
+A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
+Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
+host's Options have them and the host can change them in Game Options. They travel with the host's options, online as
+`launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
+`host_rules` beside VERA's room options. Every player's game, the host's too, plays
+them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
+The switches compose over the root each scenario reads, never over the
+cold start or the shell's Country reads, so every player's one rules registry is the
+same whichever rules a room plays. Offline games play the player's own, a network
+replay the room's it recorded. A Quick Match room has none: the guest's game drops
+any its host sends, and the lobby refuses them there. A launcher's network game
+(`tools/spawn`) has no host to share them, so each player plays their own, which its
+`ExpectedRulesDigest` compares. So the room's door, the native rules hash (LAN's join
+check, online the room's `ex_info`), leaves the switches out, while the rules
+digest compares the ones each game plays. When the door
+still refuses a join because the rules files differ, or the digest a start, each game
+says what it changes from the original game, its mod, `config.toml`'s INI roots and
+changed game files, or that it plays the original (`agreement::rules_differ_text`);
+retail's text for it sends the player to Westwood. Nothing more is exchanged for
+that. A game of another build is refused at the build check first, so no released
+game reads `host_rules`; a lobby from before it refuses the field with 400
+`invalid_options`, and the host's game drops the room's rules, says so, and its room
+plays without them. A rollback past it plays every room without them. The Superweapon Limit came later, as
+`host_rules.superweapon_limit` (2 to 20): an older guest cannot read options that carry
+it, in a room that cannot start as its players' versions differ, and an older LAN guest
+is refused at the build check. A lobby from before it refuses the field; the host's game
+turns the limit off, says so and sends its options again with its other rules. A
+rollback past it plays every room without it, as offline games then do.
+
+Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
+also carried the host's file as `personal_rules`. This version never sends it, and
+refuses a room or a replay whose `host_rules` still has it: an older host's room is
+refused at the build check before that, and an older replay plays without it and fails
+its rules check. A guest of an older version is refused at the build check. The lobby
+still accepts the field, so a rollback needs no lobby change; a rolled-back game reads
+`VERARULES.INI` again.
 
 ## Native behavior and deliberate bounds
 

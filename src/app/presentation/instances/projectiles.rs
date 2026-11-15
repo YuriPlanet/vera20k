@@ -385,15 +385,15 @@ fn bullet_shp_palette_light(kind: &ProjectileType, scheme_rgb: [i32; 3]) -> Pale
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "projectile_render_tests.rs"]
 mod native_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "projectile_flight_tests.rs"]
 mod flight_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     use super::*;
 
@@ -435,7 +435,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "projectile_voxel_tests.rs"]
 mod voxel_tests;
 

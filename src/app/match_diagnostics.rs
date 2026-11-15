@@ -773,7 +773,7 @@ fn reserve_segment_path(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{MatchDiagnosticsState, prune_old_segments};
     use crate::sim::replay::{ReplayHeader, ReplayLog};

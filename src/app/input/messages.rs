@@ -730,6 +730,10 @@ fn post_named_house_line(
         ),
         HouseLineColor::Country => {
             // HouseType+0xC0 holds 2*entry+1 (ReadColor 0x474A90).
+            // RESIDUAL (kept by the maintainer, 2026-11-15): a multiplayer
+            // SetCreditsAndColor overwrites it with the slot's raw colour
+            // priority (`0x004FCE17`), so gamemd colours these lines with that
+            // scheme of the country's last slot house; VERA keeps Color=.
             let scheme = country.map_or(0, |country| rules.country_color_scheme(&country));
             country_message_rgb(scheme, &rules.color_schemes)
         }
@@ -1178,8 +1182,10 @@ fn message_instances(
     let mut texts = Vec::new();
     // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
     // is never set and the chat cursor character 0 draws no caret.
+    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
+        .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
     // The open composition follows the typed text (`app::input::ime`).
     let composition = edit.as_ref().zip(composition).map(|(row, units)| {
@@ -1232,7 +1238,7 @@ fn message_instances(
     (fills, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 
@@ -1804,7 +1810,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "ares"))]
+#[cfg(all(test, tests_app_input_d_z, feature = "ares"))]
 mod ares_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

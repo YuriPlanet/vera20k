@@ -398,7 +398,7 @@ impl StoreIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::rules::particle_system_type::ParticleSystemTypeId;

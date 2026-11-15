@@ -90,7 +90,7 @@ impl WolPlayerCard {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};

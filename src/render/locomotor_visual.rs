@@ -284,7 +284,7 @@ fn z_free_screen_position(position: &crate::sim::components::Position) -> (f32, 
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

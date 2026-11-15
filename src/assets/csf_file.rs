@@ -652,7 +652,7 @@ pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     CsfFile::from_bytes(&data).unwrap()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod tests {
     use super::*;
     use std::collections::HashMap;

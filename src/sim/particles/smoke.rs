@@ -282,6 +282,6 @@ fn symmetric_offset(radius: i32, rng: &mut SimRng) -> i32 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 #[path = "smoke_native_tests.rs"]
 mod native_tests;

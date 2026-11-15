@@ -378,7 +378,7 @@ pub(crate) fn notice(language: Option<ChatLanguage>) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

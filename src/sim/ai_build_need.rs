@@ -505,10 +505,10 @@ fn restart_production(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_build_need_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_build_need_retail_tests.rs"]
 mod retail_tests;

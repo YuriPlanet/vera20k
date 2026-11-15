@@ -52,7 +52,7 @@ fn game_speed_hidden(
         || local_defeated
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

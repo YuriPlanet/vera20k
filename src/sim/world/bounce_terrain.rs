@@ -126,6 +126,6 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bounce_terrain_tests.rs"]
 mod tests;

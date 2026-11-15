@@ -1318,7 +1318,17 @@ fn fogged_sprite_keys<'a>(
                     context
                 }
                 FoggedDrawKind::Animation => {
-                    frozen_anim_palette_context(rules.art().anim_runtime_config(name))
+                    let config = rules.art().anim_runtime_config(name);
+                    // A frame past the SHP (End=/LoopEnd= beyond its frames)
+                    // draws nothing (`CC_Draw_Shape`, `0x0069E7F3`); the
+                    // atlas would stand frame 0 in for it.
+                    if config
+                        .and_then(|config| config.raw_shp_frame_count)
+                        .is_some_and(|count| record.frame >= count)
+                    {
+                        continue;
+                    }
+                    frozen_anim_palette_context(config)
                 }
             };
             keys.insert(ShpSpriteKey {
@@ -2586,19 +2596,19 @@ pub(crate) fn prepare_sprite_atlas(
         }
     }
 
-    // Step 1e: Pre-load both retained canopy types. NPSE Paradrop
+    // Step 1e: Pre-load the General canopy fallbacks. NPSE Paradrop
     // C2FA75/C2F939 substitutes VehicleParachute for non-infantry.
     // This registers the no-remap GlobalAnim/colour-0 fallback. The live
     // AnimClass remap closure adds SelectedScheme variants for remapped canopies;
     // both use the unit palette here because PARACH sets `AltPalette=`.
+    // Configured Ares canopies enter Step 1d through the bound animation roots.
+    // That owner supplies their Image=/Theater=/Shadow= bindings.
     let mut parachutes: Vec<&str> = Vec::new();
     if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
         parachutes.extend(rules.general.parachute_shp.as_deref());
         if crate::rules::NPATCH_ENABLED {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
         }
-        #[cfg(feature = "ares")]
-        parachutes.extend(rules.side_parachute_animations());
     }
     for shp_name in parachutes {
         let candidates = [
@@ -4144,11 +4154,11 @@ fn gather_sprite_band<'s>(
     atlas_growth::gather_band(&rects, 1, |i| sprites[i].1.indices())
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "sprite_atlas_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "sprite_atlas_projectile_tests.rs"]
 mod projectile_tests;
 

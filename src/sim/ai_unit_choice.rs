@@ -4,8 +4,8 @@
 //! Native owner: `HouseClass`. `+0x5650` (Unit), `+0x5654` (Infantry) and
 //! `+0x5658` (Aircraft) hold a type's index in its class array, -1 for none
 //! (constructor `0x004F5BC6..0x004F5BD2`). The choosers (`AI_Choose_Unit @
-//! 0x004FEA60`; `0x004FEEE0` for infantry and `0x004FF210` for aircraft,
-//! whose Ghidra labels are swapped) fill a choice that is -1; the house's
+//! 0x004FEA60`; `0x004FEEE0` for infantry and `0x004FF210` for aircraft)
+//! fill a choice that is -1; the house's
 //! chooser dispatch calls them (`sim::ai_base_building`). A factory building
 //! makes the choice (`Suggest_New_Object @ 0x004FBD80`,
 //! `production::factory_ai`), whose exit clears it again
@@ -541,6 +541,6 @@ fn pick(
     most_needed.get(usize::try_from(slot).ok()?).copied()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_unit_choice_tests.rs"]
 mod tests;

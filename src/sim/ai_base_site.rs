@@ -489,6 +489,6 @@ fn signed(cell: (u16, u16)) -> (i16, i16) {
     (cell.0 as i16, cell.1 as i16)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ai_base_site_tests.rs"]
 mod tests;

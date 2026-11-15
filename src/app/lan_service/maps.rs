@@ -1048,7 +1048,7 @@ pub(super) fn setup_request(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::net::global::{GlobalDestination, GlobalMessage};

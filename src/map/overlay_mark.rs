@@ -552,7 +552,7 @@ fn mark_low_bridge<H: OverlayMarkHost>(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

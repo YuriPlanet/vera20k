@@ -324,7 +324,7 @@ pub(crate) fn build_shp_vehicle_sequences(
     set
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -529,8 +529,6 @@ mod tests {
             firing_frames: firing,
             standing_frames: None,
             shp_facings: 8,
-            report: None,
-            start_sound: None,
             extra_light: 0,
             terrain_palette: false,
             use_buffer: false,

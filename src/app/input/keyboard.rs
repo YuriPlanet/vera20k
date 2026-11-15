@@ -683,7 +683,7 @@ pub(crate) fn key_name(encoded: u16) -> String {
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     #[cfg(not(windows))]

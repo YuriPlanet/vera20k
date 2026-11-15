@@ -373,43 +373,27 @@ pub(super) fn run(state: &mut AppState) {
 /// The refusal that names the changed game files (`{files}`).
 const CHANGED_FILES: &str = "VERA:QuickMatchChangedFiles";
 
-/// `{files}` for [`CHANGED_FILES`]: the box body is a few lines, so it names
-/// the first three files and counts the rest, which the startup log lists, as
-/// `(+2)`, which needs no translation.
-fn changed_files_text(files: &[String]) -> String {
-    const NAMED: usize = 3;
-    let named = files[..files.len().min(NAMED)].join(", ");
-    match files.len().saturating_sub(NAMED) {
-        0 => named,
-        more => format!("{named} (+{more})"),
-    }
-}
+use crate::app::shell_network_setup::agreement::changed_files_text;
 
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
-/// original game. A mod fails the pre-match check; other INI roots, changed
-/// game files, personal rules or an Options switch fail the join's rules
-/// hash (`0x0079BA60`, silently in Quick Match), against any opponent
-/// without the same. The box says what to turn off, and the runner ends
-/// before it queues. Only the Options box applies without a restart.
+/// original game. A mod fails the pre-match check; other INI roots or
+/// changed game files fail the join's rules hash (`0x0079BA60`, silently in
+/// Quick Match), against any opponent without the same. The box says what to
+/// turn off, and the runner ends before it queues. The Options switches need
+/// nothing: its room has no host rules, so its match
+/// plays without them (`HostRules`).
 fn original_game_refusal(
     mod_in_use: bool,
     assets: &crate::app::process_assets::ProcessAssets,
 ) -> Option<&'static str> {
-    let rules = assets.personal_rules();
     if mod_in_use {
         Some("VERA:QuickMatchNoMod")
     } else if !assets.stock_ini_roots() {
         Some("VERA:QuickMatchIniProfile")
     } else if !assets.changed_game_files().is_empty() {
         Some(CHANGED_FILES)
-    } else if !rules.in_effect() {
-        None
-    } else if rules.is_empty() {
-        Some("VERA:QuickMatchTerrainDeformation")
-    } else if rules.terrain_deformation() {
-        Some("VERA:QuickMatchPersonalRulesAndDeformation")
     } else {
-        Some("VERA:QuickMatchPersonalRules")
+        None
     }
 }
 
@@ -1600,7 +1584,7 @@ pub(crate) fn add_buddy_answered(state: &mut AppState, yes: bool, ask_again: boo
     welcome(state);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -1793,27 +1777,12 @@ mod tests {
         use crate::app::process_assets::ProcessAssets;
         use crate::assets::asset_manager::MediaArchiveMode;
         use crate::rules::personal_rules::PersonalRules;
-        let assets = |file: &str| {
-            ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_personal_rules(PersonalRules::from_bytes(file.as_bytes()).unwrap())
-        };
-        let mut comments = assets("; [NUKE]\n; DeformDepth=10\n");
-        assert_eq!(original_game_refusal(false, &comments), None);
-        comments.set_terrain_deformation(true);
-        assert_eq!(
-            original_game_refusal(false, &comments),
-            Some("VERA:QuickMatchTerrainDeformation")
-        );
-        let mut changes = assets("[NUKE]\nDeformDepth=10\n");
-        assert_eq!(
-            original_game_refusal(false, &changes),
-            Some("VERA:QuickMatchPersonalRules")
-        );
+        // The Options switches stay home: Quick Match's room shares none,
+        // so its match plays without them.
+        let mut changes = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+            .with_personal_rules(PersonalRules::default());
         changes.set_terrain_deformation(true);
-        assert_eq!(
-            original_game_refusal(false, &changes),
-            Some("VERA:QuickMatchPersonalRulesAndDeformation")
-        );
+        assert_eq!(original_game_refusal(false, &changes), None);
         // A loose rulesmd.ini the retail archives don't hold, found at startup.
         let dir = crate::assets::asset_manager::test_support::audio_test_install("qm-files");
         std::fs::write(dir.path().join("rulesmd.ini"), b"[General]\n").unwrap();

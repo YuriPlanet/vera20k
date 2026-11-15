@@ -460,7 +460,7 @@ impl<'a, T: Clone> IntoIterator for &'a ChunkedVec<T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

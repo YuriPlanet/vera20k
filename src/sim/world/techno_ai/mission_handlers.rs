@@ -11,43 +11,43 @@ use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
 use crate::sim::world::FrameEffects;
 use crate::util::direction::DIRECTION_DELTAS;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "foot_mission_oracle_tests.rs"]
 pub(in crate::sim::world::techno_ai) mod foot_mission_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "deployed_guard_oracle_tests.rs"]
 mod deployed_guard_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "automatic_deploy_oracle_tests.rs"]
 mod automatic_deploy_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "infantry_move_oracle_tests.rs"]
 mod infantry_move_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "../infantry_fire_oracle_tests.rs"]
 mod infantry_fire_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "hover_attack_tests.rs"]
 mod hover_attack_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "guard_sabotage_tests.rs"]
 mod guard_sabotage_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "hunt_idle_tests.rs"]
 mod hunt_idle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "campaign_hunt_oracle_tests.rs"]
 mod campaign_hunt_oracle_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "area_guard_post_tests.rs"]
 mod area_guard_post_tests;
 
@@ -2936,7 +2936,7 @@ fn attack_target_is_stale(sim: &Simulation, id: u64) -> bool {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod guard_rearm_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -3075,7 +3075,7 @@ mod guard_rearm_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 mod terrain_target_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;

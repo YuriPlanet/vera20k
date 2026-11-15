@@ -1000,6 +1000,27 @@ pub(super) fn dispatch_draw_passes(
             }
         }
     }
+    // BeaconClass::Draw 430250's label boxes (`beacon_labels`): black fill,
+    // House-colour outline, then GAME.FNT text.
+    let beacon_label_solid = state
+        .match_state
+        .match_presentation
+        .selection_overlay
+        .as_ref()
+        .map(|overlay| overlay.white_texture());
+    for (texture, key) in [
+        (beacon_label_solid, "beacon_label_fill"),
+        (beacon_label_solid, "beacon_label_outline"),
+        (Some(state.renderer.bit_font.atlas()), "beacon_label_text"),
+    ] {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            texture,
+            key,
+        );
+    }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
     // Wheel zoom defers its screen-pixel border until after resampling;
     // native scale retains the original ordering between the rally passes.
@@ -1734,7 +1755,7 @@ pub(crate) fn draw_bridge_shadows(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::{CellBodyAtlas, CellBodyDraw, RenderZPolicy, cell_body_runs};
     const SOURCE: &str = include_str!("draw_passes.rs");
@@ -1989,6 +2010,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_render))]
 #[path = "tmp_clear_gpu_tests.rs"]
 mod tmp_clear_gpu_tests;

@@ -1773,11 +1773,11 @@ pub(crate) fn mission_repair(
     Some(rate)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "building_dock_frame_tests.rs"]
 mod frame_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

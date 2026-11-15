@@ -519,7 +519,6 @@ fn factory_restore_rejects_inconsistent_roots() {
         "concrete-category",
         "manager-owned-root",
         "child-root-alias",
-        "tail-without-head",
         "early-accounting",
     ] {
         let (mut saved, rules, owner, parent) =
@@ -672,18 +671,6 @@ fn factory_restore_rejects_inconsistent_roots() {
                 let (state, frame, timer) = (manager.state(), manager.frame(), manager.ai_timer());
                 manager.set_for_test(state, frame, nodes, timer);
             }
-            "tail-without-head" => {
-                saved
-                    .production_mut_for_test()
-                    .factories_mut_for_test()
-                    .test_enqueue_kernel(owner, category, parent_type, 2, 1000);
-                saved
-                    .production_mut_for_test()
-                    .factories_mut_for_test()
-                    .test_first_mut()
-                    .unwrap()
-                    .set_object_for_test(None);
-            }
             "early-accounting" => {
                 saved
                     .production_mut_for_test()
@@ -706,5 +693,30 @@ fn factory_restore_rejects_inconsistent_roots() {
             Err(error) => panic!("{label}: unexpected earlier failure {error}"),
             Ok(_) => panic!("{label}: inconsistent factory was admitted"),
         }
+    }
+}
+
+/// A Factory with queued types and no object is live state, not a broken save:
+/// StartNext4CA5A0's forced Begin (4CA60A) refuses while the only factory
+/// building sells, and Factory Save4CA3C0/Load4CA270 keep the queue.
+#[test]
+fn factory_restore_admits_a_queued_tail_without_an_object() {
+    let (mut saved, rules, owner, _) = factory_fixture("PARENT", ProductionCategory::Building);
+    let parent_type = saved.interner().get("PARENT").unwrap();
+    let factories = saved.production_mut_for_test().factories_mut_for_test();
+    factories.test_enqueue_kernel(owner, ProductionCategory::Building, parent_type, 2, 1000);
+    factories
+        .test_first_mut()
+        .unwrap()
+        .set_object_for_test(None);
+    let view = saved
+        .production()
+        .factories()
+        .view(owner, ProductionCategory::Building)
+        .unwrap();
+    assert!(view.object.is_none());
+    assert_eq!(view.queue.len(), 1);
+    if let Err(error) = prepare_saved(&saved, rules, "tail-without-head") {
+        panic!("a queued tail without an object must load: {error}");
     }
 }

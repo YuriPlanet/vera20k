@@ -354,6 +354,6 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     log::info!("VeraX AutoLoad: issued {count} enter orders");
 }
 
-#[cfg(all(test, feature = "verax"))]
+#[cfg(all(test, tests_app_input_a_c, feature = "verax"))]
 #[path = "autoload_tests.rs"]
 mod tests;

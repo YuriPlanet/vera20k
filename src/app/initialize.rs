@@ -157,7 +157,7 @@ pub(crate) struct StartupFiles {
 pub(crate) enum StartupProblem {
     /// config.toml could not be read or parsed.
     ConfigFile,
-    /// The settings folder, VERA.INI or VERARULES.INI could not be prepared;
+    /// The settings folder or VERA.INI could not be prepared;
     /// the folder, when it is known.
     Settings(Option<std::path::PathBuf>),
 }
@@ -329,39 +329,16 @@ impl App {
             .inspect_err(|error| startup_problem = Some(StartupProblem::of_config_load(error)))
             .and_then(|config| {
                 if capture_dimensions.is_none() {
-                    let prepared = (|| -> Result<crate::rules::personal_rules::PersonalRules> {
-                        crate::app::persistence::profile_file::import_legacy(&config.paths)
-                            .map_err(|error| {
-                                anyhow::Error::new(error).context(crate::i18n::tr_fill(
-                                    "VERA:CannotPrepareFile",
-                                    &[("file", &"VERA.INI")],
-                                ))
-                            })?;
-                        let bytes = crate::app::persistence::rules_profile::load_or_create(
-                            config.paths.settings_dir(),
-                        )
-                        .with_context(|| {
-                            crate::i18n::tr_fill(
-                                "VERA:CannotPrepareFile",
-                                &[("file", &"VERARULES.INI")],
-                            )
-                        })?;
-                        crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
-                            .with_context(|| {
-                                crate::i18n::tr_fill(
-                                    "VERA:CannotReadFile",
-                                    &[("file", &"VERARULES.INI")],
-                                )
-                            })
-                    })();
-                    match prepared {
-                        Ok(rules) => personal_rules = rules,
-                        Err(error) => {
-                            startup_problem = Some(StartupProblem::Settings(Some(
-                                config.paths.settings_dir().to_owned(),
-                            )));
-                            return Err(error);
-                        }
+                    let imported =
+                        crate::app::persistence::profile_file::import_legacy(&config.paths);
+                    if let Err(error) = imported {
+                        startup_problem = Some(StartupProblem::Settings(Some(
+                            config.paths.settings_dir().to_owned(),
+                        )));
+                        return Err(anyhow::Error::new(error).context(crate::i18n::tr_fill(
+                            "VERA:CannotPrepareFile",
+                            &[("file", &"VERA.INI")],
+                        )));
                     }
                 }
                 Ok(config)
@@ -387,6 +364,7 @@ impl App {
         );
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
+        personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -399,13 +377,22 @@ impl App {
         crate::i18n::set_show_string_keys(options_profile.show_string_keys);
         // After the language is known: a mod that cannot be used is refused
         // in it. A sealed capture takes no mod from config.toml, as it takes
-        // no VERA.INI or VERARULES.INI.
-        let mods = game_config
+        // no VERA.INI.
+        let mut mods = game_config
             .as_ref()
             .map(|config| {
                 crate::app::mods::begin(&config.paths, mod_switch, capture_dimensions.is_some())
             })
             .unwrap_or_default();
+        // VERARULES.INI is no longer read: a file that still holds settings
+        // is named once the main menu is up, in the language just chosen.
+        if capture_dimensions.is_none()
+            && let Some(config) = &game_config
+            && let Some(text) =
+                crate::app::persistence::rules_profile::retire(config.paths.settings_dir())
+        {
+            mods.add_rules_file_notice(text);
+        }
         crate::map::source::set_mod_dir(mods.dir().map(std::path::Path::to_owned));
         let (window_width, window_height, window_visible) =
             startup_window_projection(profile_screen, capture_dimensions);
@@ -1426,7 +1413,7 @@ pub(crate) fn quickplay_launch_session(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

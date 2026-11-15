@@ -209,7 +209,8 @@ pub fn digest_hex(digest: [u8; 32]) -> String {
     output
 }
 
-#[cfg(test)]
+// The client's build script includes this file, and knows no test group.
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::sha256_hex;
 

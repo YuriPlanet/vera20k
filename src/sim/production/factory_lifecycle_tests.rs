@@ -79,14 +79,12 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     };
     let mut rules = retail.rules;
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").expect("retail temperate assets");
-    rules
-        .bind_scheduler_anim_assets(
-            &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
-            &assets,
-            "tem",
-            "TEMPERATE",
-        )
-        .expect("production animation bounds come from physical retail SHPs");
+    rules.bind_scheduler_anim_assets(
+        &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
     let mut sim = Simulation::with_seed(0x4441_7500);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -1141,6 +1139,71 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             50_250
         );
     }
+}
+
+/// Cancelling the active item while the only barracks sells: StartNext4CA5A0
+/// pops one queued type and its forced Begin (4CA60A) refuses, so the
+/// Factory keeps one queued type and no object. A save made then must load.
+#[test]
+fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let Some((mut runtime, owner, barracks)) = retail_barracks_sale_runtime(false, true, 50_000)
+    else {
+        return;
+    };
+    for _ in 0..8 {
+        runtime
+            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+    }
+    for name in ["E2", "FLAKT", "FLAKT"] {
+        assert!(enqueue_by_type(
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            "Russians",
+            name,
+            FrameEffects::default(),
+            false
+        ));
+    }
+    for _ in 0..100 {
+        if runtime.simulation.houses[&owner].economy().spent_credits() > 0 {
+            break;
+        }
+        runtime
+            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .unwrap();
+    }
+    let rules = &runtime.resources.rules;
+    let sim = &mut runtime.simulation;
+    assert!(super::production_sell::sell_back(
+        sim,
+        rules,
+        barracks,
+        super::SellOrder::Player,
+        None,
+        FrameEffects::default()
+    ));
+    assert!(cancel_production_for_owner(
+        sim,
+        rules,
+        "Russians",
+        super::ProductionCancellation::Type {
+            type_id: "E2",
+            naval: false
+        },
+        false,
+        FrameEffects::default(),
+    ));
+    let factory = sim
+        .production
+        .factories()
+        .view(owner, ProductionCategory::Infantry)
+        .unwrap();
+    assert!(factory.object.is_none());
+    assert_eq!(factory.queue.len(), 1);
+    super::validate_restored_factory_state(sim, rules).unwrap();
 }
 
 /// Execute the callback boundary separately from sale crew/animation. The

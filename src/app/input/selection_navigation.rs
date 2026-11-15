@@ -8,7 +8,7 @@ use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::sim::combat::health_category;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "selection_navigation_tests.rs"]
 mod object_tests;
 
@@ -603,7 +603,7 @@ fn navigation_feedback(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

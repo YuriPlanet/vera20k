@@ -2116,11 +2116,11 @@ impl LanUdpTransport {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "udp_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod close_tests {
     use super::*;
     use crate::net::lan_messages::{LanMessage, LanMessageKind, LanNamedMessage};

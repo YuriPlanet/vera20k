@@ -209,7 +209,7 @@ fn tile_in_native_window(tile: i32, base: i32, span: i32) -> bool {
     tile >= base && tile < base.wrapping_add(span)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::theater::{RmgTileKeys, parse_tileset_ini};

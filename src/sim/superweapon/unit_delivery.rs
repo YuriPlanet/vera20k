@@ -21,7 +21,7 @@ use crate::sim::world::Simulation;
 use crate::sim::world::{FrameEffects, SimSoundEvent};
 use std::hash::{Hash, Hasher};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "unit_delivery_tests.rs"]
 mod tests;
 

@@ -219,7 +219,7 @@ pub enum SelectAction {
     BoxSelect(f32, f32, f32, f32),
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

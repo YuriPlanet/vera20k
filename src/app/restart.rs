@@ -67,7 +67,7 @@ fn command(args: Vec<OsString>, package: Option<PathBuf>, executable: PathBuf) -
     command
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

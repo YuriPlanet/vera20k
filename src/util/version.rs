@@ -72,7 +72,7 @@ fn read_version_txt(mut reader: impl Read) -> io::Result<String> {
     Ok(bytes[..end].iter().copied().map(char::from).collect())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use std::io::Cursor;
 

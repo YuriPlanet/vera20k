@@ -808,7 +808,7 @@ pub fn accumulate(
     X87Chop53::store_f32_masked_chop(stored)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

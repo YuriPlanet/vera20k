@@ -230,7 +230,7 @@ impl CampaignLoadingMetadata {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::{CampaignLoadingMetadata, CampaignScenarioNames, restate_briefing_key};
     use crate::rules::ini_parser::IniFile;

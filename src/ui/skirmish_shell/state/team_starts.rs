@@ -347,7 +347,7 @@ pub fn apply_team_starts(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 

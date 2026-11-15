@@ -212,6 +212,13 @@ pub(crate) struct RetailOptionsProfile {
     /// A local input preference: nothing in the rules or on the network
     /// changes. Off by default, so buildings wait for the wrench as in gamemd.
     pub(crate) auto_repair: bool,
+    /// `[VERA] MinimapBeacons=`: the Options page's Minimap Beacons box. On,
+    /// a left click on the radar in Place Beacon mode, with nothing selected,
+    /// places the beacon at that cell (`app::input::radar`,
+    /// `docs/minimap-beacons.md`); gamemd's radar answers that click with no
+    /// action and only recentres the view. A local input preference: the
+    /// beacon travels as the ordinary beacon record. Off by default.
+    pub(crate) minimap_beacons: bool,
     /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
     /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
     /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
@@ -219,6 +226,14 @@ pub(crate) struct RetailOptionsProfile {
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
+    /// `[VERA] SuperweaponLimit=`: the Options page's Superweapon Limit.
+    /// Each superweapon may be built that many times and each building
+    /// charges its own shot (`docs/superweapon-limit.md`). Like Terrain
+    /// Deformation it changes the rules each new game reads
+    /// ([`crate::rules::personal_rules::PersonalRules::set_superweapon_limit`]).
+    /// 0, off, by default; read as
+    /// [`crate::rules::personal_rules::admitted_superweapon_limit`] admits it.
+    pub(crate) superweapon_limit: u8,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
     /// service instead of showing `TXT_APIMISSING`. No Options page offers it.
     /// Off by default; no real service exists yet.
@@ -375,8 +390,10 @@ impl Default for RetailOptionsProfile {
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             auto_repair: false,
+            minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
+            superweapon_limit: 0,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
@@ -409,7 +426,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 33],
+    pub(crate) vera: [(&'static str, String); 35],
 }
 
 impl RetailOptionsLoad {
@@ -633,7 +650,11 @@ impl RetailOptionsProfile {
             );
             self.terrain_deformation =
                 vera.read_bool("TerrainDeformation", self.terrain_deformation);
+            self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
+                vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
+            );
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
+            self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -840,7 +861,12 @@ impl RetailOptionsProfile {
                     "TerrainDeformation",
                     format_bool(self.terrain_deformation).to_string(),
                 ),
+                ("SuperweaponLimit", self.superweapon_limit.to_string()),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
+                (
+                    "MinimapBeacons",
+                    format_bool(self.minimap_beacons).to_string(),
+                ),
                 (
                     "ShowStringKeys",
                     format_bool(self.show_string_keys).to_string(),
@@ -1108,7 +1134,7 @@ fn encode_net_id(progress: crate::ui::movies_credits_shell::MovieProgress) -> St
     crate::rules::ini_value::encode_comma_hex_utf16(&flip_net_id_units(&units))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use std::cell::{Cell, RefCell};
 
@@ -1963,6 +1989,21 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .right_click_orders
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn minimap_beacons_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        let mut profile = load_snapshot(&startup, b"").retained_profile;
+        assert!(!profile.minimap_beacons);
+        profile.minimap_beacons = true;
+        let written = profile.transform_settings(b"[VERA]\nUnowned=keep\n");
+        assert!(String::from_utf8_lossy(&written).contains("MinimapBeacons=yes"));
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .minimap_beacons
+        );
     }
 
     /// `[VERA] CommanderFeedback=` is the talking-head switch. It defaults to

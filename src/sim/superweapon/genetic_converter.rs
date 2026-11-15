@@ -35,9 +35,6 @@
 //! `genetic_converter_tests.rs`.
 //!
 //! RESIDUALS:
-//! - The EVA line is skipped natively while `0x00A8B538` is set
-//!   (`HouseClass::MPlayer_Defeated @ 0x004FC205`), on every client after the
-//!   local player's multiplayer defeat; VERA always plays it.
 //! - A null `IonBlast=` or warhead reaches AnimClass or the receivers as a
 //!   null type natively; VERA builds or damages nothing. Retail sets RING1,
 //!   Mutate and MutateExplosion.
@@ -54,7 +51,7 @@
 //!   sim/radar, sim/world.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "genetic_converter_tests.rs"]
 mod tests;
 

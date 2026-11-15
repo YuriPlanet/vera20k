@@ -2067,11 +2067,11 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "shell_random_map_terrain_preview_tests.rs"]
 mod terrain_preview_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -3287,6 +3287,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "random_map_ramp_end_tests.rs"]
 mod ramp_end_tests;

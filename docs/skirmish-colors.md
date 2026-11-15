@@ -42,9 +42,8 @@ MyTeal=123,255,145
 - Rules whose `[Colors]` has fewer than the 15 entries the original eight need get
   none of VERA20k's own colours; names their `[Colors]` defines still work.
 
-Put the section in a mod's `rulesmd.ini` or in your own
-[`VERARULES.INI`](personal-rules.md). In a network game every player needs the same
-list, as for any other rules change.
+Put the section in a mod's `rulesmd.ini`. In a network game every player needs the
+same list, and a room's setup screens read it from each player's own rules.
 
 ## VERA20k's own colours
 

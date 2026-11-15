@@ -252,6 +252,7 @@ pub(super) fn push_choose_map_modal_control_instances(
     layout: &ChooseMapModalLayout,
     interior: BackdropInteriorPaint,
     shell: &SkirmishShellState,
+    search_display: &str,
     steady: bool,
 ) {
     let Some(modal) = shell.choose_map_modal.as_ref() else {
@@ -291,7 +292,7 @@ pub(super) fn push_choose_map_modal_control_instances(
     }
     super::list::paint_list_frame(out, atlas, layout.map_search);
     if let Some(caret) =
-        super::text::map_search_caret_rect(font, &modal.search, layout.map_search, layout.scale)
+        super::text::map_search_caret_rect(font, search_display, layout.map_search, layout.scale)
     {
         push_solid_rect(
             out,

@@ -80,8 +80,10 @@ pub(crate) mod match_audio;
 pub mod match_bootstrap;
 pub(crate) mod match_diagnostics;
 pub(crate) mod match_runtime;
+pub(crate) mod mod_files;
 pub(crate) mod mods;
 pub(crate) mod movie_playback;
+pub(crate) mod new_mod;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 mod network_goodbye;
 pub(crate) mod movie_subtitles;
@@ -94,7 +96,7 @@ pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod process_stats;
 pub(crate) mod radar_movie;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
 pub(crate) mod restart;
@@ -114,7 +116,7 @@ mod shell_saved_seeds;
 mod shell_skirmish;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
 pub(crate) mod spawn_probe;
 mod state;
@@ -427,7 +429,7 @@ impl App {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

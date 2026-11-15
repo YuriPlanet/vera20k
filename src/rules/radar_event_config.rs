@@ -107,7 +107,7 @@ impl RadarEventConfig {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

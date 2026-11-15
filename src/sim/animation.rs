@@ -830,6 +830,6 @@ pub(crate) fn tick_dying_animation(
     anim.finished
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "animation_tests.rs"]
 mod tests;

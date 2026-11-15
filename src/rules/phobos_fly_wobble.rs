@@ -20,7 +20,7 @@ pub fn resolve(techno: Option<bool>, global: Option<bool>, is_dropship: bool) ->
     techno.or(global).unwrap_or(is_dropship)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
 

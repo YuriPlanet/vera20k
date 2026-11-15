@@ -9,19 +9,19 @@ use crate::audio::events::{GameSoundEvent, SoundEventQueue, SoundSource};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "bridge_child_sound_tests.rs"]
 mod bridge_child_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "selection_voice_tests.rs"]
 mod selection_voice_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "sound_boundary_tests.rs"]
 mod sound_boundary_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "building_death_sound_tests.rs"]
 mod building_death_sound_tests;
 
@@ -117,7 +117,9 @@ fn collect_eva_object(
 /// upgrades) and Repairing (ToggleRepair `0x004470A4`). Trigger: a campaign
 /// `PlayerControl=` house
 /// that is not the player owns a building, a `DeploysInto=` unit or a Robot
-/// Tank, or picks up a crate; effect: that line stays silent. No retail
+/// Tank, or picks up a crate; effect: that line stays silent, except that
+/// such a house's building that lists the player as an ally gives the ally
+/// line where native gives the base line (`0x004F9411..0x004F9429`). No retail
 /// campaign reaches it. Only ALL01 (Alliance: two ORCA teams; British:
 /// nothing), ALL03 (Alliance: nothing) and SOV04 (Germans: RMNV infantry and a
 /// SHAD transport with no `DeploysInto=`) have such a house; no map gives one
@@ -1610,7 +1612,7 @@ fn cloak_sound_for_app(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
     use crate::app::input::messages::HudMessage;

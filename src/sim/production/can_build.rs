@@ -31,7 +31,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{SimSoundEvent, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "thief_capture_tests.rs"]
 mod thief_capture_tests;
 
@@ -1251,14 +1251,14 @@ fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u3
     obj.owner_mask(rules)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_produced_history_tests.rs"]
 mod produced_history_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "can_build_factory_owners_tests.rs"]
 mod factory_owners_tests;

@@ -1129,7 +1129,7 @@ fn push_progress_fill(
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use serde_json::Value;

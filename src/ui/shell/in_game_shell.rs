@@ -231,7 +231,7 @@ pub(crate) fn allied_fixture_layout(width: i32, height: i32) -> InGameShellLayou
     .unwrap()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use serde::Deserialize;

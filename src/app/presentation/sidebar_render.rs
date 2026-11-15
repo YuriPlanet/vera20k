@@ -1233,7 +1233,7 @@ pub(crate) fn begin_main_load_pass<'a>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::shows_alt_cameo;
     use crate::sim::house_state::HouseState;

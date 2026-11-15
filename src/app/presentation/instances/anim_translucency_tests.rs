@@ -179,6 +179,52 @@ fn emit_with_lighting(
 }
 
 #[test]
+fn attached_effect_sharing_canopy_art_keeps_its_lighting() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::combat::Health;
+    use crate::sim::game_entity::GameEntity;
+
+    let (mut sim, mut rules, id, atlas) = fixture("SHARED", "", 0x600, 0);
+    rules.general.parachute_shp = Some("SHARED".into());
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        9001,
+        64,
+        64,
+        0,
+        0,
+        sim.intern("Americans"),
+        Health::new(100),
+        sim.intern("E1"),
+        EntityCategory::Infantry,
+        0,
+        5,
+        false,
+    );
+    entity.lifecycle.set_in_limbo_for_test(false);
+    sim.entities_mut_for_test().insert(entity);
+    sim.anims_mut_for_test()
+        .set_owner_entity_for_test(id, Some(9001));
+    *sim.anims_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .world_coord_mut_for_test() = AnimWorldCoord { x: 0, y: 0, z: 0 };
+    let mut light = CellLightGrid::new();
+    light.set_compat_tint((64, 64), [0.5, 0.625, 0.75]);
+    let effect = emit_with_lighting(&sim, &rules, id, &atlas, &Default::default(), &light, None);
+    assert_eq!(effect.len(), 1);
+    assert_eq!(effect[0].pieces[0].instance.tint, [0.5, 0.625, 0.75]);
+
+    // Decode the production entity payload with Object+88 holding this anim.
+    let mut saved = serde_json::to_value(sim.entities().get(9001).unwrap()).unwrap();
+    saved["fall"]["parachute_animation"] = serde_json::json!(id);
+    sim.entities_mut_for_test()
+        .insert(serde_json::from_value::<GameEntity>(saved).unwrap());
+    let canopy = emit_with_lighting(&sim, &rules, id, &atlas, &Default::default(), &light, None);
+    assert_eq!(canopy.len(), 1);
+    assert_eq!(canopy[0].pieces[0].instance.tint, [1.; 3]);
+}
+
+#[test]
 fn retained_squid_light_follows_event_order_and_keeps_live_palette_colours() {
     use crate::app::presentation::lighting::MatchLighting;
     use crate::map::lighting::{LightingConfig, radiation_point_light};

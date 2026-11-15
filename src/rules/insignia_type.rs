@@ -442,6 +442,6 @@ fn read_int_key(section: &IniSection, key: &str) -> Option<i32> {
     section.read_name(key, 2048).and_then(parse_ares_int)
 }
 
-#[cfg(all(test, feature = "phobos"))]
+#[cfg(all(test, tests_rules_a_n, feature = "phobos"))]
 #[path = "insignia_type_tests.rs"]
 mod tests;

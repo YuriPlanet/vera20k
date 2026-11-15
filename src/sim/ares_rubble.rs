@@ -309,6 +309,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "ares_rubble_tests.rs"]
 mod tests;

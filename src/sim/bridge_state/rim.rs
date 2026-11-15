@@ -12,7 +12,7 @@
 
 use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "rim_tests.rs"]
 mod tests;
 

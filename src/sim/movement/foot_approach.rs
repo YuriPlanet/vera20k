@@ -32,15 +32,15 @@ const OFFSETS: [i16; 25] = [
     0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64,
 ]; // original signed table8224DC
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_approach_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "approach_crush_tests.rs"]
 mod approach_crush_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "mission_approach_tests.rs"]
 mod mission_approach_tests;
 

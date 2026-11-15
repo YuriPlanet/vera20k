@@ -503,7 +503,7 @@ pub fn decode_preview_image_from_ini(
     decode_preview_pack(&pack_text, width, height).map(Some)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -571,7 +571,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod scenario_start_header_tests {
     use super::*;
 
@@ -597,7 +597,7 @@ mod scenario_start_header_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod paletted_preview_tests {
     use super::*;
 
@@ -662,7 +662,7 @@ mod paletted_preview_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod start_staging_tests {
     use super::*;
 

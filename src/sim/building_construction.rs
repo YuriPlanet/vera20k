@@ -351,7 +351,7 @@ impl BuildingDown {
 /// Test support: the native construction `route` rows
 /// (`tools/spatial_oracle/building_construction.json`) and one visited frame's
 /// comparison, shared by the route test and the production placement tests.
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 pub(crate) mod native_route {
     use serde_json::Value;
 
@@ -425,7 +425,7 @@ pub(crate) mod native_route {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;

@@ -12,7 +12,7 @@ use super::event_packet::{
 };
 use super::lockstep::NetworkSendPolicy;
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "command_exchange_tests.rs"]
 mod tests;
 

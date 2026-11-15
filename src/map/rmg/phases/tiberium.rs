@@ -492,7 +492,7 @@ fn write_node(pool: &mut Vec<(i32, i32)>, index: usize, coord: (i32, i32)) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::regions::RmgRegion;

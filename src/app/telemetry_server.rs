@@ -874,6 +874,6 @@ pub fn start_from_env() -> Option<Result<TelemetryServer, String>> {
     Some(TelemetryServer::start(addr, root).map_err(|error| format!("telemetry server: {error}")))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 #[path = "telemetry_server_tests.rs"]
 mod tests;

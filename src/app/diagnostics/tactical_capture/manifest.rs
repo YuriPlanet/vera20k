@@ -564,7 +564,7 @@ fn sync_directory(path: &Path) -> Result<()> {
         .with_context(|| format!("cannot sync staging directory {}", path.display()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

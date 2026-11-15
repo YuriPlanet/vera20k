@@ -39,7 +39,7 @@ pub(crate) struct ProcessAssets {
     /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
     /// lease reads the same files.
     mod_dir: Option<std::path::PathBuf>,
-    /// That folder's files as one digest (`app::mods::files_digest`), taken
+    /// That folder's files as one digest (`app::mod_files::files_digest`), taken
     /// once: the pre-match check compares it.
     mod_files: std::sync::Arc<std::sync::OnceLock<Result<[u8; 32], String>>>,
     /// [`ProcessAssets::read_mod_files_ahead`] has started its thread.
@@ -47,9 +47,10 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
-    /// Personal rules are read once at startup, like the selected game
-    /// sources; only the Options switches change them later
-    /// ([`Self::set_terrain_deformation`]).
+    /// The player's own Options switches, read at startup with VERA.INI and
+    /// changed by the Options page ([`Self::set_terrain_deformation`],
+    /// [`Self::set_superweapon_limit`]). A network room plays its host's
+    /// instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
@@ -88,7 +89,7 @@ pub(crate) struct ProcessAssets {
 }
 
 fn mod_files_digest(dir: &std::path::Path) -> Result<[u8; 32], String> {
-    crate::app::mods::files_digest(dir).map_err(|error| {
+    crate::app::mod_files::files_digest(dir).map_err(|error| {
         log::warn!("Could not read the mod in {}: {error}", dir.display());
         format!("the mod's files could not be read: {error}")
     })
@@ -191,8 +192,8 @@ impl ProcessAssets {
         Some(self.mod_files.get_or_init(|| mod_files_digest(dir)))
     }
 
-    /// The Options page's Terrain Deformation box: the next scenario's rules
-    /// read it, and network agreement compares it from now on.
+    /// The Options page's Terrain Deformation box: the next offline
+    /// scenario's rules read it.
     pub(crate) fn set_terrain_deformation(&mut self, on: bool) {
         self.personal_rules.set_terrain_deformation(on);
         if let Some(rules) = self.native_rules.as_mut() {
@@ -200,10 +201,37 @@ impl ProcessAssets {
         }
     }
 
-    /// VERARULES.INI and the Options switches, as the network rules hash
-    /// ([`Self::native_ini_hashes`]) compares them.
+    /// The Options page's Superweapon Limit: the next offline scenario's
+    /// rules read it.
+    pub(crate) fn set_superweapon_limit(&mut self, limit: i32) {
+        self.personal_rules.set_superweapon_limit(limit);
+        if let Some(rules) = self.native_rules.as_mut() {
+            rules.set_superweapon_limit(limit);
+        }
+    }
+
+    /// The player's own Options switches, which offline games play and a
+    /// network room's host shares.
     pub(crate) fn personal_rules(&self) -> &crate::rules::personal_rules::PersonalRules {
         &self.personal_rules
+    }
+
+    /// Play `rules` from the next scenario on, and agree on them in a network
+    /// room: the room's host's, or none in Quick Match
+    /// (`NativeRulesProcessOwner::use_personal_rules`). Before the rules load
+    /// the player's own apply when the sources select.
+    pub(crate) fn use_personal_rules(
+        &mut self,
+        rules: crate::rules::personal_rules::PersonalRules,
+    ) {
+        if let Some(owner) = self.native_rules.as_mut() {
+            owner.use_personal_rules(rules);
+        }
+    }
+
+    /// Offline games play the player's own switches.
+    pub(crate) fn use_own_personal_rules(&mut self) {
+        self.use_personal_rules(self.personal_rules.clone());
     }
 
     /// The Rules, Art and AI roots and the theater INI suffix are the stock YR
@@ -392,7 +420,8 @@ impl ProcessAssets {
         self.campaigns.as_ref()
     }
 
-    #[cfg(test)]
+    /// The media choice startup resolved: New Mod opens the game folder again
+    /// with it (`App::make_new_mod`).
     pub(crate) fn media_archive_mode(&self) -> MediaArchiveMode {
         self.media_archive_mode
     }
@@ -410,19 +439,10 @@ impl ProcessAssets {
     pub(crate) fn native_ini_hashes(
         &self,
     ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
-        let mut hashes = self.native_ini_hashes?;
-        // VERA extension: peers must agree on personal rules, whether they
-        // may replace map-authored rules and the Options switches, which can
-        // change after install. An inactive file with the switches off adds
-        // nothing.
-        if let Some(crc) = self
-            .native_rules
-            .as_ref()
-            .and_then(|rules| rules.personal_rules_compatibility_crc())
-        {
-            hashes.rules = hashes.rules.wrapping_add(crc);
-        }
-        Some(hashes)
+        // VERA: without the Options switches, which a
+        // network room takes from its host and Quick Match leaves out; the
+        // rules digest still compares the ones each game plays.
+        self.native_ini_hashes
     }
 
     /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
@@ -459,6 +479,12 @@ impl ProcessAssets {
         // digest.
         digests.push(self.changed_tiles(assets).digest.clone());
         let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
+        // VERA: the Options switches played, which the digested sources
+        // leave out; none adds nothing.
+        if let Some(crc) = rules.personal_rules_compatibility_crc() {
+            bytes.extend_from_slice(b"personal rules\0");
+            bytes.extend_from_slice(&crc.to_le_bytes());
+        }
         for digest in digests {
             bytes.push(u8::from(digest.is_some()));
             if let Some(digest) = digest {
@@ -780,7 +806,7 @@ impl ProcessAssets {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::{MediaArchiveMode, ProcessAssets};
     use crate::assets::asset_manager::AssetManager;
@@ -1023,7 +1049,7 @@ mod tests {
     }
 
     #[test]
-    fn personal_rules_and_map_priority_participate_in_network_compatibility() {
+    fn rooms_compare_the_switches_they_play_not_the_players_own() {
         use crate::map::source::test_support::TestDirectory;
         use crate::rules::personal_rules::PersonalRules;
 
@@ -1031,27 +1057,33 @@ mod tests {
         dir.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
         dir.write("artmd.ini", b"[Test]\nVoxel=no\n");
         dir.write("aimd.ini", b"[Test]\nValue=1\n");
-        let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let hashes = |bytes: &[u8]| {
+        let start = |rules: PersonalRules| {
+            let assets = AssetManager::from_loose_root_for_test(dir.path());
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_personal_rules(PersonalRules::from_bytes(bytes).unwrap());
+                .with_personal_rules(rules);
             process.initialize_sources_if_needed(&assets).unwrap();
             process.install_native_ini_hashes(&assets, &[]);
-            process.native_ini_hashes().unwrap()
+            process.return_from_loading(assets);
+            process
         };
-        let stock = hashes(b"");
-        assert_eq!(stock, hashes(b";[General]\n;BuildSpeed=.5\n"));
-        let personal = hashes(b"[General]\nBuildSpeed=.5\n");
-        assert_ne!(stock.rules, personal.rules);
-        let priority = hashes(b"[General]\nBuildSpeed=.5\n[VERA]\nOverrideMapRules=yes\n");
-        assert_ne!(personal.rules, priority.rules);
-        assert_eq!((stock.ai, stock.art), (priority.ai, priority.art));
-        // The Options box counts from the moment it is ticked, after install.
-        let mut ticked = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
-        ticked.initialize_sources_if_needed(&assets).unwrap();
-        ticked.install_native_ini_hashes(&assets, &[]);
-        ticked.set_terrain_deformation(true);
-        assert_ne!(stock.rules, ticked.native_ini_hashes().unwrap().rules);
+        let digest = |process: &ProcessAssets| process.multiplayer_rules_digest("").unwrap();
+        let mut deformation = PersonalRules::default();
+        deformation.set_terrain_deformation(true);
+        let mut stock = start(PersonalRules::default());
+        let mut own = start(deformation);
+        // The room's door leaves the switches to the room.
+        assert_eq!(stock.native_ini_hashes(), own.native_ini_hashes());
+        let original = digest(&stock);
+        assert_ne!(original, digest(&own));
+        // Quick Match plays none; a room its host's.
+        own.use_personal_rules(PersonalRules::default());
+        assert_eq!(original, digest(&own));
+        let mut host = PersonalRules::default();
+        host.set_superweapon_limit(5);
+        stock.use_personal_rules(host.clone());
+        own.use_personal_rules(host);
+        assert_eq!(digest(&stock), digest(&own));
+        assert_ne!(original, digest(&stock));
     }
 
     #[test]

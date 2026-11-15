@@ -411,10 +411,10 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     {
         insert(name);
     }
-    // Ares `[Side] Parachute.Anim=`: an attached canopy type needs the same
+    // Ares Type/Country/Side `Parachute.Anim=`: an attached canopy needs the same
     // physical animation bounds before the simulator creates it.
-    if ares_way {
-        for name in rules.side_parachute_animations() {
+    if rules.ares() {
+        for name in rules.parachute_animations() {
             insert(name);
         }
     }
@@ -640,7 +640,7 @@ fn canonical_asset_id(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_ascii_uppercase())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use std::hash::{Hash, Hasher};
     use std::path::{Path, PathBuf};
@@ -802,6 +802,152 @@ mod tests {
             rules.art().scheduler_anim_types().contains("VEHCHUTE"),
             capability
         );
+    }
+
+    #[test]
+    fn ares_canopy_key_alone_activates_its_reader_and_asset_root() {
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        let art = IniFile::from_str("[TYPECHUTE]\nLoopCount=-1\n");
+        let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(
+            "[Animations]\n0=TYPECHUTE\n[InfantryTypes]\n0=E1\n\
+             [E1]\nParachute.Anim=TYPECHUTE\n",
+        ))
+        .process_with_fixed_art(&art)
+        .unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert!(rules.ares());
+        assert_eq!(
+            rules
+                .object("E1")
+                .unwrap()
+                .techno_combat()
+                .presentation()
+                .parachute_anim(),
+            Some("TYPECHUTE")
+        );
+        assert!(
+            anim_class_roots(&rules)
+                .iter()
+                .any(|name| name == "TYPECHUTE")
+        );
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
+        rules.bind_anim_frame_count_for_test("TYPECHUTE", 6);
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.substrate.entities.insert(
+            crate::sim::game_entity::GameEntity::test_default_of_category(
+                1,
+                "E1",
+                "Americans",
+                10,
+                11,
+                crate::map::entities::EntityCategory::Infantry,
+            ),
+        );
+        sim.interner = crate::sim::intern::test_interner();
+        let anim = sim.attach_parachute_anim(&rules, 1).unwrap();
+        assert_eq!(
+            sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
+            "TYPECHUTE"
+        );
+    }
+
+    #[test]
+    fn ares_canopy_type_and_country_bind_through_the_production_load() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::world::Simulation;
+
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let root = TestRoot::new();
+        std::fs::write(
+            root.path().join("TYPECHUTE.SHP"),
+            shp_with_undecodable_pixels(6),
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("COUNTRYCHUTE.SHP"),
+            shp_with_undecodable_pixels(8),
+        )
+        .unwrap();
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let art = IniFile::from_str("[TYPECHUTE]\nLoopCount=-1\n[COUNTRYCHUTE]\nLoopCount=-1\n");
+        let mut stack = RulesLayerStack::new(IniFile::from_str(
+            "[Animations]\n0=TYPECHUTE\n1=PARACH\n2=COUNTRYCHUTE\n\
+             [InfantryTypes]\n0=E1\n[E1]\nParachute.Anim=TYPECHUTE\n\
+             [Countries]\n0=Americans\n[Americans]\nSide=GDI\nParachute.Anim=COUNTRYCHUTE\n",
+        ));
+        let processed = stack.process_with_fixed_art(&art).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        let roots = anim_class_roots(&rules);
+        assert!(roots.iter().any(|name| name == "TYPECHUTE"));
+        assert!(roots.iter().any(|name| name == "COUNTRYCHUTE"));
+        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config("TYPECHUTE")
+                .unwrap()
+                .raw_shp_frame_count,
+            Some(6)
+        );
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config("COUNTRYCHUTE")
+                .unwrap()
+                .raw_shp_frame_count,
+            Some(8)
+        );
+
+        let mut sim = Simulation::new();
+        sim.substrate
+            .entities
+            .insert(GameEntity::test_default_of_category(
+                1,
+                "E1",
+                "Americans",
+                10,
+                11,
+                crate::map::entities::EntityCategory::Infantry,
+            ));
+        sim.interner = crate::sim::intern::test_interner();
+        let owner = sim.entities().get(1).unwrap().owner();
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner,
+                0,
+                Some(owner),
+                true,
+                0,
+                10,
+            ));
+        let attach = |sim: &mut Simulation, rules: &RuleSet| {
+            let anim = sim.attach_parachute_anim(rules, 1).unwrap();
+            Simulation::wind_down_parachute_anim(&mut sim.substrate, 1);
+            assert_eq!(sim.anim(anim).unwrap().owner_entity(), Some(1));
+            assert_eq!(sim.anim(anim).unwrap().runtime().loop_remaining, 0);
+            sim.interner
+                .resolve(sim.anim(anim).unwrap().type_id())
+                .to_owned()
+        };
+        assert_eq!(attach(&mut sim, &rules), "TYPECHUTE");
+        stack.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[E1]\nParachute.Anim=UNKNOWN\n"),
+        );
+        let processed = stack.process_with_fixed_art(&art).unwrap();
+        let mut retained = RuleSet::from_processed_rules(&processed).unwrap();
+        retained.install_art_fixture(rules.art().clone());
+        assert_eq!(attach(&mut sim, &retained), "TYPECHUTE");
+        stack.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[E1]\nParachute.Anim=<none>\n"),
+        );
+        let processed = stack.process_with_fixed_art(&art).unwrap();
+        let mut cleared = RuleSet::from_processed_rules(&processed).unwrap();
+        cleared.install_art_fixture(rules.art().clone());
+        assert_eq!(attach(&mut sim, &cleared), "COUNTRYCHUTE");
     }
 
     /// A root whose SHP is missing stays a real null-image Anim, and a bound root's
@@ -1076,7 +1222,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod anim_class_root_tests {
     use super::anim_class_roots;
     use crate::rules::ini_parser::IniFile;

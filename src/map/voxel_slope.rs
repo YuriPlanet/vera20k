@@ -211,7 +211,7 @@ fn quaternion_slerp(
     Ok(result)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

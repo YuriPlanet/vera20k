@@ -68,6 +68,6 @@ pub(crate) fn press(
     SuperWeaponClick::Target
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "superweapon_cameo_tests.rs"]
 mod tests;

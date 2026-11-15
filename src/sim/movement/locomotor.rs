@@ -875,6 +875,6 @@ impl LocomotorState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "locomotor_tests.rs"]
 mod locomotor_tests;

@@ -336,7 +336,7 @@ fn foundation_cell_ok(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 

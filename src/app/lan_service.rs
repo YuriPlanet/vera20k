@@ -1115,7 +1115,13 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         }
     };
     if expected != actual {
-        reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanClientsDiffer"));
+        // VERA: with the same build, say what this game changes.
+        let message = if expected.version == actual.version {
+            super::shell_network_setup::agreement::rules_differ_text(state)
+        } else {
+            crate::i18n::tr("VERA:LanClientsDiffer")
+        };
+        reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
     Ok(())
@@ -1983,6 +1989,18 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         }
         if let Some(taunt) = message.in_game_taunt_fields() {
             super::input::taunt::receive(state, taunt.byte);
+            return Ok(());
+        }
+        if let Some(text) = message.beacon_text_fields() {
+            //48D7F4..48D810: like 0x20/0x21, no source or session check.
+            if state.match_state.sim_runtime.is_installed() {
+                super::match_runtime::beacons::receive_text(
+                    state,
+                    text.house,
+                    text.slot,
+                    &text.text_units(),
+                );
+            }
             return Ok(());
         }
         if let Some(runtime) = state.match_state.sim_runtime.runtime()
@@ -3746,6 +3764,17 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), peers);
                 }
             }
+            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+                if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
+                {
+                    let peers: Vec<_> =
+                        super::match_runtime::network_match::nodes(&state.match_state.session)
+                            .into_iter()
+                            .skip(1)
+                            .collect();
+                    send_sources(state, message.as_bytes(), peers);
+                }
+            }
             // BC6's records; an ordinary Battle match never emits them.
             other => cooperative::send(state, other),
         }
@@ -4560,7 +4589,7 @@ pub(crate) fn loading_test_pair() -> (
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};

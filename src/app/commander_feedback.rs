@@ -1043,7 +1043,7 @@ fn feedback_seed(house_index: usize, kind: u64, tick: u64) -> u64 {
         .wrapping_add(kind.wrapping_mul(0x0100_0000_01b3))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

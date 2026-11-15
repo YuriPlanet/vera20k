@@ -13,7 +13,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ROW_NEIGHBORS};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "cell_reveal_tests.rs"]
 pub(crate) mod tests;
 

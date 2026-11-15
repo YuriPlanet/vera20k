@@ -1655,7 +1655,7 @@ fn native_frame_index(frame: i8) -> usize {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::sim::intern;
@@ -2098,6 +2098,6 @@ pub(crate) fn neutral_gpu_source(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "shroud_native_tests.rs"]
 mod native_tests;

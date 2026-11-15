@@ -68,26 +68,31 @@ impl SidebarCameoAtlas {
     }
 
     pub fn superweapon(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
-        self.superweapon_entries.get(&type_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.superweapon_entries.get(key)
+        })
     }
 
     pub fn get(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
-        self.entries.get(&type_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| self.entries.get(key))
     }
 
     /// Loaded-art admission for the shared alternate-cameo selector.
     pub fn has_alternate(&self, type_id: &str) -> bool {
-        self.alt_entries.contains_key(&type_id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            self.alt_entries.contains_key(key)
+        })
     }
 
     /// The cameo `TechnoTypeClass::GetCameo @ 0x00712040` returns: the
     /// type's `AltCameo=` image when `alt` holds and it loaded
     /// (`pAltCameo != NULL`), else its plain cameo.
     pub fn cameo(&self, type_id: &str, alt: bool) -> Option<&SidebarCameoEntry> {
-        let key = type_id.to_ascii_uppercase();
-        alt.then(|| self.alt_entries.get(&key))
-            .flatten()
-            .or_else(|| self.entries.get(&key))
+        crate::util::native_string::with_ascii_uppercase(type_id, |key| {
+            alt.then(|| self.alt_entries.get(key))
+                .flatten()
+                .or_else(|| self.entries.get(key))
+        })
     }
 }
 
@@ -860,7 +865,7 @@ fn distinct_pictures(cameos: &[RenderedCameo]) -> (Vec<usize>, Vec<usize>) {
     (pictures, picture_of)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::rendered_cameo_from_canvas;
 

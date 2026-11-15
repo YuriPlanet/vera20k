@@ -399,6 +399,6 @@ fn row_bytes(row: &[u8]) -> u32 {
     bytes
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "voxel_image_cache_tests.rs"]
 mod tests;

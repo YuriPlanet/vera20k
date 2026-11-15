@@ -424,9 +424,13 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
-        // Battle and FreeForAll, the skirmish-listed modes, share vt+4
-        // 0x005C0E30, which answers false.
-        if !rules.general.allies_allowed {
+        // Only Cooperative's vt+4 (0x005C4EE0) answers true, so its
+        // computers turn paranoid although MPCoopMD sets AlliesAllowed=no.
+        let mode_permits = self
+            .session
+            .multiplayer_mode_class()
+            .is_some_and(crate::skirmish_modes::MpModeClass::permits_all_allied);
+        if !mode_permits && !rules.general.allies_allowed {
             return;
         }
         // VERA `[General] AINearestEnemy=` (off by default): the computers
@@ -928,6 +932,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_diplomacy_tests.rs"]
 mod tests;

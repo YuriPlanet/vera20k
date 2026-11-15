@@ -248,7 +248,7 @@ fn native_layer_order(left: &LayerEntry, right: &LayerEntry) -> Ordering {
         .then_with(|| left.display_order.cmp(&right.display_order))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
 

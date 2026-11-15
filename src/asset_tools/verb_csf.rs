@@ -583,7 +583,7 @@ fn read_u32_at(data: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes(bytes))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

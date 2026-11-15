@@ -860,6 +860,12 @@ impl LocalFramePacer {
         self.render_deferred = false;
     }
 
+    /// The recent battlefield draw time ([`Self::record_presented`]), zero
+    /// before the first one.
+    pub(crate) fn draw_cost(&self) -> Duration {
+        self.draw_cost.unwrap_or_default()
+    }
+
     /// Read the same interval used by `should_admit`, for diagnostics.
     pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
         pacing_timer(game_speed, network_fps).map(PacingTimer::length_ms)
@@ -1042,7 +1048,7 @@ pub(crate) fn wall_clock_bucket() -> u32 {
     frame_bucket(wall_clock_ms())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 

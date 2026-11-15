@@ -105,6 +105,6 @@ pub(super) fn advance(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "walk_step_tests.rs"]
 mod tests;

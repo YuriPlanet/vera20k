@@ -141,7 +141,7 @@ impl ZoneBatchHost for LivePublication<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 mod tests {
     use super::*;
     include!("bridge_batch_native_tests.rs");

@@ -284,7 +284,7 @@ fn saved_game_row(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::snapshot::GameSnapshot;

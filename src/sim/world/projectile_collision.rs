@@ -750,7 +750,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 mod tests {
     use super::super::lifecycle_tests::{
         gsi_05_02_projectile, insert_entity, install_common_raw_terrain,

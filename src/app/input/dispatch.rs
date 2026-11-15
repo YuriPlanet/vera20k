@@ -40,15 +40,15 @@ use crate::sim::command::Command;
 use crate::sim::selection::SelectAction;
 use crate::ui::sidebar::{SidebarAction, SidebarTab};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "area_guard_tests.rs"]
 mod area_guard_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "mcv_group_tests.rs"]
 mod mcv_group_tests;
 
@@ -451,6 +451,9 @@ pub(crate) enum LeftUp {
     Radar {
         target: crate::render::radar::NativeRadarInputTarget,
         super_weapon: Option<crate::app::input::commands::PlaceAction<'static>>,
+        /// VERA minimap beacons: the radar answered the beacon action
+        /// ([`crate::app::input::radar::with_minimap_beacon`]).
+        beacon: bool,
     },
 }
 
@@ -480,11 +483,18 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
     let LeftUp::Radar {
         target,
         super_weapon,
+        beacon,
     } = click
     else {
         tactical_left_up(state);
         return;
     };
+    // VERA minimap beacons: the beacon action places at the pick, as the
+    // tactical release's 0x3C arm does at its Cell (0x004AC033).
+    if beacon {
+        crate::app::input::beacon::place_at_cell(state, target.cell);
+        return;
+    }
     // The selection's dispatch, each object asking its own What_Action
     // (`Selection__DispatchMultiUnitOrder @ 0x004AE750`, at `0x004ABF94`), a
     // superweapon action included; for one SPECIAL_PLACE follows
@@ -938,7 +948,13 @@ pub(crate) fn minimap_mouse(state: &mut AppState, button: MouseButton, btn_state
             if right_click_orders && state.match_state.input.minimap_press_active() => {}
         (MouseButton::Left, true)
             if left_click_can_issue_orders(state)
-                || state.match_state.input.targeting_mode.is_some() =>
+                || state.match_state.input.targeting_mode.is_some()
+                // VERA minimap beacons: the beacon click stays on the left
+                // button, as on the battlefield, in both schemes. RESIDUAL:
+                // the release asks the radar again, so a team key pressed
+                // while the left button is held can turn it into the team's
+                // order, as a targeting press cancelled mid-press already can.
+                || crate::app::input::radar::minimap_beacon_armed(state) =>
         {
             crate::app::input::radar::begin_context_press(state);
         }
@@ -1098,7 +1114,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod drag_tests {
     use super::clamp_tactical_drag_endpoint;
     use crate::sim::selection::{SelectAction, SelectionState};
@@ -2594,7 +2610,7 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod wheel_tests {
     use super::{WheelAction, wheel_action, wheel_notch};
 
@@ -3284,7 +3300,7 @@ fn selection_voice_recipients(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod item83_selection_order_tests {
     use super::{
         HELD_TYPE_SELECT_VOICE_POLICY, ORDINARY_SELECTION_ACTION_LINE_POLICY,
@@ -4916,7 +4932,7 @@ fn jump_camera_to_base(state: &mut AppState) {
     crate::app::input::camera::apply_home_camera(state, coord);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod deploy_key_tests {
     use super::{deploy_key_command, deploy_key_commands};
     use crate::rules::ini_parser::IniFile;
@@ -5321,7 +5337,7 @@ mod deploy_key_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod control_group_tests {
     use super::{
         GroupPressAction, KeyModifiers, TEAM_SELECTION_VOICE_POLICY, TeamSelection,
@@ -7186,7 +7202,7 @@ mod control_group_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod stop_command_tests {
     use crate::audio::events::GameSoundEvent;
     use crate::sim::command::Command;
@@ -7243,7 +7259,7 @@ mod stop_command_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod modifier_tests {
     use super::KeyModifiers;
 
@@ -7288,7 +7304,7 @@ mod modifier_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod context_click_route_tests {
     use super::*;
 
@@ -7335,6 +7351,6 @@ mod context_click_route_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 #[path = "building_occupant_deploy_tests.rs"]
 mod building_occupant_deploy_tests;

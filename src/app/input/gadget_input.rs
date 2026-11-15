@@ -827,7 +827,7 @@ fn publish_pressed_visuals(state: &mut AppState) {
     gs.top_pressed = top;
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
 

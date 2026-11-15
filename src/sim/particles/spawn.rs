@@ -728,7 +728,7 @@ pub(super) fn spawn_state_ai_advance(
     advance as u8
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use crate::sim::rng::SimRng;
 

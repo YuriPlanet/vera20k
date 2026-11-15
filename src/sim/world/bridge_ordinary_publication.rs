@@ -114,7 +114,7 @@ fn engineer_repair_family(
     Ok((input, family))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_engineer_family_tests.rs"]
 mod engineer_family_tests;
 
@@ -306,35 +306,35 @@ impl OrdinaryDamageHost for LiveOrdinary<'_, '_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_concrete_damage_tests.rs"]
 mod concrete_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_fv_pursuit_tests.rs"]
 mod fv_pursuit_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_wood_damage_tests.rs"]
 mod wood_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "bridge_repair_publication_tests.rs"]
 pub(super) mod tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "track_fresh_response_tests.rs"]
 mod track_fresh_response_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "track_path_continuation_tests.rs"]
 mod track_path_continuation_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "walk_failed_path_tests.rs"]
 mod walk_failed_path_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "walk_prehead_response_tests.rs"]
 mod walk_prehead_response_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_a_b))]
 #[path = "bridge_wood_occupant_tests.rs"]
 mod wood_occupant_tests;

@@ -749,6 +749,6 @@ fn fnv1a64(value: u64) -> u64 {
     hash
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "personality_tests.rs"]
 mod personality_tests;

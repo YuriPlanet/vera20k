@@ -608,6 +608,6 @@ pub(crate) fn blink_due(state: &AppState) -> bool {
         .is_some_and(|next| crate::app::input::tooltips::now_ms(state) >= next)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "super_timers_tests.rs"]
 mod tests;

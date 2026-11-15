@@ -401,7 +401,7 @@ pub(crate) fn process_main_draws(
     frontend.draws()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod main_draw_tests {
     use super::process_main_draws;
     use crate::sim::{

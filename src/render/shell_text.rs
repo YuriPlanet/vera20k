@@ -296,7 +296,7 @@ pub fn draw_in_rect_path_a_scaled(
     ShellTextDraw { instances, scissor }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;

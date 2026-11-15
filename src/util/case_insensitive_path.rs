@@ -78,7 +78,7 @@ pub fn native_listing_over<P: AsRef<Path>>(directories: &[P]) -> std::io::Result
     Ok(entries)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::util::sync::OnceLock;
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 #[path = "allocated_order_tests.rs"]
 mod tests;
 

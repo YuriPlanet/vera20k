@@ -591,6 +591,6 @@ pub(crate) fn cursor_id(cursor: i32, mini: bool) -> CursorId {
     u16::try_from(cursor).map_or(CursorId::Default, |index| CursorId::Ares { index, mini })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "ares_cursor_tests.rs"]
 mod tests;

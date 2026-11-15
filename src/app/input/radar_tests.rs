@@ -130,6 +130,35 @@ fn without_a_selection_the_radar_only_recentres() {
     assert_eq!(action(&query(&sim, &rules, &[]), None, cell, object), None);
 }
 
+/// VERA minimap beacons: in Place Beacon mode with nothing selected, the
+/// option turns the radar's empty answer into the beacon action; off, the
+/// click only recentres as in gamemd. A selection's own action and an armed
+/// superweapon keep the click.
+#[test]
+fn minimap_beacons_answer_only_the_empty_radar_click() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let empty = action(&query(&sim, &rules, &[]), None, GROUND, None);
+    assert_eq!(with_minimap_beacon(empty, false, true, true, false), None);
+    assert_eq!(
+        with_minimap_beacon(empty, true, true, true, false),
+        Some(RadarAction::PlaceBeacon)
+    );
+    assert_eq!(
+        RadarAction::PlaceBeacon.cursor(true, false),
+        CursorId::Beacon
+    );
+    assert_eq!(with_minimap_beacon(empty, true, false, true, false), None);
+    assert_eq!(with_minimap_beacon(empty, true, true, true, true), None);
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let moved = action(&query(&sim, &rules, &[tank]), None, GROUND, None);
+    assert_eq!(
+        with_minimap_beacon(moved, true, true, false, false),
+        Some(RadarAction::Move)
+    );
+}
+
 /// Over a tracked object the radar asks the object's What_Action
 /// (`0x00653C72..0x00653C83`). The lone selected tank over its own dot
 /// answers NoMove — its Self arm leaves 0, which the Unit tail turns into

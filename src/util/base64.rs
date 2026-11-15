@@ -106,7 +106,7 @@ pub fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

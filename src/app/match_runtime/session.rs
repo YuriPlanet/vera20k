@@ -296,6 +296,12 @@ pub(crate) enum NetworkLoadingRequest {
     /// A beacon record `0x20`/`0x21` to every other node
     /// (`0x00430E0C..0x00430E4E`, `0x004313C2..0x004313F5`).
     Beacon(crate::net::lan_messages::ingame::BeaconRecord),
+    /// A beacon label `0x22` to every other node (`0x0043165E..0x00431678`).
+    BeaconText {
+        house: i8,
+        slot: i8,
+        text: Vec<u16>,
+    },
     /// BC6's `0x26` to every node.
     CooperativeReady,
     /// BC6's `0x24` (Quit) to every node.
@@ -3206,6 +3212,16 @@ impl MatchSession {
         }
     }
 
+    pub(crate) fn request_beacon_text(&mut self, house: i8, slot: i8, text: Vec<u16>) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .loading_requests
+                .push(NetworkLoadingRequest::BeaconText { house, slot, text });
+        }
+    }
+
     pub(crate) fn request_taunt(&mut self, recipients: Vec<usize>, byte: u8) {
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
@@ -3712,7 +3728,7 @@ fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::{MatchSession, NetworkRoom, SessionMode};
 

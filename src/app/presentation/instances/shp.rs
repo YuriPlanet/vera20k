@@ -1364,10 +1364,10 @@ fn emit_building_turret_vxl(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_turret_visibility_tests.rs"]
 mod building_turret_visibility_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_voxel_tests.rs"]
 mod building_voxel_tests;
 
@@ -2345,7 +2345,7 @@ fn resolve_object_shp_frame_with_facing(
     Some(animation::infantry_facing_slot(facing))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 mod tests {
     /// `0x0073CCF4` draws the frame four steps past the heading's bucket and
     /// wraps inside the ring.
@@ -2509,40 +2509,40 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_anim_tests.rs"]
 mod building_anim_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "building_anim_translucency_gpu_tests.rs"]
 mod building_anim_translucency_gpu_tests;
 #[cfg(test)]
 pub(crate) use building_anim_translucency_gpu_tests::{PLANT_OWNER, SlotScene};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_anim_detail_tests.rs"]
 mod building_anim_detail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_anim_detail_order_tests.rs"]
 mod building_anim_detail_order_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "anim_detail_delay_tests.rs"]
 mod anim_detail_delay_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_sale_draw_tests.rs"]
 mod building_sale_draw_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "factory_door_tests.rs"]
 mod factory_door_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "infantry_air_shadow_tests.rs"]
 mod infantry_air_shadow_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation_instances))]
 #[path = "embedded_shadow_tests.rs"]
 mod embedded_shadow_tests;

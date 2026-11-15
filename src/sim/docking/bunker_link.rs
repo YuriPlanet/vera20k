@@ -609,7 +609,7 @@ fn at_or_below_condition_yellow(current: i32, strength: i32, condition_yellow: f
     )
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -1686,6 +1686,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "bunker_release_tests.rs"]
 mod release_tests;

@@ -153,7 +153,7 @@ impl Reassembly {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 mod tests {
     use super::*;
 

@@ -1514,10 +1514,8 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
         return;
     };
     let set = rules.animation_sequence("E1").unwrap();
-    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let corpus =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let receipt = &corpus["infantry_frame_selection_receipt"];
     assert_eq!(receipt["native_span"]["address"], "0x00518D80");
     assert_eq!(receipt["native_span"]["stop"], "0x00518F89");

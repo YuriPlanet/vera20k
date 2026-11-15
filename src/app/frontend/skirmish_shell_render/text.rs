@@ -1560,13 +1560,14 @@ pub(super) fn push_choose_map_modal_text_draws(
             rect.h,
         )
     });
+    let display_search = map_search_display(state, &modal.search);
     let hint;
-    let (search, rgb) = if modal.search.is_empty() {
+    let (search, rgb) = if display_search.is_empty() {
         hint = tr("VERA:MapSearchHint");
         (&*hint, SHELL_LABEL_TEXT_RGB)
     } else {
         let box_w = scale.base_rect(layout.map_search).w;
-        let (tail, _) = map_search_tail(&state.renderer.bit_font, &modal.search, box_w);
+        let (tail, _) = map_search_tail(&state.renderer.bit_font, &display_search, box_w);
         (tail, SHELL_LABEL_TEXT_RGB)
     };
     push_text_draw(
@@ -1583,6 +1584,18 @@ pub(super) fn push_choose_map_modal_text_draws(
 
 /// The search caret's width, in 800x600 numbers like a NewEdit's.
 pub(super) const MAP_SEARCH_CARET_W: i32 = 2;
+
+/// The committed query plus the currently composed IME text, for display
+/// only; filtering still uses the committed query.
+pub(super) fn map_search_display(state: &AppState, search: &str) -> String {
+    let composition = state
+        .platform
+        .ime
+        .composition(crate::app::input::ime::ImeTarget::ChooseMapSearch)
+        .map(|(text, _)| String::from_utf16_lossy(text))
+        .unwrap_or_default();
+    format!("{search}{composition}")
+}
 
 /// The end of `search` that fits a `box_w` wide search box with the caret
 /// after it, and that text's width: a long search scrolls its start out of
@@ -2045,7 +2058,7 @@ pub(super) fn push_saved_browser_prompt_text<I>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;

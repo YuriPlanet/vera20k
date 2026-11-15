@@ -254,7 +254,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};

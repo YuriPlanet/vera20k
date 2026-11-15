@@ -48,7 +48,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::NativeF64Bits;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "fly_process_tests.rs"]
 mod tests;
 

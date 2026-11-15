@@ -28,7 +28,7 @@
 //!   states have no represented producer. Installed stock types do not enable
 //!   UseChargeDrain. Ordinary one-time consumption uses the retained instance.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "fire_tests.rs"]
 mod tests;
 

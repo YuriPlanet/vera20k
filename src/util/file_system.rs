@@ -306,7 +306,7 @@ mod memory {
     }
 }
 
-#[cfg(all(test, feature = "wasm"))]
+#[cfg(all(test, tests_util, feature = "wasm"))]
 mod tests {
     use super::memory;
 

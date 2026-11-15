@@ -876,7 +876,7 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use serde_json::Value;

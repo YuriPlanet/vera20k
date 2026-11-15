@@ -62,15 +62,15 @@ thread_local! {
     static NAME_KEY_COPIES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "command_bar_sound_rules_tests.rs"]
 mod command_bar_sound_rules_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "multiplayer_rules_tests.rs"]
 mod multiplayer_rules_tests;
 
@@ -1308,7 +1308,7 @@ pub struct GeneralRules {
     /// `0x004F94FB` and then jumps (`0x004F9500 JMP`) to `LAB_004F95D4`, so a
     /// harvester under attack gets the EVA and **no** siren. The
     /// `EVA_OurAllyIsUnderAttack` branch does NOT jump past — native sirens
-    /// for an ally's base too, which VERA does not (pre-existing residual).
+    /// for an ally's base too, and so does VERA (`AllyUnderAttack`).
     pub base_under_attack_sound: Option<String>,
     /// Building crumble cue from `[AudioVisual] BuildingDieSound=` (stock
     /// `BuildingGenericDie`).
@@ -3476,10 +3476,11 @@ impl RadiationRules {
             light_delay: section.read_int("RadLightDelay", d.light_delay).max(1),
             // Double fields (`0x0066D057..0x0066D0A5`).
             level_factor: section.read_double("RadLevelFactor", d.level_factor),
-            light_factor: SimFixed::from_num(
+            // Saturating: an out-of-range literal scans as infinity.
+            light_factor: SimFixed::saturating_from_num(
                 section.read_double("RadLightFactor", d.light_factor.to_num()) as f32,
             ),
-            tint_factor: SimFixed::from_num(
+            tint_factor: SimFixed::saturating_from_num(
                 section.read_double("RadTintFactor", d.tint_factor.to_num()) as f32,
             ),
             color: (red, green, blue),
@@ -4018,7 +4019,10 @@ impl GeneralRules {
             ally_change_allowed,
             comp_easy_bonus: defaults.comp_easy_bonus,
             paranoid,
-            tunnel_speed: SimFixed::from_num(general.read_double("TunnelSpeed", 1.0) as f32),
+            // Saturating: an out-of-range literal scans as infinity.
+            tunnel_speed: SimFixed::saturating_from_num(
+                general.read_double("TunnelSpeed", 1.0) as f32
+            ),
             flight_level: general.read_int("FlightLevel", 500),
             attacking_aircraft_sight_range: general.read_int(
                 "AttackingAircraftSightRange",
@@ -4265,11 +4269,12 @@ impl GeneralRules {
             // reached ReadString128 value, including failed-read retention.
             gui_open_sound: None,
             gui_close_sound: None,
-            // Float fields (`FSTP dword` at `0x0066B8B1`/`0x0066B8DB`).
-            direct_rocking_coefficient: SimFixed::from_num(
+            // Float fields (`FSTP dword` at `0x0066B8B1`/`0x0066B8DB`),
+            // saturating: an out-of-range literal scans as infinity.
+            direct_rocking_coefficient: SimFixed::saturating_from_num(
                 audio_visual.read_float("DirectRockingCoefficient", 1.5),
             ),
-            fallback_coefficient: SimFixed::from_num(
+            fallback_coefficient: SimFixed::saturating_from_num(
                 audio_visual.read_float("FallBackCoefficient", 0.1),
             ),
             // ChronoInSound/ChronoOutSound live in [AudioVisual], not [General].
@@ -4388,7 +4393,8 @@ impl GeneralRules {
                     )
                     .to_bits(),
             ),
-            ship_sinking_weight: SimFixed::from_num(
+            // Saturating: an out-of-range literal scans as infinity.
+            ship_sinking_weight: SimFixed::saturating_from_num(
                 general.read_double("ShipSinkingWeight", defaults.ship_sinking_weight.to_num())
                     as f32,
             ),
@@ -5604,6 +5610,12 @@ impl RuleSet {
                 );
             }
         }
+        // The retained canopy key can enable Ares in a stock-way game too.
+        for (category, name, retained) in processed.techno_combat_states() {
+            if let Some(handle) = rules.object_category_index.get(category, name) {
+                rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
+            }
+        }
         if crate::rules::ares_switch::ares_way() {
             for (category, name, enabled, options) in processed.ares_spotlight_states() {
                 if let Some(handle) = rules.object_category_index.get(category, name) {
@@ -5633,11 +5645,6 @@ impl RuleSet {
             for (category, name, crew) in processed.crew_states() {
                 if let Some(handle) = rules.object_category_index.get(category, name) {
                     rules.object_list[handle.0 as usize].bind_crew_rules(crew);
-                }
-            }
-            for (category, name, retained) in processed.techno_combat_states() {
-                if let Some(handle) = rules.object_category_index.get(category, name) {
-                    rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
                 }
             }
             for (name, infiltration) in processed.infiltration_states() {
@@ -7891,8 +7898,11 @@ impl RuleSet {
     }
 
     /// Look up a TerrainObjectType by section name, case-insensitive.
+    /// Short names use a stack key instead of allocating a temporary string.
     pub fn terrain_object_type_case_insensitive(&self, name: &str) -> Option<&TerrainObjectType> {
-        self.terrain_object_types.get(&name.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.terrain_object_types.get(key)
+        })
     }
 
     /// Incremental projection of the retained FindOrAllocate71E2A0 result.
@@ -11035,12 +11045,21 @@ impl RuleSet {
             .as_deref()
     }
 
-    /// Every distinct `[Side] Parachute.Anim=` identity, for the animation
-    /// asset preload and canopy owner scan.
-    pub fn side_parachute_animations(&self) -> impl Iterator<Item = &str> {
+    /// Configured Type, Country and Side canopy identities for the shared
+    /// animation asset closure (Ares ObjectClass hook5F5ADD/10047C60).
+    pub fn parachute_animations(&self) -> impl Iterator<Item = &str> {
         self.side_extensions
             .iter()
             .filter_map(|extension| extension.parachute_anim.as_ref()?.as_deref())
+            .chain(
+                self.countries
+                    .values()
+                    .filter_map(|country| country.paradrop.parachute_anim.as_deref()),
+            )
+            .chain(
+                self.all_objects()
+                    .filter_map(|object| object.techno_combat().presentation().parachute_anim()),
+            )
     }
 
     /// `[Side] GraphicalText.Image=` (SideExt `+0x1F8`) and
@@ -11112,8 +11131,9 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::AresSuperWeaponMetadata> {
-        self.ares_super_weapon_metadata
-            .get(&id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.ares_super_weapon_metadata.get(key)
+        })
     }
 
     /// The Phobos techno gates for a superweapon, if the capability is
@@ -11123,8 +11143,9 @@ impl RuleSet {
         &self,
         id: &str,
     ) -> Option<&crate::rules::superweapon_type::PhobosSuperWeaponAvailability> {
-        self.phobos_super_weapon_metadata
-            .get(&id.to_ascii_uppercase())
+        crate::util::native_string::with_ascii_uppercase(id, |key| {
+            self.phobos_super_weapon_metadata.get(key)
+        })
     }
 
     /// The `[GlobalControls]` parallel AI queue switches (Phobos extension).
@@ -11178,9 +11199,9 @@ impl RuleSet {
 
     /// Resolve a particle system type name to its ID (case-insensitive).
     pub fn ps_type_id_by_name(&self, name: &str) -> Option<ParticleSystemTypeId> {
-        self.particle_system_types_by_name
-            .get(&name.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.particle_system_types_by_name.get(key).copied()
+        })
     }
 
     /// Parsed VoxelAnim Types in their retained registry order.
@@ -11195,9 +11216,9 @@ impl RuleSet {
 
     /// Resolve a `[VoxelAnims]` type name to its ID (case-insensitive).
     pub fn voxel_anim_type_id_by_name(&self, name: &str) -> Option<VoxelAnimTypeId> {
-        self.voxel_anim_types_by_name
-            .get(&name.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(name, |key| {
+            self.voxel_anim_types_by_name.get(key).copied()
+        })
     }
 
     /// Number of `[VoxelAnims]` types loaded, also used to validate saved IDs.
@@ -11220,9 +11241,9 @@ impl RuleSet {
     /// Look up the factory type for a structure by ID (case-insensitive).
     /// Returns None if the structure has no Factory= key in rules.ini.
     pub fn factory_type(&self, structure_id: &str) -> Option<FactoryType> {
-        self.factory_map
-            .get(&structure_id.to_ascii_uppercase())
-            .copied()
+        crate::util::native_string::with_ascii_uppercase(structure_id, |key| {
+            self.factory_map.get(key).copied()
+        })
     }
 
     /// `group`'s `[General] Prerequisite*` list.
@@ -11337,8 +11358,14 @@ impl RuleSet {
                 // fallback paths (e.g. refinery_pad_cell's rightmost-column
                 // anchor) keep firing. Otherwise zero-padding would silently
                 // shift refinery dock positions, which is out of scope here.
+                //
+                // Only slots below the contact capacity can be selected, so
+                // padding stops at VERA's `DOCK_CONTACT_LIMIT`.
                 if !entry.pads.is_empty() {
-                    let n = obj.number_of_docks.max(0) as usize;
+                    let n = obj
+                        .number_of_docks
+                        .clamp(0, crate::rules::object_type::DOCK_CONTACT_LIMIT)
+                        as usize;
                     obj.pads = entry.pads.iter().take(n).copied().collect();
                     while obj.pads.len() < n {
                         obj.pads.push(crate::rules::object_type::DockPad {
@@ -11419,9 +11446,9 @@ impl RuleSet {
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), crate::rules::art_data::AnimAssetBindError> {
+    ) {
         self.art_registry
-            .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)
+            .bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
     }
 
     pub fn bind_anim_class_assets(
@@ -11454,7 +11481,7 @@ impl RuleSet {
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
         theater_name: &str,
-    ) -> Result<(), crate::rules::art_data::AnimAssetBindError> {
+    ) {
         let mut roots: Vec<String> = self
             .art_registry
             .scheduler_anim_types()
@@ -11464,11 +11491,7 @@ impl RuleSet {
         roots.push(name.to_ascii_uppercase());
         roots.sort();
         roots.dedup();
-        // Preserve the existing strict load failure boundary. RESIDUAL: a
-        // previously tolerant root with a missing chained SHP can fail here.
-        // This affects modded art; none of retail's nine chain keys starts
-        // from a tolerant root. No new asset admission policy is introduced.
-        self.bind_scheduler_anim_assets(&roots, assets, theater_ext, theater_name)
+        self.bind_scheduler_anim_assets(&roots, assets, theater_ext, theater_name);
     }
 
     /// Synthetic fixtures that previously projected ART then restored the raw
@@ -12115,7 +12138,7 @@ fn parse_particle_system_types(
     (types, by_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     #[test]
     fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
@@ -16218,6 +16241,49 @@ Projectile=Invisible
     }
 
     #[test]
+    fn a_huge_dock_count_stops_at_the_contact_bound() {
+        let rules = parse_rules_with_art(
+            "[GAAIRC]\nName=Airforce\nCost=1000\nStrength=1000\nNumberOfDocks=100000\n",
+            "[GAAIRC]\nDockingOffset0=0,-128,0\n",
+        );
+        let obj = rules.object("GAAIRC").expect("obj");
+        let limit = crate::rules::object_type::DOCK_CONTACT_LIMIT;
+        assert_eq!(obj.pads.len(), limit as usize);
+        assert_eq!(obj.dock_contact_capacity(), limit as u32);
+    }
+
+    #[test]
+    fn out_of_range_rules_numbers_saturate_instead_of_stopping_the_game() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nTunnelSpeed=1e999\nShipSinkingWeight=-1e999\n\
+             [Radiation]\nRadLightFactor=1e999\n\
+             [AudioVisual]\nDirectRockingCoefficient=1e999\n\
+             [VehicleTypes]\n0=TANK\n\
+             [TANK]\nWeight=1e999\nPitchAngle=1e999\nJumpjetSpeed=40000\n\
+             [VoxelAnims]\n0=PIECE\n[PIECE]\nMinAngularVelocity=1e999\n",
+        ))
+        .unwrap();
+        assert_eq!(rules.general.tunnel_speed, SimFixed::MAX);
+        assert_eq!(rules.general.ship_sinking_weight, SimFixed::MIN);
+        assert_eq!(rules.radiation.light_factor, SimFixed::MAX);
+        let tank = rules.object("TANK").unwrap();
+        assert_eq!(tank.weight, SimFixed::MAX);
+        assert_eq!(tank.jumpjet_params.speed, SimFixed::MAX);
+        // The infinite spin keeps the constructor value.
+        let piece = rules.voxel_anim_type(rules.voxel_anim_type_id_by_name("PIECE").unwrap());
+        let default = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("PIECE");
+        assert_eq!(piece.min_angular_velocity, default.min_angular_velocity);
+    }
+
+    #[test]
+    fn sides_past_one_byte_are_not_allocated() {
+        let sides: String = (0..257).map(|i| format!("S{i}=Americans\n")).collect();
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!("[Sides]\n{sides}"))).unwrap();
+        assert_eq!(rules.allocated_sides().count(), 256);
+        assert!(rules.side_index("S256").is_none());
+    }
+
+    #[test]
     fn gsi_04_05_reservation_ai_base_spacing_default_signed_and_writer_gates() {
         let default_rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str("[BuildingTypes]\n0=PLAIN\n[PLAIN]\nName=Plain\n"),
@@ -17228,18 +17294,18 @@ Projectile=Invisible
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "map_lighting_tests.rs"]
 mod map_lighting_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "name_lookup_tests.rs"]
 mod name_lookup_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "global_promotion_tests.rs"]
 mod global_promotion_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "ares_script_conversion_tests.rs"]
 mod ares_script_conversion_tests;

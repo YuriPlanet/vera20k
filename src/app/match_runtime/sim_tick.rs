@@ -432,7 +432,7 @@ fn format_campaign_score_time(total_seconds: i32) -> String {
     format!("{hours:02}:{minutes:02}:{seconds:02}")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod campaign_score_model_tests {
     use super::build_campaign_score_screen_model_from_sources;
     use crate::assets::csf_file::test_csf;
@@ -1278,7 +1278,10 @@ fn advance_in_game_runtime_mode(
             decision.frames_running,
             decision.run_sim,
         ),
-        RuntimeAdvanceMode::ExactOneStep => u32::from(decision.scroll_input),
+        RuntimeAdvanceMode::ExactOneStep if decision.scroll_input => {
+            crate::app::input::camera::ScrollSteps::Whole
+        }
+        RuntimeAdvanceMode::ExactOneStep => crate::app::input::camera::ScrollSteps::None,
     };
     // Sample the gesture once, before simulation. Apply its request at the
     // native Tactical__AI/pre-follow seam, after this frame's bounds writers.
@@ -1542,7 +1545,7 @@ pub(crate) fn service_beside_tick(state: &mut AppState) {
     // A held key release has not reached the keys yet: an arrow it lets go
     // must not keep scrolling until the tick is back.
     let keyboard_steps = if state.platform.window_events_held {
-        0
+        crate::app::input::camera::ScrollSteps::None
     } else {
         scroll_steps
     };
@@ -1566,7 +1569,7 @@ fn after_simulation_pass(
     state: &mut AppState,
     decision: RuntimePassDecision,
     main_tick_pumps_audio: bool,
-    scroll_steps: u32,
+    scroll_steps: crate::app::input::camera::ScrollSteps,
     replaying: bool,
 ) -> bool {
     // MainThrottle55E33B publishes Logic visits per60 wall-clock buckets,
@@ -1619,9 +1622,7 @@ fn after_simulation_pass(
     if decision.run_sim && main_tick_pumps_audio && !state.match_state.sim_runtime.is_lent() {
         pump_audio_service(state, music_now_ms);
     }
-    for _ in 0..scroll_steps {
-        crate::app::input::camera::queue_keyboard_scroll(state);
-    }
+    crate::app::input::camera::queue_keyboard_scroll(state, scroll_steps);
     if decision.tactical_mutation || replaying {
         crate::app::input::camera::animate_zoom(state);
     }
@@ -1781,12 +1782,13 @@ fn house_laser_rgb(
         return [0; 3];
     };
     let name = runtime.simulation.interner().resolve(owner);
-    // CreateHouses initializes the two literal special houses without
-    // ComputeRemap; their +56FC stays0.
+    // CreateHouses gives the two literal special houses InitColor
+    // (0x688320/0x688373, which writes +56F9 only) but no ComputeRemap, so
+    // the constructor's white +56FC..+56FE (0x4F5C2E..0x4F5C54) stays.
     if runtime.simulation.session().game_mode_nonzero()
         && (name.eq_ignore_ascii_case("Neutral") || name.eq_ignore_ascii_case("Special"))
     {
-        return [0; 3];
+        return [0xFF; 3];
     }
     let index = colors.get(name).copied().or_else(|| {
         colors
@@ -3535,7 +3537,7 @@ pub(crate) fn screen_point_to_world_cell(
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::{
         ExactStepError, ExactStepReceipt, frame_ticks_inline, upsert_overlay_entries,
@@ -3557,6 +3559,25 @@ mod tests {
             overlay_id,
             frame,
         }
+    }
+
+    /// Online Neutral and Special keep the constructor's white laser colour.
+    #[test]
+    fn neutral_and_special_lasers_stay_white_online() {
+        let mut sim = crate::sim::world::Simulation::with_seed(1);
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        let neutral = sim.interner_mut_for_test().intern("Neutral");
+        let runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources::empty()),
+        };
+        let colors = crate::map::houses::HouseColorMap::default();
+        assert_eq!(
+            super::house_laser_rgb(Some(&runtime), &colors, neutral),
+            [0xFF; 3]
+        );
     }
 
     /// A catch-up frame goes to the simulation thread when lending is
@@ -3835,11 +3856,11 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 #[path = "camera_cadence_tests.rs"]
 mod camera_cadence_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod modal_pump_tests {
     use super::{
         SessionMode, audio_pump_follows_main_tick, modal_pump_should_advance_sim,

@@ -129,6 +129,6 @@ pub(crate) fn is_really_moving_now(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_world_c_o)))]
 #[path = "motion_query_tests.rs"]
 pub(crate) mod tests;

@@ -1222,6 +1222,6 @@ pub(crate) fn cell_is_in_native_map_diamond(
 
 // Tests are declared in zone/mod.rs (zone_map_tests.rs).
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "zone_history_hash_tests.rs"]
 mod history_hash_tests;
