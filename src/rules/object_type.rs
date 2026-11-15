@@ -2556,14 +2556,13 @@ pub struct ObjectType {
     /// infantryman of such a type takes Area Guard unless it is in a team
     /// (`0x0051CD54..0x0051CD75`).
     pub default_to_guard_area: bool,
-    /// `Cyborg=` bool — gamemd's TechnoTypeClass `+0xC8F` "emits damage sparks"
-    /// flag that `AI_Update` gates the per-tick damage-Spark prob-roll on.
-    /// Verified: only `InfantryTypeClass::ReadINI` writes `+0xC8F` (from `Cyborg=`);
-    /// every other leaf (vehicle/building/aircraft) keeps the ctor default 0. So
-    /// the AI_Update spark draw fires only for `Cyborg=yes` INFANTRY — a TS legacy
-    /// with **no stock-YR users** (the effect is dormant in stock). Default false.
-    /// See [`ObjectType::emits_damage_spark`].
+    /// InfantryType `Cyborg=` (`+0xEAC`, ReadBool with the current value as
+    /// default at `0x005243B8`). No stock INI authors it. See
+    /// [`ObjectType::emits_damage_spark`] for the spark flag it feeds.
     pub cyborg: bool,
+    /// TechnoType `+0xC8F`, projected from the Rules passes: see
+    /// [`ObjectType::emits_damage_spark`].
+    pub damage_sparks: bool,
 
     /// InfantryType `UseOwnName=` (`+0xECA`, ReadBool `0x00524634..0x0052464E`,
     /// ctor 0 @ `0x005237DC`): an IFV carrying this infantryman names it in
@@ -4206,13 +4205,15 @@ impl ObjectType {
             && !self.is_1x1_with_undeploy()
     }
 
-    /// gamemd's TechnoTypeClass `+0xC8F` — whether `AI_Update` runs the per-tick
-    /// damage-Spark prob-roll for this type. Only `InfantryTypeClass::ReadINI`
-    /// sets `+0xC8F` (from `Cyborg=`); all other leaves keep the ctor default 0,
-    /// so a non-infantry type never emits AI_Update sparks even if `Cyborg=yes` is
-    /// (nonsensically) set on it. Dormant in stock YR (no `Cyborg=yes` units).
+    /// gamemd's TechnoTypeClass `+0xC8F`: whether `AI_Update` runs the per-tick
+    /// damage-Spark roll for this type (`0x006FACD9`). Only
+    /// `InfantryTypeClass::ReadINI` writes it: every pass clears it
+    /// (`0x005240BD`) and a pass that reads the type's section sets it when
+    /// `Cyborg` holds (`0x005243DD..0x005243E7`). So the last Rules pass
+    /// (usually the map) must have the section; other leaves keep the ctor 0.
+    /// Dormant in stock YR (no `Cyborg=yes` types).
     pub fn emits_damage_spark(&self) -> bool {
-        self.cyborg && self.category == ObjectCategory::Infantry
+        self.damage_sparks
     }
 
     /// `BuildingClass` vt+0x284 (`0x00455DA0`, HasRallyPoint): a
@@ -5339,6 +5340,7 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            damage_sparks: false,
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),
             destroy_particle_systems: Vec::new(),
@@ -7024,32 +7026,28 @@ mod tests {
         );
     }
 
+    /// TechnoType+0xC8F: `InfantryTypeClass::ReadINI` clears it on every pass
+    /// (`0x005240BD`) and sets it only on a pass that reads the type's section
+    /// (`0x005243E7`); no other type writes it.
     #[test]
-    fn emits_damage_spark_only_for_cyborg_infantry() {
-        // Type+0xC8F = Cyborg, written ONLY by InfantryTypeClass::ReadINI; other
-        // leaves keep the ctor default 0. So `emits_damage_spark` is true iff the
-        // type is `Cyborg=yes` AND infantry.
-        let ini = IniFile::from_str("[X]\nCyborg=yes\n");
-        let s = ini.section("X").unwrap();
-        assert!(
-            ObjectType::from_ini_section("X", s, ObjectCategory::Infantry).emits_damage_spark()
+    fn damage_sparks_need_the_infantry_section_in_the_last_rules_pass() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        let sparks = |map: &str| {
+            let mut stack = RulesLayerStack::new(IniFile::from_str(
+                "[InfantryTypes]\n0=CYB\n[VehicleTypes]\n0=VCYB\n\
+                 [CYB]\nCyborg=yes\n[VCYB]\nCyborg=yes\n",
+            ));
+            stack.push(RulesLayerKind::Scenario, IniFile::from_str(map));
+            let rules = RuleSet::from_processed_rules(&stack.process().unwrap()).unwrap();
+            let spark = |id| rules.object(id).unwrap().emits_damage_spark();
+            (spark("CYB"), spark("VCYB"))
+        };
+        assert_eq!(
+            sparks("[CYB]\nStrength=90\n[VCYB]\nStrength=90\n"),
+            (true, false)
         );
-        // A Cyborg=yes vehicle/building/aircraft never emits (category gate).
-        assert!(
-            !ObjectType::from_ini_section("X", s, ObjectCategory::Vehicle).emits_damage_spark()
-        );
-        assert!(
-            !ObjectType::from_ini_section("X", s, ObjectCategory::Building).emits_damage_spark()
-        );
-        assert!(
-            !ObjectType::from_ini_section("X", s, ObjectCategory::Aircraft).emits_damage_spark()
-        );
-        // Default (no Cyborg key) → false even for infantry (dormant in stock YR).
-        let plain = IniFile::from_str("[E1]\nFixtureOnly=1\n");
-        let ps = plain.section("E1").unwrap();
-        let plain_inf = ObjectType::from_ini_section("E1", ps, ObjectCategory::Infantry);
-        assert!(!plain_inf.cyborg);
-        assert!(!plain_inf.emits_damage_spark());
+        assert_eq!(sparks(""), (false, false));
     }
 
     #[test]

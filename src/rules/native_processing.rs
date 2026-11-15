@@ -1734,6 +1734,22 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.infantry_civilian))
     }
 
+    /// TechnoType+C8F of each InfantryType after the last pass.
+    pub(crate) fn infantry_damage_spark_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.infantry_damage_sparks,
+                )
+            })
+    }
+
     /// Each InfantryType's fixed-ART reads after every reached pass.
     pub(crate) fn infantry_art_states(&self) -> impl Iterator<Item = (&str, InfantryArt)> {
         self.native_type_construction_trace
@@ -5500,6 +5516,11 @@ struct ProcessedType {
     /// the current byte as Civilian's default on each reached own-ID body.
     #[serde(default)]
     infantry_civilian: bool,
+    /// TechnoType+C8F: InfantryType ReadINI clears it on every pass
+    /// (`0x005240BD`), then a reached body sets it from the retained
+    /// `Cyborg` byte (`0x005243DD..0x005243E7`).
+    #[serde(default)]
+    infantry_damage_sparks: bool,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
     /// Infantry ctor `0x00523788`/`0x005236D7..0x005236F9` and the fixed-ART
@@ -6180,6 +6201,7 @@ impl ProcessedType {
             gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
             infantry_civilian: false,
+            infantry_damage_sparks: false,
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
             infantry_sequence_bank: None,
@@ -8748,6 +8770,9 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(family) {
+            if family == RulesTypeFamily::Infantry {
+                self.family_mut(family)[index].infantry_damage_sparks = false;
+            }
             if let Some((native_stored_id, raw, effective)) =
                 self.begin_rules_member_read(family, index, pass)
             {
@@ -8807,6 +8832,9 @@ impl RulesPassProcessor {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
+                    // `effective` holds every pass so far, so its `Cyborg` is
+                    // the retained +EAC.
+                    member.infantry_damage_sparks = effective.read_bool("Cyborg", false);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
                 // ObjectType ReadINI (`0x005F92F8..0x005F933B`) reads Image

@@ -6063,7 +6063,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
     }
 
     /// Insert a unit whose type resolves to the Cyborg infantry "CYB". The entity
-    /// category is `Unit` (the only arm hosting `techno_common_post` today); the
+    /// category is `Unit` (every techno arm runs `techno_common_post`); the
     /// gate keys off the TYPE's `emits_damage_spark`, so this exercises the draw
     /// path. Live CYB Strength100 and the supplied actual HP set the health band.
     fn insert_cyborg_unit(sim: &mut Simulation, id: u64, current: i32) {

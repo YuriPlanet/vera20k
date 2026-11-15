@@ -21,7 +21,7 @@ use crate::sim::world::Simulation;
 #[cfg(any(test, feature = "test-support"))]
 use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{
-    NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, sqrt_approx_f32,
+    NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, sqrt_approx_f32,
 };
 use glam::IVec3;
 
@@ -194,7 +194,8 @@ impl Simulation {
         }
     }
 
-    /// Reached healing tails 6FA75A,45096C,451477: ordered Greater only.
+    /// Reached healing tails 45096C,451477: ordered Greater only (the
+    /// self-heal tail 6FA75A adds a height arm; see the function below).
     /// This never creates smoke and never clears the retained owner slot.
     pub(crate) fn retire_damage_smoke_after_heal(
         interner: &StringInterner,
@@ -280,10 +281,11 @@ impl Simulation {
     /// `TechnoClass::AI_Update @ 0x006FADB3` is Tiberian Sun legacy and never
     /// runs in stock YR, despite 126 of the 141 stock `DamageParticleSystems=`
     /// entries naming a Spark system. Its top gate at `0x006FACD9` reads
-    /// `TechnoType+0xC8F`, whose only setter is `0x005243E7` in
-    /// `InfantryTypeClass::ReadINI`, conditional on the section's `Cyborg=`
-    /// bool — and no stock INI authors `Cyborg=` (`rulesmd.ini:3581` mentions
-    /// it only in a TS-inherited comment). Enabling it for vehicles would add
+    /// `TechnoType+0xC8F`, which only `InfantryTypeClass::ReadINI` writes:
+    /// cleared on every Rules pass (`0x005240BD`) and set at `0x005243E7` on a
+    /// pass that reads the type's section while `Cyborg=` holds — and no stock
+    /// INI authors `Cyborg=` (`rulesmd.ini:3581` mentions it only in a
+    /// TS-inherited comment). Enabling it for vehicles would add
     /// sparks retail does not show and consume `ScenarioClass::Random` draws
     /// gamemd does not take, which desyncs. The `Smoke` producer below is a
     /// different function (`TechnoClass::ReceiveDamage @ 0x00701900`) and is
@@ -576,29 +578,23 @@ impl crate::sim::world::ObjectSubstrate {
 }
 
 /// TechnoTypeClass::GetDamageParticleOffset @0x007178C0. The screen-relative
-/// arm first runs the retail isometric-pixel matrix, then folds authored Z
-/// into all three world axes through Sqrt_Approx/ftol.
+/// arm (`DamSmkOffScrnRel=`, +0x7BC) converts X/Y through
+/// IsometricPixelToWorld (`0x006D2070`, called at `0x007178FB`), subtracts ten
+/// times Z from both, and makes Z a height from `Sqrt_Approx(2 * (10Z)²)`
+/// scaled by 0.58 (`0x0071793B`) through ftol (`0x00717944`).
 fn damage_particle_offset(object: &crate::rules::object_type::ObjectType) -> IVec3 {
     let offset = object.damage_smoke_offset;
     if !object.dam_smk_off_scrn_rel {
         return offset;
     }
 
-    let a = f32::from_bits(0x4088_88CE);
-    let px = offset.x as f32;
-    let py = offset.y as f32;
-    let iso_x = (a * (px + 2.0 * py)) as i32;
-    let iso_y = (a * (-px + 2.0 * py)) as i32;
-
+    let (iso_x, iso_y) =
+        crate::util::pixel_conversion::PixelConversionBounds::isometric_pixel_to_leptons(
+            offset.x, offset.y,
+        );
     let z_times_ten = offset.z.wrapping_mul(10);
-    let z = X87Chop53::load_i32(z_times_ten);
-    let squared_twice = X87Chop53::add(X87Chop53::mul(z, z), X87Chop53::mul(z, z));
-    let root_bits = sqrt_approx_f32(squared_twice)
-        .expect("damage-smoke offset square stays finite in authored coordinate range");
-    let root = X87Chop53::load_f32(root_bits)
-        .expect("Sqrt_Approx damage-smoke offset is finite normal or zero");
-    let magnitude = X87Chop53::ftol_i64(root)
-        .expect("damage-smoke offset magnitude fits a signed integer") as i32;
+    // Every i32 Z gives a finite root, so the fallback never runs.
+    let magnitude = damage_particle_height(z_times_ten).unwrap_or(0);
     let vertical = if offset.z >= 0 { -magnitude } else { magnitude };
 
     IVec3::new(
@@ -606,6 +602,16 @@ fn damage_particle_offset(object: &crate::rules::object_type::ObjectType) -> IVe
         iso_y.wrapping_sub(z_times_ten),
         vertical,
     )
+}
+
+/// `0x00717921..0x00717944`: FILD, square, double, Sqrt_Approx, FMUL by the
+/// binary64 0.58 at `0x007F4FC0`, then ftol's low 32 bits.
+fn damage_particle_height(z_times_ten: i32) -> Result<i32, NativeX87Error> {
+    let z = X87Chop53::load_i32(z_times_ten);
+    let squared_twice = X87Chop53::add(X87Chop53::mul(z, z), X87Chop53::mul(z, z));
+    let root = X87Chop53::load_f32(sqrt_approx_f32(squared_twice)?)?;
+    let scale = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3FE2_8F5C_28F5_C28F))?;
+    Ok(X87Chop53::ftol_i64(X87Chop53::mul(root, scale))? as i32)
 }
 
 /// ParticleSystemClass::CreateParticle62E380 (original gamemd.exe): the
@@ -928,6 +934,18 @@ mod tests {
     }
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    /// GetDamageParticleOffset (`0x007178C0`): the screen-relative height is
+    /// `Sqrt_Approx(2 * 100²)` (about 141.4) times 0.58 (`0x0071793B`), and X/Y
+    /// go through IsometricPixelToWorld (30, 15 pixels is 256, 0 leptons).
+    #[test]
+    fn screen_relative_damage_offset_scales_its_height() {
+        use crate::rules::object_type::{ObjectCategory, ObjectType};
+        let ini = IniFile::from_str("[X]\nDamageSmokeOffset=30,15,10\nDamSmkOffScrnRel=yes\n");
+        let object =
+            ObjectType::from_ini_section("X", ini.section("X").unwrap(), ObjectCategory::Vehicle);
+        assert_eq!(damage_particle_offset(&object), IVec3::new(156, -100, -82));
+    }
 
     /// ParticleClass's constructor executed on each row
     /// (`tools/spatial_oracle/sqrt_approx_distances.py`), against
