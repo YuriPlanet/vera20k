@@ -2261,6 +2261,7 @@ impl Simulation {
             && trailer_cadence_matches(
                 u64::from(self.session.binary_frame()),
                 config.trailer_seperation,
+                rules.ares(),
             )
             && rules.art().anim_runtime_config(trailer_name).is_some()
         {
@@ -4649,9 +4650,15 @@ fn ares_truncate_x87(value: crate::util::native_x87::X87Value) -> i32 {
 
 /// `0x004242CA..0x004242DF`: a separation of 1, else the signed frame count
 /// modulo the separation (IDIV), so a negative separation also spawns.
+/// Ares hooks 0x004242CA (`AnimClass_Update_FixIE_TrailerSeperation`,
+/// Ares.dll `1000B210`): a separation below 1 jumps to 0x00424322 and spawns
+/// none; 1 and above take the IDIV.
 /// RESIDUAL: gamemd faults dividing by a zero `TrailerSeperation=`; VERA
 /// spawns no trailer there.
-fn trailer_cadence_matches(binary_frame: u64, separation: i32) -> bool {
+fn trailer_cadence_matches(binary_frame: u64, separation: i32, ares: bool) -> bool {
+    if ares && separation < 1 {
+        return false;
+    }
     separation == 1 || (separation != 0 && (binary_frame as i32).wrapping_rem(separation) == 0)
 }
 
@@ -5246,12 +5253,15 @@ mod tests {
 
     #[test]
     fn trailer_separation_spawns_on_signed_multiples_and_never_divides_by_zero() {
-        assert!(!trailer_cadence_matches(0, 0));
-        assert!(trailer_cadence_matches(7, 1));
-        assert!(trailer_cadence_matches(6, 3));
-        assert!(!trailer_cadence_matches(7, 3));
-        assert!(trailer_cadence_matches(6, -3));
-        assert!(!trailer_cadence_matches(7, -3));
+        assert!(!trailer_cadence_matches(0, 0, false));
+        assert!(trailer_cadence_matches(7, 1, false));
+        assert!(trailer_cadence_matches(6, 3, false));
+        assert!(!trailer_cadence_matches(7, 3, false));
+        assert!(trailer_cadence_matches(6, -3, false));
+        assert!(!trailer_cadence_matches(7, -3, false));
+        // Ares spawns no trailer below a separation of 1.
+        assert!(!trailer_cadence_matches(6, -3, true));
+        assert!(trailer_cadence_matches(6, 3, true));
     }
 
     fn damage_fire_fixture(can_be_occupied: bool) -> (Simulation, RuleSet, u64) {
