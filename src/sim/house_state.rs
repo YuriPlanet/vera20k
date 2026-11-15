@@ -992,7 +992,9 @@ pub struct HouseState {
     /// Native `HouseClass+0x280` timer: the auto-repair start of a house no
     /// human controls arms it (`0x00450764..0x00450779`), and the latch holds
     /// until it expires. The constructor starts it at the construction frame
-    /// with no time left. Persisted and hashed (schema v216).
+    /// with no time left. Persisted and hashed (schema v216). RESIDUAL
+    /// (invisible): native Load's NoInit restarts it (0x004F5327..0x004F5339),
+    /// so a loaded computer may repair 36-90 frames sooner there.
     repair_latch_timer: CdTimer,
     /// House+57E4..+15FF3: native retained 130x130 padded spatial threat map.
     /// Constructor4F61EF/4F6312 clears it. Save504093 and Load5031C9 retain

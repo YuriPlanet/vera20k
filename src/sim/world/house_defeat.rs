@@ -61,6 +61,9 @@
 //!   loop removes the house's remaining Units (`0x008B410C`), but Blowup_All
 //!   has already destroyed them: the truce immunity guards only area damage
 //!   (`0x00489710`), not Blowup_All's direct damage.
+//! - Invisible, not ported: the WOL stats byte `0xA8B8C1` (set at
+//!   `0x004FC556`, read only by the stats sender `0x006C6FA0`), and the
+//!   local defeat's mouse call (`0x004FC22A`) and repaint flags.
 //! - The local-player branch (`0x004FC1B0..0x004FC307`) is ported for the
 //!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
 //!   `local_player_defeated` names the ported readers). The borrowed client
@@ -263,7 +266,9 @@ impl Simulation {
     /// Returned events join the post-Logic dispatcher without executing during
     /// a House visit. Without `defeat_pass`
     /// (VERA's first tick) the defeat gates and the game-over scan are
-    /// skipped.
+    /// skipped. RESIDUAL (invisible): the online map-edge probe
+    /// (`0x004F882B..0x004F890D`) is not ported; it draws Scenario RNG only
+    /// on a cell state honest play never reaches.
     pub(super) fn house_rung(
         &mut self,
         rules: &RuleSet,

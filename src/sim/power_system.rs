@@ -1047,6 +1047,8 @@ fn radar_provider_available(
         if entity.owner() != owner
             || entity.lifecycle.in_limbo()
             || !entity.lifecycle.cell_marked()
+            // VERA-only: 508E9D..508F06 has no dying test. Invisible: UnInit
+            // already puts a dead building in limbo.
             || entity.death.is_dying()
             || !entity.building_online()
             || (require_discovery && !entity.discovery.discovered_by_current_house())
