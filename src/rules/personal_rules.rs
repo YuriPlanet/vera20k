@@ -20,6 +20,10 @@ pub struct PersonalRules {
     /// The Options page's Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
     terrain_deformation: bool,
+    /// The Options page's Superweapon Limit (`[VERA] SuperweaponLimit=` in
+    /// VERA.INI), read as Terrain Deformation is: 0 while off, else
+    /// [`admitted_superweapon_limit`]'s 2 to [`SUPERWEAPON_LIMIT_MAX`].
+    superweapon_limit: u8,
     /// The file as read, which a network room's host shares.
     source: Arc<[u8]>,
 }
@@ -30,6 +34,7 @@ impl Default for PersonalRules {
             patch: IniFile::empty(),
             override_map_rules: false,
             terrain_deformation: false,
+            superweapon_limit: 0,
             source: Arc::from(&[][..]),
         }
     }
@@ -46,6 +51,7 @@ impl PersonalRules {
             patch,
             override_map_rules,
             terrain_deformation: false,
+            superweapon_limit: 0,
             source: Arc::from(bytes),
         })
     }
@@ -63,6 +69,16 @@ impl PersonalRules {
         self.terrain_deformation
     }
 
+    /// Below 2 turns it off and past [`SUPERWEAPON_LIMIT_MAX`] takes the
+    /// most ([`admitted_superweapon_limit`]).
+    pub fn set_superweapon_limit(&mut self, limit: i32) {
+        self.superweapon_limit = admitted_superweapon_limit(limit);
+    }
+
+    pub fn superweapon_limit(&self) -> u8 {
+        self.superweapon_limit
+    }
+
     pub fn is_empty(&self) -> bool {
         self.patch.is_empty()
     }
@@ -70,7 +86,7 @@ impl PersonalRules {
     /// The file or an Options switch changes the game: what
     /// [`Self::compatibility_crc`] adds to the network rules digest.
     pub fn in_effect(&self) -> bool {
-        !self.is_empty() || self.terrain_deformation
+        !self.is_empty() || self.terrain_deformation || self.superweapon_limit != 0
     }
 
     pub(crate) fn apply_base_layer(&self, layer: &mut IniFile) {
@@ -95,8 +111,10 @@ impl PersonalRules {
     /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=10` the root does
     /// not set, so a nuke digs a crater three levels deep and 23 cells across,
     /// as wide as its retail `CellSpread=10` blast: gamemd names that warhead
-    /// `NUKE` (0x0081AF98), and retail sets none of them. Map and mode rules
-    /// still read after it and can turn it off.
+    /// `NUKE` (0x0081AF98), and retail sets none of them. Superweapon
+    /// Limit gives each building [`superweapon_limit`] picks its
+    /// `BuildLimit=` and `SuperWeaponPerBuilding=yes`. Map and mode rules still read after it
+    /// and can turn either off.
     pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
         if !self.in_effect() {
             return Cow::Borrowed(root);
@@ -105,26 +123,16 @@ impl PersonalRules {
         if !self.is_empty() {
             root.merge_source_sections(&self.patch, true);
         }
-        if !self.terrain_deformation {
-            return Cow::Owned(root);
+        let mut options = String::new();
+        if self.superweapon_limit != 0 {
+            options.push_str(&superweapon_limit(&root, self.superweapon_limit));
         }
-        let mut options = String::from("[CombatDamage]\nTerrainDeformation=yes\n");
-        if let Some(nuke) = root.section("NUKE") {
-            let crater: String = [
-                ("Deform", "100%"),
-                ("DeformDepth", "3"),
-                ("DeformRadius", "10"),
-            ]
-            .into_iter()
-            .filter(|(key, _)| !nuke.is_present(key))
-            .map(|(key, value)| format!("{key}={value}\n"))
-            .collect();
-            if !crater.is_empty() {
-                options.push_str("[NUKE]\n");
-                options.push_str(&crater);
-            }
+        if self.terrain_deformation {
+            options.push_str(&terrain_deformation(&root));
         }
-        root.merge_source_sections(&IniFile::from_str(&options), true);
+        if !options.is_empty() {
+            root.merge_source_sections(&IniFile::from_str(&options), true);
+        }
         Cow::Owned(root)
     }
 
@@ -140,10 +148,80 @@ impl PersonalRules {
         if self.terrain_deformation {
             header.push_str("TerrainDeformation=yes\n");
         }
+        if self.superweapon_limit != 0 {
+            header.push_str(&format!("SuperweaponLimit={}\n", self.superweapon_limit));
+        }
         let mut input = IniFile::from_str(&header);
         input.merge_source_sections(&self.patch, true);
         Some(input.native_crc())
     }
+}
+
+/// Terrain Deformation's rules: the switch, and the crater keys `root`'s
+/// `NUKE` warhead leaves unset.
+fn terrain_deformation(root: &IniFile) -> String {
+    let mut options = String::from("[CombatDamage]\nTerrainDeformation=yes\n");
+    if let Some(nuke) = root.section("NUKE") {
+        let crater: String = [
+            ("Deform", "100%"),
+            ("DeformDepth", "3"),
+            ("DeformRadius", "10"),
+        ]
+        .into_iter()
+        .filter(|(key, _)| !nuke.is_present(key))
+        .map(|(key, value)| format!("{key}={value}\n"))
+        .collect();
+        if !crater.is_empty() {
+            options.push_str("[NUKE]\n");
+            options.push_str(&crater);
+        }
+    }
+    options
+}
+
+/// The most of each superweapon building Superweapon Limit allows.
+pub const SUPERWEAPON_LIMIT_MAX: u8 = 20;
+
+/// A Superweapon Limit from VERA.INI, a network room or the Options slider
+/// as the game plays it: 0 (off) below 2, at most [`SUPERWEAPON_LIMIT_MAX`].
+pub const fn admitted_superweapon_limit(limit: i32) -> u8 {
+    if limit < 2 {
+        0
+    } else if limit > SUPERWEAPON_LIMIT_MAX as i32 {
+        SUPERWEAPON_LIMIT_MAX
+    } else {
+        limit as u8
+    }
+}
+
+/// Superweapon Limit's rules: each `[BuildingTypes]` entry of `root` whose
+/// `SuperWeapon=` or `SuperWeapon2=` names a Super and whose positive
+/// `BuildLimit=` is below `limit` (retail's six superweapons, each limited
+/// to one) may be built `limit` times, each charging its own shot. A building with
+/// no limit, such as a Battle Lab or a radar, keeps the house's one charge.
+/// Names read as the Rules reader reads them: list entries and Supers into
+/// 32 bytes (`RulesClass::Process @ 0x00668BF0`), `BuildLimit=` with its
+/// constructor's default, no limit.
+fn superweapon_limit(root: &IniFile, limit: u8) -> String {
+    let list = root.section_or_empty("BuildingTypes");
+    let mut options = String::new();
+    for name in list.keys().filter_map(|key| list.read_name(key, 0x20)) {
+        let Some(building) = root.section(name) else {
+            continue;
+        };
+        let provides = ["SuperWeapon", "SuperWeapon2"].into_iter().any(|key| {
+            building
+                .read_name(key, 0x20)
+                .is_some_and(|sw| !crate::rules::ini_parser::is_native_none_type_name(sw))
+        });
+        let own = building.read_int("BuildLimit", i32::MAX);
+        if provides && (1..i32::from(limit)).contains(&own) {
+            options.push_str(&format!(
+                "[{name}]\nBuildLimit={limit}\nSuperWeaponPerBuilding=yes\n"
+            ));
+        }
+    }
+    options
 }
 
 #[cfg(all(test, tests_rules_o_z))]
@@ -364,6 +442,48 @@ mod tests {
         // Keys the root already sets, from a mod or VERARULES.INI, stay.
         let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
         assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
+    }
+
+    #[test]
+    fn superweapon_limit_lifts_only_limited_superweapon_buildings() {
+        let root = b"[BuildingTypes]\n0=NAMISL\n1=GATECH\n2=GAPOWR\n\
+            [SuperWeaponTypes]\n0=NukeSpecial\n1=ForceShieldSpecial\n\
+            [NAMISL]\nSuperWeapon=NukeSpecial\nBuildLimit=1\n\
+            [GATECH]\nSuperWeapon=ForceShieldSpecial\n[GAPOWR]\nBuildLimit=1\n";
+        let scenario = |limit: i32| {
+            let mut owner = sources(root)
+                .into_owner(Default::default(), Default::default())
+                .unwrap();
+            owner.set_superweapon_limit(limit);
+            let (rules, _, _, _) = owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::empty(),
+                )
+                .unwrap()
+                .into_parts();
+            let building = |name| {
+                let object = rules.object(name).unwrap();
+                (object.build_limit, object.super_weapon_per_building)
+            };
+            (
+                [building("NAMISL"), building("GATECH"), building("GAPOWR")],
+                owner.personal_rules_compatibility_crc().is_some(),
+            )
+        };
+        let off = ([(1, false), (i32::MAX, false), (1, false)], false);
+        assert_eq!(scenario(0), off);
+        assert_eq!(scenario(1), off);
+        // The silo may be built that many times, each charging its own
+        // shot; the Battle Lab keeps no limit and the house's one charge.
+        assert_eq!(
+            scenario(2),
+            ([(2, true), (i32::MAX, false), (1, false)], true)
+        );
+        assert_eq!(
+            scenario(99),
+            ([(20, true), (i32::MAX, false), (1, false)], true)
+        );
     }
 
     #[test]

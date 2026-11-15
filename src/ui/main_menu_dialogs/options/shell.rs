@@ -26,8 +26,9 @@ use super::{
     SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP,
     SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
     SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
-    Setting, SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
-    VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    SUPERWEAPON_LIMIT_HELP, SUPERWEAPON_LIMIT_LABEL, Setting, SidebarSize,
+    TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -717,6 +718,9 @@ impl OptionsDialogState {
             LauncherTrackbarId::HouseColorStrength => {
                 return Cow::Owned(tr(HOUSE_COLOR_STRENGTH_LABEL));
             }
+            LauncherTrackbarId::SuperweaponLimit => {
+                return Cow::Owned(tr(SUPERWEAPON_LIMIT_LABEL));
+            }
             LauncherTrackbarId::GameSpeed => &self.game_speed_caption,
         })
     }
@@ -1080,6 +1084,9 @@ impl OptionsDialogState {
                 // VERA's own slider: retail has no string for it.
                 LauncherTrackbarId::HouseColorStrength => {
                     LauncherStatusHelp::Vera(HOUSE_COLOR_STRENGTH_HELP)
+                }
+                LauncherTrackbarId::SuperweaponLimit => {
+                    LauncherStatusHelp::Vera(SUPERWEAPON_LIMIT_HELP)
                 }
                 // Retail's string for the Game Options speed slider.
                 LauncherTrackbarId::GameSpeed => LauncherStatusHelp::Csf("STT:GameOptSliderSpeed"),
@@ -1747,6 +1754,7 @@ mod tests {
             Setting::Slider(Slider::Difficulty),
             Setting::Slider(Slider::HouseColorStrength),
             Setting::Checkbox(Check::TerrainDeformation),
+            Setting::Slider(Slider::SuperweaponLimit),
             Setting::Checkbox(Check::VeraIcon),
             Setting::Checkbox(Check::SmoothOnlineMenus),
             Setting::Checkbox(Check::HdMapPreviews),
@@ -2584,6 +2592,47 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
                 LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::AlwaysExceptFull)
+            ]
+        );
+    }
+
+    /// The Superweapon Limit slider reads Off at its left end and publishes
+    /// the limit, not the position: its first notch allows two.
+    #[test]
+    fn superweapon_limit_slider_publishes_off_then_two_up() {
+        use crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX;
+        let mut state = state();
+        let layout = page(Category::Gameplay);
+        let slider = layout
+            .trackbar_rect(LauncherTrackbarId::SuperweaponLimit)
+            .unwrap();
+        assert_eq!(
+            state.trackbar_plaque_text(LauncherTrackbarId::SuperweaponLimit),
+            tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_OFF)
+        );
+        state.set_trackbar_position(LauncherTrackbarId::SuperweaponLimit, 1);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::SuperweaponLimitChanged(2),
+            ]
+        );
+        state.shell_mouse_down(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
+        state.shell_mouse_up(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
+        assert_eq!(
+            state.trackbar_plaque_text(LauncherTrackbarId::SuperweaponLimit),
+            SUPERWEAPON_LIMIT_MAX.to_string()
+        );
+        state.shell_mouse_down(slider.x + 1, slider.y + slider.h - 3, &layout);
+        state.shell_mouse_up(slider.x + 1, slider.y + slider.h - 3, &layout);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::SuperweaponLimitChanged(SUPERWEAPON_LIMIT_MAX),
+                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
+                LauncherOptionsEvent::SuperweaponLimitChanged(0),
             ]
         );
     }

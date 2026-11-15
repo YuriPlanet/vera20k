@@ -354,6 +354,7 @@ mod tests {
                 can_afford: false,
                 constraints_blocked: false,
                 ares_refusal: None,
+                ready_shots: 0,
             },
         }
     }
@@ -405,6 +406,7 @@ mod tests {
                 can_afford: false,
                 constraints_blocked: false,
                 ares_refusal: None,
+                ready_shots: 0,
             })
             .collect()
     }

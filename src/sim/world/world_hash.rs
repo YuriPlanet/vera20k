@@ -508,6 +508,11 @@ fn hash_mission_leaf(leaf: &crate::sim::mission::MissionLeafState, hasher: &mut 
             b"building-firing-super-weapon-5f8".hash(hasher);
             building.firing_super_weapon().hash(hasher);
         }
+        // Only Superweapon Limit sets it; None adds no bytes.
+        if let Some(cell) = building.own_nuke_target() {
+            b"building-own-nuke-target-vera".hash(hasher);
+            cell.hash(hasher);
+        }
     }
     // Infantry already folds the same owned byte above. Native default0
     // retains the prior Unit/Aircraft hash stream; loaded nonzero Foot68D
@@ -1607,6 +1612,7 @@ impl Simulation {
                 inst.ready_tick().hash(hasher);
                 inst.hash_recharge_time(hasher);
                 inst.hash_grant_flags(hasher);
+                inst.hash_building_charges(hasher);
                 inst.hash_paid_selection(hasher);
                 inst.hash_ares_launch_history(hasher);
                 if let Some(id) = inst.native_unique_id() {

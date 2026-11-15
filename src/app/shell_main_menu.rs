@@ -184,6 +184,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.terrain_deformation = enabled;
         self.process_assets.set_terrain_deformation(enabled);
     }
+    fn store_superweapon_limit(&mut self, limit: u8) {
+        // As Terrain Deformation: the next game's rules read it.
+        self.persistence.options_profile.superweapon_limit = limit;
+        self.process_assets.set_superweapon_limit(i32::from(limit));
+    }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;

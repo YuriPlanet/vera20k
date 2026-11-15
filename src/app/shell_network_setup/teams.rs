@@ -41,10 +41,27 @@ pub(super) fn set_auto_balance(state: &mut AppState, on: bool) -> anyhow::Result
 
 /// A lobby that cannot take the host's options refuses them while they carry
 /// a field it does not know: the room goes on without the newest one it
-/// carries, the room's rules before the join queue before Balance
-/// automatically before Teams, and publishes again. Returns the line telling
-/// the host so, or `None` when none was set.
+/// carries, Superweapon Limit before the rest of the room's rules before the
+/// join queue before Balance automatically before Teams, and publishes again.
+/// Returns the line telling the host so, or `None` when none was set.
 pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
+    if let Some(mut options) = state
+        .match_state
+        .session
+        .network_setup()
+        .map(|launch| launch.options.clone())
+        .filter(|options| options.host_rules.superweapon_limit != 0)
+    {
+        // A lobby from before the limit: the room keeps its other rules.
+        options.host_rules.superweapon_limit = 0;
+        state
+            .match_state
+            .session
+            .set_network_options(options)
+            .ok()?;
+        actions::queue(state, NetworkSetupRequest::PublishOptions);
+        return Some("VERA:SuperweaponLimitNotTaken");
+    }
     if let Some(mut options) = state
         .match_state
         .session

@@ -64,7 +64,7 @@ the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
 tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
 startup; the message names three and counts the rest, which the log lists. Personal
-rules and Terrain Deformation need nothing: Quick Match's room has no
+rules, Terrain Deformation and the Superweapon Limit need nothing: Quick Match's room has no
 [room rules](#room-rules), so its match plays without them. A difference none of
 these catches still meets the guest's admission: after `WOL:MatchErrorJoiningGame` its
 status page says the games differ (`VERA:MatchStartMismatch`), the log records both
@@ -300,9 +300,10 @@ watching. A rollback past Balance automatically and Teams then turns those off t
 ### Room rules
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
-Terrain Deformation and the host's `VERARULES.INI` when it changes anything and holds
-at most 8 KB. Terrain Deformation opens as the host's Options box has it and the host
-can change it in Game Options; the file has no box. They travel with the host's options, online as
+Terrain Deformation box and [Superweapon Limit](superweapon-limit.md) and the host's
+`VERARULES.INI` when it changes anything and holds at most 8 KB. The box and the limit
+open as the host's Options have them and the host can change them in Game Options; the
+file has no control. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `host_rules` beside VERA's room options. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
@@ -324,7 +325,12 @@ that. A game of another build is refused at the build check first, so no release
 game reads `host_rules`; a lobby from before it refuses the field with 400
 `invalid_options`, and the host's game drops the room's rules, says so, and its room
 plays without them. A rollback past it plays every room without them, and each
-player needs the same personal rules again.
+player needs the same personal rules again. The Superweapon Limit came later, as
+`host_rules.superweapon_limit` (2 to 20): an older guest cannot read options that carry
+it, in a room that cannot start as its players' versions differ, and an older LAN guest
+is refused at the build check. A lobby from before it refuses the field; the host's game
+turns the limit off, says so and sends its options again with its other rules. A
+rollback past it plays every room without it, as offline games then do.
 
 ## Native behavior and deliberate bounds
 

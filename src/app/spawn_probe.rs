@@ -545,6 +545,7 @@ pub(crate) fn existing_personal_rules(
     )
     .retained_profile;
     rules.set_terrain_deformation(profile.terrain_deformation);
+    rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
     Ok(rules)
 }
 

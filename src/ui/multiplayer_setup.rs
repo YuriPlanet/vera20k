@@ -92,6 +92,9 @@ pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
 /// The room's Terrain Deformation ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const TERRAIN_DEFORMATION: u16 = 0x7F12;
+/// The room's Superweapon Limit, a trackbar in VERA's Game Options only
+/// ([`HostRules`](crate::skirmish_launch::HostRules)).
+pub(crate) const SUPERWEAPON_LIMIT: u16 = 0x7F14;
 pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
     BRIDGES,
     ALLYING,
@@ -876,6 +879,8 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) checkboxes: [RectPx; 5],
     /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
     pub(crate) room_checkboxes: [RectPx; 7],
+    /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
+    pub(crate) superweapon_limit_label: RectPx,
     /// The Teams box shares [`Self::game_options`]' box and OK: the Teams
     /// count's label, Team Starts and Team Colors, placed only with it, and
     /// online Balance and Balance automatically.
@@ -884,7 +889,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) team_colors: RectPx,
     pub(crate) balance: Option<RectPx>,
     pub(crate) auto_balance: Option<RectPx>,
-    pub(crate) trackbars: [(u16, RectPx); 5],
+    pub(crate) trackbars: [(u16, RectPx); 6],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
@@ -1020,6 +1025,7 @@ impl MultiplayerSetupLayout {
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
             room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
+            superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             teams_label: RectPx::new(0, 0, 0, 0),
             team_starts: RectPx::new(0, 0, 0, 0),
             team_colors: RectPx::new(0, 0, 0, 0),
@@ -1034,6 +1040,7 @@ impl MultiplayerSetupLayout {
                     rect(180, 215, 266, if dialog.wol() && host { 21 } else { 22 }),
                 ),
                 (TEAM_COUNT, RectPx::new(0, 0, 0, 0)),
+                (SUPERWEAPON_LIMIT, RectPx::new(0, 0, 0, 0)),
             ],
             labels,
             option_labels,
@@ -1088,7 +1095,12 @@ impl MultiplayerSetupLayout {
             if *id == TEAM_COUNT {
                 *bar = popup(215, 30, 129, 21);
             }
+            // Superweapon Limit under Unit Count.
+            if *id == SUPERWEAPON_LIMIT {
+                *bar = popup(215, 30 + 30 * OPTION_TRACKBARS.len() as i32, 129, 21);
+            }
         }
+        self.superweapon_limit_label = popup(24, 32 + 30 * OPTION_TRACKBARS.len() as i32, 185, 17);
         self.teams_label = popup(24, 32, 185, 17);
         self.team_starts = popup(215, 62, 124, 24);
         self.team_colors = popup(215, 92, 124, 24);
@@ -1098,10 +1110,10 @@ impl MultiplayerSetupLayout {
             self.balance = Some(popup(215, 122, 124, 24));
             self.auto_balance = Some(popup(215, 154, 226, 17));
         }
-        // Two columns of six under the trackbars, the left one over the art:
-        // the native five and Destroyable Bridges, then In-game Allying, the
-        // four bans and Terrain Deformation.
-        let row = |index: i32| 124 + 22 * index;
+        // Two columns of six under the trackbars and Superweapon Limit, the
+        // left one over the art: the native five and Destroyable Bridges,
+        // then In-game Allying, the four bans and Terrain Deformation.
+        let row = |index: i32| 154 + 22 * index;
         let left = |index| popup(24, row(index), 185, 17);
         let right = |index| popup(215, row(index), 226, 17);
         for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
@@ -1228,7 +1240,7 @@ impl MultiplayerSetupLayout {
                     .into_iter()
                     .chain(ROOM_CHECKBOXES)
                     .chain(OPTION_TRACKBARS)
-                    .chain([GAME_OPTIONS_OK])
+                    .chain([SUPERWEAPON_LIMIT, GAME_OPTIONS_OK])
                     .find(hit);
             }
             Some(RoomBox::Teams) => {
@@ -1246,7 +1258,9 @@ impl MultiplayerSetupLayout {
             None => {}
         }
         let in_room = |id: &u16| {
-            *id != TEAM_COUNT && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
+            *id != TEAM_COUNT
+                && *id != SUPERWEAPON_LIMIT
+                && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
         };
         let paged = view.row_count > view.dialog.rows_per_page();
         view.combos

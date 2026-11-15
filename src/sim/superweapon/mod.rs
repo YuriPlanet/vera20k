@@ -32,6 +32,8 @@ mod ares_super_anims_tests;
 mod ares_target_policy_tests;
 mod battery;
 #[cfg(all(test, tests_sim_superweapon))]
+mod building_charges_tests;
+#[cfg(all(test, tests_sim_superweapon))]
 mod building_requirements_tests;
 #[cfg(all(test, tests_sim_superweapon))]
 mod can_fire_tests;
@@ -320,7 +322,6 @@ impl SuperWeapons {
     }
 
     /// A House's instances in type order; the set itself stays fixed.
-    #[cfg(feature = "debug-tools")]
     pub(crate) fn house_instances_mut(
         &mut self,
         house: &InternedId,
@@ -471,6 +472,13 @@ pub struct SuperWeaponInstance {
     ares_launch_count: i32,
     #[serde(rename = "ares_last_launch_frame")]
     ares_charge_origin_frame: Option<i32>,
+    /// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`,
+    /// `docs/superweapon-limit.md`): the frames left on each charge the
+    /// house's further such buildings hold, the Super's own timer charging the
+    /// first building's. gamemd has one charge per Super; this stays empty
+    /// unless the rules set the key.
+    #[serde(default)]
+    building_charges: Vec<i32>,
 }
 
 fn idle_fade() -> i32 {
@@ -666,6 +674,77 @@ impl SuperWeaponInstance {
         }
     }
 
+    /// Folded only while a building charge exists, so games without Ten
+    /// Superweapons keep their hashes.
+    pub(crate) fn hash_building_charges(&self, hasher: &mut impl std::hash::Hasher) {
+        if !self.building_charges.is_empty() {
+            std::hash::Hash::hash(b"super-building-charges-v1", hasher);
+            std::hash::Hash::hash(&self.building_charges, hasher);
+        }
+    }
+
+    /// The shots charged and waiting: the Super's own when it is ready, and
+    /// each building charge with no frames left (Superweapon Limit).
+    pub fn ready_shots(&self) -> usize {
+        usize::from(self.is_active && self.is_ready)
+            + self
+                .building_charges
+                .iter()
+                .filter(|&&left| left == 0)
+                .count()
+    }
+
+    /// Superweapon Limit: keep one building charge for each of `buildings`
+    /// past the first, whose charge is the Super's own timer. A new
+    /// building's starts empty, at `recharge` frames; a lost building takes
+    /// the emptiest charge with it, the Super's own included, so the house
+    /// keeps its fullest ones. The own timer keeps its hold.
+    fn set_building_count(&mut self, buildings: usize, recharge: i32, current_frame: u32) {
+        let wanted = buildings.saturating_sub(1);
+        let frame = current_frame as i32;
+        while self.building_charges.len() > wanted {
+            let emptiest = self
+                .building_charges
+                .iter()
+                .enumerate()
+                .max_by_key(|&(index, &left)| (left, std::cmp::Reverse(index)))
+                .map_or(0, |(index, _)| index);
+            let kept = self.building_charges.remove(emptiest);
+            if self.is_active && !self.is_ready && self.charge_remaining(frame) > kept {
+                let stopped = self.charge_start_tick == -1;
+                let mut timer = CdTimer::started(frame, kept);
+                if stopped {
+                    timer.pause(frame);
+                }
+                self.store_charge_timer(timer);
+            }
+        }
+        self.building_charges.resize(wanted, recharge.max(0));
+    }
+
+    /// One frame of the building charges, which run while the Super is
+    /// granted and not held, ready or not.
+    fn step_building_charges(&mut self) {
+        if self.is_active && !self.is_suspended {
+            for left in &mut self.building_charges {
+                *left = (*left - 1).max(0);
+            }
+        }
+    }
+
+    /// The recharge a launch restarts the Super's timer with: without
+    /// building charges [`Self::recharge_time`]; with them, the fullest
+    /// one's frames left, that building's charge starting over empty. So
+    /// each building charges its own shot, and a house with charged shots
+    /// waiting is ready again at once.
+    fn next_recharge(&mut self, sw: &SuperWeaponType) -> i32 {
+        let recharge = self.recharge_time(sw);
+        let Some(fullest) = self.building_charges.iter_mut().min_by_key(|left| **left) else {
+            return recharge;
+        };
+        std::mem::replace(fullest, recharge.max(0))
+    }
+
     /// SuperClass constructor6CAF90: its charge timer starts at currentFrame
     /// with duration0; flags6C..70 begin false. The House constructs all types
     /// before its own attack-timer draw. See campaign_start --houses receipts.
@@ -693,6 +772,7 @@ impl SuperWeaponInstance {
             paid_selection: None,
             ares_launch_count: 0,
             ares_charge_origin_frame: None,
+            building_charges: Vec::new(),
         }
     }
 
@@ -910,6 +990,8 @@ impl SuperWeaponInstance {
         self.paid_selection = None;
         self.is_active = false;
         self.is_ready = false;
+        // VERA: a Super no building provides holds no building charges.
+        self.building_charges.clear();
     }
 
     /// `SuperClass::Suspend @ 0x006CB4D0` for a granted Super that is not
@@ -987,8 +1069,9 @@ impl SuperWeaponInstance {
     /// type's timer starts with the recharge time and is paused at once,
     /// keeping all of it; any other type but `PreClick=`/`PostClick=`
     /// restarts the recharge of a granted Super that is not ready and not
-    /// held, for [`Self::recharge_time`]. `CameoChargeState`, -1 on both
-    /// restarts, is the sidebar's.
+    /// held, for [`Self::recharge_time`] (VERA: [`Self::next_recharge`],
+    /// which differs only with building charges). `CameoChargeState`, -1 on
+    /// both restarts, is the sidebar's.
     fn finish_click_fire(&mut self, sw: &SuperWeaponType, current_frame: u32) {
         let frame = current_frame as i32;
         if !sw.post_click {
@@ -1009,13 +1092,14 @@ impl SuperWeaponInstance {
         }
         if !sw.pre_click && !sw.post_click && self.is_active && !self.is_ready && !self.is_suspended
         {
-            self.store_charge_timer(CdTimer::started(frame, self.recharge_time(sw)));
+            let recharge = self.next_recharge(sw);
+            self.store_charge_timer(CdTimer::started(frame, recharge));
         }
     }
 
     /// `SuperClass::StopPreclickAnim @ 0x006CB830` after its anim release
     /// ([`Simulation::release_super_anim`]): a granted Super without a
-    /// charge restarts its recharge, unless it holds a type that is not
+    /// charge restarts its recharge ([`Self::next_recharge`]), unless it holds a type that is not
     /// `PreClick=` (`0x006CB89F..0x006CB8FF`). `CameoChargeState` (`+0x78`,
     /// -1 here) is the sidebar's; a `UseChargeDrain=` type's drain state
     /// (`+0x7C`) returns to 0. Returns whether it restarted.
@@ -1023,10 +1107,8 @@ impl SuperWeaponInstance {
         if !self.is_active || self.is_ready || (self.is_suspended && !sw.pre_click) {
             return false;
         }
-        self.store_charge_timer(CdTimer::started(
-            current_frame as i32,
-            self.recharge_time(sw),
-        ));
+        let recharge = self.next_recharge(sw);
+        self.store_charge_timer(CdTimer::started(current_frame as i32, recharge));
         if sw.use_charge_drain {
             self.charge_drain_state = 0;
         }
@@ -1036,7 +1118,9 @@ impl SuperWeaponInstance {
     /// `SuperClass::Reset @ 0x006CE0B0` past its anim release
     /// ([`reset_super`]): the charge ends (`+0x6F`) and the recharge timer
     /// restarts with [`Self::recharge_time`]; a stopped timer is stopped again
-    /// at once, keeping all of it (`0x006CE12A..0x006CE18F`).
+    /// at once, keeping all of it (`0x006CE12A..0x006CE18F`). VERA: with Ten
+    /// Superweapons' building charges it restarts with
+    /// [`Self::next_recharge`], so a spy costs the house one shot, not all.
     /// `CameoChargeState` (`+0x78`, -1) is the sidebar's. The grant, the hold
     /// and the drain state stay.
     fn reset(&mut self, sw: &SuperWeaponType, current_frame: u32) {
@@ -1044,7 +1128,7 @@ impl SuperWeaponInstance {
         let frame = current_frame as i32;
         let stopped = self.charge_start_tick == -1;
         self.is_ready = false;
-        let mut timer = CdTimer::started(frame, self.recharge_time(sw));
+        let mut timer = CdTimer::started(frame, self.next_recharge(sw));
         if stopped {
             timer.pause(frame);
         }
@@ -1514,6 +1598,9 @@ pub struct SuperWeaponView {
     pub constraints_blocked: bool,
     /// The select hook's refusal of a press, if any. None without Ares.
     pub ares_refusal: Option<AresCameoRefusal>,
+    /// The shots charged and waiting ([`SuperWeaponInstance::ready_shots`]):
+    /// more than one only with Superweapon Limit, when the cameo counts them.
+    pub ready_shots: usize,
 }
 
 impl SuperWeaponView {
@@ -1607,6 +1694,7 @@ pub fn superweapon_views_for_owner(
             } else {
                 None
             },
+            ready_shots: inst.ready_shots(),
         });
     }
     views
@@ -1635,6 +1723,7 @@ pub(crate) fn tick_house_superweapon_instances(
                 .expect("selected retained Super");
             // The fade head precedes the granted/held/readiness gates.
             let fade = instance.step_fade();
+            instance.step_building_charges();
             let sw = rules.super_weapon(sim.interner.resolve(type_id));
             let charge_drain = sw.is_some_and(|sw| sw.use_charge_drain);
             let running = instance.is_active
@@ -2445,6 +2534,51 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 sw_type: selection.destination,
             });
     }
+    sync_building_charges(sim, rules, owner);
+}
+
+/// VERA's Superweapon Limit (`SuperWeaponPerBuilding=`,
+/// `docs/superweapon-limit.md`): each of `owner`'s live buildings of such a
+/// type charges its own shot of each Super it provides
+/// ([`SuperWeaponInstance::set_building_count`]). The hold and grant passes
+/// call it last, once they have decided which Supers stay granted; a held
+/// Super keeps its charges, a one-time, `ManualControl=`, `UseChargeDrain=`
+/// or `PostClick=` one has none. Without the key every count is zero and
+/// nothing changes.
+fn sync_building_charges(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    let mut buildings: std::collections::BTreeMap<InternedId, usize> = Default::default();
+    for building in owned_live_buildings(sim, owner) {
+        if !sim
+            .object_type(building.type_ref(), rules)
+            .is_some_and(|object| object.super_weapon_per_building)
+        {
+            continue;
+        }
+        for name in provided_supers(sim, rules, building) {
+            if let Some(id) = sim.interner.get(name) {
+                *buildings.entry(id).or_default() += 1;
+            }
+        }
+    }
+    let interner = &sim.interner;
+    let frame = sim.session.binary_frame();
+    for (type_id, instance) in sim.super_weapons.house_instances_mut(&owner) {
+        let Some(sw) = rules.super_weapon(interner.resolve(*type_id)) else {
+            continue;
+        };
+        let stacks = instance.is_active
+            && !instance.one_time
+            && !sw.manual_control
+            && !sw.use_charge_drain
+            && !sw.post_click;
+        let count = if stacks {
+            buildings.get(type_id).copied().unwrap_or(0)
+        } else {
+            0
+        };
+        let recharge = instance.recharge_time(sw);
+        instance.set_building_count(count, recharge, frame);
+    }
 }
 
 /// One instance's outcome in [`update_owned_supers`]'s hold pass.
@@ -2547,6 +2681,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
             low_power,
         );
     }
+    sync_building_charges(sim, rules, owner);
 }
 
 /// Full Grant6CB560 owner: retained instance flags/timers, timer-list admission
