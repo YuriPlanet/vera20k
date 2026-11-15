@@ -20,6 +20,34 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct TextState {
     pub text: String,
     pub cursor: usize,
+    /// The composing range within `text`, in UTF-16 units. The input method
+    /// owns it until it commits.
+    pub compose: Option<(usize, usize)>,
+}
+
+/// Split the platform's buffer into the text that is committed and the open
+/// composition, both as UTF-16 units, with the composition's caret inside it.
+/// Committed text excludes the composing range, so a pending pinyin run never
+/// reaches the game as typed letters.
+pub fn split_composition(
+    units: &[u16],
+    compose: Option<(usize, usize)>,
+    cursor: usize,
+) -> (Vec<u16>, Option<(Vec<u16>, usize)>) {
+    let Some((start, end)) = compose else {
+        return (units.to_vec(), None);
+    };
+    let start = start.min(units.len());
+    let end = end.clamp(start, units.len());
+    if start == end {
+        return (units.to_vec(), None);
+    }
+    let mut committed = Vec::with_capacity(units.len() - (end - start));
+    committed.extend_from_slice(&units[..start]);
+    committed.extend_from_slice(&units[end..]);
+    let preedit = units[start..end].to_vec();
+    let caret = cursor.saturating_sub(start).min(preedit.len());
+    (committed, Some((preedit, caret)))
 }
 
 /// What the Android crate does for this module.
@@ -135,5 +163,36 @@ mod tests {
     fn replacing_a_span_deletes_it_before_the_replacement() {
         assert_eq!(edit_of("abcd", "abXd"), (1, "X".into()));
         assert_eq!(edit_of("ab", "aXb"), (0, "X".into()));
+    }
+}
+
+#[cfg(test)]
+mod composition_tests {
+    use super::split_composition;
+
+    fn units(text: &str) -> Vec<u16> {
+        text.encode_utf16().collect()
+    }
+
+    #[test]
+    fn no_composition_keeps_the_whole_buffer() {
+        let buffer = units("hello");
+        assert_eq!(split_composition(&buffer, None, 5), (buffer, None));
+    }
+
+    #[test]
+    fn a_composition_is_held_back_and_its_caret_is_relative() {
+        // "ni" composed at the end of "hi": the platform's buffer is "hini".
+        let (committed, preedit) = split_composition(&units("hini"), Some((2, 4)), 4);
+        assert_eq!(String::from_utf16_lossy(&committed), "hi");
+        let (text, caret) = preedit.unwrap();
+        assert_eq!(String::from_utf16_lossy(&text), "ni");
+        assert_eq!(caret, 2);
+    }
+
+    #[test]
+    fn an_empty_composition_reads_as_none() {
+        let buffer = units("hi");
+        assert_eq!(split_composition(&buffer, Some((2, 2)), 2), (buffer, None));
     }
 }

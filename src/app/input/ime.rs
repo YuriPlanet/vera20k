@@ -286,12 +286,20 @@ mod android {
             return;
         }
         let current = crate::util::android_ime::state();
-        if current.text == state.platform.ime.android_text {
+        // The composing range is the input method's, not the game's: hold it
+        // back from the commits and hand it to the drawing paths instead.
+        let units: Vec<u16> = current.text.encode_utf16().collect();
+        let (committed, preedit) =
+            crate::util::android_ime::split_composition(&units, current.compose, current.cursor);
+        let committed = String::from_utf16_lossy(&committed);
+        state.platform.ime.composition = preedit.as_ref().map(|(text, _)| text.clone()).unwrap_or_default();
+        state.platform.ime.cursor = preedit.as_ref().map_or(0, |(_, caret)| *caret);
+        if committed == state.platform.ime.android_text {
             return;
         }
         let (removed, inserted) =
-            crate::util::android_ime::edit_of(&state.platform.ime.android_text, &current.text);
-        state.platform.ime.android_text = current.text;
+            crate::util::android_ime::edit_of(&state.platform.ime.android_text, &committed);
+        state.platform.ime.android_text = committed;
         for _ in 0..removed {
             backspace(state, focused);
         }

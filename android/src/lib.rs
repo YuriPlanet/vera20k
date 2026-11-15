@@ -153,6 +153,7 @@ fn ime_state() -> vera20k::util::android_ime::TextState {
             vera20k::util::android_ime::TextState {
                 text: state.text,
                 cursor: state.selection.start,
+                compose: state.compose_region.map(|span| (span.start, span.end)),
             }
         })
         .unwrap_or_default()
