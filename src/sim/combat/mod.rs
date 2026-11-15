@@ -116,6 +116,8 @@ mod ares_warhead_combat_tests;
 mod ares_warhead_effects_tests;
 #[cfg(test)]
 mod berzerk_alliance_tests;
+#[cfg(all(test, feature = "phobos"))]
+mod berzerk_mission_tests;
 #[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]

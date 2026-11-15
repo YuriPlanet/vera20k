@@ -95,6 +95,12 @@ fn default_ai_paradrop_mission() -> MissionType {
     MissionType::Hunt
 }
 
+/// `[CombatDamage] BerzerkMission=`'s constructor value, `Hunt`
+/// (`Ext/Rules/Body.h:1010`).
+fn default_berzerk_mission() -> MissionType {
+    MissionType::Hunt
+}
+
 /// `[General] DamagedSpeed=`'s constructor value, 0.75
 /// (`Ext/Rules/Body.h:840`; the stock Drive/Ship damaged-mover factor at
 /// `0x7E7FC0`).
@@ -1141,6 +1147,13 @@ pub struct PhobosGlobals {
     /// is the live attacker's owner when there is one.
     #[serde(default)]
     pub allow_berzerk_on_allies: bool,
+    /// `[CombatDamage] BerzerkMission=` (`Valueable<Mission>`, i.e. a mission
+    /// name through `MissionControlClass::FindIndex`, constructor `Hunt`,
+    /// `Ext/Rules/Body.h:513,1010`; read `Ext/Rules/Body.cpp:615`): the mission
+    /// Phobos' `0x701DAE` hook queues on a target the Psychedelic block makes
+    /// berserk, where stock queues Hunt (`0xF`) at that call site.
+    #[serde(default = "default_berzerk_mission")]
+    pub berzerk_mission: MissionType,
     /// `[General] Strafing.SimulateBurst=`, default `no`
     /// (`Ext/Rules/Body.cpp:264`, constructor `Ext/Rules/Body.h:706`): the
     /// fallback for an unset weapon `Strafing.SimulateBurst`; `yes` alternates
@@ -1880,6 +1893,7 @@ impl Default for PhobosGlobals {
             reveal_houses: AffectedHouse::TEAM,
             berzerk_targeting: AffectedHouse::ALL,
             allow_berzerk_on_allies: false,
+            berzerk_mission: MissionType::Hunt,
             strafing_simulate_burst: false,
             strafing_use_ammo_per_shot: false,
             strafing_target_cell: false,
@@ -3017,6 +3031,15 @@ fn section_settings(section: &crate::rules::ini_parser::IniSection) -> PhobosGlo
         // `Ext/Rules/Body.cpp:421`.
         allow_berzerk_on_allies: section
             .read_bool("AllowBerzerkOnAllies", defaults.allow_berzerk_on_allies),
+        // `Ext/Rules/Body.cpp:615`: `detail::read<Mission>` looks the name up
+        // in `[MissionControl]` (`Utilities/TemplateDef.h:508-526`); a name
+        // matching no mission, like a blank value, keeps the previous one.
+        berzerk_mission: section.read_string_with(
+            "BerzerkMission",
+            2048,
+            defaults.berzerk_mission,
+            |current, value| MissionType::from_map_name(value).unwrap_or(current),
+        ),
         overload_particle_sys_count: section.read_int(
             "Overload.ParticleSysCount",
             defaults.overload_particle_sys_count,

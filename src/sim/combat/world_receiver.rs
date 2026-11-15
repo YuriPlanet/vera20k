@@ -1959,9 +1959,30 @@ pub(crate) fn commit_entities(
                 overlay_registry,
                 run.effects(),
             );
+            // Phobos' `TechnoClass_ReceiveDamage_Berzerk` replaces the six
+            // bytes of the stock `push 0 / push 0xF / mov ecx,esi` queue call
+            // at `0x701DAE` (returning `0x701DBA`): it adds
+            // `SetDestination(NULL, false)`, vt+0x480 mode 0 which keeps the
+            // NavQueue, and queues `[CombatDamage] BerzerkMission=` where
+            // stock pushes `0xF`, Hunt
+            // (`Ext/Techno/Hooks.ReceiveDamage.cpp:541-552`).
+            #[cfg(feature = "phobos")]
+            let queued_mission = rules.phobos_globals.berzerk_mission;
+            #[cfg(not(feature = "phobos"))]
+            let queued_mission = MissionType::Hunt;
+            #[cfg(feature = "phobos")]
+            {
+                let _ = world.assign_destination_keeping_queue(
+                    target_id,
+                    None,
+                    rules,
+                    overlay_registry,
+                    run.effects(),
+                );
+            }
             let _ = world.mission_queue_exact(
                 target_id,
-                MissionId::from_known(MissionType::Hunt),
+                MissionId::from_known(queued_mission),
                 0,
                 world.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
