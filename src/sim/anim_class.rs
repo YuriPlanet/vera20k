@@ -5367,7 +5367,9 @@ mod tests {
             .section_names()
             .iter()
             .filter_map(|name| art_ini.section(name))
-            .flat_map(|section| ["StartSound", "Report"].map(|key| section.get_for_test(key)))
+            .flat_map(|section| {
+                ["StartSound", "Report", "StopSound"].map(|key| section.get_for_test(key))
+            })
             .flatten()
             .collect();
         let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
@@ -7983,9 +7985,10 @@ mod tests {
             "[General]\nDropZoneAnim=ARRWSE\n[AudioVisual]\nDropZoneRadius=4\n[Animations]\n0=ARRWSE\n[BuildingTypes]\n0=BLOCK\n[BLOCK]\nStrength=100\n[Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\n",
         )).unwrap();
         let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[ARRWSE]\nLoopCount=2\nLoopEnd=4\nRate=450\nDemandLoad=true\nLayer=Top\nZAdjust=-300\nReport=Explosion06\nStopSound=ExplosionShard\nNext=none\n",
+            "[ARRWSE]\nLoopCount=2\nLoopEnd=4\nRate=450\nDemandLoad=true\nLayer=Top\nZAdjust=-300\nNext=none\n",
         ));
         art.bind_anim_frame_count_for_test("ARRWSE", 5);
+        art.set_anim_sounds_for_test("ARRWSE", Some("Explosion06"), Some("ExplosionShard"));
         rules.replace_art_registry_for_test(art);
         let map=crate::map::map_file::MapFile::from_bytes(
             b"[Map]\nTheater=TEMPERATE\nSize=0,0,16,16\nLocalSize=0,0,16,16\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Waypoints]\n59=10010\n123=6005\n[Triggers]\nCUE=Player,<none>,Cue,0,1,1,1,0\n[Events]\nCUE=1,8,0,0\n[Actions]\nCUE=1,8,0,123,0,0,0,0,BH\n[Tags]\nCUETAG=0,Cue,CUE\n",

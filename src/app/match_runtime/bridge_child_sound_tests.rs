@@ -36,10 +36,11 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
     for report in native["anim_reports"].as_array().unwrap() {
         let name = report["name"].as_str().unwrap();
         let config = rules.art().anim_runtime_config(name).unwrap();
-        // Native resolves Report with case-insensitive Voc FindByName;
-        // ArtRegistry stores the same identity in uppercase.
+        // None of these sets StartSound=, so the start slot holds Report=,
+        // resolved with case-insensitive Voc FindByName; ArtRegistry stores
+        // the same identity in uppercase.
         assert_eq!(
-            config.report,
+            config.start_sound,
             report["report_name"].as_str().map(str::to_ascii_uppercase)
         );
         assert!(config.stop_sound.is_none());

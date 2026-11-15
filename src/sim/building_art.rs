@@ -1472,11 +1472,12 @@ pub(crate) fn slot_test_fixture_with(building_rules: &str) -> (Simulation, RuleS
     let art_ini = IniFile::from_str(
         "[B]\nActiveAnim=N\nActiveAnimDamaged=D\nActiveAnimGarrisoned=G\n[N]\nLoopCount=-1\nRate=150\nRandomRate=450,150\nStopSound=OLDSTOP\n[D]\nLoopCount=-1\nRate=300\nRandomRate=900,300\n[G]\nLoopCount=-1\nRate=450\n",
     );
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+    let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
         &IniFile::from_str(&format!(
             "[BuildingTypes]\n0=B\n[B]\nStrength=100\n{building_rules}[Animations]\n0=N\n1=D\n2=G\n"
         )),
         &art_ini,
+        &["OLDSTOP"],
     )
     .unwrap();
     let mut art = ArtRegistry::from_ini(&art_ini);

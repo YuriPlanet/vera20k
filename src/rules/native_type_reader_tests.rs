@@ -161,8 +161,8 @@ fn an_unknown_anim_start_sound_gives_way_to_report() {
         "[SoundList]\n0=Boom\n1=Bang\n",
     ));
     let art = IniFile::from_str(
-        "[MISS]\nStartSound=NoSuchSound\nReport=Boom\n\
-         [HIT]\nStartSound=Bang\nReport=Boom\n",
+        "[MISS]\nStartSound=NoSuchSound\nReport=Boom\nStopSound=NoSuchSound\n\
+         [HIT]\nStartSound=Bang\nReport=Boom\nStopSound=Boom\n",
     );
     let processed = RulesLayerStack::new(IniFile::from_str("[Animations]\n0=MISS\n1=HIT\n"))
         .process_with_fixed_art_and_registry_state_recovering(
@@ -175,16 +175,13 @@ fn an_unknown_anim_start_sound_gives_way_to_report() {
         .unwrap();
     let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    let start_sound = |name: &str| {
-        rules
-            .art()
-            .anim_runtime_config(name)
-            .unwrap()
-            .start_sound
-            .clone()
+    let sounds = |name: &str| {
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        (config.start_sound.clone(), config.stop_sound.clone())
     };
-    assert_eq!(start_sound("MISS").as_deref(), Some("BOOM"));
-    assert_eq!(start_sound("HIT").as_deref(), Some("BANG"));
+    // 0x004283C2..0x00428415: an unknown StopSound= keeps the -1 slot.
+    assert_eq!(sounds("MISS"), (Some("BOOM".into()), None));
+    assert_eq!(sounds("HIT"), (Some("BANG".into()), Some("BOOM".into())));
 }
 
 /// BuildingType's ToOverlay read finds its fixed ART section by ObjectType+1F8

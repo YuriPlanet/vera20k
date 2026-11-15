@@ -167,11 +167,6 @@ pub struct ArtEntry {
     pub standing_frames: Option<u16>,
     /// SHP vehicle: number of facing directions (from `Facings=`, default 8).
     pub shp_facings: u8,
-    /// Animation `Report=` sound ID. Used as a fallback when `StartSound=`
-    /// is absent.
-    pub report: Option<String>,
-    /// Animation `StartSound=` sound ID. Takes priority over `Report=`.
-    pub start_sound: Option<String>,
     /// Signed building brightness addition (ExtraLight= in art.ini).
     /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness
     /// for the body and Buildup alike; the gate branch 0043D644 omits it. It
@@ -514,11 +509,10 @@ pub struct AnimTypeRuntimeConfig {
     pub shadow: bool,
     pub ping_pong: bool,
     pub reverse: bool,
-    /// The raw `Report=` read.
-    pub report: Option<String>,
-    /// The sound `AnimClass::Start @ 0x00424CE0` plays (AnimType +2F8). The
-    /// rules processor resolves it against SOUNDMD (`AnimTypeReferences`);
-    /// before that, this reader stands in `StartSound=`, else `Report=`.
+    /// The sound `AnimClass::Start @ 0x00424CE0` plays (AnimType +2F8),
+    /// and the one `AnimClass::UnInit @ 0x004255B0` plays (+2FC). Only the
+    /// rules processor sets them (`AnimTypeReferences`), from `StartSound=`
+    /// else `Report=`, and `StopSound=`, resolved against SOUNDMD.
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
 }
@@ -608,7 +602,6 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
             shadow,
             ping_pong,
             reverse,
-            report,
             start_sound,
             stop_sound,
         } = self;
@@ -686,7 +679,6 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
         shadow.hash(state);
         ping_pong.hash(state);
         reverse.hash(state);
-        report.hash(state);
         start_sound.hash(state);
         stop_sound.hash(state);
         if *ares_make_infantry_owner != crate::rules::ares_warhead::HouseSelector::Invoker
@@ -1090,16 +1082,8 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         shadow: section.read_bool("Shadow", false),
         ping_pong: section.read_bool("PingPong", false),
         reverse: section.read_bool("Reverse", false),
-        report: section
-            .read_name("Report", 0x80)
-            .map(str::to_ascii_uppercase),
-        start_sound: section
-            .read_name("StartSound", 0x80)
-            .or_else(|| section.read_name("Report", 0x80))
-            .map(str::to_ascii_uppercase),
-        stop_sound: section
-            .read_name("StopSound", 0x80)
-            .map(str::to_ascii_uppercase),
+        start_sound: None,
+        stop_sound: None,
     }
 }
 
@@ -1402,8 +1386,6 @@ impl ArtRegistry {
             let firing_frames: Option<u16> = present_frames("FiringFrames");
             let standing_frames: Option<u16> = present_frames("StandingFrames");
             let shp_facings: u8 = section.read_int("Facings", 8).clamp(1, 32) as u8;
-            let report = section.read_name("Report", 0x80).map(str::to_owned);
-            let start_sound = section.read_name("StartSound", 0x80).map(str::to_owned);
             let anim_runtime_config = parse_anim_runtime_config(section);
             // ObjectType::ReadINI5F92D0 selects the one-hop Image25 ART.
             // This is a fresh AnimType: its base reader skips LoadSHP for
@@ -1556,8 +1538,6 @@ impl ArtRegistry {
                     firing_frames,
                     standing_frames,
                     shp_facings,
-                    report,
-                    start_sound,
                     extra_light,
                     terrain_palette: section.read_bool("TerrainPalette", false),
                     use_buffer: section.read_bool("UseBuffer", false),
@@ -1724,6 +1704,23 @@ impl ArtRegistry {
     /// scheduler-owned runtime.
     pub fn scheduler_anim_types(&self) -> &BTreeSet<String> {
         &self.scheduler_anim_types
+    }
+
+    /// The start (+2F8) and stop (+2FC) sound slots the rules processor
+    /// would publish, for a raw fixture that skips it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_anim_sounds_for_test(
+        &mut self,
+        name: &str,
+        start: Option<&str>,
+        stop: Option<&str>,
+    ) {
+        let config = self
+            .anim_runtime_configs
+            .get_mut(&name.to_ascii_uppercase())
+            .expect("test animation section must exist");
+        config.start_sound = start.map(str::to_ascii_uppercase);
+        config.stop_sound = stop.map(str::to_ascii_uppercase);
     }
 
     #[cfg(any(test, feature = "test-support"))]

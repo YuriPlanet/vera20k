@@ -191,7 +191,7 @@ fn cue_matches_coordinate(event: &SimSoundEvent, expected: AnimWorldCoord) -> bo
 
 fn hostile_latch(entity: &crate::sim::game_entity::GameEntity) -> bool {
     // Read the canonical serialized owner, rather than widen a private core API.
-    serde_json::to_value(entity).unwrap()["ai_sell_repair"]["was_attacked_by_enemy"]
+    serde_json::to_value(entity).unwrap()["seldom"]["ai_sell_repair"]["was_attacked_by_enemy"]
         .as_bool()
         .expect("existing serialized hostile-hit byte")
 }
@@ -350,9 +350,9 @@ fn history(
                 .art()
                 .anim_runtime_config(name)
                 .unwrap()
-                .report
+                .start_sound
                 .as_deref()
-                .is_some_and(|report| report.eq_ignore_ascii_case("Explosion14"))
+                .is_some_and(|sound| sound.eq_ignore_ascii_case("Explosion14"))
         );
     }
     assert_eq!(

@@ -108,7 +108,9 @@ fn rules_for_history(retail: &IniFile, physical_art: &IniFile, row: &Value) -> R
     let sounds: Vec<&str> = [&row["art"], &row["next_art"]]
         .into_iter()
         .filter_map(|native| art.section(native["name"].as_str()?))
-        .flat_map(|section| ["StartSound", "Report"].map(|key| section.get_for_test(key)))
+        .flat_map(|section| {
+            ["StartSound", "Report", "StopSound"].map(|key| section.get_for_test(key))
+        })
         .flatten()
         .collect();
     let mut rules =
