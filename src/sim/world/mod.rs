@@ -8266,9 +8266,12 @@ impl Simulation {
     /// RESIDUAL: this one pass builds every wake after movement, where Drive
     /// (`0x004B078C..0x004B0823`), Hover (`0x00514A21..0x00514AC3`) and Ship
     /// (`0x0069FE97..0x0069FEEB`) build theirs inside each unit's Process. A
-    /// wake draws no random number, so only its creation order (its
-    /// AbstractClass ID) relative to objects made later in the same frame
-    /// differs.
+    /// wake draws no random number, so three things differ, none visible:
+    /// its creation order (its AbstractClass ID) relative to objects made
+    /// later in the same frame; the gate (alive, moving now, cell, bridge)
+    /// is read after the whole LogicVector, not in the unit's own Process;
+    /// and its first AI comes a frame late, since a native wake made
+    /// mid-walk joins that frame's walk.
     pub(crate) fn spawn_wakes_for_frame(&mut self, rules: &RuleSet) {
         if !self.session.binary_frame().is_multiple_of(10)
             && !self.session.binary_frame().is_multiple_of(8)

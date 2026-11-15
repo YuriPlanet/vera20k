@@ -2403,8 +2403,10 @@ pub fn object_shp_candidates(
 /// `FUN_005F96B0` (which replaces the second letter with the theater's, only
 /// for names matching `[GNCY][AT]`, and does nothing for theater `-1`, the
 /// value `ReadINI` passes), loads it, and on a miss lets `FUN_005F9710` force
-/// the second letter to `G` unconditionally and retries. The theater postpass
-/// at `0x00427A80` reloads images with the type's resolved `NewTheater` flag.
+/// the second letter to `G` unconditionally and retries. The theater pass at
+/// `0x00427940` (map load, `MouseClass::Load`, the random map generator)
+/// reloads a `NewTheater` image through the type's vt+0xA0 and a `Theater=yes`
+/// one as `<ID>.<theater extension>`, else `.SHP`. `0x00427A80` has no caller.
 /// Fresh types inherit `Theater`/`NewTheater` from the one-hop Image section
 /// in ObjectType::ReadINI5F92D0, then AnimType::ReadINI427D00 applies recognized
 /// own-section values. Missing, empty or invalid bools preserve the inherited

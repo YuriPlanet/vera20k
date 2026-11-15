@@ -203,10 +203,12 @@ impl Simulation {
                         self.spawn_named_anim(rules, name, anim_coord(old_location), 0, 0x600, 0);
                     }
                     // RESIDUAL: native walks the cell's objects within
-                    // DamageRadius with no `Warhead=` too, handing
-                    // ReceiveDamage a null warhead (`0x0074A884..0x0074A92E`);
-                    // VERA skips the walk. Every retail VoxelAnim with
-                    // `Damage=` names a `Warhead=`.
+                    // DamageRadius (X+Y distance) with no `Warhead=` too,
+                    // handing ReceiveDamage a null warhead
+                    // (`0x0074A884..0x0074A92E`); VERA skips the walk. Every
+                    // retail VoxelAnim with `Damage=` names a `Warhead=`, but
+                    // retail TIRE sets neither, so a TIRE bounce hands Damage
+                    // 0 to an object at its exact XY (DamageRadius 0).
                     if let Some(name) = kind.warhead.as_deref() {
                         let warhead = self.interner.intern(name);
                         // 1005D640: a negative DamageRadius or a Damage of
