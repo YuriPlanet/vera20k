@@ -5,9 +5,11 @@
 //! `BeaconClass::Draw 0x00430250` (tactical) and `0x00430650` (radar) blit
 //! them through the owning House's ColorScheme Convert (`ColorScheme+0x30C`,
 //! `0x004302EE`, `0x004306ED`) at brightness 1000 with flags `0x600`:
-//! centred, with no A-buffer and no Z. That Convert's palette is TEMPERAT.PAL
-//! with indices 16..31 replaced by the House's ramp
-//! (`ColorScheme__Constructor 0x0068C710`).
+//! centred, with no A-buffer and no Z. Init_Theater loads the theater's
+//! `UNIT%s.PAL` into `0x00886380` (`0x00534CB2..0x00534CD9`) and rebuilds
+//! every scheme's Convert from it (`0x00534D77` -> `0x0068C860`), so that
+//! Convert's palette is the unit palette with indices 16..31 replaced by the
+//! House's ramp (`ColorScheme__BuildRampPalette 0x0068C3B0`).
 //!
 //! ## Dependency rules
 //! - Part of render/ — the caller supplies the visible records.
@@ -45,7 +47,9 @@ impl BeaconArt {
         self.tactical.len()
     }
 
-    /// `ramps` holds each beacon row's House ramp, in House order.
+    /// `unit_palette` is the theater's unit palette; `ramps` holds each
+    /// beacon row's House ramp, in House order.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -53,12 +57,12 @@ impl BeaconArt {
         assets: &AssetManager,
         side_index: i32,
         ares: bool,
+        unit_palette: Option<&Palette>,
         ramps: &[[Color; 16]],
     ) -> Self {
         let file = |name| side_mix_file(assets, side_index, ares, name);
         let shape = |name| ShpFile::from_bytes(file(name)?).ok();
-        let base = file("temperat.pal").and_then(|bytes| Palette::from_bytes(bytes).ok());
-        let palettes: Vec<Palette> = base
+        let palettes: Vec<Palette> = unit_palette
             .map(|base| {
                 ramps
                     .iter()

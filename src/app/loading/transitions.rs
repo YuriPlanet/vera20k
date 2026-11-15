@@ -441,7 +441,8 @@ pub(crate) fn install_world_presentation(
         .borrow_mut()
         .reset();
     // Full_Init 687BB2 -> Init_BeaconArt 4309D0, after 68781F mounted the
-    // side's MIX group; each row's ColorScheme is its House's (+0x16054).
+    // side's MIX group; each row's ColorScheme is its House's (+0x16054),
+    // whose Convert Init_Theater rebuilt from UNIT%s.PAL (534D77).
     let beacon_side = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let beacon_ares = state.rules().is_some_and(|rules| rules.ares());
     state.match_state.match_presentation.beacon_art =
@@ -461,6 +462,11 @@ pub(crate) fn install_world_presentation(
                     *runtime.resources.rules.house_color_ramps.ramp(index)
                 })
                 .collect();
+            let unit_palette = crate::map::theater::load_theater_unit_and_iso_palettes(
+                assets,
+                &state.match_state.match_presentation.theater_name,
+            )
+            .map(|(unit, _)| unit);
             Some(crate::render::beacon_art::BeaconArt::new(
                 &state.renderer.gpu.device,
                 &state.renderer.gpu.queue,
@@ -468,6 +474,7 @@ pub(crate) fn install_world_presentation(
                 assets,
                 beacon_side,
                 beacon_ares,
+                unit_palette.as_ref(),
                 &ramps,
             ))
         });

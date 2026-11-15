@@ -1991,6 +1991,18 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             super::input::taunt::receive(state, taunt.byte);
             return Ok(());
         }
+        if let Some(text) = message.beacon_text_fields() {
+            //48D7F4..48D810: like 0x20/0x21, no source or session check.
+            if state.match_state.sim_runtime.is_installed() {
+                super::match_runtime::beacons::receive_text(
+                    state,
+                    text.house,
+                    text.slot,
+                    &text.text_units(),
+                );
+            }
+            return Ok(());
+        }
         if let Some(runtime) = state.match_state.sim_runtime.runtime()
             && let Some(event) = super::match_runtime::network_match::decode_kick_proposal(
                 &state.match_state.session,
@@ -3743,6 +3755,17 @@ fn drain_match_requests(state: &mut AppState) {
             NetworkLoadingRequest::Beacon(record) => {
                 if let Ok(message) =
                     crate::net::lan_messages::ingame::BeaconMessage::new(&local_name(state), record)
+                {
+                    let peers: Vec<_> =
+                        super::match_runtime::network_match::nodes(&state.match_state.session)
+                            .into_iter()
+                            .skip(1)
+                            .collect();
+                    send_sources(state, message.as_bytes(), peers);
+                }
+            }
+            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+                if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
                 {
                     let peers: Vec<_> =
                         super::match_runtime::network_match::nodes(&state.match_state.session)
