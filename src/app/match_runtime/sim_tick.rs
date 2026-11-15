@@ -1781,12 +1781,13 @@ fn house_laser_rgb(
         return [0; 3];
     };
     let name = runtime.simulation.interner().resolve(owner);
-    // CreateHouses initializes the two literal special houses without
-    // ComputeRemap; their +56FC stays0.
+    // CreateHouses gives the two literal special houses InitColor
+    // (0x688320/0x688373, which writes +56F9 only) but no ComputeRemap, so
+    // the constructor's white +56FC..+56FE (0x4F5C2E..0x4F5C54) stays.
     if runtime.simulation.session().game_mode_nonzero()
         && (name.eq_ignore_ascii_case("Neutral") || name.eq_ignore_ascii_case("Special"))
     {
-        return [0; 3];
+        return [0xFF; 3];
     }
     let index = colors.get(name).copied().or_else(|| {
         colors
@@ -3557,6 +3558,25 @@ mod tests {
             overlay_id,
             frame,
         }
+    }
+
+    /// Online Neutral and Special keep the constructor's white laser colour.
+    #[test]
+    fn neutral_and_special_lasers_stay_white_online() {
+        let mut sim = crate::sim::world::Simulation::with_seed(1);
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        let neutral = sim.interner_mut_for_test().intern("Neutral");
+        let runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources::empty()),
+        };
+        let colors = crate::map::houses::HouseColorMap::default();
+        assert_eq!(
+            super::house_laser_rgb(Some(&runtime), &colors, neutral),
+            [0xFF; 3]
+        );
     }
 
     /// A catch-up frame goes to the simulation thread when lending is
