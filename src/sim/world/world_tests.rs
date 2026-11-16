@@ -9790,6 +9790,75 @@ fn voxel_anim_builds_its_attached_system_and_smoke_follows_the_anim() {
     );
 }
 
+/// A live DEBRIS VoxelAnim whose type names a Smoke `AttachedSystem=`, built
+/// through the constructor: the world, its rules, the anim and its system.
+#[cfg(not(feature = "ares"))]
+fn voxel_anim_with_attached_smoke() -> (Simulation, RuleSet, u64, u64) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[VoxelAnims]\n0=DEBRIS\n\
+         [Smk]\nBehavesLike=Smoke\nMaxEC=10\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n\
+         [DEBRIS]\nAttachedSystem=Sys\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(17);
+    let kind = rules.voxel_anim_type_id_by_name("DEBRIS").unwrap();
+    sim.emit_debris_voxel(
+        kind,
+        rules.voxel_anim_type(kind),
+        None,
+        IVec3::new(1280, 2560, 0),
+        true,
+        &mut Vec::new(),
+        &rules,
+    )
+    .unwrap();
+    let id = sim.voxel_anims().ids()[0];
+    let system = sim
+        .voxel_anims()
+        .get(id)
+        .unwrap()
+        .attached_system()
+        .unwrap();
+    (sim, rules, id, system)
+}
+
+/// The anim's expiry (`0x00749A11`) takes the generic arm of
+/// `DispatchPointerExpiredCleanup @ 0x007258D0` (`0x00725925`), so its
+/// system's PointerExpired (`0x0062FE90`) drops the owner and stops spawning.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn a_dying_voxel_anim_ends_its_attached_system() {
+    let (mut sim, rules, id, system) = voxel_anim_with_attached_smoke();
+    sim.uninit_with_rules(id, &rules);
+    let sys = sim.particle_systems().get(system).unwrap();
+    assert_eq!(sys.owner_entity(), None);
+    assert!(sys.done_spawning());
+}
+
+/// A save holding a live anim's AttachedSystem loads: the system's owner is
+/// in the VoxelAnim store, which Smoke's owner lookup resolves.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn a_voxel_anims_attached_system_survives_a_save() {
+    let (sim, _rules, id, system) = voxel_anim_with_attached_smoke();
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "attached system", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
+        .expect("the anim owner resolves")
+        .sim;
+    restored
+        .restore_after_snapshot_load()
+        .expect("restore the anim and its system");
+    assert_eq!(
+        restored
+            .particle_systems()
+            .get(system)
+            .unwrap()
+            .owner_entity(),
+        Some(id)
+    );
+}
+
 /// Callback-disabled damage fixtures may deliver after another constructor;
 /// they retain the original constructor IDs and spend no second RNG/ID draws.
 #[test]

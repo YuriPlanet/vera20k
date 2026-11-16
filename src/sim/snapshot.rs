@@ -1632,7 +1632,12 @@ fn restore_object_references(
     }
 
     for (&system_id, system) in sim.substrate.particle_systems.iter() {
-        if let Some(owner_id) = system.owner_entity() {
+        // A VoxelAnim owns its AttachedSystem (`0x007498A5`); Smoke follows
+        // it through `target_get_coords`, which resolves that store too.
+        if let Some(owner_id) = system
+            .owner_entity()
+            .filter(|&owner| !sim.substrate.voxel_anims.contains_key(owner))
+        {
             require_object_reference(
                 &entity_ids,
                 sim.terrain_objects.objects(),

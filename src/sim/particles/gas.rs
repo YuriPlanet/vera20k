@@ -46,7 +46,7 @@ impl Simulation {
     /// ParticleSystem62E430: construct the explicit ParticleType and append.
     /// +C4 is DynamicVector capacity, not ParticleSystemType.ParticleCap.
     ///
-    /// RESIDUAL: gamemd's gas spawners (`0x00425034`, `0x00518418`,
+    /// RESIDUAL: gamemd's gas spawners (`0x00425032`, `0x00518416`,
     /// `0x005185AD`, `0x0074D0EF`) pass the cloud global `0x00A8ED78` to
     /// `0x0062E430` with no null test, so once the cloud has retired the next
     /// gas particle crashes gamemd at `0x0062E462`. VERA builds a new cloud
