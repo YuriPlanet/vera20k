@@ -1203,6 +1203,12 @@ pub struct PhobosGlobals {
     /// (`Ext/Techno/Hooks.Firing.cpp:1265-1274`).
     #[serde(default)]
     pub cylinder_rangefinding: bool,
+    /// `[General] UnitPowerDrain=`, default `no` (`Phobos.INI.cpp:263`):
+    /// owned and present Infantry/Unit/Aircraft types contribute their
+    /// `Power=` to the House totals (`Ext/House/Hooks.cpp:34-58`), and a
+    /// gain or loss of any techno rechecks power (`:15-23`).
+    #[serde(default)]
+    pub unit_power_drain: bool,
     /// `[General] RecountBurst=`, default `no` (`Ext/Rules/Body.cpp:382`,
     /// constructor `Ext/Rules/Body.h:803`): a weapon change or an idle timeout
     /// recounts the retained burst index and re-arms the shot
@@ -2139,6 +2145,7 @@ impl Default for PhobosGlobals {
             can_target_ai_iron_curtained: false,
             auto_target_iron_curtained: true,
             cylinder_rangefinding: false,
+            unit_power_drain: false,
             recount_burst: false,
             ai_superweapon_delay: None,
             reveal_houses: AffectedHouse::TEAM,
@@ -2287,6 +2294,7 @@ impl PhobosGlobals {
             .read_bool("IvanBombAttachToCenter", globals.ivan_bomb_attach_to_center);
         // `Ext/Rules/Body.cpp:122-123`: the AI Chronoshift supers, by type ID.
         let general = ini.section_or_empty("General");
+        globals.unit_power_drain = general.read_bool("UnitPowerDrain", globals.unit_power_drain);
         globals.ai_chrono_sphere_sw =
             general.read_phobos_type_name("AIChronoSphereSW", &globals.ai_chrono_sphere_sw);
         globals.ai_chrono_warp_sw =

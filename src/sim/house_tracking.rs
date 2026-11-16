@@ -915,6 +915,38 @@ impl HouseTracking {
         counts.get(&type_id).copied().unwrap_or(0)
     }
 
+    /// Phobos `HouseClass_UpdatePower_AfterBuildings` (`0x508D8D`,
+    /// `Ext/House/Hooks.cpp:34-58`): each owned and present Infantry, Unit
+    /// and Aircraft type adds `Power * count` to output when positive, else
+    /// to drain.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn add_unit_power_types(
+        &self,
+        produced: &mut i32,
+        drained: &mut i32,
+        mut power_of: impl FnMut(InternedId) -> Option<i32>,
+    ) {
+        for counts in [
+            &self.active_infantry_types,
+            &self.active_unit_types,
+            &self.active_aircraft_types,
+        ] {
+            for (&type_id, &count) in counts {
+                if count == 0 {
+                    continue;
+                }
+                let Some(power) = power_of(type_id) else {
+                    continue;
+                };
+                if power > 0 {
+                    *produced = produced.wrapping_add(power.wrapping_mul(count));
+                } else {
+                    *drained = drained.wrapping_sub(power.wrapping_mul(count));
+                }
+            }
+        }
+    }
+
     /// The sum of the four on-map counters' totals (`CounterClass+0x10` of
     /// `+0x5550`, `+0x5564`, `+0x5578` and `+0x558C`), as the co-op score
     /// rows add them (`0x0049B7E0`).

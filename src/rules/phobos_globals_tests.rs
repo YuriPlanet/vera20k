@@ -141,6 +141,17 @@ fn the_warhead_prevent_scatter_fallback() {
     );
 }
 
+/// `[General] UnitPowerDrain=` (`Phobos.INI.cpp:263`, constructor `no`):
+/// owned Infantry/Unit/Aircraft types join the House power totals and the
+/// cameo readout.
+#[cfg(feature = "phobos")]
+#[test]
+fn unit_power_drain_constructs_false_and_reads_general() {
+    assert!(!PhobosGlobals::default().unit_power_drain);
+    assert!(read("[General]\nUnitPowerDrain=yes\n").unit_power_drain);
+    assert!(!read("[General]\nUnitPowerDrain=no\n").unit_power_drain);
+}
+
 /// `[CombatDamage] AllowBerzerkOnAllies=` (`Ext/Rules/Body.cpp:421`,
 /// constructor `Body.h:339,847` no): the switch on Phobos' re-added Psychedelic
 /// ally test (`0x701D2E`, `Ext/Techno/Hooks.ReceiveDamage.cpp:535`). It sits
@@ -165,22 +176,28 @@ fn allow_berzerk_on_allies_constructs_false_and_reads_from_combat_damage() {
 fn the_ready_to_next_mission_moving_check_defaults_false() {
     assert!(!PhobosGlobals::default().ready_to_next_mission_moving_check);
     assert!(
-        read("[General]
+        read(
+            "[General]
 ReadyToNextMission.MovingCheck=yes
-")
-            .ready_to_next_mission_moving_check
+"
+        )
+        .ready_to_next_mission_moving_check
     );
     assert!(
-        !read("[General]
+        !read(
+            "[General]
 ReadyToNextMission.MovingCheck=no
-")
-            .ready_to_next_mission_moving_check
+"
+        )
+        .ready_to_next_mission_moving_check
     );
     assert!(
-        !read("[CombatDamage]
+        !read(
+            "[CombatDamage]
 ReadyToNextMission.MovingCheck=yes
-")
-            .ready_to_next_mission_moving_check,
+"
+        )
+        .ready_to_next_mission_moving_check,
         "the key is a `[General]` read"
     );
 }

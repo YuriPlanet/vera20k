@@ -7439,6 +7439,69 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
     );
 }
 
+/// Phobos `[General] UnitPowerDrain`: the active Infantry/Unit/Aircraft
+/// counts fold their type `Power=` after the building roster
+/// (`Ext/House/Hooks.cpp:34-58`), and the cameo readout reports the same
+/// value for the local player (`Misc/PhobosToolTip.cpp:70-80`).
+#[cfg(feature = "phobos")]
+#[test]
+fn unit_power_drain_folds_active_counts_into_the_house_totals() {
+    use crate::sim::combat::Health;
+
+    let ini_str: &str = "\
+[General]\nUnitPowerDrain=yes\n\n\
+[VehicleTypes]\n0=CHARGER\n1=DRAINER\n\n\
+[BuildingTypes]\n\n\
+[InfantryTypes]\n\n\
+[AircraftTypes]\n\n\
+[CHARGER]\nStrength=100\nArmor=none\nPower=25\n\
+[DRAINER]\nStrength=100\nArmor=none\nPower=-50\n";
+    let ini = IniFile::from_str(ini_str);
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(""))
+        .expect("unit power rules parse");
+    let mut sim = Simulation::new();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.input_delay_ticks = 0;
+    let grid = PathGrid::test_all_passable(64, 64);
+    let _ = (
+        crate::sim::intern::test_intern("CHARGER"),
+        crate::sim::intern::test_intern("DRAINER"),
+        crate::sim::intern::test_intern("Americans"),
+    );
+    sim.interner = crate::sim::intern::test_interner();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    for (id, kind, rx) in [(1u64, "CHARGER", 10u16), (2u64, "DRAINER", 12u16)] {
+        let mut unit = GameEntity::test_default_of_category(
+            id,
+            kind,
+            "Americans",
+            rx,
+            10,
+            EntityCategory::Unit,
+        );
+        unit.health = Health::new(100);
+        sim.substrate.entities.insert(unit);
+        sim.house_added_to_game(id, &rules);
+    }
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
+    assert_eq!(sim.power_states[&owner].total_output(), 25);
+    assert_eq!(sim.power_states[&owner].total_drain(), 50);
+    assert_eq!(
+        sim.cameo_power_delta(&rules, owner, rules.object("DRAINER").unwrap()),
+        -50,
+        "the tooltip's unit arm reads the type Power"
+    );
+    assert_eq!(
+        sim.cameo_power_delta(&rules, owner, rules.object("CHARGER").unwrap()),
+        25
+    );
+}
+
 /// Combat-death counterpart: a structure killed in combat in the object pass
 /// lives in the Dying window through the factory sweep and is freed only by the
 /// single end-of-tick drain. Its repair took its step in the building's own

@@ -704,7 +704,13 @@ pub(crate) fn cameo_power_delta(
     object: &crate::rules::object_type::ObjectType,
 ) -> i32 {
     if object.category != crate::rules::object_type::ObjectCategory::Building {
-        return 0;
+        // `GetPower` (`Misc/PhobosToolTip.cpp:70-80`): an Infantry, Unit or
+        // Aircraft reports its type `Power=` only with `UnitPowerDrain`.
+        return if rules.phobos_globals.unit_power_drain {
+            object.power
+        } else {
+            0
+        };
     }
     let enhancers: Vec<(&GameEntity, &crate::rules::object_type::ObjectType)> = building_order
         .iter()
@@ -785,6 +791,7 @@ fn recalculate_power_for_owner(
     state: &mut PowerState,
     entities: &EntityStore,
     building_order: &[u64],
+    tracking: Option<&crate::sim::house_tracking::HouseTracking>,
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
@@ -992,6 +999,20 @@ fn recalculate_power_for_owner(
         drained = drained.wrapping_add(building_power_drain(entity, rules, interner));
     }
 
+    // Phobos `HouseClass_UpdatePower_AfterBuildings` (`0x508D8D`,
+    // `Ext/House/Hooks.cpp:34-58`): after the building roster, the active
+    // Infantry/Unit/Aircraft counts fold their type `Power=`.
+    #[cfg(feature = "phobos")]
+    if rules.phobos_globals.unit_power_drain
+        && let Some(tracking) = tracking
+    {
+        tracking.add_unit_power_types(&mut produced, &mut drained, |type_id| {
+            interner
+                .object_type(type_id, rules)
+                .map(|object| object.power)
+        });
+    }
+
     //508D4A stores the assessment byte;508D79 forces output to zero for
     // either the outage timer or a drained positive-output contributor.
     // Ares 3.0 10024760 (hook 0x508D4A) first raises a negative total, which
@@ -1050,6 +1071,7 @@ pub(crate) fn tick_power_states(
             state,
             entities,
             &buildings,
+            None,
             rules,
             interner,
             binary_frame,
@@ -1079,6 +1101,7 @@ pub(crate) fn assess_house_power(
     state: &mut PowerState,
     entities: &EntityStore,
     building_order: &[u64],
+    tracking: Option<&crate::sim::house_tracking::HouseTracking>,
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
@@ -1101,6 +1124,7 @@ pub(crate) fn assess_house_power(
         state,
         entities,
         building_order,
+        tracking,
         rules,
         interner,
         binary_frame,
@@ -1379,7 +1403,16 @@ mod tests {
             };
             state.set_radar_outage_for_test(CdTimer::from_raw(int(&row[0]), int(&row[1])));
             let frame = int(&row[2]) as u32;
-            let _ = assess_house_power(&mut state, &entities, &[], &rules, &interner, frame, false);
+            let _ = assess_house_power(
+                &mut state,
+                &entities,
+                &[],
+                None,
+                &rules,
+                &interner,
+                frame,
+                false,
+            );
             assert_eq!(
                 (state.radar_outage_timer, state.radar_dirty),
                 (CdTimer::from_raw(int(&row[3]), int(&row[4])), row[5] == 1),
@@ -1661,6 +1694,7 @@ BuildSpeed=0.02
                 &mut state,
                 &entities,
                 &[1],
+                None,
                 &rules,
                 &test_interner(),
                 0,
@@ -1704,6 +1738,7 @@ BuildSpeed=0.02
                 &mut state,
                 &store,
                 &[1],
+                None,
                 &rules,
                 &test_interner(),
                 0,

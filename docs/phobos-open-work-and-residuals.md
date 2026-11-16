@@ -219,11 +219,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上
   理论上可能与 CRT 相差 1 lepton。触发：长距离斜向预测正落在格边界；频率：
   极低；风险：预测高度差 1，影响一帧爬升。
-- **ToolTips 扩展文本电力行**：建筑臂已实现（`Simulation::cameo_power_delta`：
-  `GetEnhancedPower` 无 plant 结算 + 原生 drain，电力非零时在成本行后追加
-  ` ⚡±N`）；单位臂仍缺 `UnitPowerDrain` 机制（`[General] UnitPowerDrain` 默认
-  no，零售无影响）。触发：`UnitPowerDrain=yes` 且悬停单位；频率：仅该类模组；
-  风险：单位提示少电力段，实际电力结算也不含单位。
+- **ToolTips 扩展文本电力行**：无残渣；建筑臂走 `Simulation::cameo_power_delta`
+  （`GetEnhancedPower` 无 plant 结算 + 原生 drain），电力非零时在成本行后追加
+  ` ⚡±N`；单位臂在 `[General] UnitPowerDrain=yes` 时读取单位类型 `Power=`，
+  同一开关让电力评估按活跃 Infantry/Unit/Aircraft 计数结算，并在增减时重算
+  （`unit_power_drain_folds_active_counts_into_the_house_totals`）。
 - **`SWShotsFormat` 余量**：无残渣；`SW.Shots` 同时读入 Phobos 元数据
   （默认 -1），计数在共享 Launch 尾对 stock 类型也自增（Ares 处理臂由
   `finish_ares_launch` 计数），phobos-only 的可用性与提示行均可用

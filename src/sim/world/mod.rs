@@ -6450,6 +6450,18 @@ impl Simulation {
                     .add_building_drain(drain);
             }
         }
+        // Phobos `HouseClass_RegisterGain` (`0x502A80`,
+        // `Ext/House/Hooks.cpp:15-23`): a techno gain rechecks power when the
+        // unit drain is on.
+        #[cfg(feature = "phobos")]
+        if rules.phobos_globals.unit_power_drain && entity.category() != EntityCategory::Structure {
+            Self::invalidate_house_power(
+                &self.houses,
+                &mut self.power_states,
+                entity.owner(),
+                false,
+            );
+        }
         // Ares builds: the building's store joins the House's (`0x00502B83`,
         // `sim::ares_tiberium_storage`).
         #[cfg(feature = "ares")]
@@ -6516,6 +6528,13 @@ impl Simulation {
         if structure {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
         }
+        // Phobos `HouseClass_RegisterLoss` (`0x5025F0`,
+        // `Ext/House/Hooks.cpp:15-23`): a techno loss rechecks power when the
+        // unit drain is on.
+        #[cfg(feature = "phobos")]
+        if rules.phobos_globals.unit_power_drain && !structure {
+            Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
+        }
     }
 
     /// Private retained House dirty bytes, shared by their represented native
@@ -6575,6 +6594,7 @@ impl Simulation {
             state,
             &self.substrate.entities,
             self.houses[&owner].base_projection().buildings(),
+            Some(self.houses[&owner].tracking()),
             rules,
             &self.interner,
             self.session.binary_frame(),
