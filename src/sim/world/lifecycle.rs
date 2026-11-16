@@ -1981,36 +1981,37 @@ impl Simulation {
 
     /// VERA watching (docs/Networking.md "Watching"): this world plays a
     /// match its game watches. It stands in the followed player's seat for
-    /// that player's view, sidebar and sounds, but sends nothing, so every
-    /// command record is another game's. The app installs it with the world,
-    /// before its first frame.
+    /// that player's view, sidebar and sounds, or shows the observer's
+    /// sidebar there, but sends nothing, so every command record is another
+    /// game's. The app installs it with the world, before its first frame.
     pub fn install_watcher(&mut self) {
         self.session.install_watcher();
     }
 
-    /// VERA watching: a watcher's world follows another human. Online, the
-    /// current House selects only this process's view and result, since every
-    /// peer holds a different one (see `shared_owned_by_current_house`), and
-    /// PlayerControl only its EVA and score lines (unhashed online), so
-    /// following moves those and rebuilds just the objects' owner and
-    /// discovery bytes, from the history every peer keeps. Refused offline,
-    /// to a player, for a House that is no human player's, once this
-    /// process's result is on its way, and in a frame stopped by a failure.
-    /// A frame waiting on the stream has run its logic, and a watcher's
-    /// command tail reads no current House, so it follows then as between
-    /// frames.
+    /// VERA watching: a watcher's world follows another human, or the one it
+    /// kept while it showed the observer's sidebar ([`Self::observe`]).
+    /// Online, the current House selects only this process's view and
+    /// result, since every peer holds a different one (see
+    /// `shared_owned_by_current_house`), and PlayerControl only its EVA and
+    /// score lines (unhashed online), so following moves those and rebuilds
+    /// just the objects' owner and discovery bytes, from the history every
+    /// peer keeps. Refused offline and for a House that is no human player's,
+    /// and when the view may not change (`watcher_view_may_change`).
     pub fn follow_house(&mut self, owner: InternedId) -> bool {
         let Some(view) = self.network_discovery_view_bit(owner) else {
             return false;
         };
-        if !self.session.watcher()
-            || self.session.current_house() == Some(owner)
-            || self.session.outcome_request().is_some()
-            || (self.frame_continuation.is_some() && !self.pending_network_wait())
+        let current = self.session.current_house();
+        if !self.watcher_view_may_change()
+            || (current == Some(owner) && !self.session.watcher_observes())
         {
             return false;
         }
-        for (house, controlled) in [(self.session.current_house(), false), (Some(owner), true)] {
+        self.session.show_observer_sidebar(false);
+        if current == Some(owner) {
+            return true;
+        }
+        for (house, controlled) in [(current, false), (Some(owner), true)] {
             if let Some(house) = house.and_then(|house| self.houses.get_mut(&house)) {
                 house.assign_player_control(controlled);
             }
@@ -2021,6 +2022,29 @@ impl Simulation {
             entity.discovery.follow_view(owned, view);
         }
         true
+    }
+
+    /// VERA watching: the watcher shows the observer's sidebar, Tab's stop
+    /// after the last player (`ScenarioSession::watcher_observes`). Its world
+    /// keeps the House it last followed, and with it that player's sounds,
+    /// radar and result, so nothing else changes. Refused while it already
+    /// shows it and when the view may not change.
+    pub fn observe(&mut self) -> bool {
+        if !self.watcher_view_may_change() || self.session.watcher_observes() {
+            return false;
+        }
+        self.session.show_observer_sidebar(true);
+        true
+    }
+
+    /// Whether a watcher's view may change now: never for a player, once this
+    /// process's result is on its way, or in a frame stopped by a failure. A
+    /// frame waiting on the stream has run its logic, and a watcher's command
+    /// tail reads no current House, so it changes then as between frames.
+    fn watcher_view_may_change(&self) -> bool {
+        self.session.watcher()
+            && self.session.outcome_request().is_none()
+            && (self.frame_continuation.is_none() || self.pending_network_wait())
     }
 
     /// `+0x41A` as a decision every peer shares reads it: VisualCharacter's

@@ -18,6 +18,10 @@ const LIST_WAIT: Duration = Duration::from_secs(600);
 const STALL: Duration = Duration::from_secs(60);
 /// Escape leaves at the next frame's network wait pass.
 const RETURN_WAIT: Duration = Duration::from_secs(60);
+/// Tab's stops at most: 30 players and the observer's sidebar.
+const TAB_STOPS: usize = 31;
+/// The observer's sidebar among the views Tab shows; every other is a House.
+const OBSERVER_VIEW: &str = "the observer's sidebar";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
@@ -27,7 +31,7 @@ enum Step {
     Joining,
     /// The watched match, through its catch-up and the frames after it.
     Playing,
-    /// Tab followed the next player; Escape comes a presented frame later.
+    /// Tab went through the views; Escape comes a presented frame later.
     Followed,
     /// Escape pressed: back to the online lobby.
     Returning,
@@ -44,7 +48,8 @@ pub(super) struct WatchRun {
     /// The latest native frame and when the world reached it.
     last_frame: Option<(u32, Instant)>,
     frames_after: u32,
-    followed: Option<(String, String)>,
+    /// The view before Tab and each it showed, back to that one.
+    tab: Option<(String, Vec<String>)>,
     exit_route: Vec<Value>,
 }
 
@@ -67,7 +72,7 @@ impl LiveRoundFlow {
             caught_up_frame: None,
             last_frame: None,
             frames_after: 0,
-            followed: None,
+            tab: None,
             exit_route: Vec::new(),
         });
         self.record(
@@ -194,7 +199,7 @@ impl LiveRoundFlow {
     }
 
     /// Until the delayed present the stream's frames run at speed; after it
-    /// the world must keep running, and then Tab follows the next player.
+    /// the world must keep running, and then Tab goes through the views.
     fn play_watched_match(
         &mut self,
         run: &mut WatchRun,
@@ -250,18 +255,43 @@ impl LiveRoundFlow {
         if run.frames_after < FRAMES_AFTER_CATCH_UP {
             return Ok(());
         }
-        let before = followed_house(state)?;
-        press(state, KeyCode::Tab)?;
-        let after = followed_house(state)?;
+        // Tab goes through the other players and the observer's sidebar back
+        // to the player it started with.
+        let start = shown_view(state)?;
+        let mut views: Vec<String> = Vec::new();
+        while views.last() != Some(&start) {
+            ensure!(
+                views.len() < TAB_STOPS,
+                "Tab never came back to {start}: {}",
+                views.join(" -> ")
+            );
+            press(state, KeyCode::Tab)?;
+            let view = shown_view(state)?;
+            ensure!(
+                views.last().unwrap_or(&start) != &view,
+                "Tab kept showing {view}"
+            );
+            views.push(view);
+        }
         ensure!(
-            after != before,
-            "Tab kept following {before}; the match needs two players still in it"
+            views.iter().any(|view| view == OBSERVER_VIEW),
+            "Tab never showed the observer's sidebar: {}",
+            views.join(" -> ")
+        );
+        ensure!(
+            views
+                .iter()
+                .any(|view| view != &start && view != OBSERVER_VIEW),
+            "Tab followed nobody else; the match needs two players still in it"
         );
         self.record(
             frame,
-            &format!("Tab followed {after} after {before} at native frame {native}"),
+            &format!(
+                "Tab went {start} -> {} at native frame {native}",
+                views.join(" -> ")
+            ),
         );
-        run.followed = Some((before, after));
+        run.tab = Some((start, views));
         run.advance(Step::Followed);
         Ok(())
     }
@@ -320,8 +350,8 @@ impl LiveRoundFlow {
     }
 
     pub(super) fn watch_receipt(&self, state: &AppState, run: &WatchRun) -> Result<Value> {
-        let (before, after) = run
-            .followed
+        let (start, views) = run
+            .tab
             .as_ref()
             .context("online watch capture is incomplete")?;
         let menu = self
@@ -339,12 +369,12 @@ impl LiveRoundFlow {
         Ok(
             json!({"target":"online-live-watch","account":config.account,"host":config.host,
             "service_boundary":"normal WOL UI, deployed HTTPS lobby and its watch grant, the relay's delayed stream to a watcher, production loading and frame boundary",
-            "scope":"a third account finds the host's running match in the lobby's watch list, loads it, catches up to the delayed present, plays 300 frames more without a stop, follows the next player with Tab and leaves with Escape to the lobby and the settled Main Menu; no result or cross-client checksum claim beyond the watcher's own check",
+            "scope":"a third account finds the host's running match in the lobby's watch list, loads it, catches up to the delayed present, plays 300 frames more without a stop, goes through the players and the observer's sidebar with Tab and leaves with Escape to the lobby and the settled Main Menu; no result or cross-client checksum claim beyond the watcher's own check",
             "watch":{"match_id":run.match_id,"delay_seconds":run.delay_seconds,
                 "first_native_frame":run.first_frame,"catch_up_seen":run.catch_up_seen,
                 "caught_up_native_frame":run.caught_up_frame,
                 "frames_after_catch_up":run.frames_after,
-                "followed_before_tab":before,"followed_after_tab":after,
+                "tab_start":start,"tab_views":views,
                 "exit_route":exit_route},
             "returned_to_menu":true,"menu_return":menu,"route":self.route}),
         )
@@ -362,14 +392,18 @@ fn native_frame(state: &AppState) -> Result<u32> {
         .binary_frame())
 }
 
-/// The House this watcher stands in for (`current_house`).
-fn followed_house(state: &AppState) -> Result<String> {
+/// What the watcher shows: the observer's sidebar, or the House it stands in
+/// for (`current_house`).
+fn shown_view(state: &AppState) -> Result<String> {
     let sim = &state
         .match_state
         .sim_runtime
         .runtime()
         .context("watched world")?
         .simulation;
+    if sim.session().watcher_observes() {
+        return Ok(OBSERVER_VIEW.to_owned());
+    }
     let house = sim
         .session()
         .current_house()

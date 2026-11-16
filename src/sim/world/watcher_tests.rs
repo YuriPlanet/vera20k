@@ -1,6 +1,7 @@
 //! VERA watching (docs/Networking.md "Watching"): a watcher's world plays the
 //! match in the followed player's seat, sends nothing, and can follow another
-//! player (`Simulation::install_watcher`, `Simulation::follow_house`).
+//! player or show the observer's sidebar (`Simulation::install_watcher`,
+//! `Simulation::follow_house`, `Simulation::observe`).
 
 use super::*;
 use crate::rules::ruleset::RuleSet;
@@ -94,6 +95,24 @@ fn following_another_player_moves_only_this_games_view() {
         tank.discovered_by_other_house,
         "Bob, now another receiver, saw it"
     );
+}
+
+/// The observer's sidebar keeps the followed House, so Tab can come back to
+/// it, and changes nothing every player shares.
+#[test]
+fn the_observers_sidebar_keeps_the_followed_house() {
+    let (mut sim, ann, _, _) = watched_world(ScenarioGameMode::Wol, true);
+    let shared = sim.state_hash();
+    assert!(sim.observe());
+    assert!(!sim.observe(), "it shows it already");
+    assert_eq!(sim.session.current_house(), Some(ann));
+    assert!(sim.session.watcher_observes() && !sim.session.is_observer_house(ann));
+    assert_eq!(sim.state_hash(), shared);
+    assert!(sim.follow_house(ann), "back to Ann's sidebar");
+    assert!(!sim.session.watcher_observes());
+    assert!(!sim.follow_house(ann), "Ann is already followed");
+    let (mut player, ..) = players(ScenarioGameMode::Wol, false);
+    assert!(!player.observe(), "a player keeps their own sidebar");
 }
 
 /// A stream with nothing more yet: every frame waits on it.

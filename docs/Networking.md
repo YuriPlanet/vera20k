@@ -403,7 +403,12 @@ their leaving ends the watch no more than it ends the other players' match. Tab 
 the next player still in the match, in House order, also while a frame waits on the
 stream (`match_runtime::watching`): online the current House only chooses this game's
 view and result, so following rebuilds just the objects' owner and discovery bytes from
-the history every player's game keeps (`Simulation::follow_house`). A watcher gives no
+the history every player's game keeps (`Simulation::follow_house`). After the last
+player, Tab shows the observer's sidebar as an observer in the room sees it: each
+player's name, kills, units and money, and the time played on the credits counter
+(`Simulation::observe`). Only the sidebar changes: the world keeps the last player's
+House, so the sounds, radar and end of the match stay that player's. The next Tab
+follows the first player again. A watcher gives no
 orders: its input is the camera, zoom, Tab
 and Escape, and it has no chat. Escape leaves at once; the returned transport's relay
 Leave ends the watcher's session. A match that ends with a result ends for the watcher
@@ -549,9 +554,10 @@ list shows a running match whose players include the host, then selects that row
 presses Join. The grant, the map and the relay's stream must bring it into the match.
 It records whether the game was catching up and the frame where it reached the delayed
 present, then requires 300 more frames without a stop: a desync's "Scenarios do not
-match." or a lost relay's message fails it. It presses Tab once, which must follow
-another player, then Escape, which must return it to the online lobby, and leaves for
-the Main Menu. Run it beside `online-live-host` and `online-live-guest` for two other
+match." or a lost relay's message fails it. It presses Tab until it is back on the
+player it started with, which must pass another player and the observer's sidebar,
+then Escape, which must return it to the online lobby, and leaves for the Main Menu.
+Run it beside `online-live-host` and `online-live-guest` for two other
 accounts. Their `--online-frames` must keep their first match going well past the
 watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
 minutes behind and needs 300 frames after catching up, and it catches up only when it
@@ -559,4 +565,4 @@ joins more than two minutes into the match. The host's room must let everyone wa
 as the Create Game Watching choice's default does; Quick Match games
 (`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
 records the match, the grant's delay, whether catch-up was seen and the frame it ended,
-the frames played after it, the Houses followed before and after Tab, and the exit route.
+the frames played after it, the views Tab went through, and the exit route.
