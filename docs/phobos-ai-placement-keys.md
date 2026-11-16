@@ -1,9 +1,12 @@
 # AI placement and bug-fix switches
 
-Eleven Phobos keys that rescan found without a reader: six `[AI]` placement
-switches, four `[General]` bug-fix switches and one `[CombatDamage]` key. Two of
-them (`BuildingWaypoints`, `MissileSpawnAttackCell`) have their consumer ported
-here; the rest are read and recorded as residuals.
+Eleven Phobos switches that rescan found without a reader: six `[AI]` placement
+switches, four `[General]` bug-fix switches and one `[CombatDamage]` key, plus
+the eight `[General] TeamDelays.Count1..Count8` rows that carry the
+`TeamDelays.DynamicType` delays. `AIAutoDeployMCV`, `AISetBaseCenter`,
+`MissileSpawnAttackCell`, `FallingDownTargetingFix`, `BuildingWaypoints`
+(selection half) and `TeamDelays.DynamicType` have consumers ported here; the
+remaining consumers are recorded as residuals.
 
 ```ini
 [AI]
@@ -19,6 +22,8 @@ BuildingWaypoints=false       ; Valueable<bool>
 FallingDownTargetingFix=false ; Valueable<bool>
 BalloonHoverPathingFix=false  ; Valueable<bool>
 TeamDelays.DynamicType=StartingPoint ; Valueable<DynamicTeamDelayType>
+TeamDelays.Count1=0,0,0        ; Valueable<Vector3D<int>>
+; Count2..Count8, same shape: X,Y,Z for 2..8 counted players
 
 [CombatDamage]
 MissileSpawnAttackCell=true   ; Valueable<bool>
@@ -39,11 +44,15 @@ Readers (`Ext/Rules/Body.cpp`, constructor defaults from `Ext/Rules/Body.h`):
 | `FallingDownTargetingFix` | `:451` | `false` (`Body.h:361,866`) |
 | `BalloonHoverPathingFix` | `:540` | `false` (`Body.h:455,958`) |
 | `TeamDelays.DynamicType` | `:606` | `StartingPoint` (`Body.h:510,1007`) |
+| `TeamDelays.Count1..Count8` | `:608-613` | `{0,0,0}` (`Body.h:511,1008`) |
 
 `DynamicTeamDelayType` is `Utilities/Enum.h`'s enum: `StartingPoint`, `PlayerCount`,
 `Allies`, `Enemies`, `AliveCount`, `AliveAllies`, `AliveEnemies`, `None`, parsed by
 `EnumParser<DynamicTeamDelayType>` (case-insensitive names, unknown keeps the
-constructed value).
+constructed value). `TeamDelays.CountN` is indexed by the count `1..8` and its
+`X`, `Y`, `Z` by the house's AI difficulty `0`, `1`, `2` (Hard, Normal, Easy),
+the same hardest-first order as `[General] TeamDelays=`; a row left at
+`{0,0,0}` or a non-positive selected entry keeps the stock delay.
 
 ## BuildingWaypoints
 
@@ -107,15 +116,16 @@ that its footprint stays the aim point.
   `ObjectClass::SpawnParachuted 0x005F5965`, `ObjectClass::Update 0x005F3F86`
   track and untrack the falling list.
 - Balloon hover pathing `Misc/Hooks.BugFixes.cpp:3499` (`BalloonHoverPathingFix`).
-- `HouseClass::ResetTeamDelay @ 0x004F8ACC` (`TeamDelays.DynamicType`).
+- `HouseClass::Update_ResetTeamDelay @ 0x004F8ACC`, hook `0x004F8ACC` ->
+  `0x004F8AD5` (`TeamDelays.DynamicType`; `Ext/House/Hooks.cpp:599-674`).
 
 ## VERA
 
-`rules::phobos_globals::PhobosGlobals` carries all eleven fields
-(`src/rules/phobos_globals.rs:529-600`), reads them in `from_ini` by their own
-sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
+`rules::phobos_globals::PhobosGlobals` carries the eleven switches and the eight
+`team_delays_count` rows (`src/rules/phobos_globals.rs`), reads them in
+`from_ini` by their own sections and defaults them in `Default`.
 `src/rules/ini_value.rs` adds `PhobosDynamicTeamDelayType` with
-`read_phobos_valueable_dynamic_team_delay_type` (`:1069-1080`, `:2218-2250`).
+`read_phobos_valueable_dynamic_team_delay_type`.
 
 - `building_waypoints`: `sim::world::planning`'s `planning_selection_refusal`
   (`0x00639DA0`'s owner) admits a selected building when the key is on;
@@ -155,6 +165,25 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
   `DistributedFireCandidate` entries and replaces the best score. Test
   `falling_down_targeting_fix_offers_a_tracked_fall_to_an_air_capable_guard`
   covers key-off invisibility and the key-on pick.
+- `team_delays_dynamic_type`: `sim::ai_team_creation::dynamic_team_delay` is
+  `HouseClass_Update_ResetTeamDelay 0x004F8ACC`'s owner. It leaves the stock
+  path when the session is a campaign, the type is `None`, or
+  `ScenarioSession::multiplayer_start_count` (the retained non-zero
+  multiplayer start waypoints, `0..=7`) is below two. `StartingPoint` uses that
+  count; every other type iterates houses and applies the `Alive*` `Defeated`
+  gate, the observer/`MultiplayPassive` skip, and the `Allies`/`Enemies`
+  alliance filters. A count outside `1..=8` or a non-positive X/Y/Z entry
+  returns `None`; otherwise the house's difficulty selects the column.
+  `update_team_creation` computes the stock `[General] TeamDelays=` fallback
+  with the commander `TeamDelayPercent` scaling, then restarts the timer with
+  the dynamic value when it returns one. Tests
+  `team_delays_count_rows_select_the_ai_difficulty_column`,
+  `player_count_reads_the_count_row_for_the_houses_difficulty`,
+  `an_absent_count_row_leaves_the_stock_team_delay`,
+  `one_start_waypoint_leaves_the_stock_team_delay`,
+  `alive_enemies_counts_only_living_non_allied_houses` and
+  `none_and_campaign_keep_the_stock_team_delay` cover the column, house-count,
+  filter and fallback boundaries.
 
 ## Residuals
 
@@ -196,20 +225,27 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
   takes the uncorrected path in both key states. Frequency: hover movement only.
   Risk: a mod relying on the stock shortcut sees the corrected route; no retail
   object is player-visible here.
-- `TeamDelays.DynamicType` (`0x004F8ACC`): `HouseClass::ResetTeamDelay` itself is
-  not ported; VERA keeps Ares' `TeamDelayPercent` scaling in
-  `rules::personality::scale_team_delay` and starts teams from the retail delay.
-  Trigger: any AI team launch after a reset. Effect: the per-type refill (player
-  count, allies, enemies, alive counts) never replaces the flat delay. Frequency:
-  every team the AI launches. Risk: AI attack pacing differs from a mod that sets
-  `PlayerCount` or `AliveEnemies`.
+- `TeamDelays.DynamicType` boundaries: the hook's first branch is the per-house
+  `HouseExt::TeamDelay >= 0` override, whose only writer in Phobos is trigger
+  action `SetTeamDelay` (`Ext/TAction/Body.cpp:759-765`,
+  `HouseExt::Fetch(pHouse)->TeamDelay = value`). VERA does not port that action
+  yet, so no house carries an override and the dynamic or stock path always
+  runs. The hook's neutral test is `HouseClass::IsNeutral`; VERA substitutes the
+  `MultiplayPassive=` house flag because it has no separate neutral flag. A
+  `SetTeamDelay` mod therefore sees the dynamic pacing instead of its fixed
+  override, and a map marking a house neutral without `MultiplayPassive=` counts
+  it. Trigger: a mod using `SetTeamDelay`, or a non-retail neutral house.
+  Frequency: per AI team reset in such a mod. Risk: pacing differs there; retail
+  authors neither key.
 - `BuildingWaypoints`' display half (`0x4AE95E`): VERA's planning mode does not
   run a building's planning click, so no building receives a non-attack plan.
   Trigger: a building selected in planning mode with the key on. Effect: native
   skips the click (`0x4AE982`) except for `Attack`; VERA never issues one.
   Frequency: player action. Risk: a `BuildingWaypoints` mod expects a building to
   accept a move-plan icon, which VERA still refuses at the click.
-- Retail rules author none of the eleven keys except where noted, so the
-  constructed defaults reproduce stock; `AIAutoDeployMCV`,
-  `AISetBaseCenter` and `MissileSpawnAttackCell` are on by default and are the
-  three whose Phobos behaviour retail already sees.
+- Retail rules author none of these switches or `Count` rows, so the constructed
+  defaults reproduce stock; `AIAutoDeployMCV`, `AISetBaseCenter` and
+  `MissileSpawnAttackCell` are on by default and are the three whose Phobos
+  behaviour retail already sees. `TeamDelays.DynamicType` defaults to
+  `StartingPoint`, but `Count1..8` all stay `{0,0,0}`, so retail keeps
+  `[General] TeamDelays=` unless a map or mod supplies a row.
