@@ -102,9 +102,8 @@ fn extended_ifv_resize_retains_base_and_discards_extra_tail_and_labels() {
     assert_eq!(restored.weapon_flh(18, false), object.weapon_flh(18, false));
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
-fn original_build_keeps_extension_keys_and_slots_inactive() {
+fn stock_way_keeps_extension_keys_and_slots_inactive() {
     let (rules, _) = fixture(&[]);
     let object = rules.object("CARRIER").unwrap();
     assert!(object.gunner);
@@ -113,6 +112,6 @@ fn original_build_keeps_extension_keys_and_slots_inactive() {
     assert_eq!(object.gunner_turrets.turret_for_weapon(18), -1);
     let mut actor =
         crate::sim::game_entity::GameEntity::test_default(1, "CARRIER", "Americans", 10, 10);
-    actor.set_gunner_weapon(18, object, crate::rules::ARES_BUILD);
+    actor.set_gunner_weapon(18, object, false);
     assert_eq!(actor.current_weapon_number(), 0);
 }

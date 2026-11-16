@@ -11,20 +11,18 @@ use serde_json::{Value, json};
 #[path = "can_build_ares_tests.rs"]
 mod ares_tests;
 
-#[cfg(not(feature = "ares"))]
 fn rows(section: &str) -> Vec<Value> {
     let data: Value =
         serde_json::from_str(crate::test_fixture::text("tools/can_build_oracle.json")).unwrap();
     data[section].as_array().unwrap().clone()
 }
 
-#[cfg(not(feature = "ares"))]
 fn comparable_can_build_rows() -> impl Iterator<Item = Value> {
     rows("can_build").into_iter().filter(|row| {
         // These gamemd controls intentionally differ from Ares100082B0's
         // positive specific count and CountOwnedNow100032F0's tracked
         // alternates. The Ares corpus covers those component boundaries.
-        !crate::rules::ARES_BUILD
+        !crate::rules::ares_switch::ares_way()
             || (row["proc_alternate"].is_null()
                 && row["name"].as_str() != Some("BuildingType count negative"))
     })
@@ -52,7 +50,6 @@ fn category(class: &str) -> EntityCategory {
 
 /// The row's rules: the oracle's types, the asked type `Q` of its class and
 /// the `[General]` lists.
-#[cfg(not(feature = "ares"))]
 fn rules_for(row: &Value) -> RuleSet {
     let class = row["class"].as_str().unwrap();
     let spec = &row["type"];
@@ -326,7 +323,6 @@ fn query(row: &Value, rules: &RuleSet) -> ObjectType {
     rules.object_in_category(class, "Q").unwrap().clone()
 }
 
-#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n\
@@ -354,7 +350,6 @@ fn upgrade_prerequisite_world() -> (Simulation, RuleSet, InternedId) {
 /// even when an earlier host carries the prerequisite. Its fixed three-type
 /// scan does not read the upgrade count or compare PowersUpBuilding's name.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
     let (mut sim, rules, owner) = upgrade_prerequisite_world();
     let product = rules.object("Q").unwrap();
@@ -392,7 +387,6 @@ fn upgrade_prerequisite_uses_house_order_and_all_three_type_slots() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
     use crate::sim::mission::MissionDispatchTimer;
     use crate::sim::mission::state::MissionTestFixture;
@@ -429,7 +423,6 @@ fn upgrade_prerequisite_skips_limbo_offline_and_both_selling_missions() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn can_build_matches_the_original() {
     for row in comparable_can_build_rows() {
         let rules = rules_for(&row);
@@ -456,7 +449,6 @@ fn can_build_matches_the_original() {
 /// rejects that zero mask. The limit-only and prerequisite-override arms
 /// precede this country gate in the original function.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn comma_only_required_houses_refuses_ordinary_can_build_but_keeps_shortcuts() {
     let make = |required: &str| {
         RuleSet::from_ini(&IniFile::from_str(&format!(
@@ -500,7 +492,6 @@ fn comma_only_required_houses_refuses_ordinary_can_build_but_keeps_shortcuts() {
 // Ares hook 0x50B370 (10024F80) replaces CheckBuildLimit; its own tests are
 // in can_build_ares_tests.rs.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn check_build_limit_matches_the_original() {
     for row in rows("check_build_limit") {
         let rules = rules_for(&row);
@@ -563,7 +554,6 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn can_build_after_runtime_tech_level_change_matches_original_current_value_controls() {
     for row in comparable_can_build_rows() {
         let native_tech_level = row["type"]["tech"].as_i64().unwrap_or(1) as i32;
@@ -663,7 +653,6 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn secret_lab_can_build_matches_original_human_ai_limit_and_priority_controls() {
     let native: Value =
         serde_json::from_str(crate::test_fixture::text("tools/can_build_secret_lab.json")).unwrap();
@@ -692,7 +681,6 @@ fn secret_lab_can_build_matches_original_human_ai_limit_and_priority_controls() 
 /// house, even on the computer's limit-only FindFactory route and after a
 /// spy stole the tech.
 #[test]
-#[cfg(not(feature = "ares"))]
 fn retail_room_bans_refuse_the_spy_and_stolen_tech_units() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

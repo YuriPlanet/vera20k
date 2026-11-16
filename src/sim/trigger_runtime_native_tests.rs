@@ -1169,7 +1169,6 @@ fn damage_source_event44_matches_original_registered_house_index() {
 
 // The stock tag section of 5F5390; Ares replaces it (hook 0x5F57B5, see the
 // ares tests).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
     use super::tests::{

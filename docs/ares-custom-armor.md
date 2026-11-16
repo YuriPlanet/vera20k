@@ -1,9 +1,9 @@
 # Optional Ares custom armor for ordinary weapons
 
-Build with `--features ares` to register `[ArmorTypes]`, bind object `Armor`
-names, and read warhead `Versus.<name>` plus its `.ForceFire`, `.Retaliate`
-and `.PassiveAcquire` switches. Default builds retain the original eleven
-armor names and raw native Verses reader.
+A game that ships `ares.mix` registers `[ArmorTypes]`, binds object `Armor`
+names, and reads warhead `Versus.<name>` plus its `.ForceFire`, `.Retaliate`
+and `.PassiveAcquire` switches, in every build ([Ares](ares.md)). Other games
+retain the original eleven armor names and raw native Verses reader.
 
 The retained Rules registry owns the ordered armor catalog. Each processed
 type owns its armor index; each warhead owns its independent Ares verses

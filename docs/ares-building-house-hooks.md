@@ -1,7 +1,7 @@
 # Optional Ares Building, House, Infantry and SWType hooks
 
-Build with `--features ares`. Default builds keep every stock path named
-below. This page covers the hooks of `Ext/Building/Hooks.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md));
+other games keep every stock path named below. This page covers the hooks of `Ext/Building/Hooks.cpp`,
 `Hooks.Foundation.cpp`, `Ext/House/*.cpp`, `Ext/HouseType/Hooks.cpp`,
 `Ext/Infantry/*.cpp` and `Ext/SWType/Hooks.cpp`. The table at the end gives
 each one's disposition; hooks other pages already describe show as "ported

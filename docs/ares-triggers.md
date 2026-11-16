@@ -1,9 +1,8 @@
 # Optional Ares trigger events and actions
 
-Requires an explicit `--features ares` build. Default builds keep the stock
-trigger bodies: an event kind outside 0..61 is always met and the stock
-TechTypeExists/DoesNotExist (60/61) stay as they are; see
-[build capability](ares.md).
+Every build runs these when the game plays Ares ([Ares](ares.md)). Other
+games keep the stock trigger bodies: an event kind outside 0..61 is always met
+and the stock TechTypeExists/DoesNotExist (60/61) stay as they are.
 
 ```ini
 [Events]

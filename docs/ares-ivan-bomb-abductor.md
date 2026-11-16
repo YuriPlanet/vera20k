@@ -1,7 +1,8 @@
 # Optional Ares Ivan bombs, abductors and weapon extras
 
-Build with `--features ares`. Default builds ignore every key below and keep
-the stock Crazy Ivan bomb, capture and FireAt behaviour.
+When a game plays Ares ([Ares](ares.md)), every build plays the keys below.
+Other games ignore them and keep the stock Crazy Ivan bomb, capture and FireAt
+behaviour.
 
 ```ini
 [MyBomber]                       ; rulesmd.ini WeaponType, Warhead with IvanBomb=yes
@@ -38,7 +39,7 @@ ImmuneToAbduction=no
 Passengers.BySize=yes            ; the hold counts Size= (abduction only here)
 ```
 
-## Ivan bombs in Ares builds
+## Ivan bombs in Ares games
 
 `PlantBomb` (Ares.dll 10055AE0) remembers the planting weapon on its bomb,
 and every bomb hook reads that weapon's keys over the Rules ones. Any Techno

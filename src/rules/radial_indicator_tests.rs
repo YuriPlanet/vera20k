@@ -65,66 +65,70 @@ fn ares_radial_indicator_radius_answers_the_sensor_range() {
 
 #[test]
 fn constructors_and_each_admitted_radial_reader_history_match_original() {
-    let native = crate::test_fixture::json("tools/procedural_drawing_oracle/radial_indicator.json");
-    let reader = &native["reader_inputs"];
-    for (name, expected) in reader["constructors"].as_object().unwrap() {
-        let blank = IniFile::empty();
-        let object = ObjectType::from_ini_section(
-            name,
-            blank.section_or_empty(name),
-            ObjectCategory::Building,
-        );
-        assert_fields(&object, expected);
-    }
-    let names = reader["constructors"]
-        .as_object()
-        .unwrap()
-        .keys()
-        .cloned()
-        .collect::<Vec<_>>();
-    let registry = format!(
-        "[BuildingTypes]\n{}",
-        names
-            .iter()
-            .enumerate()
-            .map(|(i, name)| format!("{i}={name}\n"))
-            .collect::<String>()
-    );
-    let mut layers = RulesLayerStack::new(IniFile::from_str(&registry));
-    for row in reader["retained_history"].as_array().unwrap() {
-        let source = row["sections"]
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let native =
+            crate::test_fixture::json("tools/procedural_drawing_oracle/radial_indicator.json");
+        let reader = &native["reader_inputs"];
+        for (name, expected) in reader["constructors"].as_object().unwrap() {
+            let blank = IniFile::empty();
+            let object = ObjectType::from_ini_section(
+                name,
+                blank.section_or_empty(name),
+                ObjectCategory::Building,
+            );
+            assert_fields(&object, expected);
+        }
+        let names = reader["constructors"]
             .as_object()
             .unwrap()
-            .iter()
-            .map(|(name, keys)| {
-                format!(
-                    "[{name}]\n{}",
-                    keys.as_object()
-                        .unwrap()
-                        .iter()
-                        .map(|(key, value)| format!("{key}={}\n", value.as_str().unwrap()))
-                        .collect::<String>()
-                )
-            })
-            .collect::<String>();
-        layers.push(RulesLayerKind::Scenario, IniFile::from_str(&source));
-        let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
-        let object = rules.object(row["type"].as_str().unwrap()).unwrap();
-        assert_fields(object, &row["after"]);
-        for (flag, expected) in row["range_by_268"].as_array().unwrap().iter().enumerate() {
-            // Ares hook4566F9 shows a sensor array's SensorsSight instead
-            // (`sim::sensor_lifecycle`'s Ares test).
-            if crate::rules::ARES_BUILD
-                && object.sensor_array
-                && object.psychic_detection_radius <= 0
-                && !object.gap_generator
-            {
-                continue;
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        let registry = format!(
+            "[BuildingTypes]\n{}",
+            names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| format!("{i}={name}\n"))
+                .collect::<String>()
+        );
+        let mut layers = RulesLayerStack::new(IniFile::from_str(&registry));
+        for row in reader["retained_history"].as_array().unwrap() {
+            let source = row["sections"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, keys)| {
+                    format!(
+                        "[{name}]\n{}",
+                        keys.as_object()
+                            .unwrap()
+                            .iter()
+                            .map(|(key, value)| format!("{key}={}\n", value.as_str().unwrap()))
+                            .collect::<String>()
+                    )
+                })
+                .collect::<String>();
+            layers.push(RulesLayerKind::Scenario, IniFile::from_str(&source));
+            let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+            let object = rules.object(row["type"].as_str().unwrap()).unwrap();
+            assert_fields(object, &row["after"]);
+            for (flag, expected) in row["range_by_268"].as_array().unwrap().iter().enumerate() {
+                // Ares hook4566F9 shows a sensor array's SensorsSight instead
+                // (`sim::sensor_lifecycle`'s Ares test).
+                if ares_way
+                    && object.sensor_array
+                    && object.psychic_detection_radius <= 0
+                    && !object.gap_generator
+                {
+                    continue;
+                }
+                assert_eq!(
+                    object.building_sensor_range(flag != 0, None, ares_way),
+                    expected.as_i64().unwrap() as i32
+                );
             }
-            assert_eq!(
-                object.building_sensor_range(flag != 0, None, crate::rules::ARES_BUILD),
-                expected.as_i64().unwrap() as i32
-            );
         }
     }
 }

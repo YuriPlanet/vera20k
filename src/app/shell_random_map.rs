@@ -2378,7 +2378,7 @@ mod tests {
             .entities
             .iter()
             .flat_map(|entity| {
-                // An Ares build's unvalidated decks (hook 0x58FA51) can add
+                // An Ares game's unvalidated decks (hook 0x58FA51) can add
                 // a one-cell CABHUT, which is no tech building.
                 tech_footprints
                     .get(&entity.type_id)

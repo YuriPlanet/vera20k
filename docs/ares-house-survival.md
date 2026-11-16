@@ -1,8 +1,8 @@
 # Optional Ares House survival
 
-Build with `--features ares` to enable this multiplayer defeat-rule extension.
-Default builds retain the retail three-entry `BaseUnit` sum and original normal
-game counter test. INIs cannot enable omitted extensions. No Ares DLL is loaded.
+When a game plays Ares ([Ares](ares.md)), every build runs this multiplayer
+defeat-rule extension. Other games retain the retail three-entry `BaseUnit` sum
+and original normal game counter test. No Ares DLL is loaded.
 
 ```ini
 [General]
@@ -15,7 +15,7 @@ KeepAlive=yes
 KeepAlive=no
 ```
 
-Register the example types normally. In an Ares build, each tracked object
+Register the example types normally. In a game that plays Ares, each tracked object
 contributes to its House's retained KeepAlive count. An unset key defaults to
 true for a Building that is neither Insignificant nor DontScore, including
 unit-like deployed buildings; other classes default to false. An explicit

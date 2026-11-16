@@ -486,28 +486,30 @@ fn the_retail_transport_scripts_run_ported_actions() {
         return;
     };
     let vm = &sim.team_script_vm;
-    let mut transport_teams = 0;
-    let mut first_unported = std::collections::BTreeMap::new();
-    for team_type in vm.team_types.values() {
-        let actions = &vm.scripts[&team_type.script_id].actions;
-        if actions.iter().any(|action| action.action_id == 14) {
-            transport_teams += 1;
-            assert!(
-                actions
-                    .iter()
-                    .all(|action| action_is_ported(action.action_id, crate::rules::ARES_BUILD))
-            );
+    for ares_way in [false, true] {
+        let mut transport_teams = 0;
+        let mut first_unported = std::collections::BTreeMap::new();
+        for team_type in vm.team_types.values() {
+            let actions = &vm.scripts[&team_type.script_id].actions;
+            if actions.iter().any(|action| action.action_id == 14) {
+                transport_teams += 1;
+                assert!(
+                    actions
+                        .iter()
+                        .all(|action| action_is_ported(action.action_id, ares_way))
+                );
+            }
+            if let Some(action) = actions
+                .iter()
+                .find(|action| !action_is_ported(action.action_id, ares_way))
+            {
+                *first_unported.entry(action.action_id).or_insert(0) += 1;
+            }
         }
-        if let Some(action) = actions
-            .iter()
-            .find(|action| !action_is_ported(action.action_id, crate::rules::ARES_BUILD))
-        {
-            *first_unported.entry(action.action_id).or_insert(0) += 1;
-        }
+        assert_eq!(vm.team_types.len(), 163);
+        assert_eq!(transport_teams, 16);
+        assert!(first_unported.is_empty(), "{first_unported:?}");
     }
-    assert_eq!(vm.team_types.len(), 163);
-    assert_eq!(transport_teams, 16);
-    assert!(first_unported.is_empty(), "{first_unported:?}");
 }
 
 /// Through the production readers: the five retail AIMD TeamTypes whose

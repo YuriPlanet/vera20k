@@ -12,10 +12,8 @@
 //! gamemd. The player's Ares setting (`util::ares_launch::AresSetting`) can
 //! replace that answer for a whole launch: On makes every game an Ares game,
 //! as a mounted `ares.mix` does, and Off keeps every key from turning Ares on
-//! ([`launch_keys_off`]). Every build lets the switch turn on, the release build too. Until
-//! the last Ares code leaves the `ares` build feature, a build without that
-//! feature plays such a game with the Ares code already on this switch only:
-//! what the feature still holds (listed below) is missing there.
+//! ([`launch_keys_off`]). Every build lets the switch turn on, the release
+//! build too.
 //!
 //! Which keys count comes from the readers, not from a list. Every reader
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
@@ -60,38 +58,18 @@
 //! Outside every scope a thread reads by its launch, the game the asset
 //! manager opened for play (`util::ares_launch`), as Ares.dll patches a whole
 //! launch: the INI text loads of a game that ships `ares.mix` take Ares'
-//! syntax wherever they run. Until the `ares` feature is deleted, a build
-//! with it reads every game the Ares way, as it always has
-//! ([`reading_mode`]).
-//!
-//! Still decided by the build feature, not this switch, until each moves to
-//! it (AGENTS.md): the sites that still read `cfg(feature = "ares")` and the
-//! spawn file's Country and Side limits. A
-//! game turned on by its keys alone, without `ares.mix`, still loads its INIs
-//! and reads its Rules the stock way.
+//! syntax wherever they run. A game turned on by its keys alone, without
+//! `ares.mix`, still loads its INIs and reads its Rules the stock way.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The Rules-reading mode a scope that asks for `on` gets: `on`, and always
-/// the Ares way in a build with the `ares` feature, which keeps reading every
-/// game as Ares.dll does, as it did before the switch. The PR that deletes the
-/// feature makes this `on`.
-pub(crate) const fn reading_mode(on: bool) -> bool {
-    cfg!(feature = "ares") || on
-}
-
 /// Whether this launch restores Rules a saved registry says were read
-/// `ares_way`. A launch reads one way: the Ares way in a build with the
-/// `ares` feature ([`reading_mode`]), otherwise the way its game says by
-/// shipping `ares.mix` or not ([`launch_ships_ares`]). Rules read the other
-/// way belong to another game. A test has no launch and restores both.
+/// `ares_way`. A launch reads one way, the way its game says by shipping
+/// `ares.mix` or not ([`launch_ships_ares`]). Rules read the other way belong
+/// to another game. A test has no launch and restores both.
 pub(crate) fn launch_reads(ares_way: bool) -> bool {
-    if cfg!(feature = "ares") {
-        ares_way
-    } else {
-        cfg!(any(test, feature = "test-support")) || ares_way == launch_ships_ares()
-    }
+    cfg!(any(test, feature = "test-support")) || ares_way == launch_ships_ares()
 }
 
 /// Whether the game this launch opened for play ships `ares.mix`
@@ -111,9 +89,7 @@ fn launch_ships_ares() -> bool {
 /// `ares.mix` exactly when its thread reads the Ares way
 /// ([`game_ships_ares`]), so an Ares test opens [`read_ares_way`] first.
 pub(crate) fn ares_way() -> bool {
-    ARES_WAY
-        .get()
-        .unwrap_or_else(|| reading_mode(launch_ships_ares()))
+    ARES_WAY.get().unwrap_or_else(launch_ships_ares)
 }
 
 /// Whether the game ships `ares.mix`: startup mounted it
@@ -132,11 +108,10 @@ pub struct AresWay {
     outer: Option<bool>,
 }
 
-/// Open a Rules-reading scope in the given mode (see [`ares_way`] and
-/// [`reading_mode`]).
+/// Open a Rules-reading scope in the given mode (see [`ares_way`]).
 pub fn read_ares_way(on: bool) -> AresWay {
     AresWay {
-        outer: ARES_WAY.replace(Some(reading_mode(on))),
+        outer: ARES_WAY.replace(Some(on)),
     }
 }
 

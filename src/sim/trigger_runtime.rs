@@ -6123,7 +6123,7 @@ mod factory_owner_tests;
 
 // Vanilla duplicate keys: Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps
 // only the later one (rules::ini_parser::ares_syntax).
-#[cfg(all(test, tests_sim_trigger, not(feature = "ares")))]
+#[cfg(all(test, tests_sim_trigger))]
 #[path = "trigger_runtime_duplicate_ini_tests.rs"]
 mod duplicate_ini_tests;
 

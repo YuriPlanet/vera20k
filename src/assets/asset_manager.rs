@@ -506,7 +506,9 @@ impl AssetManager {
     /// Whether this game is an Ares game (`rules::ares_switch`): the player's
     /// Ares setting is On, or, set to Auto, the selected mod mounted Ares's
     /// `ares.mix`, its own copy or the installation's. With no mod selected,
-    /// Auto ignores it; Off never mounts it.
+    /// Auto ignores it; Off never mounts it. Such a game's files take the
+    /// forms an Ares launch gives them: the appended audio bags and the
+    /// supplemental string tables.
     pub fn ships_ares(&self) -> bool {
         use crate::util::ares_launch::AresSetting;
         match self.ares_setting {
@@ -526,14 +528,6 @@ impl AssetManager {
     /// The player's Ares setting this game opened with.
     pub fn ares_setting(&self) -> crate::util::ares_launch::AresSetting {
         self.ares_setting
-    }
-
-    /// Whether this game's files take the forms an Ares launch gives them:
-    /// the appended audio bags and the supplemental string tables. A game
-    /// that ships `ares.mix` does, and until the `ares` feature is deleted a
-    /// build with it does for every game, as it always has.
-    pub fn ares_form(&self) -> bool {
-        cfg!(feature = "ares") || self.ships_ares()
     }
 
     /// Read-only INI tooling without a complete retail installation. No game
@@ -572,6 +566,15 @@ impl AssetManager {
     pub fn from_loose_root_for_test(ra2_dir: &Path) -> Self {
         let mut manager = Self::from_ini_probe_root(ra2_dir).expect("open loose test root");
         manager.select_audio_pair();
+        manager
+    }
+
+    /// [`Self::from_loose_root_for_test`], opened with the player's Ares
+    /// setting On, so it is an Ares game ([`Self::ships_ares`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_loose_root_with_ares_for_test(ra2_dir: &Path) -> Self {
+        let mut manager = Self::from_loose_root_for_test(ra2_dir);
+        manager.ares_setting = crate::util::ares_launch::AresSetting::On;
         manager
     }
 
@@ -672,8 +675,7 @@ impl AssetManager {
         // VERA's No mod choice ignores an installed ares.mix, so an Ares
         // installation can also play the original game. A selected mod may
         // supply it or inherit the installation's copy. Decide before any
-        // mount: Ares changes source priority as well as INI parsing. Until
-        // its build feature is deleted, that feature still forces Ares order.
+        // mount: Ares changes source priority as well as INI parsing.
         // VERA: the player's Ares setting On mounts the installation's copy
         // with no mod selected too, and Off mounts none.
         let ares = match ares_setting {
@@ -683,12 +685,11 @@ impl AssetManager {
             crate::util::ares_launch::AresSetting::On => true,
             crate::util::ares_launch::AresSetting::Off => false,
         };
-        let ares_order = cfg!(feature = "ares") || ares;
-        if !ares_order {
+        if !ares {
             manager.mount_language_archives(&mut policy)?;
         }
         manager.mount_base_mix_files(ares, &mut policy)?;
-        if ares_order {
+        if ares {
             manager.mount_language_archives(&mut policy)?;
         }
 
@@ -770,7 +771,7 @@ impl AssetManager {
         // Installed hook4011C0 -> Audio_Load1005ADD0: audio, ares, audio01..99.
         // Selection stays before bulk mounts. Executed native loop and merge:
         // tools/rules_oracle/ares_audio_bags.{py,json,md}.
-        let stems = if self.ares_form() {
+        let stems = if self.ships_ares() {
             ["audio".to_owned(), "ares".to_owned()]
                 .into_iter()
                 .chain((1..100).map(|i| format!("audio{i:02}")))
@@ -821,7 +822,7 @@ impl AssetManager {
                 source.entry_id, source.source_archive
             ),
         };
-        if !self.ares_form() {
+        if !self.ships_ares() {
             let Some(pair) = self.audio_pairs.first() else {
                 return Ok(None);
             };
@@ -2262,7 +2263,7 @@ mod tests {
         write_audio_archive(&dir, "audiomd.mix", b"truncated", &[1, 2]);
         write_audio_archive(&dir, "audio.mix", &base, &[3, 4]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        if manager.ares_form() {
+        if manager.ships_ares() {
             assert!(
                 manager.load_audio_index().unwrap().is_none(),
                 "Ares skips the malformed pair without opening another audio archive"

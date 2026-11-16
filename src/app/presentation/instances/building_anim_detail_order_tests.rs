@@ -1,7 +1,6 @@
 //! Real repair System/children, free Anim and building-slot emission share one
 //! retained Display query history. Atlas markers are declared presence inputs;
 //! the separate physical GAPOWR test owns source geometry, not pixel output.
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
 
 use super::*;
 use crate::app::presentation::detail::DetailState;
@@ -17,7 +16,6 @@ use std::collections::HashMap;
 
 // Ares simulates WeldingSys itself (hooks 0x62DF05, 0x62FD60) and builds no
 // ParticleClass children for this stock draw path.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_building_slot_preserves_mixed_display_detail_query_order() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {

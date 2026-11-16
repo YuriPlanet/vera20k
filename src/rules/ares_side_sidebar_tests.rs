@@ -247,9 +247,8 @@ fn ares_side_sidebar_retained_values_enter_configuration_identity() {
     );
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
-fn ares_side_sidebar_keys_are_inert_without_the_compiled_extension() {
+fn ares_side_sidebar_keys_are_inert_read_the_stock_way() {
     let configured = RulesLayerStack::new(IniFile::from_str(
         "[Sides]\nGDI=UnknownCountry\nNod=UnknownCountry\nThirdSide=UnknownCountry\nFourthSynthetic=UnknownCountry\n\
          [FourthSynthetic]\nSidebar.MixFileIndex=4\nSidebar.YuriFileNames=yes\n",

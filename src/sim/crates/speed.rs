@@ -240,7 +240,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn original_speed_effect_updates_live_foot_speed_for_every_recipient() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(

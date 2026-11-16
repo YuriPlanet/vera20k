@@ -99,7 +99,7 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 只能通过以下方式之一开启：
 
 - **VERA 玩家选项**，位于 **Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
-- **构建选项**，例如用 `--features ares` 编译受支持的 [Ares 扩展](docs/ares.md)。
+- **构建选项**，例如用 `--features phobos` 编译受支持的 [Phobos 扩展](docs/phobos.md)。
 - **INI 键**，由模组或地图设置。
 
 声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。

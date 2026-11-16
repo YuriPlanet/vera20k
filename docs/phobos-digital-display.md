@@ -153,8 +153,8 @@ The catalog and every per-type binding are hashed under
   instead of keeping it.
 - `PassengerKill` and `AutoDeath` have no owners in VERA; those entries never
   draw even when authored.
-- Ares-only `SuperWeapons=` names are available only when the `ares` feature is
-  also built. `InfoIndex` 3+ draws nothing in a Phobos-only build.
+- Ares-only `SuperWeapons=` names are available only in a game read the Ares
+  way ([Ares](ares.md)). `InfoIndex` 3+ draws nothing in any other game.
 - `FactoryProcess` shows the building's own factory. Phobos index 0 on a
   non-primary human building reads the house's primary factory, and index 2
   selects the separate defense primary; VERA has one primary per factory

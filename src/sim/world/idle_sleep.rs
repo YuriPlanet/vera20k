@@ -294,12 +294,8 @@ impl Simulation {
 
     /// Whether an extension's per-visit steps, which this module has not
     /// sorted, can run in this game: Ares plays, or the build carries Phobos.
-    /// A build with the `ares` feature counts as well while Ares code sits
-    /// behind that feature ([`ARES_BUILD`](crate::rules::ARES_BUILD)), since
-    /// there it runs in every game, this check's own games included; the PR
-    /// that deletes the feature drops that term.
     pub(super) fn extension_steps_unsorted(&self, rules: &RuleSet) -> bool {
-        crate::rules::ARES_BUILD || rules.ares() || crate::rules::PHOBOS_ENABLED
+        rules.ares() || crate::rules::PHOBOS_ENABLED
     }
 
     /// The frame plain idle building `id` may sleep until and its owner

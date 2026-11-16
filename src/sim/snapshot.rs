@@ -3634,8 +3634,9 @@ mod tests {
         let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
         let mut header = GameSnapshot::read_header(&bytes).unwrap();
         // Flip every capability bit: the result is a foreign mode for any build.
+        // No build records the Ares bit any more, so it flips to set.
         header.compatibility = RulesCompatibility::from_capabilities(
-            !crate::rules::ARES_BUILD,
+            true,
             !crate::rules::PHOBOS_ENABLED,
             !crate::rules::NPATCH_ENABLED,
             !crate::rules::VERAX_ENABLED,

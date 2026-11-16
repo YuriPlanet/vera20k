@@ -108,9 +108,9 @@ same build as `tools/rules_oracle/ares_side_sidebar.py`):
 - A custom `AI.BaseDefenseCounts` vector shorter than the difficulty row is
   rejected by preflight as a missing difficulty; the native read past the
   vector is undefined data.
-- The Ares save layout gained the new fields; saves made before this change
-  do not load in Ares builds.
-- With Ares and NPatch compiled together, `Parachute.Anim` takes precedence
+- Saves hold the new fields; a save from an older build with the retired
+  `ares` feature does not load.
+- With Ares playing and NPatch compiled in, `Parachute.Anim` takes precedence
   over NPSE `VehicleParachute=` and the stock canopy. The installed DLL's
   hook order at the shared `0x5F5ADD` site is not separately proven.
 - The fourth side's sidebar geometry uses the existing nonzero (Soviet)

@@ -1224,7 +1224,6 @@ mod tests {
     /// of 4CC360's anchor bit 0x80); its own tests are
     /// `ares_shared_probe_stops_at_a_solid_building_except_its_target` here
     /// and `line_of_fire::tests::ares_cliff_counts_the_bridge_bit`.
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn shared_probe_matches_original_bodies_and_receivers() {
         use crate::rules::ini_parser::IniFile;

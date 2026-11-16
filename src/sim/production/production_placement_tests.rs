@@ -4271,7 +4271,6 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
 /// infantry remains in limbo rather than being deleted or refunded.
 // Ares KickOutClones100127C0 deletes a refused clone instead
 // (`ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn cloning_vat_keeps_a_refused_copy_in_limbo() {
     let scenario = IniFile::from_str("[NACLON]\nFactory=InfantryType\n");

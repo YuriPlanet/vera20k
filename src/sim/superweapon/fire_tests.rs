@@ -327,7 +327,6 @@ fn the_launch_alert_matches_native() {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 fn default_build_scene(
     kind: crate::rules::superweapon_type::SuperWeaponKind,
 ) -> (
@@ -384,7 +383,6 @@ fn default_build_scene(
     (sim, rules, owner, sw_type)
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
     use crate::rules::superweapon_targeting::TargetReject;
@@ -438,7 +436,6 @@ fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
     use crate::rules::superweapon_type::{SuperWeaponBuildingRequirements, SuperWeaponKind};
@@ -487,7 +484,6 @@ fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
     ));
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
     use crate::rules::superweapon_type::SuperWeaponKind;

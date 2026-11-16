@@ -354,8 +354,8 @@ pub fn country_choices(rules: &crate::rules::ruleset::RuleSet) -> Vec<SkirmishCo
             })
         })
         .collect();
-    // Ares ListIndex, then the Country registry index. A stock build returns
-    // the common 100, so this preserves source order.
+    // Ares ListIndex, then the Country registry index. Without Ares every
+    // Country's is the common 100, so this preserves source order.
     countries.sort_by_key(|&(list_index, index, _)| (list_index, index));
     std::iter::once(SkirmishCountryChoice::Random)
         .chain(

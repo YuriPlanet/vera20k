@@ -1076,7 +1076,6 @@ fn a_deployed_gis_alt_over_the_ifv_skips_the_row() {
 /// click orders nothing and no longer selects the depot. Ares drops the
 /// `UnitRepair=` gate (hook `0x417E16`), so there the jet keeps Select
 /// (`sim::world::passenger_entry_tests`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
     let Some((retail, registry)) = retail() else {

@@ -7,9 +7,10 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 
 ## Where it stands
 
-- Everything is behind the `ares` cargo feature; default builds keep their behaviour. The
-  one deliberate default-build change: buildings and aircraft no longer take stealth from
-  `Cloakable=` (native vanilla never did; see [ares-bugfixes.md](ares-bugfixes.md)).
+- Everything is in every build and plays when the game plays Ares ([ares.md](ares.md));
+  other games keep their behaviour. The one deliberate change for every game: buildings
+  and aircraft no longer take stealth from `Cloakable=` (native vanilla never did; see
+  [ares-bugfixes.md](ares-bugfixes.md)).
 - INI keys: the restored Ares source reads 684 distinct keys. The engine reads every
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list,
@@ -27,16 +28,10 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   for the stock destructor. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
-- Tests at the commit that adds this page (RA2_DIR set to a retail install):
-  - core `--features ares`: 8468 passed, 2 failed in the last full run; one of the two, the
-    WithConst test, was a fixture expectation fixed afterwards and passes in a focused rerun
-    of `sim::scenario_bootstrap::`
-  - core default: 7985 passed, 1 failed
-  - client `--features ares`: 3829 passed, 6 failed
-  - client default: 3788 passed, 6 failed
-  - `check -p vera20k --lib --features ares,phobos`: passes
-  The remaining failures are environment-only: the local retail install is Traditional
-  Chinese, so `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
+- Tests at the commit that adds this page, when Ares was still a build feature
+  (RA2_DIR set to a retail install): besides one fixture expectation fixed afterwards
+  (the WithConst test), the failures were environment-only: the local retail install is
+  Traditional Chinese, so `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
   and six client CSF tests (selection_navigation x4,
   `messages::trigger_message_csf_labels_match_original_lookup_through_retail_archive_reader`,
   `tooltips::retail_ifv_tip_names_its_turret_or_passenger`) compare against English text.
@@ -44,8 +39,8 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 
 ## Blocked on gamemd logic VERA does not port
 
-These Ares features hook stock gamemd code that VERA has no port of, in either build.
-Porting that stock code changes default builds, so it belongs in its own native chain
+These Ares features hook stock gamemd code that VERA has no port of.
+Porting that stock code changes games without Ares too, so it belongs in its own native chain
 first; the Ares part is then small. None of them is reachable with retail YR data.
 
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
@@ -190,12 +185,13 @@ For each item:
   parser, Find vs FindOrAllocate, read order) into the extension's `src/rules/ares_*.rs`
   reader with the `read_ares_*` helpers.
 - Port the hook at the engine's single owner of the hooked gamemd function, behind
-  `cfg(feature = "ares")`, citing the Ares.dll function and the gamemd hook address.
+  the game's switch, `RuleSet::ares` (`RuleSet::ares_form` where it needs data only Rules
+  read the Ares way hold), citing the Ares.dll function and the gamemd hook address.
 - New simulation state is saved (serde default) and world-hashed in an owner struct with
   rule-named operations; the architecture guards check this.
 - One to three focused tests per mechanism. A stock oracle test that an installed Ares
-  hook changes gets an Ares expectation or a `cfg(not(feature = "ares"))` gate citing the
-  hook.
+  hook changes keeps its expectation in a game without Ares, and an Ares case gets the
+  Ares expectation, citing the hook.
 - Move the item's row from this page into its chain doc, and add the chain to
   [ares.md](ares.md).
 

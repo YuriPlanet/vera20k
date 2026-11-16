@@ -2458,7 +2458,7 @@ pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
-        crate::assets::csf_file::CsfFile::load_active(asset_manager.ares_form(), |name| {
+        crate::assets::csf_file::CsfFile::load_active(asset_manager.ships_ares(), |name| {
             asset_manager.get_ref(name)
         })
         .map_err(

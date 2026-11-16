@@ -61,9 +61,9 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
         cli.verb,
         Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
     ) {
-        root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref())
+        root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref(), cli.ares)
     } else {
-        root::open_manager(&ra2_dir, cli.all_mixes)
+        root::open_manager(&ra2_dir, cli.all_mixes, cli.ares)
     };
     let mut manager = manager.map_err(|error| ErrorReport {
         error,

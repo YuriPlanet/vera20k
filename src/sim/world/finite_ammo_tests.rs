@@ -231,7 +231,6 @@ fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
 /// Infantry5200E1..520105 refills only on a positive-fear turn that reaches
 /// zero. Stock E1's unlimited count bypasses it; the native Scenario reader
 /// admits this finite-magazine map override without an extension.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
     use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
@@ -306,7 +305,6 @@ fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
 /// InfantryClass::FireAt51DF8C..51DFD6: a Fraidycat's last returned Bullet
 /// starts panic and queues Guard. The physical E1 weapons/art stay unchanged;
 /// these registered Scenario overrides activate the stock finite-ammo branch.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn fraidycat_last_round_queues_guard_panics_then_refills() {
     let Some(mut scene) =
@@ -361,7 +359,6 @@ fn fraidycat_last_round_queues_guard_panics_then_refills() {
 }
 
 /// FireAt's panic is independent of ReceiveDamage/ForcePanic's Fearless gate.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn fraidycat_last_round_does_not_use_fearless_gate() {
     let Some(mut scene) = Scene::new(
@@ -439,7 +436,6 @@ fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
 
 // This is the stock GetROF6FCFA9 magazine shortcut. Installed Ares hook
 // 10047A60 skips it (continues at6FCFC1), independently of this ammo port.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() {
     let Some(mut scene) = Scene::new("[GAPILL]\nAmmo=2\nInitialAmmo=2\nCanPassiveAquire=no\n")

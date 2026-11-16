@@ -702,11 +702,11 @@ fn ares_chrono_warp_blows_up_an_unplaceable_building() {
 /// tail resets the piggybacked Drive, so once it is active again its
 /// Process (0x4B0500 -> Process_Movement 0x4B2630) paths to the source
 /// cell and the tank drives back, as gamemd with Ares does.
-// Fails on main with the feature (the tank stays at its landing), from
-// before the superweapons moved to the switch; stays on the feature so
-// the default suite does not carry it until it is fixed.
-#[cfg(feature = "ares")]
+// Fails on main read the Ares way (the tank stays at its landing), from
+// before the superweapons moved to the switch; ignored so the default
+// suite does not carry it until it is fixed.
 #[test]
+#[ignore = "known failure (#4560): the warped tank stays at its landing"]
 fn ares_warped_tank_heads_back_to_its_source() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::locomotor_type::LocomotorKind;

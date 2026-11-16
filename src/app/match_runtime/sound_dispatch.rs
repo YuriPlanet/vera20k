@@ -2594,7 +2594,6 @@ mod tests {
     // Installed Ares hands ChronoWarp and PsychicDominator to their handlers
     // (hook 6CC390), whose line and cleanup are the common Launch's own facts
     // (`ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail`).
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn launch_drops_the_ready_line_for_its_player_only() {
         launch_drops_the_ready_line(
@@ -2684,7 +2683,6 @@ mod tests {
         );
     }
 
-    #[cfg(not(feature = "ares"))]
     fn launch_drops_the_ready_line(name: &str, activated: &str, ready: &str) {
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
 
@@ -2932,7 +2930,7 @@ mod tests {
             ))
             .unwrap();
         let ares = rules.ares_form();
-        assert_eq!(ares, ares_way || cfg!(feature = "ares"));
+        assert_eq!(ares, ares_way);
         for (name, ready) in [
             ("ParaDropSpecial", "EVA_ReinforcementsReady"),
             ("AmericanParaDropSpecial", "EVA_ReinforcementsReady"),

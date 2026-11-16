@@ -8330,9 +8330,7 @@ impl RuleSet {
     /// misread such data (a handler type's absent PreDependent). So they
     /// follow how the Rules were read, not [`Self::ares`] alone. A game Ares
     /// turned on in by its keys, read the stock way, keeps the stock form of
-    /// these until loading reads its Rules the Ares way; a build with the
-    /// `ares` feature reads every game the Ares way and keeps their Ares form
-    /// in every game, as before the switch.
+    /// these until loading reads its Rules the Ares way.
     pub fn ares_form(&self) -> bool {
         self.reads_ares_way
     }
@@ -8728,9 +8726,10 @@ impl RuleSet {
             .hash(&mut hasher);
         // The process registry is admitted only when its retained capability
         // matches this binary. Include that immutable build identity even if
-        // the selected INIs contain no extension keys.
+        // the selected INIs contain no extension keys. The `false` held the
+        // retired `ares` build feature and keeps a released game's hash.
         b"rules-build-compatibility-v1".hash(&mut hasher);
-        crate::rules::ARES_BUILD.hash(&mut hasher);
+        false.hash(&mut hasher);
         // The game's Ares switch: two peers or a replay with the same layers
         // but another `ares.mix` answer play different games. Folded only
         // when Ares plays, so a stock game's hash stays as it was.
@@ -12206,53 +12205,53 @@ mod tests {
             mission_data::MissionType,
             native_processing::{RulesLayerKind, RulesLayerStack},
         };
-        let root = "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n[CombatDamage]\nEMPAIRecoverMission=Guard\n";
-        let make = |language: &str| {
-            let mut layers = RulesLayerStack::new(IniFile::from_str(root));
-            layers.push(
-                RulesLayerKind::LangRule,
-                IniFile::from_str(&format!("[CombatDamage]\nEMPAIRecoverMission={language}\n")),
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let root = "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n[CombatDamage]\nEMPAIRecoverMission=Guard\n";
+            let make = |language: &str| {
+                let mut layers = RulesLayerStack::new(IniFile::from_str(root));
+                layers.push(
+                    RulesLayerKind::LangRule,
+                    IniFile::from_str(&format!("[CombatDamage]\nEMPAIRecoverMission={language}\n")),
+                );
+                layers.push(
+                    RulesLayerKind::GameMode,
+                    IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=junk\n"),
+                );
+                layers.push(
+                    RulesLayerKind::Scenario,
+                    IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=\n"),
+                );
+                RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+            };
+            let rules = make("Area Guard");
+            let expected = ares_way.then_some(MissionType::AreaGuard);
+            assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
+            let retained_hash = rules.simulation_config_hash();
+            let mut changed = make("Hunt");
+            // Source identity deliberately includes layer history, even when the
+            // final merged text agrees. Normalize only this private test input to
+            // isolate the retained extension state in the compatibility hash.
+            assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
+            changed.source_ini_hash = rules.source_ini_hash;
+            assert_eq!(
+                changed.ares_emp_ai_recover_mission(),
+                ares_way.then_some(MissionType::Hunt)
             );
-            layers.push(
-                RulesLayerKind::GameMode,
-                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=junk\n"),
+            assert_eq!(retained_hash == changed.simulation_config_hash(), !ares_way);
+            let fresh = RuleSet::from_processed_rules(
+                &RulesLayerStack::new(IniFile::from_str(
+                    "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n",
+                ))
+                .process()
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                fresh.ares_emp_ai_recover_mission().is_none(),
+                "new RulesClass constructor"
             );
-            layers.push(
-                RulesLayerKind::Scenario,
-                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=\n"),
-            );
-            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
-        };
-        let rules = make("Area Guard");
-        let expected = crate::rules::ARES_BUILD.then_some(MissionType::AreaGuard);
-        assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
-        let retained_hash = rules.simulation_config_hash();
-        let mut changed = make("Hunt");
-        // Source identity deliberately includes layer history, even when the
-        // final merged text agrees. Normalize only this private test input to
-        // isolate the retained extension state in the compatibility hash.
-        assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
-        changed.source_ini_hash = rules.source_ini_hash;
-        assert_eq!(
-            changed.ares_emp_ai_recover_mission(),
-            crate::rules::ARES_BUILD.then_some(MissionType::Hunt)
-        );
-        assert_eq!(
-            retained_hash == changed.simulation_config_hash(),
-            !crate::rules::ARES_BUILD
-        );
-        let fresh = RuleSet::from_processed_rules(
-            &RulesLayerStack::new(IniFile::from_str(
-                "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n",
-            ))
-            .process()
-            .unwrap(),
-        )
-        .unwrap();
-        assert!(
-            fresh.ares_emp_ai_recover_mission().is_none(),
-            "new RulesClass constructor"
-        );
+        }
     }
     #[test]
     fn infantry_occupy_pip_uses_each_admitted_rules_section_pass() {
@@ -16008,8 +16007,8 @@ Projectile=Invisible
         assert!(!defaults.object("YARD").unwrap().build_const_eligible);
     }
 
-    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
-    #[cfg(not(feature = "ares"))]
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn build_const_readai_does_not_trim_individual_tokens() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -16032,8 +16031,8 @@ Projectile=Invisible
         );
     }
 
-    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
-    #[cfg(not(feature = "ares"))]
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn build_const_readai_uses_native_127_source_byte_prefix() {
         let oversized = format!("GACNST,{},LATE", "X".repeat(120));
@@ -16077,8 +16076,8 @@ Projectile=Invisible
         assert!(!rules.object("LATE").unwrap().build_const_eligible);
     }
 
-    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
-    #[cfg(not(feature = "ares"))]
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn recalc_type_lists_share_native_parser_and_registered_family_resolution() {
         let ini = IniFile::from_str(

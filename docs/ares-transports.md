@@ -1,7 +1,7 @@
 # Optional Ares transports, payloads and conversions
 
-Requires an explicit `--features ares` build. Default builds do not read or execute
-these extensions; see [build capability](ares.md).
+Every build runs these extensions when the game plays Ares ([Ares](ares.md));
+other games do not.
 
 ```ini
 [APC]

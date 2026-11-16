@@ -18,7 +18,6 @@ fn native_voice_corpus() -> serde_json::Value {
 
 // Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
 // 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     use crate::map::entities::EntityCategory;
@@ -435,7 +434,6 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
 
 // Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
 // 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
     use crate::map::entities::EntityCategory;

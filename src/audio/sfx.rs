@@ -3661,7 +3661,7 @@ mod tests {
     /// lacks stores nothing and clears the entry's `+0x0C` (`0x00406510`), so
     /// `AllocateFromPool @ 0x00405190` refuses every play (`0x004051B6`) even
     /// though another name resolved. A 33rd token is refused before its lookup.
-    #[cfg(not(feature = "ares"))]
+    /// Read the stock way: Ares' AddSample (`0x1005AFA0`) never clears `+0x0C`.
     #[test]
     fn one_unresolvable_sample_name_silences_the_whole_entry() {
         use crate::assets::audio_bag::{AudioIndex, test_support::build_idx};

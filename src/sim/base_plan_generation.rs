@@ -950,7 +950,6 @@ mod tests {
     /// No building passes the House TechLevel, so the list is the power plant
     /// alone: shorter than the three seeds, with base defenses to insert.
     /// (Ares pads such a list to four with defense nodes instead.)
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn recalc_survives_a_list_shorter_than_its_three_seeds() {
         let rules = planner_rules(

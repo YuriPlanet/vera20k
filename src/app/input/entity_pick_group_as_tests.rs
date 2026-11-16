@@ -67,7 +67,7 @@ fn shift_t_click_replaces_a_selected_enemy(ares_way: bool) {
     let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
     let rules = rules("no");
     let ares = rules.ares();
-    assert_eq!(ares, ares_way || cfg!(feature = "ares"));
+    assert_eq!(ares, ares_way);
     let sim = scene();
     let click = compute_type_select_click_mutation_with_playfield(
         sim.entities(),
@@ -98,7 +98,7 @@ fn type_selection_group_reaches_every_path(ares_way: bool) {
     let order = [1, 2, 3, 4, 5, 6];
     let disabled_deploy = rules("no");
     let ares = disabled_deploy.ares();
-    assert_eq!(ares, ares_way || cfg!(feature = "ares"));
+    assert_eq!(ares, ares_way);
     let tap = |rules: &RuleSet| {
         compute_type_select_tap_with_playfield(
             sim.entities(),

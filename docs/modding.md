@@ -38,8 +38,8 @@ here, and a mod that changes the program doesn't.
   the parts in a match and keep their own layout. You can't yet add other kinds of
   parts.
 - Ares and Phobos. Only some of their keys work. A game with Ares keys turns Ares on by
-  itself, but the downloads hold only part of Ares so far; a build you make yourself has
-  the rest, and Phobos needs one. See [More detail](#more-detail).
+  itself, and a mod that ships `ares.mix` gets all the Ares support VERA20k has. Phobos
+  needs a build you make yourself. See [More detail](#more-detail).
 - Big conversions such as Mental Omega. They depend on DLL features, so they don't work
   as a whole.
 
@@ -358,8 +358,8 @@ loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left the
 - [INI profiles](ini-roots.md): use your own rules, art and AI files under other names.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to build VERA20k with it. The official downloads hold
-  part of Ares, which a game's Ares keys turn on, and none of the others.
+  each extension covers and how to turn it on or build VERA20k with it. The official
+  downloads hold all of Ares, which a game's data turns on, and none of the others.
 
 ## Something wrong?
 

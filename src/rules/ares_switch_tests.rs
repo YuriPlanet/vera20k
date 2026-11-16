@@ -9,8 +9,9 @@ use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPr
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::rules::ruleset::RuleSet;
 
-/// The retail install as it is. The retail fixtures ship `ares.mix` in a
-/// build with the `ares` feature; the retail archives do not.
+/// The retail install as it is. The retail fixtures ship `ares.mix` on a
+/// thread read the Ares way (`ares_switch::game_ships_ares`); the retail
+/// archives do not.
 fn installed(assets: &AssetManager) -> NativeRulesProcessOwner {
     assert!(!assets.ships_ares());
     retail_rules_owner(assets).with_ares_mix(false)

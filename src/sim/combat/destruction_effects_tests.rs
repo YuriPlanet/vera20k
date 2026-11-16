@@ -862,7 +862,6 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
 /// first draw.
 // Stock Building GetCrew44EB10 always draws for the Engineer; Ares1004C650
 // draws only with a positive Engineer chance.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn a_killed_building_draws_its_death_anims_before_its_survivors() {
     let rules = rules();

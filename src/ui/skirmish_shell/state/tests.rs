@@ -2399,10 +2399,10 @@ fn choose_map_help_keys_match_the_native_table() {
     }
 }
 
-#[cfg(feature = "ares")]
 #[test]
 fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
     use crate::rules::ini_parser::IniFile;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = IniFile::from_str(
         "[Countries]\n0=Low\n1=High\n2=Hidden\n3=Custom\n\
          [Low]\nMultiplay=yes\nUIName=NAME:Low\nListIndex=10\n\

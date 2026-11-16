@@ -432,7 +432,7 @@ pub(crate) fn commit_unit_firing_counter(
 /// moving/idle/DeployToLand arms serve every Foot. Original concrete-class
 /// controls: tools/spatial_oracle/unit_simple_deploy.json.
 ///
-/// `air_rate` is the type's Ares `AirRate` (0 in stock builds).
+/// `air_rate` is the type's Ares `AirRate` (0 in a stock game).
 pub(crate) fn tick_foot_body_frame_counter(
     entity: &mut crate::sim::game_entity::GameEntity,
     rules: crate::sim::movement::SpeedRules<'_>,
