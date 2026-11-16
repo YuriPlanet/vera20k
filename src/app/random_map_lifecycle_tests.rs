@@ -93,7 +93,7 @@ fn start_production_worker(
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types),
+        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types, prepared.ares),
         shared_cell_dummy.clone(),
         decision,
     )
@@ -176,7 +176,11 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         description: "Unit 2 lifecycle".into(),
         ..Default::default()
     };
-    std::fs::write(seed_dir.join(seed_name), options.to_sed_bytes()).expect("write lifecycle .SED");
+    std::fs::write(
+        seed_dir.join(seed_name),
+        options.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("write lifecycle .SED");
     const MATCH_SEED: u32 = 0x0412_0419;
 
     // U2-02: collect cross-thread receipts from the production worker. Every
@@ -292,7 +296,11 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     assert_eq!(generation_entries, 2, "valid preview adds no worker run");
     assert!(randmap_img.is_file());
     assert!(!randmap_sed.exists(), "accepted caller follows teardown");
-    std::fs::write(&randmap_sed, committed.to_sed_bytes()).expect("accepted caller writes .SED");
+    std::fs::write(
+        &randmap_sed,
+        committed.to_sed_bytes(native_rules.reads_ares_way()),
+    )
+    .expect("accepted caller writes .SED");
 
     let mut empty_modal = Some(RandomMapSetupModalState::open(
         options.clone(),

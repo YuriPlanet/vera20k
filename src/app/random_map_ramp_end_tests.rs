@@ -161,7 +161,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         &mut |view| match view.point() {
             GenerationPoint::After(Stage::Regions) => {
                 before_islands = Some(
@@ -265,7 +265,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     // identity belongs to the consumed buffer even if the file later changes.
     let seed_dir = crate::map::source::test_support::TestDirectory::new("ramp-end");
     let seed_name = "CellRamp11.SED";
-    let seed_bytes = options.to_sed_bytes();
+    let seed_bytes = options.to_sed_bytes(prepared.ares);
     seed_dir.write(seed_name, &seed_bytes);
     struct SilentProgress;
     impl crate::app::loading::pump::LoadingProgressSink for SilentProgress {
@@ -365,7 +365,7 @@ fn generated_raised_ridge_materializes_native_cliff_faces() {
         &prepared.settings,
         &prepared.resolved_inputs,
         &prepared.blocks,
-        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types),
+        &crate::map::rmg::build::GenerationObjects::tech(&prepared.tech_types, prepared.ares),
         &mut |view| {
             if view.point() == GenerationPoint::After(Stage::Regions) {
                 let cells = view.snapshot().map_file.cells;

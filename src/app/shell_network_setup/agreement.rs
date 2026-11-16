@@ -63,11 +63,12 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
             .process_assets
             .manager()
             .ok_or_else(|| anyhow!("assets missing"))?;
+        let ares = state.process_assets.reads_ares_way();
         crate::map::source::load_network_map_ini(root, source_file, assets)
             .ok()
             .map(|loaded| {
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&loaded.ini);
+                options.apply_sed(&loaded.ini, ares);
                 options.normalize();
                 options
             })

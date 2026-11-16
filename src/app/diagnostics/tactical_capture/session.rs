@@ -192,14 +192,16 @@ impl TacticalCaptureSession {
                 let bytes = std::fs::read(&path).context("read capture setup seed")?;
                 let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
                     .context("parse capture setup seed")?;
+                let ares = state.process_assets.reads_ares_way();
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&ini);
+                options.apply_sed(&ini, ares);
                 options.normalize();
                 let mut modal = crate::ui::skirmish_shell::RandomMapSetupModalState::open(
                     options.clone(),
                     None,
                     false,
                 );
+                modal.ares = ares;
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
                 ensure!(

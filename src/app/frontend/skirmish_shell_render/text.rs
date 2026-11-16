@@ -997,9 +997,8 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     }
 
     // Ares' Urban Areas box takes its caption beside the icon, like the
-    // `0x102` checkboxes, in the basic view only.
-    #[cfg(feature = "ares")]
-    if !modal.advanced {
+    // `0x102` checkboxes, in the basic view only, when Ares.dll is loaded.
+    if modal.ares && !modal.advanced {
         push_text_draw(
             out,
             state,
@@ -2060,7 +2059,7 @@ mod tests {
                 let list = random_map_setup_dropdown_rect(
                     &layout,
                     combo.row(),
-                    crate::ui::skirmish_shell::setup_combo_items(combo).len(),
+                    crate::ui::skirmish_shell::setup_combo_items(combo, false).len(),
                 );
                 for text in &texts {
                     let inside = text.x >= list.x

@@ -461,6 +461,7 @@ impl LoadingRequest {
                         == Some(
                             crate::map::source::effective_network_map_digest(
                                 &loaded.map_data().ini,
+                                false,
                                 false
                             )
                             .as_str()
@@ -1515,9 +1516,7 @@ fn lease_loading_assets_and_play_loading_theme(
     // Ares683C70 needs the selected map INI. When the Rules are read the Ares
     // way its one playback occurs at the consuming Selected->Prepared
     // transition, before the Rules prefix reset.
-    let ares = process_assets
-        .native_rules()
-        .is_some_and(|owner| owner.reads_ares_way());
+    let ares = process_assets.reads_ares_way();
     if !ares && let Some(assets) = audio_service_asset_manager(process_assets, Some(&session)) {
         let _ = audio.play_theme("LOADING", assets, now_ms);
     }
@@ -2564,9 +2563,7 @@ fn prepare_loading_session(
                 // an immutable request, while retained catalog fields update.
                 process_assets.reload_campaigns(assets);
             }
-            let ares = process_assets
-                .native_rules()
-                .is_some_and(|owner| owner.reads_ares_way());
+            let ares = process_assets.reads_ares_way();
             if ares && let Some(native) = native.as_mut() {
                 let early = process_assets
                     .native_rules()
@@ -2996,10 +2993,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         // 0x642B30 picks AlliedLoad/SovietLoad by Campaign.CD; no scheme of
         // that name keeps the stock colour. Only when the Rules are read the
         // Ares way.
-        let ares = state
-            .process_assets
-            .native_rules()
-            .is_some_and(|owner| owner.reads_ares_way());
+        let ares = state.process_assets.reads_ares_way();
         let ares_text_rgb = if ares {
             state.rules().and_then(|rules| {
                 let schemes = &rules.color_schemes;

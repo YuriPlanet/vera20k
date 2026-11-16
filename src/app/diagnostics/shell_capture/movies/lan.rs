@@ -1154,7 +1154,8 @@ impl LanCapture {
             num_players: 2,
             ..Default::default()
         };
-        let sed = options.to_sed_bytes();
+        let ares = state.process_assets.reads_ares_way();
+        let sed = options.to_sed_bytes(ares);
         // A path, as a bare name would be read from VERA's random-map folder.
         let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
         fs::write(&sed_path, &sed)?;
@@ -3940,8 +3941,9 @@ impl LanCapture {
                     crate::map::source::random_map_dir(root)
                         .join(crate::map::skirmish_scenarios::RANDMAP_SED),
                 )?;
+                let ares = state.process_assets.reads_ares_way();
                 let mut options = crate::map::rmg::RmgOptions::default();
-                options.apply_sed(&crate::rules::ini_parser::IniFile::from_bytes(&sed)?);
+                options.apply_sed(&crate::rules::ini_parser::IniFile::from_bytes(&sed)?, ares);
                 ensure!(
                     metadata.digest == options.native_digest()
                         && metadata.official

@@ -385,7 +385,13 @@ and Export Map. A map for more than eight players stages one `W` slot for each s
 LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
 The generated rules digest covers VERA's town catalogue and `[Extras]`, which each game
 resolves from its own files, so players whose games would build different towns are
-refused at Start as on any rules difference. A preview larger than the 512 KiB preview
+refused at Start as on any rules difference. In a game read the Ares way (Ares.dll
+loaded: the mod ships `ares.mix`, or the Ares setting is On) the seed's effective digest
+also covers its `UrbanAreas=` key and the generated rules digest Ares' `[Urban]` lists, as
+the `ares` build's always did; the rules agreement already covers which way each game
+reads, so nothing new is exchanged. A guest reading the other way accepts the host's
+seed bytes and is refused by that agreement, whose text names the Ares setting. A
+preview larger than the 512 KiB preview
 transfer, as Enormous and Colossal maps make, is written at half size until it fits.
 A LAN guest of another build is refused at the build check. Online, an older guest
 cannot read options carrying such a map and says the update was invalid, in a room that

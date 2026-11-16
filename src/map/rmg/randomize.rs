@@ -14,7 +14,6 @@ pub trait RandomRanged {
     fn ranged(&mut self, min: i32, max: i32) -> i32;
 
     /// One raw draw (`Randomizer::Random`), for Ares' urban-areas bit.
-    #[cfg(feature = "ares")]
     fn next_u32(&mut self) -> u32;
 }
 
@@ -103,8 +102,8 @@ pub fn randomize(
 /// hook 0x596786 -> 0x5967C1): the map type, then the theater, as the item
 /// data of a uniform pick over each combo's entries; then the Urban Areas box
 /// from the low bit of one raw draw; then the time draw. The rest follows
-/// [`randomize`].
-#[cfg(feature = "ares")]
+/// [`randomize`]. The shell calls it only when Ares.dll is loaded (the game
+/// is read the Ares way).
 pub fn randomize_from_combos(
     options: &mut RmgOptions,
     settings: &RmgSettings,

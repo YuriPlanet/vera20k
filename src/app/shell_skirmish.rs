@@ -361,14 +361,18 @@ impl App {
             return false;
         };
 
-        #[cfg(feature = "ares")]
-        let extra_flags = state
-            .process_assets
-            .native_rules()
-            .map(|rules| rules.country_flag_files())
-            .unwrap_or_default();
-        #[cfg(not(feature = "ares"))]
-        let extra_flags = Vec::new();
+        // Ares' country flags join the atlas when Ares.dll is loaded (the
+        // game is read the Ares way).
+        let ares = state.process_assets.reads_ares_way();
+        let extra_flags = if ares {
+            state
+                .process_assets
+                .native_rules()
+                .map(|rules| rules.country_flag_files())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let dialog_background = state.frontend.shell_dialog_background.clone();
         state.frontend.skirmish_shell_chrome =
             crate::render::skirmish_shell_chrome::build_skirmish_shell_chrome_atlas(
@@ -1357,8 +1361,11 @@ impl App {
         };
         modal.hide();
         let previous = modal.cancel_selection();
-        #[cfg(feature = "ares")]
-        {
+        // Ares.dll is loaded when the game is read the Ares way: it reads
+        // the urban-areas setting, and the dialog lists Ares' entries and
+        // shows its Urban Areas box.
+        let ares = state.process_assets.reads_ares_way();
+        if ares {
             let settings = state
                 .process_assets
                 .manager()
@@ -1380,9 +1387,10 @@ impl App {
             Some(previous),
             available,
         );
+        modal.ares = ares;
         // VERA: the player's own presets, for the Presets button.
         if let Some(dir) = Self::random_map_dir(state) {
-            modal.custom_presets = crate::app::shell_random_map::load_custom_presets(&dir);
+            modal.custom_presets = crate::app::shell_random_map::load_custom_presets(&dir, ares);
         }
         state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
     }

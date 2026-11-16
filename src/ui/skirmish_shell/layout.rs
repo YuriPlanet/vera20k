@@ -402,7 +402,8 @@ pub enum RandomMapSetupControl {
     /// VERA: a row of the Extras view, top down from 0.
     ExtrasRow(usize),
     /// Ares' Urban Areas box (`ARES_CHK_RMG_URBAN_AREAS`, Ares' dialog 261).
-    #[cfg(feature = "ares")]
+    /// Hit-tested only when Ares.dll is loaded (the game is read the Ares
+    /// way).
     UrbanAreas5000,
 }
 
@@ -486,8 +487,8 @@ pub struct RandomMapSetupLayout {
     pub progress_text: RectPx,
     pub progress_bar: RectPx,
     /// Ares' Urban Areas checkbox: `177, 192, 150, 14` in Ares' dialog 261
-    /// (RMGDialog.rc), which keeps every stock control's position.
-    #[cfg(feature = "ares")]
+    /// (RMGDialog.rc), which keeps every stock control's position. Drawn and
+    /// hit-tested only when Ares.dll is loaded (the game is read the Ares way).
     pub urban_areas: RectPx,
 }
 
@@ -1085,7 +1086,6 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         ),
         progress_text: dlu_rect(ptext_x, ptext_y, ptext_w, ptext_h),
         progress_bar: dlu_rect(pbar_x, pbar_y, pbar_w, pbar_h),
-        #[cfg(feature = "ares")]
         urban_areas: checkbox_dlu_rect(177, 192, 150, 14),
     }
 }
@@ -1093,11 +1093,13 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
 /// Topmost interactive control at `(x, y)`, or `None`.
 ///
 /// Tested in draw order: the option rows first, then the action row, then the
-/// right column — matching `choose_map_modal_button_at`.
+/// right column — matching `choose_map_modal_button_at`. `ares`: Ares.dll is
+/// loaded (the game is read the Ares way), which adds its Urban Areas box.
 pub fn random_map_setup_control_at(
     layout: &RandomMapSetupLayout,
     x: i32,
     y: i32,
+    ares: bool,
 ) -> Option<RandomMapSetupControl> {
     const ROW_CONTROLS: [RandomMapSetupControl; 6] = [
         RandomMapSetupControl::MapType0x405,
@@ -1133,14 +1135,16 @@ pub fn random_map_setup_control_at(
         .iter()
         .find(|(rect, _)| rect.contains(x, y))
         .map(|(_, control)| *control);
-    #[cfg(feature = "ares")]
-    let control = control.or_else(|| {
-        layout
-            .urban_areas
-            .contains(x, y)
-            .then_some(RandomMapSetupControl::UrbanAreas5000)
-    });
-    control
+    if ares {
+        control.or_else(|| {
+            layout
+                .urban_areas
+                .contains(x, y)
+                .then_some(RandomMapSetupControl::UrbanAreas5000)
+        })
+    } else {
+        control
+    }
 }
 
 /// [`random_map_setup_control_at`] with VERA's buttons, for a dialog that may
@@ -1152,6 +1156,7 @@ pub fn random_map_setup_control_at_view(
     y: i32,
     advanced: bool,
     extras: bool,
+    ares: bool,
 ) -> Option<RandomMapSetupControl> {
     if layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
@@ -1166,7 +1171,7 @@ pub fn random_map_setup_control_at_view(
         return Some(RandomMapSetupControl::PresetCycle);
     }
     if !advanced {
-        return random_map_setup_control_at(layout, x, y);
+        return random_map_setup_control_at(layout, x, y, ares);
     }
     if let Some(field) = AdvancedField::ALL
         .into_iter()
@@ -1180,23 +1185,18 @@ pub fn random_map_setup_control_at_view(
     }
     // Everything but the option rows hit-tests as in the basic view; Ares'
     // Urban Areas box sits under the seventh slider and is basic-only.
-    random_map_setup_control_at(layout, x, y).filter(|control| {
+    random_map_setup_control_at(layout, x, y, ares).filter(|control| {
         SETUP_BASIC_ROW_CONTROLS
             .iter()
             .all(|row_control| row_control != control)
-            && !is_ares_urban_areas_box(*control)
+            && !is_ares_urban_areas_box(*control, ares)
     })
 }
 
-/// Ares' Urban Areas box, which only the basic view shows.
-fn is_ares_urban_areas_box(control: RandomMapSetupControl) -> bool {
-    #[cfg(feature = "ares")]
-    return control == RandomMapSetupControl::UrbanAreas5000;
-    #[cfg(not(feature = "ares"))]
-    {
-        let _ = control;
-        false
-    }
+/// Ares' Urban Areas box, which only the basic view shows, when Ares.dll is
+/// loaded (the game is read the Ares way).
+fn is_ares_urban_areas_box(control: RandomMapSetupControl, ares: bool) -> bool {
+    ares && control == RandomMapSetupControl::UrbanAreas5000
 }
 
 const SETUP_BASIC_ROW_CONTROLS: [RandomMapSetupControl; 6] = [
@@ -1536,7 +1536,6 @@ impl ScaledRects for RandomMapSetupLayout {
             status_help: self.status_help.scaled_rects(scale),
             progress_text: self.progress_text.scaled_rects(scale),
             progress_bar: self.progress_bar.scaled_rects(scale),
-            #[cfg(feature = "ares")]
             urban_areas: self.urban_areas.scaled_rects(scale),
         }
     }
@@ -1878,22 +1877,22 @@ mod tests {
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, false),
+            random_map_setup_control_at_view(&setup, cx, cy, true, false, false),
             Some(RandomMapSetupControl::Advanced(AdvancedField::Water))
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true),
+            random_map_setup_control_at_view(&setup, cx, cy, true, true, false),
             Some(RandomMapSetupControl::ExtrasRow(AdvancedField::Water.row())),
             "the Extras view takes the sliders' rows"
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, false, false),
+            random_map_setup_control_at_view(&setup, cx, cy, false, false, false),
             Some(RandomMapSetupControl::MapType0x405),
             "the basic view keeps the original rows"
         );
         let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false),
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false),
             Some(RandomMapSetupControl::AdvancedToggle)
         );
     }
@@ -1936,25 +1935,25 @@ mod tests {
 
         let (x, y) = centre(setup.control_rects[0]);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::MapType0x405)
         );
         let (x, y) = centre(setup.control_rects[5]);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Players0x3eb)
         );
         let (x, y) = centre(setup.randomize);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Randomize0x621)
         );
         let (x, y) = centre(setup.generate);
         assert_eq!(
-            random_map_setup_control_at(&setup, x, y),
+            random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Generate0x620)
         );
-        assert_eq!(random_map_setup_control_at(&setup, 0, 0), None);
+        assert_eq!(random_map_setup_control_at(&setup, 0, 0, false), None);
     }
 
     #[test]
@@ -2276,14 +2275,14 @@ mod tests {
         let face = setup.control_rects[0];
 
         assert_eq!(
-            random_map_setup_control_at(&setup, face.x + face.w / 2, face.y + 2),
+            random_map_setup_control_at(&setup, face.x + face.w / 2, face.y + 2, false),
             Some(RandomMapSetupControl::MapType0x405)
         );
         // The base dialog's own map-type spot is empty chrome once stretched: a
         // click there must not still land on the control.
         let base_face = base.control_rects[0];
         assert_eq!(
-            random_map_setup_control_at(&setup, base_face.x + 5, base_face.y + 2),
+            random_map_setup_control_at(&setup, base_face.x + 5, base_face.y + 2, false),
             None
         );
     }

@@ -391,12 +391,15 @@ pub fn validate_network_map_content(ini: &IniFile, seed: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn effective_network_map_digest(ini: &IniFile, seed: bool) -> String {
+/// `ares`: Ares.dll is loaded (the game is read the Ares way); only a seed
+/// reads it, whose bytes then carry the Urban Areas box
+/// (`RmgOptions::to_sed_bytes`).
+pub fn effective_network_map_digest(ini: &IniFile, seed: bool, ares: bool) -> String {
     if seed {
         let mut options = crate::map::rmg::RmgOptions::default();
-        options.apply_sed(ini);
+        options.apply_sed(ini, ares);
         options.normalize();
-        return IniFile::from_bytes(&options.to_sed_bytes())
+        return IniFile::from_bytes(&options.to_sed_bytes(ares))
             .expect("serialized seed INI")
             .multiplayer_digest();
     }
@@ -658,7 +661,9 @@ fn decode_transfer(bytes: &[u8], resource: TransferResource) -> Result<TransferC
             "random-map seed options missing"
         );
         let mut options = crate::map::rmg::RmgOptions::default();
-        options.apply_sed(&ini);
+        // The options are read and dropped: whether Ares.dll is loaded (the
+        // Urban Areas box) changes nothing here.
+        options.apply_sed(&ini, false);
         options.normalize();
     } else if !include_expansion_will_run(&ini) {
         map_file::MapFile::from_ini(ini.clone())?;
@@ -1551,7 +1556,7 @@ mod tests {
         let mut options = crate::map::rmg::RmgOptions::default();
         options.seed = 1234;
         options.normalize();
-        let bytes = options.to_sed_bytes();
+        let bytes = options.to_sed_bytes(false);
         let digest = sha256_hex(&bytes);
         let loaded = install_received_asset(
             root.path(),
@@ -1565,7 +1570,7 @@ mod tests {
             panic!("seed INI");
         };
         let mut decoded = crate::map::rmg::RmgOptions::default();
-        decoded.apply_sed(&ini);
+        decoded.apply_sed(&ini, false);
         decoded.normalize();
         assert_eq!(decoded, options);
         let LoadedMapSource::Loose { path, .. } = loaded.source else {
@@ -1639,8 +1644,8 @@ mod tests {
             second.source.physical_identity()
         );
         assert_eq!(
-            effective_network_map_digest(&first.ini, false)
-                != effective_network_map_digest(&second.ini, false),
+            effective_network_map_digest(&first.ini, false, false)
+                != effective_network_map_digest(&second.ini, false, false),
             crate::rules::ARES_BUILD
         );
         std::fs::remove_file(root.path().join("child.ini")).unwrap();

@@ -167,14 +167,17 @@ pub struct GenerationObjects<'a> {
     /// The Ares urban catalog and Main draw, used when the options' urban
     /// switch is set.
     pub urban_areas: Option<super::phases::urban_areas::UrbanInputs<'a>>,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way.
+    pub ares: bool,
 }
 
 impl<'a> GenerationObjects<'a> {
-    /// Tech buildings only.
-    pub fn tech(tech_types: &'a [TechType]) -> Self {
+    /// Tech buildings only; `ares` as [`Self::ares`].
+    pub fn tech(tech_types: &'a [TechType], ares: bool) -> Self {
         Self {
             tech_types,
             urban_areas: None,
+            ares,
         }
     }
 }
@@ -219,7 +222,8 @@ const VERA_URBAN_SALT: u16 = 0xB71D;
 /// switch keeps the seed's own presence and the native district count;
 /// VERA's opt-in passes presence 1 (`0x005A5020` never takes its early exit
 /// at 1 or more) and the Buildings slider (1..=100) as the fill, from one
-/// district up to most of the open land.
+/// district up to most of the open land. Ares' switch counts only when
+/// Ares.dll is loaded (the game is read the Ares way).
 fn urban_inputs<'a>(
     options: &RmgOptions,
     objects: &'a GenerationObjects<'a>,
@@ -229,14 +233,12 @@ fn urban_inputs<'a>(
     i32,
     Option<i32>,
 ) {
-    #[cfg(feature = "ares")]
-    if options.urban_areas {
+    if objects.ares && options.urban_areas {
         if objects.urban_areas.is_none() {
             log::warn!("random map: urban areas requested without an urban catalog");
         }
         return (objects.urban_areas.as_ref(), options.urban_presence, None);
     }
-    let _ = objects;
     if options.urban_enabled && options.urban_presence > 0 {
         return (Some(vera), 1, Some(options.urban_presence.min(100)));
     }
@@ -328,13 +330,13 @@ fn fair_candidates(
     };
     #[cfg(not(target_arch = "wasm32"))]
     if objects.urban_areas.is_none() && !others.is_empty() {
-        let tech_types = objects.tech_types;
+        let (tech_types, ares) = (objects.tech_types, objects.ares);
         return std::thread::scope(|scope| {
             let runs: Vec<_> = others
                 .iter()
                 .map(|candidate| {
                     scope.spawn(move || {
-                        let objects = GenerationObjects::tech(tech_types);
+                        let objects = GenerationObjects::tech(tech_types, ares);
                         generate_once(candidate, settings, resolved, blocks, &objects, &mut |_| {})
                     })
                 })
@@ -491,6 +493,7 @@ fn generate_once(
         urban_presence,
         urban_fill,
         urban_areas: urban,
+        ares: objects.ares,
     };
 
     observe(GenerationPointView {
@@ -553,7 +556,7 @@ fn generate_once(
         construction_trace: output.construction_trace,
         start_waypoints: output.waypoints,
         #[cfg(any(test, feature = "test-support"))]
-        stages_run: executed_stages(&options),
+        stages_run: executed_stages(&options, objects.ares),
         unfilled_start_slots: output.unfilled_start_slots,
         fairness: output.fairness,
     };
@@ -685,7 +688,7 @@ mod tests {
                 &RmgSettings::default(),
                 &resolved(),
                 &one_by_one(),
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             );
             Some(std::sync::Arc::new(generated))
         })
@@ -695,7 +698,6 @@ mod tests {
     /// Ares urban areas (hook 0x598FB8): the switch runs the stage, and each
     /// placed urban object follows the structures at the entity index its
     /// constructor row names.
-    #[cfg(feature = "ares")]
     #[test]
     fn urban_objects_follow_the_structures_with_matching_trace_rows() {
         use crate::map::rmg::RmgConstructionPhase;
@@ -721,6 +723,7 @@ mod tests {
                 catalog: &catalog,
                 main_draw: &main_draw,
             }),
+            ares: true,
         };
         let mut placed = 0;
         for seed in 1..=8 {
@@ -769,7 +772,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         );
         assert_eq!(generated.unfilled_start_slots, 0);
         let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
@@ -797,7 +800,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             );
             assert_eq!(
                 (
@@ -825,7 +828,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         );
         assert_eq!(generated.unfilled_start_slots, 0);
         assert_eq!(generated.start_waypoints.len(), 30);
@@ -870,7 +873,7 @@ mod tests {
                     &settings,
                     &resolved,
                     &blocks,
-                    &GenerationObjects::tech(&[]),
+                    &GenerationObjects::tech(&[], false),
                 );
                 assert_eq!(
                     (
@@ -930,7 +933,7 @@ mod tests {
             seed: 4242,
             ..options(1, 0)
         };
-        let objects = GenerationObjects::tech(&[]);
+        let objects = GenerationObjects::tech(&[], false);
         let plain = generate_map(&base, &settings, &resolved, &blocks, &objects);
         assert!(!plain.stages_run.contains(&Stage::UrbanAreas));
         let urban = generate_map(
@@ -1089,7 +1092,7 @@ mod tests {
             name: "CAOILD".into(),
             footprint: square.to_vec(),
         }];
-        let objects = GenerationObjects::tech(&derrick);
+        let objects = GenerationObjects::tech(&derrick, false);
         let plain = generate_map(&options(1, 0), &settings, &resolved, &blocks, &objects);
         let decked = || {
             let mut options = options(1, 0);
@@ -1204,7 +1207,7 @@ mod tests {
     fn an_ore_variant_redraws_only_the_ore() {
         use crate::map::rmg::extras::Extra;
         let (settings, resolved, blocks) = (RmgSettings::default(), resolved(), one_by_one());
-        let objects = GenerationObjects::tech(&[]);
+        let objects = GenerationObjects::tech(&[], false);
         let variant = |value: u8| {
             let mut options = options(1, 0);
             options.extras.set(Extra::OreVariant, value);
@@ -1252,7 +1255,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         );
         let map = &generated.map_file;
         let thumbnail: Vec<u8> = (0..6 * 4 * 4).map(|byte| byte as u8 | 3).collect();
@@ -1353,7 +1356,7 @@ mod tests {
     #[test]
     fn fair_starts_even_the_ore_and_repeat() {
         let (settings, resolved, blocks) = (RmgSettings::default(), resolved(), one_by_one());
-        let objects = GenerationObjects::tech(&[]);
+        let objects = GenerationObjects::tech(&[], false);
         let fair = RmgOptions {
             fair_starts: true,
             ..options(1, 0)
@@ -1412,6 +1415,7 @@ mod tests {
                     catalog: &catalog,
                     main_draw: &|| 0,
                 }),
+                ares: false,
             },
         );
         assert_eq!(overlays(&searched), overlays(&one_by_one));
@@ -1430,7 +1434,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             );
             let tiles: Vec<i32> = g.map_file.cells.iter().map(|c| c.tile_index).collect();
             let overlays: Vec<(u16, u16, u8)> = g
@@ -1472,7 +1476,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&types),
+                &GenerationObjects::tech(&types, false),
             );
             if !generated.construction_trace.events.is_empty() {
                 chosen = Some(generated);
@@ -1514,7 +1518,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&types),
+                &GenerationObjects::tech(&types, false),
             );
             let emitted =
                 generated
@@ -1575,7 +1579,7 @@ mod tests {
             settings,
             resolved,
             blocks,
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
             &mut |view| {
                 points.push(view.point());
                 snapshots.push(view.snapshot());
@@ -1797,7 +1801,7 @@ mod tests {
                 &settings,
                 &resolved,
                 &blocks,
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
             )
             .map_file
             .cells
@@ -1835,7 +1839,7 @@ mod tests {
             &RmgSettings::default(),
             &resolved(),
             &one_by_one(),
-            &GenerationObjects::tech(&[]),
+            &GenerationObjects::tech(&[], false),
         )
     }
 
@@ -1853,7 +1857,7 @@ mod tests {
     ///
     /// The rock gate is checked on its observable product, never on
     /// `stages_run`: that field is assigned straight from
-    /// `executed_stages(&options)`, so comparing the two would compare one pure
+    /// `executed_stages(&options, ares)`, so comparing the two would compare one pure
     /// function against itself and could not fail.
     ///
     /// Only the OFF side is a per-cell assertion. How many rocks a temperate
@@ -2036,7 +2040,7 @@ mod tests {
                 &settings,
                 &resolved(),
                 &one_by_one(),
-                &GenerationObjects::tech(&[]),
+                &GenerationObjects::tech(&[], false),
                 &mut |view| {
                     if view.point() == GenerationPoint::Initial {
                         preview_has_no_synthetic_lighting = view.snapshot().map_file.ini.is_empty();

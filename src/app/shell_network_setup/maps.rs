@@ -351,11 +351,13 @@ pub(crate) fn local_transfer_source(
         .session
         .network_map_metadata()
         .ok_or_else(|| anyhow!("map metadata missing"))?;
+    let ares = state.process_assets.reads_ares_way();
     let loaded = state.frontend.scenario_catalog.verify_network_map_input(
         file,
         metadata,
         &config.paths.ra2_dir,
         assets,
+        ares,
     );
     if resource == TransferResource::Map {
         if let Some(loaded) = &loaded {
@@ -423,17 +425,25 @@ pub(crate) fn accept_transfer_asset(
                 resource == TransferResource::Seed,
                 file,
             )?;
+            let ares = state.process_assets.reads_ares_way();
             let expected = state
                 .match_state
                 .session
                 .network_map_metadata()
                 .ok_or_else(|| anyhow!("map selection ended"))?;
-            ensure!(
+            let seed = resource == TransferResource::Seed;
+            let verified = |ares| {
                 crate::app::scenario_catalog::ScenarioCatalog::verify_transferred_network_map(
-                    &loaded,
-                    expected,
-                    resource == TransferResource::Seed
-                ),
+                    &loaded, expected, seed, ares,
+                )
+            };
+            // A seed that verifies only with the other answer is the host's
+            // file read by a game whose Ares answer differs. It is accepted,
+            // so the rules agreement, which covers that answer, refuses the
+            // game and its text names the Ares setting
+            // (`agreement::rules_differ_text`).
+            ensure!(
+                verified(ares) || (seed && verified(!ares)),
                 "downloaded map differs"
             );
             let effective = expected.effective_digest.clone();

@@ -166,7 +166,11 @@ pub(crate) fn spawn_map_identity(
             file,
             byte_length,
             source_sha256: source_sha256.to_owned(),
-            effective_digest: crate::map::source::effective_network_map_digest(&loaded.ini, false),
+            effective_digest: crate::map::source::effective_network_map_digest(
+                &loaded.ini,
+                false,
+                false,
+            ),
         },
         start_waypoints: crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
     })
@@ -635,7 +639,11 @@ mod tests {
         };
         let report = run_desktop(Some(&root), None, None, None).unwrap();
         let stock = &report.countries[..10];
-        assert!(stock.iter().all(|country| country.selectable && !country.label.is_empty()));
+        assert!(
+            stock
+                .iter()
+                .all(|country| country.selectable && !country.label.is_empty())
+        );
         assert_eq!(
             stock.iter().map(|country| country.side).collect::<Vec<_>>(),
             [0, 0, 0, 0, 0, 1, 1, 1, 1, 2].map(Some)
