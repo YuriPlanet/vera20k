@@ -896,6 +896,8 @@ fn main() -> Result<(), String> {
     if !args.serial_scans {
         scenario.runtime.simulation.batch_target_scans();
     }
+    // As a real match's handoff does (`app::loading::transitions`).
+    scenario.runtime.simulation.present_effect_anims();
     scenario
         .runtime
         .simulation

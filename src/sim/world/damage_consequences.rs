@@ -407,6 +407,7 @@ mod muzzle_anim_tests {
     #[test]
     fn a_presentation_flash_rides_its_firer_outside_display_and_ends_with_it() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
+        sim.present_effect_anims();
         sim.reveal(tank);
         let unique_before = sim.next_native_runtime_id();
         let mut event = shot(&mut sim, tank, EntityCategory::Unit);
