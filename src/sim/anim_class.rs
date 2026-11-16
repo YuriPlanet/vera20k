@@ -3249,6 +3249,14 @@ impl Simulation {
         #[cfg(not(feature = "ares"))]
         let source_house = None;
         let no_effects = anim.no_effects;
+        // Phobos' replaced body (`Ext/Anim/Hooks.cpp:46-47`) rejects the inert
+        // flag trigger action 41 writes (`IsInert`,
+        // `Ext/TAction/Hooks.cpp:118`) before the accumulator runs, where the
+        // stock body gates after it.
+        #[cfg(feature = "phobos")]
+        if no_effects {
+            return false;
+        }
         let type_id = anim.type_id;
         let accumulator = f64::from_bits(anim.damage_accumulator.bits());
         #[cfg(feature = "phobos")]

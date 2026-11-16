@@ -318,7 +318,12 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
     scene.sim.substrate.set_anim_no_effects(scene.anim, true);
     advance(&mut scene, 3);
     let anim = scene.sim.anim(scene.anim).unwrap();
+    // The stock body accumulates while inert and gates the damage later;
+    // Phobos' replaced body rejects the inert anim before the accumulator.
+    #[cfg(not(feature = "phobos"))]
     assert!(f64::from_bits(anim.damage_accumulator.bits()) > 1.0);
+    #[cfg(feature = "phobos")]
+    assert_eq!(anim.damage_accumulator, NativeF64Bits::POSITIVE_ZERO);
     assert_eq!(
         scene
             .sim
@@ -359,7 +364,10 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
             .damage_accumulator
             .bits(),
     );
+    #[cfg(not(feature = "phobos"))]
     assert!(carried > 0.0 && carried < 1.0);
+    #[cfg(feature = "phobos")]
+    assert_eq!(carried, 0.0);
     scene.sim.substrate.set_anim_no_effects(scene.anim, false);
     advance(&mut scene, 2);
     assert_eq!(

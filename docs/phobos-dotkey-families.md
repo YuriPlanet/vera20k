@@ -54,11 +54,15 @@ owner, else the anim's house) the damage house; `ApplyOncePerLoop` lands
 `anim_class.rs::anim_frame_damage`; the stock accumulate and Ares delay bodies
 keep their native conversions.
 
-RESIDUALS: the hook's `IsBuildingAnim -> ParentBuilding` invoker fallback has
-no VERA model; the `Damage.ApplyFirepowerMult` fold is unported; Phobos's
-replaced body would fold the stock branches through `std::round` while VERA
-keeps the native/Ares conversion; the hook's `IsInert` reject has no VERA
-flag; the erase-anim owner house is propagated only through the invoker path.
+The `Damage.ApplyFirepowerMult` fold is implemented (cached on the first
+damage round, `anim_damage_applies_the_invokers_firepower_multiplier`); the
+hook's `IsBuildingAnim -> ParentBuilding` fallback is covered by the anim's
+`owner_entity` (a building anim stores its building there); and the `IsInert`
+reject is the retained `no_effects` flag (trigger action 41), now checked
+before the accumulator as the replaced body does. RESIDUALS: Phobos's replaced
+body folds the stock damage branches through `std::round` while VERA keeps the
+native/Ares conversion; the erase-anim owner house is propagated only through
+the invoker path.
 
 ## FallingDownDamage.AllowEMP / .Water (+ the ratio model)
 
