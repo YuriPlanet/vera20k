@@ -802,6 +802,41 @@ fn ares_power_plants_fall_back_to_the_first_candidate_without_a_draw() {
     assert_eq!(sim.scenario_rng.logical_state(), before, "no draw");
 }
 
+/// Phobos `[AI] EnablePowerSurplus=yes` makes House+0x160B4 `PowerSurplus`,
+/// which the splice takes off the output (`0x004FE6FC..0x004FE71D`, `JLE`
+/// past the splice): drain 100 plus the radar's 50 fits under 200 less 50
+/// exactly, but not under 200 less 51, so that house builds a plant first.
+/// Without the switch the stock `PowerSurplus=` changes nothing.
+#[test]
+fn phobos_spare_power_puts_a_power_plant_first() {
+    let (mut sim, owner) = computer_house(true);
+    let mut power = PowerState::default();
+    power.set_total_output_for_test(200);
+    power.set_total_drain_for_test(100);
+    sim.power_states.map_mut_for_test().insert(owner, power);
+    for (ai, plant) in [
+        ("PowerSurplus=51", None),
+        ("EnablePowerSurplus=yes\nPowerSurplus=50", None),
+        ("EnablePowerSurplus=yes\nPowerSurplus=51", Some("GAPOWR")),
+    ] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=GAPOWR\n1=RADAR\n[GAPOWR]\nPower=200\n[RADAR]\nPower=-50\n\
+             [General]\nGDIPowerPlant=GAPOWR\n[AI]\n{ai}\n"
+        )))
+        .expect("spare power rules");
+        assert_eq!(
+            rules.phobos(),
+            ai.starts_with("Enable") || crate::rules::PHOBOS_ENABLED
+        );
+        let radar = rules.object("RADAR").expect("consumer type");
+        assert_eq!(
+            super::power_plant_to_splice(&mut sim, &rules, owner, radar),
+            plant.and_then(|name| rules.building_type_index(name)),
+            "{ai:?}"
+        );
+    }
+}
+
 /// Retail rules through the production layers: no retail country sets
 /// `AI.PowerPlants=`, so with Ares a Soviet computer house is offered
 /// `[NodRegularPower, NodAdvancedPower]`, NAPOWR and NANRCT

@@ -9,9 +9,10 @@
 //! [`phobos_read`] asked for and no stock or Ares reader read in that
 //! section. Only the readers of the Phobos pieces that run in every build
 //! open that scope: the parallel AI queue limits
-//! (`rules::phobos_parallel_ai_queues`) and the last-legs sale, hunt and
+//! (`rules::phobos_parallel_ai_queues`), the last-legs sale, hunt and
 //! regroup switches (`[General] AIFireSale`, `AIFireSaleDelay`, `AIAllToHunt`,
-//! `GatherWhenMCVDeploy`). `AllowParallelAIQueues`, which Ares reads too,
+//! `GatherWhenMCVDeploy`) and the AI's spare power (`[AI] EnablePowerSurplus`,
+//! `PowerSurplus.ScaleToDrainAmount`). `AllowParallelAIQueues`, which Ares reads too,
 //! turns neither switch on. Retail data holds none of these keys, so a retail
 //! game plays as gamemd.
 //!

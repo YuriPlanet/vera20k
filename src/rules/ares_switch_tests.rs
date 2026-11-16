@@ -104,6 +104,18 @@ fn a_maps_phobos_key_turns_phobos_on() {
     assert!(phobos.phobos());
     assert!(!phobos.ares());
     assert!(phobos.parallel_ai_queues_act());
+    // The spare power switch alone turns it on too, and the house then keeps
+    // retail's `[AI] PowerSurplus=50` spare.
+    let spare = skirmish(
+        &mut owner,
+        None,
+        &IniFile::from_str("[AI]\nEnablePowerSurplus=yes\n"),
+    );
+    assert!(spare.phobos() && !spare.ares());
+    let power = crate::sim::power_system::PowerState::default();
+    assert_eq!(power.power_surplus(&spare), 50);
+    assert_eq!(power.power_surplus(&phobos), 0, "Phobos on, the switch off");
+    assert_eq!(power.power_surplus(&shared), 0);
 }
 
 /// A map's `ImmuneToAbduction=` (Ares' TechnoTypeExt reader alone reads it,
