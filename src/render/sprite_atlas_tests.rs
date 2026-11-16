@@ -362,6 +362,48 @@ fn one_object_world(
     (store, crate::sim::intern::test_interner())
 }
 
+/// A non-voxel turreted Unit without `<image>TUR.SHP` draws the body's
+/// `WalkFrames * Facings` turret block (`0x73C7AC`/`0x73CCF4`). The block is
+/// not a Stand/Walk sequence when `StandingFrames=0`, so the atlas must request
+/// it explicitly; otherwise the draw's `atlas.get` finds no key.
+#[test]
+fn vehicle_turret_body_frames_are_requested_even_without_a_stand_block() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+
+    let art = IniFile::from_str(
+        "[TANK]\nImage=TANK\nWalkFrames=4\nFacings=8\nStandingFrames=0\nFiringFrames=0\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nTurret=yes\n"),
+        &art,
+    )
+    .expect("turret atlas rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+
+    let color = HouseColorIndex(2);
+    let mut needed = HashSet::new();
+    insert_object_keys(
+        &mut needed,
+        "TANK",
+        EntityCategory::Unit,
+        color,
+        Some(&rules),
+        None,
+    );
+    let frames: HashSet<u16> = needed
+        .iter()
+        .filter(|key| key.type_id == "TANK" && key.house_color == color)
+        .map(|key| key.frame)
+        .collect();
+    // Walk 0..3 with StandingFrames=0 leaves the turret block at
+    // 4 * 8 .. 4 * 8 + 7 unrequested by Stand/Walk alone.
+    assert!(
+        (32..40).all(|frame| frames.contains(&frame)),
+        "turret body block 32..39 missing from {frames:?}"
+    );
+}
+
 #[test]
 fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
     let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("C3Y03MD.MAP")

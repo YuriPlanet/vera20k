@@ -1666,6 +1666,16 @@ fn insert_object_keys(
                         }
                     }
                 }
+                // A non-voxel turreted Unit without `<image>TUR.SHP` draws
+                // its body's `WalkFrames * Facings` turret block
+                // (`0x73C7AC`/`0x73CCF4`). That block need not coincide with
+                // a Stand or Walk sequence (e.g. `StandingFrames=0`), so
+                // request it explicitly; an absent atlas key draws nothing.
+                if let Some(turret) = set.shp_vehicle_turret() {
+                    for frame_offset in 0..turret.frame_count {
+                        insert(turret.start_frame + frame_offset);
+                    }
+                }
             } else {
                 // Fallback: hardcoded default layout (stand=0-7, walk=8-55).
                 // Use facing=0 for all keys — frame index encodes direction.

@@ -647,16 +647,21 @@ mod turret_shape_tests {
     /// name).
     #[test]
     fn the_turret_shp_name_tracks_the_body_image_and_gates_non_voxel_turrets() {
-        for global in ["", "ArtImageSwap=yes", "ArtImageSwap=no"] {
+        for (global, expected) in [
+            ("", "TANKTUR"),
+            ("ArtImageSwap=yes", "HULLTUR"),
+            ("ArtImageSwap=no", "TANKTUR"),
+        ] {
             let rules = rules(global);
+            let expected_file = format!("{expected}.SHP");
             assert_eq!(
                 rules.unit_turret_shp_id("TANK").as_deref(),
-                Some("HULLTUR"),
+                Some(expected),
                 "{global:?}"
             );
             assert_eq!(
                 rules.unit_turret_shp_file("TANK").as_deref(),
-                Some("HULLTUR.SHP"),
+                Some(expected_file.as_str()),
                 "{global:?}"
             );
             assert_eq!(rules.unit_turret_shp_file("TRUCK"), None, "no Turret=");

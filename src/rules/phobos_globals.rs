@@ -760,10 +760,11 @@ pub struct PhobosGlobals {
     #[serde(default = "default_damaged_speed")]
     pub damaged_speed: NativeF64Bits,
     /// `[General] ArtImageSwap=`, default `no` (`Phobos.INI.cpp:262`):
-    /// Phobos' ART `Image=` redirect for TechnoTypes. VERA's body SHP source
-    /// already applies that redirect, so the SHP UnitType turret file name
-    /// (`RuleSet::unit_turret_shp_id`) tracks the same base and this flag
-    /// changes no name; it is read for parity only.
+    /// Phobos' ART `Image=` redirect for TechnoTypes. `yes` makes the SHP
+    /// UnitType turret file (`RuleSet::unit_turret_shp_id`) follow the ART
+    /// `Image=` override; the default uses the type's own `ImageFile`
+    /// (`UnitTypeClass_ReadINI_TurretShape @ 0x747A2E`). VERA's body SHP source
+    /// still applies that redirect unconditionally, a separate residual.
     #[serde(default)]
     pub art_image_swap: bool,
     /// `[General] KeepRange.EarlyStopFrame=`, default 0 (`:271`, `Body.h:189`).
