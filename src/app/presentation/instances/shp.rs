@@ -1828,6 +1828,39 @@ fn slot_anims_hidden_by_sale(building: &crate::sim::game_entity::GameEntity) -> 
     building.building_down() && building.in_construction_bstate()
 }
 
+/// The rules-side slot-9 draw configuration. Native reads `TurretAnim` and its
+/// offsets from the BuildingType section (`0x00464450..0x004645C9`), not ART;
+/// ART's `TurretAnim` is only VERA's legacy fallback. `TurretAnimIsVoxel`
+/// types draw through `emit_building_turret_vxl` instead.
+fn rules_turret_anim_config(
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    building_type: &str,
+) -> Option<crate::rules::art_data::BuildingAnimConfig> {
+    let object = rules?.object(building_type)?;
+    if object.turret_anim_is_voxel {
+        return None;
+    }
+    let anim_type = object.turret_anim.clone()?;
+    Some(crate::rules::art_data::BuildingAnimConfig {
+        native_slot: 9,
+        anim_type,
+        damaged_variant: None,
+        garrisoned_variant: None,
+        kind: crate::rules::art_data::BuildingAnimKind::Special,
+        is_primary: false,
+        x: object.turret_anim_x,
+        y: object.turret_anim_y,
+        y_sort: 0,
+        z_adjust: object.turret_anim_z_adjust,
+        loop_start: 0,
+        loop_end: 0,
+        loop_count: 0,
+        rate: 0,
+        start_frame: 0,
+        ping_pong: false,
+    })
+}
+
 fn emit_building_anims(
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,
@@ -1859,7 +1892,16 @@ fn emit_building_anims(
         Some(e) => e,
         None => return,
     };
-    for anim in &art_entry.building_anims {
+    // Rules own slot 9. When the type declares `TurretAnim=`, use that
+    // configuration and drop ART's legacy slot-9 entry so the two cannot
+    // diverge; ART remains the fallback for types without the rules key.
+    let rules_turret = rules_turret_anim_config(rules, building_type);
+    for anim in art_entry
+        .building_anims
+        .iter()
+        .filter(|anim| rules_turret.is_none() || anim.native_slot != 9)
+        .chain(rules_turret.iter())
+    {
         let Some(anim_id) = building.building_art.anim_slots()[usize::from(anim.native_slot)]
         else {
             continue;
@@ -2347,6 +2389,44 @@ fn resolve_object_shp_frame_with_facing(
 
 #[cfg(test)]
 mod tests {
+    /// Native reads slot 9's `TurretAnim`, offsets and `TurretAnimIsVoxel` from
+    /// the BuildingType section (`0x00464450..0x004645C9`), not ART. The draw
+    /// list must therefore synthesize that entry even when ART declares no
+    /// `TurretAnim`, or the seeded slot is never emitted.
+    #[test]
+    fn rules_turret_anim_supplies_slot_nine_without_an_art_turret_entry() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let art = IniFile::from_str("[PLANT]\n[VOXPLANT]\n");
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=PLANT\n1=VOXPLANT\n\
+                 [PLANT]\nStrength=100\nTurret=yes\nTurretAnim=S\n\
+                 TurretAnimX=3\nTurretAnimY=-2\nTurretAnimZAdjust=-40\n\
+                 [VOXPLANT]\nStrength=100\nTurret=yes\nTurretAnim=S\n\
+                 TurretAnimIsVoxel=yes\n\
+                 [Animations]\n0=S\n",
+            ),
+            &art,
+        )
+        .unwrap();
+
+        let config = super::rules_turret_anim_config(Some(&rules), "PLANT")
+            .expect("rules TurretAnim supplies a slot-9 draw entry");
+        assert_eq!(config.native_slot, 9);
+        assert_eq!(config.anim_type, "S");
+        assert_eq!(
+            (config.x, config.y, config.z_adjust),
+            (3, -2, -40),
+            "TurretAnimX/Y/ZAdjust anchor the slot"
+        );
+        assert!(
+            super::rules_turret_anim_config(Some(&rules), "VOXPLANT").is_none(),
+            "TurretAnimIsVoxel draws through the VXL path"
+        );
+    }
+
     #[test]
     fn infantry_draw_selects_the_visual_types_bank_despite_a_building_name_collision() {
         use crate::map::entities::EntityCategory;

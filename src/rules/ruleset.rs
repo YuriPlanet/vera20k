@@ -12828,9 +12828,10 @@ impl RuleSet {
     /// a non-voxel turreted Vehicle, `<image>TUR`.
     ///
     /// VERA's body SHP source already applies the ART `Image=` redirect
-    /// ([`ArtRegistry::resolve_effective_image_id`]), so
-    /// `[General] ArtImageSwap` is read for parity but does not change this
-    /// base: the turret file tracks the body's actual source, not the type ID.
+    /// ([`ArtRegistry::resolve_effective_image_id`]), but native only swaps the
+    /// turret base to it when `[General] ArtImageSwap=yes`
+    /// (`0x747A2E`, `Ext/TechnoType/Hooks.cpp:142-168`); otherwise the type's
+    /// own `ImageFile` (`ObjectType+0x1F8`) names the file.
     ///
     /// [`ArtRegistry::resolve_effective_image_id`]: crate::rules::art_data::ArtRegistry::resolve_effective_image_id
     pub fn unit_turret_shp_id(&self, type_id: &str) -> Option<String> {
@@ -12846,9 +12847,12 @@ impl RuleSet {
         if entry.voxel {
             return None;
         }
-        let base = self
-            .art()
-            .resolve_effective_image_id(&object.id, &object.image);
+        let base = if self.art_image_swap_enabled() {
+            self.art()
+                .resolve_effective_image_id(&object.id, &object.image)
+        } else {
+            object.image.clone()
+        };
         Some(format!("{}TUR", base.to_ascii_uppercase()))
     }
 
@@ -12856,6 +12860,18 @@ impl RuleSet {
     pub fn unit_turret_shp_file(&self, type_id: &str) -> Option<String> {
         self.unit_turret_shp_id(type_id)
             .map(|id| format!("{id}.SHP"))
+    }
+
+    /// `[General] ArtImageSwap=` is a Phobos-only key; the stock build keeps
+    /// the native default (`no`, name the turret after `ImageFile`).
+    #[cfg(feature = "phobos")]
+    fn art_image_swap_enabled(&self) -> bool {
+        self.phobos_globals.art_image_swap
+    }
+
+    #[cfg(not(feature = "phobos"))]
+    fn art_image_swap_enabled(&self) -> bool {
+        false
     }
 
     #[cfg(any(test, feature = "test-support"))]

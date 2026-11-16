@@ -40,22 +40,26 @@ when `ArtImageSwap=yes`, otherwise the type's own image
   image: frame 0 when the turret shape is bound, otherwise the body block.
 - `render::sprite_atlas` probes `<image>TUR.SHP` at atlas build for each
   non-voxel turreted UnitType, decodes it and inserts its frames under the
-  derived stem; an absent file binds nothing.
+  derived stem; an absent file binds nothing. It also requests the body's
+  `WalkFrames * Facings` turret block explicitly (`shp_vehicle_turret`), which
+  need not overlap a `Stand`/`Walk` sequence when `StandingFrames=0`.
 - `app::presentation::instances::shp` emits the SHP unit turret piece after
   the body, from the bound turret shape or the body slice, at the turret
   facing; it is skipped for dying and disguised units.
 
 ## Name-source decision
 
-VERA's body SHP source already applies the ART `Image=` redirect
-(`ArtRegistry::resolve_effective_image_id`) unconditionally, so the turret base
-tracks the **body's effective image**, not `ImageFile` under a separate
-`ArtImageSwap` gate. `ArtImageSwap` is therefore read for parity but changes
-no name in VERA; this keeps the turret and body in the same asset family.
-Native with `ArtImageSwap=no` would name the turret after the type's
-`ImageFile` even when the body loaded an ART `Image=` redirect. Flagged for
-the maintainer; the global can start gating the name if the body source ever
-splits.
+`unit_turret_shp_id` names the base exactly as native `0x747A2E` chooses it:
+`[General] ArtImageSwap=yes` takes the ART `Image=` redirect, otherwise the
+type's own `ImageFile` (`ObjectType.image`, defaulting to the type ID). The
+two bases can differ when a type sets ART `Image=`, which is exactly the case
+`ArtImageSwap` exists for.
+
+VERA's body SHP load still applies the ART `Image=` redirect unconditionally,
+so a type with an ART override and `ArtImageSwap=no` can draw its body from the
+redirected file while the turret probes `<ImageFile>TUR.SHP`. Native behaves the
+same way at `0x747A2E`; the body side's `ArtImageSwap` handling is a separate,
+pre-existing gap (see residuals).
 
 ## Phobos quirks kept
 
@@ -95,6 +99,12 @@ None; file probing and frame selection read no RNG.
   a `<image>TUR.SHP` that appears after the type was already covered is not
   picked up until a full atlas rebuild. Frequency: map reload. Risk: no
   turret until reload.
+- **Body SHP ignores `ArtImageSwap`.** VERA resolves the unit body through the
+  ART `Image=` redirect regardless of the global, while native keeps body and
+  turret naming on `ImageFile` until `ArtImageSwap=yes`. Trigger: a type with
+  ART `Image=` and the default global. Frequency: types with an ART override;
+  retail dormant. Risk: body and turret can come from different stems, and the
+  body may load the redirected file where native loads `ImageFile`.
 - **Aircraft.** The native hook is `UnitTypeClass` only; aircraft are
   excluded by the `Vehicle` category gate even though the shared SHP sequence
   builder serves them.

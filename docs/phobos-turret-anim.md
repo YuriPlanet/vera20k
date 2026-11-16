@@ -86,27 +86,32 @@ and uses `DRAGON_FRAME_TABLE` (`0x007F4890`, `(28 - i) & 31`) as
 (`0x004555D0`) supplying the power-ratio, EMP, health and mission terms.
 Stock builds compile these paths out entirely.
 
+Drawing: `sync_rules_turret_anim` (`src/sim/building_art.rs:798`) seeds slot 9
+from the rules `TurretAnim=` name at every Grand_Opening (`0x00446662`), and
+`rules_turret_anim_config` (`src/app/presentation/instances/shp.rs:1828`)
+synthesizes the slot-9 `BuildingAnimConfig` for `emit_building_anims`. The
+rules key takes precedence over ART's legacy `TurretAnim` entry so the slot has
+one owner; ART still supplies the slot for types whose rules section leaves the
+key unset. `TurretAnimIsVoxel=yes` types draw through
+`emit_building_turret_vxl` instead.
+
 The unused-key case yields one frame per facing (`shapeFacing * 1`), matching
 the documented default.
 
 ## Residuals
 
-- **SHP slot-9 drawing is not ported.** Grand_Opening's slot-9 frame block
-  (`0x00446580..0x004466D5`, `src/rules/art_data.rs:2376-2383`) is a VERA
-  residual. This chain pins only the CPU frame selection and state advance;
-  it makes no claim of rendered parity and does not touch the voxel draw
-  `emit_building_turret_vxl` (`src/app/presentation/instances/shp.rs`).
-  Trigger: a mod/map with `TurretAnimIsVoxel=false` and a slot-9 `TurretAnim`.
-  Effect: the computed frame has no SHP consumer here. Frequency: retail
-  dormant — the eight `Turret=yes` types all set `TurretAnimIsVoxel=true` and
-  ART declares no `TurretAnim`. Risk: low; no retail-INI or visual/GPU
-  verification was possible (no `ini/`, `config.toml` or `RA2_DIR` in this
-  checkout).
-- **No VERA path creates a slot-9 animation.** Only the WallTower identity
-  path cycles slot 9's type; the Grand_Opening `TurretAnim` creation is
-  unported, so both helpers are inert with retail data. Trigger: a mod whose
-  ART defines `TurretAnim=` for a slot-9 type. Effect: no frame is written.
-  Frequency: retail dormant. Risk: low.
+- **Damaged/garrisoned slot-9 names are not read.** `0x004644FD` and
+  `0x00464594` select `TurretAnimDamaged=` and the image's
+  `TurretAnimGarrisoned=`; the slot keeps the normal name instead
+  (`src/sim/building_art.rs:798`). Trigger: a type that authors either key.
+  Effect: the wrong anim plays while damaged or garrisoned. Frequency: retail
+  dormant. Risk: visual-only.
+- **ART `TurretAnim=` remains a fallback.** Rules owns slot 9 when the type
+  declares `TurretAnim=` (`rules_turret_anim_config`,
+  `src/app/presentation/instances/shp.rs:1828`); a type whose rules section
+  leaves the key unset still draws the ART-declared slot, which native does
+  not. Trigger: mod ART with `TurretAnim=` but rules without it. Effect: an
+  extra slot-9 image. Frequency: retail dormant. Risk: low.
 - **`Animation.Step=0` is not written.** The hook clears the slot-9 anim's
   Step (`Hooks.cpp:1324`); VERA's AnimClass AI keeps the type's configured
   step while advancing the frame. Trigger: an anim type with `Step` above 0.
