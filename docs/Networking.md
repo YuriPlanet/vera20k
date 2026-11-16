@@ -144,11 +144,12 @@ replay and federation are unchanged. Measured traffic is in
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
-button, or type `/pause` or `/resume` as a whole line in match chat. Such a line is
-not sent as chat; in a match without synchronized pause it answers that pausing is
-not available. A pause marker follows the relay's last committed frame; clients finish
-that same frame and stop. Resume uses a separate authenticated control, so it
-works while simulation ticks are stopped. Both markers use the normal ordered
+button, or type `/pause` or `/resume` as a whole line in match chat. Such a line
+goes out as chat to its recipients like any other, so they read who asked; in a
+match without synchronized pause it answers that pausing is not available.
+A pause marker follows the relay's last committed frame; clients finish that
+same frame and stop. Resume uses a separate authenticated control, so it works
+while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery. Connections, chat and ticket renewal keep running;
 accepted gameplay inputs wait for their assigned frames after resume. Opening
 Options alone remains local. After a resume nobody can pause again for 30
