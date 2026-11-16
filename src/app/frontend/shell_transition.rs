@@ -75,8 +75,6 @@ pub(crate) enum ShellSlideKind {
     WolOptions,
     /// Dialog 0xD6 — the shell's Sound Options, run from WOL Options.
     WolSoundOptions,
-    /// VERA's Chat Translation page, over the hidden lobby.
-    WolChatTranslation,
     /// Dialog 0x112 — the WOL auto-login query after a dialog login.
     WolAutoLoginQuery,
     /// Dialog 0xFE — the WOL locale page during the connect.
@@ -136,7 +134,6 @@ impl ShellSlideKind {
             ShellSlideKind::WolLobby => 0x0113,
             ShellSlideKind::WolOptions => 0x02BC,
             ShellSlideKind::WolSoundOptions => 0x00D6,
-            ShellSlideKind::WolChatTranslation => crate::ui::wol_chat_translation::DIALOG.0,
             ShellSlideKind::WolAutoLoginQuery => 0x0112,
             ShellSlideKind::WolLocale => 0x00FE,
             ShellSlideKind::WolMyInformation => 0x0114,
@@ -326,13 +323,14 @@ pub(crate) enum ShellExitThen {
     },
     /// `0x113` Options (`0x61F`): the lobby slides out and `0x2BC` opens.
     WolOptionsOpen,
-    /// `0x2BC` closed with OK (the staged values) or Cancel (`None`).
-    WolOptionsClose(Option<crate::ui::wol_options::WolPreferences>),
-    /// The online lobby's Chat Translation: it slides out and the page opens.
-    WolChatTranslationOpen,
-    /// The Chat Translation page closed with OK (its settings) or Cancel
-    /// (`None`).
-    WolChatTranslationClose(Option<crate::ui::chat_translation::ChatTranslationSettings>),
+    /// `0x2BC` closed with OK (the staged values and the chat translation
+    /// settings) or Cancel (`None`).
+    WolOptionsClose(
+        Option<(
+            crate::ui::wol_options::WolPreferences,
+            crate::ui::chat_translation::ChatTranslation,
+        )>,
+    ),
     /// `0x2BC` Sound Options (`0x63A`): it slides out and `0xD6` runs.
     WolSoundOptionsOpen,
     /// `0xD6` Back (`0x686`): `0x2BC` shows again.
@@ -388,9 +386,7 @@ impl ShellExitThen {
             | Self::WolLobbyRunner(_)
             | Self::WolLobbyHide
             | Self::WolCreateAccepted { .. }
-            | Self::WolOptionsOpen
-            | Self::WolChatTranslationOpen => ShellSlideKind::WolLobby,
-            Self::WolChatTranslationClose(_) => ShellSlideKind::WolChatTranslation,
+            | Self::WolOptionsOpen => ShellSlideKind::WolLobby,
             Self::WolOptionsClose(_) | Self::WolSoundOptionsOpen => ShellSlideKind::WolOptions,
             Self::WolSoundOptionsBack => ShellSlideKind::WolSoundOptions,
             Self::WolAutoLoginClose(_) => ShellSlideKind::WolAutoLoginQuery,
@@ -684,7 +680,6 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolLobby
             | ShellSlideKind::WolOptions
             | ShellSlideKind::WolSoundOptions
-            | ShellSlideKind::WolChatTranslation
             | ShellSlideKind::WolAutoLoginQuery
             | ShellSlideKind::WolLocale
             | ShellSlideKind::WolMyInformation
@@ -965,11 +960,6 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
             _ => return None,
         }
     } else if state.frontend.shell_route.wol_lobby() {
-        // VERA's page, like 0x2BC, runs over the hidden lobby.
-        if crate::app::shell_wol::chat_translation::page(state).is_some() {
-            let kind = ShellSlideKind::WolChatTranslation;
-            return crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()).then_some(kind);
-        }
         // 0x2BC and its 0xD6 run over the hidden lobby.
         if let Some(crate::app::shell_wol::WolPage::Options(page)) =
             state.frontend.wol.as_ref().map(|visit| &visit.page)
@@ -1180,7 +1170,6 @@ pub(crate) fn render_shell_first_paint_slide(
         | ShellSlideKind::WolLobby
         | ShellSlideKind::WolOptions
         | ShellSlideKind::WolSoundOptions
-        | ShellSlideKind::WolChatTranslation
         | ShellSlideKind::WolAutoLoginQuery
         | ShellSlideKind::WolLocale
         | ShellSlideKind::WolMyInformation
@@ -1573,7 +1562,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (5, true, false)
+            (4, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);

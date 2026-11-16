@@ -287,15 +287,6 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
         top_panel: true,
         campaign_score: false,
     },
-    // VERA's Chat Translation page: OK, then Cancel.
-    SlideDialogSpec {
-        dialog_id: crate::ui::wol_chat_translation::DIALOG.0,
-        top_buttons: 1,
-        bottom_button: true,
-        map_button: false,
-        top_panel: false,
-        campaign_score: false,
-    },
     // VERA's Mods page: Use This Mod and Open Mods Folder, then Back.
     SlideDialogSpec {
         dialog_id: crate::ui::mods_shell::DIALOG.0,

@@ -1352,8 +1352,8 @@ impl ShellCaptureRequest {
                             | movies::WolTarget::ModernTeams
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
-                            | movies::WolTarget::ModernChatTranslation
-                            | movies::WolTarget::ModernChatTranslationList
+                            | movies::WolTarget::ModernOptionsTranslation
+                            | movies::WolTarget::ModernOptionsTranslationList
                     )
             }
             Some(movies::MoviesTarget::WolWelcome {

@@ -958,7 +958,7 @@ pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
 pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
     // 5EDD00's TrimRight("\n\r") result is what WOL sends.
     let text = wol_chat::trim_line_end(&text).to_vec();
-    if text.is_empty() || crate::app::shell_wol::translation::command(state, &text) {
+    if text.is_empty() {
         return;
     }
     let commands = wol_chat::WolChatCommands {

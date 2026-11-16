@@ -523,7 +523,6 @@ pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text:
             name: name.to_owned(),
             color,
         },
-        crate::ui::chat_translation::ChatPlace::Match,
     );
 }
 

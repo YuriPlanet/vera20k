@@ -86,19 +86,17 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
-Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
-`ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
-`/translate off` stops it. The online lobby's Chat Translation page picks the same
-languages or Off, and sets where lines are translated (lobby, game rooms, matches,
-private messages), whether the source language is named, whether languages sharing the
-reader's alphabet are translated, and which languages the player already reads, all
-saved as `[VERA] Translate*=`. Choosing a language other than English starts with
-shared-alphabet lines translated too. Received chat in another script is sent to the lobby's
-translation service: for a Latin-script language a line with any letter outside it, for
-any other language a line with none of its letters. The original stays; its translation
-follows as a line from the same sender marked `»`, starting with a bracketed note in the
-reader's language that names the source language, unless it only repeats the original
-or the service says it was already in a language the player reads.
+The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
+languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
+by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other
+players' chat in the lobby, game rooms, private messages and, with the box ticked,
+matches is sent to the lobby's translation service when it needs it: for a Latin-script
+language a line with any letter outside it, for any other language a line with none of
+its letters. A reader whose script another listed language shares, English readers
+excepted, also sends the lines in that script, since they may be another language. The
+original stays; its translation follows as a line from the same sender marked `»`,
+without the service's bracketed note naming the source language, unless it only repeats
+the original or the service says it was already in the chosen language.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
