@@ -98,8 +98,10 @@ const ROSTER_PING_W: i32 = 16;
 const ROSTER_CAPTION_W: i32 = 260;
 const ROSTER_ADD_AI: (i32, i32) = (286, 91);
 const ROSTER_JOIN_W: i32 = 91;
-/// A list opened from a narrow cell is at least this wide.
-const ROSTER_LIST_MIN_W: i32 = 143;
+/// A list opened from VERA's roster is at least as wide as its widest text,
+/// with this margin at each side, and as a colour swatch this wide.
+const ROSTER_LIST_MARGIN: i32 = 3;
+const ROSTER_SWATCH_LIST_W: i32 = 40;
 /// VERA's team bar under the roster: groups of controls from left to right,
 /// each starting a new line of the bar where it does not fit beside the one
 /// before. In a room with teams they are the Teams count's label and
@@ -622,6 +624,25 @@ pub(crate) struct SetupCombo {
     pub(crate) visible: bool,
     pub(crate) selected: Option<usize>,
     pub(crate) choices: Vec<SetupChoice>,
+    /// In VERA's roster, the least width its list opens at, in 800x600
+    /// pixels ([`roster_list_width`]).
+    pub(crate) list_w: i32,
+}
+/// The least width, in 800x600 pixels, VERA's roster opens a list of
+/// `choices` at: its widest text at the roster's size, which `width`
+/// measures in the shell font, or its colour swatches.
+pub(crate) fn roster_list_width(choices: &[SetupChoice], width: impl Fn(&str) -> u32) -> i32 {
+    choices
+        .iter()
+        .map(|choice| match choice.swatch {
+            Some(_) => ROSTER_SWATCH_LIST_W,
+            None => {
+                (width(&choice.text) as f32 * ROSTER_TEXT_SCALE).ceil() as i32
+                    + 2 * ROSTER_LIST_MARGIN
+            }
+        })
+        .max()
+        .unwrap_or(0)
 }
 #[derive(Debug, Clone)]
 pub(crate) struct SetupTrackbar {
@@ -1196,21 +1217,18 @@ impl MultiplayerSetupState {
             }
         };
         let scale = layout.page.scale;
-        let mut face = layout.control_rect(id)?;
-        // VERA's roster opens a narrow cell's list wider than the cell, on
-        // rows as tall as its own.
+        let face = layout.control_rect(id)?;
+        let mut popup =
+            ComboPopup::new(face, scale, combo.choices.len(), cap, self.popup.top_index);
+        // VERA's roster opens a list on rows as tall as its own, as wide as
+        // its cell or, if wider, its widest text and any scrollbar.
         if layout.roster {
-            face = scale.derive_rect(face, |mut rect| {
-                rect.w = rect.w.max(ROSTER_LIST_MIN_W);
-                rect
-            });
+            popup = popup.with_row_height(scale.scale_rect(RectPx::new(0, 0, 0, ROSTER_ROW_H)).h);
+            let text_w = scale.scale_rect(RectPx::new(0, 0, combo.list_w, 0)).w;
+            let bar_w = popup.scrollbar().map_or(0, |bar| bar.w);
+            popup.rect.w = popup.rect.w.max(text_w + bar_w);
         }
-        let popup = ComboPopup::new(face, scale, combo.choices.len(), cap, self.popup.top_index);
-        Some(if layout.roster {
-            popup.with_row_height(scale.scale_rect(RectPx::new(0, 0, 0, ROSTER_ROW_H)).h)
-        } else {
-            popup
-        })
+        Some(popup)
     }
     pub(crate) fn caret_visible(&self, now: Instant) -> bool {
         now.saturating_duration_since(self.focus_started).as_secs() % 2 == 0
@@ -2208,6 +2226,7 @@ mod tests {
                 visible: true,
                 selected: Some(0),
                 choices: (0..choices).map(choice).collect(),
+                list_w: 0,
             });
         }
         let center = |rect: RectPx| (rect.x + rect.w / 2, rect.y + rect.h / 2);
@@ -2227,6 +2246,14 @@ mod tests {
             popup.row_at(popup.rect.x + 1, popup.rect.y + ROSTER_ROW_H),
             Some(1)
         );
+        // They are as wide as their cell, or as their widest text if wider.
+        let open = SetupColumn::Country.control(3);
+        let cell = layout.control_rect(open).unwrap();
+        assert_eq!(popup.rect.w, cell.w);
+        let combo = view.combos.iter_mut().find(|combo| combo.id == open);
+        combo.unwrap().list_w = cell.w + 40;
+        let popup = ui.popup_geometry(&view, &layout).unwrap();
+        assert_eq!(popup.rect.w, cell.w + 40);
         // A join or move that puts another player where the list opened
         // hides it, so a pick cannot change them.
         let open = SetupColumn::Country.control(3);

@@ -424,6 +424,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                             item(5, label(state, "GUI:AINormal")),
                             item(6, label(state, "GUI:AIHard")),
                         ],
+                        list_w: 0,
                     });
                 }
                 continue;
@@ -615,6 +616,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             visible,
             selected,
             choices: players,
+            list_w: 0,
         });
         // VERA's room bans leave their countries off the list.
         let banned = super::bans::banned_countries(state, launch.options.bans);
@@ -770,6 +772,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     && !(column == SetupColumn::Team && no_team_lists),
                 selected,
                 choices,
+                list_w: 0,
             });
         }
         if visible && !bare {
@@ -907,6 +910,13 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             })
         })
         .collect();
+    // VERA's roster opens each list as wide as its widest text needs.
+    if dialog.modern {
+        let font = &state.renderer.bit_font;
+        for combo in &mut combos {
+            combo.list_w = roster_list_width(&combo.choices, |text| font.text_width(text));
+        }
+    }
     Some(SetupView {
         first_row,
         row_count,

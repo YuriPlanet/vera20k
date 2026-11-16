@@ -1039,8 +1039,17 @@ impl SkirmishLaunchSession {
     /// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
     /// only a nonobserver human in raw row 0 seeds the comparison. An observer
     /// there bypasses this native gate; do not invent all-pairs. VERA shared
-    /// control: a player sharing a House plays its leader's team.
+    /// control: a player sharing a House plays its leader's team. VERA's
+    /// room where only AI play: they are allied when all are on one team.
     pub fn all_allied(&self) -> bool {
+        let playing =
+            |human: &SkirmishHumanSlot| human.raw_slot_index.is_some() && !human.is_observer();
+        if !self.humans.iter().any(playing) {
+            let team = self.opponents.first().map(|ai| ai.team);
+            return matches!(team, Some(LaunchTeam::Team(_)))
+                && self.opponents.iter().all(|ai| Some(ai.team) == team)
+                && !self.mode.class.policy().permits_all_allied;
+        }
         let house_team = |index: usize| self.humans[self.house_leader(index)].slot.team;
         let Some(LaunchTeam::Team(team)) = self
             .humans

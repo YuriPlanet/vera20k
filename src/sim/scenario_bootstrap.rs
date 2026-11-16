@@ -875,7 +875,13 @@ fn native_assign_launch_starts_from_preassignment(
             write_owner = false;
             start
         } else if let Some(first) = first_occupied {
-            if observer_reserved_first && !observer_claim_complete {
+            if observer_reserved_first && !observer_claim_complete && slots[slot].observer {
+                // VERA: where only AI play, every observer comes before
+                // them; a later one shares the first one's view and leaves
+                // its reserved start to the next House, which plays.
+                write_owner = false;
+                first
+            } else if observer_reserved_first && !observer_claim_complete {
                 observer_claim_complete = true;
                 first
             } else if slots[slot].observer {
@@ -4430,6 +4436,50 @@ mod tests {
                 case["name"]
             );
         }
+    }
+
+    /// VERA's room where only AI play: every observer comes before them, and
+    /// a second one leaves the first one's reserved start to the first AI,
+    /// so on a map with a start for each AI every AI gets its own.
+    #[test]
+    fn observers_ahead_of_only_ai_leave_each_ai_a_start() {
+        let mut session = one_player_battle_launch("watch.map").session().clone();
+        let template = session.humans[0].clone();
+        session.humans = (0..2u8)
+            .map(|row| {
+                let mut human = template.clone();
+                human.name = format!("Watcher{row}");
+                human.raw_slot_index = Some(row);
+                human.set_observer(true);
+                human.slot.color_index = 8;
+                human
+            })
+            .collect();
+        session.opponents = (2..4u8)
+            .map(|row| crate::skirmish_launch::SkirmishAiSlot {
+                raw_slot_index: row,
+                country: LaunchCountry::Russia,
+                country_random: false,
+                color_index: row,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+                difficulty: crate::skirmish_launch::AiDifficulty::Normal,
+            })
+            .collect();
+        session.ai_player_count = 2;
+        session.rebuild_house_roster();
+        let starts = [(20, 20), (60, 60)].map(|(rx, ry)| Waypoint { index: 0, rx, ry });
+        let result = native_assign_launch_starts(&session, &starts, &mut SimRng::new(7));
+        let slots = normalized_launch_slots(&session);
+        let ai_starts: Vec<_> = result
+            .placements
+            .iter()
+            .filter(|(slot, _)| !slots[*slot].observer)
+            .map(|(_, start)| (start.rx, start.ry))
+            .collect();
+        assert_eq!(ai_starts.len(), 2);
+        assert_ne!(ai_starts[0], ai_starts[1]);
     }
 
     fn network_hash_perspective(

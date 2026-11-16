@@ -325,9 +325,18 @@ thirty rows less its AI. Its host sets it at Create Game and changes it in the r
 the team bar's Room size, which the host's game advertises again to the lobby; a lower
 size sends no one away, it only keeps newcomers out. The host may watch too, with the
 Spectators' Watch or by dragging its own row there, and plays again with a team's Join,
-as a guest would; someone else must play for the match to start. Nothing new travels. An
-older host keeps its Create Game Max players and always plays, and a rollback does
-again.
+as a guest would; someone else, or two or more AI, must play for the match to start.
+Nothing new travels. An older host keeps its Create Game Max players and always plays,
+and a rollback does again.
+
+Everyone in a VERA room may watch while two or more AI play, a match gamemd's room never
+starts. It runs until one AI, or one team of them, is left: no spectator's defeat
+decides it, and the AI left do not band together when one falls (`[AI] Paranoid`). Its
+spectators look on from one start, which the first AI then takes, so the map needs a
+start for each AI. The lobby places its relay by the people watching and does not list
+it to watch, as a watcher's game follows a player. Nothing new travels. A lobby from
+before this refuses to start it, and the host's game says the match could not start; an
+older game keeps its rule that someone plays, and a rollback does again.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who

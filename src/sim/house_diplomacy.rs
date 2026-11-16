@@ -442,6 +442,11 @@ impl Simulation {
         if self.session.computer_slot_has_team() {
             return;
         }
+        // VERA: in a match only AI play there is no human for the computers
+        // to turn on together (`Simulation::network_ai_alone`).
+        if self.network_ai_alone() {
+            return;
+        }
         let game_mode_nonzero = self.session.game_mode_nonzero();
         // Each bracket's walks visit only the maps that may change.
         let mut maps = ParanoidMaps::default();

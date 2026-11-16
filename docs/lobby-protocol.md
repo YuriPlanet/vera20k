@@ -198,16 +198,17 @@ of `open`, `closed`, `observer` or `waiting`. A receiver resolves its own
 `launch.local_player_index` from the authenticated player; it never uses the host's.
 `slot` uses `SkirmishLocalSlot` serde. Options are authored only by the room owner;
 the service increments `revision` and clears guest readiness on a material change.
-Starting requires at least one non-observer human and at least two playing
-participants, counting the actual `launch.opponents` AI rows. A host can select
-an AI opponent and start alone; `ai_player_count` without an AI row is insufficient.
-AI players may play while observers watch. The map's `player_capacity` must cover
-every playing human and AI row, or with Teams set (`launch.options.teams`), where a
-team's players share its bases, one start for each team that has players or AI and
-one for each playing participant on no team. A lobby from before this refuses options
-past the map's capacity with `invalid_options`, and a start with both observers and
-AI with 409 `not_ready`. `start.users` contains exactly
-the canonical human names, including observers, and never includes AI rows.
+Starting requires at least two playing participants, counting the actual
+`launch.opponents` AI rows. A host can select an AI opponent and start alone;
+`ai_player_count` without an AI row is insufficient. AI players may play while observers
+watch, and with two or more AI everyone in the room may watch. The map's
+`player_capacity` must cover every playing human and AI row, or with Teams set
+(`launch.options.teams`), where a team's players share its bases, one start for each
+team that has players or AI and one for each playing participant on no team. A lobby
+from before this refuses options past the map's capacity with `invalid_options`, and a
+start with both observers and AI with 409 `not_ready`; one from before AI-only games
+refuses a start where every human watches with 409 `not_ready`. `start.users` contains
+exactly the canonical human names, including observers, and never includes AI rows.
 
 Event kinds and payloads:
 
@@ -590,11 +591,11 @@ players' games never learn it is there (relay README, "Watchers").
 `GET /v1/matches` returns
 `{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
 the matches the caller may watch. These are matches in play between two or more humans,
-with watching on, in a room without a password, on a relay that lets watchers in and on
-the caller's version (as `kind=41` lists rooms), that the caller plays no part in. Clan
-rooms, generated maps and co-op missions are never listed: a watcher's game cannot yet
-rebuild a start that splits players by squad, comes from the host's map seed or from a
-campaign. `name`
+at least one of them playing (a watcher's game follows a player), with watching on, in a
+room without a password, on a relay that lets watchers in and on the caller's version
+(as `kind=41` lists rooms), that the caller plays no part in. Clan rooms, generated maps
+and co-op missions are never listed: a watcher's game cannot yet rebuild a start that
+splits players by squad, comes from the host's map seed or from a campaign. `name`
 is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
 began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans;
 `watchers` counts who watches now, of at most `max_watchers` (10); and `delay_seconds` is

@@ -43,7 +43,8 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .filter(|human| !human.is_observer())
         .count() as i32;
-    if !has_minimum_players(&launch) {
+    let watch_ai = state.match_state.session.network_several_observers();
+    if !has_minimum_players(&launch, watch_ai) {
         message(state, "TXT_ONLY_ONE", &[]);
         return Ok(());
     }
@@ -384,12 +385,13 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
 /// VERA's shared LAN/online admission allows a human to play the ordinary
 /// skirmish AI without creating another network participant. Observers and
 /// a stale declared AI count cannot stand in for an actual opponent slot,
-/// and players sharing a House count once.
-fn has_minimum_players(launch: &SkirmishLaunchSession) -> bool {
+/// and players sharing a House count once. VERA's own room (`watch_ai`)
+/// also starts with everyone watching while two or more AI play.
+fn has_minimum_players(launch: &SkirmishLaunchSession, watch_ai: bool) -> bool {
     let houses = (0..launch.humans.len())
         .filter(|&index| !launch.humans[index].is_observer() && launch.house_leader(index) == index)
         .count();
-    houses >= 1 && houses + launch.opponents.len() >= 2
+    (houses >= 1 || watch_ai) && houses + launch.opponents.len() >= 2
 }
 
 fn all_allied(state: &AppState) -> bool {
@@ -478,12 +480,12 @@ mod tests {
         let mut launch = fixture();
         assert_eq!(launch.humans.len(), 1);
         assert_eq!(launch.opponents.len(), 1);
-        assert!(has_minimum_players(&launch));
+        assert!(has_minimum_players(&launch, false));
 
         launch.opponents.clear();
         assert_eq!(launch.ai_player_count, 1);
         assert!(
-            !has_minimum_players(&launch),
+            !has_minimum_players(&launch, false),
             "a declared count without an AI House is not an opponent"
         );
     }
@@ -492,17 +494,24 @@ mod tests {
     fn observers_do_not_replace_playing_humans_or_opponents() {
         let mut launch = fixture();
         launch.humans[0].set_observer(true);
-        assert!(!has_minimum_players(&launch));
+        assert!(!has_minimum_players(&launch, false));
+        // VERA's room starts with everyone watching two or more AI.
+        assert!(!has_minimum_players(&launch, true));
+        let mut second = launch.opponents[0].clone();
+        second.raw_slot_index += 1;
+        launch.opponents.push(second);
+        assert!(!has_minimum_players(&launch, false));
+        assert!(has_minimum_players(&launch, true));
 
         let mut player = fixture().local_player().clone();
         player.name = "Guest".into();
         player.raw_slot_index = Some(2);
         launch.humans.push(player);
         launch.opponents.clear();
-        assert!(!has_minimum_players(&launch));
+        assert!(!has_minimum_players(&launch, false));
 
         // VERA shared control: two players on one start are one House.
         launch.humans[0].set_observer(false);
-        assert!(!has_minimum_players(&launch));
+        assert!(!has_minimum_players(&launch, false));
     }
 }
