@@ -19,7 +19,6 @@
 
 pub(crate) mod buddies;
 pub(crate) mod buddy;
-pub(crate) mod chat_translation;
 mod live_service;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::lobby_base_url;
@@ -159,8 +158,6 @@ pub(crate) enum WolPage {
     /// WOL Options `0x2BC` (and its Sound Options `0xD6`) over the hidden
     /// lobby.
     Options(Box<options::WolOptionsPage>),
-    /// VERA's Chat Translation page, over the hidden lobby.
-    ChatTranslation(Box<crate::ui::wol_chat_translation::WolChatTranslationPage>),
     /// The auto-login query `0x112` after a dialog login.
     AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
     /// The locale page `0xFE` during the connect.
@@ -789,10 +786,6 @@ impl App {
             options::cursor_moved(state);
             return;
         }
-        if chat_translation::page_open(state) {
-            chat_translation::cursor_moved(state);
-            return;
-        }
         if persona::page_open(state) {
             persona::cursor_moved(state);
             return;
@@ -852,10 +845,6 @@ impl App {
             options::mouse(state, true);
             return;
         }
-        if chat_translation::page_open(state) {
-            chat_translation::mouse(state, true);
-            return;
-        }
         if persona::page_open(state) {
             persona::mouse(state, true);
             return;
@@ -910,10 +899,6 @@ impl App {
         }
         if Self::wol_page_is_options(state) {
             options::mouse(state, false);
-            return;
-        }
-        if chat_translation::page_open(state) {
-            chat_translation::mouse(state, false);
             return;
         }
         if persona::page_open(state) {
@@ -983,10 +968,10 @@ impl App {
             }
     }
 
-    /// Esc closes the login page's open name list or the Chat Translation
-    /// page's open language list.
+    /// Esc closes the login page's open name list or the Options page's open
+    /// translation list.
     pub(super) fn close_wol_open_list(state: &mut AppState) -> bool {
-        if chat_translation::close_list(state) {
+        if options::close_list(state) {
             return true;
         }
         let Some(login) = state

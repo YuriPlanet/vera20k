@@ -514,7 +514,7 @@ gets the same finish again without it.
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
 A reply can start with a short bracketed note, in that language, naming the language
 it was translated from. It can also carry `source`, that language's tag, when it is one
-of the translation targets; clients hide a translation whose `source` the player reads.
+of the translation targets; clients hide a translation whose `source` is its `target`.
 `text` is non-blank and at most 2048 UTF-8 bytes, the chat limit. Clients translate
 received chat only after the player opts in, and always keep the original visible.
 A deployment without a translator, a failed model call or one taking over 10 seconds,

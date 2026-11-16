@@ -4,9 +4,14 @@
 //! The model owns the dialog's nine checkboxes and its results. The
 //! `[WOnline]` preferences it shows and commits ([`WolPreferences`]) belong to
 //! the app: the profile holds what VERA.INI says, and the WOL owner holds the
-//! live process copy each WOL entry re-reads (`0x0077DED0`).
+//! live process copy each WOL entry re-reads (`0x0077DED0`). VERA's online
+//! lobby adds its chat translation language
+//! ([`crate::ui::chat_translation`]) under Play Music; gamemd has no such
+//! control.
 
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::button::ShellButtonInteraction;
+use crate::ui::shell::combobox::{ComboPopup, ComboPopupInteraction};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
     RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
@@ -27,6 +32,11 @@ pub(crate) const ASIAN: u16 = 0x05FA;
 pub(crate) const LATIN: u16 = 0x05FB;
 pub(crate) const BUDDIES: u16 = 0x0774;
 pub(crate) const CLAN: u16 = 0x0775;
+/// VERA's chat translation list; no retail control has this id.
+pub(crate) const TRANSLATE: u16 = 0x7E10;
+pub(crate) const TRANSLATE_CAPTION_KEY: &str = "VERA:TranslateChatInto";
+/// The list's first row.
+pub(crate) const TRANSLATE_OFF_KEY: &str = "VERA:ChatTranslationNone";
 
 /// The nine `[WOnline]` values (`0x0077DED0`, `0x0077DFD0`). The seven ints
 /// stay raw: the dialog only tests them for nonzero and OK replaces them with
@@ -162,8 +172,12 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
-/// Status help of `0x2BC`'s controls (executed `0x006040B0`).
+/// Status help of `0x2BC`'s controls (executed `0x006040B0`), and of VERA's
+/// translation list.
 pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
+    if control == TRANSLATE {
+        return Some("VERA:ChatTranslationHelp");
+    }
     CHECKBOXES
         .iter()
         .find(|checkbox| checkbox.id == control)
@@ -174,8 +188,9 @@ pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
 /// What a press on the page asks its host to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WolOptionsAction {
-    /// IDOK: the staged values (`0x0078EC9A..0x0078EDE1`).
-    Ok(WolPreferences),
+    /// IDOK: the staged values (`0x0078EC9A..0x0078EDE1`), and the chat
+    /// translation language.
+    Ok(WolPreferences, Option<ChatLanguage>),
     /// IDCANCEL: nothing staged changes.
     Cancel,
     /// `0x63A`: the nested Sound Options page `0xD6`.
@@ -184,11 +199,19 @@ pub(crate) enum WolOptionsAction {
     MusicPreview(bool),
 }
 
+/// The translation list's rows: Off, then every language.
+fn translate_rows() -> impl Iterator<Item = Option<ChatLanguage>> {
+    std::iter::once(None).chain(ChatLanguage::all().map(Some))
+}
+
 /// The open dialog: its checkbox states and button press.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) struct WolOptionsState {
     /// Template order, as [`CHECKBOXES`].
     pub(crate) checked: [bool; 9],
+    /// The chat translation language OK hands back; `None` is off.
+    pub(crate) translate: Option<ChatLanguage>,
+    pub(crate) translate_list: ComboPopupInteraction<u16>,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     /// The control under the pointer, the status line's help source.
     pub(crate) hovered: Option<u16>,
@@ -197,7 +220,7 @@ pub(crate) struct WolOptionsState {
 impl WolOptionsState {
     /// Init `0x497`: every nonzero live value checks its box; unchecked is the
     /// template default.
-    pub(crate) fn open(preferences: &WolPreferences) -> Self {
+    pub(crate) fn open(preferences: &WolPreferences, translate: Option<ChatLanguage>) -> Self {
         let p = preferences;
         Self {
             checked: [
@@ -211,6 +234,8 @@ impl WolOptionsState {
                 p.display_buddies,
                 p.display_clan,
             ],
+            translate,
+            translate_list: ComboPopupInteraction::default(),
             buttons: ShellButtonInteraction::default(),
             hovered: None,
         }
@@ -234,11 +259,45 @@ impl WolOptionsState {
     /// A released owner-draw button.
     pub(crate) fn activate(&self, id: u16) -> Option<WolOptionsAction> {
         match id {
-            OK => Some(WolOptionsAction::Ok(self.staged())),
+            OK => Some(WolOptionsAction::Ok(self.staged(), self.translate)),
             CANCEL => Some(WolOptionsAction::Cancel),
             SOUND_OPTIONS => Some(WolOptionsAction::SoundOptions),
             _ => None,
         }
+    }
+
+    /// The translation list's row for the current language.
+    pub(crate) fn translate_row(&self) -> usize {
+        translate_rows()
+            .position(|language| language == self.translate)
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn pick_translate_row(&mut self, row: usize) {
+        if let Some(language) = translate_rows().nth(row) {
+            self.translate = language;
+        }
+    }
+
+    /// The name translation list row `row` shows; Off's comes from `off`.
+    pub(crate) fn translate_row_text(row: usize, off: &str) -> String {
+        translate_rows()
+            .nth(row)
+            .flatten()
+            .map_or_else(|| off.to_owned(), |language| language.name().to_owned())
+    }
+
+    /// The open translation list.
+    pub(crate) fn translate_popup(&self, layout: &WolOptionsLayout) -> Option<ComboPopup> {
+        self.translate_list.control?;
+        let (_, list) = layout.translate?;
+        Some(ComboPopup::new(
+            list,
+            layout.page.scale,
+            translate_rows().count(),
+            0,
+            self.translate_list.top_index,
+        ))
     }
 
     /// IDOK's `BM_GETCHECK` reads, already in the committed form: the seven
@@ -269,6 +328,8 @@ pub(crate) struct WolOptionsLayout {
     pub(crate) status_help: RectPx,
     /// Template order, as [`CHECKBOXES`]; `None` for a box the page hides.
     pub(crate) checkboxes: [Option<RectPx>; 9],
+    /// The translation caption and list, on the modern page only.
+    pub(crate) translate: Option<(RectPx, RectPx)>,
 }
 
 impl WolOptionsLayout {
@@ -313,6 +374,7 @@ impl WolOptionsLayout {
                 let (x, y, w, h) = checkbox.dlu;
                 Some(scale.scale_rect(child_window(x, y, w, h)))
             }),
+            translate: None,
         }
     }
 
@@ -321,8 +383,9 @@ impl WolOptionsLayout {
     /// filter have no online service, nothing reads Show All, the language
     /// filters count any text beyond Latin-1 as Asian (`0x007B7D90`), and
     /// with no buddy list or clans Filter Buddies hides every sender and
-    /// Filter Clan none. Native diagnostics keep the retail page through the
-    /// same layout and state owners.
+    /// Filter Clan none. VERA's translation caption and list sit under Play
+    /// Music. Native diagnostics keep the retail page through the same layout
+    /// and state owners.
     pub(crate) fn modern(mut self) -> Self {
         let first_row = self.checkboxes[0];
         for (checkbox, rect) in CHECKBOXES.iter().zip(&mut self.checkboxes) {
@@ -332,10 +395,17 @@ impl WolOptionsLayout {
                 None
             };
         }
+        let (x, y, w, h) = CHECKBOXES[0].dlu;
+        let row = child_window(x, y, w, h);
+        let caption = RectPx::new(row.x, row.y + row.h + 10, row.w, 17);
+        let list = RectPx::new(row.x, caption.y + caption.h, 180, 24);
+        let scale = self.page.scale;
+        self.translate = Some((scale.scale_rect(caption), scale.scale_rect(list)));
         self
     }
 
-    /// The control under `(x, y)`, buttons first, then the checkboxes.
+    /// The control under `(x, y)`, buttons first, then the checkboxes and
+    /// the translation list.
     pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
         if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
             return Some(button.id);
@@ -344,6 +414,11 @@ impl WolOptionsLayout {
             .iter()
             .zip(self.checkboxes)
             .find_map(|(checkbox, rect)| rect?.contains(x, y).then_some(checkbox.id))
+            .or_else(|| {
+                self.translate
+                    .is_some_and(|(_, list)| list.contains(x, y))
+                    .then_some(TRANSLATE)
+            })
     }
 
     pub(crate) fn checkbox_rect(&self, id: u16) -> Option<RectPx> {
@@ -419,6 +494,37 @@ mod tests {
     }
 
     #[test]
+    fn modern_page_picks_the_chat_translation_language_and_ok_hands_it_back() {
+        let retail = WolOptionsLayout::responsive(1600, 1200);
+        let modern = WolOptionsLayout::responsive(1600, 1200).modern();
+        assert_eq!(retail.translate, None);
+        let (_, list) = modern.translate.expect("the modern page has the list");
+        let music = modern.checkbox_rect(MUSIC).unwrap();
+        assert!(list.y > music.y + music.h, "the list sits under Play Music");
+        assert_eq!(
+            modern.control_at(list.x + list.w / 2, list.y + list.h / 2),
+            Some(TRANSLATE)
+        );
+
+        let mut dialog = WolOptionsState::open(&WolPreferences::default(), None);
+        assert_eq!(dialog.translate_row(), 0);
+        dialog.translate_list.open(TRANSLATE, Some(0));
+        let popup = dialog.translate_popup(&modern).unwrap();
+        assert_eq!(popup.total, 15);
+        dialog.pick_translate_row(2);
+        assert_eq!(dialog.translate, Some(ChatLanguage::SimplifiedChinese));
+        assert_eq!(WolOptionsState::translate_row_text(2, "Off"), "简体中文");
+        assert_eq!(WolOptionsState::translate_row_text(0, "Off"), "Off");
+        assert_eq!(
+            dialog.activate(OK),
+            Some(WolOptionsAction::Ok(
+                WolPreferences::default(),
+                Some(ChatLanguage::SimplifiedChinese)
+            ))
+        );
+    }
+
+    #[test]
     fn ok_stages_checkbox_states_and_cancel_stages_nothing() {
         // Raw INI ints only matter as nonzero; OK writes 0 or 1.
         let live = WolPreferences {
@@ -426,7 +532,7 @@ mod tests {
             display_asian: 0,
             ..WolPreferences::default()
         };
-        let mut dialog = WolOptionsState::open(&live);
+        let mut dialog = WolOptionsState::open(&live, None);
         assert!(dialog.is_checked(PAGES) && !dialog.is_checked(ASIAN));
         assert!(!dialog.is_checked(BUDDIES));
         assert_eq!(dialog.toggle(PAGES), None);
@@ -435,7 +541,7 @@ mod tests {
             dialog.toggle(MUSIC),
             Some(WolOptionsAction::MusicPreview(false))
         );
-        let Some(WolOptionsAction::Ok(staged)) = dialog.activate(OK) else {
+        let Some(WolOptionsAction::Ok(staged, None)) = dialog.activate(OK) else {
             panic!("OK commits");
         };
         assert_eq!(

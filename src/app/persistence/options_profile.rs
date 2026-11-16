@@ -286,11 +286,11 @@ pub(crate) struct RetailOptionsProfile {
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
-    /// `[VERA] Translate*=`: what received online chat is translated into, and
-    /// where. The lobby's Chat Translation page and the `/translate` chat
-    /// command change it, and write it alone
+    /// `[VERA] TranslateChat=`: the language other players' online chat is
+    /// translated into; `None`, the default, is off. Only the online lobby's
+    /// Options page changes it, and writes it alone
     /// ([`Self::commit_chat_translation`]).
-    pub(crate) chat_translation: crate::ui::chat_translation::ChatTranslationSettings,
+    pub(crate) chat_translation: Option<crate::ui::chat_translation::ChatLanguage>,
     /// `[VERA] Language=`: the tag of the interface language the player chose
     /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
     /// Only the Language list changes it; Options' accept writes it out.
@@ -690,19 +690,10 @@ impl RetailOptionsProfile {
                 crate::ui::main_menu_dialogs::options::ColorVisionMode::from_ini_value(
                     vera.read_int("ColorVisionMode", self.color_vision.ini_value()),
                 );
-            let chat = &mut self.chat_translation;
+            // `off`, or a tag this build does not offer, is off.
             if let Some(value) = vera.read_name("TranslateChat", 16) {
-                chat.set_language(crate::ui::chat_translation::ChatLanguage::from_tag(value));
+                self.chat_translation = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
-            for place in crate::ui::chat_translation::ChatPlace::ALL {
-                chat.set_translates(
-                    place,
-                    vera.read_bool(place.ini_key(), chat.translates(place)),
-                );
-            }
-            chat.show_source = vera.read_bool("TranslateShowSource", chat.show_source);
-            chat.same_alphabet = vera.read_bool("TranslateSameAlphabet", chat.same_alphabet);
-            chat.set_readable_tags(&vera.read_string("TranslateKnown", "", 64));
             // Empty, as a profile that never picked one writes it, follows
             // the system again.
             if let Some(value) = vera.read_name("Language", 16) {
@@ -952,8 +943,8 @@ impl RetailOptionsProfile {
         profile_file::update(ra2_dir, |input| self.transform_wol_preferences(input))
     }
 
-    /// The Chat Translation page's and the `/translate` command's writer: the
-    /// `[VERA] Translate*=` keys alone.
+    /// The online lobby Options page's writer for `[VERA] TranslateChat=`
+    /// alone.
     pub(crate) fn commit_chat_translation(&self, ra2_dir: &Path) -> io::Result<()> {
         profile_file::update(ra2_dir, |input| self.transform_chat_translation(input))
     }
@@ -995,20 +986,24 @@ impl RetailOptionsProfile {
     }
 
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
-        use crate::ui::chat_translation::{ChatLanguage, ChatPlace};
-        let chat = &self.chat_translation;
-        let readable = chat.readable_tags();
-        let mut values = vec![(
-            "TranslateChat",
-            chat.language.map_or("off", ChatLanguage::tag),
-        )];
-        values.extend(
-            ChatPlace::ALL.map(|place| (place.ini_key(), format_bool(chat.translates(place)))),
-        );
-        values.push(("TranslateShowSource", format_bool(chat.show_source)));
-        values.push(("TranslateSameAlphabet", format_bool(chat.same_alphabet)));
-        values.push(("TranslateKnown", readable.as_str()));
-        set_ini_values(input, VERA_SECTION, &values)
+        let language = self
+            .chat_translation
+            .map_or("off", crate::ui::chat_translation::ChatLanguage::tag);
+        let output = set_ini_values(input, VERA_SECTION, &[("TranslateChat", language)]);
+        // Earlier builds' Chat Translation page wrote these; nothing reads them.
+        crate::util::ini_writer::remove_ini_keys(
+            &output,
+            VERA_SECTION,
+            &[
+                "TranslateLobby",
+                "TranslateRooms",
+                "TranslateMatches",
+                "TranslatePrivate",
+                "TranslateShowSource",
+                "TranslateSameAlphabet",
+                "TranslateKnown",
+            ],
+        )
     }
 
     fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
@@ -1731,63 +1726,41 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn chat_translation_writes_only_its_own_keys_and_reads_back() {
-        use crate::ui::chat_translation::{ChatLanguage, ChatPlace};
+    fn chat_translation_writes_its_language_and_drops_the_retired_keys() {
+        use crate::ui::chat_translation::ChatLanguage;
         let startup = RetailStartupOptions::default();
         let mut profile = RetailOptionsProfile::default();
-        let chat = &mut profile.chat_translation;
-        chat.language = Some(ChatLanguage::SimplifiedChinese);
-        chat.set_translates(ChatPlace::Match, false);
-        chat.show_source = false;
-        chat.same_alphabet = true;
-        chat.set_reads(ChatLanguage::English, true);
-        chat.set_reads(ChatLanguage::Korean, true);
-        let output = profile.transform_chat_translation(b"[VERA]\r\nZoom=150\r\n");
+        profile.chat_translation = Some(ChatLanguage::SimplifiedChinese);
+        let output = profile.transform_chat_translation(
+            b"[VERA]\r\nZoom=150\r\nTranslateMatches=no\r\nTranslateKnown=en,ko\r\n",
+        );
         let text = String::from_utf8(output.clone()).unwrap();
         assert!(
             text.contains("Zoom=150")
                 && text.contains("TranslateChat=zh-Hans")
-                && text.contains("TranslateKnown=en,ko"),
+                && !text.contains("TranslateMatches")
+                && !text.contains("TranslateKnown"),
             "{text}"
         );
         let reread = load_snapshot(&startup, &output).retained_profile;
         assert_eq!(reread.chat_translation, profile.chat_translation);
 
-        // Back to off, and an emptied list stays empty.
         let off = RetailOptionsProfile::default().transform_chat_translation(&output);
         let reread = load_snapshot(&startup, &off).retained_profile;
-        assert_eq!(reread.chat_translation, Default::default());
+        assert_eq!(reread.chat_translation, None);
     }
 
     #[test]
-    fn options_accept_leaves_the_chat_translation_keys_alone() {
-        use crate::ui::chat_translation::ChatLanguage;
+    fn options_accept_leaves_the_chat_translation_key_alone() {
         let startup = RetailStartupOptions::default();
-        let accepted = RetailOptionsProfile::default()
-            .transform_settings(b"[VERA]\r\nTranslateChat=ja\r\nTranslateKnown=ko\r\n");
-        let chat = load_snapshot(&startup, &accepted)
-            .retained_profile
-            .chat_translation;
-        assert_eq!(chat.language, Some(ChatLanguage::Japanese));
-        assert!(chat.reads(ChatLanguage::Korean));
-    }
-
-    /// A language with no saved choice starts as picking it would; a saved
-    /// choice stays.
-    #[test]
-    fn same_alphabet_starts_by_language_until_a_choice_is_saved() {
-        let startup = RetailStartupOptions::default();
-        let same_alphabet = |ini: &[u8]| {
-            load_snapshot(&startup, ini)
+        let accepted =
+            RetailOptionsProfile::default().transform_settings(b"[VERA]\r\nTranslateChat=ja\r\n");
+        assert_eq!(
+            load_snapshot(&startup, &accepted)
                 .retained_profile
-                .chat_translation
-                .same_alphabet
-        };
-        assert!(same_alphabet(b"[VERA]\r\nTranslateChat=de\r\n"));
-        assert!(!same_alphabet(b"[VERA]\r\nTranslateChat=en\r\n"));
-        assert!(!same_alphabet(
-            b"[VERA]\r\nTranslateChat=de\r\nTranslateSameAlphabet=no\r\n"
-        ));
+                .chat_translation,
+            Some(crate::ui::chat_translation::ChatLanguage::Japanese)
+        );
     }
 
     /// A windowed launch opens centred, so the window keys earlier builds

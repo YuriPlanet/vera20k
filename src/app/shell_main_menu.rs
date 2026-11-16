@@ -2021,12 +2021,6 @@ impl App {
                 crate::app::shell_wol::lobby::commit_create(state, observe)
             }
             ShellExitThen::WolOptionsOpen => crate::app::shell_wol::options::commit_open(state),
-            ShellExitThen::WolChatTranslationOpen => {
-                crate::app::shell_wol::chat_translation::commit_open(state)
-            }
-            ShellExitThen::WolChatTranslationClose(staged) => {
-                crate::app::shell_wol::chat_translation::commit_close(state, staged)
-            }
             ShellExitThen::WolOptionsClose(staged) => {
                 crate::app::shell_wol::options::commit_close(state, staged)
             }
