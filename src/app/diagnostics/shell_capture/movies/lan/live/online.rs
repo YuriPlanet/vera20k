@@ -208,7 +208,7 @@ impl LiveRoundFlow {
                 .network_setup()
                 .context("restored online setup")?;
             ensure!(
-                restored.mode.class.lists_in_skirmish(),
+                restored.mode.class.policy().lists_in_skirmish,
                 "ordinary online setup did not offer computer opponents"
             );
             self.record(

@@ -234,13 +234,13 @@ impl ChooseMapContext {
     /// `0x005D6203..0x005D6237`.
     fn permits(self, mode: &SkirmishGameMode) -> bool {
         match self {
-            Self::Skirmish => mode.class.lists_in_skirmish(),
+            Self::Skirmish => mode.class.policy().lists_in_skirmish,
             Self::Network {
                 observer,
                 tournament_room,
                 clan_room,
             } => {
-                (!observer || mode.class.allows_observers())
+                (!observer || mode.class.policy().observers_allowed)
                     && (mode.wonline_tournament_allowed || !tournament_room)
                     && (mode.wonline_clan_tournament_allowed || !clan_room)
             }

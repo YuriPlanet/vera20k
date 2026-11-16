@@ -734,6 +734,12 @@ impl App {
         state: &mut AppState,
         elapsed_seconds: i32,
     ) -> Option<crate::app::match_runtime::scenario_exit::ScenarioExitDestination> {
+        let skips_skirmish_score = state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class())
+            .is_some_and(|class| class.policy().skips_skirmish_score_screen);
         let eligible = state
             .match_state
             .sim_runtime
@@ -741,6 +747,7 @@ impl App {
             .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
             && state.match_state.live_network.is_none()
             && !crate::app::cooperative_round::applies(state)
+            && !skips_skirmish_score
             && !state.match_state.map_basic.skip_score.unwrap_or(false);
         if !eligible {
             return None;

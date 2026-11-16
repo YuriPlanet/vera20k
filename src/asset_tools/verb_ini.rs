@@ -344,7 +344,7 @@ fn run_inner(
     let id = options.mode_id.expect("validated mode id");
     let mode = crate::skirmish_modes::mode_by_id(&modes, id)
         .ok_or_else(|| format!("mode id {id} is absent from MPModesMD.ini"))?;
-    if !mode.class.lists_in_skirmish() {
+    if !mode.class.policy().lists_in_skirmish {
         return Err(format!(
             "mode id {id} is not in the supported noncampaign skirmish list"
         ));

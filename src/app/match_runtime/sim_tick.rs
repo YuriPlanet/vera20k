@@ -195,11 +195,18 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     start_verdict_theme(state, outcome, wall_ms);
     let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
     let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
+    let skips_skirmish_score_screen = state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class())
+        .is_some_and(|class| class.policy().skips_skirmish_score_screen);
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
         state.match_state.session_mode(),
         outcome,
         state.match_state.map_basic.skip_score.unwrap_or(false),
         cooperative,
+        skips_skirmish_score_screen,
         title,
         detail,
         || build_campaign_score_screen_model(state, elapsed_score_ticks),

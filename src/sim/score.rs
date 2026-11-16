@@ -176,9 +176,11 @@ impl Simulation {
             return false;
         }
         // GameExit's co-op arm (mode vt+8, `0x00685851..0x0068586A`) draws
-        // the empty backdrop instead of the score dialog, so Cooperative
-        // makes none of its draws.
-        if session.multiplayer_mode_class() == Some(crate::skirmish_modes::MpModeClass::Cooperative)
+        // the empty backdrop instead of the score dialog, so modes with
+        // skips_skirmish_score_screen make none of its draws.
+        if session
+            .multiplayer_mode_class()
+            .is_some_and(|class| class.policy().skips_skirmish_score_screen)
         {
             return false;
         }

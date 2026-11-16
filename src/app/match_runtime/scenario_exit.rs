@@ -190,12 +190,14 @@ pub(crate) const SCORE_THEME: &str = "SCORE";
 
 /// Commit the route selected for a terminal outcome. Model builders are lazy:
 /// campaign SkipScore and defeat paths do not construct either score model,
-/// and a campaign result never evaluates the multiplayer score owner.
+/// and a mode whose policy skips the skirmish score screen never evaluates the
+/// multiplayer score owner.
 pub(crate) fn scenario_exit_destination(
     mode: super::session::SessionMode,
     outcome: crate::sim::house_state::HouseOutcomeKind,
     skip_score: bool,
     cooperative: bool,
+    skips_skirmish_score_screen: bool,
     title: String,
     detail: String,
     campaign_score: impl FnOnce() -> crate::ui::campaign_score_shell::CampaignScoreScreenModel,
@@ -214,6 +216,7 @@ pub(crate) fn scenario_exit_destination(
         None if cooperative => ScenarioExitDestination::CooperativeResult {
             victory: outcome == crate::sim::house_state::HouseOutcomeKind::Victory,
         },
+        None if skips_skirmish_score_screen => ScenarioExitDestination::MainMenu,
         None => ScenarioExitDestination::Score {
             title,
             detail,
@@ -534,6 +537,7 @@ mod tests {
             Victory,
             false,
             false,
+            false,
             "victory".into(),
             "detail".into(),
             || campaign_model.clone(),
@@ -558,6 +562,7 @@ mod tests {
             Victory,
             true,
             false,
+            false,
             "victory".into(),
             "detail".into(),
             || panic!("SkipScore must continue without a score model"),
@@ -573,6 +578,7 @@ mod tests {
             Defeat,
             false,
             false,
+            false,
             "defeat".into(),
             "detail".into(),
             || panic!("campaign defeat does not build a score model"),
@@ -583,6 +589,7 @@ mod tests {
         let skirmish = scenario_exit_destination(
             SessionMode::Skirmish,
             Victory,
+            false,
             false,
             false,
             "victory".into(),
@@ -603,6 +610,7 @@ mod tests {
             Defeat,
             false,
             true,
+            true,
             "defeat".into(),
             "detail".into(),
             || panic!("co-op must not build campaign score"),
@@ -612,6 +620,19 @@ mod tests {
             cooperative,
             ScenarioExitDestination::CooperativeResult { victory: false }
         ));
+
+        let custom_no_score = scenario_exit_destination(
+            SessionMode::Lan,
+            Victory,
+            false,
+            false,
+            true,
+            "victory".into(),
+            "detail".into(),
+            || panic!("network mode must not build campaign score"),
+            || panic!("mode policy skips_skirmish_score_screen must not build skirmish score"),
+        );
+        assert!(matches!(custom_no_score, ScenarioExitDestination::MainMenu));
     }
 
     /// `0x0055CFD0` routes victory/defeat before restart and restart before

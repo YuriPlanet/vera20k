@@ -429,7 +429,7 @@ impl Simulation {
         let mode_permits = self
             .session
             .multiplayer_mode_class()
-            .is_some_and(crate::skirmish_modes::MpModeClass::permits_all_allied);
+            .is_some_and(|class| class.policy().permits_all_allied);
         if !mode_permits && !rules.general.allies_allowed {
             return;
         }

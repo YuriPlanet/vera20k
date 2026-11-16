@@ -1058,7 +1058,7 @@ impl SkirmishLaunchSession {
             .opponents
             .iter()
             .all(|ai| ai.team == LaunchTeam::Team(team));
-        same_humans && same_ai && !self.mode.class.permits_all_allied()
+        same_humans && same_ai && !self.mode.class.policy().permits_all_allied
     }
 
     /// FreeForAll5C5D40's roles: each non-observer node+6B is its source index.
@@ -1079,10 +1079,10 @@ impl SkirmishLaunchSession {
     }
 
     /// VERA shared control: the human whose House human `index` plays in.
-    /// Outside Cooperative, players who pick the same start share one House,
-    /// led by the first of them in row order; everyone else leads their own.
-    /// gamemd's setup refuses a taken start (`0x005E9720`), so it never sees
-    /// a shared one.
+    /// When [`ModePolicy::shared_start_positions`] allows it, players who pick
+    /// the same start share one House, led by the first of them in row order;
+    /// everyone else leads their own. gamemd's setup refuses a taken start
+    /// (`0x005E9720`), so it never sees a shared one.
     pub fn house_leader(&self, index: usize) -> usize {
         let human = &self.humans[index];
         if !self.shares_start(human) {
@@ -1098,9 +1098,9 @@ impl SkirmishLaunchSession {
             .map_or(index, |(leader, _)| leader)
     }
 
-    /// A seated player's explicit start, outside Cooperative, can be shared.
+    /// A seated player's explicit start can be shared when the mode policy allows it.
     pub fn shares_start(&self, human: &SkirmishHumanSlot) -> bool {
-        self.mode.class != crate::skirmish_modes::MpModeClass::Cooperative
+        self.mode.class.policy().shared_start_positions
             && human.raw_slot_index.is_some()
             && !human.is_observer()
             && matches!(human.slot.start_position, LaunchStartPosition::Position(_))
@@ -1904,5 +1904,16 @@ mod tests {
         let mut expected_rng = SimRng::new(seed);
         let _ = draw_collision_free_color(&mut expected_rng, &[1, 2], SkirmishColorMode::VANILLA);
         assert_eq!(rng.state(), expected_rng.state());
+    }
+
+    #[test]
+    fn shares_start_follows_mode_policy_shared_start_positions() {
+        let mut session = random_test_session();
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(2);
+        let battle_human = session.humans[0].clone();
+
+        assert!(session.shares_start(&battle_human));
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(!session.shares_start(&battle_human));
     }
 }
