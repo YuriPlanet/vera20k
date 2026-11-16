@@ -2692,6 +2692,13 @@ impl Simulation {
         else {
             return false;
         };
+        // `Ext/BuildingType/Hooks.Placing.cpp:15-23`, hook `0x00739889` reads
+        // `NumConYards` before the new yard joins it; the live BuildConst
+        // vector is that count, so sample it before the spawn below.
+        let prior_conyards = self
+            .houses
+            .get(&owner_id)
+            .map_or(0, |house| house.build_const_order().len());
 
         // `0x00739422..0x007394D8`: the unit leaves its cell (Mark(UP),
         // vt+0x124(0); the Drive locomotor's Mark_All_Occupation_Bits(0)
@@ -2984,7 +2991,14 @@ impl Simulation {
         );
         self.add_unit_sensor_after_unlimbo(new_sid, rules, registry);
         self.mission_spawned_entities = true;
-        if recalc_context.is_some() {
+        // `!AISetBaseCenter && NumConYards > 1` skips the whole
+        // `0x00739889..0x0073992B` block, including the gather call at
+        // `0x00739926`; key on (constructed default) always runs it.
+        #[cfg(feature = "phobos")]
+        let base_center_block = rules.phobos_globals.ai_set_base_center || prior_conyards <= 1;
+        #[cfg(not(feature = "phobos"))]
+        let base_center_block = true;
+        if recalc_context.is_some() && base_center_block {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
             // primary center, then the shared AI half (Computer_Paranoid,

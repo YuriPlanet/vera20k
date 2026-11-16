@@ -129,6 +129,14 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
   it keeps the current queue. Test
   `ai_auto_deploy_mcv_off_keeps_the_second_yard_out_of_the_guard_arm` covers
   both states.
+- `ai_set_base_center`: `Simulation::deploy_mcv` samples the owner's
+  `build_const_order()` before the new yard spawns, then runs the
+  `set_base_center` / `refresh_ai_base_after_deploy` / `MoveGroundForcesToBase`
+  block only when the key is on or the sampled count is at most one; the
+  key-off two-yard case skips the whole `0x00739889..0x0073992B` range, as the
+  hook does. Test
+  `ai_set_base_center_off_skips_the_rewrite_only_above_one_yard` covers the
+  boundary.
 - `missile_spawn_attack_cell`: `sim::spawn_manager`'s `set_destination` sends a
   missile to the target's Cell when the key is on and the target is not a
   `EntityCategory::Structure`. The native oracle host opts out through
@@ -136,13 +144,6 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
 
 ## Residuals
 
-- `AISetBaseCenter` (`0x00739889`): the deploy path still anchors the base
-  plan and center unconditionally. Trigger: an AI deploy while the house
-  already has two or more conyards and the key is cleared. Effect: the base
-  centre and spawn cell move to the new yard where native skips to
-  `0x0073992B`. Frequency: every such deploy. Risk: AI production shifts to
-  the newest yard in a mod that clears the key; retail's default key on
-  matches VERA.
 - `AIBiasSpawnCell` (`0x004FD538`): VERA's `sim::house_strategy` has no
   `GetSpawnPosition()` reader and no conyard enumeration, so the nearest-conyard
   base-centre rewrite does not run. Trigger: an AI house with two or more
