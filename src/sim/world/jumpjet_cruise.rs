@@ -150,6 +150,34 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         [xy[0], xy[1], z]
     }
     fn set_location(&mut self, coord: [i32; 3]) {
+        // VERA-only deviation. The hold and the cruise write Location with
+        // +0x74 clear and no Mark pair (Update's step `0x0054D55A..D607`, and
+        // State3_Translate's arrival snap, `0x0054BFF0`), so a cell-list link
+        // that a Mark pair from outside the locomotor gave the owner stays in
+        // the cell it leaves. Trigger: `TechnoClass::ChangeOwner`'s pair
+        // (`0x00701674`, `0x00701691`) when mind control takes a Jumpjet
+        // cruising below two levels; rare. In gamemd that cell keeps the link
+        // and its raw 0x20, a blocker nothing occupies, while the Jumpjet lives
+        // and after it dies; here the next entry walk of that cell would then
+        // fail the frame. So the owner leaves that cell through
+        // `MapClass::Pick_Up` (`0x005687F0`) first, and the blocker goes with
+        // it. Lifted phases, touchdown and the crash relocation unlink first.
+        // RESIDUAL: Pick_Up picks the raw plane by height, so one that climbed
+        // to deck height before leaving keeps the ground 0x20, as gamemd does;
+        // and an OnBridge change since the capture misses the linked list.
+        let position = &self.owner().position;
+        let here = (position.rx(), position.ry());
+        let there = self.cell_of([coord[0], coord[1]]);
+        if (i32::from(here.0), i32::from(here.1)) != (i32::from(there.0), i32::from(there.1))
+            && self
+                .sim
+                .substrate
+                .occupancy
+                .contains_entity(here.0, here.1, self.stable_id)
+        {
+            self.sim
+                .foot_pick_up(self.stable_id, self.rules, self.registry);
+        }
         foot_set_location(
             &mut self.sim.substrate.entities,
             self.stable_id,
@@ -1368,6 +1396,55 @@ mod tests {
             assert!(!sim.substrate.occupancy.contains_entity(rx, ry, 1));
             assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(rx, ry), 0);
         }
+    }
+
+    /// Mind control taking a Jumpjet unit that cruises below two levels:
+    /// `TechnoClass::ChangeOwner`'s Mark pair (`0x00701674`, `0x00701691`)
+    /// links it in its cell's ground list, and the cruise then moves it with
+    /// no Mark pair (`0x0054D134`). The cell it leaves keeps no link, which
+    /// would outlive the Jumpjet.
+    #[test]
+    fn a_cruising_jumpjet_linked_by_a_capture_leaves_no_link_behind() {
+        let mut sim = hovering_jumpjet(0x40);
+        let russians = sim.interner.intern("Russians");
+        for (house, side) in [(sim.interner.intern("Americans"), 0), (russians, 1)] {
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    house, side, None, true, 0, 10,
+                ));
+        }
+        {
+            let entity = sim.substrate.entities.get_mut(1).expect("jumpjet");
+            entity.set_foot_occupation_enabled(true);
+            entity.lifecycle.set_in_limbo_for_test(false);
+            entity.lifecycle.set_cell_marked_for_test(true);
+            // Unlimbo's threat publication, which ChangeOwner withdraws.
+            entity.cached_spatial_threat.publish(0);
+        }
+        Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 100);
+        assert!(!sim.substrate.occupancy.contains_entity(10, 10, 1));
+
+        sim.change_owner(1, russians);
+        assert!(
+            sim.substrate.occupancy.contains_entity(10, 10, 1),
+            "the capture's Mark(PUT) links it"
+        );
+        // Its new owner sends it on.
+        order_east(&mut sim);
+        for frame in 0..80 {
+            sim.session.set_binary_frame_for_test(1001 + frame);
+            sim.tick_air_movement_with_cell_lists_one(
+                1,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        }
+        let position = sim.substrate.entities.get(1).expect("jumpjet").position;
+        assert_ne!((position.rx(), position.ry()), (10, 10), "it flew on");
+        assert!(!sim.substrate.occupancy.contains_entity(10, 10, 1));
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(10, 10), 0);
     }
 
     /// Before the locomotor owned this tick, VERA's air adapter cycled an idle
