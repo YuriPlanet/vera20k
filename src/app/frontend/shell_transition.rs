@@ -158,7 +158,7 @@ impl ShellSlideKind {
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options slides VERA's page buttons and its Mods button under
     /// retail's Keyboard.
-    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map.
+    /// Skirmish slides VERA's Game Options between Start Game and Choose Map.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -171,7 +171,7 @@ impl ShellSlideKind {
                         .stacked
                         .len() as u32
                 }
-                ShellSlideKind::Skirmish => spec.top_buttons + 2,
+                ShellSlideKind::Skirmish => spec.top_buttons + 1,
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -1548,9 +1548,9 @@ mod tests {
             (3, true, false)
         );
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
-        // Retail `0x102` slides Start Game and Choose Map; VERA's Save Setup
-        // and Load Setup slide under them.
-        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (4, true, true));
+        // Retail `0x102` slides Start Game and Choose Map; VERA's Game Options
+        // slides between them.
+        assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (3, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA leaves Network out
         // and slides its six page buttons under Keyboard, then its Mods
         // button where the build has mods.

@@ -26,7 +26,7 @@ For example, in German:
 Name=Deutsch
 
 [Strings]
-VERA:SaveSetup=Setup speichern
+VERA:ChooseMap=Karte wählen
 VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
 VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
 ```

@@ -97,18 +97,6 @@ impl App {
         )
     }
 
-    /// Whether the selected map has a setup for Load Setup.
-    pub(crate) fn skirmish_setup_saved(state: &AppState) -> bool {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .saved_setup(
-                &state.frontend.skirmish_shell_state,
-                state.frontend.scenario_catalog.shell_maps(),
-            )
-            .is_some()
-    }
-
     fn skirmish_choose_map_layout(
         state: &AppState,
     ) -> crate::ui::skirmish_shell::ChooseMapModalLayout {
@@ -425,22 +413,6 @@ impl App {
                     state,
                     crate::app::frontend::shell_transition::ShellExitThen::SkirmishChooseMap,
                 );
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::SaveSetup => {
-                state.frontend.multiplayer_shell_runtime.save_setup(
-                    &state.frontend.skirmish_shell_state,
-                    state.frontend.scenario_catalog.shell_maps(),
-                );
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::LoadSetup => {
-                let maps = state.frontend.scenario_catalog.shell_maps();
-                if let Some(setup) = state
-                    .frontend
-                    .multiplayer_shell_runtime
-                    .saved_setup(&state.frontend.skirmish_shell_state, maps)
-                {
-                    setup.apply(&mut state.frontend.skirmish_shell_state, maps);
-                }
             }
             crate::ui::skirmish_shell::SkirmishShellAction::GameOptions => {
                 Self::open_skirmish_game_options(state);
@@ -1733,16 +1705,11 @@ impl App {
         if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {
             return;
         }
-        // Load Setup stays disabled until the selected map has a saved setup.
-        let load_setup_enabled = Self::skirmish_setup_saved(state);
         state
             .frontend
             .skirmish_shell_state
             .pressed_owner_draw_button =
-            crate::ui::skirmish_shell::hit_test_owner_draw_button(&layout, x, y).filter(|button| {
-                *button != crate::ui::skirmish_shell::OwnerDrawButton::LoadSetup
-                    || load_setup_enabled
-            });
+            crate::ui::skirmish_shell::hit_test_owner_draw_button(&layout, x, y);
         if state
             .frontend
             .skirmish_shell_state

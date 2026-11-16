@@ -254,7 +254,6 @@ fn build_skirmish_shell_instances(
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
-    load_setup_enabled: bool,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
 
@@ -417,15 +416,14 @@ fn build_skirmish_shell_instances(
                     shell.validation_modal.is_some(),
                 ),
                 (
+                    layout.game_options_button,
+                    OwnerDrawButton::GameOptions,
+                    false,
+                ),
+                (
                     layout.choose_map_button,
                     OwnerDrawButton::ChooseMap0x5aa,
                     false,
-                ),
-                (layout.save_setup_button, OwnerDrawButton::SaveSetup, false),
-                (
-                    layout.load_setup_button,
-                    OwnerDrawButton::LoadSetup,
-                    !load_setup_enabled,
                 ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
             ] {
@@ -435,18 +433,6 @@ fn build_skirmish_shell_instances(
                     rect,
                     shell.pressed_owner_draw_button == Some(button),
                     disabled,
-                    RIGHT_PANEL_BUTTON_DEPTH,
-                );
-            }
-            // VERA's Game Options on its tile under Start Game; where the
-            // panel has none (640x480) the page draws it with its controls.
-            if layout.game_options_in_panel() {
-                push_right_panel_button_shp(
-                    &mut instances,
-                    atlas,
-                    layout.game_options_button,
-                    shell.pressed_owner_draw_button == Some(OwnerDrawButton::GameOptions),
-                    false,
                     RIGHT_PANEL_BUTTON_DEPTH,
                 );
             }
@@ -465,28 +451,6 @@ fn build_skirmish_shell_instances(
     push_combo_instances(&mut instances, atlas, rules, layout, shell, maps);
     push_checkbox_instances(&mut instances, atlas, layout, shell);
     push_trackbar_instances(&mut instances, atlas, layout, shell);
-    // VERA's Game Options on the page, where the panel has no tile for it
-    // (640x480): owner-draw type 3, MNBTTN centred on the control as Sound
-    // Options' Play and Stop are (609FC7..609FE2), so it paints with the
-    // page's other controls.
-    if !layout.game_options_in_panel() {
-        instances.extend(crate::render::shell_paint::paint_modal_sprites(
-            None,
-            type3_button_frames(atlas),
-            layout.screen,
-            &[crate::render::shell_paint::ModalButton {
-                rect: layout.game_options_button,
-                pressed: shell.pressed_owner_draw_button == Some(OwnerDrawButton::GameOptions),
-                enabled: true,
-            }],
-            layout.scale,
-            crate::render::shell_paint::ModalDepths {
-                background: SHELL_CONTROL_DEPTH,
-                button: SHELL_CONTROL_DEPTH,
-                text: SHELL_CONTROL_TEXT_DEPTH,
-            },
-        ));
-    }
     push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
 
     if let Some(flag) = flag_name_for_country_choice(
@@ -811,7 +775,6 @@ fn render_skirmish_shell_with_atlas(
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
-            crate::app::App::skirmish_setup_saved(state),
         )
     };
     if preview_instance.is_some() {

@@ -684,26 +684,6 @@ pub(super) fn build_shell_text_draws(
         );
     }
 
-    // VERA's Game Options on the page (640x480), captioned as the Options
-    // pages' own buttons are; on its panel tile the panel's captions take it.
-    if !layout.game_options_in_panel() {
-        push_button_label_draw(
-            &mut shell_draws,
-            state,
-            &localized_label(
-                state,
-                crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
-                "Game Options",
-            ),
-            layout.game_options_button,
-            shell.pressed_owner_draw_button
-                == Some(crate::ui::skirmish_shell::OwnerDrawButton::GameOptions),
-            false,
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale,
-        );
-    }
-
     push_combo_face_label_draw(
         &mut shell_draws,
         state,
@@ -853,41 +833,33 @@ fn push_right_panel_text_draws(
     // (`SetupDialog::button_label`): retail's "Customize Battle" reads as the
     // settings Game Options keeps.
     let choose = tr("VERA:ChooseMap");
-    let save = tr("VERA:SaveSetup");
-    let load = tr("VERA:LoadSetup");
+    let game_options = localized_label(
+        state,
+        crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
+        "Game Options",
+    );
     let back = localized_label(state, "GUI:Back", "Back");
-    let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
-    for (label, rect, button, disabled) in [
+    for (label, rect, button) in [
         (
             start.as_str(),
             layout.start_button,
             OwnerDrawButton::StartGame0x617,
-            false,
+        ),
+        (
+            game_options.as_str(),
+            layout.game_options_button,
+            OwnerDrawButton::GameOptions,
         ),
         (
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
-            false,
-        ),
-        (
-            save.as_str(),
-            layout.save_setup_button,
-            OwnerDrawButton::SaveSetup,
-            false,
-        ),
-        (
-            load.as_str(),
-            layout.load_setup_button,
-            OwnerDrawButton::LoadSetup,
-            load_disabled,
         ),
         (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
-            false,
         ),
     ] {
         push_button_label_draw(
@@ -896,23 +868,6 @@ fn push_right_panel_text_draws(
             label,
             rect,
             shell.pressed_owner_draw_button == Some(button),
-            disabled,
-            0.00041,
-            layout.scale,
-        );
-    }
-    // VERA's Game Options on its tile under Start Game.
-    if layout.game_options_in_panel() {
-        push_button_label_draw(
-            shell_draws,
-            state,
-            &localized_label(
-                state,
-                crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
-                "Game Options",
-            ),
-            layout.game_options_button,
-            shell.pressed_owner_draw_button == Some(OwnerDrawButton::GameOptions),
             false,
             0.00041,
             layout.scale,

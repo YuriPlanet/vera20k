@@ -87,9 +87,6 @@ use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, Skir
 pub enum OwnerDrawButton {
     StartGame0x617,
     ChooseMap0x5aa,
-    /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
-    SaveSetup,
-    LoadSetup,
     /// VERA's Game Options ([`super::game_options`]).
     GameOptions,
     Back0x5c0,
@@ -101,8 +98,6 @@ pub enum SkirmishShellAction {
     StartGame,
     BackOrExit,
     ChooseMap,
-    SaveSetup,
-    LoadSetup,
     /// The app opens the box on the rules the profile keeps.
     GameOptions,
     SelectColor(ColorComboId),

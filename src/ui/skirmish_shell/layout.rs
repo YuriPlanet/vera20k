@@ -254,15 +254,8 @@ pub struct SkirmishShellLayout {
     /// gamemd's Choose Map (`0x5AA`), one tile down where VERA's Game Options
     /// takes its tile.
     pub choose_map_button: RectPx,
-    /// VERA's Save Setup and Load Setup, on the two empty tiles under Choose
-    /// Map; gamemd's `0x102` has no such buttons.
-    pub save_setup_button: RectPx,
-    pub load_setup_button: RectPx,
     /// VERA's Game Options ([`super::game_options`]), on gamemd's Choose Map
-    /// tile under Start Game where the panel has a tile to spare above Back
-    /// for the buttons it moves down. At 640x480 it has none: the panel keeps
-    /// gamemd's order, and the button sits on the page under Build Off Ally
-    /// ConYards ([`Self::game_options_in_panel`]).
+    /// tile under Start Game.
     pub game_options_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
@@ -292,13 +285,6 @@ impl SkirmishShellLayout {
         let (x, y) = dialog_origin(self.screen.w, self.screen.h);
         self.scale
             .dialog_origin_or((self.screen.x + x, self.screen.y + y))
-    }
-
-    /// Whether Game Options sits in the panel, under Start Game, rather than
-    /// on the page, as it does at 640x480 where the panel has no tile to
-    /// spare.
-    pub fn game_options_in_panel(&self) -> bool {
-        self.game_options_button.x == self.load_setup_button.x
     }
 
     /// The live height of the shell space: the authored 600 rows letterboxed
@@ -535,8 +521,6 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.right_panel_text.map_label = layout.right_panel_text.map_label.translate(dx, dy);
     layout.start_button = layout.start_button.translate(dx, dy);
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
-    layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
-    layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
     layout.game_options_button = layout.game_options_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
@@ -780,19 +764,11 @@ pub fn compute_layout_for_rows(
     let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
     let back_button = back_rect(screen_w, panel);
     // Not retail. VERA's Game Options takes gamemd's Choose Map tile, under
-    // Start Game, where the panel has a tile to spare above Back: Choose Map,
-    // Save Setup and Load Setup each move one tile down. At 640x480 Back
-    // takes that tile, so the panel keeps gamemd's order and the button goes
-    // on the page, in the row under Build Off Ally ConYards, the size of
-    // Sound Options' Play and Stop (`0xD6`, MNBTTN type 3) as the Options
-    // pages' own buttons are.
-    let last_moved = choose_map_tile.translate(0, 3 * SDBTNBKGD_H);
-    let panel_has_room = last_moved.y + last_moved.h <= back_button.y;
-    let (game_options_button, choose_map_button) = if panel_has_room {
-        (choose_map_tile, choose_map_tile.translate(0, SDBTNBKGD_H))
-    } else {
-        (dlu_rect(201, 244, 83, 15), choose_map_tile)
-    };
+    // Start Game, and Choose Map moves one tile down. Every panel has that
+    // tile free above Back, the six-tile one of the smallest window (640x480)
+    // too.
+    let game_options_button = choose_map_tile;
+    let choose_map_button = choose_map_tile.translate(0, SDBTNBKGD_H);
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -803,9 +779,6 @@ pub fn compute_layout_for_rows(
             screen_w, screen_h, start_base, panel, SDBTNANM_W,
         ),
         choose_map_button,
-        // Every panel keeps them above Back: it has six tiles at 640x480.
-        save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
-        load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
         game_options_button,
         back_button,
         map_preview: right_static(
@@ -887,10 +860,6 @@ impl SkirmishShellLayout {
             &mut self.trackbar_labels.unit_count,
         ] {
             *rect = rect.translate(0, dy);
-        }
-        // On the page, Game Options moves down with the options above it.
-        if !self.game_options_in_panel() {
-            self.game_options_button = self.game_options_button.translate(0, dy);
         }
         self.shown_rows = shown;
         self.opponent_scrollbar = opponent_scrollbar_rect(&self.rows, shown);
@@ -1498,8 +1467,6 @@ impl ScaledRects for SkirmishShellLayout {
             right_panel_text: self.right_panel_text.scaled_rects(scale),
             start_button: self.start_button.scaled_rects(scale),
             choose_map_button: self.choose_map_button.scaled_rects(scale),
-            save_setup_button: self.save_setup_button.scaled_rects(scale),
-            load_setup_button: self.load_setup_button.scaled_rects(scale),
             game_options_button: self.game_options_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
@@ -1753,10 +1720,10 @@ mod tests {
     fn key_rects_match_640x480_formula() {
         let layout = compute_layout(640, 480);
         assert_eq!(layout.start_button, RectPx::new(484, 241, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(484, 283, 156, 42));
-        // VERA's Save Setup and Load Setup fill the two tiles above Back.
-        assert_eq!(layout.save_setup_button, RectPx::new(484, 325, 156, 42));
-        assert_eq!(layout.load_setup_button, RectPx::new(484, 367, 156, 42));
+        // VERA's Game Options takes gamemd's Choose Map tile; Choose Map
+        // moves one down.
+        assert_eq!(layout.game_options_button, RectPx::new(484, 283, 156, 42));
+        assert_eq!(layout.choose_map_button, RectPx::new(484, 325, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
@@ -1831,37 +1798,27 @@ mod tests {
         assert!(options_bottom < thirty.status_help.y);
     }
 
-    /// Where the panel has a tile to spare above Back, VERA's Game Options
-    /// sits second, under Start Game, and Choose Map, Save Setup and Load
-    /// Setup follow it a tile apart, on a page grown to thirteen rows too. At
-    /// 640x480 the panel has none, so the button sits on the page under Build
-    /// Off Ally ConYards, left of the panel and above the status line.
+    /// VERA's Game Options sits second in every panel, under Start Game, with
+    /// Choose Map a tile under it and above Back: on the smallest window,
+    /// 640x480, and on a page grown to thirteen rows.
     #[test]
-    fn game_options_sits_second_in_the_panel_where_it_has_room() {
+    fn game_options_sits_second_in_every_panel() {
         use super::{SDBTNBKGD_H, compute_layout_for_rows};
-        let roomy = compute_layout_for_rows(800, 600, 30);
-        assert!(roomy.game_options_in_panel());
-        let column = [
-            roomy.start_button,
-            roomy.game_options_button,
-            roomy.choose_map_button,
-            roomy.save_setup_button,
-            roomy.load_setup_button,
-        ];
-        for pair in column.windows(2) {
-            assert_eq!(pair[1], pair[0].translate(0, SDBTNBKGD_H));
+        for layout in [
+            compute_layout(640, 480),
+            compute_layout_for_rows(800, 600, 30),
+        ] {
+            let column = [
+                layout.start_button,
+                layout.game_options_button,
+                layout.choose_map_button,
+            ];
+            for pair in column.windows(2) {
+                assert_eq!(pair[1], pair[0].translate(0, SDBTNBKGD_H));
+            }
+            let choose = layout.choose_map_button;
+            assert!(choose.y + choose.h <= layout.back_button.y);
         }
-        let bottom = roomy.load_setup_button.y + roomy.load_setup_button.h;
-        assert!(bottom <= roomy.back_button.y);
-
-        let small = compute_layout(640, 480);
-        assert!(!small.game_options_in_panel());
-        let button = small.game_options_button;
-        let build_off_ally = small.checkboxes[4].rect;
-        assert_eq!(button.x, build_off_ally.x);
-        assert!(button.y >= build_off_ally.y + build_off_ally.h);
-        assert!(button.y + button.h < small.status_help.y);
-        assert!(button.x + button.w < small.back_button.x);
     }
 
     #[test]
