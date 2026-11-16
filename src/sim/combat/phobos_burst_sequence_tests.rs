@@ -299,10 +299,11 @@ fn the_key_off_keeps_the_stock_stage() {
     assert_eq!(index(&sim, firer), 2);
 }
 
-/// A Unit with the key behaves stock: VERA does not read the unit art
-/// `FireUp=` the unit arm of `0x736F61` is gated on, so the key stays dormant.
+/// A Unit whose art leaves `FireUp=` unset stays stock: `UnitTypeExt::FireUp`
+/// composes -1, so the `0x736F61` arm (`phobos_unit_fire_up_tests`) holds
+/// nothing and the first shot lands on frame 0.
 #[test]
-fn a_unit_with_the_key_stays_stock() {
+fn a_unit_without_the_art_key_stays_stock() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "[VehicleTypes]\n0=FIRER\n\
          [FIRER]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\nOmniFire=yes\n\
@@ -377,7 +378,7 @@ fn a_unit_with_the_key_stays_stock() {
         .iter()
         .filter(|(id, _)| !before_ids.contains(id))
         .count();
-    assert_eq!(shots, 1, "the dormant unit arm does not gate the shot");
+    assert_eq!(shots, 1, "no `FireUp=` holds nothing");
     assert_eq!(index(&sim, firer), 1);
     assert_eq!(rearm(&sim, firer), 2, "Burst.Delays still arms the rearm");
     assert_eq!(

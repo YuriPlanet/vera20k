@@ -439,6 +439,8 @@ mod tests {
             roof_production_anim: Default::default(),
             #[cfg(feature = "phobos")]
             phobos_fire_up_reset_in_retarget: true,
+            #[cfg(feature = "phobos")]
+            phobos_fire_up: -1,
             image: None,
             #[cfg(feature = "phobos")]
             phobos_turret_barrel: Default::default(),
