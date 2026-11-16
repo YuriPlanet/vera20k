@@ -16,8 +16,8 @@ mod sequenced;
 mod startup;
 mod timing;
 pub use sequenced::{
-    CommandDeliveryTrace, DeliveryCounters, MatchSpeedChange, MultiplayerPauseStatus,
-    SequencedError, SequencedTiming,
+    CommandDeliveryTrace, DeliveryCounters, MatchPauseChange, MatchSpeedChange,
+    MultiplayerPauseStatus, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
 /// The relay's turn length, which online playout follows.
@@ -277,6 +277,14 @@ impl LiveCommandSession {
         self.sequenced
             .as_mut()
             .map_or_else(Vec::new, |session| session.take_speed_changes())
+    }
+
+    /// VERA: other players' shared pauses and resumes in frames dispatched so
+    /// far.
+    pub fn take_pause_changes(&mut self) -> Vec<MatchPauseChange> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_pause_changes())
     }
 
     /// VERA: true once, when this game reaches a pause that found it catching

@@ -150,11 +150,14 @@ match without synchronized pause it answers that pausing is not available.
 A pause marker follows the relay's last committed frame; clients finish that
 same frame and stop. Resume uses a separate authenticated control, so it works
 while simulation ticks are stopped. Both markers use the normal ordered
-history and replay recovery. Connections, chat and ticket renewal keep running;
-accepted gameplay inputs wait for their assigned frames after resume. Opening
-Options alone remains local. After a resume nobody can pause again for 30
-seconds. Confirming Leave resumes as needed until the queued
-EXIT executes. Shared paused time is excluded from the score-screen duration.
+history and replay recovery, and each names the player who asked: once a
+client's world reaches one, the other players and watchers read "<name> paused
+the game." or "<name> resumed the game." A rejoining game shows only those its
+world reaches after catching up. Connections, chat and ticket renewal keep
+running; accepted gameplay inputs wait for their assigned frames after resume.
+Opening Options alone remains local. After a resume nobody can pause again for
+30 seconds. Confirming Leave resumes as needed until the queued EXIT executes.
+Shared paused time is excluded from the score-screen duration.
 This feature requires updated clients and relay;
 it is unavailable in a mixed-version room or a direct LAN match.
 
