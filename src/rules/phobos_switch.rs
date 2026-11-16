@@ -11,8 +11,9 @@
 //! open that scope: the parallel AI queue limits
 //! (`rules::phobos_parallel_ai_queues`), the last-legs sale, hunt and
 //! regroup switches (`[General] AIFireSale`, `AIFireSaleDelay`, `AIAllToHunt`,
-//! `GatherWhenMCVDeploy`) and the AI's spare power (`[AI] EnablePowerSurplus`,
-//! `PowerSurplus.ScaleToDrainAmount`). `AllowParallelAIQueues`, which Ares reads too,
+//! `GatherWhenMCVDeploy`), the AI's spare power (`[AI] EnablePowerSurplus`,
+//! `PowerSurplus.ScaleToDrainAmount`) and the target zone scan (a TechnoType's
+//! `TargetZoneScanType`). `AllowParallelAIQueues`, which Ares reads too,
 //! turns neither switch on. Retail data holds none of these keys, so a retail
 //! game plays as gamemd.
 //!

@@ -99,19 +99,26 @@ use super::threat_range::{ScanRange, scan_range};
 use crate::map::cell_index::{NativeCellIdentity, square_ring_cells};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
-use crate::rules::object_type::{ObjectType, VhpScan};
+use crate::rules::locomotor_type::SpeedType;
+use crate::rules::object_type::{ObjectType, TargetZoneScanType, VhpScan};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
+use crate::sim::cell_rect::{CellRef, get_cellclass_fallback};
 use crate::sim::components::DriveCoord;
 use crate::sim::entity_store::EntityStore;
+use crate::sim::find_nearby_cell::{
+    NearbyArgs, NearbyFootprint, NearbySearchOptions, PassabilityArgs,
+};
 use crate::sim::game_entity::{DistributedFireCandidate, GameEntity};
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
+use crate::sim::movement::coord_cell;
 use crate::sim::movement::ground_pose::{object_get_coords, position_world_coord};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{CellObjectMember, OccupancyGrid};
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::sim::projectile::{ProjectileCoord, cell_ref_target_coord};
 use crate::sim::rng::SimRng;
 use crate::sim::vision::FogState;
 use crate::util::lepton::{lepton_to_cell, lepton_to_cell_packed};
@@ -1826,8 +1833,9 @@ fn scanner_mask<'r>(
 /// `GetZoneID(candidate cell, ATTACKER type +0x5B4, candidate +0x8C)` and
 /// `CMP EAX,EBP ; JNZ 0x006F894F` at `0x006F7E7E`-`0x006F7E9C`). So a hunting
 /// object considers only what its own movement zone can reach from where it
-/// stands — it does not walk at something across water or up a cliff. That
-/// gate is carried here by [`WalkArgs::zone`].
+/// stands — it does not walk at something across water or up a cliff — unless
+/// Phobos plays and its type's `TargetZoneScanType` lets it ([`zone_admits`]).
+/// That gate is carried here by [`WalkArgs::zone`].
 ///
 /// arg6 is not the only argument the two walks disagree on. **arg7 differs
 /// too, and it decides the SCALE of the score's distance term.** The flat walk
@@ -2166,6 +2174,126 @@ fn cutoff_distance(scanner: DriveCoord, candidate: DriveCoord, candidate_high_fl
     }
 }
 
+/// G12's test of a candidate against the scanner's zone ([`evaluate_candidate`]).
+/// A zone lookup that answers `None` admits, as G12 notes.
+///
+/// Once Phobos plays, its hook `TechnoClass_EvaluateObject_MapZone` (0x6F7E47,
+/// `src/Ext/Techno/Hooks.TargetEvaluation.cpp` at Phobos c783774a) replaces the
+/// stock test (`0x006F7E47..0x006F7EA1`) with `TechnoExt::AllowedTargetByZone`
+/// (`src/Ext/Techno/Body.cpp`, given arg6 as the scanner's zone) and resumes at
+/// `0x006F7EA2` to keep the candidate, `0x006F894F` to refuse it. Its
+/// `TargetZoneScanType` is the scanner type's, which the hook
+/// `TechnoClass_GreatestThreat_MapZoneSetContext` (0x6F9C67) stores as the walk
+/// over every object starts: the one walk with a zone (`PUSH ECX @
+/// 0x006F9D69`), so an aircraft scanner, which Phobos admits at once, never
+/// reaches it. Phobos looks the candidate's zone up at the cell of its Location
+/// (vt+0x1B8, `0x0041BEA0`), not of its GetCoords: for a building, its
+/// top-left cell instead of its centre.
+fn zone_admits(
+    ctx: &ScanContext<'_>,
+    candidate: &GameEntity,
+    scanner_zone: u32,
+    weapon_index: i32,
+) -> bool {
+    let zone_at = |(x, y): (i16, i16)| {
+        ctx.zone_grid.zip(ctx.terrain).and_then(|(zones, terrain)| {
+            zones.get_zone_id_native(
+                terrain,
+                (x as u16, y as u16),
+                ctx.attacker_obj.movement_zone,
+                candidate.on_bridge(),
+            )
+        })
+    };
+    if !ctx.rules.phobos() {
+        let coords = object_get_coords(candidate, ctx.terrain);
+        let cell = (
+            lepton_to_cell_packed(coords.x),
+            lepton_to_cell_packed(coords.y),
+        );
+        return zone_at(cell).is_none_or(|zone| zone == scanner_zone);
+    }
+    let scan_type = ctx.attacker_obj.target_zone_scan_type;
+    if scan_type == TargetZoneScanType::Any {
+        return true;
+    }
+    let location = coord_cell(position_world_coord(&candidate.position));
+    zone_at(location).is_none_or(|zone| zone == scanner_zone)
+        || scan_type == TargetZoneScanType::InRange
+            && reaches_from_nearby_cell(ctx, candidate, location, weapon_index)
+}
+
+/// `AllowedTargetByZone`'s `inrange` arm for a candidate in another zone
+/// ([`zone_admits`]): `MapClass::NearByLocation` (FNPC, `0x0056DC20`) from the
+/// cell of the candidate's Location with the scanner type's SpeedType and
+/// MovementZone, no zone, 1x1, overlay cells refused, bridge cells unless the
+/// SpeedType is Float and no cell to be near. From that cell's
+/// GetCoordsWithBridge, the selected weapon's own `Range` must reach the
+/// candidate's vt+0x58 coordinate (Object `0x00410540` forwards GetCoords):
+/// YRpp's `DistanceFromSquared` ([`ProjectileCoord::distance_from_squared`])
+/// against the range squared, in doubles. Phobos selects the weapon again; it
+/// is G1's choice.
+fn reaches_from_nearby_cell(
+    ctx: &ScanContext<'_>,
+    candidate: &GameEntity,
+    (x, y): (i16, i16),
+    weapon_index: i32,
+) -> bool {
+    // VERA-internal: only unit tests of the walk run without a world, and the
+    // gate stays off there, as without a zone grid.
+    let Some(world) = ctx.fire_world else {
+        return true;
+    };
+    let speed_type = ctx.attacker_obj.speed_type;
+    let args = NearbyArgs {
+        allow_bridge_cells: speed_type != SpeedType::Float,
+        options: NearbySearchOptions {
+            reject_any_overlay: true,
+        },
+        ..NearbyArgs::plain(
+            PassabilityArgs {
+                speed_type,
+                required_zone_id: None,
+                movement_zone: ctx.attacker_obj.movement_zone,
+                bridge_aware_zone: false,
+            },
+            NearbyFootprint::SINGLE,
+        )
+    };
+    // `CellStruct::Empty`, (0, 0), is no cell, and `MapClass::TryGetCellAt`
+    // has none off the map.
+    let Some(cell) = world
+        .nearby_passable_cell((i32::from(x), i32::from(y)), args)
+        .filter(|&cell| cell != (0, 0))
+        .map(|(x, y)| get_cellclass_fallback(ctx.terrain, i32::from(x), i32::from(y)))
+        .filter(|cell| matches!(cell, CellRef::Real(_)))
+    else {
+        return false;
+    };
+    // Phobos reads the slot's WeaponType without a null check; VERA refuses a
+    // slot with none (a map type without a weapon) instead.
+    let Some(weapon) = (weapon_index >= 0)
+        .then(|| {
+            get_weapon(
+                ctx.scanner,
+                ctx.attacker_obj,
+                weapon_index,
+                ctx.entities,
+                ctx.rules,
+                ctx.interner,
+            )
+        })
+        .flatten()
+    else {
+        return false;
+    };
+    let target = object_get_coords(candidate, ctx.terrain);
+    let distance_squared = cell_ref_target_coord(&cell)
+        .distance_from_squared(ProjectileCoord::new(target.x, target.y, target.z));
+    let range = f64::from(weapon.range_leptons);
+    distance_squared <= range * range
+}
+
 /// `TechnoClass::Evaluate_Candidate @ 0x006F7CA0` — the gate ladder, in native
 /// order, followed by the score.
 ///
@@ -2367,23 +2495,12 @@ fn evaluate_candidate(
     // with no map. Trigger: unit tests and any map whose resolved terrain is
     // not square. Player effect in production: none — `rebuild_zone_grid_full`
     // always builds from resolved terrain. Frequency: nil in a real match.
-    if let Some(scanner_zone) = walk.zone {
-        let coords = object_get_coords(candidate, ctx.terrain);
-        let cell = (
-            lepton_to_cell_packed(coords.x) as u16,
-            lepton_to_cell_packed(coords.y) as u16,
-        );
-        let candidate_zone = ctx.zone_grid.zip(ctx.terrain).and_then(|(zones, terrain)| {
-            zones.get_zone_id_native(
-                terrain,
-                cell,
-                ctx.attacker_obj.movement_zone,
-                candidate.on_bridge(),
-            )
-        });
-        if candidate_zone.is_some_and(|zone| zone != scanner_zone) {
-            return None;
-        }
+    //
+    // Once Phobos plays, its test replaces the stock one ([`zone_admits`]).
+    if let Some(scanner_zone) = walk.zone
+        && !zone_admits(ctx, candidate, scanner_zone, weapon_index)
+    {
+        return None;
     }
 
     // G10/G11 — the ally arm ([`ScanContext::ally_arm_refuses`]), then the
@@ -3537,3 +3654,7 @@ mod coefficient_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "greatest_threat_avoidance_tests.rs"]
 mod avoidance_tests;
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+#[path = "greatest_threat_zone_tests.rs"]
+mod zone_tests;

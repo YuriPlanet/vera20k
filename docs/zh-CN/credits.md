@@ -89,6 +89,7 @@ VERA20K 已移植功能对应的原作者：
 - 遭遇战 AI 去硬编码（残局变卖/全体出击、MCV 部署集结）— **TaranDahl**。
 - 并行 AI 生产队列限制 — **Trsdy**、**NetsuNegi**（按类别）、
   **Starkku**（按 TechnoType）。
+- 目标评估的地图区域检查（`TargetZoneScanType`）— **Starkku**。
 - 遭遇战无限颜色 — **Morton**。
 - AttachEffect — **Starkku**（目标过滤 — **Flactine**，附加事件 606 — **FS-21**）。
 - 暴击系统 — **Starkku**（逻辑）、**AutoGavy**（弹头暴击）、**Trsdy**
@@ -104,7 +105,7 @@ VERA 的 include/inheritance 遍历还改编自 baixiong443 的 ra2-mono `IniFil
 各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用
 GitHub 用户名标注每个链条对应的合并 PR 作者：
 
-- **1372704087** — Phobos 侧的全部功能：护盾、自定义辐射类型、三条矿石
+- **1372704087** — 以下 Phobos 功能：护盾、自定义辐射类型、三条矿石
   链、超武科技门槛、数字显示、放置预览、侧边栏 GDI/NOD 坐标、步兵自动
   部署、`FlyNoWobbles`、暂停界面居中、建筑生产队列、遭遇战 AI 去硬编码、
   并行 AI 队列限制、遭遇战无限颜色、超武侧边栏、匍匐速度、建筑类型选择、

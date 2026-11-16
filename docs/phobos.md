@@ -5,18 +5,19 @@ Phobos DLL and is not general mod support.
 
 ## The Phobos switch
 
-Three of these extensions are in every build, the release build too, and play in a game whose rules,
+Four of these extensions are in every build, the release build too, and play in a game whose rules,
 mode or map hold one of their keys. Such a key turns Phobos on for that game, as loading Phobos.dll
 would, and the game's log names it, e.g.
 `Phobos plays in this game: [GlobalControls] ForbidParallelAIQueues.Building is a Phobos key`.
 `AllowParallelAIQueues`, which Ares reads too, turns neither extension on. Retail data holds no
 such key, so a retail game plays as the original. A save, a replay and every player in an online
 match reach the same answer from the same rules, mode and map
-([Networking](Networking.md)). The three are:
+([Networking](Networking.md)). The four are:
 
 - [Parallel AI queue limits](phobos-parallel-ai-queues.md)
 - [Skirmish AI dehardcoding](phobos-ai-dehardcode.md)
 - [AI spare power](phobos-power-surplus.md)
+- [Target zone scan](phobos-target-zone.md)
 
 The rest needs a build with the `phobos` feature, which plays Phobos in every game:
 
@@ -61,6 +62,7 @@ Supported extensions:
 - [Skirmish AI dehardcoding](phobos-ai-dehardcode.md) (last-legs sale/hunt switches and MCV deploy regroup)
 - [Parallel AI queue limits](phobos-parallel-ai-queues.md) (per-category and per-type AI clone forbids)
 - [AI spare power](phobos-power-surplus.md) (`[AI] EnablePowerSurplus` keeps `PowerSurplus` power spare in AI base planning)
+- [Target zone scan](phobos-target-zone.md) (`TargetZoneScanType` lets hunting units pick targets outside their movement zone)
 - [Unlimited skirmish colours](phobos-skirmish-unlimited-colors.md) (spawner colour indices address any `[Colors]` entry)
 - [Superweapon sidebar](phobos-superweapon-sidebar.md) (left-edge superweapon cameos, toggle and positional hotkeys)
 - [Prone movement speed](phobos-prone-speed.md) (`ProneSpeed` for crawling and non-crawling prone infantry)
@@ -130,6 +132,7 @@ The features ported here originate with:
   **TaranDahl**.
 - Parallel AI queue forbids - **Trsdy**, **NetsuNegi** (by category),
   **Starkku** (by TechnoType).
+- Target evaluation map zone check (`TargetZoneScanType`) - **Starkku**.
 - Unlimited skirmish colours - **Morton**.
 - Superweapon sidebar - **NetsuNegi**, **CrimRecya**.
 - Prone speed customization - **TaranDahl**.
@@ -150,7 +153,7 @@ The features ported here originate with:
 The Rust ports are individual VERA20K contributions; GitHub usernames name
 the merged pull requests that carried each chain:
 
-- **1372704087** — every Phobos chain listed above: shields, custom
+- **1372704087** — the Phobos chains named here: shields, custom
   radiation types, the three ore chains, superweapon techno gates, digital
   display, placement preview, sidebar GDI/NOD positions, infantry auto
   deploy, `FlyNoWobbles`, the centred pause-menu background, building
