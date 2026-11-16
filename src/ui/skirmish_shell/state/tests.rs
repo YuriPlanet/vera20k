@@ -2469,8 +2469,9 @@ fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
     );
 }
 
-/// VERA's Load Setup puts back what Save Setup kept, clearing the page's own
-/// claims first; a saved choice the page does not offer leaves Random.
+/// VERA's last setup goes back on the page as it was kept, clearing the
+/// page's own claims first; a saved choice the page does not offer leaves
+/// Random.
 #[test]
 fn saved_setup_loads_back_through_the_combo_rules() {
     use SkirmishComboId as Id;
@@ -2536,8 +2537,8 @@ fn saved_setup_loads_back_through_the_combo_rules() {
     assert_eq!(shown.computers[1].seat.start, LaunchStartPosition::Auto);
 }
 
-/// Save and Load reach every computer row the map seats, not only the rows
-/// VERA's scrollbar shows.
+/// Keeping a setup and putting it back reach every computer row the map
+/// seats, not only the rows VERA's scrollbar shows.
 #[test]
 fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
     let maps = [test_map_entry_with_starts("thirty.mmx", 30)];
