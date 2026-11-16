@@ -42,6 +42,11 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `VeinholeWarhead`：`IsVeins=` 动画在成熟杂草格（Overlay 126、Data>=0x30、
+  平地、低空占位）上每 2 帧用 `[General] VeinDamage=` + `[CombatDamage]
+  VeinholeWarhead=` 伤害格内低空 techno；前置失败置 `UnableToContinue`
+  （`Ext/Anim/Body.cpp:164-195`，钩子 `0x4243BC`）。`VeinDamage`、`ImmuneToVeins`
+  两个原生键同批读取。
 - `ColorAddUse8BitRGB`（其余三色）：`TechnoExt::GetTintColor` 的类词替换钩子已接
   ——建筑（普通铁幕）、单位体素（铁幕/狂暴）、步兵 SHP（狂暴）都改用
   `GetColorFromColorAdd` 的单臂词（开关开启时按 8 位 RGB 收窄），与空袭激光色
@@ -138,14 +143,13 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 4 项（5 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 3 项（4 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
-| `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
 
 ## 2. 明确排除（不移植，扫描器已列 disabled）
 
@@ -183,6 +187,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
   生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
   `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
+- **Veinhole 的空战头**：`VeinholeWarhead=` 未设时 Phobos 向 `ReceiveDamage` 传 null
+  战头；VERA 的伤害包必须有活动战头，因此该键未设/未知名时不造成伤害（零售
+  `VeinDamage=0` 且未设该键，故零售行为不变）。TS `VeinProof` 能力在 YR 类型上
+  没有可读标志，未建模。
 - **DisplayIncome 的卖出标签**：`FootClass::Sell`（`Hooks.Selling.cpp:7-27`）在
   全局 `DisplayIncome` 开启时立即打印卖出金额；VERA 目前没有玩家单位卖出路径，
   该臂未接。触发：卖出单位；频率：仅单位卖出；风险：少一条浮动金额。

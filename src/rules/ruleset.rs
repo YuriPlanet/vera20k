@@ -2023,6 +2023,10 @@ pub struct GeneralRules {
     /// share `TechnoTypeClass::GetRefund @ 0x00711F60` applies. Constructor
     /// default 0.5 (`0x006675CE..0x006675D4`, ECX set at `0x00667190`).
     pub refund_percent: crate::util::native_x87::NativeF64Bits,
+    /// `VeinDamage=` (Rules `+0x1450`, `ReadInt` at `0x0067434D` against the
+    /// `[General]` section; constructor seed 0). The veinhole anim attack's
+    /// damage per hit (`Ext/Anim/Body.cpp:183`).
+    pub vein_damage: i32,
     /// `ShipSinkingWeight=` (Rules `+0x630`, `ReadDouble` at `0x0066F174`;
     /// constructor default 3.0 at `0x00665EE8`). A surface naval unit at
     /// least this `Weight=` sinks on water instead of exploding
@@ -3081,6 +3085,7 @@ impl Default for GeneralRules {
             refund_percent: crate::util::native_x87::NativeF64Bits::from_bits(
                 0x3fe0_0000_0000_0000,
             ),
+            vein_damage: 0,
             ship_sinking_weight: SimFixed::lit("3.0"),
             // RulesClass constructor 0x6660BE..0x6660ED.
             tracked_uphill: NativeF64Bits::ONE,
@@ -4423,6 +4428,7 @@ impl GeneralRules {
                     )
                     .to_bits(),
             ),
+            vein_damage: general.read_int("VeinDamage", defaults.vein_damage),
             ship_sinking_weight: SimFixed::from_num(
                 general.read_double("ShipSinkingWeight", defaults.ship_sinking_weight.to_num())
                     as f32,

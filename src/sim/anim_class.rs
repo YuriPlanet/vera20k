@@ -64,6 +64,9 @@ mod flaming_guy;
 #[cfg(test)]
 #[path = "anim_animated_tiberium_tests.rs"]
 mod animated_tiberium_tests;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "anim_vein_attack_tests.rs"]
+mod vein_attack_tests;
 
 #[cfg(all(test, feature = "phobos"))]
 #[path = "anim_firing_update_tests.rs"]
@@ -2934,6 +2937,13 @@ impl Simulation {
         if self.substrate.pending_delete.contains_object(&id) {
             return Ok(false);
         }
+        // Phobos `AnimClass_Update_VeinholeAttack` (hook `0x4243BC`,
+        // `Misc/Hooks.VeinholeMonster.cpp:59-67`): an `IsVeins=` anim runs
+        // the veinhole attack AI before the animated-tiberium check.
+        #[cfg(feature = "phobos")]
+        if config.is_veins {
+            self.vein_attack_ai(id, rules, overlay_registry, frame_effects)?;
+        }
         // AnimAI4243BC..424427: compare the exact CellAnim type at virtual
         // GetCoords minus384 in XY. A mismatch writes inactive but falls
         // through this visit's frame/damage work; retirement is next visit.
@@ -3081,6 +3091,132 @@ impl Simulation {
     /// AnimClass::AI424513..424647, after the stage/timer commit. Debit the
     /// retained fraction before GetCoords/AreaDamage can retire this emitter.
     /// The body adds no RNG request; receiver consequences keep their owners.
+    /// Phobos `AnimExt::VeinAttackAI` (`Ext/Anim/Body.cpp:164-195`, hook
+    /// `0x4243BC`): a `IsVeins=` anim on the fully grown weed overlay (index
+    /// 126, data >= 0x30, flat cell) retires itself when a precondition fails
+    /// and damages every low techno of its cell every other frame with
+    /// `[General] VeinDamage=` and `[General] VeinholeWarhead=`.
+    ///
+    /// RESIDUAL: native passes a null warhead when `VeinholeWarhead=` is
+    /// unset; a damage packet needs a live warhead, so an unset/unknown key
+    /// deals no damage (retail leaves it unset with `VeinDamage=0`). The TS
+    /// `VeinProof` ability has no YR type flag to read.
+    #[cfg(feature = "phobos")]
+    fn vein_attack_ai(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<(), TiberiumImageError> {
+        const WEED_OVERLAY_INDEX: u8 = 126;
+        const FULLY_GROWN_FROM: u8 = 0x30;
+        let Some(location) = self.anim_absolute_coord(id) else {
+            return Ok(());
+        };
+        let (occupiers, retire) = {
+            let Some(terrain) = self.resolved_terrain.as_ref() else {
+                return Ok(());
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let identity = cells.lookup_world(location.x, location.y);
+            let (rx, ry) = cells.coord(identity);
+            let slope = match identity {
+                crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                    terrain.cells()[index].slope_type
+                }
+                crate::map::cell_index::NativeCellIdentity::Dummy => {
+                    terrain.shared_cell_dummy().snapshot().slope_type
+                }
+            };
+            let (overlay, overlay_data) = self.anim_cell_overlay_fields(location);
+            let mut occupiers: Vec<u64> = Vec::new();
+            if let Some(cell) = self.substrate.occupancy.get(rx as u16, ry as u16) {
+                for layer in [
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                    crate::sim::movement::locomotor::MovementLayer::Bridge,
+                    crate::sim::movement::locomotor::MovementLayer::Air,
+                    crate::sim::movement::locomotor::MovementLayer::Underground,
+                ] {
+                    for occupant in cell.iter_layer(layer) {
+                        occupiers.push(occupant.entity_id);
+                    }
+                }
+            }
+            // `pOccupier->GetHeight() > 0` for the cell list head blocks the
+            // anim from continuing.
+            let blocked = occupiers.iter().any(|&occupier| {
+                self.substrate.entities.get(occupier).is_some_and(|entity| {
+                    crate::sim::movement::air_movement::current_fly_height(entity, Some(terrain))
+                        > 0
+                })
+            });
+            let retire = occupiers.is_empty()
+                || blocked
+                || overlay != Some(WEED_OVERLAY_INDEX)
+                || overlay_data < FULLY_GROWN_FROM
+                || slope != 0;
+            (occupiers, retire)
+        };
+        // `pAnim->UnableToContinue = true`; the same next-visit retirement
+        // byte the animated-tiberium mismatch writes.
+        if retire && let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.runtime.inactive = true;
+        }
+        if !self.session.binary_frame().is_multiple_of(2) {
+            return Ok(());
+        }
+        let Some(warhead_name) = rules.phobos_globals.veinhole_warhead.as_deref() else {
+            return Ok(());
+        };
+        let Some(warhead) = rules.warhead(warhead_name) else {
+            return Ok(());
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        let damage = rules.general.vein_damage;
+        let terrain = self.resolved_terrain.as_ref();
+        let targets: Vec<u64> = occupiers
+            .into_iter()
+            .filter(|&occupier| {
+                let Some(entity) = self.substrate.entities.get(occupier) else {
+                    return false;
+                };
+                if !matches!(
+                    entity.category(),
+                    crate::map::entities::EntityCategory::Structure
+                        | crate::map::entities::EntityCategory::Unit
+                        | crate::map::entities::EntityCategory::Infantry
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) {
+                    return false;
+                }
+                let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                    return false;
+                };
+                !object.immune_to_veins
+                    && entity.health.current() > 0
+                    && entity.lifecycle.object_alive()
+                    && crate::sim::movement::air_movement::current_fly_height(entity, terrain) <= 5
+            })
+            .collect();
+        for occupant in targets {
+            let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                occupant,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: false,
+                    arg6: false,
+                },
+            );
+            self.commit_direct_damage_receiver(rules, overlay_registry, receiver, effects);
+        }
+        Ok(())
+    }
+
     fn anim_frame_damage(
         &mut self,
         id: AnimId,

@@ -2606,6 +2606,10 @@ pub struct ObjectType {
     /// rules.ini. Also selects the deployed self-irradiate mission behaviour
     /// for deploy-fire units whose deploy weapon emits radiation.
     pub immune_to_radiation: bool,
+    /// `ImmuneToVeins=` (`TechnoType+?`, Phobos `Ext/Anim/Body.cpp:186`): the
+    /// veinhole anim attack skips this type. Retail authors it on the three
+    /// TS vein types.
+    pub immune_to_veins: bool,
     /// Allows this object to be admitted as its own ground AoE receiver.
     /// CrushWarhead independently admits self regardless of this flag.
     pub damage_self: bool,
@@ -7372,6 +7376,7 @@ impl ObjectType {
             omni_crusher: section.read_bool("OmniCrusher", false),
             omni_crush_resistant: section.read_bool("OmniCrushResistant", false),
             immune_to_radiation: section.read_bool("ImmuneToRadiation", false),
+            immune_to_veins: section.read_bool("ImmuneToVeins", false),
             damage_self: section.read_bool("DamageSelf", false),
             immune: section.read_bool("Immune", false),
             type_immune: section.read_bool("TypeImmune", false),
