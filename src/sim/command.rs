@@ -521,6 +521,11 @@ pub enum ObjectAction {
 pub const VERA_EJECT_BUNKER_OPCODE: u8 = 0x31;
 pub const VERA_PAID_SUPER_OPCODE: u8 = 0x30;
 pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
+/// VERA-only Phobos `ExtendedPlayerRepair` toggle: the issuing human House
+/// sets its `PlayerAutoRepair` byte to the payload bit. Phobos adds a custom
+/// `EventClass` type for this; VERA keeps a one-byte wire record so the flag
+/// stays synchronized and replayable.
+pub const VERA_PLAYER_AUTO_REPAIR_OPCODE: u8 = 0x33;
 pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
 
 impl ObjectAction {
@@ -723,6 +728,36 @@ impl CycleProducerRecord {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             category,
+        })
+    }
+}
+
+/// Phobos `EventExt::RespondToTogglePlayerAutoRepair`
+/// (`Ext/Event/Body.cpp:109-128`): the issuing House flips its own
+/// `PlayerAutoRepair` switch; the wire carries the requested state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlayerAutoRepairRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub enabled: bool,
+}
+impl PlayerAutoRepairRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        CommandRecord::encode(
+            VERA_PLAYER_AUTO_REPAIR_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &[u8::from(self.enabled)],
+        )
+    }
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != VERA_PLAYER_AUTO_REPAIR_OPCODE {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            enabled: record.payload()[0] != 0,
         })
     }
 }

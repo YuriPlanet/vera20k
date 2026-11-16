@@ -19,8 +19,8 @@ use crate::sim::command::{
     COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, CycleProducerRecord, DeployRecord,
     ExitRecord, GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
     ObjectAction, ObjectActionRecord, PaidSuperAction, PaidSuperRecord, PlaceRecord,
-    ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord,
-    SpecialPlaceRecord, StopRecord,
+    PlayerAutoRepairRecord, ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord,
+    SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -263,6 +263,26 @@ impl Simulation {
         }
         .write_into(&mut record);
         Some(record)
+    }
+
+    /// Phobos `EventExt::RaiseTogglePlayerAutoRepair` (`Ext/Event/Body.cpp:
+    /// 109-128`): a one-byte record whose sender sets its own House switch.
+    pub fn encode_player_auto_repair_record(
+        &self,
+        command_owner: InternedId,
+        enabled: bool,
+    ) -> Option<CommandRecord> {
+        let record = self.encode_header_event(
+            command_owner,
+            crate::sim::command::VERA_PLAYER_AUTO_REPAIR_OPCODE,
+        )?;
+        PlayerAutoRepairRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            enabled,
+        }
+        .encode()
+        .ok()
     }
 
     /// TargetEvent4C65E0 is used by SELL16 (Execute4C6F12) and
@@ -980,6 +1000,18 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        if let Some(event) = PlayerAutoRepairRecord::decode(record) {
+            let owner = self.command_sender_owner(event.house_id)?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::TogglePlayerAutoRepair {
+                        enabled: event.enabled,
+                    },
+                )
+            });
+        }
         if let Some(event) = RepairRecord::decode(record) {
             let owner = self.command_sender_owner(event.house_id)?;
             let entity_id = u64::try_from(event.entity_id).ok()?;

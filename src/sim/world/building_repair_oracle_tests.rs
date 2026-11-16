@@ -1066,3 +1066,28 @@ fn extended_player_repair_toggles_the_human_house_buildings() {
         "the cleared house flag stops the repair"
     );
 }
+
+/// The VERA wire record carries the requested switch state and decodes back
+/// to the semantic command for the issuing House, so the flag stays
+/// synchronized for replay and network peers.
+#[cfg(feature = "phobos")]
+#[test]
+fn player_auto_repair_record_round_trips_the_requested_state() {
+    let corpus = corpus();
+    let input = &corpus["update"][0]["input"];
+    let (sim, _rules, _smoke) = update_scene(&corpus, input);
+    let owner = sim.interner.get("AI").unwrap();
+    for enabled in [true, false] {
+        let record = sim
+            .encode_player_auto_repair_record(owner, enabled)
+            .expect("repair toggle record");
+        let envelope = sim
+            .decode_native_command_record(&record, 0)
+            .expect("repair toggle decodes");
+        assert_eq!(
+            envelope.payload,
+            crate::sim::command::Command::TogglePlayerAutoRepair { enabled }
+        );
+        assert_eq!(envelope.owner, owner);
+    }
+}

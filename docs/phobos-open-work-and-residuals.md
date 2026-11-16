@@ -174,8 +174,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 ## 3. 已记录残渣（按链，含触发/影响/频率/风险）
 
 ### 本会话新增链
-1. **Warhead.PreventScatter**（`8bacaf9bd`）：rules 解析不到的 warhead 名 → VERA
-   照常散射；native 会走全局。触发：坏 WARHEAD 引用；频率：仅坏数据；风险：低。
+1. **Warhead.PreventScatter**（`8bacaf9bd`）：无残渣；gamemd 对未知 warhead 名
+   分配空类型，VERA 的 `warhead_prevents_scatter` 同样回落到
+   `[CombatDamage] Warhead.PreventScatter`（回归测试
+   `world_receiver::prevent_scatter_tests`）。
 2. **AIChronoSphereSW/AIChronoWarpSW**（`6fb756008`）：
    - `ValueableIdx` 名字→索引在**跨 INI 层**的差异：native 坏名字保留旧层索引，
      VERA 单次合并读取下解析为未找到；频率：仅坏数据。
@@ -194,10 +196,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    Ares 的 ApplyPermaMC 调用点，Dominator 原生路径不变。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
-- **飞机等级光照与风暴/支配者同时存在的顺序**：Phobos 的飞机钩子先查 Dominator
-  再查风暴，VERA 两种绘制共用 cell-lighting 顺序（风暴优先）；两者同时运行时
-  飞机取 Ion 等级而非 Dominator。触发：雷电风暴与支配者重叠；频率：极低；
-  风险：等级项差一个档位。
+- **飞机等级光照与风暴/支配者同时存在的顺序**：无残渣；飞机 `DrawIt` 臂改走
+  `Simulation::lighting_aircraft_profile`（Dominator→核闪→Ion），与 Phobos
+  `Ext/Techno/Hooks.Tint.cpp:320-338` 一致；jumpjet 臂保持 cell-lighting 的
+  Ion 优先顺序。
 - **Veinhole 的空战头**：`VeinholeWarhead=` 未设时 Phobos 向 `ReceiveDamage` 传 null
   战头；VERA 的伤害包必须有活动战头，因此该键未设/未知名时不造成伤害（零售
   `VeinDamage=0` 且未设该键，故零售行为不变）。TS `VeinProof` 能力在 YR 类型上
@@ -209,11 +211,9 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `BuildingClass` 奴隶矿车累积、对其 `DeploysInto` 类型立即打印；VERA 的奴隶
   收入统一经 `pay_refinery_owner` 累到矿厂。触发：TS 风格奴隶矿车；频率：仅
   该类单位；风险：标签锚点位置不同（零售无此单位）。
-- **ExtendedPlayerRepair 的多人数值同步**：Phobos 用自有 `EventClass` 房间事件
-  翻转 `PlayerAutoRepair`；VERA 目前把它作为本地 `Command` 队列项，单机/战役
-  正确，联机时对端看不到该房标志变化。触发：联机中玩家点修理按钮；频率：每次
-  切换；风险：双方建筑自动修理状态不一致。下一步：给它一个 VERA 同步
-  opcode 并让回放/校验包含该房标志（标志本身已持久化）。
+- **ExtendedPlayerRepair 的多人数值同步**：无残渣；`PlayerAutoRepairRecord`
+  （VERA opcode `0x33`）把开关写进同步 `CommandRecord`，解码后按房执行
+  `set_player_auto_repair`，单机/联机/回放同一路径。
 - **Jumpjet 预测的三角/开方**：Phobos `JumpjetLocomotionPredictHeight` 用
   `Math::cos/sin`（MSVC CRT，binary64）与 `Foot::DistanceFrom`；VERA 用 Rust
   `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上
@@ -224,8 +224,9 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   电力段。触发：开启扩展提示；频率：每次悬停电力建筑/单位；风险：少一段文本。
 - **`SWShotsFormat` 余量**：`SW.Shots` 状态只在 Ares 包；仅 phobos 构建没有计数，
   射击行不显示。触发：自定义 `SW.Shots` 且开启扩展提示；风险：少一行提示。
-- **`MaxWidth` 的 5 px 绘制内边距**（钩子 `0x479029`）：VERA 文字内边距为固定
-  常量，不随 `MaxWidth>0` 收缩；触发：设置 MaxWidth；风险：边框附近间距差 5 px。
+- **`MaxWidth` 的 5 px 绘制内边距**（钩子 `0x479029`）：无残渣；cameo 换行宽度
+  在 `MaxWidth>0` 时取 `MaxWidth-5`（回归测试
+  `cameo_max_width_reserves_the_five_pixel_padding`）。
 - **sim-scale deviations（有意保留，AGENTS.md）**：VERA 自有渲染器与 native
   管线不同（体素光栅/着色、图集）；`sim/` 不依赖 `render/`。实机对比时以
   “玩法可辨差异”为准，不以像素级 native 一致为准。

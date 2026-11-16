@@ -2212,10 +2212,10 @@ pub(crate) fn commit_entities(
             // warhead leaves the admitted object in place. The admission
             // before it only reads. Phobos re-hooks the same site with its
             // nullable-plus-global decision, so both features go through
-            // `WarheadType::prevents_scatter`.
-            let prevent_scatter = rules
-                .warhead(world.interner.resolve(event.warhead_ref))
-                .is_some_and(|warhead| warhead.prevents_scatter(rules));
+            // `warhead_prevents_scatter`, which keeps the global for an
+            // unknown name the way gamemd's allocating lookup does.
+            let prevent_scatter =
+                warhead_prevents_scatter(rules, world.interner.resolve(event.warhead_ref));
             if !prevent_scatter {
                 match world.receive_damage_scatter(
                     target_id,
@@ -5500,6 +5500,17 @@ fn warhead_trigger_skips(
     )
 }
 
+/// The `0x702CFE` scatter decision for a damage event's warhead name.
+/// gamemd's rules lookup allocates an empty type for an unknown name, so the
+/// hook still reads a warhead and its absent `PreventScatter=` falls through
+/// to the global; a name VERA cannot resolve must not turn the global off.
+fn warhead_prevents_scatter(rules: &RuleSet, name: &str) -> bool {
+    match rules.warhead(name) {
+        Some(warhead) => warhead.prevents_scatter(rules),
+        None => cfg!(feature = "phobos") && rules.phobos_globals.warhead_prevent_scatter,
+    }
+}
+
 /// `Ext/Techno/Hooks.ReceiveDamage.cpp:26-34`'s gate, with the damaging
 /// techno as invoker.
 #[cfg(feature = "phobos")]
@@ -5668,4 +5679,30 @@ fn warhead_damages_wall(
     wall_flags: &crate::rules::overlay_types::OverlayTypeFlags,
 ) -> bool {
     warhead.wall || warhead.wall_absolute_destroyer || (warhead.wood && wall_flags.armor_is_wood)
+}
+
+#[cfg(all(test, feature = "phobos"))]
+mod prevent_scatter_tests {
+    use super::warhead_prevents_scatter;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    /// gamemd allocates an empty warhead for a name the rules do not define,
+    /// so the native hook's nullable read falls through to the global instead
+    /// of scattering.
+    #[test]
+    fn an_unresolved_warhead_name_keeps_the_global_prevent_scatter() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[CombatDamage]\nWarhead.PreventScatter=yes\n\
+             [Warheads]\n0=HIT\n1=OFF\n\
+             [HIT]\n[OFF]\nPreventScatter=no\n",
+        ))
+        .unwrap();
+        assert!(warhead_prevents_scatter(&rules, "HIT"));
+        assert!(!warhead_prevents_scatter(&rules, "OFF"));
+        assert!(
+            warhead_prevents_scatter(&rules, "NO-SUCH-WARHEAD"),
+            "an unknown name keeps the global"
+        );
+    }
 }

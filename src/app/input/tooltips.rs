@@ -1201,6 +1201,18 @@ pub(crate) enum TipAnchor {
     SwButton { right: f32, top: f32 },
 }
 
+/// Phobos `CCToolTip_Draw2_SetMaxWidth @ 0x478EF8` and the padding hook
+/// `0x479029`: a positive `MaxWidth` replaces the wrap limit and reserves five
+/// pixels so the text stops short of the border; zero keeps the view width.
+#[cfg(feature = "phobos")]
+fn cameo_wrap_width(max_width: i32, view_width: u32) -> u32 {
+    if max_width > 0 {
+        (max_width - 5).max(1) as u32
+    } else {
+        view_width
+    }
+}
+
 /// The cameo draw overrides for tip id `id`, or `None` for every other tip.
 #[cfg(feature = "phobos")]
 fn cameo_tip_draw(state: &AppState, id: u32) -> Option<CameoTipDraw> {
@@ -1211,11 +1223,7 @@ fn cameo_tip_draw(state: &AppState, id: u32) -> Option<CameoTipDraw> {
     }
     let ui = &state.process_assets.phobos_tooltips_ui;
     let (_, _, view_width, _) = crate::app::input::camera::tactical_viewport_px(state);
-    let wrap_width = if ui.max_width > 0 {
-        ui.max_width as u32
-    } else {
-        view_width.max(0) as u32
-    };
+    let wrap_width = cameo_wrap_width(ui.max_width, view_width.max(0) as u32);
     let anchor = if ui.anchored_tooltips
         && ui.extended_tooltips
         && state.match_state.match_presentation.tool_tip_descriptions
@@ -2643,5 +2651,16 @@ ToolTip.Background.Opacity={opacity}
         );
         assert_eq!(fill[0].tint, [0.25, 0.5, 0.75]);
         assert_eq!(fill[0].alpha, 0.4);
+    }
+
+    /// Phobos `MaxWidth` reserves five pixels for the border (`0x479029`);
+    /// zero keeps the view width.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn cameo_max_width_reserves_the_five_pixel_padding() {
+        assert_eq!(cameo_wrap_width(200, 1024), 195);
+        assert_eq!(cameo_wrap_width(3, 1024), 1);
+        assert_eq!(cameo_wrap_width(0, 1024), 1024);
+        assert_eq!(cameo_wrap_width(-4, 800), 800);
     }
 }

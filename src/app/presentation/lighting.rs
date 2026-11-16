@@ -364,11 +364,13 @@ pub(crate) fn phobos_air_unit_light(
     if !aircraft && !jumpjet {
         return light;
     }
-    // The cell-lighting order is storm, Dominator, nuke. RESIDUAL: the
-    // aircraft hook checks the Dominator before the storm, so an aircraft
-    // drawn while a lightning storm and the Dominator both run uses their
-    // order here (both rare together).
-    let profile = sim.lighting_cell_profile();
+    // The aircraft hook checks the Dominator before the storm; the jumpjet
+    // arms use the cell-lighting order (storm first).
+    let profile = if aircraft {
+        sim.lighting_aircraft_profile()
+    } else {
+        sim.lighting_cell_profile()
+    };
     let level = sim.session().lighting().profile(profile).level_units;
     let multiplier = if aircraft {
         f64::from_bits(rules.phobos_globals.aircraft_level_light_multiplier.bits())
