@@ -12818,7 +12818,7 @@ impl RuleSet {
         if entry.voxel {
             return None;
         }
-        let base = if self.phobos_globals.art_image_swap {
+        let base = if self.art_image_swap_enabled() {
             self.art()
                 .resolve_effective_image_id(&object.id, &object.image)
         } else {
@@ -12831,6 +12831,18 @@ impl RuleSet {
     pub fn unit_turret_shp_file(&self, type_id: &str) -> Option<String> {
         self.unit_turret_shp_id(type_id)
             .map(|id| format!("{id}.SHP"))
+    }
+
+    /// `[General] ArtImageSwap=` is a Phobos-only key; the stock build keeps
+    /// the native default (`no`, name the turret after `ImageFile`).
+    #[cfg(feature = "phobos")]
+    fn art_image_swap_enabled(&self) -> bool {
+        self.phobos_globals.art_image_swap
+    }
+
+    #[cfg(not(feature = "phobos"))]
+    fn art_image_swap_enabled(&self) -> bool {
+        false
     }
 
     #[cfg(any(test, feature = "test-support"))]
