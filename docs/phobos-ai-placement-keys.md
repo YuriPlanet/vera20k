@@ -193,6 +193,17 @@ that its footprint stays the aim point.
   `ai_clean_wall_node_refuses_a_wall_without_a_protected_neighbour` and
   `ai_clean_wall_node_requires_a_protected_neighbour` cover the gate, key-off
   fill and both neighbour answers.
+- `ai_bias_spawn_cell`: `sim::house_strategy` (`0x004FD500`'s owner) calls
+  `bias_base_center_to_nearest_conyard` before its enemy/superweapon steps. With
+  the key on outside a campaign and more than one `ConstructionYard=` in the
+  house, it keeps the nearest alive, healthy, out-of-limbo yard by cell squared
+  distance against the retained launch waypoint center, then writes
+  `HouseState::base_center` (VERA's one published center; native's
+  `BaseSpawnCell` and `Base.Center` collapse to it). Tests
+  `ai_bias_spawn_cell_moves_the_center_to_the_nearest_live_yard`,
+  `ai_bias_spawn_cell_skips_limbo_and_dead_yards` and
+  `ai_bias_spawn_cell_needs_two_yards_and_a_non_campaign` cover the nearest
+  pick, the live filter and the key/campaign/one-yard boundaries.
 - `team_delays_dynamic_type`: `sim::ai_team_creation::dynamic_team_delay` is
   `HouseClass_Update_ResetTeamDelay 0x004F8ACC`'s owner. It leaves the stock
   path when the session is a campaign, the type is `None`, or
@@ -215,13 +226,6 @@ that its footprint stays the aim point.
 
 ## Residuals
 
-- `AIBiasSpawnCell` (`0x004FD538`): VERA's `sim::house_strategy` has no
-  `GetSpawnPosition()` reader and no conyard enumeration, so the nearest-conyard
-  base-centre rewrite does not run. Trigger: an AI house with two or more
-  conyards in a non-campaign game. Effect: the base centre and spawn cell stay
-  on the scenario waypoint instead of the conyard nearest it. Frequency: once per
-  house AI update. Risk: AI production concentrates on the far conyard; player
-  visible in long AI games.
 - `FallingDownTargetingFix` boundaries: the native hook's `skip` reads the
   `ThreatType::Air | ThreatType::Range` argument, which VERA's scan does not
   carry; the port gates on an air-capable non-AA-only mask (`mask & 4 != 0`,
