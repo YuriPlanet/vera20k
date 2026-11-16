@@ -10612,7 +10612,7 @@ impl RuleSet {
                         .map(|port| object.alternate_fire_flh(port))
                         .collect::<Vec<_>>()
                 });
-                let consumed = (art.map_or(0, |art| art.turret_offset), slots, ports);
+                let consumed = (art.map_or(0, |art| art.turret_offset[0]), slots, ports);
                 (object.id.to_ascii_uppercase(), consumed)
             })
             .collect::<BTreeMap<_, _>>()

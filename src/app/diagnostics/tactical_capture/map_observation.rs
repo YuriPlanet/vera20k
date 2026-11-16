@@ -4295,7 +4295,7 @@ impl TacticalCaptureSession {
                                 entity, object, sim.entities(), rules, sim.interner())
                                 .map(|weapon| weapon.id.as_str()),
                             "turret_offset": crate::sim::combat::fire_coord::firer_art(rules, object)
-                                .map_or(0, |art| art.turret_offset),
+                                .map_or(0, |art| art.turret_offset[0]),
                             "rocking_angles_fixed_bits": entity.rocking.as_ref().map(|rocking| [
                                 rocking.angle_sideways().to_bits(), rocking.angle_forwards().to_bits()]),
                         })

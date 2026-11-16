@@ -456,7 +456,7 @@ mod tests {
             frame_width: 30,
             frame_height: 30,
             voxel: false,
-            turret_offset: 0,
+            turret_offset: [0, 0, 0],
             y_draw_offset: 0,
             x_draw_offset: 0,
             building_anims: Vec::new(),

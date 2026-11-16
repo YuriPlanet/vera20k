@@ -43,6 +43,12 @@ when `ArtImageSwap=yes`, otherwise the type's own image
   derived stem; an absent file binds nothing. It also requests the body's
   `WalkFrames * Facings` turret block explicitly (`shp_vehicle_turret`), which
   need not overlap a `Stand`/`Walk` sequence when `StandingFrames=0`.
+- `rules::art_data::ArtData::turret_offset` is the full `[X, Y, Z]` triple,
+  read through the Phobos `PartialVector3D<int>` scan: retail's bare `-20`
+  fills X, an authored triple fills all three. `shp_turret_offset_screen`
+  rotates the `(X, Y)` pair by `turret-bearing - body-bearing`, keeps `Z`, and
+  projects all three through `absolute_leptons_to_screen`
+  (`Ext/Unit/Hooks.DrawIt.cpp:38-49`).
 - `app::presentation::instances::shp` emits the SHP unit turret piece after
   the body, from the bound turret shape or the body slice, at the turret
   facing; it is skipped for dying and disguised units.
@@ -84,12 +90,6 @@ None; file probing and frame selection read no RNG.
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **`TurretOffset` lateral/height terms.** The SHP turret draw applies the
-  native matrix translation (`Ext/Unit/Hooks.DrawIt.cpp:38-49`,
-  `TechnoTypeExt::ApplyTurretOffset`), but `ArtData::turret_offset` reads only
-  the first integer of the ART triple. Trigger: a nonzero `Y` or `Z` term.
-  Frequency: authored mods. Risk: the turret pivot ignores lateral/height
-  components; the X term matches native.
 - **Z adjust and shadow.** Native's SHP turret draw uses zAdjust -32 and
   disables the shadow; VERA reuses the body's Z policy and emits no separate
   turret shadow. Trigger: every SHP turret. Frequency: modded turret units.

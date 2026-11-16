@@ -320,7 +320,7 @@ pub fn turret_pivot_coordinate(
     } else {
         (0, 0)
     };
-    let offset = base.art.map_or(0, |art| art.turret_offset);
+    let offset = base.art.map_or(0, |art| art.turret_offset[0]);
     let delta = if entity.locomotor.is_some() {
         // Authored TurretOffset is not clamped by the ART reader; ftol keeps
         // the low dword of an out-of-range coordinate, as native does.
@@ -575,7 +575,7 @@ pub(crate) fn fire_coordinate(
         #[cfg(feature = "phobos")]
         let offset = phobos_turret_pivot_offset(world, snap, obj, burst_index, art);
         #[cfg(not(feature = "phobos"))]
-        let offset = [art.map_or(0, |art| art.turret_offset), 0, 0];
+        let offset = [art.map_or(0, |art| art.turret_offset[0]), 0, 0];
         (offset, base.facings)
     };
     let flh_delta = flh_world_delta(
@@ -683,7 +683,7 @@ fn phobos_turret_pivot_offset(
     burst_index: u8,
     art: Option<&ArtEntry>,
 ) -> [i32; 3] {
-    let stock = [art.map_or(0, |art| art.turret_offset), 0, 0];
+    let stock = [art.map_or(0, |art| art.turret_offset[0]), 0, 0];
     if snap.category != EntityCategory::Unit {
         return stock;
     }
@@ -742,7 +742,7 @@ pub(crate) fn custom_flh_coordinate(
         });
     let turret_arm = on_turret && (structure || has_turret);
     let turret_offset = if turret_arm {
-        base.art.map_or(0, |art| art.turret_offset)
+        base.art.map_or(0, |art| art.turret_offset[0])
     } else {
         0
     };
@@ -1226,7 +1226,7 @@ fn open_topped_port_coordinate(
     #[cfg(not(feature = "phobos"))]
     let turret_space = true;
     let (turret_offset, facings) = if turret_space {
-        (base.art.map_or(0, |art| art.turret_offset), base.facings)
+        (base.art.map_or(0, |art| art.turret_offset[0]), base.facings)
     } else {
         (
             0,

@@ -107,8 +107,8 @@ pub struct ArtEntry {
     pub frame_height: u16,
     /// Render as VXL+HVA model (true) or SHP sprite (false).
     pub voxel: bool,
-    /// Optional voxel turret/barrel forward/backward alignment tweak.
-    pub turret_offset: i32,
+    /// Phobos `TurretOffset` FLH pivot (`CoordStruct`, all three terms).
+    pub turret_offset: [i32; 3],
     /// Extra Y pixel offset for sprite rendering.
     pub y_draw_offset: i32,
     /// Extra X pixel offset for sprite rendering.
@@ -1465,7 +1465,10 @@ impl ArtRegistry {
             let crater: bool = section.read_bool("Crater", false);
             let force_big_craters: bool = section.read_bool("ForceBigCraters", false);
             let voxel: bool = section.read_bool("Voxel", false);
-            let turret_offset: i32 = section.read_int("TurretOffset", 0);
+            // Phobos `Valueable<PartialVector3D<int>>` (`Ext/TechnoType/Body.h:56`)
+            // uses the partial three-integer scan: retail's bare `-20` fills X
+            // and leaves Y/Z at zero, while `256,128,-24` fills all three.
+            let turret_offset: [i32; 3] = section.read_phobos_int_triple("TurretOffset", [0, 0, 0]);
             let y_draw_offset: i32 = section.read_int("YDrawOffset", 0);
             let x_draw_offset: i32 = section.read_int("XDrawOffset", 0);
             let building_anims: Vec<BuildingAnimConfig> = parse_building_anims(section, ini);

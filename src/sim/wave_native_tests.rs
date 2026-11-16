@@ -163,7 +163,7 @@ fn retail_tele_and_mtnk_read_the_native_magnetic_and_lift_inputs() {
                 ]
             );
             let art = rules.art().get(&object.image).expect("firer art");
-            assert_eq!(art.turret_offset, integer(&native["turret_offset"]));
+            assert_eq!(art.turret_offset[0], integer(&native["turret_offset"]));
         }
         // Selected native D70..D94 block. Padding has no gameplay authority.
         let block = bytes::<40>(&native["jumpjet_block_hex"]);

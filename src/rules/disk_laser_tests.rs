@@ -60,7 +60,7 @@ fn stock_disc_reads_battle_map_weapon_art_and_charge_reference() {
     assert_eq!(weapon.laser_outer_spread, [0, 0, 0]);
     let art = rules.art().get("DISK").expect("fixed retail DISK art");
     assert_eq!(disc.weapon_flh(0, false), [0, 0, 75].into());
-    assert_eq!(art.turret_offset, 0);
+    assert_eq!(art.turret_offset, [0, 0, 0]);
     assert_eq!(
         rules.general.disk_laser_charge_up(),
         Some("FloatingDiscChargeUp")

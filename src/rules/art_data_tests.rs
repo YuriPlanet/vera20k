@@ -191,6 +191,31 @@ fn muzzle_flash_reads_past_a_missing_index() {
     assert_eq!(ports[..3], [(1, 2), (0, 0), (5, 6)]);
 }
 
+/// Phobos `TechnoTypeExt::TurretOffset` is a `Valueable<PartialVector3D<int>>`
+/// read through the partial three-integer scan (`Ext/TechnoType/Body.cpp:1322`,
+/// `Ext/TechnoType/Body.h:56`). Retail ART writes the stock scalar form, so
+/// `-20` must land in X while Y/Z stay zero; an explicit triple fills all
+/// three terms used by `ApplyTurretOffset`.
+#[test]
+fn turret_offset_reads_the_partial_three_integer_form() {
+    let ini = IniFile::from_str(
+        "[MTNK]\nTurretOffset=256,128,-24\n\
+         [SCUD]\nTurretOffset=-200\n\
+         [NONE]\nFixtureOnly=1\n",
+    );
+    let reg = ArtRegistry::from_ini(&ini);
+    assert_eq!(
+        reg.get("MTNK").expect("MTNK art").turret_offset,
+        [256, 128, -24]
+    );
+    assert_eq!(
+        reg.get("SCUD").expect("SCUD art").turret_offset,
+        [-200, 0, 0],
+        "the stock bare scalar is the X term"
+    );
+    assert_eq!(reg.get("NONE").expect("NONE art").turret_offset, [0, 0, 0]);
+}
+
 #[test]
 fn gsi_04_05_hidden_absent_occupy_height_inherits_resolved_height() {
     let ini: IniFile = IniFile::from_str(

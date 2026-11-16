@@ -2699,7 +2699,7 @@ fn emit_turret_unit_sprites(
     // Look up TurretOffset from art.ini and compute screen-space shift.
     let art_offset: i32 = art_reg
         .and_then(|a| a.get(type_id))
-        .map(|e| e.turret_offset)
+        .map(|e| e.turret_offset[0])
         .unwrap_or(0);
     // Use the same stable or quaternion-SLERP slope matrix as every hull,
     // turret, and barrel raster layer in this presentation phase.
