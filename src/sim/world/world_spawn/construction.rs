@@ -193,6 +193,22 @@ impl Simulation {
                 session.binary_frame(),
                 None,
             );
+            // `TechnoExt::InitializeAttachEffects`' second `Attach`
+            // (`Body.Internal.cpp:157`): the owner country's list.
+            if let Some(country) = houses.get(&ge.owner()).and_then(|house| house.country()) {
+                let country = interner.resolve(country).to_owned();
+                let invulnerability = ge.invulnerability.clone();
+                crate::sim::attach_effect::attach_country_effects(
+                    ge.phobos_attach_effects_mut(),
+                    category.into(),
+                    invulnerability.as_ref(),
+                    obj,
+                    rules,
+                    session.binary_frame(),
+                    None,
+                    &country,
+                );
+            }
         }
         // InitManagers6F3F40 classifies the owner after construction; it does
         // not manufacture either discovery-history byte. The launch-owned

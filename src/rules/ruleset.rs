@@ -90,13 +90,12 @@ pub struct CountryRules {
     pub reveal_houses: Option<crate::rules::phobos_shields::AffectedHouse>,
     /// Phobos `AttachEffect.AttachTypes` on a country.
     ///
-    /// RESIDUAL: read but not attached. Phobos `TechnoExt::InitializeAttachEffects`
-    /// (`Body.Internal.cpp:157`) attaches the owner country's list to every
-    /// created techno as an outside effect whose source is the techno itself,
-    /// and `HouseClass` owner change (`House/Hooks.cpp:353`) attaches the new
-    /// country's list under `AttachEffect.AttachOnOwnerChange`. VERA's
-    /// `AttachSource` holds only a warhead source, so a country that sets
-    /// the list gives its objects none of those effects.
+    /// `TechnoExt::InitializeAttachEffects` (`Body.Internal.cpp:157`)
+    /// attaches the owner country's list to every created techno through
+    /// [`crate::sim::attach_effect::attach_country_effects`], and an owner
+    /// change attaches the new country's list when
+    /// `AttachEffect.AttachOnOwnerChange` (country value, else `[General]`)
+    /// allows it (`House/Hooks.cpp:342-343`).
     #[cfg(feature = "phobos")]
     pub attach_effect_attach_types: Vec<String>,
     /// `AttachEffect.DurationOverrides`, paired by index.
@@ -12010,7 +12009,7 @@ impl RuleSet {
     }
 
     /// Case-insensitive country lookup (gamemd parity), exact key first.
-    fn country_rules(&self, id: &str) -> Option<&CountryRules> {
+    pub(crate) fn country_rules(&self, id: &str) -> Option<&CountryRules> {
         let index = self.country_index(id)?;
         self.countries.get(self.country_name(index)?)
     }

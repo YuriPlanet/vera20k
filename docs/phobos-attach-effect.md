@@ -86,6 +86,26 @@ AttachEffect.DurationOverrides=     ; per-list-position Duration override
 AttachEffect.RecreationDelays=      ; per-list-position re-create delay, frames
 ```
 
+Owner countries attach effects to every techno they create, and a changed
+owner attaches the new country's list when the switch allows it:
+
+```ini
+[COUNTRY]
+AttachEffect.AttachTypes=
+AttachEffect.Delays=                ; paired by index, same as a TechnoType
+AttachEffect.InitialDelays=
+AttachEffect.DurationOverrides=
+AttachEffect.RecreationDelays=
+AttachEffect.AttachOnOwnerChange=   ; Nullable, else [General] AttachEffects.AttachOnOwnerChange
+```
+
+`sim::attach_effect::attach_country_effects` owns both sites
+(`TechnoExt::InitializeAttachEffects`' second call at
+`Body.Internal.cpp:157`, and `House/Hooks.cpp:342-343`); the source object is
+the techno itself. Tests:
+`a_country_attach_types_list_attaches_at_creation`,
+`a_new_country_attaches_its_list_on_owner_change`.
+
 Warheads attach effects on detonation:
 
 ```ini

@@ -764,14 +764,77 @@ pub fn attach_initial_effects(
     frame: u32,
     source: Option<AttachSource>,
 ) -> usize {
-    let names = object.attach_effect_attach_types();
+    attach_effect_names(
+        list,
+        object.attach_effect_attach_types(),
+        object.attach_effect_duration_overrides(),
+        object.attach_effect_delays(),
+        object.attach_effect_initial_delays(),
+        object.attach_effect_recreation_delays(),
+        category,
+        invulnerability,
+        object,
+        rules,
+        frame,
+        source,
+    )
+}
+
+/// Phobos `TechnoExt::InitializeAttachEffects`' second call
+/// (`Body.Internal.cpp:157`) and the owner-change hook
+/// (`House/Hooks.cpp:342-343`): the owner country's
+/// `AttachEffect.AttachTypes`, paired with its own overrides and delays,
+/// attaches with the techno itself as the source object.
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+pub fn attach_country_effects(
+    list: &mut AttachEffectList,
+    category: crate::rules::object_type::ObjectCategory,
+    invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    frame: u32,
+    source: Option<AttachSource>,
+    country: &str,
+) -> usize {
+    let Some(country) = rules.country_rules(country) else {
+        return 0;
+    };
+    attach_effect_names(
+        list,
+        &country.attach_effect_attach_types,
+        &country.attach_effect_duration_overrides,
+        &country.attach_effect_delays,
+        &country.attach_effect_initial_delays,
+        &country.attach_effect_recreation_delays,
+        category,
+        invulnerability,
+        object,
+        rules,
+        frame,
+        source,
+    )
+}
+
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn attach_effect_names(
+    list: &mut AttachEffectList,
+    names: &[String],
+    overrides: &[i32],
+    delays: &[i32],
+    initial_delays: &[i32],
+    recreation_delays: &[i32],
+    category: crate::rules::object_type::ObjectCategory,
+    invulnerability: Option<&crate::sim::superweapon::invulnerability::InvulnerabilityState>,
+    object: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    frame: u32,
+    source: Option<AttachSource>,
+) -> usize {
     if names.is_empty() {
         return 0;
     }
-    let overrides = object.attach_effect_duration_overrides();
-    let delays = object.attach_effect_delays();
-    let initial_delays = object.attach_effect_initial_delays();
-    let recreation_delays = object.attach_effect_recreation_delays();
     let policy = AttachPolicy {
         replace_longer_duration: rules.attach_effect_globals().replace_longer_duration,
         ..AttachPolicy::default()
@@ -1833,9 +1896,6 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.phobos_attach_effects().is_empty() {
-            return;
-        }
         let game_mode_nonzero = self.session.game_mode_nonzero();
         let old_human = self
             .houses
@@ -1890,6 +1950,50 @@ impl Simulation {
             .get_mut(id)
             .expect("the gated entity still exists")
             .phobos_attach_effects_mut() = list;
+        // Phobos `House/Hooks.cpp:342-343`: the new country's list attaches
+        // under `AttachEffect.AttachOnOwnerChange` (country value, else the
+        // `[General]` fallback).
+        let country = self
+            .houses
+            .get(&new_owner)
+            .and_then(|house| house.country())
+            .map(|country| self.interner.resolve(country).to_owned());
+        let Some(country) = country else {
+            return;
+        };
+        let enabled = rules
+            .country_rules(&country)
+            .and_then(|country| country.attach_effect_attach_on_owner_change)
+            .unwrap_or(rules.attach_effect_globals().attach_on_owner_change);
+        if !enabled {
+            return;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let type_name = self.interner.resolve(entity.type_ref()).to_owned();
+        let attachment_category = entity.category().into();
+        let invulnerability = entity.invulnerability.clone();
+        let Some(object) = rules.object(&type_name) else {
+            return;
+        };
+        let frame = self.session.binary_frame();
+        let list = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("the entity checked above still exists")
+            .phobos_attach_effects_mut();
+        attach_country_effects(
+            list,
+            attachment_category,
+            invulnerability.as_ref(),
+            object,
+            rules,
+            frame,
+            None,
+            &country,
+        );
     }
 
     /// Phobos `TechnoExt::UpdateLaserTrails` (`Body.Update.cpp:526..570`):
@@ -7033,5 +7137,105 @@ VeteranRange=2.0
             -512,
             "no sentinel arm on the bullet gate"
         );
+    }
+
+    /// Phobos `TechnoExt::InitializeAttachEffects`'s second call
+    /// (`Body.Internal.cpp:157`): the owner country's
+    /// `AttachEffect.AttachTypes` list attaches at creation, with the country's
+    /// own paired duration override.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_country_attach_types_list_attaches_at_creation() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]
+0=Americans
+             [Americans]
+AttachEffect.AttachTypes=CTRY
+             AttachEffect.DurationOverrides=7
+             [VehicleTypes]
+0=TANK
+             [TANK]
+Strength=100
+Speed=5
+             [AttachEffectTypes]
+0=CTRY
+[CTRY]
+Duration=100
+",
+        ))
+        .expect("country attach rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 9);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_country_for_test(Some(owner));
+        let tank = sim
+            .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
+            .expect("TANK spawns");
+        let effects = sim
+            .substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .phobos_attach_effects();
+        assert_eq!(effects.instances.len(), 1, "the country list attached");
+        assert_eq!(effects.instances[0].remaining(), 7, "the country override");
+    }
+
+    /// Phobos `House/Hooks.cpp:342-343`: an owner change attaches the new
+    /// country's list when `AttachEffect.AttachOnOwnerChange` allows it.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_new_country_attaches_its_list_on_owner_change() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]
+0=Americans
+1=Russians
+             [Americans]
+             [Russians]
+AttachEffect.AttachTypes=CTRY
+             AttachEffect.AttachOnOwnerChange=yes
+             [VehicleTypes]
+0=TANK
+             [TANK]
+Strength=100
+Speed=5
+             [AttachEffectTypes]
+0=CTRY
+[CTRY]
+Duration=100
+",
+        ))
+        .expect("owner-change attach rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let russians = sim.interner.intern("Russians");
+        sim.houses
+            .get_mut(&russians)
+            .unwrap()
+            .set_country_for_test(Some(russians));
+        let tank = sim
+            .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
+            .expect("TANK spawns");
+        assert_eq!(attach_count(&sim, tank), 0, "the old country has no list");
+        sim.change_owner_with_rules(
+            tank,
+            russians,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::empty(),
+        );
+        assert_eq!(
+            attach_count(&sim, tank),
+            1,
+            "the new country's list attached"
+        );
+        assert_eq!(sim.substrate.entities.get(tank).unwrap().owner(), russians);
     }
 }
