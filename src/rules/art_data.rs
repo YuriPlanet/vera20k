@@ -1561,6 +1561,79 @@ impl ArtRegistry {
         with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.get(key))
     }
 
+    /// Whether an anim of type `image_id` changes nothing but its own picture,
+    /// so it may run as a presentation anim
+    /// (`sim::anim_class::AnimConstructorInput::Presentation`). VERA-only.
+    ///
+    /// Such a type reads none of the keys whose AnimClass effects reach the
+    /// simulation: `Damage=` and Ares `Damage.Delay`/`Weapon=`, `Warhead=`,
+    /// `Spawns=`, `SpawnsParticle=`, `MakeInfantry=` and Phobos `CreateUnit=`,
+    /// `Scorch=`/`Crater=`, `Bouncer=`, `IsMeteor=`, the tiberium and vein
+    /// keys, `HideIfNoOre=`, `Flamer=`, `Sticky=`, `PsiWarning=` and the flaming
+    /// guy; nor `RandomRate=` or `RandomLoopDelay=`, whose draws take the
+    /// Scenario stream. Every anim it can become or make (`Next=`,
+    /// `TrailerAnim=`, `ExpireAnim=`, `BounceAnim=`) must be one too. A type
+    /// whose ART body was never read keeps constructor state and is refused.
+    pub fn anim_presentation_only(&self, image_id: &str) -> bool {
+        let mut seen = Vec::new();
+        self.anim_presentation_only_from(image_id, &mut seen)
+    }
+
+    fn anim_presentation_only_from(&self, image_id: &str, seen: &mut Vec<String>) -> bool {
+        let key = image_id.to_ascii_uppercase();
+        if seen.contains(&key) {
+            return true;
+        }
+        // A missing type constructs nothing, in the simulation or out of it.
+        let Some(config) = self.anim_runtime_configs.get(&key) else {
+            return true;
+        };
+        seen.push(key);
+        let damage = config.damage.bits() & !(1 << 63) != 0;
+        #[cfg(feature = "phobos")]
+        let creates_unit = config.phobos_create_unit.is_some();
+        #[cfg(not(feature = "phobos"))]
+        let creates_unit = false;
+        let affects_play = !config.art_body_read
+            || damage
+            || config.ares_damage_delay != 0
+            || config.ares_weapon.is_some()
+            || config.warhead.is_some()
+            || config.spawns.is_some()
+            || config.spawns_particle.is_some()
+            || config.make_infantry != -1
+            || creates_unit
+            || config.scorch
+            || config.crater
+            || config.bouncer
+            || config.is_meteor
+            || config.is_tiberium
+            || config.is_animated_tiberium
+            || config.tiberium_chain_reaction
+            || config.tiberium_spawn_type.is_some()
+            || config.is_veins
+            || config.hide_if_no_ore
+            || config.flamer
+            || config.sticky
+            || config.psi_warning
+            || config.is_flaming_guy
+            || config.random_rate_logic_frames.is_some()
+            || config.random_loop_delay.is_some();
+        if affects_play {
+            return false;
+        }
+        let children = [
+            config.next.clone(),
+            config.trailer_anim.clone(),
+            config.expire_anim.clone(),
+            config.bounce_anim.clone(),
+        ];
+        children
+            .into_iter()
+            .flatten()
+            .all(|child| self.anim_presentation_only_from(&child, seen))
+    }
+
     /// Apply the canonical RulesClass processing receipt before asset binding.
     /// Building/weapon references allocated after the AnimType sweep retain
     /// constructor state even when a same-named ART section exists.

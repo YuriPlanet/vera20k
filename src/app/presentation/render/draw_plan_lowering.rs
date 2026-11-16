@@ -223,6 +223,28 @@ impl NativeDisplayOrder {
         Self { positions }
     }
 
+    /// [`Self::from_display`] for `sim`'s Display, with each presentation anim
+    /// (`Simulation::presentation_anims`) after the members of its layer, in
+    /// the order they were made.
+    pub(crate) fn from_world(sim: &crate::sim::world::Simulation) -> Self {
+        let display = sim.display_layers();
+        let mut order = Self::from_display(display);
+        let mut next = [0u64; 5];
+        for (index, slot) in next.iter_mut().enumerate() {
+            let layer = crate::sim::world::display_layers::DisplayLayer::from_index(index as u8)
+                .expect("native Display layer index");
+            *slot = display.members(layer).len() as u64;
+        }
+        for (id, layer) in sim.presentation_anims() {
+            let index = usize::from(layer.index());
+            order
+                .positions
+                .insert(id, (TacticalLayer(layer.index()), next[index]));
+            next[index] += 1;
+        }
+        order
+    }
+
     #[cfg(test)]
     pub(crate) fn new(ids: &[DrawId]) -> Self {
         Self {

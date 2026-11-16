@@ -593,7 +593,7 @@ pub(crate) fn control_group_status_labels(
     // A digit shows only on a Display member the admission passes, a selected
     // or hovered one, in Display order. The group members are few, so they
     // are put in that order rather than walking every Display member.
-    let order = frame.display_order(sim.display_layers());
+    let order = frame.display_order(sim);
     let mut labels: Vec<_> = slot_by_id
         .keys()
         .filter_map(|&stable_id| Some((order.position(stable_id)?, labelled(stable_id)?)))
