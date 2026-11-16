@@ -170,7 +170,7 @@ Rust SDK each is a newtype. Like handles, IDs are values and allocate nothing.
 | `OverlayTypeId` | overlays | `ctx.overlayTypeId(name)` |
 | `SoundId` | sounds in the simulation API | `ctx.soundId(name)` |
 | `MarkId` | marks | `Mark.id(name)` |
-| `NotifyId` | simulation-to-client notifications, declared in the module's `vera.notify` custom section | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; declared names are checked for collisions across all modules of the match at load; an undeclared name returns `NO_ID` |
+| `NotifyId` | simulation-to-client notifications, declared in the sending simulation module's `vera.notify` custom section | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; the names simulation modules declare are checked for collisions across the match at load; in a simulation module an undeclared name returns `NO_ID` |
 | `TeamTypeId`, `ScriptTypeId`, `AiTriggerId` | AI team types, team scripts, AI triggers | `ai.teamTypeId(name)`, `ai.scriptTypeId(name)`, `ai.aiTriggerId(name)` |
 
 ```ts
@@ -192,13 +192,17 @@ outcome under the [error model](#errors), because names come from data a mod
 may change. A call given `NO_ID` returns `NotFound` as well; an ID that no
 lookup returned is an invalid argument. `Mark.id` registers a name it has not
 seen, so it always returns an ID. Notification names are declared ahead of
-time: the SDK build writes the names a module uses, from a list in the
-module's project configuration, into a Wasm custom section `vera.notify`.
-`Notify.id` returns an ID for every declared name: when it loads the modules,
-the engine checks the declared names of all modules loaded in the match, the
-mod's and the map's together, for hash collisions, and refuses modules whose
-names collide, with a message (RFC 3, step 6; RFC 10). For a name the module
-did not declare, `Notify.id` returns `NO_ID` and sets `NotFound`.
+time by the simulation modules that send them: the SDK build writes the names
+a simulation module sends, from a list in the module's project configuration,
+into a Wasm custom section `vera.notify`. The format of that list is SDK
+documentation, not engine API. Client modules declare nothing, and a declared
+name that no client module receives is not an error. `Notify.id` returns an
+ID for every declared name: when it loads the modules, the engine checks the
+declared names of all simulation modules loaded in the match, the mod's and
+the map's together, for hash collisions, and refuses modules whose names
+collide, with a message (RFC 3, step 6; RFC 10). In a simulation module,
+`Notify.id` of a name the module did not declare returns `NO_ID` and sets
+`NotFound`; in a client module it returns the hash of any name.
 Types cannot be added during a match (RFC 8), so an ID stays valid for the
 whole scenario and across a save and its load.
 
@@ -299,7 +303,10 @@ the simulation state.
 The SDK has no exceptions. Two kinds of failure exist:
 
 1. **Expected outcomes** return a `Status` (or `NO_HANDLE` for a function that
-   returns a handle). The module decides what to do.
+   returns a handle). The module decides what to do. A handle that is
+   `NO_HANDLE` or whose object is gone gives `Gone`, a name that matches
+   nothing gives `NotFound`, and a refusal by an owner, including a target
+   kind that does not fit an atomic action in a trigger, gives `Refused`.
 2. **Programming errors** (a trap, the operation budget exceeded, an invalid
    argument) disable the module at the same frame on every machine, as RFC 3
    says.
@@ -307,7 +314,7 @@ The SDK has no exceptions. Two kinds of failure exist:
 ```ts
 enum Status {
   Ok = 0,
-  Gone = 1,         // a handle's object no longer exists
+  Gone = 1,         // the handle is NO_HANDLE or its object no longer exists
   NotFound = 2,     // a name matched no type, section, trigger or node
   Refused = 3,      // the owner declined: cell blocked, cannot attach, not allowed
   Unsupported = 4,  // the feature is off in this game (for example an Ares action without Ares)
@@ -316,23 +323,24 @@ enum Status {
 
 What counts as an invalid argument (and so disables the module) is listed per
 function: out-of-range indexes (global 0..49, local 0..99), negative counts,
-an enum value outside its list. A name that matches nothing returns
+an enum value outside its list. `Trigger.create` checks the arguments of each
+`Action.atomic` in the same way ([4.1](#41-using-actions)). A name that matches nothing returns
 `NotFound`, because names come from data that a mod may change. A target kind
 that does not fit an atomic action in a trigger is a data error as well and
 gives `Refused` ([4.1](#41-using-actions)). The split
 between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
 
 A call on a handle that is `NO_HANDLE` or whose object is gone does nothing.
-It returns `NotFound` where it returns a `Status`, and sets
-`ctx.lastStatus()` (in a client module, `ui.lastStatus()`) to `NotFound`.
+It returns `Gone` where it returns a `Status`, and sets
+`ctx.lastStatus()` (in a client module, `ui.lastStatus()`) to `Gone`.
 This holds for every method on a handle, including methods that return
 `void`, such as those of `Node` (section 11.1). It never disables the module
 (RFC 3).
 
 An atomic action run by a trigger (`Action.atomic`, [4.1](#41-using-actions))
 has no module code to receive its status. When it fails, its error status
-(`Refused` or `NotFound`) is written to the in-game log and the action is
-skipped; nothing else happens (RFC 3).
+(`Refused`, `Gone` or `NotFound`) is written to the in-game log and the action
+is skipped; nothing else happens (RFC 3).
 
 `ctx.lastStatus(): Status` repeats the status of the last call for functions
 that return a handle, an ID or a value, and for calls on a missing or gone
@@ -789,18 +797,36 @@ action runs at once.
 
 In a trigger, an atomic action is `Action.atomic(kind, target, params)`:
 `kind` names one atomic action of [4.3](#43-atomic-actions-rfc-6b-and-spreadsheet-instant-effects)
-(`AtomicKind`), `params` carries its parameters (`AtomicParams`: IDs, values,
-a cell), and `target` is an explicit target parameter (`ActionTarget`): `Subject` (the default) is the record's subject; `Other` the
-record's other object; `TagHolder` the objects whose tag holds the springing
-trigger, as the "live" rows of 4.2 act on, or the cell when the trigger is
-held by a CellTag; `House` the trigger's house unless a house is given
-explicitly; `Cell` a cell, given directly or as a waypoint. A target kind that
-does not fit the action (for example `Cell` for `techno.kill`) is a data
-error, not a programming error: the action is refused and the module stays
-enabled. No module code receives the status of an atomic action run by a
-trigger: when it fails, its error status (`Refused` or `NotFound`) is written
-to the in-game log and the action is skipped; nothing else happens (see
-[Errors](#errors); RFC 3, 6b). Original and atomic actions that run at once
+(`AtomicKind`), `params` carries its parameters (`AtomicParams`), and `target`
+is an explicit target parameter (`ActionTarget`). An atomic action covers an
+action whose parameters fit: one target, one ID, up to two integers and one
+cell (`Log` also takes its line of text). An action that needs more, such as
+`map.createProjectile`, is written as a module action. The targets: `Subject`
+(the default) is the record's subject; `Other` the record's other object;
+`TagHolder` the objects whose tag holds the springing trigger, as the "live"
+rows of 4.2 act on, or the cell when the trigger is held by a CellTag;
+`Projectile` the event's projectile; `House` the trigger's house unless a
+house is given explicitly; `Cell` a cell, given directly or as a waypoint.
+Fixed rules cover what the parameters cannot say:
+
+- a second object the action needs (the source of damage, a kill or a
+  detonation, the object a weapon fires at, a passenger) is the record's
+  `other`; when the event has none, the action gets `Gone` and is skipped,
+  and the status is logged;
+- objects the action creates belong to the trigger's house, unless the target
+  is `House` with an explicit house;
+- a coordinate is the center of the given cell, or of the target's cell.
+
+`Trigger.create` checks the arguments of each `Action.atomic`: an invalid one
+is an invalid argument from module code and disables the module (see
+[Errors](#errors); RFC 3). Atomic actions written in INI are checked at load
+and reported in the lobby; their INI form is open question 5 of the RFC. A
+target kind that does not fit the action (for example a `TagHolder` that is a
+cell, for `Kill`) is a data error, not a programming error: the action gets
+`Refused` and the module stays enabled. No module code receives the status of
+an atomic action run by a trigger: when it fails, its error status
+(`Refused`, `Gone` or `NotFound`) is written to the in-game log and the action
+is skipped; nothing else happens (see [Errors](#errors); RFC 3, 6b). Original and atomic actions that run at once
 can raise further events and chain within a frame; a chain that includes a
 module trigger, an event VERA adds or an atomic action is limited to the
 per-frame depth (see [Event delivery](#event-delivery)).
@@ -820,18 +846,18 @@ class Action {
   static wasm(exportName: string): Action;
   static atomic(kind: AtomicKind, target: ActionTarget, params: AtomicParams): Action;
 }
-enum ActionTarget { Subject, Other, TagHolder, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House defaults to the trigger's house
-enum AtomicKind {            // the atomic actions of 4.3, named after their functions
+enum ActionTarget { Subject, Other, TagHolder, Projectile, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House defaults to the trigger's house
+enum AtomicKind {            // the atomic actions of 4.3 whose parameters fit, named after their functions
   FireWeapon, LaunchSuperWeapon, SpawnAnim, Remove, Kill, Damage, SetHealth, Heal,
   CreateObject, SetMission, Teleport, ClearTarget, ClearDisguise, PlaySound,
   AddExperience, SetRank, AddMoney, SetTechLevel, AllowType, SetOwner,
   ClearMindControl, SetAmmo, AddAmmo, AddPassenger, RemovePassenger,
-  AddEffect, RemoveEffect, AddMark, RemoveMark, CreateProjectile,
+  AddEffect, RemoveEffect, AddMark, RemoveMark,
   DetonateWeapon, DetonateWarhead, DetonateProjectile, RemoveProjectile,
   EndFor, SetScore, AddScore, Log, Convert,
 }
 class AtomicParams {         // the parameters of an atomic action other than its target
-  id: i32 = NO_ID;           // type ID: weapon, warhead, superweapon, animation, techno, sound, effect, mark, projectile
+  id: i32 = NO_ID;           // type ID: weapon, warhead, superweapon, animation, techno, sound, effect, mark
   value: i32 = 0;            // amount, damage, points, weapon index, mission, rank, ammo, enum value
   value2: i32 = 0;           // second value where the action needs one
   cell: Cell | null = null;  // a cell, where the action takes one
@@ -839,9 +865,45 @@ class AtomicParams {         // the parameters of an atomic action other than it
 }
 ```
 
-`AtomicKind` lists every action of 4.3 except the area search, which is a
-query. How each function's parameters map onto the fields of `AtomicParams`
-belongs to the interface definition (RFC 12).
+`AtomicKind` lists the actions of 4.3 whose parameters fit; the area search (a
+query) and `map.createProjectile` are not among them. The table lists the
+target and the fields each kind uses; how they map onto each function's
+parameters belongs to the interface definition (RFC 12). *Object* means
+`Subject`, `Other` or a `TagHolder` that holds objects; *cell* means `Cell` or
+the cell of an object target; `—` means the kind uses no target or no field;
+`other` is the second object of the rules above.
+
+| `AtomicKind` | Target | Fields and second object |
+| --- | --- | --- |
+| `FireWeapon` | object (the shooter) | `id` weapon or `value` weapon slot; `cell`; `other` as the object fired at |
+| `LaunchSuperWeapon` | `House` | `id` superweapon type, `cell` |
+| `SpawnAnim` | cell | `id` animation |
+| `Remove` | object | — |
+| `Kill` | object | `other` as the source |
+| `Damage` | object | `id` warhead, `value` damage; `other` as the source |
+| `SetHealth`, `Heal` | object | `value` points |
+| `CreateObject` | cell, or `House` | `id` type; `cell` with a `House` target |
+| `SetMission` | object | `value` mission, `cell` |
+| `Teleport` | object | `cell`, `value` blocked-cell rule (`Blocked`) |
+| `ClearTarget`, `ClearDisguise`, `ClearMindControl` | object | — |
+| `PlaySound` | cell | `id` sound |
+| `AddExperience` | object | `value` points |
+| `SetRank` | object | `value` rank |
+| `AddMoney` | `House` | `value` amount |
+| `SetTechLevel` | — | `id` type, `value` level |
+| `AllowType` | `House` | `id` type, `value` 1 allowed, 0 not |
+| `SetOwner` | object | the new owner is not defined yet |
+| `SetAmmo`, `AddAmmo` | object | `value` ammo |
+| `AddPassenger`, `RemovePassenger` | object (the transport) | `other` as the passenger |
+| `AddEffect`, `RemoveEffect` | object | `id` effect type |
+| `AddMark`, `RemoveMark` | object or `House` | `id` mark |
+| `DetonateWeapon` | cell | `id` weapon; `other` as the source |
+| `DetonateWarhead` | cell | `id` warhead, `value` damage; `other` as the source |
+| `DetonateProjectile`, `RemoveProjectile` | `Projectile` | — |
+| `EndFor` | `House` | `value` outcome |
+| `SetScore`, `AddScore` | `House` | `value` points |
+| `Log` | — | `text` |
+| `Convert` | object | `id` type |
 
 `Action.original(n, …)` runs the existing arm of
 `TR::execute_live_trigger_action`; with Ares, `TRA::ares_execute_action`
@@ -1017,8 +1079,9 @@ Ares actions (only with Ares; otherwise `Unsupported`; owner `TRA::ares_execute_
 ### 4.3 Atomic actions (RFC 6b) and spreadsheet instant effects
 
 One function is one operation with one owner (RFC 6 granularity). In a
-trigger, each is written `Action.atomic` with the `AtomicKind` of the same
-name and takes the target parameter of [4.1](#41-using-actions).
+trigger, each one that `AtomicKind` lists is written `Action.atomic` with the
+kind of the same name and takes the target parameter of
+[4.1](#41-using-actions).
 
 | Function | Semantics | Draws | Owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- |
@@ -1045,7 +1108,7 @@ name and takes the target parameter of [4.1](#41-using-actions).
 | `transport.addPassenger(p: Techno)` / `removePassenger(p: Techno)` | Board or eject a passenger | native | **no owner yet** (`PassengerCargo::board_forced_chain`, `disembark` are list operations without limbo/unlimbo) | v1? | RFC 6b; F25 |
 | `techno.addEffect(...)` / `removeEffect(...)` | section 5 | — | section 5 | v1 | RFC 6b; F2, F3 |
 | `techno.addMark(...)` / `removeMark(...)` | section 6 | — | section 6 | v1 | RFC 6b |
-| `map.createProjectile(p: ProjectileParams): Projectile` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data; `NO_HANDLE` on failure | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
+| `map.createProjectile(p: ProjectileParams): Projectile` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data; `NO_HANDLE` on failure. Not an `AtomicKind`: it needs more parameters than an atomic action has (4.1) | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
 | `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno): Status` | Detonate a weapon at a coordinate with no bullet; `source` may be `NO_HANDLE` | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
 | `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno): Status` | Area damage of a warhead with a given damage and source; `source` may be `NO_HANDLE` | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
 | `projectile.detonate(): Status` | Detonate a projectile now | native | `src/sim/projectile` detonation admission (no public entry) | later | **adopted in RFC 0.0.5** (P8); Rc: `SetProjectileCollision` |
@@ -1636,7 +1699,7 @@ class Ui {
   remove(n: Node): Status;
   registerHotkey(name: string, defaultKey: string): Status;
   viewer(): House;                 // NO_HANDLE for a spectator
-  lastStatus(): Status;            // as ctx.lastStatus(); NotFound after a call on a NO_HANDLE or removed node
+  lastStatus(): Status;            // as ctx.lastStatus(); Gone after a call on a NO_HANDLE or removed node
 }
 class Node {                       // a call on a NO_HANDLE or removed node does nothing (Errors)
   name(): string;
@@ -1781,7 +1844,9 @@ implementation.
 - **G-T1** Module and atomic trigger actions (`Action.wasm`,
   `Action.atomic`): new action numbers in `TR::execute_live_trigger_action`;
   `Action.wasm` queues a module call, and `Action.atomic` resolves its target
-  and runs the 4.3 function at once, logging a failure (G-H4) (RFC 6a, 6b).
+  and runs the 4.3 function at once, logging a failure (G-H4); the arguments
+  of `Action.atomic` are checked when `Trigger.create` runs, and those of
+  atomic actions written in INI at load (RFC 6a, 6b).
 - **G-T2** Run-time trigger and tag creation from modules
   (`Trigger.create`, `Tag.create`, `techno.setTag`, `cell.setTag`): today
   definitions come only from `RuntimeDefinitions::read_map`/`read_teams`; IDs
@@ -1901,9 +1966,9 @@ implementation.
   existing registries (`RuleSet` type indexes, sound binding, AI
   definitions), with `NotFound` for an unknown name, a registry of mark
   names for `Mark.id`, and the stable hash of notification names for
-  `Notify.id`, read from each module's `vera.notify` custom section, with a
-  collision check at load across all modules of the match, the mod's and the
-  map's (RFC 3, 10, 15).
+  `Notify.id`, read from each simulation module's `vera.notify` custom
+  section, with a collision check at load across all simulation modules of
+  the match, the mod's and the map's (RFC 3, 10, 15).
 
 ### Client
 
