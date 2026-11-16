@@ -281,7 +281,7 @@ Residuals:
   buffer, not the screen. `android-activity` reports the IME height through
   `MainEvent::InsetsChanged`, which winit drops, so lifting a page above the
   keyboard is a separate change (IME insets).
-- On a tablet, Gboard's password keyboard arrives as a compact floating panel
+- When a tablet is connected to an external keyboard, ColorOS's secure input
   that a tap expands, while the same build on a phone shows the ordinary
   full-width secure keyboard. That is the input method's large-screen behaviour
   for a password field, not the app's editor info, so it stays as it is; if
