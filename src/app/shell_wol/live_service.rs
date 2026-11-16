@@ -3026,16 +3026,24 @@ fn apply_event(
         // (docs/lobby-protocol.md "Host handover"): what this game agreed
         // with the old host is gone, and the room opens again.
         "host_changed" => {
-            let name = payload["member"]["name"]
-                .as_str()
-                .ok_or_else(|| anyhow!("missing member"))?
-                .to_owned();
+            #[derive(Deserialize)]
+            struct Payload {
+                member: wire::Member,
+                channel: Option<wire::Channel>,
+            }
+            let p: Payload = decode(payload)?;
             service.accepted_options = None;
             service.last_ready_request = None;
             service.pending_choices = None;
             service.start_preparation = None;
             maps::cancel(state, service);
-            service_event(state, WolServiceEvent::HostChanged(name));
+            service_event(
+                state,
+                WolServiceEvent::HostChanged {
+                    name: p.member.name,
+                    channel: p.channel.map(Into::into),
+                },
+            );
         }
         "member_left" => {
             let name = payload["name"]

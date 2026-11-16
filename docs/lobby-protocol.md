@@ -219,7 +219,7 @@ Event kinds and payloads:
 | `room_reopened` | `{channel:<Channel>,members:[Member]}` |
 | `member_joined` | `{member:<Member>}` |
 | `member_left` | `{name}` |
-| `host_changed` | `{member:<Member>}` |
+| `host_changed` | `{member:<Member>, channel:<Channel>}` |
 | `options` | `{revision,options:<HostOptions>}` |
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
@@ -466,9 +466,10 @@ credentials.
 Host handover: when a game room's owner leaves before start (Leave, sign-out or an
 expired session), the player who has been in the room longest becomes its owner,
 provided every game still in it names version 0.3.5 or newer. The lobby sends
-`host_changed` with the new owner's member, then `member_left` for the old one, and
-clears every readiness; the room's options, map upload and advertisement stay until
-the new owner's game publishes its own. A Quick Match room, or one with an older game
+`host_changed` with the new owner's member and the room's channel, then `member_left`
+for the old one, and clears every readiness; a room named `<old>'s_game` becomes
+`<new>'s_game` unless another open room has that name. The room's options, map upload
+and advertisement stay until the new owner's game publishes its own. A Quick Match room, or one with an older game
 or a game that names no version, closes with `error` `host_left` and `channel_left`
 as before. A lobby from before handover closes every such room that way. Membership,
 authorization, readiness, sequence history and idle expiration are server-owned.

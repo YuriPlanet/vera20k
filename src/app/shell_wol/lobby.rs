@@ -1148,11 +1148,6 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         visit.back_to_room = false;
         resume = visit.cooperative_resume.take();
     }
-    let me = nickname(state);
-    let host = joined
-        .members
-        .iter()
-        .any(|member| member.flags & MEMBER_OPERATOR != 0 && member.name.eq_ignore_ascii_case(&me));
     let listed = joined.members.clone();
     let channel = joined.channel.clone();
     if let Some(lobby) = lobby_mut(state) {
@@ -1163,28 +1158,17 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
     });
     request_listed(state, &listed);
     close_wait(state);
-    if host {
-        let observe = state
-            .frontend
-            .multiplayer_shell_runtime
-            .lan_create_observer();
-        commit_create(state, observe);
-        // Before anyone is seated again: the Cooperative mode admits only
-        // its two players.
-        if let Some(resume) = resume.filter(|_| !observe)
-            && let Err(error) = crate::app::shell_network_setup::resume_cooperative(state, resume)
-        {
-            log::warn!("WOL reopened room keeps its mode: {error:#}");
-        }
-        seat_again(state, &listed, &me);
-    } else {
-        enter_game_as_guest(state);
-    }
+    let observe = state
+        .frontend
+        .multiplayer_shell_runtime
+        .lan_create_observer();
+    open_game_room(state, &listed, observe, resume);
 }
 
 /// The others in a room this game hosts again take rows as joiners would,
 /// in the lobby's order, so the host's options name them all; VERA's room
-/// does not tell them as joins.
+/// does not tell them as joins. Everyone still here stays: past this host's
+/// own Max players, or with no seat free, the room grows and they watch.
 fn seat_again(state: &mut AppState, listed: &[WolMember], me: &str) {
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.quiet_joins();
@@ -1194,43 +1178,105 @@ fn seat_again(state: &mut AppState, listed: &[WolMember], me: &str) {
         .map(|member| member.name.clone())
         .filter(|name| !name.eq_ignore_ascii_case(me))
     {
+        let session = &mut state.match_state.session;
+        if session.network_several_observers() && session.network_join_row(false).is_none() {
+            let people = session
+                .network_setup()
+                .map_or(0, |launch| launch.humans.len() + 1);
+            let grown = session
+                .set_network_people_limit(u8::try_from(people).unwrap_or(u8::MAX))
+                .and_then(|()| session.set_network_spectators(true));
+            if let Err(error) = grown {
+                log::warn!("WOL room grows for {name}: {error:#}");
+            }
+        }
         if let Err(error) = setup::user_joined(state, name) {
             log::warn!("WOL room seats its players again: {error:#}");
         }
     }
 }
 
-/// VERA: the host left, and the lobby made `name` the room's host
-/// (`host_changed`, docs/lobby-protocol.md "Host handover"); the old host's
-/// `member_left` follows. The room opens again as after a match: the new
-/// host's game from its own room settings, seating everyone still here, and
-/// the others' games enter it as after a join. The chat stays.
-fn host_changed(state: &mut AppState, name: String) {
-    let Some(room) = lobby_mut(state) else {
-        return;
-    };
-    let old = room
-        .members
+/// Opens the game room this player just came into or back to: as its host
+/// when the lobby lists it as the owner, from this game's own room
+/// settings (on the campaign's next stage with `resume`), seating everyone
+/// else listed, and otherwise as a guest.
+fn open_game_room(
+    state: &mut AppState,
+    listed: &[WolMember],
+    observe: bool,
+    resume: Option<crate::app::shell_network_setup::CooperativeResume>,
+) -> bool {
+    let me = nickname(state);
+    let host = listed
+        .iter()
+        .any(|member| member.flags & MEMBER_OPERATOR != 0 && member.name.eq_ignore_ascii_case(&me));
+    if host {
+        commit_create(state, observe);
+        // Before anyone is seated again: the Cooperative mode admits only
+        // its two players.
+        if let Some(resume) = resume.filter(|_| !observe)
+            && let Err(error) = crate::app::shell_network_setup::resume_cooperative(state, resume)
+        {
+            log::warn!("WOL reopened room keeps its mode: {error:#}");
+        }
+        seat_again(state, listed, &me);
+    } else {
+        enter_game_as_guest(state);
+    }
+    host
+}
+
+/// Makes `name` the host in a room's member list, first, without the old
+/// host, where a guest's game takes its host from
+/// (`setup::guest_users_listed`); returns the old host's name.
+fn pass_room(members: &mut Vec<WolMember>, name: &str) -> Option<String> {
+    let old = members
         .iter()
         .find(|member| member.flags & MEMBER_OPERATOR != 0)
         .map(|member| member.name.clone());
-    // The old host is out of the room already, and the new one leads the
-    // list, where a guest's game takes its host from
-    // (`setup::guest_users_listed`).
-    room.members
-        .retain(|member| Some(&member.name) != old.as_ref());
-    for member in &mut room.members {
+    members.retain(|member| Some(&member.name) != old.as_ref());
+    for member in members.iter_mut() {
         member.flags &= !MEMBER_OPERATOR;
     }
-    if let Some(index) = room
-        .members
+    if let Some(index) = members
         .iter()
-        .position(|member| member.name.eq_ignore_ascii_case(&name))
+        .position(|member| member.name.eq_ignore_ascii_case(name))
     {
-        let mut host = room.members.remove(index);
+        let mut host = members.remove(index);
         host.flags |= MEMBER_OPERATOR;
-        room.members.insert(0, host);
+        members.insert(0, host);
     }
+    old
+}
+
+/// VERA: the host left, and the lobby made `name` the room's host, renaming
+/// a room it named for the old host (`host_changed`, docs/lobby-protocol.md
+/// "Host handover"); the old host's `member_left` follows. The room opens
+/// again as after a match: the new host's game from its own room settings,
+/// seating everyone still here, and the others' games enter it as after a
+/// join. The chat stays. A join still sliding in opens the room as it is
+/// now ([`joined`]).
+fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>) {
+    let Some(runner) = lobby_mut(state) else {
+        return;
+    };
+    if !runner
+        .current
+        .as_ref()
+        .is_some_and(|current| current.kind == GAME_CHANNEL)
+    {
+        if let Some(Ok(joined)) = runner.deferred.as_mut() {
+            pass_room(&mut joined.members, &name);
+            if let Some(channel) = channel {
+                joined.channel = channel;
+            }
+        }
+        return;
+    }
+    if let Some(channel) = channel {
+        runner.current = Some(channel);
+    }
+    let old = pass_room(&mut runner.members, &name);
     refill_players(state);
     if !in_setup_channel(state) || quick_match_runner(state) {
         return;
@@ -1240,24 +1286,15 @@ fn host_changed(state: &mut AppState, name: String) {
         .multiplayer_setup
         .as_mut()
         .map(|ui| std::mem::take(&mut ui.chat));
-    let me = nickname(state);
-    let host = name.eq_ignore_ascii_case(&me);
-    if host {
-        let observe = state
-            .match_state
-            .session
-            .network_setup()
-            .is_some_and(|launch| launch.local_player().is_observer());
-        let listed = lobby(state)
-            .map(|lobby| lobby.members.clone())
-            .unwrap_or_default();
-        // As Create does before the host's row is made (`send_create`).
-        super::persona::take_side_and_color(state, &me);
-        commit_create(state, observe);
-        seat_again(state, &listed, &me);
-    } else {
-        enter_game_as_guest(state);
-    }
+    let observe = state
+        .match_state
+        .session
+        .network_setup()
+        .is_some_and(|launch| launch.local_player().is_observer());
+    let listed = lobby(state)
+        .map(|lobby| lobby.members.clone())
+        .unwrap_or_default();
+    let host = open_game_room(state, &listed, observe, None);
     if let (Some(chat), Some(ui)) = (chat, state.frontend.multiplayer_setup.as_mut()) {
         ui.chat = chat;
     }
@@ -3032,7 +3069,10 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     request_listed(state, &listed);
     if joined.channel.kind == GAME_CHANNEL {
         close_wait(state);
-        enter_game_as_guest(state);
+        // As a guest, unless the lobby made this player the room's host
+        // while the join slid in ([`host_changed`]).
+        let observe = state.frontend.multiplayer_shell_runtime.lan_observer();
+        open_game_room(state, &listed, observe, None);
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
@@ -3421,7 +3461,7 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             }
         }
         WolServiceEvent::RoomReopened(joined) => room_reopened(state, joined),
-        WolServiceEvent::HostChanged(name) => host_changed(state, name),
+        WolServiceEvent::HostChanged { name, channel } => host_changed(state, name, channel),
         WolServiceEvent::ChannelLeft if awaiting_room(state) => room_not_returned(state, true),
         WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
         WolServiceEvent::ChannelLeft => leave_finished(state, true),

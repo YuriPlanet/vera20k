@@ -420,7 +420,9 @@ A VERA room whose host leaves stays open when every game left in it is 0.3.5 or 
 the lobby makes the player who has been in it longest its host and sends `host_changed`
 before the old host's `member_left` (docs/lobby-protocol.md "Host handover"). The new
 host's game opens the room again from its own room settings, as Create Game does, and
-seats everyone still there; the others' games enter it again as after a join. The chat
+seats everyone still there, raising its Room size and opening the Spectators where its
+own settings would leave someone out; the others' games enter it again as after a join.
+A room named for the old host (`<old>'s_game`) takes the new host's name. The chat
 stays, and it says who left and who hosts now. A room that comes back after its match
 without its host goes to its next player the same way, through `room_reopened`. A
 room with a released game in it, or a Quick Match room, closes as before, so a released

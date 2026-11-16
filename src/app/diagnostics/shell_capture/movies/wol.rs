@@ -3356,7 +3356,13 @@ impl WolCapture {
                     },
                 );
                 setup_requests(state);
-                service_event(state, WolServiceEvent::HostChanged(NICKNAME.into()));
+                service_event(
+                    state,
+                    WolServiceEvent::HostChanged {
+                        name: NICKNAME.into(),
+                        channel: None,
+                    },
+                );
                 service_event(state, WolServiceEvent::UserLeft(PEER.into()));
                 let names: Vec<String> = state
                     .match_state
