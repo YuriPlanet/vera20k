@@ -146,7 +146,6 @@ impl Hash for HouseAiProduction {
 
 /// Phobos' per-house factory building pointers, one slot per producing
 /// building category (`HouseExt::Factory_*Type`).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiFactorySlot {
     Building,
@@ -156,7 +155,6 @@ pub(crate) enum AiFactorySlot {
     Aircraft,
 }
 
-#[cfg(feature = "phobos")]
 impl AiFactorySlot {
     const fn index(self) -> usize {
         match self {
@@ -239,12 +237,10 @@ impl HouseAiProduction {
     }
     /// Phobos `BuildingClass_Update_Factory_Phobos @ 0x4502F4` remembers the
     /// first factory building of a category; a second one consults it.
-    #[cfg(feature = "phobos")]
     pub(crate) fn parallel_factory(&self, slot: AiFactorySlot) -> Option<u64> {
         self.parallel_factories[slot.index()]
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn set_parallel_factory(&mut self, slot: AiFactorySlot, building: Option<u64>) {
         self.parallel_factories[slot.index()] = building;
     }
@@ -253,12 +249,25 @@ impl HouseAiProduction {
     /// `0x44531F`) clear the pointer only while it still names the same
     /// factory building. `FactoryClass_AbandonProduction` (`0x4CA07A`) has no
     /// such test and uses [`Self::set_parallel_factory`] instead.
-    #[cfg(feature = "phobos")]
     pub(crate) fn clear_parallel_factory(&mut self, slot: AiFactorySlot, building: u64) {
         let entry = &mut self.parallel_factories[slot.index()];
         if *entry == Some(building) {
             *entry = None;
         }
+    }
+
+    /// Phobos `HouseExt::OnDetach`, which its `AnnounceInvalidPointer` hook
+    /// (`0x7258D0`) runs on every house for a removed building: each slot
+    /// that names the building is cleared. Answers whether one did.
+    pub(crate) fn forget_parallel_factory(&mut self, building: u64) -> bool {
+        let mut named = false;
+        for entry in &mut self.parallel_factories {
+            if *entry == Some(building) {
+                *entry = None;
+                named = true;
+            }
+        }
+        named
     }
 
     #[cfg(any(test, feature = "test-support"))]

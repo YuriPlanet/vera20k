@@ -40,6 +40,10 @@ from the same files read without it; a game without it adds nothing.
 Players on one build reach the same answer. Older builds, including those that
 load an installed `ares.mix` with No mod selected, are refused by the existing
 build check. A rollback restores that build's earlier selection and INI reading.
+Whether Phobos plays is decided from the same rules, mode and map
+([the Phobos switch](phobos.md#the-phobos-switch)) and adds nothing to the
+digest, so players on one build reach the same answer; older builds are refused
+by the build check.
 
 The rules agreement is one digest of the process's rules sources
 (`ProcessAssets::multiplayer_rules_digest`). With **No mod** selected, the

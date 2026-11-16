@@ -19,11 +19,13 @@
 //!
 //! Which keys count comes from the readers, not from a list. Every reader
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
-//! is noted with whether an Ares reader asked: the `read_ares_*` parsers
-//! always do, and an Ares reader body opens [`ares_reads`] for the stock
-//! readers it calls. A key a stock reader also read in the same section does
-//! not count, since Ares re-reads stock keys such as `Prerequisite`, `Armor`
-//! or `Verses`. Reads through Ares' parsers that are not Ares keys open
+//! is noted with who asked: an Ares reader, a Phobos reader the Phobos
+//! switch counts (`phobos_switch`), or a stock reader. The `read_ares_*`
+//! parsers always ask as Ares, and an Ares reader body opens [`ares_reads`]
+//! for the stock readers it calls. A key a stock or Phobos reader also read
+//! in the same section does not count, since Ares re-reads stock keys such
+//! as `Prerequisite`, `Armor` or `Verses`, and a key both extensions read
+//! turns neither on. Reads through Ares' parsers that are not Ares keys open
 //! [`not_ares_reads`]: an Ares reader that replaces a stock read or reads a
 //! key retail data already holds, and the Phobos readers, which parse with
 //! Ares' `Valueable<T>` readers, so a Phobos-only mod keeps Ares off. That
@@ -171,11 +173,11 @@ impl Drop for AresReads {
     }
 }
 
-/// Marks the reads made while it lives as not Ares', even inside an Ares
-/// reader: another extension's reader (Phobos), a stock key Ares re-parses in
-/// place of the stock reader (`Armor`, `DebrisMaximums`), or an RA2 or TS key
-/// retail data already holds (`TiberiumProof`, the IFV turret keys). They
-/// count as stock reads.
+/// Marks the reads made while it lives as not Ares', even inside an Ares or
+/// Phobos reader: a Phobos reader the Phobos switch does not count yet, a
+/// stock key Ares re-parses in place of the stock reader (`Armor`,
+/// `DebrisMaximums`), or an RA2 or TS key retail data already holds
+/// (`TiberiumProof`, the IFV turret keys). They count as stock reads.
 #[must_use = "the scope ends when the guard drops"]
 pub(crate) struct NotAresReads(());
 
@@ -216,17 +218,35 @@ thread_local! {
 /// lookups only.
 pub(crate) fn note_found(section: &str, key: &str) {
     RECORDER.with_borrow_mut(|recorder| {
-        let ares = recorder.ares_depth > 0 && recorder.not_ares_depth == 0;
+        // A not-Ares scope wins over the reader that opened it.
+        let reader = if recorder.not_ares_depth > 0 {
+            Reader::Stock
+        } else if crate::rules::phobos_switch::reading() {
+            Reader::Phobos
+        } else if recorder.ares_depth > 0 {
+            Reader::Ares
+        } else {
+            Reader::Stock
+        };
         if let Some(reads) = recorder.active.as_mut() {
-            reads.note(ares, section, key);
+            reads.note(reader, section, key);
         }
     });
+}
+
+/// Who asked for a key [`note_found`] noted.
+#[derive(Clone, Copy)]
+enum Reader {
+    Stock,
+    Ares,
+    Phobos,
 }
 
 /// The present keys one recorded run's readers found, split by who asked.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeyReads {
     ares: SectionKeys,
+    phobos: SectionKeys,
     stock: SectionKeys,
 }
 
@@ -234,11 +254,11 @@ pub(crate) struct KeyReads {
 type SectionKeys = BTreeMap<String, BTreeSet<String>>;
 
 impl KeyReads {
-    fn note(&mut self, ares: bool, section: &str, key: &str) {
-        let map = if ares {
-            &mut self.ares
-        } else {
-            &mut self.stock
+    fn note(&mut self, reader: Reader, section: &str, key: &str) {
+        let map = match reader {
+            Reader::Stock => &mut self.stock,
+            Reader::Ares => &mut self.ares,
+            Reader::Phobos => &mut self.phobos,
         };
         let keys = match map.get_mut(section) {
             Some(keys) => keys,
@@ -251,27 +271,44 @@ impl KeyReads {
 
     /// Fold a later run (the next Rules pass) into these reads.
     pub(crate) fn absorb(&mut self, later: KeyReads) {
-        for (map, later) in [(&mut self.ares, later.ares), (&mut self.stock, later.stock)] {
+        for (map, later) in [
+            (&mut self.ares, later.ares),
+            (&mut self.phobos, later.phobos),
+            (&mut self.stock, later.stock),
+        ] {
             for (section, keys) in later {
                 map.entry(section).or_default().extend(keys);
             }
         }
     }
 
-    fn stock_read(&self, section: &str, key: &str) -> bool {
-        self.stock
-            .get(section)
-            .is_some_and(|keys| keys.contains(key))
+    fn found(map: &SectionKeys, section: &str, key: &str) -> bool {
+        map.get(section).is_some_and(|keys| keys.contains(key))
     }
 
-    /// The Ares readers' keys that no stock reader of these reads saw.
+    fn keys(map: &SectionKeys) -> impl Iterator<Item = (&str, &str)> {
+        map.iter().flat_map(|(section, keys)| {
+            keys.iter().map(move |key| (section.as_str(), key.as_str()))
+        })
+    }
+
+    /// Whether a stock or Phobos reader of these reads saw the key.
+    fn read_outside_ares(&self, section: &str, key: &str) -> bool {
+        Self::found(&self.stock, section, key) || Self::found(&self.phobos, section, key)
+    }
+
+    /// The Ares readers' keys that no stock or Phobos reader of these reads
+    /// saw.
     fn ares_only(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.ares
-            .iter()
-            .flat_map(|(section, keys)| {
-                keys.iter().map(move |key| (section.as_str(), key.as_str()))
-            })
-            .filter(|(section, key)| !self.stock_read(section, key))
+        Self::keys(&self.ares).filter(|(section, key)| !self.read_outside_ares(section, key))
+    }
+
+    /// The Phobos readers' keys that no stock or Ares reader of these reads
+    /// saw (`phobos_switch`).
+    pub(super) fn phobos_only(&self) -> impl Iterator<Item = (&str, &str)> {
+        Self::keys(&self.phobos).filter(|(section, key)| {
+            !Self::found(&self.stock, section, key) && !Self::found(&self.ares, section, key)
+        })
     }
 }
 
@@ -324,8 +361,8 @@ impl AresInputs {
 
     /// Whether Ares plays once the projection's own reads are in: `ares.mix`
     /// ships, or a key only Ares readers found remains after the
-    /// projection's stock reads. The deciding input goes to the log, so a
-    /// modder can see why.
+    /// projection's stock and Phobos reads. The deciding input goes to the
+    /// log, so a modder can see why.
     pub(crate) fn decide(&self, projection: &KeyReads) -> bool {
         if self.ships_ares {
             log::info!("Ares plays in this game: ares.mix is installed or the Ares setting is On");
@@ -338,7 +375,7 @@ impl AresInputs {
             .keys
             .iter()
             .map(|(section, key)| (section.as_str(), key.as_str()))
-            .filter(|(section, key)| !projection.stock_read(section, key))
+            .filter(|(section, key)| !projection.read_outside_ares(section, key))
             .chain(projection.ares_only())
             .min();
         if let Some((section, key)) = key {
