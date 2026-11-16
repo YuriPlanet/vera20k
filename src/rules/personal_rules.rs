@@ -1,5 +1,6 @@
-//! The player's own rule switches: the Options page's Terrain Deformation
-//! and Superweapon Limit, which a network room's host shares. VERA-only.
+//! The player's own rule switches: Terrain Deformation and the Superweapon
+//! Limit of the skirmish page's Game Options, which a network room's host
+//! shares. VERA-only.
 //!
 //! VERARULES.INI, a file of the player's own rule keys, was read here until
 //! it was retired for New Mod (docs/modding.md); `persistence::rules_profile`
@@ -14,10 +15,10 @@ use crate::rules::ini_parser::IniFile;
 
 #[derive(Clone, Debug, Default)]
 pub struct PersonalRules {
-    /// The Options page's Terrain Deformation box (`[VERA] TerrainDeformation=`
+    /// The skirmish Game Options' Terrain Deformation box (`[VERA] TerrainDeformation=`
     /// in VERA.INI). Each new scenario's root reads it, so it needs no restart.
     terrain_deformation: bool,
-    /// The Options page's Superweapon Limit (`[VERA] SuperweaponLimit=` in
+    /// The skirmish Game Options' Superweapon Limit (`[VERA] SuperweaponLimit=` in
     /// VERA.INI), read as Terrain Deformation is: 0 while off, else
     /// [`admitted_superweapon_limit`]'s 2 to [`SUPERWEAPON_LIMIT_MAX`].
     superweapon_limit: u8,
@@ -121,7 +122,7 @@ fn terrain_deformation(root: &IniFile) -> String {
 /// The most of each superweapon building Superweapon Limit allows.
 pub const SUPERWEAPON_LIMIT_MAX: u8 = 20;
 
-/// A Superweapon Limit from VERA.INI, a network room or the Options slider
+/// A Superweapon Limit from VERA.INI, a network room or a Game Options slider
 /// as the game plays it: 0 (off) below 2, at most [`SUPERWEAPON_LIMIT_MAX`].
 pub const fn admitted_superweapon_limit(limit: i32) -> u8 {
     if limit < 2 {

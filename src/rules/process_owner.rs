@@ -726,12 +726,12 @@ impl NativeRulesProcessOwner {
         self.sources.personal_rules = rules;
     }
 
-    /// The Options page's Terrain Deformation box, read by the next scenario.
+    /// The skirmish Game Options' Terrain Deformation box, read by the next scenario.
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.sources.personal_rules.set_terrain_deformation(on);
     }
 
-    /// The Options page's Superweapon Limit, read by the next scenario.
+    /// The skirmish Game Options' Superweapon Limit, read by the next scenario.
     pub fn set_superweapon_limit(&mut self, limit: i32) {
         self.sources.personal_rules.set_superweapon_limit(limit);
     }

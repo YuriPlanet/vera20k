@@ -219,14 +219,14 @@ pub(crate) struct RetailOptionsProfile {
     /// action and only recentres the view. A local input preference: the
     /// beacon travels as the ordinary beacon record. Off by default.
     pub(crate) minimap_beacons: bool,
-    /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
+    /// `[VERA] TerrainDeformation=`: the skirmish Game Options' Terrain Deformation
     /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
     /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
     /// changes the rules each new game reads, so online peers must agree on it
     /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
     /// Off by default.
     pub(crate) terrain_deformation: bool,
-    /// `[VERA] SuperweaponLimit=`: the Options page's Superweapon Limit.
+    /// `[VERA] SuperweaponLimit=`: the skirmish Game Options' Superweapon Limit.
     /// Each superweapon may be built that many times and each building
     /// charges its own shot (`docs/superweapon-limit.md`). Like Terrain
     /// Deformation it changes the rules each new game reads

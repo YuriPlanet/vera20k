@@ -55,8 +55,8 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
-    /// The player's own Options switches, read at startup with VERA.INI and
-    /// changed by the Options page ([`Self::set_terrain_deformation`],
+    /// The player's own rule switches, read at startup with VERA.INI and
+    /// changed by the skirmish Game Options ([`Self::set_terrain_deformation`],
     /// [`Self::set_superweapon_limit`]). A network room plays its host's
     /// instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
@@ -246,7 +246,7 @@ impl ProcessAssets {
             .clone()
     }
 
-    /// The Options page's Terrain Deformation box: the next offline
+    /// The skirmish Game Options' Terrain Deformation box: the next offline
     /// scenario's rules read it.
     pub(crate) fn set_terrain_deformation(&mut self, on: bool) {
         self.personal_rules.set_terrain_deformation(on);
@@ -255,8 +255,8 @@ impl ProcessAssets {
         }
     }
 
-    /// The Options page's Superweapon Limit: the next offline scenario's
-    /// rules read it.
+    /// The skirmish Game Options' Superweapon Limit: the next offline
+    /// scenario's rules read it.
     pub(crate) fn set_superweapon_limit(&mut self, limit: i32) {
         self.personal_rules.set_superweapon_limit(limit);
         if let Some(rules) = self.native_rules.as_mut() {
@@ -264,7 +264,7 @@ impl ProcessAssets {
         }
     }
 
-    /// The player's own Options switches, which offline games play and a
+    /// The player's own rule switches, which offline games play and a
     /// network room's host shares.
     pub(crate) fn personal_rules(&self) -> &crate::rules::personal_rules::PersonalRules {
         &self.personal_rules

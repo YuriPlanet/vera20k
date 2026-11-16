@@ -140,14 +140,6 @@ pub(crate) const COMPACT_SUPER_TIMERS_LABEL: &str = "VERA:CompactSuperTimers";
 pub(crate) const COMPACT_SUPER_TIMERS_HELP: &str = "VERA:CompactSuperTimersHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const AUTO_REPAIR_HELP: &str = "VERA:AutoRepairHelp";
-/// VERA's terrain deformation box (`docs/terrain-deformation.md`).
-pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
-pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
-/// VERA's Superweapon Limit slider (`docs/superweapon-limit.md`).
-pub(crate) const SUPERWEAPON_LIMIT_LABEL: &str = "VERA:SuperweaponLimit";
-pub(crate) const SUPERWEAPON_LIMIT_HELP: &str = "VERA:SuperweaponLimitHelp";
-/// Its plaque at the left end.
-pub(crate) const SUPERWEAPON_LIMIT_OFF: &str = "VERA:SuperweaponLimitOff";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
@@ -715,11 +707,6 @@ pub(crate) enum LauncherTrackbarId {
     /// the level minus [`crate::rules::house_colors::STRENGTH_MIN`], so the
     /// retail strength is position 0 and the strongest is position 9.
     HouseColorStrength,
-    /// VERA's own slider: how many of each superweapon a player may build,
-    /// each building charging its own shot. Position 0 is off, position `n`
-    /// a limit of `n + 1`, so the first notch allows two. Saved; the next
-    /// game's rules read it, as Terrain Deformation's do.
-    SuperweaponLimit,
     /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
     /// (`0xBBB` control `0x529`). No main-menu page has it and the profile
     /// pack leaves it out: the menu sets it up with
@@ -738,7 +725,6 @@ impl LauncherTrackbarId {
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
             }
-            Self::SuperweaponLimit => crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX - 1,
         }
     }
 
@@ -747,11 +733,7 @@ impl LauncherTrackbarId {
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
             Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
-            Self::Score
-            | Self::Sound
-            | Self::Voice
-            | Self::HouseColorStrength
-            | Self::SuperweaponLimit => 50,
+            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
         }
     }
 
@@ -760,15 +742,12 @@ impl LauncherTrackbarId {
     }
 
     /// Whether a running match keeps it as the match began: the campaign
-    /// difficulty and the Superweapon Limit are taken when a game starts, and
-    /// the team colour strength is baked into a battle's colour tables when it
-    /// loads, so the in-game menu shows them greyed. gamemd's in-game menu has
-    /// no Difficulty either, so a mission's restart keeps its own.
+    /// difficulty is taken when a game starts, and the team colour strength is
+    /// baked into a battle's colour tables when it loads, so the in-game menu
+    /// shows them greyed. gamemd's in-game menu has no Difficulty either, so a
+    /// mission's restart keeps its own.
     pub(crate) const fn fixed_in_match(self) -> bool {
-        matches!(
-            self,
-            Self::Difficulty | Self::SuperweaponLimit | Self::HouseColorStrength
-        )
+        matches!(self, Self::Difficulty | Self::HouseColorStrength)
     }
 }
 
@@ -799,10 +778,6 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: the player's damaged buildings are sent the Repair
     /// order by themselves (`app::input::auto_repair`). It applies at once.
     AutoRepair,
-    /// VERA's own box: explosions dent open ground as in Tiberian Sun and a
-    /// nuke leaves a crater. Saved; the next game's rules read it, so a match
-    /// already running keeps its own.
-    TerrainDeformation,
     /// VERA's local camera option: the wheel changes battle view distance.
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
@@ -875,15 +850,6 @@ pub(crate) enum LauncherCheckboxId {
     CompactSuperTimers,
 }
 
-impl LauncherCheckboxId {
-    /// Whether a running match keeps it as the match began, as
-    /// [`LauncherTrackbarId::fixed_in_match`] says of the sliders: Terrain
-    /// Deformation is read when a game starts.
-    pub(crate) const fn fixed_in_match(self) -> bool {
-        matches!(self, Self::TerrainDeformation)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherCue {
     MainButton,
@@ -927,7 +893,6 @@ pub(crate) enum LauncherOptionsEvent {
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
     AutoRepairChanged(bool),
-    TerrainDeformationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
     MinimapBeaconsChanged(bool),
@@ -949,8 +914,6 @@ pub(crate) enum LauncherOptionsEvent {
     CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
-    /// VERA's Superweapon Limit as the profile stores it, 0 while off.
-    SuperweaponLimitChanged(u8),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -1009,7 +972,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
     pub(crate) minimap_beacons: bool,
-    pub(crate) terrain_deformation: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
     /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
@@ -1044,9 +1006,6 @@ pub(crate) struct LauncherOptionsValues {
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
     pub(crate) house_color_position: u8,
-    /// VERA's Superweapon Limit as the slider's position
-    /// ([`LauncherTrackbarId::SuperweaponLimit`]).
-    pub(crate) superweapon_limit_position: u8,
     pub(crate) score_position: u8,
     pub(crate) sound_position: u8,
     pub(crate) voice_position: u8,
@@ -1076,7 +1035,6 @@ impl Default for LauncherOptionsValues {
             shift_queue: false,
             auto_repair: false,
             minimap_beacons: false,
-            terrain_deformation: false,
             performance_stats: false,
             show_string_keys: false,
             skip_intro: false,
@@ -1091,7 +1049,6 @@ impl Default for LauncherOptionsValues {
             ares: crate::util::ares_launch::AresSetting::Auto,
             color_vision: ColorVisionMode::Off,
             house_color_position: 0,
-            superweapon_limit_position: 0,
             score_position: 4,
             sound_position: 7,
             voice_position: 7,
@@ -1248,9 +1205,6 @@ impl OptionsDialogState {
         values.house_color_position = values
             .house_color_position
             .min(LauncherTrackbarId::HouseColorStrength.maximum());
-        values.superweapon_limit_position = values
-            .superweapon_limit_position
-            .min(LauncherTrackbarId::SuperweaponLimit.maximum());
         // The 0x497 init sets each trackbar's range and position; every change
         // sends WM_HSCROLL (0x0061E609..0x0061E6AF), whose handler
         // (0x0055FF68) names the position (tables 0x0082A248 / 0x0082A254 /
@@ -1326,12 +1280,6 @@ impl OptionsDialogState {
         (!id.is_audio() || self.launcher_audio_available) && !(self.in_match && id.fixed_in_match())
     }
 
-    /// Whether a checkbox is enabled: on VERA's in-game menu, not the ones a
-    /// match keeps as it began.
-    pub(crate) const fn checkbox_enabled(&self, id: LauncherCheckboxId) -> bool {
-        !(self.in_match && id.fixed_in_match())
-    }
-
     /// Whether a button window is enabled: BBB's init disables its Sound
     /// button without an output device (`0x004E2201..0x004E2223`), and the
     /// in-game page's Sound button stands for it. VERA's Check for Updates
@@ -1400,16 +1348,6 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => self.values.sound_position,
             LauncherTrackbarId::Voice => self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => self.values.house_color_position,
-            LauncherTrackbarId::SuperweaponLimit => self.values.superweapon_limit_position,
-        }
-    }
-
-    /// The Superweapon Limit the slider stands at, as the profile stores
-    /// it: 0 at the left end, then 2 up.
-    pub(crate) const fn superweapon_limit(&self) -> u8 {
-        match self.values.superweapon_limit_position {
-            0 => 0,
-            position => position + 1,
         }
     }
 
@@ -1426,10 +1364,6 @@ impl OptionsDialogState {
     pub(crate) fn trackbar_plaque_text(&self, id: LauncherTrackbarId) -> String {
         match id {
             LauncherTrackbarId::HouseColorStrength => self.house_color_strength().to_string(),
-            LauncherTrackbarId::SuperweaponLimit => match self.superweapon_limit() {
-                0 => crate::i18n::tr(SUPERWEAPON_LIMIT_OFF),
-                limit => limit.to_string(),
-            },
             _ => self.trackbar_position(id).to_string(),
         }
     }
@@ -1450,7 +1384,6 @@ impl OptionsDialogState {
             LauncherTrackbarId::Sound => &mut self.values.sound_position,
             LauncherTrackbarId::Voice => &mut self.values.voice_position,
             LauncherTrackbarId::HouseColorStrength => &mut self.values.house_color_position,
-            LauncherTrackbarId::SuperweaponLimit => &mut self.values.superweapon_limit_position,
         };
         if *slot == position {
             return;
@@ -1499,13 +1432,6 @@ impl OptionsDialogState {
                     .push(LauncherOptionsEvent::HouseColorStrengthChanged(
                         position + crate::rules::house_colors::STRENGTH_MIN,
                     ))
-            }
-            LauncherTrackbarId::SuperweaponLimit => {
-                self.pending_events
-                    .push(LauncherOptionsEvent::Cue(LauncherCue::GenericClick));
-                let limit = self.superweapon_limit();
-                self.pending_events
-                    .push(LauncherOptionsEvent::SuperweaponLimitChanged(limit));
             }
         }
     }
@@ -1565,10 +1491,7 @@ impl OptionsDialogState {
         id: LauncherCheckboxId,
         frame: PhysicalControlFrame,
     ) {
-        if !(0..18).contains(&frame.local_x)
-            || !(0..18).contains(&frame.local_y)
-            || !self.checkbox_enabled(id)
-        {
+        if !(0..18).contains(&frame.local_x) || !(0..18).contains(&frame.local_y) {
             return;
         }
         let slot = match id {
@@ -1580,7 +1503,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => &mut self.values.auto_repair,
-            LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
             LauncherCheckboxId::MinimapBeacons => &mut self.values.minimap_beacons,
@@ -1621,9 +1543,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::AutoRepair => self
                 .pending_events
                 .push(LauncherOptionsEvent::AutoRepairChanged(checked)),
-            LauncherCheckboxId::TerrainDeformation => self
-                .pending_events
-                .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
             LauncherCheckboxId::MouseWheelZoom => self
                 .pending_events
                 .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
@@ -1914,8 +1833,6 @@ impl Category {
                 Setting::Slider(Slider::Difficulty),
                 Setting::Checkbox(Check::ShiftQueue),
                 Setting::Checkbox(Check::AutoRepair),
-                Setting::Checkbox(Check::TerrainDeformation),
-                Setting::Slider(Slider::SuperweaponLimit),
                 Setting::List(List::Ares),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
@@ -2221,10 +2138,8 @@ mod tests {
         let mut in_match = state(true);
         in_match.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
         let before = in_match.values;
-        in_match.checkbox_mouse_down(LauncherCheckboxId::TerrainDeformation, frame(5, 5, 18, 18));
         for id in [
             LauncherTrackbarId::Difficulty,
-            LauncherTrackbarId::SuperweaponLimit,
             LauncherTrackbarId::HouseColorStrength,
         ] {
             // The track's far end, which the main menu's dialog jumps to.
@@ -2245,11 +2160,6 @@ mod tests {
         // What the match does take still changes.
         in_match.checkbox_mouse_down(LauncherCheckboxId::ShiftQueue, frame(5, 5, 18, 18));
         assert_ne!(in_match.values.shift_queue, before.shift_queue);
-        main_menu.checkbox_mouse_down(LauncherCheckboxId::TerrainDeformation, frame(5, 5, 18, 18));
-        assert_ne!(
-            main_menu.values.terrain_deformation,
-            before.terrain_deformation
-        );
     }
 
     #[test]
@@ -2630,7 +2540,6 @@ mod tests {
                 Slider::Sound,
                 Slider::Voice,
                 Slider::HouseColorStrength,
-                Slider::SuperweaponLimit,
             ]
             .map(Setting::Slider),
         )
@@ -2654,7 +2563,6 @@ mod tests {
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::AutoRepair,
-                Check::TerrainDeformation,
                 Check::PerformanceStats,
                 Check::ShowStringKeys,
                 Check::SkipIntro,
