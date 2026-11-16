@@ -663,6 +663,15 @@ impl Simulation {
         }
     }
 
+    /// Phobos `IsPassable` resolved for a live Terrain object
+    /// (`Ext/TerrainType/Hooks.Passable.cpp:25-44`): the player's unforced
+    /// click over it answers Move. A stock constructor projects `false`.
+    pub fn terrain_object_is_passable(&self, id: u64) -> bool {
+        self.terrain_objects()
+            .get(id)
+            .is_some_and(|terrain| terrain.passable())
+    }
+
     /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at a clicked Cell's
     /// coordinate, as Foot What_Action's shroud rung and the Unit harvest
     /// rungs' gate ask it ([`Self::cell_move_action`]); the cursor asks it for

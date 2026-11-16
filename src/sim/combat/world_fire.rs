@@ -439,11 +439,11 @@ fn create_phobos_delayed_fire_anim(
 
     // `CenterAnimOnFirer` short-circuits to `GetCenterCoords()`
     // (`Body.cpp:677-680`); otherwise `GetFLHAbsoluteCoords`
-    // (`Body.Internal.cpp:80-89`) with `AnimOffset` replacing the weapon FLH
-    // (`Hooks.Firing.cpp:678-681`). RESIDUAL: VERA's `fire_coordinate` adds its
-    // `Flh` base to the weapon FLH (and ignores it for Infantry/Structure)
-    // rather than replacing it, and has no separate body/turret basis switch
-    // for `AnimOnTurret`; the anim is still placed at a valid firing coord.
+    // (`Body.Internal.cpp:80-89`). `AnimOffset` replaces the weapon FLH
+    // (`Body.cpp:727-733`), and `AnimOnTurret` selects the body/turret basis
+    // (`Body.cpp:680`). RESIDUAL: `CenterAnimOnFirer` still uses
+    // `object_get_coords` because VERA has no shared
+    // `TechnoClass::GetCenterCoords` centre-height owner.
     let coord = if weapon.phobos_delayed_fire_center_anim_on_firer {
         object_get_coords(world, snap.stable_id).map(crate::sim::anim_class::AnimWorldCoord::from)
     } else {
@@ -451,23 +451,30 @@ fn create_phobos_delayed_fire_anim(
             .interner
             .object_type_in_category(snap.type_id, snap.category.into(), rules);
         obj.map(|obj| {
-            let base = weapon
-                .phobos_delayed_fire_anim_offset
-                .map(crate::rules::flh::Flh::from)
-                .unwrap_or_default();
             let source = super::fire_coord::FireSource {
                 tar_com: fireat_tarcom(world, snap),
+                flh_override: weapon
+                    .phobos_delayed_fire_anim_offset
+                    .map(crate::rules::flh::Flh::from),
+                on_turret: weapon.phobos_delayed_fire_anim_on_turret,
                 ..super::fire_coord::FireSource::from(snap)
             };
-            super::fire_coord::fire_coordinate(world, rules, &source, obj, weapon_index, 0, base)
-                .coord
+            super::fire_coord::fire_coordinate(
+                world,
+                rules,
+                &source,
+                obj,
+                weapon_index,
+                0,
+                crate::rules::flh::Flh::default(),
+            )
+            .coord
         })
         .map(crate::sim::anim_class::AnimWorldCoord::from)
     };
     let Some(coord) = coord else {
         return;
     };
-    let _ = weapon.phobos_delayed_fire_anim_on_turret;
 
     let type_id = world.interner.intern(anim_name);
     let attached = weapon.phobos_delayed_fire_anim_is_attached;
@@ -498,6 +505,8 @@ fn phobos_delayed_fire_suppresses_this_frame(
     snap: &AttackerSnapshot,
     weapon_index: i32,
     weapon: &crate::rules::weapon_type::WeaponType,
+    at_firing_frame: bool,
+    pause_applies: bool,
 ) -> bool {
     let id = snap.stable_id;
     let frame = world.session.binary_frame() as i32;
@@ -527,15 +536,14 @@ fn phobos_delayed_fire_suppresses_this_frame(
         return false;
     }
 
-    // `PauseFiringSequence && (Infantry || turretless SHP Unit)` yields to the
-    // class pause-sequence hooks `0x736F61` / `0x5209AF`
-    // (`Hooks.Firing.cpp:658-662`, `Body.cpp:699-750`). VERA keeps one timer
-    // but also sets `DelayedFireSequencePaused` for the `0x736480` frame freeze.
-    let pause_sequence = weapon.phobos_delayed_fire_pause_firing_sequence
-        && matches!(
-            snap.category,
-            EntityCategory::Infantry | EntityCategory::Unit
-        );
+    // `PauseFiringSequence && (Infantry || (Unit && !HasTurret() && !Voxel))`
+    // yields to the class pause-sequence hooks `0x5209AF` / `0x736F61`
+    // (`Hooks.Firing.cpp:658-662`, `Ext/Techno/Body.cpp:699-750`). The freeze
+    // starts only when the sequence reaches `firingFrame` (`Body.cpp:711-716`):
+    // `at_firing_frame` carries that boundary for the admitted shot, so a
+    // turreted or Voxel Unit keeps its stock Stage/counter cadence while its
+    // shot is still delayed.
+    let pause_sequence = at_firing_frame && pause_applies;
 
     // `Burst <= 1 || !OnlyOnInitialBurst || CurrentBurstIndex == 0`
     // (`Hooks.Firing.cpp:664`). `weapon_burst.index()` is `Techno+0x3B8`.
@@ -562,10 +570,8 @@ fn phobos_delayed_fire_suppresses_this_frame(
         let elapsed = frame.wrapping_sub(start_frame);
         if elapsed < duration_frames {
             // `timer.InProgress()` (`Hooks.Firing.cpp:666-667`,
-            // `Body.cpp:737-740`): keep suppressing; hold the frame freeze.
-            if pause_sequence && let Some(firer) = world.substrate.entities.get_mut(id) {
-                firer.set_phobos_delayed_fire_sequence_paused(true);
-            }
+            // `Body.cpp:737-740`): keep suppressing; the pause flag was set
+            // only at the firing-frame boundary and stays until reset.
             return true;
         }
         // `timer.Completed()` → `ResetDelayedFireTimer`, fall through and fire
@@ -749,6 +755,11 @@ fn admit_attacker_fire<'r>(
             .entities
             .get(snap.stable_id)
             .is_some_and(|entity| entity.mission_leaf.foot_firing_sequence_latch() != 0);
+    // `Body.cpp:711-716` sets the pause only when the sequence reaches
+    // `firingFrame`; the latch path already passed that equality at `:793`.
+    // Infantry without the latch begins its action below, so the boundary
+    // belongs to its later stage, not to this Fire_At.
+    let at_firing_frame = !infantry_fire || firing_at_entry;
     if firing_at_entry {
         let entity = world.substrate.entities.get(snap.stable_id)?;
         let prone = entity
@@ -1175,6 +1186,7 @@ fn admit_attacker_fire<'r>(
         target_coords,
         target_type_ref,
         is_garrison,
+        at_firing_frame,
     })
 }
 
@@ -1349,6 +1361,12 @@ pub(super) struct AdmittedFire<'a> {
     pub(super) target_coords: (u16, u16, SimFixed, SimFixed),
     pub(super) target_type_ref: InternedId,
     pub(super) is_garrison: bool,
+    /// The admitted shot is at the class firing-frame boundary (`firingFrame`),
+    /// which `DelayedFire.PauseFiringSequence` requires before it sets the
+    /// freeze (`Ext/Techno/Body.cpp:711-716`). Infantry without a
+    /// firing-sequence latch starts its action after this hook and is not at
+    /// that boundary yet.
+    pub(super) at_firing_frame: bool,
 }
 
 /// Object `id`'s GetCoords (`vt+0x48`,
@@ -2036,6 +2054,7 @@ pub(super) fn emit_admitted_fire(
         target_coords: (target_rx, target_ry, target_sub_x, target_sub_y),
         target_type_ref,
         is_garrison,
+        at_firing_frame,
     } = shot;
     let snap = &snap;
     let weapon = selected.weapon;
@@ -2132,7 +2151,27 @@ pub(super) fn emit_admitted_fire(
     // counters and launch. A suppressed frame starts nothing and fires
     // nothing; the completed timer's fall-through fires normally.
     #[cfg(feature = "phobos")]
-    if phobos_delayed_fire_suppresses_this_frame(world, rules, snap, selected.index, weapon) {
+    let pause_applies = weapon.phobos_delayed_fire_pause_firing_sequence
+        && match snap.category {
+            EntityCategory::Infantry => true,
+            // `Voxel=` is the ART key, `Turret=` the rules key
+            // (`Hooks.Firing.cpp:658-662`, `Body.Internal.cpp:54`).
+            EntityCategory::Unit => {
+                !obj.has_turret
+                    && !super::fire_coord::firer_art(rules, obj).is_some_and(|art| art.voxel)
+            }
+            _ => false,
+        };
+    #[cfg(feature = "phobos")]
+    if phobos_delayed_fire_suppresses_this_frame(
+        world,
+        rules,
+        snap,
+        selected.index,
+        weapon,
+        at_firing_frame,
+        pause_applies,
+    ) {
         return None;
     }
     // Phobos TechnoClass_FireAt_BeforeTruelyFire (0x6FDDC0): an admitted shot
@@ -3474,7 +3513,7 @@ fn phobos_area_fire_random_cell(
 /// authored. VERA models every group except the CE/health/veterancy trio's
 /// AE lists, which it does carry (`has_attach_effect_gates`).
 #[cfg(feature = "phobos")]
-fn phobos_skip_weapon_picking(weapon: &WeaponType) -> bool {
+pub(crate) fn phobos_skip_weapon_picking(weapon: &WeaponType) -> bool {
     let targeting = weapon.weapon_targeting();
     targeting.can_target == crate::rules::phobos_crit::AffectedTarget::ALL
         && targeting.min_health == 0.0
@@ -4182,6 +4221,7 @@ pub(crate) fn visit_fire(
                     target_coords: coords,
                     target_type_ref: type_ref,
                     is_garrison: false,
+                    at_firing_frame: true,
                 })
             });
             if let Some(shot) = shot {

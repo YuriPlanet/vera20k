@@ -106,6 +106,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             ),
             target_type_ref: building.type_ref(),
             is_garrison: true,
+            at_firing_frame: true,
         };
         let mut emitted = super::CombatEmit::default();
         assert!(

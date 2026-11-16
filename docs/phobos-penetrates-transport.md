@@ -37,8 +37,12 @@ below it makes the hit fatal (the passenger's max Strength, defenses
 ignored). Otherwise the damage is
 `ceil(bullet Health * warhead DamageMultiplier * transport DamageMultiplier)`.
 `DamageAll=yes` damages every passenger whose own level is below the
-warhead's; otherwise one `Random(0, n-1)` passenger is picked. An attack that
-leaves no passenger plays `CleanSound` at the transport.
+warhead's; otherwise one `Random(0, n-1)` passenger is picked. Each damaged
+passenger first takes the transport's Location
+(`passenger->SetLocation(transporterCoords)`, `Detonate.cpp:813,845,865,916`),
+so its death effects and corpse leave from the transport; the SetLocation
+carries the passenger's own riders. An attack that leaves no passenger plays
+`CleanSound` at the transport.
 
 ## Where VERA20K owns it
 
@@ -47,7 +51,12 @@ leaves no passenger plays `CleanSound` at the transport.
 global level. `sim::combat::penetrates_transport` runs inside
 `crit::detonate`'s per-target loop (the `DetonateOnOneUnit` port);
 `crit::detonate` now carries the bullet damage. Passenger damage goes through
-the shared receiver (`commit_entities`), so armor, verses and shields apply.
+the shared receiver (`commit_entities`), so armor, verses and shields apply;
+before that receiver call the passenger takes the transport's coordinate
+through `movement::ground_pose::foot_set_location`. The regression test
+`penetrates_transport_moves_damaged_passengers_to_the_transport` stages a
+`TarCom` on both passengers so `ReceiveDamage`'s Scatter gate refuses and the
+final Location stays the transport's.
 
 ## Native anchors
 
@@ -56,12 +65,13 @@ The penetration test runs inside the warhead body Phobos hooks at `BulletClass_D
 
 ## Residuals
 
-- `SetLocation(transporterCoords)` before each passenger's damage is not
-  applied; a killed passenger's death effects use its own stored position.
 - The general death path already removes a dying gunner; only the
   `ReceiveGunner(new head)` half of `Gunner=` handling is missing, so a
   transport with `Gunner=yes` and at least two passengers keeps an empty
-  gunner slot after a penetrating kill.
+  gunner slot after a penetrating kill. Trigger: a fatal penetration whose
+  first (cargo-head) passenger dies in a `Gunner=yes` Unit; effect: the
+  transport keeps firing mode0 instead of the new head's `IFVMode`; risk:
+  gunner transports lose their post-kill weapon.
 - The receiver's under-attack events produced by passenger damage are
   dropped; nested death effects still surface through the shared effects.
 - `ApplyPerTargetEffectsOnDetonate=no` keeps the existing VERA residual: the

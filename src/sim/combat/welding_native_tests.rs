@@ -405,6 +405,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
         target_coords: resolve_target_coords(&target, &sim).unwrap(),
         target_type_ref: sim.entities().get(roles["target"]).unwrap().type_ref(),
         is_garrison: false,
+        at_firing_frame: true,
     };
     assert!(shot.selected.weapon.use_spark_particles);
     let before = sim.state_hash();

@@ -643,7 +643,10 @@ fn reveal_warhead_reveals_the_map_for_its_owner() {
         // Reveal stores the firing House's map-clear byte (`+0x241`) before
         // any client-map work, so no fog-viewer fixture is needed.
         sim.reset_shroud_for_owner(house, &rules);
-        assert!(!sim.houses[&house].map_is_clear(), "the shroud starts closed");
+        assert!(
+            !sim.houses[&house].map_is_clear(),
+            "the shroud starts closed"
+        );
         detonate_once(&mut sim, &rules, firer, target, Some(target));
         sim.houses[&house].map_is_clear()
     };
@@ -1500,6 +1503,49 @@ fn penetrates_transport_damages_the_selected_passengers() {
         (100, 100),
         "a transport at the warhead's level is not penetrated"
     );
+}
+
+/// `Detonate.cpp:813,845,865,916`: every damaged passenger takes the
+/// transport's Location before `ReceiveDamage`, so a lethal passenger's death
+/// effects leave from the transport rather than its own stored cell.
+#[test]
+fn penetrates_transport_moves_damaged_passengers_to_the_transport() {
+    let (mut sim, rules, firer, apc, gi1, gi2) = penetrates_scene(1, true);
+    // A staging target (`TarCom+0x2B4`) refuses ReceiveDamage's Scatter gate
+    // (`0x00702B47..0x00702CFC`), as a passenger firing from the transport
+    // holds one; otherwise the damage scatters the passenger off the transport.
+    for id in [gi1, gi2] {
+        assert!(
+            crate::sim::combat::attack_target::install_entity_attack_target_for_test(
+                &mut sim.substrate.entities,
+                id,
+                firer
+            )
+        );
+    }
+    let transport = object_get_coords(
+        sim.entities().get(apc).expect("transport"),
+        sim.resolved_terrain.as_ref(),
+    );
+    assert_ne!(
+        object_get_coords(
+            sim.entities().get(gi1).expect("passenger"),
+            sim.resolved_terrain.as_ref()
+        ),
+        transport,
+        "the fixture starts the first passenger off the transport"
+    );
+    shoot(&mut sim, &rules, "WH", firer, apc, 20);
+    for id in [gi1, gi2] {
+        assert_eq!(
+            object_get_coords(
+                sim.entities().get(id).expect("passenger"),
+                sim.resolved_terrain.as_ref()
+            ),
+            transport,
+            "the damaged passenger now sits at the transport"
+        );
+    }
 }
 
 /// Phobos `ChangeOwner` (`Ext/WarheadType/Detonate.cpp:207-211,488-522`):

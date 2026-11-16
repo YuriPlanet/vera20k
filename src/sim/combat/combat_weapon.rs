@@ -708,14 +708,7 @@ pub(crate) fn weapon_index_against_wall(
     // Phobos `TechnoExt::CanFireNoAmmoWeapon(pThis, 1)`: only a type with
     // `Ammo= > 0` runs out. Without Ares extension data the constructor
     // values apply (`NoAmmoAmount=0`, `NoAmmoWeapon=-1` accepts any slot).
-    #[cfg(feature = "ares")]
-    let no_ammo_secondary = obj.ammo > 0
-        && obj
-            .techno_combat()
-            .ammo()
-            .can_fire_no_ammo_weapon(facts.ammo, 1);
-    #[cfg(not(feature = "ares"))]
-    let no_ammo_secondary = obj.ammo > 0 && facts.ammo <= 0;
+    let no_ammo_secondary = can_fire_no_ammo_weapon(obj, facts.ammo, 1);
     let current = get_weapon(entity, obj, index, entities, rules, interner);
     let current_ae = ae_forbids(current);
     if hurts_wall(current) && !no_ammo_secondary && !current_ae {
@@ -801,6 +794,27 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
         .is_some_and(|projectile| projectile.aa)
 }
 
+/// `TechnoExt::CanFireNoAmmoWeapon` (`Ext/Techno/WeaponHelpers.cpp:107-118`):
+/// a type with `Ammo=0` never runs out; with Ares extension data the count and
+/// `NoAmmoWeapon` slot decide, otherwise the constructor values
+/// (`NoAmmoAmount=0`, `NoAmmoWeapon=-1`, which accepts any slot) apply.
+fn can_fire_no_ammo_weapon(obj: &ObjectType, ammo: i32, index: i32) -> bool {
+    if obj.ammo <= 0 {
+        return false;
+    }
+    #[cfg(feature = "ares")]
+    {
+        obj.techno_combat()
+            .ammo()
+            .can_fire_no_ammo_weapon(ammo, index)
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = index;
+        ammo <= 0
+    }
+}
+
 /// `0x00772A90`: a weapon's class bits in a threat mask, from its
 /// projectile (`Weapon+0xA0`): `AA=` (`+0x2A4`) gives `4`, `AG=` (`+0x2A5`)
 /// ORs `0xB8`. A weapon naming no projectile section reads the reader's
@@ -883,7 +897,16 @@ pub(crate) fn what_weapon_should_i_use<'r>(
     target: Option<&TargetFacts>,
     get_weapon: impl Fn(i32) -> Option<&'r WeaponType>,
 ) -> i32 {
-    what_weapon_should_i_use_with_force(rules, obj, attacker, target, get_weapon, None, || None)
+    what_weapon_should_i_use_with_force(
+        rules,
+        obj,
+        attacker,
+        target,
+        get_weapon,
+        None,
+        || None,
+        || None,
+    )
 }
 
 /// [`what_weapon_should_i_use`] with the Phobos forced slot handed to the
@@ -898,6 +921,9 @@ pub(crate) fn what_weapon_should_i_use_with_force<'r>(
     // Phobos `SelectMultiWeapon`, asked after `SelectForceWeapon` at the same
     // hook; lazy so a ladder arm returning before `0x6F3428` never queries it.
     multi: impl FnOnce() -> Option<i32>,
+    // Phobos `PickWeaponIndex` at `0x6F36DB`, lazy for the same reason: the
+    // arms A–P that return before Q never ask it.
+    pick: impl FnOnce() -> Option<i32>,
 ) -> i32 {
     match attacker.kind {
         TechnoKind::Infantry if obj.deploy_fire => {
@@ -911,7 +937,9 @@ pub(crate) fn what_weapon_should_i_use_with_force<'r>(
         }
         _ => {}
     }
-    techno_what_weapon_should_i_use(rules, obj, attacker, target, get_weapon, forced, multi)
+    techno_what_weapon_should_i_use(
+        rules, obj, attacker, target, get_weapon, forced, multi, pick,
+    )
 }
 
 /// Whether the airstrike secondary is selected for a techno target.
@@ -958,6 +986,7 @@ fn techno_what_weapon_should_i_use<'r>(
     get_weapon: impl Fn(i32) -> Option<&'r WeaponType>,
     forced: Option<i32>,
     multi: impl FnOnce() -> Option<i32>,
+    pick: impl FnOnce() -> Option<i32>,
 ) -> i32 {
     // A @ 0x006F333B: turreted non-gattling types fire the gunner slot,
     // unconditionally (`-1` collapses to 0). Phobos
@@ -1109,7 +1138,14 @@ fn techno_what_weapon_should_i_use<'r>(
             return 1;
         }
     }
-    // Q @ 0x006F36DB.
+    // Q @ 0x006F36DB: Phobos `TechnoClass_WhatWeaponShouldIUse`
+    // (`Ext/Techno/Hooks.Firing.cpp:121-165`) asks
+    // `TechnoExt::PickWeaponIndex(pThis, pTargetTechno, pTarget, 0, 1,
+    // allowFallback, allowAAFallback)` and returns Primary/Secondary when it
+    // answers, skipping the stock Verses arm at `0x6F36E3`.
+    if let Some(index) = pick() {
+        return index;
+    }
     let Some(TargetFacts::Techno {
         obj: target_obj,
         flight,
@@ -1476,6 +1512,23 @@ pub(crate) fn select_weapon_index_against_in_query(
     };
     #[cfg(not(feature = "phobos"))]
     let multi = || -> Option<i32> { None };
+    // Phobos `PickWeaponIndex` at `0x6F36DB`, after the arms A–P that return
+    // earlier; lazy like `multi`.
+    #[cfg(feature = "phobos")]
+    let pick = || {
+        phobos_pick_weapon_index(
+            rules,
+            attacker_entity,
+            attacker_obj,
+            attacker,
+            target,
+            target_facts.as_ref(),
+            world,
+            interner,
+        )
+    };
+    #[cfg(not(feature = "phobos"))]
+    let pick = || -> Option<i32> { None };
     Some(what_weapon_should_i_use_with_force(
         rules,
         attacker_obj,
@@ -1493,6 +1546,7 @@ pub(crate) fn select_weapon_index_against_in_query(
         },
         forced,
         multi,
+        pick,
     ))
 }
 
@@ -1676,6 +1730,176 @@ fn phobos_force_weapon_index(
         }
     }
     (force >= 0).then_some(force)
+}
+
+/// Phobos `TechnoExt::PickWeaponIndex` (`Ext/Techno/WeaponHelpers.cpp:7-100`),
+/// asked by the stock ladder hook at `0x6F36DB`
+/// (`Ext/Techno/Hooks.Firing.cpp:121-165`) for slots 0/1 of every Techno that
+/// reaches Q. `None` is native `-1`: the caller keeps the stock Verses arm at
+/// `0x6F36E3`.
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn phobos_pick_weapon_index(
+    rules: &RuleSet,
+    attacker_entity: &GameEntity,
+    attacker_obj: &ObjectType,
+    attacker: &AttackerFacts,
+    target: Option<&TargetKind>,
+    target_facts: Option<&TargetFacts<'_>>,
+    world: &Simulation,
+    interner: &StringInterner,
+) -> Option<i32> {
+    let Some(primary) = get_weapon(
+        attacker_entity,
+        attacker_obj,
+        0,
+        &world.substrate.entities,
+        rules,
+        interner,
+    ) else {
+        return get_weapon(
+            attacker_entity,
+            attacker_obj,
+            1,
+            &world.substrate.entities,
+            rules,
+            interner,
+        )
+        .map(|_| 1);
+    };
+    let Some(secondary) = get_weapon(
+        attacker_entity,
+        attacker_obj,
+        1,
+        &world.substrate.entities,
+        rules,
+        interner,
+    ) else {
+        return Some(0);
+    };
+    let target_entity = match target {
+        Some(TargetKind::Entity(id)) => world.substrate.entities.get(*id),
+        _ => None,
+    };
+    let target_obj =
+        target_entity.and_then(|entity| interner.object_type(entity.type_ref(), rules));
+    // Phobos leaves `pTargetCell` null for an airborne Techno.
+    let airborne =
+        matches!(target_facts, Some(TargetFacts::Techno { flight, .. }) if flight.high());
+    struct CellGate {
+        land: Option<LandType>,
+        techno_content: bool,
+        bridges: bool,
+    }
+    let cell = if airborne {
+        None
+    } else {
+        match target_facts {
+            Some(TargetFacts::Techno { .. }) => target_entity.map(|entity| {
+                let (rx, ry) = (entity.position.rx(), entity.position.ry());
+                CellGate {
+                    land: world.resolved_terrain.as_ref().and_then(|terrain| {
+                        terrain
+                            .cell(rx, ry)
+                            .and_then(|cell| LandType::from_index(cell.land_type))
+                    }),
+                    techno_content: matches!(
+                        world.native_cell_content((rx, ry)).next(),
+                        Some(crate::sim::occupancy::CellObjectMember::Entity(_))
+                    ),
+                    bridges: world.cell_has_bridge_head((rx, ry)),
+                }
+            }),
+            Some(TargetFacts::Cell {
+                land_type,
+                bridge_flag,
+                ..
+            }) => Some(CellGate {
+                land: LandType::from_index(*land_type),
+                techno_content: false,
+                bridges: *bridge_flag,
+            }),
+            _ => None,
+        }
+    };
+    // Phobos `IsCellEligible` + `IsTechnoEligible` + `CanTargetHouses` + the
+    // CE/health/veterancy gates + `HasRequiredAttachedEffects`, in native
+    // order. `SkipWeaponPicking` makes the whole group pass (`Body.cpp:210`);
+    // a null Techno target skips the Techno gates.
+    let allowed = |weapon: &WeaponType| -> bool {
+        if super::world_fire::phobos_skip_weapon_picking(weapon) {
+            return true;
+        }
+        if let Some(cell) = &cell
+            && !super::crit::cell_eligible(
+                cell.land,
+                weapon.weapon_targeting().can_target,
+                Some(cell.techno_content),
+                cell.bridges,
+            )
+        {
+            return false;
+        }
+        let (Some(entity), Some(obj)) = (target_entity, target_obj) else {
+            return true;
+        };
+        let targeting = weapon.weapon_targeting();
+        super::crit::techno_eligible(entity.category(), targeting.can_target, obj.is_vehicle())
+            && super::can_target_house(
+                weapon.can_target_houses(),
+                attacker_entity.owner(),
+                entity.owner(),
+                &world.houses,
+                world.house_alliances(),
+                &world.interner,
+            )
+            && super::health_in_threshold(
+                entity.health.current(),
+                obj.strength,
+                targeting.min_health,
+                targeting.max_health,
+            )
+            && super::affected_veterancy_allows(targeting.veterancy, entity.veterancy.rank_kind())
+            && world.weapon_attach_effects_allow(weapon, Some(entity), Some(attacker_entity), rules)
+    };
+    // Phobos' secondary gate, before the fallback keys: an ineligible
+    // secondary leaves the primary.
+    if !allowed(secondary) {
+        return Some(0);
+    }
+    let second_is_aa = airborne && projectile_aa(rules, secondary);
+    let allow_fallback = !attacker_obj
+        .phobos_multi_weapon
+        .no_secondary_weapon_fallback;
+    let allow_aa_fallback = allow_fallback
+        || attacker_obj
+            .phobos_multi_weapon
+            .no_secondary_weapon_fallback_allow_aa;
+    let first_skip = super::world_fire::phobos_skip_weapon_picking(primary);
+    let first_allowed_ae = first_skip
+        || world.weapon_attach_effects_allow(primary, target_entity, Some(attacker_entity), rules);
+    if !allow_fallback
+        && (!allow_aa_fallback || !second_is_aa)
+        && first_allowed_ae
+        && !can_fire_no_ammo_weapon(attacker_obj, attacker.ammo, 1)
+    {
+        return Some(0);
+    }
+    // Phobos' primary gate; `firstAllowedAE` is part of it.
+    if !allowed(primary) || !first_allowed_ae {
+        return Some(1);
+    }
+    // Cell target only: a Naval_Primary or Land_Secondary type answers the
+    // secondary on land.
+    if target_entity.is_none()
+        && let Some(cell) = &cell
+        && (attacker_obj.naval_targeting == 1 || attacker_obj.land_targeting == 2)
+        && cell.land != Some(LandType::Water)
+        && cell.land != Some(LandType::Beach)
+    {
+        return Some(1);
+    }
+    None
 }
 
 /// Phobos `TechnoTypeExt::SelectMultiWeapon` (`Ext/TechnoType/Body.cpp:175-291`),

@@ -436,6 +436,13 @@ impl TerrainObjectState {
         self.can_be_built_on
     }
 
+    /// Phobos `IsPassable` resolved for this live object
+    /// (`Ext/TerrainType/Hooks.Passable.cpp:25-44`): a passable Terrain turns
+    /// the player's unforced click over it into a Move action.
+    pub(crate) const fn passable(&self) -> bool {
+        self.passable
+    }
+
     pub const fn lifecycle(&self) -> TerrainObjectLifecycle {
         self.lifecycle
     }

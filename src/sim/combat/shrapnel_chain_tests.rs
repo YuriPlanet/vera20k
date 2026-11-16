@@ -149,6 +149,7 @@ impl PrismScene {
             target_coords,
             target_type_ref,
             is_garrison: false,
+            at_firing_frame: true,
         };
         world_fire::emit_admitted_fire(
             &mut self.world,

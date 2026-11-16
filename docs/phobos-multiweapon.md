@@ -72,6 +72,19 @@ are independent type keys: the fallback keeps `count == 2` inside
 `SelectMultiWeapon` and drops the airstrike/drain/electric secondary priorities
 unless `AllowAA` re-enables the airborne one.
 
+At the stock ladder's Q arm (`0x6F36DB`, `Ext/Techno/Hooks.Firing.cpp:121-165`)
+Phobos asks `TechnoExt::PickWeaponIndex` for slots 0/1 before native's Verses
+checks at `0x6F36E3` (`Ext/Techno/WeaponHelpers.cpp:7-100`). The pick answers
+when the secondary is targetable and the primary is not, or the reverse:
+`SkipWeaponPicking` bypasses a slot's group, otherwise the cell `CanTarget`
+(airborne targets skip the cell), techno `CanTarget`, `CanTargetHouses`, the
+health and veterancy ranges and required AttachEffects decide. `allowFallback`
+is `!NoSecondaryWeaponFallback`; with the key on, only `secondIsAA` (airborne
+target, AA projectile) or `.AllowAA` keeps the airborne-secondary fallback,
+and a `CanFireNoAmmoWeapon` secondary also blocks the primary answer. A cell
+target on land also picks the secondary for `NavalTargeting=1` or
+`LandTargeting=2`.
+
 ## Voice attack
 
 `TechnoTypeExt::GetVoiceAttack` (`Ext/TechnoType/Hooks.MultiWeapon.cpp:82-116`,
@@ -89,17 +102,33 @@ including the voice keys bound against the fixed sound catalog;
 latch, and `ruleset` projects the result onto `ObjectType::phobos_multi_weapon`.
 `sim::combat::combat_weapon::select_weapon_index_against_in_query` computes the
 slot lazily at the `0x6F3428` position via `phobos_multi_weapon_index`, and
+`phobos_pick_weapon_index` runs the `0x6F36DB` pick from the same owner (it
+reuses `world_fire::phobos_skip_weapon_picking`, `crit::cell_eligible` /
+`techno_eligible`, `can_target_house`, `health_in_threshold`,
+`affected_veterancy_allows` and `weapon_attach_effects_allow`);
 `multi_weapon_can_fire` reuses `phobos_airburst::weapon_picking_allows_with`
 for the target-eligibility and warhead-versus gates.
 `sim::world::selection_voice::attack_voice_request` owns the Phobos voice arm.
+The regression tests are
+`phobos_stock_weapon_pick_honours_can_target_and_the_fallback_keys` (pick
+answers the secondary, `NoSecondaryWeaponFallback` suppresses it, `.AllowAA`
+keeps the airborne arm) and
+`phobos_no_secondary_weapon_fallback_disables_the_drain_priority` (the
+SelectMultiWeapon arm).
 
 ## Residuals
 
 - `IsSecondary` consumers in the Infantry/Unit firing-frame hooks
   (`Ext/Infantry/Hooks.Firing.cpp:45`, `Ext/Unit/Hooks.Firing.cpp:42`) are
   presentation; VERA's firing frames do not read the predicate yet.
-- `NoSecondaryWeaponFallback` is ported only inside `SelectMultiWeapon`; the
-  stock `WhatWeaponShouldIUse` fallback hook `0x6F36DB` remains unported.
+- `NoSecondaryWeaponFallback` is ported in both owners: `SelectMultiWeapon`
+  (`0x6F3428`) and the stock `PickWeaponIndex` pick (`0x6F36DB`).
+- The shield arm following the `0x6F36DB` pick (`Ext/Techno/Hooks.Firing.cpp:
+  140-162`) is not ported: an active target shield whose primary cannot
+  target the shield would answer the secondary. Trigger: a shielded Techno
+  target and a pick that returns `-1`; risk: a type keeps firing a primary
+  the shield refuses. VERA's shield targeting gate is separate; no retail
+  content reaches this arm.
 - `SkipWeaponPicking` needs no separate key here: VERA applies the picking
   gates unconditionally and every gate passes when Phobos derives the flag as
   true.

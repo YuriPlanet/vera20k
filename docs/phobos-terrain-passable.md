@@ -42,16 +42,26 @@ zone 5): the object keeps its cell-list membership but contributes neither an
 occupation mask nor a zone class, matching `0x483DDF`. The map-only terrain
 types installed after the RuleSet constructor are projected too.
 
+`TerrainObjectState` carries the resolved value; `Simulation::terrain_object_is_passable`
+exposes it read-only. `app::input::context_order::attack_action` (the
+`TechnoClass::What_Action` owner shared by cursor and click) applies the
+`0x7002E9` arm before `base_action`: a current player's controllable Techno
+whose target is a passable Terrain answers `AttackAction::Move` unless forced,
+so no class tail runs (`Ext/TerrainType/Hooks.Passable.cpp:25-44`). Force-fire,
+another house's actor, an offline actor and a non-passable Terrain all keep the
+stock answer.
+
 ## Tests
 
 - `src/sim/terrain_object.rs` — the type key, both globals, `SpawnsTiberium`
   selection, an explicit `no` beating the globals, the constructed state's
   zero bits and the projected cell no longer blocking.
+- `src/app/input/context_order.rs` —
+  `a_passable_terrain_answers_move_for_the_player_unless_forced`: the Move
+  answer through production `attack_action`, plus force-fire, AI actor, offline
+  actor and an explicit `IsPassable=no` type keeping the stock answer.
 
 ## Residuals
 
-- The `WhatAction` arm (`0x7002E9`) selects a Move order/action and is not
-  ported; clicking passable terrain keeps the stock attack order unless
-  force-firing. This is a player-visible input gap.
 - The buildable-upon half of the same Phobos family is
   [its own page](phobos-terrain-can-be-built-on.md).
