@@ -16,8 +16,10 @@ import android.os.Bundle
 import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.text.InputType
 import android.view.RoundedCorner
 import android.view.WindowInsets
+import android.view.inputmethod.EditorInfo
 import com.google.androidgamesdk.GameActivity
 import java.io.File
 import java.io.IOException
@@ -45,6 +47,16 @@ class VeraActivity : GameActivity() {
     fun displayInsetTop(): Int = displayInsetTop
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // GameActivity defaults to TYPE_NULL (0), which puts its InputConnection
+        // into raw-key mode (fullEditor = false, mForwardKeyEvents = true). Its
+        // sendKeyEvent then dispatches KEYCODE_DEL to the view's OnKeyListener
+        // and also calls processKeyEvent itself, deleting two characters per
+        // backspace and leaving Chinese IMEs without a text editor.
+        setImeEditorInfoFields(
+            InputType.TYPE_CLASS_TEXT,
+            EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_FLAG_NO_FULLSCREEN,
+        )
         super.onCreate(savedInstanceState)
         window.decorView.setOnApplyWindowInsetsListener { _, insets ->
             updateDisplayInsets(insets)
