@@ -356,7 +356,7 @@ pub(crate) fn render_multiplayer_setup(
                     layout.header_controls[row].0,
                     ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
                     if !enabled {
-                        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+                        ROOM_CLOSED_TEXT_RGB
                     } else if pressed || ui.buttons.hovered == Some(id) {
                         [1.0, 1.0, 1.0]
                     } else {
@@ -452,9 +452,16 @@ pub(crate) fn render_multiplayer_setup(
                 SHELL_CONTROL_TEXT_DEPTH,
                 ROSTER_TEXT_SCALE,
             ));
-            if let Some(rect) = layout.balance {
-                let enabled = view.enabled(BALANCE);
-                let pressed = enabled && ui.buttons.is_pressed(BALANCE);
+            for (id, rect, caption) in [
+                (TEAM_STARTS, layout.team_starts, "VERA:TeamStarts"),
+                (TEAM_COLORS, layout.team_colors, "VERA:TeamColors"),
+                (BALANCE, layout.balance, "VERA:Balance"),
+            ] {
+                let Some(rect) = rect else {
+                    continue;
+                };
+                let enabled = view.enabled(id);
+                let pressed = enabled && ui.buttons.is_pressed(id);
                 controls.extend(shell_paint::paint_modal_sprites(
                     None,
                     type3_button_frames(atlas),
@@ -472,7 +479,7 @@ pub(crate) fn render_multiplayer_setup(
                     },
                 ));
                 texts.push(sized(
-                    &crate::i18n::tr("VERA:Balance"),
+                    &crate::i18n::tr(caption),
                     rect,
                     ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     super::text::button_label_color_for_disabled(!enabled),
@@ -906,10 +913,9 @@ pub(crate) fn render_multiplayer_setup(
                 }
             }
         }
-        // VERA's Game Options and Teams over the room, on the box art the
-        // online lobby's popups use: the box and its buttons first, then its
-        // controls.
-        if let Some(open) = view.open_box
+        // VERA's Game Options over the room, on the box art the online
+        // lobby's popups use: the box and its OK first, then its controls.
+        if view.open_box.is_some()
             && let Some(popup) = layout.game_options
         {
             let button = |id: u16, rect: RectPx, text: String| {
@@ -933,24 +939,13 @@ pub(crate) fn render_multiplayer_setup(
                     label,
                 )
             };
-            let mut buttons = vec![button(
+            let (buttons, labels): (Vec<_>, Vec<_>) = [button(
                 GAME_OPTIONS_OK,
                 popup.ok,
                 localized_label(state, "GUI:OK", "GUI:OK"),
-            )];
-            if open == RoomBox::Teams {
-                buttons.push(button(
-                    TEAM_STARTS,
-                    layout.team_starts,
-                    crate::i18n::tr("VERA:TeamStarts"),
-                ));
-                buttons.push(button(
-                    TEAM_COLORS,
-                    layout.team_colors,
-                    crate::i18n::tr("VERA:TeamColors"),
-                ));
-            }
-            let (buttons, labels): (Vec<_>, Vec<_>) = buttons.into_iter().unzip();
+            )]
+            .into_iter()
+            .unzip();
             let draw = shell_paint::paint_modal_shp(
                 font,
                 atlas
@@ -965,16 +960,14 @@ pub(crate) fn render_multiplayer_setup(
             );
             overlay.controls.extend(draw.sprites);
             overlay.texts.extend(draw.text);
-            if open == RoomBox::GameOptions {
-                push_option_controls(
-                    &mut overlay.controls,
-                    &mut overlay.texts,
-                    state,
-                    &view,
-                    &layout,
-                    super::wol_lobby::POPUP_DEPTHS.text,
-                );
-            }
+            push_option_controls(
+                &mut overlay.controls,
+                &mut overlay.texts,
+                state,
+                &view,
+                &layout,
+                super::wol_lobby::POPUP_DEPTHS.text,
+            );
         }
         // VERA asks a guest before downloading a map it does not have, then
         // shows the download, on the art of VERA's other online-service boxes.
@@ -1235,8 +1228,10 @@ fn player_badge(
 /// join the group.
 const ROSTER_BOX_RGB: [f32; 3] = [96.0 / 255.0, 96.0 / 255.0, 96.0 / 255.0];
 
-/// VERA's room's own text: green, where the shell's is yellow.
+/// VERA's room's own text: green, where the shell's is yellow, and a dim
+/// green, where the shell's is dark red, on what is closed.
 const ROOM_TEXT_RGB: [f32; 3] = [0.0, 1.0, 0.0];
+const ROOM_CLOSED_TEXT_RGB: [f32; 3] = [0.0, 0.5, 0.0];
 
 /// The local player's row in VERA's roster: a dark red band behind it.
 const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
@@ -1432,13 +1427,19 @@ fn push_trackbar(
     };
     let scale = layout.control_scale(bar.id);
     // The team bar's count keeps its value at the roster's text size and
-    // in the room's colour.
-    let (text_factor, rgb) = if scale == layout.page.scale {
-        (scale.factor(), SHELL_LABEL_TEXT_RGB)
+    // in the room's colours.
+    let (text_factor, [rgb, closed]) = if scale == layout.page.scale {
+        (
+            scale.factor(),
+            [
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
+            ],
+        )
     } else {
         (
             layout.page.scale.factor() * ROSTER_TEXT_SCALE,
-            ROOM_TEXT_RGB,
+            [ROOM_TEXT_RGB, ROOM_CLOSED_TEXT_RGB],
         )
     };
     paint_control(
@@ -1476,11 +1477,7 @@ fn push_trackbar(
             &state.renderer.bit_font,
             &value,
             rect_to_text_rect(crate::ui::shell::trackbar::value_text_rect(rect, scale)),
-            if view.enabled(bar.id) {
-                rgb
-            } else {
-                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-            },
+            if view.enabled(bar.id) { rgb } else { closed },
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             [0.0; 2],
             text_depth,

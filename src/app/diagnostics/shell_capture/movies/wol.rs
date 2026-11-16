@@ -2561,7 +2561,7 @@ impl WolCapture {
                 }
                 if self.target == WolTarget::ModernTeams {
                     use crate::ui::multiplayer_setup::{
-                        BALANCE, RoomBox, SetupAction, SetupColumn, TEAM_COUNT, TEAMS,
+                        BALANCE, SetupAction, SetupColumn, TEAM_COUNT,
                     };
                     // A room with teams lets the guest in watching; the
                     // guest takes a seat by picking Team B.
@@ -2584,11 +2584,6 @@ impl WolCapture {
                             slot,
                             observer: false,
                         },
-                    );
-                    setup_button(state, TEAMS)?;
-                    ensure!(
-                        setup_view(state)?.open_box == Some(RoomBox::Teams),
-                        "Teams did not open"
                     );
                     crate::app::shell_network_setup::apply_action(
                         state,
@@ -2761,12 +2756,6 @@ impl WolCapture {
                             "Team Colors": colors,
                             "Teams 15": wide_captions,
                         }),
-                    );
-                    // The frame shows the room, its Teams count in the team
-                    // bar over the chat.
-                    crate::app::shell_network_setup::apply_action(
-                        state,
-                        SetupAction::OpenBox(None),
                     );
                 }
                 MoviesCapture::restore_neutral_pointer(state);

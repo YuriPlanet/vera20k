@@ -902,7 +902,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .as_ref()
             .and_then(|ui| ui.open_box)
             .filter(|_| dialog.modern),
-        teams_enabled: host && grouped,
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),

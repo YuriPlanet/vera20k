@@ -503,7 +503,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 PREVIOUS_ROWS => Some(SetupAction::RosterPage { forward: false }),
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
-                TEAMS => Some(SetupAction::OpenBox(Some(RoomBox::Teams))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
                 TEAM_STARTS => Some(SetupAction::TeamStarts),
                 TEAM_COLORS => Some(SetupAction::TeamColors),
