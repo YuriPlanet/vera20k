@@ -1028,3 +1028,83 @@ fn ai_superweapon_delay_gates_the_per_frame_try() {
         "unset adds no per-frame call"
     );
 }
+
+fn bias_rules(key: bool) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=YARD\n[YARD]\nConstructionYard=yes\nStrength=1000\n",
+    ))
+    .unwrap();
+    rules.phobos_globals.ai_bias_spawn_cell = key;
+    rules
+}
+
+fn bias_scene(
+    key: bool,
+    campaign: bool,
+    yards: &[(u16, u16, bool, bool)],
+) -> (Simulation, RuleSet, InternedId) {
+    let rules = bias_rules(key);
+    let (mut sim, names) = houses(true, 1);
+    let owner = names[0];
+    if campaign {
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+    }
+    for &(rx, ry, limbo, alive) in yards {
+        let yard = spawn_building(&mut sim, owner, "YARD", 1000, limbo);
+        let entity = sim.substrate.entities.get_mut(yard).unwrap();
+        entity.position.set_rx_for_test(rx);
+        entity.position.set_ry_for_test(ry);
+        if !alive {
+            entity.health = Health::new(0);
+        }
+    }
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_base_center_for_test(Some((20, 20)));
+    (sim, rules, owner)
+}
+
+#[test]
+fn ai_bias_spawn_cell_moves_the_center_to_the_nearest_live_yard() {
+    let (mut sim, rules, owner) =
+        bias_scene(true, false, &[(10, 20, false, true), (30, 30, false, true)]);
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((10, 20)));
+}
+
+#[test]
+fn ai_bias_spawn_cell_skips_limbo_and_dead_yards() {
+    let (mut sim, rules, owner) = bias_scene(
+        true,
+        false,
+        &[
+            (10, 20, true, true),
+            (30, 20, false, false),
+            (40, 20, false, true),
+        ],
+    );
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((40, 20)));
+}
+
+#[test]
+fn ai_bias_spawn_cell_needs_two_yards_and_a_non_campaign() {
+    let (mut sim, rules, owner) = bias_scene(true, false, &[(10, 20, false, true)]);
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
+
+    let (mut sim, rules, owner) =
+        bias_scene(true, true, &[(10, 20, false, true), (30, 30, false, true)]);
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
+
+    let (mut sim, rules, owner) = bias_scene(
+        false,
+        false,
+        &[(10, 20, false, true), (30, 30, false, true)],
+    );
+    bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
+    assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
+}
