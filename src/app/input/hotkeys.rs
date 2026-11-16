@@ -19,14 +19,16 @@ const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
-/// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
+/// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F,
+/// Thread Stats Ctrl+Alt+G, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, String Keys Ctrl+Alt+K,
 /// Edit Layout Ctrl+Alt+E, Formation Line F, Formation Lock O, Ferry J and
 /// Rotate Primary I.
 /// Retail `KEYBOARDMD.INI` binds none of these keys but F, which is its
 /// Follow; [`HotkeyBindings::move_follow_off_formation_key`] moves that.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 10] = [
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 11] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
+    (HotkeyCommand::ThreadStats, CTRL_BIT | ALT_BIT | 0x47),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
@@ -101,9 +103,11 @@ pub(crate) enum HotkeyCommand {
     ScreenCapture,
     SetView(usize),
     /// VERA's built-in keys in the `vera20k` keyboard category, each with a
-    /// default in [`VERA_DEFAULT_KEYS`]. These four work on every screen
+    /// default in [`VERA_DEFAULT_KEYS`]. These five work on every screen
     /// ([`HotkeyBindings::window_command`]).
     PerformanceStats,
+    /// Show or hide the performance panel's Threads and Ticks rows.
+    ThreadStats,
     LockCursor,
     FullScreen,
     /// Swap the interface between each label's text and its string-table key
@@ -523,8 +527,8 @@ impl HotkeyBindings {
             .unwrap_or(HotkeyResolution::Unhandled)
     }
 
-    /// VERA's every-screen commands (Performance Stats, Lock Cursor to Window,
-    /// Full Screen, String Keys), which the window owner runs before any
+    /// VERA's every-screen commands (Performance Stats, Thread Stats, Lock
+    /// Cursor to Window, Full Screen, String Keys), which the window owner runs before any
     /// screen's own keys. A binding on a key that types text, held without Ctrl
     /// or Alt, is left to the battle's hotkey dispatch, which serves the chat
     /// edit first, so text boxes keep their letters.
@@ -536,6 +540,7 @@ impl HotkeyBindings {
     ) -> Option<HotkeyCommand> {
         let HotkeyResolution::Command(
             command @ (HotkeyCommand::PerformanceStats
+            | HotkeyCommand::ThreadStats
             | HotkeyCommand::LockCursor
             | HotkeyCommand::FullScreen
             | HotkeyCommand::StringKeys),
@@ -985,9 +990,9 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's six default keys above 0x256 and
+        // The 87 retail rows, plus VERA's seven default keys above 0x256 and
         // the two Formation keys, Ferry's J and Rotate Primary's I below 0x200.
-        assert_eq!(loaded.by_key.len(), 97);
+        assert_eq!(loaded.by_key.len(), 98);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -995,7 +1000,7 @@ mod tests {
             );
         }
         let saved = loaded.to_ini_string();
-        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n");
+        ini.push_str("FullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\n");
         let ini = ini.replacen(
             "[Hotkey]\n",
             "[Hotkey]\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\n",
@@ -1128,9 +1133,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nStringKeys=1611\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nFormationLine=70\nRotatePrimary=73\nFerry=74\nFormationLock=79\nStopObject=83\nFullScreen=1037\nRelationColors=1089\nLayoutEdit=1605\nPerformanceStats=1606\nThreadStats=1607\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1351,6 +1356,7 @@ mod tests {
         let mut bindings = HotkeyBindings::from_ini_bytes(archive);
         for (command, key) in [
             (HotkeyCommand::PerformanceStats, 0x646),
+            (HotkeyCommand::ThreadStats, 0x647),
             (HotkeyCommand::LockCursor, 0x64c),
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::StringKeys, 0x64b),

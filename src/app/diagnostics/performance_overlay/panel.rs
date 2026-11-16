@@ -235,9 +235,10 @@ pub(super) enum Part {
 }
 
 /// The panel's rows in the language in use ([`crate::i18n`]): rates and
-/// units, Most CPU, Cores, Threads, a match's Ticks and the GPU, each row
-/// only once it has something to say.
-pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
+/// units, Most CPU, Cores and the GPU, each row only once it has something
+/// to say, and with `thread_rows` (the Thread Stats key) Threads and a
+/// match's Ticks.
+pub(super) fn rows(shown: &Shown, thread_rows: bool) -> Vec<Vec<Part>> {
     let mut rows = vec![vec![Part::Text(first_row(shown), GREEN)]];
     if let Some((first, rest)) = shown.areas.split_first() {
         let mut row = vec![
@@ -276,7 +277,7 @@ pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
     }
     // Which of the game's threads the cores' load is: a share of one core
     // each, so the rest of the threads together can pass 100.
-    if let Some(threads) = shown.threads {
+    if let Some(threads) = shown.threads.filter(|_| thread_rows) {
         let load = |key, percent: f32| tr_fill(key, &[("percent", &format!("{percent:.0}"))]);
         rows.push(vec![
             Part::Text(format!("{}  ", tr("VERA:FpsPanelThreads")), GREEN),
@@ -292,7 +293,7 @@ pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
         ]);
     }
     // Where a match's ticks ran, and how often the event loop turned.
-    if let Some(rates) = shown.loop_rates {
+    if let Some(rates) = shown.loop_rates.filter(|_| thread_rows) {
         let count = |key, rate: f32| tr_fill(key, &[("count", &thousands(rate.round() as usize))]);
         rows.push(vec![
             Part::Text(format!("{}  ", tr("VERA:FpsPanelTicks")), GREEN),
@@ -404,7 +405,7 @@ mod tests {
             core_loads: Some(vec![90.0, 10.0]),
             ..Shown::default()
         };
-        let rows = rows(&shown);
+        let rows = rows(&shown, false);
         assert_eq!(
             text(&rows[0][0]),
             "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Units 12,345"
@@ -425,11 +426,14 @@ mod tests {
     #[test]
     fn the_gpu_row_reads_the_gpus_share_of_the_time_between_frames() {
         let gpu = |gpu_ms, frame_ms| {
-            rows(&Shown {
-                frame_ms,
-                gpu_ms: Some(gpu_ms),
-                ..Shown::default()
-            })
+            rows(
+                &Shown {
+                    frame_ms,
+                    gpu_ms: Some(gpu_ms),
+                    ..Shown::default()
+                },
+                false,
+            )
             .pop()
             .expect("a first row")
         };
@@ -442,8 +446,9 @@ mod tests {
         assert_eq!(gpu(5.0, f32::NAN).len(), 1);
     }
 
+    /// The rows' text with the thread rows on.
     fn rows_of(shown: Shown) -> Vec<String> {
-        rows(&shown)
+        rows(&shown, true)
             .iter()
             .map(|row| row.iter().map(text).collect())
             .collect()
@@ -484,7 +489,8 @@ mod tests {
 
     /// The rows that say which thread a full core is: each thread's share
     /// of one core, where a match's ticks ran, and the cores the system
-    /// allows when it holds some back.
+    /// allows when it holds some back. The thread rows show only while
+    /// their own key has them on.
     #[test]
     fn thread_and_tick_rows_say_which_thread_does_the_work() {
         let counts = |inline_frames, lent_frames, turns| LoopCounts {
@@ -496,7 +502,7 @@ mod tests {
         let rates = counts(121, 40, 2_860)
             .since(counts(100, 40, 1_000))
             .and_then(|counts| loop_rates(Duration::from_millis(1_500), counts));
-        let rows = rows_of(Shown {
+        let shown = Shown {
             frame_ms: 50.0,
             core_loads: Some(vec![100.0, 10.0]),
             allowed_cores: Some((1, 8)),
@@ -507,7 +513,9 @@ mod tests {
             }),
             loop_rates: rates,
             ..Shown::default()
-        });
+        };
+        assert_eq!(super::rows(&shown, false).len(), 2);
+        let rows = rows_of(shown);
         assert_eq!(rows[1], "Cores     avg 55%  ·  1 of 8 allowed");
         assert_eq!(
             rows[2],

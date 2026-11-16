@@ -2271,6 +2271,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
         HotkeyCommand::PerformanceStats
+        | HotkeyCommand::ThreadStats
         | HotkeyCommand::LockCursor
         | HotkeyCommand::FullScreen
         | HotkeyCommand::StringKeys => run_window_command(state, command),
@@ -2302,6 +2303,21 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
     }
 }
 
+/// The Performance Stats boxes follow the panel the keys showed or hid.
+fn follow_performance_stats(state: &mut AppState, shown: bool) {
+    if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+        dialog.sync_performance_stats(shown);
+    }
+    if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
+        page.dialog.sync_performance_stats(shown);
+    }
+    crate::app::App::shell_menu_follow_performance_stats(state, shown);
+    log::info!(
+        "Performance stats: {}",
+        if shown { "shown" } else { "hidden" }
+    );
+}
+
 /// VERA's every-screen commands ([`HotkeyBindings::window_command`]): from the
 /// window owner's key handling on every screen, or from a battle's hotkey
 /// dispatch for a binding on a typing key.
@@ -2317,17 +2333,17 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
         }
         HotkeyCommand::PerformanceStats => {
             let shown = state.renderer.performance_overlay.toggle();
-            if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                dialog.sync_performance_stats(shown);
+            follow_performance_stats(state, shown);
+        }
+        // The rows are the panel's: asking for them while it is hidden
+        // shows it.
+        HotkeyCommand::ThreadStats => {
+            let rows = state.renderer.performance_overlay.toggle_thread_rows();
+            if rows && !state.renderer.performance_overlay.is_visible() {
+                state.renderer.performance_overlay.set_visible(true);
+                follow_performance_stats(state, true);
             }
-            if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
-                page.dialog.sync_performance_stats(shown);
-            }
-            crate::app::App::shell_menu_follow_performance_stats(state, shown);
-            log::info!(
-                "Performance stats: {}",
-                if shown { "shown" } else { "hidden" }
-            );
+            log::info!("Thread stats: {}", if rows { "shown" } else { "hidden" });
         }
         HotkeyCommand::StringKeys => state.toggle_string_keys_view(),
         _ => return,

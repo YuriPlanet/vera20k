@@ -44,6 +44,8 @@ const ELLIPSIS: &str = "...";
 
 pub(crate) struct PerformanceOverlay {
     visible: bool,
+    /// Whether the panel also draws its Threads and Ticks rows.
+    thread_rows: bool,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
     camera_buffer: wgpu::Buffer,
@@ -200,6 +202,7 @@ impl PerformanceOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
+            thread_rows: false,
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
             camera_group,
@@ -274,6 +277,14 @@ impl PerformanceOverlay {
         self.visible
     }
 
+    /// Ctrl+Alt+G: show or hide the panel's Threads and Ticks rows; returns
+    /// whether they are now shown. They draw with the panel, and like it
+    /// start hidden at every launch.
+    pub(crate) fn toggle_thread_rows(&mut self) -> bool {
+        self.thread_rows = !self.thread_rows;
+        self.thread_rows
+    }
+
     /// Where the match's message list starts, in frame pixels from the
     /// battlefield's top: below the shown panel, from its last drawn frame,
     /// and 0 while it is hidden.
@@ -330,7 +341,7 @@ impl PerformanceOverlay {
                 .stats
                 .close_window(now, frame_ms, tps, source.and_then(match_sample), gpu_ms);
         }
-        let mut rows = panel::rows(&frame.stats.shown);
+        let mut rows = panel::rows(&frame.stats.shown, self.thread_rows);
         let mut instances = Vec::new();
         let mut glyphs = Vec::new();
         let bottom = layout_rows(font, &mut rows, placement, &mut instances, &mut glyphs);
