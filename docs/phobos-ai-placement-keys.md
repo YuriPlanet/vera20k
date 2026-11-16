@@ -178,6 +178,21 @@ that its footprint stays the aim point.
   `ai_forbid_conyard_off_still_places_the_second_yard` and
   `a_placed_conyard_node_is_not_open_only_with_the_key` cover both hooks and
   the key-off path.
+- `ai_node_walls_only`: `sim::production::wall_placement::autofill_walls`
+  (`0x00588750`'s owner) passes a `require_base_node` gate to
+  `scan_autofill_direction` for each cardinal direction until one filler has
+  been revealed. The gate compares the direction's first cell with the owner's
+  `BasePlanState` nodes (`pack_base_plan_cell` + `type_or_control ==
+  base_plan_type_index`, `0x005887C1` / `0x005885D1`); `autofill_cells` (the
+  human preview) never gates. `ai_clean_wall_node`:
+  `sim::ai_base_building::exit_building` (`0x00443C60`) refuses a `Wall=`
+  product whose top-left eight-neighbourhood has no `protect_with_wall`
+  building, forgetting the site and answering `Failed`
+  (`0x004451F8` -> `0x004454E6`). Tests
+  `ai_node_walls_only_gates_each_first_cell_until_one_wall_lands`,
+  `ai_clean_wall_node_refuses_a_wall_without_a_protected_neighbour` and
+  `ai_clean_wall_node_requires_a_protected_neighbour` cover the gate, key-off
+  fill and both neighbour answers.
 - `team_delays_dynamic_type`: `sim::ai_team_creation::dynamic_team_delay` is
   `HouseClass_Update_ResetTeamDelay 0x004F8ACC`'s owner. It leaves the stock
   path when the session is a campaign, the type is `None`, or
@@ -207,14 +222,6 @@ that its footprint stays the aim point.
   on the scenario waypoint instead of the conyard nearest it. Frequency: once per
   house AI update. Risk: AI production concentrates on the far conyard; player
   visible in long AI games.
-- `AINodeWallsOnly` (`0x005885D1`, `0x005887C1`) and `AICleanWallNode`
-  (`0x004451F8`): VERA's wall fill (`sim::production::wall_placement`,
-  `0x00588750`'s owner) expands every cardinal direction from the origin and has
-  no base-node list to test the visited cell against, and its placement loop has
-  no eight-neighbour `ProtectWithWall` test. Trigger: an AI house filling walls.
-  Effect: walls grow past non-node cells, and a wall node with no protecting
-  neighbour is still placed. Frequency: every wall placement an AI makes when its
-  key is set. Risk: dormant in retail; visible wall spam in a mod that sets it.
 - `FallingDownTargetingFix` boundaries: the native hook's `skip` reads the
   `ThreatType::Air | ThreatType::Range` argument, which VERA's scan does not
   carry; the port gates on an air-capable non-AA-only mask (`mask & 4 != 0`,
