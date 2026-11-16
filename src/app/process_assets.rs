@@ -494,6 +494,15 @@ impl ProcessAssets {
         self.native_rules.as_ref()
     }
 
+    /// Whether this game is read the Ares way, as Ares.dll loaded reads it
+    /// (`NativeRulesProcessOwner::reads_ares_way`): the shell's answer for its
+    /// Ares hooks, the random map generator's and the random countries'.
+    pub(crate) fn reads_ares_way(&self) -> bool {
+        self.native_rules
+            .as_ref()
+            .is_some_and(|rules| rules.reads_ares_way())
+    }
+
     pub(crate) fn native_ini_hashes(
         &self,
     ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
@@ -725,7 +734,6 @@ impl ProcessAssets {
             .flat_map(|rules| rules.multiplayer_countries())
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn country_random_rows(&self) -> Vec<(&str, Option<&str>, bool, i32, i32)> {
         self.native_rules
             .as_ref()
@@ -766,19 +774,13 @@ impl ProcessAssets {
 
     /// `Game_GetFlagSurface @ 0x1001DCE0` country insignia by HouseType index,
     /// for lobby/diplomacy rows that resolve before a match Rules projection
-    /// exists.
+    /// exists. `None` unless Ares.dll is loaded (the game is read the Ares
+    /// way).
     pub(crate) fn country_flag_surface(&self, index: u16) -> Option<String> {
-        #[cfg(feature = "ares")]
-        {
-            return self
-                .native_rules
-                .as_ref()
-                .and_then(|rules| rules.country_flag_surface(index))
-                .map(str::to_owned);
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            let _ = index;
+        let rules = self.native_rules.as_ref()?;
+        if rules.reads_ares_way() {
+            rules.country_flag_surface(index).map(str::to_owned)
+        } else {
             None
         }
     }

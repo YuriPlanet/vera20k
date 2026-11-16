@@ -302,8 +302,8 @@ fn surveyed_urban_names(theater_name: &str) -> Option<Vec<&'static str>> {
 
 /// Resolve the Ares `[Urban]` lists of `settings` against the processed Rules
 /// type arrays and the art foundations: a structure that is no BuildingType
-/// has no footprint, a foot that is no type is unknown.
-#[cfg(feature = "ares")]
+/// has no footprint, a foot that is no type is unknown. Used when Ares.dll is
+/// loaded (the game is read the Ares way).
 pub fn resolve_ares_urban(
     settings: &crate::map::rmg::RmgSettings,
     processed: &crate::rules::native_processing::ProcessedRulesLayers,

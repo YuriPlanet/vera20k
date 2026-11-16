@@ -587,9 +587,9 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     }
 
     // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
-    // shell's own checkbox; the Advanced view's seventh slider takes its place.
-    #[cfg(feature = "ares")]
-    if !modal.advanced {
+    // shell's own checkbox when Ares.dll is loaded; the Advanced view's
+    // seventh slider takes its place.
+    if modal.ares && !modal.advanced {
         paint_control(
             out,
             &chrome,

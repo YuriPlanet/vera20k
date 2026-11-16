@@ -297,7 +297,7 @@ pub fn status_help_key_for_random_map_setup(control: RandomMapSetupControl) -> &
         }
         C::Advanced(_) => "VERA:RandomMapAdvancedSliderHelp",
         // Ares Game_DialogFunc_Subtext_Load (Ares.dll 10075EC0, hook 0x60411B).
-        #[cfg(feature = "ares")]
+        // The box is hit-tested only when Ares.dll is loaded.
         C::UrbanAreas5000 => "STT:RMGUrbanAreas",
     }
 }

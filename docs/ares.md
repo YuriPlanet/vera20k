@@ -16,10 +16,10 @@ mounts it for that mod and reads the game the Ares way: its INIs load with Ares'
 keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
 with every Ares key VERA20K reads, Ares' sound bags and string tables are added, and the
 whole simulation, the Country loading screen, the sidebar, superweapon targeting, the HUD's
-markers, the flying credits, `IvanBomb.Image`, messages and sounds take their Ares form. A
-download still misses what is behind the feature: in a skirmish, Ares' random country weights (a
-Random player draws as in the original) and the spawn file's larger Country and Side
-limits; and the random map generator's urban areas. A game with Ares keys but no `ares.mix` is
+markers, the flying credits, `IvanBomb.Image`, messages and sounds, the skirmish shell's random
+countries and flags, and the random map generator take their Ares form. A download still misses
+what is behind the feature: the spawn file's larger Country and Side limits. A game with Ares
+keys but no `ares.mix` is
 read the stock way and plays only the world, unit and combat parts and the sidebar's Ares
 behaviour (no cameo limit, Ares' cameo order, Shift-click queuing five, `EnemyUIName`) with
 the original sidebar art, so it can play unlike both the original and Ares: a mod that needs Ares ships `ares.mix`, as Ares mods do. For

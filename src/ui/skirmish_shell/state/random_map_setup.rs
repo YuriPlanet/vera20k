@@ -6,11 +6,9 @@
 
 use crate::map::rmg::options::RmgOptions;
 use crate::map::rmg::preview::PreviewImage;
-#[cfg(not(feature = "ares"))]
-use crate::map::rmg::randomize::randomize;
-#[cfg(feature = "ares")]
-use crate::map::rmg::randomize::randomize_from_combos;
-use crate::map::rmg::randomize::{RandomRanged, derive_from_map_type};
+use crate::map::rmg::randomize::{
+    RandomRanged, derive_from_map_type, randomize, randomize_from_combos,
+};
 use crate::map::rmg::settings::RmgSettings;
 use crate::ui::shell::combobox::ComboPress;
 use crate::ui::shell::geom::{RectPx, ShellScale};
@@ -31,7 +29,6 @@ impl RandomRanged for MainRngRanged {
         self.0.ranged(min, max)
     }
 
-    #[cfg(feature = "ares")]
     fn next_u32(&mut self) -> u32 {
         self.0.next_u32()
     }
@@ -114,8 +111,7 @@ const fn item(key: &'static str, fallback: &'static str, value: i32) -> SetupCom
 /// is absent, though the generator builds it and the string table names it.
 /// VERA lists it last, as it does the larger sizes, so the original four keep
 /// their rows.
-#[cfg(not(feature = "ares"))]
-const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
+const STOCK_MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
     item("TXT_MAP_CONTINENT", "Continent", 1),
     item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
     item("TXT_MAP_INLAND", "Inland", 3),
@@ -124,9 +120,9 @@ const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
 ];
 /// Ares' RMG_EnableArchipelago (Ares.dll 1006ACF0, hook 0x596FFE -> 0x597008)
 /// starts the fill at the table's first label with item data 0, so every
-/// dialog lists archipelago first.
-#[cfg(feature = "ares")]
-const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
+/// dialog lists archipelago first when Ares.dll is loaded (the game is read
+/// the Ares way).
+const ARES_MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
     item("TXT_MAP_ARCHIPELAGO", "Archipelago", 0),
     item("TXT_MAP_CONTINENT", "Continent", 1),
     item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
@@ -146,8 +142,7 @@ const TIME_ITEMS: [SetupComboItem; 4] = [
 /// generator's URBAN and DESERT (`rmg::emit::theater_name` 2 and 3), which
 /// the string table names. LUNAR is not offered: it authors no water, shore,
 /// cliff or road tiles for the generator to place.
-#[cfg(not(feature = "ares"))]
-const THEATER_ITEMS: [SetupComboItem; 4] = [
+const STOCK_THEATER_ITEMS: [SetupComboItem; 4] = [
     item("Name:Temperate", "Temperate", 0),
     item("Name:Snow", "Snow", 1),
     item("Name:Urban", "Urban", 2),
@@ -155,9 +150,9 @@ const THEATER_ITEMS: [SetupComboItem; 4] = [
 ];
 /// Ares' RMG_EnableDesert (Ares.dll 1006AD10, hook 0x5970EA) adds
 /// `Name:Desert` with item data 3 after the two native entries; VERA adds
-/// URBAN after it.
-#[cfg(feature = "ares")]
-const THEATER_ITEMS: [SetupComboItem; 4] = [
+/// URBAN after it. Listed when Ares.dll is loaded (the game is read the Ares
+/// way).
+const ARES_THEATER_ITEMS: [SetupComboItem; 4] = [
     item("Name:Temperate", "Temperate", 0),
     item("Name:Snow", "Snow", 1),
     item("Name:Desert", "Desert", 3),
@@ -184,12 +179,26 @@ const RESOURCE_ITEMS: [SetupComboItem; 4] = [
 ];
 
 /// The entries a combo is filled with, in list order: the original's, then
-/// VERA's, in Skirmish, LAN and online dialogs alike.
-pub fn setup_combo_items(combo: SetupCombo) -> &'static [SetupComboItem] {
+/// VERA's, in Skirmish, LAN and online dialogs alike. `ares`: Ares.dll is
+/// loaded (the game is read the Ares way), which lists its landform and
+/// theater orders.
+pub fn setup_combo_items(combo: SetupCombo, ares: bool) -> &'static [SetupComboItem] {
     match combo {
-        SetupCombo::MapType => &MAP_TYPE_ITEMS,
+        SetupCombo::MapType => {
+            if ares {
+                &ARES_MAP_TYPE_ITEMS
+            } else {
+                &STOCK_MAP_TYPE_ITEMS
+            }
+        }
         SetupCombo::Time => &TIME_ITEMS,
-        SetupCombo::Theater => &THEATER_ITEMS,
+        SetupCombo::Theater => {
+            if ares {
+                &ARES_THEATER_ITEMS
+            } else {
+                &STOCK_THEATER_ITEMS
+            }
+        }
         SetupCombo::Size => &SIZE_ITEMS,
         SetupCombo::Resources => &RESOURCE_ITEMS,
     }
@@ -341,6 +350,10 @@ pub struct RandomMapSetupModalState {
     pub custom_presets: Vec<RmgOptions>,
     /// The slot [`Self::save_custom_preset`] takes once every slot is taken.
     pub next_custom_slot: usize,
+    /// Ares.dll is loaded (the game is read the Ares way): the combos list
+    /// Ares' entries, Surprise Me draws from them, and the Urban Areas box
+    /// shows. The shell sets it when it opens the dialog; never saved.
+    pub ares: bool,
 }
 
 /// Maps [`RandomMapSetupModalState::history`] remembers.
@@ -413,6 +426,7 @@ impl RandomMapSetupModalState {
             history: Vec::new(),
             custom_presets: Vec::new(),
             next_custom_slot: 0,
+            ares: false,
         };
         modal.options.normalize();
         modal
@@ -432,7 +446,7 @@ impl RandomMapSetupModalState {
 
     /// The entries `combo` lists in this dialog.
     pub fn combo_items(&self, combo: SetupCombo) -> &'static [SetupComboItem] {
-        setup_combo_items(combo)
+        setup_combo_items(combo, self.ares)
     }
 
     /// Whether a control is currently interactive. Every control is inert
@@ -581,7 +595,7 @@ impl RandomMapSetupModalState {
                 // VERA: the Advanced view hides the combos.
                 return None;
             }
-            let combo = super::super::layout::random_map_setup_control_at(layout, x, y)
+            let combo = super::super::layout::random_map_setup_control_at(layout, x, y, self.ares)
                 .and_then(SetupCombo::from_control)
                 .filter(|combo| self.is_enabled(combo.control()))?;
             let face = layout.control_rects[combo.row()];
@@ -712,10 +726,7 @@ impl RandomMapSetupModalState {
         self.advanced_values = None;
         self.options.urban_enabled = false;
         self.preset = None;
-        #[cfg(not(feature = "ares"))]
-        randomize(&mut self.options, settings, rng, description);
-        #[cfg(feature = "ares")]
-        {
+        if self.ares {
             let values = |combo| {
                 self.combo_items(combo)
                     .iter()
@@ -731,6 +742,8 @@ impl RandomMapSetupModalState {
                 &map_types,
                 &theaters,
             );
+        } else {
+            randomize(&mut self.options, settings, rng, description);
         }
         self.generated = false;
         self.generated_preview = None;
@@ -741,8 +754,8 @@ impl RandomMapSetupModalState {
     /// `RMG::UrbanAreas` itself: Ares copies it in at SyncOptionsFromControls
     /// (MapSeedClass_DialogFunc_GetData, Ares.dll 1006A940, hook 0x596C81) and
     /// out at SyncControlsFromOptions (_SetData 1006A980, hook 0x5971EA). A
-    /// click alone neither rerolls nor invalidates the generated map.
-    #[cfg(feature = "ares")]
+    /// click alone neither rerolls nor invalidates the generated map. The box
+    /// shows only when Ares.dll is loaded ([`Self::ares`]).
     pub fn toggle_urban_areas(&mut self) {
         self.options.urban_areas = !self.options.urban_areas;
     }
@@ -928,7 +941,6 @@ mod tests {
             max
         }
 
-        #[cfg(feature = "ares")]
         fn next_u32(&mut self) -> u32 {
             u32::MAX
         }
@@ -975,7 +987,6 @@ mod tests {
                 min
             }
 
-            #[cfg(feature = "ares")]
             fn next_u32(&mut self) -> u32 {
                 0
             }
@@ -1106,7 +1117,7 @@ mod tests {
         // The receiver takes the sender's options whole and shows the
         // sender's slider values.
         dialog.change_advanced(AdvancedField::Water, 37);
-        let code = dialog.options.share_code();
+        let code = dialog.options.share_code(dialog.ares);
         let mut receiver = opened();
         assert_eq!(receiver.adopt_share_code("not a code"), None);
         assert_eq!(
@@ -1373,7 +1384,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn every_map_type_selects_its_entry_once_archipelago_is_listed() {
         let mut state = opened();
@@ -1398,11 +1408,10 @@ mod tests {
     /// Surprise Me draws the map type, then the theater, from those entries
     /// and takes the Urban Areas box from a raw draw's low bit (hook
     /// 0x596786).
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_lists_archipelago_and_desert_and_surprise_me_draws_from_them() {
         let values = |combo| {
-            setup_combo_items(combo)
+            setup_combo_items(combo, true)
                 .iter()
                 .map(|item| item.value)
                 .collect::<Vec<_>>()
@@ -1411,6 +1420,7 @@ mod tests {
         assert_eq!(values(SetupCombo::Theater), [0, 1, 3, 2]);
 
         let mut modal = opened();
+        modal.ares = true;
         modal.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
         assert_eq!(modal.options.map_type, 4, "the last map-type entry");
         assert_eq!(modal.options.theater, 2, "the last theater entry");
@@ -1421,11 +1431,10 @@ mod tests {
         assert!(modal.generated, "the box alone keeps the generated map");
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
     fn archipelago_and_the_added_theaters_are_listed_after_the_original_entries() {
         let values = |combo| {
-            setup_combo_items(combo)
+            setup_combo_items(combo, false)
                 .iter()
                 .map(|item| item.value)
                 .collect::<Vec<_>>()
@@ -1476,7 +1485,7 @@ mod tests {
         let list = super::super::super::layout::random_map_setup_dropdown_rect(
             &layout,
             SetupCombo::Time.row(),
-            setup_combo_items(SetupCombo::Time).len(),
+            setup_combo_items(SetupCombo::Time, false).len(),
         );
         let dusk_row = list.y + list.h * 5 / 8;
         assert_eq!(

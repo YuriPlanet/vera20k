@@ -41,30 +41,25 @@ pub struct RmgSettings {
     /// the light of their moods.
     pub extras: super::extras::ExtrasSettings,
     /// Ares `[General] GenerateUrbanAreas=`: the process's first value of
-    /// the urban-areas switch ([`RmgOptions::urban_areas`]).
-    #[cfg(feature = "ares")]
+    /// the urban-areas switch ([`RmgOptions::urban_areas`]). Read in every
+    /// launch; only code that runs when Ares.dll is loaded (the game is read
+    /// the Ares way) uses it.
     pub generate_urban_areas: bool,
-    /// Ares `[Urban] Structures=`, `Infantry=` and `Vehicles=` names.
-    #[cfg(feature = "ares")]
+    /// Ares `[Urban] Structures=`, `Infantry=` and `Vehicles=` names, read
+    /// and used like `generate_urban_areas`.
     pub urban_structures: Vec<String>,
-    #[cfg(feature = "ares")]
     pub urban_infantry: Vec<String>,
-    #[cfg(feature = "ares")]
     pub urban_vehicles: Vec<String>,
 }
 
 /// The `[Urban]` defaults of MapSeedClass_LoadFromINI (Ares.dll 1006ABF0).
-#[cfg(feature = "ares")]
 const URBAN_STRUCTURES: &str = "CABUNK01,CABUNK02,CAARMY01,CAARMY02,CAARMY03,CAARMY04,CACHIG03,\
 CANEWY01,CANEWY14,CANWY09,CANWY26,CANWY25,CATEXS07";
-#[cfg(feature = "ares")]
 const URBAN_INFANTRY: &str = "CIV1,CIV2,CIV3,CIVA,CIVB,CIVC";
-#[cfg(feature = "ares")]
 const URBAN_VEHICLES: &str = "TRUCKA,TRUCKB,COP,EUROC,SUVW,SUVB,FTRK,AMBU";
 
 /// Ares `VectorNames::Tokenize`: `strtok` on commas alone, so empty tokens
 /// vanish and spaces stay in the names.
-#[cfg(feature = "ares")]
 fn tokenize_names(text: &str) -> Vec<String> {
     text.split(',')
         .filter(|name| !name.is_empty())
@@ -89,13 +84,9 @@ impl Default for RmgSettings {
             vera_urban: Default::default(),
             extras: Default::default(),
             // RMG::UrbanAreas starts false; an absent file reads the defaults.
-            #[cfg(feature = "ares")]
             generate_urban_areas: false,
-            #[cfg(feature = "ares")]
             urban_structures: tokenize_names(URBAN_STRUCTURES),
-            #[cfg(feature = "ares")]
             urban_infantry: tokenize_names(URBAN_INFANTRY),
-            #[cfg(feature = "ares")]
             urban_vehicles: tokenize_names(URBAN_VEHICLES),
         }
     }
@@ -106,8 +97,10 @@ impl RmgSettings {
     /// selection and per-key defaults remain owned by `load` and `apply`.
     /// VERA's town catalogue and `[Extras]` go in too: the catalogue keeps
     /// only the buildings whose art each player's game has, so two players
-    /// may resolve different towns from the same rules.
-    pub fn multiplayer_digest(&self) -> String {
+    /// may resolve different towns from the same rules. `ares`: Ares.dll is
+    /// loaded (the game is read the Ares way); only then do the Ares
+    /// `[Urban]` lists go in.
+    pub fn multiplayer_digest(&self, ares: bool) -> String {
         let mut bytes = b"VERA20k RMG settings v2\0".to_vec();
         for value in [self.min_tiberium, self.max_tiberium, self.max_trees]
             .into_iter()
@@ -163,17 +156,18 @@ impl RmgSettings {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }
         }
-        #[cfg(feature = "ares")]
-        for list in [
-            &self.urban_structures,
-            &self.urban_infantry,
-            &self.urban_vehicles,
-        ] {
-            for name in list {
-                bytes.extend_from_slice(name.as_bytes());
-                bytes.push(b',');
+        if ares {
+            for list in [
+                &self.urban_structures,
+                &self.urban_infantry,
+                &self.urban_vehicles,
+            ] {
+                for name in list {
+                    bytes.extend_from_slice(name.as_bytes());
+                    bytes.push(b',');
+                }
+                bytes.push(0);
             }
-            bytes.push(0);
         }
         crate::util::sha256::sha256_hex(&bytes)
     }
@@ -298,19 +292,16 @@ impl RmgSettings {
         // MapSeedClass_LoadFromINI (Ares.dll 1006ABF0, hook 0x5982D5, after
         // RMGMaximumTiberium): gamemd's ReadBool and 0x800-byte ReadString.
         // Ares reads them once per process; RMGMD.INI does not change, so
-        // each load reads the same values.
-        #[cfg(feature = "ares")]
-        {
-            self.generate_urban_areas =
-                general.read_bool("GenerateUrbanAreas", self.generate_urban_areas);
-            let urban = ini.section_or_empty("Urban");
-            self.urban_structures =
-                tokenize_names(&urban.read_string("Structures", URBAN_STRUCTURES, 0x800));
-            self.urban_infantry =
-                tokenize_names(&urban.read_string("Infantry", URBAN_INFANTRY, 0x800));
-            self.urban_vehicles =
-                tokenize_names(&urban.read_string("Vehicles", URBAN_VEHICLES, 0x800));
-        }
+        // each load reads the same values. Stock gamemd reads none of these
+        // keys; VERA reads them in every launch, and only code that runs when
+        // Ares.dll is loaded uses them.
+        self.generate_urban_areas =
+            general.read_bool("GenerateUrbanAreas", self.generate_urban_areas);
+        let urban = ini.section_or_empty("Urban");
+        self.urban_structures =
+            tokenize_names(&urban.read_string("Structures", URBAN_STRUCTURES, 0x800));
+        self.urban_infantry = tokenize_names(&urban.read_string("Infantry", URBAN_INFANTRY, 0x800));
+        self.urban_vehicles = tokenize_names(&urban.read_string("Vehicles", URBAN_VEHICLES, 0x800));
         // VERA extension: gamemd reads no `[Extras]`.
         self.extras.apply(ini.section_or_empty("Extras"));
     }
@@ -341,9 +332,18 @@ mod tests {
         });
         let mut extras = base.clone();
         extras.extras.fair_tech = "CAOUTP".into();
-        assert_ne!(towns.multiplayer_digest(), base.multiplayer_digest());
-        assert_ne!(extras.multiplayer_digest(), base.multiplayer_digest());
-        assert_eq!(base.clone().multiplayer_digest(), base.multiplayer_digest());
+        assert_ne!(
+            towns.multiplayer_digest(false),
+            base.multiplayer_digest(false)
+        );
+        assert_ne!(
+            extras.multiplayer_digest(false),
+            base.multiplayer_digest(false)
+        );
+        assert_eq!(
+            base.clone().multiplayer_digest(false),
+            base.multiplayer_digest(false)
+        );
     }
 
     #[test]
@@ -397,7 +397,6 @@ mod tests {
     /// gamemd's ReadBool and ReadString with Ares' defaults, split on commas
     /// alone. The loader drops a key with an empty value, so it keeps the
     /// default.
-    #[cfg(feature = "ares")]
     #[test]
     fn urban_keys_read_with_ares_defaults_and_comma_tokens() {
         let defaults = RmgSettings::default();
