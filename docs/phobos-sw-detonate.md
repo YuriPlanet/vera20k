@@ -58,6 +58,7 @@ building's foundation centre at its Location Z), as Phobos uses
 `Ext/BuildingType/Body.cpp:341`), and `type_super_weapons` names the
 detonation firer from it (`a_superweapons_list_names_the_detonation_firer` in
 the phobos-only run). No residual.
-RESIDUAL: the Ares-handler launch tail calls the detonation with no overlay
-registry and default frame effects, so its `MapClass::DamageArea` arm skips
-tiberium reduction and the frame's effect routing.
+The Ares-handler launch tail now threads the caller's overlay registry and
+frame effects into `apply_phobos_launch_tail`, so its detonation runs
+tiberium reduction and effect routing like the stock tail; no residual for
+this arm.

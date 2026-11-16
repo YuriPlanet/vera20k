@@ -702,7 +702,15 @@ fn launch(
             _ => false,
         };
         if activated {
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         true
@@ -736,7 +744,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -753,7 +769,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -770,7 +794,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -876,7 +908,15 @@ fn launch(
                 frame_effects,
             );
             if activated {
-                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+                super::finish_ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             return activated;
         }
@@ -892,19 +932,43 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         #[cfg(feature = "ares")]
         SuperWeaponKind::SonarPulse => {
             super::sonar_pulse::launch(sim, rules, owner, sw, (rx, ry));
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         #[cfg(feature = "ares")]
         SuperWeaponKind::Battery => {
             super::battery::activate(sim, rules, owner, sw);
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         #[cfg(feature = "ares")]
@@ -923,7 +987,15 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
         #[cfg(feature = "ares")]
@@ -938,7 +1010,15 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
-            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::finish_ares_launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             return true;
         }
     }

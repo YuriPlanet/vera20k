@@ -2665,6 +2665,8 @@ fn finish_ares_launch(
     owner: InternedId,
     typ: InternedId,
     cell: (u16, u16),
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: crate::sim::world::FrameEffects<'_>,
 ) {
     use crate::rules::superweapon_type::AresSuperWeaponFlags as F;
     let frame = sim.session.binary_frame() as i32;
@@ -2732,8 +2734,8 @@ fn finish_ares_launch(
             owner,
             sw,
             cell,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            overlay_registry,
+            frame_effects,
         );
     }
 }

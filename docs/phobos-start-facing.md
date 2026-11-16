@@ -52,6 +52,8 @@ the construction turn.
 
 RESIDUAL — the selling rotation (`0x449DAA`/`0x449DE9`): VERA's sell path
 models the deconstruction stages but no facing turn, so a sold building
-reaches the start facing only through Unlimbo. Trigger = selling any building;
-impact = the deconstruction facing differs from Phobos (presentation only);
-frequency = every sale; risk = visual only, the sale completes normally.
+reaches the start facing only through Unlimbo. The native block is gated on
+`BuildingType+0x16CA` `Artillary=` (`0x00460F56`); no retail building sets it
+(`object_type.rs` records the same dormancy for stage 0), so retail sales are
+unaffected. Trigger = selling a custom `Artillary=yes` building; impact =
+presentation facing only; risk = visual, the sale completes normally.
