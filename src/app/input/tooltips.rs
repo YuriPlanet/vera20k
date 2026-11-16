@@ -633,6 +633,7 @@ fn extended_super_tip(
     name: &str,
     money: i32,
     recharge_ticks: i32,
+    shots: Option<(i32, i32)>,
 ) -> String {
     let mut text = name.to_string();
     let mut wrote = false;
@@ -657,8 +658,39 @@ fn extended_super_tip(
             "{separator}{}{minutes:02}:{seconds:02}",
             ui.time_label
         ));
+        wrote = true;
+    }
+    if let Some((remaining, total)) = shots {
+        text.push(if wrote { ' ' } else { '\n' });
+        text.push_str(&format_csf(
+            &ui.sw_shots_format,
+            &[
+                CsfArg::Int(i64::from(remaining)),
+                CsfArg::Int(i64::from(total)),
+            ],
+        ));
     }
     text
+}
+
+/// `SWShotsFormat` data for a type, from the local owner's launch count
+/// (`Misc/PhobosToolTip.cpp:194-203`). Ares owns the count and the total.
+#[cfg(all(feature = "phobos", feature = "ares"))]
+fn super_tooltip_shots(state: &AppState, name: &str) -> Option<(i32, i32)> {
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let owner_name = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let owner = runtime.simulation.interner().get(&owner_name)?;
+    crate::sim::superweapon::super_weapon_tooltip_shots(
+        &runtime.simulation,
+        &runtime.resources.rules,
+        &owner,
+        name,
+    )
+}
+
+#[cfg(not(all(feature = "phobos", feature = "ares")))]
+fn super_tooltip_shots(_state: &AppState, _name: &str) -> Option<(i32, i32)> {
+    None
 }
 
 /// `RadarClass` slot +0x88 @ 0x00654320 registers the two radar-top buttons
@@ -812,6 +844,9 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                                     &item.display_name,
                                     amount,
                                     super_type.recharge_time_frames,
+                                    item.super_weapon_section
+                                        .as_deref()
+                                        .and_then(|name| super_tooltip_shots(state, name)),
                                 ))
                             })
                             .unwrap_or(tip)
@@ -931,6 +966,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                                     &entry.view.display_name,
                                     amount,
                                     super_type.recharge_time_frames,
+                                    super_tooltip_shots(state, &entry.type_id),
                                 ))
                             })
                             .unwrap_or(tip)
@@ -1033,6 +1069,37 @@ pub(crate) fn build_tooltip_instances(
         .map(|runtime| tooltip_background(&runtime.resources.rules, current_sidebar_side(state)))
         // Without a live Rules the stock opaque black stays.
         .unwrap_or(([0.0; 3], 1.0));
+    // Phobos `AnchoredToolTips` (`Misc/PhobosToolTip.cpp:367-406`): only the
+    // extended cameo tips leave the cursor; a super-weapon button pins to its
+    // column's right edge, a strip cameo to the sidebar's left edge.
+    let ui = &state.match_state.match_presentation.tool_tips;
+    let anchor = if ui.anchored && ui.extended {
+        if let Some(index) = tip
+            .id
+            .checked_sub(SW_SIDEBAR_TIP_ID_BASE)
+            .map(|offset| offset as usize)
+        {
+            state
+                .match_state
+                .match_presentation
+                .sw_sidebar
+                .entries
+                .get(index)
+                .map_or(TipAnchor::Cursor, |entry| TipAnchor::RightOfColumn {
+                    x: (entry.rect.x + entry.rect.w) as i32 + 2,
+                    y: entry.rect.y as i32 + 3,
+                })
+        } else if tip.id >= CAMEO_TIP_ID_BASE {
+            TipAnchor::LeftOfSidebar {
+                x: state.sidebar_frame().column().0 as i32,
+                y: tip.y - 40,
+            }
+        } else {
+            TipAnchor::Cursor
+        }
+    } else {
+        TipAnchor::Cursor
+    };
     tooltip_quads(
         &state.renderer.bit_font,
         &tip.text,
@@ -1060,6 +1127,7 @@ pub(crate) fn build_tooltip_instances(
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        anchor,
         // The darken strip is only the "a real FNT loaded" sentinel here (the
         // 5x7 fallback builds none); the pop-up itself no longer draws with it.
         state
@@ -1069,6 +1137,18 @@ pub(crate) fn build_tooltip_instances(
             .is_some()
             .then_some(fill),
     )
+}
+
+/// Phobos `AnchoredToolTips` (`Misc/PhobosToolTip.cpp:367-406`): a cameo tip
+/// leaves the cursor and pins beside its owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TipAnchor {
+    /// The stock forward-down cursor offset.
+    Cursor,
+    /// Super-weapon sidebar: the button column's right edge plus two.
+    RightOfColumn { x: i32, y: i32 },
+    /// Strip cameo: the sidebar's left edge, forty pixels above the cursor.
+    LeftOfSidebar { x: i32, y: i32 },
 }
 
 /// Geometry half of [`build_tooltip_instances`], split out so the box metrics
@@ -1090,6 +1170,7 @@ pub(crate) fn tooltip_quads(
     tint: [f32; 3],
     max_width: i32,
     camera_offset: [f32; 2],
+    anchor: TipAnchor,
     fill: Option<([f32; 3], f32)>,
 ) -> (
     Vec<SpriteInstance>,
@@ -1109,22 +1190,42 @@ pub(crate) fn tooltip_quads(
     let (layout, [placement_w, placement_h]) = size_tip_box(font, text, wrap_w);
     let box_w = layout.width as f32 + TIP_DRAW_PAD[0];
     let box_h = layout.height as f32 + TIP_DRAW_PAD[1];
-    let bx = place_tip(
-        tip_xy[0] as f32,
-        TIP_CURSOR_OFFSET[0] as f32,
-        placement_w,
-        region[0],
-        region[2],
-    );
-    // Draw clamps the wider frame to the surface at `0x00478F40..0x00478F56`.
-    let bx = bx.min(region[0] + (region[2] - box_w).max(0.0));
-    let by = place_tip(
-        tip_xy[1] as f32,
-        TIP_CURSOR_OFFSET[1] as f32,
-        placement_h,
-        region[1],
-        region[3],
-    );
+    let (bx, by) = match anchor {
+        TipAnchor::Cursor => {
+            let bx = place_tip(
+                tip_xy[0] as f32,
+                TIP_CURSOR_OFFSET[0] as f32,
+                placement_w,
+                region[0],
+                region[2],
+            );
+            // Draw clamps the wider frame to the surface at
+            // `0x00478F40..0x00478F56`.
+            let bx = bx.min(region[0] + (region[2] - box_w).max(0.0));
+            let by = place_tip(
+                tip_xy[1] as f32,
+                TIP_CURSOR_OFFSET[1] as f32,
+                placement_h,
+                region[1],
+                region[3],
+            );
+            (bx, by)
+        }
+        TipAnchor::RightOfColumn { x, y } => (
+            (x as f32).max(region[0]),
+            (y as f32)
+                .min(region[1] + (region[3] - box_h).max(0.0))
+                .max(region[1]),
+        ),
+        TipAnchor::LeftOfSidebar { x, y } => (
+            (x as f32 - box_w - 2.0)
+                .min(region[0] + (region[2] - box_w).max(0.0))
+                .max(region[0]),
+            (y as f32)
+                .min(region[1] + (region[3] - box_h).max(0.0))
+                .max(region[1]),
+        ),
+    };
 
     let mut fill_quads = Vec::with_capacity(1);
     if let Some((fill_tint, fill_alpha)) = fill {
@@ -2039,6 +2140,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             0,
             [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
         let panned = tooltip_quads(
@@ -2049,6 +2151,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             0,
             [640.0, 480.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
 
@@ -2110,6 +2213,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             0,
             [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
         assert_eq!(
@@ -2129,6 +2233,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             0,
             [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
         assert_eq!(flipped[0].position, [973.0, 316.0]);
@@ -2148,7 +2253,8 @@ mod tests {
                     region,
                     [1.0; 3],
                     0,
-                    [0.0; 2],
+                    [0.0, 0.0],
+                    TipAnchor::Cursor,
                     Some(([0.0, 0.0, 0.0], 1.0)),
                 );
                 assert_eq!(
@@ -2184,7 +2290,8 @@ mod tests {
             [0.0, 0.0, 1024.0, 768.0],
             [1.0; 3],
             0,
-            [0.0; 2],
+            [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
         assert_eq!(fill[0].position, [995.0, 316.0]);
@@ -2206,6 +2313,7 @@ mod tests {
             [1.0, 1.0, 0.0],
             0,
             [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
         assert_eq!(fill[0].tint, [0.0, 0.0, 0.0]);
@@ -2310,6 +2418,7 @@ ToolTip.Background.Opacity={opacity}
             [1.0, 1.0, 0.0],
             0,
             [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.25, 0.5, 0.75], 0.4)),
         );
         assert_eq!(fill[0].tint, [0.25, 0.5, 0.75]);
@@ -2334,10 +2443,17 @@ ToolTip.Background.Opacity={opacity}
             extended_techno_tip(&ui, "Cheap", -500, 54),
             "Cheap\n+CR500 T00:03"
         );
-        assert_eq!(extended_super_tip(&ui, "Nuke", 0, 1800), "Nuke\nT02:00");
         assert_eq!(
-            extended_super_tip(&ui, "Nuke", 1500, 900),
+            extended_super_tip(&ui, "Nuke", 0, 1800, None),
+            "Nuke\nT02:00"
+        );
+        assert_eq!(
+            extended_super_tip(&ui, "Nuke", 1500, 900, None),
             "Nuke\n+CR1500 T01:00"
+        );
+        assert_eq!(
+            extended_super_tip(&ui, "Nuke", 0, 1800, Some((2, 3))),
+            "Nuke\nT02:00 Shots: 2"
         );
     }
 
@@ -2358,10 +2474,45 @@ ToolTip.Background.Opacity={opacity}
             [100, 100],
             [0.0, 0.0, 800.0, 600.0],
             [1.0, 1.0, 0.0],
-            200,
+            0,
             [0.0, 0.0],
+            TipAnchor::Cursor,
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
         assert!(fill[0].size[0] < wide.width as f32 + 8.0);
+    }
+
+    /// `AnchoredToolTips`: the super-weapon column puts the box at its right
+    /// edge plus two; a strip cameo puts it left of the sidebar, forty pixels
+    /// above the cursor (`Misc/PhobosToolTip.cpp:367-406`).
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn anchored_tips_pin_to_their_owner_not_the_cursor() {
+        let font = make_test_font(&[(b'x' as u16, 6)], 4);
+        let (column, _, _) = tooltip_quads(
+            &font,
+            "xxx",
+            [100, 100],
+            [0.0, 0.0, 1024.0, 768.0],
+            [1.0, 1.0, 0.0],
+            0,
+            [0.0, 0.0],
+            TipAnchor::RightOfColumn { x: 800, y: 120 },
+            Some(([0.0, 0.0, 0.0], 1.0)),
+        );
+        assert_eq!(column[0].position, [800.0, 120.0]);
+        let (sidebar, _, _) = tooltip_quads(
+            &font,
+            "xxx",
+            [900, 300],
+            [0.0, 0.0, 1024.0, 768.0],
+            [1.0, 1.0, 0.0],
+            0,
+            [0.0, 0.0],
+            TipAnchor::LeftOfSidebar { x: 800, y: 260 },
+            Some(([0.0, 0.0, 0.0], 1.0)),
+        );
+        assert_eq!(sidebar[0].position, [769.0, 260.0]);
+        assert_eq!(sidebar[0].size[0], 29.0);
     }
 }

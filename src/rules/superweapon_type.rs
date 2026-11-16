@@ -2352,6 +2352,11 @@ impl AresSuperWeaponMetadata {
     pub(crate) fn availability(&self) -> &AresSuperWeaponAvailability {
         &self.availability
     }
+    /// `SW.Shots` for the `SWShotsFormat` tooltip group.
+    #[cfg(feature = "ares")]
+    pub fn tooltip_shots(&self) -> i32 {
+        self.availability.shots()
+    }
     pub(crate) fn native_auxiliary(&self) -> Option<&str> {
         self.native_auxiliary.as_deref()
     }
@@ -2426,6 +2431,12 @@ impl AresSuperWeaponAvailability {
 
     pub(crate) fn allows_shots(&self, count: i32) -> bool {
         self.shots < 0 || count < self.shots
+    }
+
+    /// The configured `SW.Shots` total, read for Phobos' `SWShotsFormat`
+    /// tooltip group; negative keeps stock's unrestricted count.
+    pub(crate) fn shots(&self) -> i32 {
+        self.shots
     }
 
     pub(crate) fn allows_controller(&self, player: bool) -> bool {

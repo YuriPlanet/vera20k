@@ -1774,9 +1774,31 @@ fn use_weeds_anim_stage(
     Some(progress.min(54))
 }
 
-/// Query active superweapons for a specific owner (for sidebar rendering).
-pub fn superweapon_views_for_owner(
+/// Phobos `PhobosToolTip::HelpText_Super`'s shots group
+/// (`Misc/PhobosToolTip.cpp:194-203`): `SW_Shots` less the house's launch
+/// count, over the configured total. `None` keeps stock, which has no shots
+/// policy.
+#[cfg(feature = "ares")]
+pub fn super_weapon_tooltip_shots(
     sim: &Simulation,
+    rules: &RuleSet,
+    owner: &InternedId,
+    name: &str,
+) -> Option<(i32, i32)> {
+    let total = rules.super_weapon_metadata(name)?.tooltip_shots();
+    if total <= 0 {
+        return None;
+    }
+    let launched = sim
+        .interner
+        .get(name)
+        .and_then(|id| sim.super_weapons.get(owner)?.get(&id))
+        .map_or(0, |instance| instance.ares_launch_count);
+    Some((total - launched, total))
+}
+
+/// Query active superweapons for a specific owner (for sidebar rendering).
+pub fn superweapon_views_for_owner(    sim: &Simulation,
     rules: &RuleSet,
     owner: &InternedId,
 ) -> Vec<SuperWeaponView> {
