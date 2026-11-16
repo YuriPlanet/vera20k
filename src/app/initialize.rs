@@ -142,6 +142,39 @@ fn startup_window_projection(
     )
 }
 
+/// Gives the window's class a black background brush, or takes it away again.
+///
+/// Windows paints a window with its class brush when it shows or resizes it.
+/// winit registers its class with none and shows a window before it sizes and
+/// places it, so until the first swapchain present, seconds into startup, the
+/// window would show black and white patches of whatever its surface held.
+/// Startup sets the brush before it shows the window and takes it away where
+/// it presents its first frame. The window keeps its black until a frame
+/// replaces it; a brush left on would blank it between frames on every resize.
+#[cfg(windows)]
+fn black_window_background(window: &Window, black: bool) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Gdi::{BLACK_BRUSH, GetStockObject};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW};
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = handle.hwnd.get() as *mut std::ffi::c_void;
+    // SAFETY: `hwnd` is winit's live window, and a stock brush is never freed.
+    unsafe {
+        let brush = if black {
+            GetStockObject(BLACK_BRUSH) as isize
+        } else {
+            0
+        };
+        SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, brush);
+    }
+}
+
 /// What the startup error card says about the player's own files.
 #[derive(Debug, Default)]
 pub(crate) struct StartupFiles {
@@ -312,6 +345,9 @@ impl App {
         // A `-SPAWN` test run's opt-in invisible window (tools/spawn/README.md).
         hidden_spawn_window: bool,
         mod_switch: Option<&crate::app::mods::ModSwitch>,
+        // A `-SPAWN` launch file's `[Settings] Ares=`, which this launch plays
+        // instead of VERA.INI's.
+        spawn_ares: Option<crate::util::ares_launch::AresSetting>,
     ) -> Result<InitializationStep> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -365,6 +401,11 @@ impl App {
         let options_profile = options_load.retained_profile;
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
+        // The Ares setting holds for the whole launch, as the mod does.
+        let ares_setting = spawn_ares.unwrap_or(options_profile.ares);
+        if ares_setting != crate::util::ares_launch::AresSetting::Auto {
+            log::info!("Ares setting for this start: {}", ares_setting.ini_value());
+        }
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -434,12 +475,15 @@ impl App {
         } else {
             super::WINDOW_TITLE
         };
+        // On Windows the window opens hidden and is shown, painted black, once
+        // winit has sized and placed it (`black_window_background`).
+        let show_when_placed = cfg!(windows) && window_visible;
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
             .with_title(title)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
-            .with_visible(window_visible)
+            .with_visible(window_visible && !show_when_placed)
             .with_active(window_visible);
         // A player window shrinks no further than gamemd's smallest mode,
         // 640x480, the view every zoom step keeps.
@@ -498,6 +542,11 @@ impl App {
         // the cursor, before the startup splash; from the first frame after it,
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
         window.set_cursor_visible(false);
+        #[cfg(windows)]
+        if show_when_placed {
+            black_window_background(&window, true);
+            window.set_visible(true);
+        }
         #[cfg(target_os = "macos")]
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
@@ -510,6 +559,18 @@ impl App {
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
         )?;
+        // On the processor, building the renderers and reaching the first
+        // picture can take minutes, and the window stays blank until then: a
+        // player is told why while the start goes on.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(adapter) = gpu.software_renderer() {
+            log::warn!(
+                "{adapter} is a software renderer: no graphics card and driver qualified, so the processor draws and the game will be very slow"
+            );
+            if !capture && !hidden_spawn_window {
+                crate::app::system_dialog::report_software_renderer(adapter);
+            }
+        }
         let quickplay_allowed = replay_retail_directory.is_none();
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let pending = (
@@ -532,6 +593,7 @@ impl App {
                 profile_screen,
                 external_launch,
                 quickplay_allowed,
+                ares_setting,
             )
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -559,6 +621,7 @@ impl App {
         launch_window_size: ScreenSize,
         external_launch: bool,
         quickplay_allowed: bool,
+        ares_setting: crate::util::ares_launch::AresSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
@@ -590,10 +653,11 @@ impl App {
         let sidebar_layout_spec = SidebarChromeLayoutSpec::stock();
         let mut startup_asset_manager = game_config.as_ref().and_then(|config| {
             startup_asset_or_error(
-                AssetManager::with_mod(
+                AssetManager::with_mod_and_ares(
                     &config.paths.ra2_dir,
                     mods.dir(),
                     startup_options.media_archive_mode,
+                    ares_setting,
                 )
                 .and_then(|assets| assets.with_ini_roots(&config.ini))
                     .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
@@ -706,6 +770,8 @@ impl App {
                 Err(err) => log::warn!("Initial startup present deferred: {err:#}"),
             }
         }
+        #[cfg(windows)]
+        black_window_background(&window, false);
         if external_launch {
             log::info!("External launch: process-start splash skipped");
         }
@@ -723,7 +789,8 @@ impl App {
                         .unwrap_or_default(),
                 )
                 .with_personal_rules(personal_rules)
-                .with_mod_dir(mods.dir().map(Path::to_path_buf));
+                .with_mod_dir(mods.dir().map(Path::to_path_buf))
+                .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()

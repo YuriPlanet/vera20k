@@ -87,6 +87,9 @@ index) and `selectable` (the menu offers it), so a launcher can offer a mod's
 countries as the game does.
 `rules_digest` is Battle's. A network launch plays each player's own Terrain Deformation
 and Superweapon Limit, which the digest covers.
+`[Settings] Ares=Auto|On|Off` replaces the player's [Ares setting](../../docs/ares.md#the-ares-setting)
+for that launch (an unknown value plays Auto); the probe does not read spawn.ini, so
+pass the same with `--ares <Auto|On|Off>`, or it reports VERA.INI's.
 `[Settings] GameMode` selects an `MPModesMD.ini` row by id (default 1): a network
 launch takes a stock row, and a one-human launch any row of the `MPModesMD.ini` the
 game loaded, or row 1 when the id has none, so a

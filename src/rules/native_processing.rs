@@ -220,8 +220,12 @@ struct RulesLayer {
 #[derive(Debug, Clone)]
 pub struct RulesLayerStack {
     layers: Vec<RulesLayer>,
-    /// The selected mod mounted `ares.mix` (`rules::ares_switch`).
+    /// The game is an Ares game (`rules::ares_switch`): it mounted `ares.mix`,
+    /// or the player's Ares setting is On.
     ships_ares: bool,
+    /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
+    /// (`ares_switch::launch_keys_off`).
+    ares_keys_off: bool,
 }
 
 impl RulesLayerStack {
@@ -235,6 +239,7 @@ impl RulesLayerStack {
             // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
             // stands for the game `ares_switch::game_ships_ares` says.
             ships_ares: crate::rules::ares_switch::game_ships_ares(false),
+            ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
         }
     }
 
@@ -245,6 +250,15 @@ impl RulesLayerStack {
     /// before any Process pass reads it.
     pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.ships_ares = ships_ares;
+        self
+    }
+
+    /// VERA: the stack of a game whose player set Ares Off, where no Ares key
+    /// turns Ares on. The game's owner sets it from the launch
+    /// (`NativeRulesProcessOwner::startup_layers`); a fixture stack reads the
+    /// launch's (`ares_switch::launch_keys_off`).
+    pub fn with_ares_keys_off(mut self, off: bool) -> Self {
+        self.ares_keys_off = off;
         self
     }
 
@@ -469,6 +483,7 @@ impl RulesLayerStack {
                 let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
                     &processor.ares_reads,
                     self.ships_ares,
+                    self.ares_keys_off,
                 );
                 let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
@@ -503,6 +518,7 @@ impl RulesLayerStack {
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
+            self.ares_keys_off,
         );
         let (ini, native_type_construction_trace) = processor.finish();
         Ok((
@@ -5751,6 +5767,13 @@ pub(crate) struct TechnoTypeReferences {
     /// `UnloadingClass=` (+6B8, `0x007146E8..0x0071471A`), a UnitType, and
     /// `DeployingAnim=` (+6BC, `0x00714715..0x0071473F`), an AnimType.
     unloading_class: Option<String>,
+    /// Ares TechnoTypeExt ctor1003C9E4 clears +1DC. Early reader10041DC0 in
+    /// Ext/TechnoType/Hooks.cpp
+    /// (hook715320, resumes715326) calls1002EBC0/1002D970 and UnitType
+    /// Find1002DCF0, without allocation. Absent/empty/unknown retains the
+    /// pointer. The values none/<none> clear it. The draw consumes this pointer.
+    #[serde(default)]
+    water_image: Option<String>,
     deploying_anim: Option<String>,
     /// `Enslaves=` (+D40, `0x00714DD7..0x00714DEC`) through the InfantryType
     /// reader `0x0067BAC0`, and `Spawns=` (+D58, `0x00714E9E..0x00714EB3`)
@@ -5800,6 +5823,7 @@ impl TechnoTypeReferences {
             damage_particle_systems: Vec::new(),
             destroy_particle_systems: Vec::new(),
             unloading_class: None,
+            water_image: None,
             deploying_anim: None,
             enslaves: None,
             spawns: None,
@@ -5840,6 +5864,7 @@ impl TechnoTypeReferences {
             .destroy_particle_systems
             .clone_from(&self.destroy_particle_systems);
         object.unloading_class.clone_from(&self.unloading_class);
+        object.bind_water_image(self.water_image.as_deref());
         object.deploying_anim.clone_from(&self.deploying_anim);
         object.enslaves.clone_from(&self.enslaves);
         object.spawns.clone_from(&self.spawns);
@@ -8782,6 +8807,15 @@ impl RulesPassProcessor {
             {
                 self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 self.process_techno_base(family, index, &raw);
+                // Ares TechnoTypeClass_LoadFromINI_EarlyReader10041DC0
+                // replaces lea edi,[ebp+CB8] at715320, then resumes715326.
+                // Reading its isolated pointer in either mode also lets a
+                // key-only game select the runtime Ares switch.
+                if let Some(image) =
+                    self.resolve_existing_type_from(&raw, "WaterImage", RulesTypeFamily::Vehicle)
+                {
+                    self.family_mut(family)[index].techno_references.water_image = image;
+                }
                 // TechnoTypeClass::ReadINI parses `Prerequisite=` (`0x007141C5`)
                 // and `PrerequisiteOverride=` (`0x0071424B`) after `Dock=` and
                 // `DeploysInto=` (`0x00713180`, `0x00713279`), the reads above

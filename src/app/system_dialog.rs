@@ -1,7 +1,8 @@
 //! The system's own dialogs, for what the game window cannot show: a startup
-//! that never got a working window or renderer, and a panic. A Windows release
-//! build has no console and the app bundle and AppImage none either, so
-//! without these the game would vanish with only the log knowing why. The
+//! that never got a working window or renderer, a panic, and a start on the
+//! system's software renderer, whose window stays blank for minutes. A Windows
+//! release build has no console and the app bundle and AppImage none either,
+//! so without these the game would vanish with only the log knowing why. The
 //! first-launch game folder questions (`app_bundle`) use the same macOS alert
 //! and Linux dialog tool.
 //!
@@ -27,9 +28,10 @@ static FATAL_MESSAGE_SHOWN: AtomicBool = AtomicBool::new(false);
 /// main thread re-raises it ([`report_reraised_panic`]).
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 
-/// Let fatal failures show a message box. Only a launch a player is watching
-/// turns this on; captures, `-SPAWN` test runs and tests leave it off so that
-/// nothing unattended waits on a click.
+/// Let fatal failures, and the software renderer's warning, show a message
+/// box. Only a launch a player is watching turns this on; captures, `-SPAWN`
+/// test runs and tests leave it off so that nothing unattended waits on a
+/// click.
 /// Call it from the main thread.
 pub fn enable_fatal_messages() {
     let _ = MAIN_THREAD.set(std::thread::current().id());
@@ -119,6 +121,29 @@ pub(crate) fn report_startup_failure(error: &anyhow::Error) {
             &format!("{error:#}\n\n{}", log_note()),
         );
     }
+}
+
+/// Tell the player that the game draws with the processor, on the system's
+/// software renderer `adapter` (`GpuContext::software_renderer`), and what to
+/// do about it. The start goes on while the box shows.
+pub(crate) fn report_software_renderer(adapter: &str) {
+    if FATAL_MESSAGES.load(Ordering::Acquire) {
+        let (title, message) = software_renderer_message(adapter);
+        show_warning_beside(title, message);
+    }
+}
+
+fn software_renderer_message(adapter: &str) -> (String, String) {
+    (
+        crate::i18n::tr("VERA:SoftwareRendererTitle"),
+        crate::i18n::tr_fill(
+            "VERA:SoftwareRendererText",
+            &[
+                ("adapter", &adapter),
+                ("advice", &crate::i18n::tr(GRAPHICS_ADVICE)),
+            ],
+        ),
+    )
 }
 
 /// What the graphics failure advises on this system, as its text's label.
@@ -238,6 +263,87 @@ fn show_error(title: &str, message: &str) {
     eprintln!("{title}\n\n{message}");
 }
 
+/// Show a warning box on a thread of its own and return at once. It has no
+/// owner window: one on the main thread, busy starting the game, would freeze
+/// it. Unlike `show_error` it leaves the pointer alone: the game clips it only
+/// once it has started (`input::cursor`), and hides it only over its own
+/// window.
+#[cfg(target_os = "windows")]
+fn show_warning_beside(title: String, message: String) {
+    let shown = std::thread::Builder::new()
+        .name("warning box".to_owned())
+        .spawn(move || {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                MB_ICONWARNING, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
+            };
+
+            let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+            let (message, title) = (wide(&message), wide(&title));
+            // SAFETY: both strings are NUL-terminated UTF-16 that outlive the
+            // call; a null owner is a documented argument.
+            unsafe {
+                MessageBoxW(
+                    std::ptr::null_mut(),
+                    message.as_ptr(),
+                    title.as_ptr(),
+                    MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND,
+                );
+            }
+        });
+    if let Err(error) = shown {
+        log::warn!("Could not show the warning box: {error}");
+    }
+}
+
+/// Show a warning box and return at once; a thread of its own waits for the
+/// dialog program. The program gets no output of the game's, so whatever
+/// waits on that output does not wait on the box too.
+#[cfg(target_os = "linux")]
+fn show_warning_beside(title: String, message: String) {
+    use std::process::{Command, Stdio};
+
+    let mut command = match DialogTool::installed() {
+        Some(DialogTool::Zenity) => {
+            let mut command = Command::new("zenity");
+            command
+                .args(["--warning", "--no-markup", "--title=VERA20k"])
+                .arg(format!("--text={title}\n\n{message}"));
+            command
+        }
+        Some(DialogTool::Kdialog) => {
+            let mut command = Command::new("kdialog");
+            command
+                .args(["--title", "VERA20k", "--sorry"])
+                .arg(format!("{title}\n\n{message}"));
+            command
+        }
+        None => {
+            eprintln!("{title}\n\n{message}");
+            return;
+        }
+    };
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let shown = std::thread::Builder::new()
+        .name("warning box".to_owned())
+        .spawn(move || {
+            let _ = command.status();
+        });
+    if let Err(error) = shown {
+        log::warn!("Could not show the warning box: {error}");
+    }
+}
+
+/// AppKit shows an alert on the main thread only, which is busy starting the
+/// game (Metal never offers a software renderer anyway); elsewhere stderr is
+/// all there is.
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn show_warning_beside(title: String, message: String) {
+    eprintln!("{title}\n\n{message}");
+}
+
 /// The desktop's dialog program: zenity (GNOME and most desktops) or kdialog
 /// (KDE), run as a child process.
 #[cfg(target_os = "linux")]
@@ -296,5 +402,13 @@ mod tests {
         );
         // A main-thread panic still shows at once.
         assert_eq!(note_panic(true, report.clone(), &worker), Some(report));
+    }
+
+    #[test]
+    fn the_software_renderer_warning_names_the_renderer_and_what_to_do() {
+        let (title, text) = software_renderer_message("Microsoft Basic Render Driver");
+        assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
+        assert!(text.contains("(Microsoft Basic Render Driver)"), "{text}");
+        assert!(text.ends_with(&crate::i18n::tr(GRAPHICS_ADVICE)), "{text}");
     }
 }

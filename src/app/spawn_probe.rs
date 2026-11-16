@@ -198,15 +198,18 @@ pub(crate) fn probe(
     media_archive_mode: MediaArchiveMode,
     map: Option<&str>,
     mod_dir: Option<std::path::PathBuf>,
+    ares_setting: crate::util::ares_launch::AresSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
-    let mut assets = AssetManager::with_mod(root, mod_dir.as_deref(), media_archive_mode)
-        .and_then(|assets| assets.with_ini_roots(&config.ini))
-        .context("could not load the game archives")?;
+    let mut assets =
+        AssetManager::with_mod_and_ares(root, mod_dir.as_deref(), media_archive_mode, ares_setting)
+            .and_then(|assets| assets.with_ini_roots(&config.ini))
+            .context("could not load the game archives")?;
     let mut process =
         ProcessAssets::new_with_ini_config(media_archive_mode, true, config.ini.clone())
             .with_personal_rules(personal_rules)
-            .with_mod_dir(mod_dir);
+            .with_mod_dir(mod_dir)
+            .with_ares_setting(ares_setting);
     let (mut startup_rules, projection) = process
         .initialize_sources_if_needed(&assets)
         .map_err(anyhow::Error::msg)
@@ -483,13 +486,15 @@ fn color_names(
 }
 
 /// Desktop `--probe [--ra2-dir DIR] [--map PATH]`: the game folder comes from
-/// config.toml as for play unless `--ra2-dir` names one, and the mod from
-/// config.toml unless `--mod` or `--no-mod` chooses.
+/// config.toml as for play unless `--ra2-dir` names one, the mod from
+/// config.toml unless `--mod` or `--no-mod` chooses, and the Ares setting from
+/// VERA.INI unless `--ares` names the one spawn.ini will.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) fn run_desktop(
     ra2_dir: Option<&Path>,
     map: Option<&Path>,
     mod_switch: Option<&crate::app::mods::ModSwitch>,
+    ares: Option<crate::util::ares_launch::AresSetting>,
 ) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
     let config = match ra2_dir {
@@ -501,6 +506,7 @@ pub(crate) fn run_desktop(
         None => config,
     };
     let personal_rules = existing_personal_rules(config.paths.settings_dir())?;
+    let ares = ares.unwrap_or_else(|| existing_ares_setting(config.paths.settings_dir()));
     let map = map
         .map(|path| {
             ensure_file(path)?;
@@ -516,6 +522,7 @@ pub(crate) fn run_desktop(
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
         crate::app::mods::launch_dir(&config.paths, mod_switch),
+        ares,
     )
 }
 
@@ -527,6 +534,16 @@ fn ensure_file(path: &Path) -> Result<()> {
         path.display()
     );
     Ok(())
+}
+
+/// The player's Ares setting as startup reads it from VERA.INI.
+pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_launch::AresSetting {
+    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
+        settings_dir,
+        &Default::default(),
+    )
+    .retained_profile
+    .ares
 }
 
 /// The player's Options switches as startup reads them from VERA.INI.
@@ -616,7 +633,7 @@ mod tests {
         let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let report = run_desktop(Some(&root), None, None).unwrap();
+        let report = run_desktop(Some(&root), None, None, None).unwrap();
         let stock = &report.countries[..10];
         assert!(stock.iter().all(|country| country.selectable && !country.label.is_empty()));
         assert_eq!(

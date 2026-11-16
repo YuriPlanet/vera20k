@@ -1,5 +1,5 @@
-//! VERA extension: the Extras that add to a finished random map (offline
-//! Skirmish only); gamemd's generator has no counterpart.
+//! VERA extension: the Extras that add to a finished random map; gamemd's
+//! generator has no counterpart.
 //!
 //! Each runs after the last native stage, from a stream of its own, so no
 //! native draw moves and a map with every Extra off is the map it was:

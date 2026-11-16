@@ -102,6 +102,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
     }
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with. Options' accept writes it out.
+        self.persistence.options_profile.ares = setting;
+    }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
         // frame is corrected; no atlas or ramp has to be rebuilt. Options'

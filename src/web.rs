@@ -602,6 +602,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         map.as_deref(),
         // The mod `set_mod` chose, as config.toml names it on the desktop.
         crate::app::mods::launch_dir(&config.paths, None),
+        // The Ares setting the browser's VERA.INI holds, as its start reads it.
+        crate::app::spawn_probe::existing_ares_setting(config.paths.settings_dir()),
     )
     .map_err(error)?;
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))

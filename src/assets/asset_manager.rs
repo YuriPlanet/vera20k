@@ -330,6 +330,9 @@ pub struct AssetManager {
     /// takes the place of the installation's file of the same name. `None`
     /// is the original game.
     mod_dir: Option<PathBuf>,
+    /// VERA: the player's Ares setting this game opened with
+    /// (`util::ares_launch::AresSetting`).
+    ares_setting: crate::util::ares_launch::AresSetting,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -358,6 +361,7 @@ impl Clone for AssetManager {
             active_sidebar_archives: self.active_sidebar_archives.clone(),
             ra2_dir: self.ra2_dir.clone(),
             mod_dir: self.mod_dir.clone(),
+            ares_setting: self.ares_setting,
         }
     }
 }
@@ -499,12 +503,29 @@ impl AssetManager {
         self.mod_dir.is_some()
     }
 
-    /// Whether the selected mod mounted Ares's `ares.mix`, its own copy or
-    /// the installation's. With no mod selected, it is ignored (`rules::ares_switch`).
+    /// Whether this game is an Ares game (`rules::ares_switch`): the player's
+    /// Ares setting is On, or, set to Auto, the selected mod mounted Ares's
+    /// `ares.mix`, its own copy or the installation's. With no mod selected,
+    /// Auto ignores it; Off never mounts it.
     pub fn ships_ares(&self) -> bool {
+        use crate::util::ares_launch::AresSetting;
+        match self.ares_setting {
+            AresSetting::On => true,
+            AresSetting::Off => false,
+            AresSetting::Auto => self.ares_mix_mounted(),
+        }
+    }
+
+    /// Whether `ares.mix` is mounted: the file itself, whatever the setting.
+    pub fn ares_mix_mounted(&self) -> bool {
         self.archives
             .iter()
             .any(|archive| archive_name_matches(&archive.name, "ares.mix"))
+    }
+
+    /// The player's Ares setting this game opened with.
+    pub fn ares_setting(&self) -> crate::util::ares_launch::AresSetting {
+        self.ares_setting
     }
 
     /// Whether this game's files take the forms an Ares launch gives them:
@@ -543,6 +564,7 @@ impl AssetManager {
             active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
             mod_dir: mod_dir.map(Path::to_path_buf),
+            ares_setting: Default::default(),
         })
     }
 
@@ -571,12 +593,43 @@ impl AssetManager {
             ra2_dir,
             mod_dir,
             media_mode,
+            Default::default(),
+            StartupArchivePolicy::OptionalWarnings,
+        )?;
+        // The launch's `ares.mix` answer, as below; the Ares setting is left
+        // to the launch that chose one (`with_mod_and_ares`).
+        crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
+        Ok(manager)
+    }
+
+    /// VERA: [`AssetManager::with_mod`] under the player's Ares setting
+    /// (`util::ares_launch::AresSetting`), which can make the game an Ares
+    /// game, or not, whatever its mod ships.
+    pub fn with_mod_and_ares(
+        ra2_dir: &Path,
+        mod_dir: Option<&Path>,
+        media_mode: MediaArchiveMode,
+        ares_setting: crate::util::ares_launch::AresSetting,
+    ) -> Result<Self, AssetError> {
+        let manager = Self::open_startup_archives(
+            ra2_dir,
+            mod_dir,
+            media_mode,
+            ares_setting,
             StartupArchivePolicy::OptionalWarnings,
         )?;
         // This is the game the launch plays: its `ares.mix` answer is the
         // launch's (`util::ares_launch`), which a thread with no reading scope
         // loads its INIs by.
+        crate::util::ares_launch::set_setting(ares_setting);
         crate::util::ares_launch::set_game_ships_ares(manager.ships_ares());
+        if ares_setting == crate::util::ares_launch::AresSetting::On && !manager.ares_mix_mounted()
+        {
+            log::warn!(
+                "The Ares setting is On, but no ares.mix was found: the game reads the Ares way \
+                 without Ares' own archive"
+            );
+        }
         Ok(manager)
     }
 
@@ -594,6 +647,7 @@ impl AssetManager {
             ra2_dir,
             None,
             media_mode,
+            Default::default(),
             StartupArchivePolicy::Inspect(&mut issues),
         )?;
         Ok((manager, issues))
@@ -603,9 +657,11 @@ impl AssetManager {
         ra2_dir: &Path,
         mod_dir: Option<&Path>,
         media_mode: MediaArchiveMode,
+        ares_setting: crate::util::ares_launch::AresSetting,
         mut policy: StartupArchivePolicy<'_>,
     ) -> Result<Self, AssetError> {
         let mut manager = Self::from_roots(ra2_dir, mod_dir)?;
+        manager.ares_setting = ares_setting;
 
         // WinMain registers the YR language archive before the RA2 fallback,
         // and Init_Game later runs Init_Base_Mix_Files (0x0052BB64). Ares's
@@ -618,7 +674,15 @@ impl AssetManager {
         // supply it or inherit the installation's copy. Decide before any
         // mount: Ares changes source priority as well as INI parsing. Until
         // its build feature is deleted, that feature still forces Ares order.
-        let ares = manager.mod_selected() && manager.loose_path("ares.mix").is_some();
+        // VERA: the player's Ares setting On mounts the installation's copy
+        // with no mod selected too, and Off mounts none.
+        let ares = match ares_setting {
+            crate::util::ares_launch::AresSetting::Auto => {
+                manager.mod_selected() && manager.loose_path("ares.mix").is_some()
+            }
+            crate::util::ares_launch::AresSetting::On => true,
+            crate::util::ares_launch::AresSetting::Off => false,
+        };
         let ares_order = cfg!(feature = "ares") || ares;
         if !ares_order {
             manager.mount_language_archives(&mut policy)?;
@@ -2472,6 +2536,36 @@ mod tests {
         assert_eq!(original.get_ref("new.vxl"), None);
     }
 
+    /// VERA's Ares setting: Auto ignores the installation's `ares.mix` with
+    /// no mod selected, On mounts it and makes an Ares game, and Off mounts
+    /// no copy, not even a selected mod's own.
+    #[test]
+    fn the_ares_setting_decides_the_ares_game_and_its_archive() {
+        use crate::util::ares_launch::AresSetting;
+        let install = audio_test_install("ares-setting");
+        install.write_mix("ares.mix", "ares.txt", b"installed Ares");
+        let mod_dir = TestDirectory::new("ares-setting-mod");
+        mod_dir.write_mix("ares.mix", "ares.txt", b"mod Ares");
+        let open = |mod_dir: Option<&Path>, setting| {
+            AssetManager::with_mod_and_ares(
+                install.path(),
+                mod_dir,
+                MediaArchiveMode::STOCK_DIGITAL,
+                setting,
+            )
+            .unwrap()
+        };
+
+        let auto = open(None, AresSetting::Auto);
+        assert!(!auto.ships_ares() && !auto.ares_mix_mounted());
+        let on = open(None, AresSetting::On);
+        assert!(on.ships_ares());
+        assert_eq!(on.get_ref("ares.txt"), Some(&b"installed Ares"[..]));
+        let off = open(Some(mod_dir.path()), AresSetting::Off);
+        assert!(!off.ships_ares() && !off.ares_mix_mounted());
+        assert_eq!(off.get_ref("ares.txt"), None);
+    }
+
     #[test]
     fn startup_mounts_ecache_then_elocal_archives_between_expansions_and_core() {
         let install = audio_test_install("ecache-elocal");
@@ -2629,6 +2723,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2713,6 +2808,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
         manager
@@ -2787,6 +2883,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2829,6 +2926,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -2869,6 +2967,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2910,6 +3009,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -2946,6 +3046,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 
@@ -3003,6 +3104,7 @@ mod tests {
             active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
             mod_dir: None,
+            ares_setting: Default::default(),
         };
         manager.rebuild_indexes();
 

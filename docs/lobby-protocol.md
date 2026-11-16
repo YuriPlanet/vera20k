@@ -153,7 +153,10 @@ Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length
 Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
 `C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
 that carry it. Other modes omit the field.
-`start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
+`start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
+and for a random map of 9 to 30 players four more for each start past the eighth,
+bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
+or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
@@ -401,7 +404,7 @@ Generated maps transfer the `.SED` bytes as the map and the separate native PCX
 preview with `resource:"preview"` (512KiB maximum). Preview downloads use the
 selected seed's URL plus `&resource=preview`; response `digest` names the preview.
 Both resources use the same ownership, ordered chunk, hash and cleanup rules.
-Generated capacity equals the staged start count (2–8); observers consume only
+Generated capacity equals the staged start count (2–30); observers consume only
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 

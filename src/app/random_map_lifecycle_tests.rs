@@ -204,7 +204,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     generated_modal
         .as_mut()
@@ -299,7 +298,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     assert_eq!(
         empty_modal.as_ref().expect("empty modal").accept(),
@@ -351,7 +349,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
-        true,
     ));
     cancel_modal
         .as_mut()
@@ -423,7 +420,6 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         runtime.random_map_options_for_setup(),
         Some(previous_selection),
         false,
-        true,
     );
     assert_eq!(reopened.options, options);
     assert_eq!(reopened.previous_selection, Some(previous_selection));

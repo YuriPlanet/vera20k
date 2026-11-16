@@ -576,6 +576,9 @@ impl ApplicationHandler for App {
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
             self.mod_switch.as_ref(),
+            self.spawn_request
+                .as_ref()
+                .and_then(|request| request.ares_setting),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)

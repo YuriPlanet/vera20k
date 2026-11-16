@@ -39,6 +39,9 @@ pub(crate) struct ProcessAssets {
     /// The launch's mod folder (`app::mods`): a manager rebuilt after a lost
     /// lease reads the same files.
     mod_dir: Option<std::path::PathBuf>,
+    /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
+    /// the mod folder is.
+    ares_setting: crate::util::ares_launch::AresSetting,
     /// That folder's files as one digest (`app::mod_files::files_digest`), taken
     /// once: the pre-match check compares it.
     mod_files: std::sync::Arc<std::sync::OnceLock<Result<[u8; 32], String>>>,
@@ -121,6 +124,7 @@ impl ProcessAssets {
         Self {
             media_archive_mode,
             mod_dir: None,
+            ares_setting: Default::default(),
             mod_files: Default::default(),
             mod_files_ahead: Default::default(),
             ini_config: Default::default(),
@@ -162,6 +166,19 @@ impl ProcessAssets {
     pub(crate) fn with_mod_dir(mut self, mod_dir: Option<std::path::PathBuf>) -> Self {
         self.mod_dir = mod_dir;
         self
+    }
+
+    pub(crate) fn with_ares_setting(
+        mut self,
+        setting: crate::util::ares_launch::AresSetting,
+    ) -> Self {
+        self.ares_setting = setting;
+        self
+    }
+
+    /// The launch's Ares setting, which other players' games must share.
+    pub(crate) fn ares_setting(&self) -> crate::util::ares_launch::AresSetting {
+        self.ares_setting
     }
 
     /// The player opened a multiplayer menu: start reading the mod's files
@@ -270,8 +287,12 @@ impl ProcessAssets {
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets =
-            AssetManager::with_mod(root, self.mod_dir.as_deref(), self.media_archive_mode)?;
+        let assets = AssetManager::with_mod_and_ares(
+            root,
+            self.mod_dir.as_deref(),
+            self.media_archive_mode,
+            self.ares_setting,
+        )?;
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
@@ -492,14 +513,28 @@ impl ProcessAssets {
             }
         }
         // Whether Ares plays (`rules::ares_switch`) follows these sources and
-        // the map, which the map agreement covers, and whether the selected
-        // mod mounted `ares.mix`. A game using it adds the byte, so the same
-        // files read with and without Ares never agree; with no mod selected
-        // the installed archive is ignored and adds nothing.
+        // the map, which the map agreement covers, and whether the game is an
+        // Ares game: the selected mod mounted `ares.mix`, or the player's Ares
+        // setting is On. Such a game adds the byte, so the same files read
+        // with and without Ares never agree; with no mod selected and the
+        // setting on Auto the installed archive is ignored and adds nothing.
         // Until the `ares` feature is deleted a build with it writes the byte
         // for every game, as it always has.
         if cfg!(feature = "ares") || assets.ships_ares() {
             bytes.push(u8::from(assets.ships_ares()));
+        }
+        // VERA: the player's Ares setting. Off keeps Ares keys from turning
+        // Ares on, so such a game never agrees with one set to Auto; Auto
+        // adds nothing, as before the setting.
+        match assets.ares_setting() {
+            crate::util::ares_launch::AresSetting::Auto => {}
+            // On without a mod can play with or without the installation's
+            // `ares.mix`; which one is part of the game.
+            crate::util::ares_launch::AresSetting::On => {
+                bytes.extend_from_slice(b"ares on\0");
+                bytes.push(u8::from(assets.ares_mix_mounted()));
+            }
+            crate::util::ares_launch::AresSetting::Off => bytes.extend_from_slice(b"ares off\0"),
         }
         // VERA: with a mod in use, its other files too (art, maps, archives),
         // so players whose copies of a mod differ never start a match. Without
@@ -565,10 +600,13 @@ impl ProcessAssets {
         compared.extend(theater_inis.iter().map(String::as_str));
         self.changed_game_files =
             crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
-        // A selected mod mounting `ares.mix` makes the game an Ares game
+        // A mounted `ares.mix` (a selected mod's, or the installation's with
+        // the player's Ares setting On) makes the game an Ares game
         // (`rules::ares_switch`): its INIs and Rules are read the Ares way even
-        // where every compared file is retail. With no mod selected it is ignored.
-        if assets.ships_ares() {
+        // where every compared file is retail. With no mod selected and the
+        // setting on Auto it is ignored.
+        // The player's Ares setting is not a file: the room names it itself.
+        if assets.ares_mix_mounted() {
             self.changed_game_files.push("ares.mix".to_owned());
         }
         for file in self.changed_tiles(assets).files.clone() {

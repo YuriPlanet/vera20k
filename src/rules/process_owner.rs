@@ -125,9 +125,13 @@ struct NativeRulesSourceSnapshot {
     /// games
     /// ([`NativeRulesProcessOwner::use_personal_rules`]).
     personal_rules: PersonalRules,
-    /// Startup mounted `ares.mix`: Ares plays in every game this process
-    /// loads (`rules::ares_switch`).
+    /// The game is an Ares game (`AssetManager::ships_ares`: it mounted
+    /// `ares.mix`, or the player's Ares setting is On): Ares plays in every
+    /// game this process loads (`rules::ares_switch`).
     ships_ares: bool,
+    /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
+    /// in a game this process loads.
+    ares_keys_off: bool,
 }
 
 #[derive(Debug)]
@@ -336,14 +340,16 @@ impl NativeRulesProcessOwner {
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
             PersonalRules::default(),
             crate::rules::ares_switch::game_ships_ares(false),
+            crate::rules::ares_switch::launch_keys_off(),
         )
     }
 
     /// Preserve the selector's actual logical names beside the frozen inputs.
     /// These diagnostic labels do not alter Rules processing or saved state.
-    /// `ships_ares`: startup mounted `ares.mix` (`AssetManager::ships_ares`),
+    /// `ships_ares`: the game is an Ares game (`AssetManager::ships_ares`),
     /// so Ares plays and the registry reads every Rules pass the Ares way
-    /// (`rules::ares_switch`).
+    /// (`rules::ares_switch`); `ares_keys_off`: the player's Ares setting is
+    /// Off, so no Ares key turns Ares on.
     pub(crate) fn from_named_cold_start_sources(
         selected_rules_root: IniFile,
         langrule: Option<NativeLangRuleSource>,
@@ -353,6 +359,7 @@ impl NativeRulesProcessOwner {
         rules_art_names: [String; 2],
         personal_rules: PersonalRules,
         ships_ares: bool,
+        ares_keys_off: bool,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -389,6 +396,7 @@ impl NativeRulesProcessOwner {
                 fixed_eva,
                 personal_rules,
                 ships_ares,
+                ares_keys_off,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
@@ -412,8 +420,17 @@ impl NativeRulesProcessOwner {
             sources.rules_art_names,
             sources.personal_rules,
             ships_ares,
+            sources.ares_keys_off,
         )
         .expect("the same sources cold-started once already")
+    }
+
+    /// VERA: the owner of a launch whose Ares setting is Off: no Ares key
+    /// turns Ares on in the games it loads.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ares_keys_off(mut self, off: bool) -> Self {
+        self.sources.ares_keys_off = off;
+        self
     }
 
     /// Session6980C0/475540 against the retained process INI. This mutates the
@@ -1282,7 +1299,8 @@ impl NativeRulesProcessOwner {
 
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
-            .with_ares_mix(self.sources.ships_ares);
+            .with_ares_mix(self.sources.ships_ares)
+            .with_ares_keys_off(self.sources.ares_keys_off);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

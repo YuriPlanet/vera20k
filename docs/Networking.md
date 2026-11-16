@@ -28,8 +28,9 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
-and map, and whether the selected mod loads `ares.mix`, which the rules agreement
-covers. With **No mod** selected, the installation's `ares.mix` is ignored and
+and map, whether the selected mod loads `ares.mix`, and the player's
+[Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
+**No mod** selected and the setting on Auto, the installation's `ares.mix` is ignored and
 ordinary builds keep the original archive order and INI readers. A selected mod
 can load its own `ares.mix` or use the installation's copy; that game's INIs and
 rules are read the Ares way. Without it Ares plays only
@@ -63,7 +64,7 @@ refused by the build check first; a rollback returns to the earlier digest for e
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
-YR's; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
 the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, another INI is compared with the retail archives' own entry, else
@@ -303,6 +304,23 @@ anyone waits. A lobby from before the queue refuses the field; the host's game s
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Balance automatically and Teams then turns those off too.
 
+A room's Create Random Map is Skirmish's whole generator: up to 30 players, the sizes
+past Very Large, the added landform and theaters, Advanced, Fair Starts, Extras, Presets
+and Export Map. A map for more than eight players stages one `W` slot for each start
+(`ScenarioStartStaging::to_w_text`), so its record runs past the native 37 numbers and
+512 bytes, up to 2048 (`maps::checked_staging`); it travels as any random map's does, on
+LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
+The generated rules digest covers VERA's town catalogue and `[Extras]`, which each game
+resolves from its own files, so players whose games would build different towns are
+refused at Start as on any rules difference. A preview larger than the 512 KiB preview
+transfer, as Enormous and Colossal maps make, is written at half size until it fits.
+A LAN guest of another build is refused at the build check. Online, an older guest
+cannot read options carrying such a map and says the update was invalid, in a room that
+cannot start, since its players' versions differ. A lobby from before these maps refuses
+options carrying one with 400 `invalid_options`; the host's game says so and keeps its
+other options until the host picks a smaller map. A rollback of the game
+returns rooms to the eight-player dialog; one of the lobby refuses these maps again.
+
 ### Room rules
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
@@ -333,6 +351,15 @@ it, in a room that cannot start as its players' versions differ, and an older LA
 is refused at the build check. A lobby from before it refuses the field; the host's game
 turns the limit off, says so and sends its options again with its other rules. A
 rollback past it plays every room without it, as offline games then do.
+
+The player's [Ares setting](ares.md#the-ares-setting) (`[VERA] Ares=`, or a launch
+file's `[Settings] Ares=`) is not a room rule: like the mod, each game reads it at start
+and plays its own. Auto adds nothing to the rules digest, so a game set to Auto agrees
+with a released game as before. On makes every game an Ares game, which adds the byte a
+mounted `ares.mix` adds, and Off adds its own words, so a player whose setting differs
+from the others' is refused at the start, and that game's text names the setting
+(`agreement::own_changes_text`). Nothing new is exchanged. A rollback reads no setting
+and plays Auto.
 
 Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
 also carried the host's file as `personal_rules`. This version never sends it, and

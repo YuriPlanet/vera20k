@@ -4685,8 +4685,8 @@ impl RandomMapInput {
                 if self.phase == 1 {
                     if let Some(players) = self.players {
                         ensure!(
-                            (2..=8).contains(&players),
-                            "random maps support two to eight starts"
+                            (2..=crate::map::rmg::MAX_PLAYERS as usize).contains(&players),
+                            "random maps support two to thirty starts"
                         );
                         let layout =
                             crate::app::frontend::shell_layout::random_map_setup_layout(state);
