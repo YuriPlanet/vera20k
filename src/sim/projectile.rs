@@ -199,6 +199,17 @@ impl ProjectileCoord {
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self { x, y, z }
     }
+
+    /// YRpp's `CoordStruct::DistanceFromSquared`, the distance Phobos
+    /// compares: each component's int difference as a double, then the sum of
+    /// their squares. Phobos is built for SSE2, so Rust's f64 gives the same
+    /// result on every platform.
+    pub(crate) fn distance_from_squared(self, other: Self) -> f64 {
+        let dx = f64::from(self.x.wrapping_sub(other.x));
+        let dy = f64::from(self.y.wrapping_sub(other.y));
+        let dz = f64::from(self.z.wrapping_sub(other.z));
+        dx * dx + dy * dy + dz * dz
+    }
 }
 
 /// CellClass virtual +0x48 @ 0x00486840 of the cell `MapClass::Get_CellClass`

@@ -101,6 +101,47 @@ impl VhpScan {
     }
 }
 
+/// Phobos `TargetZoneScanType=` (TechnoTypeExt, default `same`): what a
+/// scanner does with a candidate outside its movement zone in
+/// `Greatest_Threat`'s walk over every object, once Phobos plays
+/// (`crate::sim::combat::greatest_threat`'s zone gate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TargetZoneScanType {
+    /// Refuse it.
+    #[default]
+    Same,
+    /// Keep it.
+    Any,
+    /// Keep it when the selected weapon reaches it from the passable cell
+    /// found nearest it.
+    InRange,
+}
+
+impl TargetZoneScanType {
+    /// Phobos' enum reader (`detail::read<TargetZoneScanType>`,
+    /// `src/Utilities/TemplateDef.h`): `INI_EX::ReadString` into its
+    /// 2048-byte buffer, then `_strcmpi` of the whole value with `same`, `any`
+    /// and `inrange`. Other text keeps the value, which Phobos logs
+    /// (`Debug::INIParseFailed`), and each rules pass supplies its prior value.
+    fn read_ini(section: &IniSection) -> Self {
+        section.read_string_with("TargetZoneScanType", 2048, Self::Same, |current, value| {
+            if value.eq_ignore_ascii_case("same") {
+                Self::Same
+            } else if value.eq_ignore_ascii_case("any") {
+                Self::Any
+            } else if value.eq_ignore_ascii_case("inrange") {
+                Self::InRange
+            } else {
+                log::warn!(
+                    "[{}] TargetZoneScanType={value}: expected same, any or inrange",
+                    section.name
+                );
+                current
+            }
+        })
+    }
+}
+
 /// Sidebar/build-queue classification for buildable buildings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildCategory {
@@ -809,6 +850,8 @@ pub struct ObjectType {
     /// already has a factory building for this type's category does not start
     /// another one for this type.
     pub forbid_parallel_ai_queues: bool,
+    /// Phobos `TargetZoneScanType=` ([`TargetZoneScanType`]).
+    pub target_zone_scan_type: TargetZoneScanType,
     /// `[BuildingTypes] AIPlanningCount=` — the NPSE count of plan nodes a
     /// computer house's base plan gives this building. The techno reader
     /// extension chain reads it with the current field as its default and
@@ -4618,6 +4661,10 @@ impl ObjectType {
             },
             forbid_parallel_ai_queues: crate::rules::phobos_switch::phobos_read(|| {
                 section.read_bool("ForbidParallelAIQueues", false)
+            }),
+            // TechnoTypeExt::ExtData::LoadFromINIFile (src/Ext/TechnoType/Body.cpp).
+            target_zone_scan_type: crate::rules::phobos_switch::phobos_read(|| {
+                TargetZoneScanType::read_ini(section)
             }),
             ai_planning_count: if crate::rules::NPATCH_ENABLED {
                 building_int(section, category, "AIPlanningCount") & 0xFF

@@ -1404,7 +1404,8 @@ pub(crate) fn foot_enter_idle_mode_selection(
 ///    movement-zone gate ON (`0x006F8EC4` computes the hunter's zone id and
 ///    `0x006F9D69` hands it to `Evaluate_Candidate`, which rejects any
 ///    candidate outside it at `0x006F7E9C`), so the hunter reaches the far side
-///    of the map but not the far side of a river.
+///    of the map but not the far side of a river, unless Phobos plays and its
+///    type's `TargetZoneScanType` lets it (`combat::greatest_threat::zone_admits`).
 /// 3. **The infantry arms**, taken only by an infantryman (`What_Am_I` 0xF,
 ///    `0x004D53A0..0x004D53B4`) whose scan came back with a target: the
 ///    engineer's, the C4 one, the VehicleThief's and the no-flag arm are
