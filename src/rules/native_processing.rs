@@ -220,8 +220,12 @@ struct RulesLayer {
 #[derive(Debug, Clone)]
 pub struct RulesLayerStack {
     layers: Vec<RulesLayer>,
-    /// The selected mod mounted `ares.mix` (`rules::ares_switch`).
+    /// The game is an Ares game (`rules::ares_switch`): it mounted `ares.mix`,
+    /// or the player's Ares setting is On.
     ships_ares: bool,
+    /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
+    /// (`ares_switch::launch_keys_off`).
+    ares_keys_off: bool,
 }
 
 impl RulesLayerStack {
@@ -235,6 +239,7 @@ impl RulesLayerStack {
             // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
             // stands for the game `ares_switch::game_ships_ares` says.
             ships_ares: crate::rules::ares_switch::game_ships_ares(false),
+            ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
         }
     }
 
@@ -245,6 +250,15 @@ impl RulesLayerStack {
     /// before any Process pass reads it.
     pub fn with_ares_mix(mut self, ships_ares: bool) -> Self {
         self.ships_ares = ships_ares;
+        self
+    }
+
+    /// VERA: the stack of a game whose player set Ares Off, where no Ares key
+    /// turns Ares on. The game's owner sets it from the launch
+    /// (`NativeRulesProcessOwner::startup_layers`); a fixture stack reads the
+    /// launch's (`ares_switch::launch_keys_off`).
+    pub fn with_ares_keys_off(mut self, off: bool) -> Self {
+        self.ares_keys_off = off;
         self
     }
 
@@ -469,6 +483,7 @@ impl RulesLayerStack {
                 let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
                     &processor.ares_reads,
                     self.ships_ares,
+                    self.ares_keys_off,
                 );
                 let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
@@ -503,6 +518,7 @@ impl RulesLayerStack {
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
+            self.ares_keys_off,
         );
         let (ini, native_type_construction_trace) = processor.finish();
         Ok((

@@ -111,8 +111,8 @@ pub(crate) fn rules_differ_text(state: &AppState) -> String {
 }
 
 /// What this game changes from the original game, which other players'
-/// games must change the same way: its mod, `config.toml`'s INI roots and
-/// changed game files. `None` when it plays the original. The Options
+/// games must change the same way: its mod, `config.toml`'s INI roots, the
+/// Ares setting when not Auto and changed game files. `None` when it plays the original. The Options
 /// switches never count: a room plays its host's
 /// (`HostRules`).
 pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
@@ -123,6 +123,16 @@ pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
     }
     if !state.process_assets.stock_ini_roots() {
         changes.push(tr("VERA:RulesChangeIniRoots"));
+    }
+    let ares = state.process_assets.ares_setting();
+    if ares != crate::util::ares_launch::AresSetting::Auto {
+        changes.push(tr_fill(
+            "VERA:RulesChangeAres",
+            &[(
+                "setting",
+                &crate::ui::main_menu_dialogs::options::ares_label(ares),
+            )],
+        ));
     }
     let files = state.process_assets.changed_game_files();
     if !files.is_empty() {

@@ -255,6 +255,9 @@ pub(super) fn build_text(
             LauncherComboId::Display => dialog.shell_display_label(),
             LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label(),
             LauncherComboId::ColorVision => dialog.shell_selected_color_vision().label(),
+            LauncherComboId::Ares => {
+                crate::ui::main_menu_dialogs::options::ares_label(dialog.shell_selected_ares())
+            }
             LauncherComboId::Language => dialog.shell_language_label(),
         };
         out.push(text_draw(
@@ -329,6 +332,10 @@ pub(super) fn build_open_list(
         LauncherComboId::HealthBars => HealthBarMode::choices()
             .into_iter()
             .map(HealthBarMode::label)
+            .collect(),
+        LauncherComboId::Ares => crate::ui::main_menu_dialogs::options::ares_choices()
+            .into_iter()
+            .map(crate::ui::main_menu_dialogs::options::ares_label)
             .collect(),
         LauncherComboId::ColorVision => ColorVisionMode::choices()
             .into_iter()

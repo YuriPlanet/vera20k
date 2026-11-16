@@ -139,6 +139,24 @@ pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
 pub(crate) const HEALTH_BARS_LABEL: &str = "VERA:HealthBars";
 pub(crate) const HEALTH_BARS_HELP: &str = "VERA:HealthBarsHelp";
+pub(crate) const ARES_LABEL: &str = "VERA:AresSetting";
+pub(crate) const ARES_HELP: &str = "VERA:AresSettingHelp";
+
+/// The `[VERA] Ares=` list's rows, top to bottom; the first is the default.
+pub(crate) fn ares_choices() -> Vec<crate::util::ares_launch::AresSetting> {
+    use crate::util::ares_launch::AresSetting;
+    vec![AresSetting::Auto, AresSetting::On, AresSetting::Off]
+}
+
+/// The `[VERA] Ares=` list's row text.
+pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> String {
+    use crate::util::ares_launch::AresSetting;
+    crate::i18n::tr(match setting {
+        AresSetting::Auto => "VERA:AresSettingAuto",
+        AresSetting::On => "VERA:AresSettingOn",
+        AresSetting::Off => "VERA:AresSettingOff",
+    })
+}
 /// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
 /// string table has nothing for it.
 pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
@@ -568,6 +586,9 @@ pub(crate) enum LauncherComboId {
     ColorVision,
     /// The `[VERA] Language=` list: VERA's interface language.
     Language,
+    /// The `[VERA] Ares=` list: the Ares extension setting, from the next
+    /// start (`util::ares_launch::AresSetting`).
+    Ares,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -824,6 +845,8 @@ pub(crate) enum LauncherOptionsEvent {
     SidebarSelected(SidebarSize),
     /// The Health Bars list's pick, applied at once like Sidebar.
     HealthBarModeSelected(HealthBarMode),
+    /// The `[VERA] Ares=` list's pick, played from the next start.
+    AresSelected(crate::util::ares_launch::AresSetting),
     /// The Colour Vision list's pick, applied to the very next frame.
     ColorVisionModeSelected(ColorVisionMode),
     /// The Display list's pick, applied to the window at once.
@@ -938,6 +961,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
+    /// The Ares list's choice; it applies from the next start, as a mod does.
+    pub(crate) ares: crate::util::ares_launch::AresSetting,
     /// The Colour Vision list's choice; reads every frame, so it applies at
     /// once without rebuilding anything.
     pub(crate) color_vision: ColorVisionMode,
@@ -988,6 +1013,7 @@ impl Default for LauncherOptionsValues {
             compact_super_timers: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
+            ares: crate::util::ares_launch::AresSetting::Auto,
             color_vision: ColorVisionMode::Off,
             house_color_position: 0,
             superweapon_limit_position: 0,
@@ -1612,6 +1638,15 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::SidebarSelected(size));
     }
 
+    /// The Ares list publishes its pick for the profile; the game reads it at
+    /// its next start.
+    pub(crate) fn select_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        self.values.ares = setting;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::AresSelected(setting));
+    }
+
     /// The Health Bars list publishes its pick at once too.
     pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
         self.values.health_bars = mode;
@@ -1771,6 +1806,7 @@ impl Category {
                 Setting::Checkbox(Check::AutoRepair),
                 Setting::Checkbox(Check::TerrainDeformation),
                 Setting::Slider(Slider::SuperweaponLimit),
+                Setting::List(List::Ares),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
@@ -2494,6 +2530,7 @@ mod tests {
             List::HealthBars,
             List::ColorVision,
             List::Language,
+            List::Ares,
         ]
         .map(Setting::List)
         .into_iter()

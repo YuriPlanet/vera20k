@@ -107,6 +107,18 @@ fn a_maps_ares_key_turns_ares_on() {
     assert!(cloaks(&ares));
 }
 
+/// VERA's Ares setting Off: the same map's Ares key turns nothing on, and the
+/// processed Rules keep that answer for their projections.
+#[test]
+fn the_ares_setting_off_keeps_a_maps_ares_key_off() {
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let map = IniFile::from_str("[HTNK]\nImmuneToAbduction=yes\n");
+    let mut owner = installed(&assets).with_ares_keys_off(true);
+    assert!(!skirmish(&mut owner, None, &map).ares());
+}
+
 /// `ares.mix` mounted at startup (Load_Bootstrap_AresMIX, hook 0x0053029E)
 /// turns Ares on for retail rules in every test build, and the switch is
 /// part of the game's configuration, so a replay or a peer with the other

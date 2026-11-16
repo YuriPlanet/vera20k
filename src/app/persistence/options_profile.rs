@@ -276,6 +276,11 @@ pub(crate) struct RetailOptionsProfile {
     /// value. Defaults to the native rule. Client presentation only: the
     /// simulation never reads it, and the profile writer round-trips the value.
     pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
+    /// `[VERA] Ares=Auto|On|Off`: the Ares extension setting
+    /// (`util::ares_launch::AresSetting`). Read at start, like the mod: a
+    /// change applies from the next start. Auto keeps the game's data in
+    /// charge; an unknown value reads as Auto.
+    pub(crate) ares: crate::util::ares_launch::AresSetting,
     /// `[VERA] ColorVisionMode=`: the whole-viewport colour-vision filter, as
     /// a [`ColorVisionMode`](crate::ui::main_menu_dialogs::options::ColorVisionMode)
     /// value. `Off` keeps the retail image. Client presentation only: the
@@ -401,6 +406,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_score: false,
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
+            ares: crate::util::ares_launch::AresSetting::Auto,
             color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode::Off,
             chat_translation: Default::default(),
             language: None,
@@ -426,7 +432,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 35],
+    pub(crate) vera: [(&'static str, String); 36],
 }
 
 impl RetailOptionsLoad {
@@ -672,6 +678,12 @@ impl RetailOptionsProfile {
             self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
                 vera.read_int("HealthBars", self.health_bars.ini_value()),
             );
+            // Absent keeps the current value; an unknown one reads as Auto.
+            self.ares = crate::util::ares_launch::AresSetting::from_ini_text(&vera.read_string(
+                "Ares",
+                self.ares.ini_value(),
+                16,
+            ));
             // Absent keeps the current value; a value this build does not know
             // reads as Off instead of enabling a filter with no matrix.
             self.color_vision =
@@ -834,6 +846,7 @@ impl RetailOptionsProfile {
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
+                ("Ares", self.ares.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
                 (
                     "SmoothSidebar",
