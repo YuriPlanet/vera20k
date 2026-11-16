@@ -128,6 +128,7 @@ Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和�
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 

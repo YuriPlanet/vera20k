@@ -41,7 +41,19 @@ Ares 官方没有按 INI key 公布单个功能的作者，因此这里只署名
 
 技术细节：[Phobos 扩展支持](../phobos.md)
 
-Phobos 由 Phobos Developers 开发。VERA20K 已移植功能对应的原作者：
+This product includes software developed by the Phobos Developers.
+
+Phobos 由 **Belonit**（Gluk-v48）与 **Kerbiter**（Metadorius）于 2020 年创立，现由
+[Phobos Developers](https://github.com/Phobos-developers/Phobos#credits) 开发：
+
+- 维护者：**Kerbiter**（负责人）、**Starkku**（联合负责人）、**CrimRecya**、
+  **ZivDero**、**Ollerus**、**NetsuNegi**、**TaranDahl**、**Noble_Fish**
+  （兼文档与问题分类）。
+- 问题分类：**FlyStar**、**Fryone**。
+- 暂不活跃的维护者：**Belonit**（前负责人）、**Uranusian**（兼中文社区大使）、
+  **secsome**、**Otamaa**、**FS-21**、**Morton**、**Trsdy**。
+
+VERA20K 已移植功能对应的原作者：
 
 - 自定义辐射类型 — **Otamaa**（移植并修正 **Ares developers** 未完成的
   RadTypes 代码）。

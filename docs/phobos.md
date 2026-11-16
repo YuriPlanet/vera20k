@@ -84,8 +84,21 @@ VERA20K implements the behavior in Rust. It does not load `Phobos.dll`, import
 Phobos C++ source or redistribute Phobos binaries; the native identities cited
 by these pages are the Phobos sources named in each page.
 
-Phobos is developed by the Phobos Developers. The features ported here
-originate with:
+This product includes software developed by the Phobos Developers.
+
+Phobos was founded by **Belonit** (Gluk-v48) and **Kerbiter** (Metadorius) in
+2020 and is developed by the
+[Phobos Developers](https://github.com/Phobos-developers/Phobos#credits):
+
+- Maintainers: **Kerbiter** (lead), **Starkku** (co-lead), **CrimRecya**,
+  **ZivDero**, **Ollerus**, **NetsuNegi**, **TaranDahl** and **Noble_Fish**
+  (also documentation and triage).
+- Triage: **FlyStar** and **Fryone**.
+- Inactive maintainers: **Belonit** (past lead), **Uranusian** (also Chinese
+  community ambassador), **secsome**, **Otamaa**, **FS-21**, **Morton** and
+  **Trsdy**.
+
+The features ported here originate with:
 
 - Custom radiation types - **Otamaa**, who ported and fixed the **Ares
   developers**' unfinished RadTypes code.
