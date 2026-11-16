@@ -126,7 +126,7 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
     (
         "options-0xd5-hover-tooltips",
         Category::Interface,
-        (160, 206),
+        (160, 250),
     ),
     ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
