@@ -1509,6 +1509,14 @@ pub struct Simulation {
     #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
+    /// Phobos `ScenarioExt::Global()->FallingDownTracker`
+    /// (`Ext/Techno/Hooks.cpp:1654-1702`, hooks `0x5F4160`, `0x5F5965`,
+    /// `0x5F3F86`): Technos that started a bomb fall or a paradrop, in
+    /// `AddUnique` order. A derived targeting cache: not saved or hashed.
+    /// Live membership is `is_falling_down`; the scan filters ended falls.
+    #[cfg(feature = "phobos")]
+    #[serde(skip, default)]
+    pub(crate) phobos_falling_down: Vec<u64>,
     /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
     /// drawn once at scenario start; saved and hashed. See
     /// `sim::ares_make_stuff_up`.
@@ -2332,6 +2340,43 @@ impl Simulation {
     /// update it, so readers never see a load-time copy.
     pub(crate) fn terrain_cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
         Some(self.resolved_terrain.as_ref()?.cell(rx, ry)?.level)
+    }
+
+    /// Phobos `FallingDownTracker::AddUnique`
+    /// (`Ext/Techno/Hooks.cpp:1656-1686`, hooks `0x5F4160`, `0x5F5965`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_track_falling_down(&mut self, stable_id: u64) {
+        if !self.phobos_falling_down.contains(&stable_id) {
+            self.phobos_falling_down.push(stable_id);
+        }
+    }
+
+    /// Live entries of the falling tracker, in `AddUnique` order. Native
+    /// `ObjectClass_Update_Track` (`0x5F3F86`) removes a landed object; VERA
+    /// keeps [`GameEntity::finish_fall`] free of `Simulation` and filters the
+    /// ended falls here instead. An empty list after a save load rebuilds the
+    /// cache from the entity flags, in entity-store order.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_falling_down_candidates(&self) -> Vec<u64> {
+        let tracked: Vec<u64> = if self.phobos_falling_down.is_empty() {
+            self.substrate
+                .entities
+                .values()
+                .filter(|entity| entity.is_falling_down())
+                .map(|entity| entity.stable_id())
+                .collect()
+        } else {
+            self.phobos_falling_down.clone()
+        };
+        tracked
+            .into_iter()
+            .filter(|id| {
+                self.substrate
+                    .entities
+                    .get(*id)
+                    .is_some_and(|entity| entity.is_falling_down())
+            })
+            .collect()
     }
 
     /// Resolve the CellClass identity returned by MapClass::Get_CellClass and
@@ -4851,6 +4896,8 @@ impl Simulation {
             buildup_bypass: false,
             #[cfg(feature = "phobos")]
             reflected_warhead: None,
+            #[cfg(feature = "phobos")]
+            phobos_falling_down: Vec::new(),
             #[cfg(feature = "ares")]
             ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
