@@ -53,8 +53,7 @@ The common subset rules apply to every signature:
 - parameters that group several values are classes, not object shapes.
 
 `T | null` works only for classes in AssemblyScript; a missing handle is
-`NO_HANDLE` (see [Handles](#handles)). A missing integer is
-written as `-1` (or another documented sentinel), as the community
+`NO_HANDLE` (see [Handles](#handles)). A missing integer is written as `-1` (or another documented sentinel), as the community
 spreadsheet also does ("negative means none").
 
 ### Value types
@@ -105,6 +104,8 @@ nullable: `NO_HANDLE` (`0`) means "none" and is never a live object.
 | `Trigger` | a live trigger | it is deleted |
 | `Tag` | a live tag | it is deleted |
 | `Effect` | one attached effect instance | it expires or is removed |
+| `SuperWeapon` | one house's superweapon of one type | the house no longer holds it |
+| `Node` | a node of the client interface tree (section 11) | it is removed or the match screen closes |
 
 ```ts
 type Techno     = i64;   // any unit or building
@@ -118,6 +119,8 @@ type Team       = i64;
 type Trigger    = i64;
 type Tag        = i64;
 type Effect     = i64;
+type SuperWeapon = i64;
+type Node       = i64;   // client
 const NO_HANDLE: i64 = 0;
 
 // on Techno:
@@ -136,7 +139,8 @@ if (e.other != NO_HANDLE) {
 A signature, field or result that may hold no object has the plain handle
 type and a note that it may be `NO_HANDLE`. Event payload fields that may be
 absent (an attacker, a projectile) are `NO_HANDLE` when absent. `T | null` is
-kept for classes (see [Signatures](#signatures)).
+kept for classes such as `Path` and `DisguiseInfo` (see
+[Signatures](#signatures)).
 
 Types and the other named kinds listed under [IDs](#ids) are named by their
 ID string in INI and in setup calls; module code holds the integer ID a lookup
@@ -166,7 +170,7 @@ Rust SDK each is a newtype. Like handles, IDs are values and allocate nothing.
 | `OverlayTypeId` | overlays | `ctx.overlayTypeId(name)` |
 | `SoundId` | sounds in the simulation API | `ctx.soundId(name)` |
 | `MarkId` | marks | `Mark.id(name)` |
-| `NotifyId` | simulation-to-client notifications | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides |
+| `NotifyId` | simulation-to-client notifications | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; checked for collisions across all modules of the match at load |
 | `TeamTypeId`, `ScriptTypeId`, `AiTriggerId` | AI team types, team scripts, AI triggers | `ai.teamTypeId(name)`, `ai.scriptTypeId(name)`, `ai.aiTriggerId(name)` |
 
 ```ts
@@ -187,9 +191,11 @@ nothing returns `NO_ID` and sets `ctx.lastStatus()` to `NotFound`: an expected
 outcome under the [error model](#errors), because names come from data a mod
 may change. A call given `NO_ID` returns `NotFound` as well; an ID that no
 lookup returned is an invalid argument. `Mark.id` registers a name it has not
-seen, so it always returns an ID. `Notify.id` always returns an ID as well: the
-engine checks notification names for hash collisions when it loads the
-modules and refuses a module whose names collide, with a message (RFC 10).
+seen, so it always returns an ID. `Notify.id` always returns an ID as well:
+when it loads the modules, the engine checks the notification names of all
+modules loaded in the match, the mod's and the map's together, for hash
+collisions, and refuses modules whose names collide, with a message (RFC 3,
+step 6; RFC 10).
 Types cannot be added during a match (RFC 8), so an ID stays valid for the
 whole scenario and across a save and its load.
 
@@ -220,15 +226,19 @@ fields it fills; fields an event does not list are `NO_HANDLE` or `-1`. The
 layout of each record belongs to the interface definition (RFC 12). The SDK
 reads records in place and allocates nothing per event.
 
-Every event VERA adds is raised at a safe point: after the calculation that
-produced it has completed (for example `TakeDamage` after the damage has been
-committed), never in the middle of one, and the trigger's original and atomic
+Every event VERA adds is raised at a safe point, a moment that is not inside
+any calculation: after a calculation has completed (for example `TakeDamage`
+after the damage has been committed) or before one begins (for example
+`HouseTransfer` before the transfer begins). The trigger's original and atomic
 actions run at once from that point (RFC 5). Because they run at once, they can
 chain within a frame: damage raises `TakeDamage`, its trigger deals damage
-with an atomic action, which raises `TakeDamage` again. The engine limits the
-depth of such a chain per frame; a trigger that would exceed the limit fires in
-the next frame instead, so no chain loops forever. The limit is open question
-18 of the RFC.
+with an atomic action, which raises `TakeDamage` again. When a chain includes
+a trigger created or bound by a module, an event VERA adds or an atomic
+action, the engine limits its depth per frame; a trigger that would exceed the
+limit fires in the next frame instead, so no such chain loops forever (gap
+G-T11). The limit is open question 18 of the RFC. A chain made only of
+original events and original actions runs exactly as in the original (RFC
+Goal 5).
 
 ### Query results
 
@@ -260,8 +270,8 @@ State that only some objects use lives in side tables keyed by handle, not in
 every object: marks (section 6), type tag bindings and other subscriptions
 (`Wasm.Tags`, RFC 7), and the 16 bytes of module data per projectile (RFC 9).
 An object that uses none of them costs nothing. Each object, weapon, warhead
-and projectile type carries one flag that says whether a module binds it; an event site checks that flag and does
-nothing more when it is clear (RFC 15). Side tables are saved and hashed with
+and projectile type carries one flag that says whether a module binds it; an
+event site checks that flag and does nothing more when it is clear (RFC 15). Side tables are saved and hashed with
 the simulation state.
 
 ### Enumerations
@@ -302,7 +312,9 @@ enum Status {
 What counts as an invalid argument (and so disables the module) is listed per
 function: out-of-range indexes (global 0..49, local 0..99), negative counts,
 an enum value outside its list. A name that matches nothing returns
-`NotFound`, because names come from data that a mod may change. The split
+`NotFound`, because names come from data that a mod may change. A target kind
+that does not fit an atomic action in a trigger is a data error as well and
+returns a status ([4.1](#41-using-actions)). The split
 between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
 
 `ctx.lastStatus(): Status` repeats the status of the last call for functions
@@ -439,7 +451,7 @@ class TriggerDef {
   event: i32 = 0;            // an Event value
   param: EventParam = new EventParam();
   conditions: Cond[] = [];
-  actions: TriggerAction[] = [];
+  actions: Action[] = [];
   difficulty: Difficulty = Difficulty.All;
   allowWin: bool = false;    // the A15 marker
   transferOnCapture: bool = false;   // TriggerType token 8
@@ -468,8 +480,9 @@ class EventBatch {           // one per module per frame
 `EventRecord` fields not listed for an event are `NO_HANDLE` or `-1`. Records
 come in firing order; each is one queued module action with the payload of the
 event that sprang its trigger, and there are no stand-alone event records. The
-layout belongs to the interface definition (see [Event delivery](#event-delivery)). RFC 6a: every event names
-the object it is attached to and, where there is one, the other object
+layout belongs to the interface definition (see
+[Event delivery](#event-delivery)). RFC 6a: every event names the object it is
+attached to and, where there is one, the other object
 involved.
 
 Original events evaluate in the existing trigger runtime (`TR::has_occurred`).
@@ -603,10 +616,11 @@ section): such a binding fires for every shooter that uses the type, whatever
 the shooter's own type, and the shooter is the subject. Each raise site checks
 one flag of the object's type, or of the weapon, warhead or projectile type,
 first (see [Side tables](#side-tables)); `Cond.isWeaponType` tests the weapon.
-Each event is raised at a safe point, after the calculation that produced it
-has completed (see [Event delivery](#event-delivery)); the "Raised at" column
-names the owner of that moment and says where the exact safe point is not
-known.
+Each event is raised at a safe point, a moment that is not inside any
+calculation: after the calculation that produced it has completed, or, for
+`HouseTransfer`, before the transfer begins (see
+[Event delivery](#event-delivery)); the "Raised at" column names the owner of
+that moment and says where the exact safe point is not known.
 
 | Event | Payload (`EventRecord`) | Raised at (owner of the moment) | Tier | Sources |
 | --- | --- | --- | --- | --- |
@@ -627,8 +641,8 @@ known.
 | `EnteredBy` (new) | `other` passenger, `value` occupied size, `value2` garrison flag | as `Enter`, raised on the container | v1? | RFC 6a; T15 `OnEntryBy` |
 | `ExitedBy` | as `EnteredBy` | as `Exit` | v1? | RFC 6a; T16 `OnExitBy` |
 | `Crushed` | `other` crusher | crush step in movement (file unverified), after the crush; hook **no owner yet** | v1? | RFC 6a; T25 `OnCrush` |
-| `HouseTransfer` | `house` new house, `value` 1 if by mind control; raised before the transfer | `src/sim/world/mod.rs::change_owner_with_rules`; `src/sim/capture_manager.rs`; hook **no owner yet** | v1? | RFC 6a; T28 `OnHouseTransfer`; Rc: `UnitTaken` |
-| `HouseTransferred` | `house` previous house, `value` 1 if by mind control; raised after the transfer | `change_owner_with_rules`; hook **no owner yet** | v1? | RFC 6a (P10); Rc: `UnitGiven` (two-phase transfer) |
+| `HouseTransfer` | `house` new house, `value` 1 if by mind control; raised before the transfer | `src/sim/world/mod.rs::change_owner_with_rules`; `src/sim/capture_manager.rs`; before the transfer begins; hook **no owner yet** | v1? | RFC 6a; T28 `OnHouseTransfer`; Rc: `UnitTaken` |
+| `HouseTransferred` | `house` previous house, `value` 1 if by mind control; raised after the transfer | `change_owner_with_rules`, after the transfer completes; hook **no owner yet** | v1? | RFC 6a (P10); Rc: `UnitGiven` (two-phase transfer) |
 | `EffectStart` | `effect`, `value` stack count | `src/sim/attach_effect.rs::AttachEffectList::attach`, after the effect is attached; hook **no owner yet** | v1? | RFC 6a; T17 `OnBehaviorStart` |
 | `EffectExpire` | `effect` (reads gone after delivery), `id` effect type (`EffectTypeId`) | `attach_effect.rs` update/removal, after the effect is removed; hook **no owner yet** | v1? | RFC 6a; T19 `OnBehaviorExpire` |
 | `EffectStacks` | `effect`, `value` new stack count | `attach_effect.rs` cumulative attach, after the stack is added; hook **no owner yet** | v1? | RFC 6a; T20 `OnBehaviorStack` |
@@ -758,10 +772,16 @@ action runs at once.
 In a trigger, each atomic action value takes an explicit target parameter
 (`ActionTarget`): `Subject` (the default) is the record's subject; `Other` the
 record's other object; `TagHolder` the objects whose tag holds the springing
-trigger, as the "live" rows of 4.2 act on; `House` a house; `Cell` a cell,
-given directly or as a waypoint. Original and atomic actions that run at once
-can raise further events and chain within a frame, up to the per-frame depth
-limit (see [Event delivery](#event-delivery)).
+trigger, as the "live" rows of 4.2 act on, or the cell when the trigger is
+held by a CellTag; `House` the trigger's house unless a house is given
+explicitly; `Cell` a cell, given directly or as a waypoint. A target kind that
+does not fit the action (for example `Cell` for `techno.kill`) is a data
+error, not a programming error: the action returns an error status and the
+module stays enabled (see [Errors](#errors); RFC 3, 6b). Original and atomic
+actions that run at once can raise further events and chain within a frame;
+a chain that includes a trigger created or bound by a module, an event VERA
+adds or an atomic action is limited to the per-frame depth (see
+[Event delivery](#event-delivery)).
 
 ```ts
 class ActionParams {
@@ -773,11 +793,11 @@ class ActionParams {
   tag: string | null = null;
   cell: Cell | null = null;   // replaces the waypoint token
 }
-class TriggerAction {
-  static original(n: i32, p: ActionParams): TriggerAction;
-  static wasm(exportName: string): TriggerAction;
+class Action {
+  static original(n: i32, p: ActionParams): Action;
+  static wasm(exportName: string): Action;
 }
-enum ActionTarget { Subject, Other, TagHolder, House, Cell }   // target of an atomic action in a trigger; Subject is the default
+enum ActionTarget { Subject, Other, TagHolder, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House defaults to the trigger's house
 ```
 
 `Action.original(n, …)` runs the existing arm of
@@ -1211,7 +1231,7 @@ class Filter {
 | `house.techLevel()` | `i32` | `HouseState::tech_level` | v1 | RFC 6c |
 | `house.isAlly(other)`, `allies(out: HandleBuffer)`, `enemies(out: HandleBuffer)` | `bool`, `i32` counts | `src/sim/house_diplomacy.rs` | v1 | RFC 6c |
 | `house.isDefeated()`, `isHuman()` | `bool` | `HouseState.is_defeated`, `is_human` | v1 | RFC 6c |
-| `house.superWeapon(type: SuperWeaponTypeId)` | `SuperWeapon \| null` (ready, charge) | `src/sim/superweapon/mod.rs::HouseSuperWeapons` | v1? | |
+| `house.superWeapon(type: SuperWeaponTypeId)` | `SuperWeapon` (`NO_HANDLE` when the house does not hold it; reads: ready, charge) | `src/sim/superweapon/mod.rs::HouseSuperWeapons` | v1? | |
 | `house.stats()` | lost/destroyed counts | `MatchStatistics` | v1? | E15, E16 |
 | `scenario.houses(out: HandleBuffer)` | `i32` count, order: house array order | `src/sim/houses.rs::Houses` | v1 | RFC 6c |
 
@@ -1567,7 +1587,7 @@ the existing layout reader is `src/ui/match_layout.rs` and
 
 ```ts
 class Ui {
-  find(name: string): Node | null;
+  find(name: string): Node;        // NO_HANDLE when no node has that name
   create(n: NodeSpec): Node;
   remove(n: Node): Status;
   registerHotkey(name: string, defaultKey: string): Status;
@@ -1581,7 +1601,7 @@ class Node {
   setSize(w: i32, h: i32): void;
   setVisible(v: bool): void;
   setItems(items: string[]): void;   // List
-  setValue(v: i32): void;            // Bar
+  setFill(v: i32): void;             // Bar: how full the bar is
   onClick(enabled: bool): void;      // routes clicks to the module's onClick
 }
 ```
@@ -1592,7 +1612,7 @@ class Node {
 | `create`, `remove` | v1 | RFC 10, example |
 | `setLabel`, `setArt`, `setPosition`, `setVisible` | v1 | RFC 10 |
 | `setItems` | v1 | RFC 10 example |
-| `setSize`, `setValue` | v1? | |
+| `setSize`, `setFill` | v1? | |
 | `onClick`, hover, hotkeys | v1 | RFC 10 |
 | data binding (a property bound to a published value) | later | Rc: RmlUi data models |
 
@@ -1632,7 +1652,9 @@ Static layout uses the syntax of `veraui.ini` (RFC 10). Keys that exist today
 RFC 0.0.5 uses these keys in its example and adds the `List` part type and
 `Label` for `Text` parts (P16). Where a mod and a map keep
 layout sections is open question 15. Client code uses the same names:
-`Text.label(...)`, `node.setLabel`, `node.setArt` and `node.setValue` (RFC 10).
+`Text.label(...)`, `node.setLabel` and `node.setArt` (RFC 10). `Value` keeps
+only its INI meaning, the data source a part shows (`Credits`, `Power`, ...);
+the fill of a `Bar` is set with `node.setFill`.
 
 ### 11.3 Display properties per object
 
@@ -1738,8 +1760,15 @@ implementation.
   before `onFrame`; it drops queued actions whose trigger was disabled or
   removed, and every queued action once the game has ended (RFC 5, 15).
 - **G-T10** Per-type module flag on object, weapon, warhead and projectile
-  types, set when a module binds the type, checked first at each event site so that nothing else runs for unbound types
-  (RFC 15).
+  types, set when a module binds the type, checked first at each event site
+  so that nothing else runs for unbound types (RFC 15).
+- **G-T11** Per-frame chain depth counter in `TR`, where a trigger springs:
+  counts the depth of a chain of triggers sprung at once within a frame when
+  the chain includes a trigger created or bound by a module, an event VERA
+  adds or an atomic action, and moves a trigger that would exceed the limit to
+  the next frame; a chain of only original events and original actions is not
+  limited and runs as in the original (RFC 5, Goal 5; the limit is open
+  question 18).
 
 ### Actions
 
@@ -1767,8 +1796,8 @@ implementation.
   publication and blocked-cell refusal.
 - **G-A12** Remove or force-detonate one projectile (P8, adopted in RFC 0.0.5).
 - **G-A13** Detonate a warhead with damage and source at a coordinate
-  (P7, adopted in RFC 0.0.5): `apply_area_damage` exists, the API wrapper with credit does
-  not.
+  (P7, adopted in RFC 0.0.5): `apply_area_damage` exists, the API wrapper
+  with credit does not.
 
 ### Attached effects and marks
 
@@ -1822,7 +1851,8 @@ implementation.
   existing registries (`RuleSet` type indexes, sound binding, AI
   definitions), with `NotFound` for an unknown name, a registry of mark
   names for `Mark.id`, and the stable hash of notification names for
-  `Notify.id` with a collision check at load (RFC 10, 15).
+  `Notify.id` with a collision check at load across all modules of the match,
+  the mod's and the map's (RFC 3, 10, 15).
 
 ### Client
 
@@ -1838,7 +1868,7 @@ implementation.
   animations, visibility, text, values, buttons).
 - **G-C6** In-game console for `log()`.
 
-Total: 51 gaps (H 6, T 10, A 13, E/M 5, Q 2, O 2, AI 4, R 3, C 6). G-T8 is a
+Total: 52 gaps (H 6, T 11, A 13, E/M 5, Q 2, O 2, AI 4, R 3, C 6). G-T8 is a
 pre-existing gap of the original trigger system.
 
 ## Proposed RFC changes

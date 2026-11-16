@@ -26,9 +26,9 @@ react to triggers, issue actions and missions, override chosen game
 decisions, and build its own interface. Authors write modules in any language
 that compiles to WebAssembly, with their own tools; the engine only runs the
 compiled `.wasm`. Official SDKs exist for TypeScript and Rust. The API uses the
-terms Red Alert 2
-modders already know: triggers, events, actions, tags, missions, local and
-global variables, and frames, and adds conditions, attached effects and marks.
+terms Red Alert 2 modders already know: triggers, events, actions, tags,
+missions, local and global variables, and frames, and adds conditions,
+attached effects and marks.
 
 Every function, event, condition, effect and override, with its owner in the
 engine and its sources, is listed in the
@@ -266,7 +266,9 @@ On load the engine:
    results of floating-point operations;
 4. adds operation metering and sets the memory limit;
 5. checks that the exports the INI and the lifecycle need exist and have the
-   right signatures.
+   right signatures;
+6. checks the notification names of all modules loaded in the match, the
+   mod's and the map's together, for hash collisions (section 10).
 
 A failure before the match is shown in the lobby with its reason, and the match
 cannot start with that module. A failure during a match (trap, budget exceeded,
@@ -282,7 +284,8 @@ and what the module left behind is handled this way:
 
 Errors that are part of normal play return a status and the module carries on:
 a handle whose object is gone, an unknown name, an action an engine rule
-refuses (for example a cell that cannot be built on). Errors that show a broken
+refuses (for example a cell that cannot be built on), or a target kind that
+does not fit an atomic action in a trigger (section 6b). Errors that show a broken
 module disable it: an invalid argument, a trap, an exceeded budget.
 
 `docs/modding.md` currently says a mod is only data and VERA20k never runs a
@@ -348,15 +351,19 @@ Ordering rules:
   C run first and B runs later in the same frame. An author who needs a strict
   order writes all of the trigger's actions as module code and calls original
   actions through the API (L1).
-- Every event VERA adds is raised at a safe point: after the calculation that
-  produced it has completed (for example `TakeDamage` after the damage has
-  been committed), never in the middle of one. The trigger's original and
-  atomic actions run at once from that point.
-- Original and atomic actions can chain within a frame: damage raises
+- Every event VERA adds is raised at a safe point: a moment that is not inside
+  any calculation. After a calculation has completed is a safe point (for
+  example `TakeDamage` after the damage has been committed), and so is before
+  one begins (for example `HouseTransfer` before the transfer begins). The
+  trigger's original and atomic actions run at once from that point.
+- Actions that run at once can chain within a frame: damage raises
   `TakeDamage`, its trigger deals damage with an atomic action, which raises
-  `TakeDamage` again, and so on. The engine limits the depth of such a chain
-  per frame; a trigger that would exceed the limit fires in the next frame
-  instead, so no chain loops forever. The limit is open question 18.
+  `TakeDamage` again, and so on. The engine limits the depth of a chain per
+  frame when the chain includes a trigger created or bound by a module, an
+  event VERA adds or an atomic action; a trigger that would exceed the limit
+  fires in the next frame instead, so no such chain loops forever. The limit
+  is open question 18. A chain made only of original events and original
+  actions runs exactly as in the original (Goal 5).
 - A queued module action is dropped when the game has ended, or when its
   trigger was disabled or removed before the module phase. Handles to objects
   that are gone read as gone.
@@ -460,10 +467,10 @@ A trigger has one event, any number of conditions and one or more actions.
   taken, weapon fired, killed); the trigger fires at that moment, its original
   and atomic actions run at once, and its module actions are queued, each with
   the event's payload, for the module phase (section 5). A delivered event
-  that VERA adds is raised at a safe point, after the calculation that
-  produced it has completed, never in the middle of one (section 5). *Polled
-  events*
-  describe a state (health below a value, money above a value); the
+  that VERA adds is raised at a safe point, a moment that is not inside any
+  calculation: after the calculation that produced it has completed, or
+  before one begins, as `HouseTransfer` is raised before the transfer begins
+  (section 5). *Polled events* describe a state (health below a value, money above a value); the
   engine checks them natively at the interval the trigger sets, and the trigger
   fires while the state holds.
 - **Conditions** filter a trigger before any module code runs. The engine
@@ -512,6 +519,7 @@ Candidate delivered events for version 1:
 | Fire | target (optional), weapon index, projectile (optional) |
 | SpawnFire | spawned unit, target (optional), weapon index, projectile (optional) |
 | HitTarget | target, damage, projectile |
+| Detonated | projectile, cell, source (optional), warhead |
 | TargetChanged | new target (optional: set when a target is chosen, empty when it is cleared) |
 | ProjectileIncoming | projectile, launcher (optional) |
 | Birth | producer (optional), effect (optional), build time (optional) |
@@ -552,12 +560,11 @@ programming language.
 
 Candidate instant actions for version 1: fire a weapon (by index or name, at a
 cell, an object or the current target), launch a superweapon, spawn an
-animation, remove, kill, deal damage through the warhead and armor rules (with a source for kill credit
-and experience), set health directly (no credit), create an object, set a
-mission, teleport to a cell (as the Chronosphere does; when the cell is
-blocked, a stated rule picks a nearby cell or the action fails), clear the
-target, clear a
-disguise, search an area (a query that returns objects), play a sound, add
+animation, remove, kill, deal damage through the warhead and armor rules
+(with a source for kill credit and experience), set health directly (no
+credit), create an object, set a mission, teleport to a cell (as the
+Chronosphere does; when the cell is blocked, a stated rule picks a nearby
+cell or the action fails), clear the target, clear a disguise, search an area (a query that returns objects), play a sound, add
 experience, add money, change the tech tree, transfer the owner, clear mind
 control, change ammo, add or remove passengers, add or remove an attached
 effect, add or remove a mark, create a projectile (type, start, target object
@@ -568,10 +575,13 @@ end the game for a house (win or lose) and set scores, write a line to the
 in-game log.
 
 In a trigger, each atomic action takes an explicit target parameter: the
-subject (the default), the other object of the event, the objects whose tag
-holds the trigger, a house, or a cell or waypoint. Atomic actions run at once
-and may raise further events, so they can chain within a frame up to the depth
-limit of section 5.
+subject (the default), the other object of the event, the tag holder (the
+objects whose tag holds the trigger, or the cell for a CellTag), a house (the
+trigger's house unless one is given), or a cell or waypoint. A target kind
+that does not fit the action is a data error, not a broken module: the action
+returns an error status and the module stays enabled (section 3). Atomic
+actions run at once and may raise further events, so they can chain within a
+frame up to the depth limit of section 5.
 
 Attached effects are per-object states with a duration, owned by
 `sim/attach_effect.rs` (section 8). Candidates: tint, attached animation,
@@ -780,9 +790,11 @@ closures, and is not part of the official API.
 - Notifications are named, and a name resolves once to an ID:
   `Notify.id("WaveStarted")` returns a `NotifyId`. The ID is a stable hash of
   the case-folded name, computed the same way on every machine and in both the
-  simulation and the client module. The engine checks for collisions when it
-  loads the modules and refuses a module whose notification names collide,
-  with a message naming them (section 3), so `Notify.id` always returns an ID.
+  simulation and the client module. When it loads the modules, the engine
+  checks the notification names of all modules loaded in the match, the mod's
+  and the map's together, for collisions, and refuses modules whose names
+  collide, with a message naming them (section 3, step 6), so `Notify.id`
+  always returns an ID.
   The simulation module sends a notification to one player's client with
   `notify(player, id, bytes)`; the client module receives it in
   `onNotify(id, bytes)`.
@@ -997,8 +1009,9 @@ Planned order after acceptance:
     translated.
 17. **Campaigns.** Whether a mission's modules start fresh or continue the
     previous mission's state.
-18. **Chain depth.** The per-frame limit on the depth of a chain of original
-    and atomic actions (section 5).
+18. **Chain depth.** The per-frame limit on the depth of a chain that
+    includes a trigger created or bound by a module, an event VERA adds or an
+    atomic action (section 5).
 
 ## Changelog
 
@@ -1017,18 +1030,29 @@ Planned order after acceptance:
   Fire, HitTarget and Detonated); `Aimed` merged into `TargetChanged`, plus a
   target priority multiplier effect; action functions take
   `(ctx, e: EventRecord)`; notification names resolve to a `NotifyId`; client
-  code uses the `veraui.ini` names (`Column.hold(Hold.BottomLeft)`); original
-  and atomic actions chain within a frame up to a per-frame depth limit, beyond
-  which a trigger fires in the next frame (open question 18); events VERA adds
-  are raised at safe points, after the calculation that produced them; each
-  atomic action in a trigger takes an explicit target (subject, other, tag
-  holder, house, cell or waypoint); notification IDs are a stable hash of the
-  case-folded name, with a collision check at load, so `Notify.id` always
-  returns an ID; handles are never nullable and `NO_HANDLE` means none; client
-  API names follow the layout keys `Label`, `Art` and `Value` (`Text.label`,
-  `setLabel`, `setArt`, `setValue`); notifications carry the module's own
-  bytes, which the engine cannot filter; `Ctx.event()` removed; related text
-  and the appendix updated to match.
+  code uses the `veraui.ini` names (`Column.hold(Hold.BottomLeft)`); actions
+  that run at once chain within a frame, and a chain that includes a trigger
+  created or bound by a module, an event VERA adds or an atomic action is
+  limited to a per-frame depth, beyond which a trigger fires in the next frame
+  (open question 18, engine gap G-T11), while a chain of only original events
+  and original actions runs exactly as in the original (Goal 5); events VERA
+  adds are raised at safe points, moments that are not inside any calculation
+  (after a calculation completes, or before one begins, as for
+  `HouseTransfer`); each atomic action in a trigger takes an explicit target
+  (subject, other, tag holder, house, cell or waypoint): the house defaults to
+  the trigger's house, the tag holder of a CellTag is the cell, and a target
+  kind that does not fit the action returns an error status without disabling
+  the module; `Detonated` added to the table of candidate delivered events;
+  notification IDs are a stable hash of the case-folded name, with a collision
+  check at load across all modules of the match, the mod's and the map's
+  (section 3, step 6), so `Notify.id` always returns an ID; handles are never
+  nullable and `NO_HANDLE` means none, and `Node` and `SuperWeapon` are
+  handles, while `Path` and `DisguiseInfo` stay classes that may be `null`;
+  client API names follow the layout keys `Label` and `Art` (`Text.label`,
+  `setLabel`, `setArt`), a bar's fill is set with `setFill`, and `Value` keeps
+  only its INI meaning, a data source such as `Credits` or `Power`;
+  notifications carry the module's own bytes, which the engine cannot filter;
+  `Ctx.event()` removed; related text and the appendix updated to match.
 - **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
   override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
   visibility and house marks, query order, warhead detonation, projectile
