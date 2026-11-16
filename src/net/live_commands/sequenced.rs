@@ -41,6 +41,17 @@ const PACE_REPORT_INTERVAL_MS: i32 = 1_000;
 const PACE_BACKLOG_MS: u32 = 2_000;
 // Ticks kept for one pace report's tick-cost percentile.
 const MAX_TICK_COSTS: usize = 256;
+// VERA watching (relay README "Watchers"): the relay never pushes to a
+// watcher, so it pulls this often, and starts a whole match behind, so it
+// buffers and reads further ahead than a player.
+const WATCH_PULL_INTERVAL_MS: u32 = 100;
+const WATCH_BUFFERED_FRAMES: usize = 512;
+const WATCH_REORDER_WINDOW: u64 = 2048;
+// The relay's agreed samples kept until this world reaches their frames.
+const WATCH_SAMPLES: usize = 16;
+// A watcher that hears nothing from its relay this long has lost the match:
+// the relay dropped it long before.
+const WATCH_SILENCE_MS: u32 = 60_000;
 
 /// App diagnostics for one match's ordered delivery, counted by the session
 /// that owns it. Wall-clock observations; never simulation or delivery input.
@@ -85,6 +96,9 @@ pub struct SequencedTiming {
     /// Changes at a synchronized pause/resume boundary. Presentation must
     /// not turn time spent paused into simulation catch-up or receipt jitter.
     pub clock_epoch: u64,
+    /// Frames that reach this game together: the relay's turn for a player
+    /// (`turn_frames`), more for a watcher (`watch_turn`).
+    pub turn_frames: u32,
 }
 
 /// Authenticated relay capability and the latest contiguous pause marker.
@@ -273,6 +287,16 @@ pub enum SequencedError {
     QueueFull,
     #[error("this online match needs a newer VERA20k")]
     NewerClientRequired,
+    /// A watcher's world differs from the checksum every player reported
+    /// for `frame` (relay README "Watchers").
+    #[error(
+        "this watcher's simulation differs from the players' at frame {frame}: \
+         local {local:#010x}, players {remote:#010x}"
+    )]
+    WatchDesync { frame: u32, local: u32, remote: u32 },
+    /// A watcher's relay answered nothing for `WATCH_SILENCE_MS`.
+    #[error("no answer from the online game server: watching ended")]
+    WatchLost,
     /// A refusal the session cannot act on, such as the games' start
     /// agreements differing.
     #[error("the online ordering service refused this match: {0:?}")]
@@ -291,6 +315,8 @@ impl SequencedError {
             Self::StartCancelled => "start_cancelled",
             Self::QueueFull => "queue_full",
             Self::NewerClientRequired => "newer_client_required",
+            Self::WatchDesync { .. } => "watch_desync",
+            Self::WatchLost => "watch_lost",
             Self::Refused(OrderError::AgreementMismatch) => "agreement_mismatch",
             Self::Refused(OrderError::ModifiedRetry) => "modified_retry",
             Self::Refused(OrderError::InvalidCursor) => "invalid_cursor",
@@ -301,7 +327,7 @@ impl SequencedError {
     /// What a match this error ended tells the player.
     pub fn interruption(&self) -> NetworkInterruption {
         match self {
-            Self::Desync { .. } => NetworkInterruption::ScenariosDiffer,
+            Self::Desync { .. } | Self::WatchDesync { .. } => NetworkInterruption::ScenariosDiffer,
             Self::QueueFull => NetworkInterruption::QueueFull,
             Self::NewerClientRequired => NetworkInterruption::NewerClientRequired,
             Self::Refused(OrderError::AgreementMismatch) => NetworkInterruption::StartMismatch,
@@ -310,6 +336,7 @@ impl SequencedError {
             | Self::InvalidTimeline
             | Self::Unavailable
             | Self::Absent
+            | Self::WatchLost
             | Self::Refused(_) => NetworkInterruption::ConnectionFailed,
         }
     }
@@ -345,8 +372,23 @@ struct CommittedFrame {
     desync: Option<RelayDesync>,
 }
 
+/// VERA: a game that watches the match instead of playing in it (relay
+/// README "Watchers"). Its `local_source` is the player it follows; it
+/// pulls the stream and sends nothing into it.
+#[derive(Debug)]
+struct Watch {
+    /// How far behind the players its relay holds the stream.
+    delay_seconds: u32,
+    /// The relay's checksums every player reported alike, by frame, kept
+    /// until this world has its own for that frame.
+    samples: VecDeque<(u32, u32)>,
+    /// Sources whose departure this game has read.
+    departed: u32,
+}
+
 #[derive(Debug)]
 pub(super) struct SequencedSession {
+    watch: Option<Watch>,
     houses: [Option<i8>; 30],
     local_source: u8,
     agreement: [u8; 32],
@@ -422,28 +464,51 @@ impl SequencedSession {
                 .ok_or(StartupError::InvalidAdmission)?,
         )
         .map_err(|_| StartupError::InvalidAdmission)?;
-        let local_source = transport
-            .relay_source()
-            .ok_or(StartupError::InvalidAdmission)?;
+        let watch_delay = transport.relay_watch_delay();
+        let player_source = match watch_delay {
+            Some(_) => None,
+            None => Some(
+                transport
+                    .relay_source()
+                    .ok_or(StartupError::InvalidAdmission)?,
+            ),
+        };
         let mut houses = [None; 30];
-        houses[usize::from(local_source)] = Some(local_house);
+        if let Some(source) = player_source {
+            houses[usize::from(source)] = Some(local_house);
+        }
         for (house, endpoint) in transport.connections().peers() {
             let source = vera20k_relay_protocol::endpoint_peer(endpoint)
                 .ok_or(StartupError::InvalidAdmission)?;
             houses[usize::from(source)] =
                 Some(i8::try_from(house).map_err(|_| StartupError::InvalidAdmission)?);
         }
+        let local_source = match player_source {
+            Some(source) => source,
+            // A watcher's game follows one player: the one source of the
+            // match its roster holds as no peer.
+            None => {
+                let followed = cert.sources_mask & !roster_mask(&houses);
+                let source = followed.trailing_zeros() as usize;
+                if followed.count_ones() != 1 || source >= houses.len() {
+                    return Err(StartupError::InvalidAdmission.into());
+                }
+                houses[source] = Some(local_house);
+                source as u8
+            }
+        };
         let mask = roster_mask(&houses);
         let (identity, fps, count) = agreement.sequencing_identity()?;
         if mask != cert.sources_mask || fps != cert.tick_hz || count != mask.count_ones() as usize {
             return Err(StartupError::InvalidAdmission.into());
         }
-        Ok(Self::with_roster(
-            houses,
-            local_source,
-            identity,
-            cert.tick_hz,
-        ))
+        let mut session = Self::with_roster(houses, local_source, identity, cert.tick_hz);
+        session.watch = watch_delay.map(|delay_seconds| Watch {
+            delay_seconds,
+            samples: VecDeque::new(),
+            departed: 0,
+        });
+        Ok(session)
     }
 
     fn with_roster(
@@ -454,6 +519,7 @@ impl SequencedSession {
     ) -> Self {
         let mask = roster_mask(&houses);
         Self {
+            watch: None,
             houses,
             local_source,
             agreement,
@@ -513,6 +579,45 @@ impl SequencedSession {
 
     pub(super) fn restoring(&self) -> bool {
         self.restoring
+    }
+
+    /// This game watches the match instead of playing in it.
+    pub(super) fn watching(&self) -> bool {
+        self.watch.is_some()
+    }
+
+    /// A watcher's match is over: every player's departure has been read and
+    /// every frame before it handed to the world.
+    pub(super) fn watch_over(&self) -> bool {
+        self.watch.as_ref().is_some_and(|watch| {
+            (watch.departed | self.refused) == roster_mask(&self.houses)
+                && self.frames.is_empty()
+                && self.assembling.records.is_empty()
+        })
+    }
+
+    fn buffered_frames(&self) -> usize {
+        if self.watch.is_some() {
+            WATCH_BUFFERED_FRAMES
+        } else {
+            BUFFERED_FRAMES
+        }
+    }
+
+    fn reorder_window(&self) -> u64 {
+        if self.watch.is_some() {
+            WATCH_REORDER_WINDOW
+        } else {
+            REORDER_WINDOW
+        }
+    }
+
+    /// Frames that reach this game together (`SequencedTiming::turn_frames`).
+    fn playout_turn(&self) -> u32 {
+        match &self.watch {
+            Some(watch) => watch_turn(self.pace_fps, watch.delay_seconds),
+            None => vera20k_relay_protocol::turn_frames(self.pace_fps),
+        }
     }
 
     /// Ends a restore once the world at `frame` has reached the shared one.
@@ -699,6 +804,14 @@ impl SequencedSession {
         if transport.relay_absent() {
             self.error.get_or_insert(SequencedError::Absent.into());
         }
+        if self.watch.is_some()
+            && self
+                .last_response
+                .or(self.first_service)
+                .is_some_and(|last| now.wrapping_sub(last) > WATCH_SILENCE_MS)
+        {
+            self.error.get_or_insert(SequencedError::WatchLost.into());
+        }
         if self.error.is_some() {
             return;
         }
@@ -719,6 +832,10 @@ impl SequencedSession {
             self.last_progress = Some((now, position));
         }
         self.service_delivery(transport, now);
+        if self.watch.is_some() {
+            // A watcher only reads the stream (relay README "Watchers").
+            return;
+        }
         self.service_pause(transport, now);
         self.service_pace(transport, now);
         if let Err(error) = self.seal_submissions(transport) {
@@ -843,6 +960,25 @@ impl SequencedSession {
     }
 
     fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
+        if self.watch.is_some() {
+            // Ready until the start, then a Pull from the cursor while the
+            // frame buffer has room: the relay pushes nothing to a watcher.
+            let sent = if !self.started {
+                service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
+                    && transport.configure_watch(self.agreement).is_ok()
+            } else {
+                self.frames.len() < WATCH_BUFFERED_FRAMES
+                    && service_due(self.last_control, now, WATCH_PULL_INTERVAL_MS as i32)
+                    && transport.pull_ordering(self.next_sequence).is_ok()
+            };
+            if sent {
+                self.last_control = Some(now);
+            }
+            if let Some(stats) = transport.relay_link_stats() {
+                self.delivery.link = Some(stats);
+            }
+            return;
+        }
         if !self.started {
             // Only READY_REQUEST until the start: its STATUS replies carry
             // the start, and there are no records to pull (spec §6.0).
@@ -913,7 +1049,7 @@ impl SequencedSession {
     /// The relay holds entries past the contiguous cursor, and the frame
     /// buffer has room for them.
     fn cursor_gap(&self) -> bool {
-        self.frames.len() < BUFFERED_FRAMES
+        self.frames.len() < self.buffered_frames()
             && (self.remote_next_sequence > self.next_sequence
                 || self
                     .entries
@@ -953,6 +1089,15 @@ impl SequencedSession {
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
                 self.pause_active_sources &= status.active_sources;
+                if let Some(watch) = &mut self.watch
+                    && let Some(sample) = status.watch_sample
+                    && watch.samples.back().is_none_or(|last| last.0 < sample.0)
+                {
+                    if watch.samples.len() == WATCH_SAMPLES {
+                        watch.samples.pop_front();
+                    }
+                    watch.samples.push_back(sample);
+                }
             }
             OrderEvent::PauseStatus {
                 supported_sources,
@@ -1002,8 +1147,9 @@ impl SequencedSession {
                         ..
                     } => {
                         // A returning process's own source in the stream is
-                        // the process it replaces.
-                        if *source == self.local_source && !self.restoring {
+                        // the process it replaces; a watcher's is the player
+                        // it follows.
+                        if *source == self.local_source && !self.restoring && self.watch.is_none() {
                             self.accept_through(*batch_id)?;
                             self.trace_assignment(*batch_id, *frame, received_at);
                         }
@@ -1015,7 +1161,8 @@ impl SequencedSession {
                     | OrderEntry::Rate { sequence, .. }
                     | OrderEntry::Desync { sequence, .. } => *sequence,
                 };
-                if sequence >= self.next_sequence && sequence - self.next_sequence < REORDER_WINDOW
+                if sequence >= self.next_sequence
+                    && sequence - self.next_sequence < self.reorder_window()
                 {
                     self.entries
                         .entry(sequence)
@@ -1081,7 +1228,13 @@ impl SequencedSession {
     /// half a second of frames: the Catching up status line.
     fn catching_up_frames(&self, current_frame: u32) -> Option<u32> {
         let frames = self.head_frame.saturating_sub(current_frame);
-        (frames > u32::from(self.pace_fps) / 2).then_some(frames)
+        // A watcher's frames come a pull or a second at a time and wait
+        // to be played evenly (`watch_turn`); only more than that is behind.
+        let waiting = match self.watch {
+            Some(_) => self.playout_turn(),
+            None => 0,
+        };
+        (frames > u32::from(self.pace_fps) / 2 + waiting).then_some(frames)
     }
 
     /// VERA: true once, when this game reaches a pause that found it
@@ -1103,7 +1256,7 @@ impl SequencedSession {
     }
 
     fn assemble(&mut self) -> Result<(), SequencedError> {
-        while self.frames.len() < BUFFERED_FRAMES {
+        while self.frames.len() < self.buffered_frames() {
             let Some(received) = self.entries.remove(&self.next_sequence) else {
                 break;
             };
@@ -1170,6 +1323,9 @@ impl SequencedSession {
                     }
                     let house =
                         self.houses[usize::from(source)].ok_or(SequencedError::InvalidTimeline)?;
+                    if let Some(watch) = &mut self.watch {
+                        watch.departed |= 1 << source;
+                    }
                     if self.refused & 1 << source != 0 {
                         // It already left at its refused batch.
                         continue;
@@ -1179,8 +1335,9 @@ impl SequencedSession {
                         // DestroyConnection(house, 1) (0x005DA750) sends
                         // EVENT_REMOVEPLAYER (0x005DA898..0x005DA8F0), which
                         // kills the House on every peer; each peer retires its
-                        // own connection and posts the line.
-                        if source != self.local_source {
+                        // own connection and posts the line. A watcher posts
+                        // the line of the player it follows too.
+                        if source != self.local_source || self.watch.is_some() {
                             self.assembling.lost.push(house);
                         }
                         CommandRecord::encode(
@@ -1237,6 +1394,7 @@ impl SequencedSession {
                         received_at,
                         frames_per_second: self.pace_fps,
                         clock_epoch: self.pause.epoch,
+                        turn_frames: self.playout_turn(),
                     });
                 }
                 OrderEntry::Pause {
@@ -1272,6 +1430,7 @@ impl SequencedSession {
                             received_at: self.contiguous_received_at.expect("consumed resume"),
                             frames_per_second: self.pace_fps,
                             clock_epoch: epoch,
+                            turn_frames: self.playout_turn(),
                         });
                     }
                     self.finish_pause_request();
@@ -1304,6 +1463,7 @@ impl SequencedSession {
                         received_at: self.contiguous_received_at.expect("consumed rate marker"),
                         frames_per_second,
                         clock_epoch: self.pause.epoch,
+                        turn_frames: self.playout_turn(),
                     });
                 }
                 OrderEntry::Desync {
@@ -1356,6 +1516,33 @@ impl SequencedSession {
         }
     }
 
+    /// A watcher's world against the checksums every player reported alike,
+    /// once it has its own sample of their frames (relay README "Watchers").
+    fn check_watch_samples(&mut self, frame: u32) -> Result<(), SequencedError> {
+        let Some(watch) = &mut self.watch else {
+            return Ok(());
+        };
+        while let Some(&(sample_frame, remote)) = watch.samples.front()
+            && sample_frame <= frame
+        {
+            watch.samples.pop_front();
+            if let Some(&(_, local)) = self
+                .samples
+                .iter()
+                .rev()
+                .find(|(frame, _)| *frame == sample_frame)
+                && local != remote
+            {
+                return Err(SequencedError::WatchDesync {
+                    frame: sample_frame,
+                    local,
+                    remote,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Service fresh input without another Logic visit. The current context
     /// is an already sampled post-Logic/pre-dispatch CRC, even when its frame
     /// has completed. It is historical metadata; only the relay assigns the
@@ -1392,9 +1579,10 @@ impl SequencedSession {
                 transport.set_ordering_restore(false);
             }
         }
-        if self.restoring {
-            // Orders given to a world still replaying the past are dropped
-            // here, the one boundary every local command crosses.
+        if self.restoring || self.watch.is_some() {
+            // Orders given to a world still replaying the past, or by a
+            // watcher, are dropped here, the one boundary every local
+            // command crosses.
             let records: Vec<_> = queues
                 .local_records_after(std::iter::empty())
                 .map_err(super::CommandExchangeError::from)?
@@ -1549,6 +1737,7 @@ impl SequencedSession {
             }
             self.samples.push_back((context.frame, context.checksum));
         }
+        self.check_watch_samples(context.frame)?;
         self.flush_local_commands(transport, queues, context, now)?;
         if self
             .frames
@@ -1585,6 +1774,19 @@ fn gameplay_opcode(opcode: u8) -> bool {
         opcode,
         0 | 0x0d | 0x19 | 0x1a | 0x1b | 0x1c | 0x1f | 0x20 | 0x21 | 0x23 | 0x24
     )
+}
+
+/// Frames that reach a watcher together at `fps`: what its relay releases
+/// at once (a second's mark when it holds the stream back, a turn when it
+/// does not; relay README "Watchers"), and two pulls' worth for the pull
+/// that brings them.
+fn watch_turn(fps: u16, delay_seconds: u32) -> u32 {
+    let released = if delay_seconds > 0 {
+        u32::from(fps)
+    } else {
+        vera20k_relay_protocol::turn_frames(fps)
+    };
+    released + 2 * (u32::from(fps) * WATCH_PULL_INTERVAL_MS / 1000).max(1)
 }
 
 fn roster_mask(houses: &[Option<i8>; 30]) -> u32 {
@@ -2320,6 +2522,108 @@ mod pace_tests {
         assert!(matches!(
             session.assemble(),
             Err(SequencedError::InvalidTimeline)
+        ));
+    }
+}
+
+#[cfg(all(test, tests_net))]
+mod watch_tests {
+    use super::*;
+    use vera20k_relay_protocol::OrderStatus;
+
+    fn watcher(houses: [Option<i8>; 30]) -> SequencedSession {
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        session.watch = Some(Watch {
+            delay_seconds: 120,
+            samples: VecDeque::new(),
+            departed: 0,
+        });
+        session.mark_started_for_test();
+        session
+    }
+
+    /// A watcher stands in the place of the player it follows: that
+    /// player's batches are the stream's like any other's, its loss gets a
+    /// line, and the match is over once every player left and their frames
+    /// ran.
+    #[test]
+    fn a_watcher_reads_its_players_stream_to_the_end() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let batch = || {
+            OrderEvent::Entry(OrderEntry::Batch {
+                sequence: 1,
+                frame: 1,
+                source: 0,
+                batch_id: 1,
+                bytes: vec![0],
+            })
+        };
+        let mut player = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        assert!(player.receive(batch(), Instant::now()).is_err());
+        assert!(watcher(houses).receive(batch(), Instant::now()).is_ok());
+
+        let mut session = watcher(houses);
+        let departure = |sequence, source, lost| {
+            OrderEvent::Entry(OrderEntry::Departure {
+                sequence,
+                frame: 1,
+                source,
+                lost,
+            })
+        };
+        for event in [
+            departure(1, 1, false),
+            departure(2, 0, true),
+            OrderEvent::Entry(OrderEntry::FrameEnd {
+                sequence: 3,
+                frame: 1,
+            }),
+        ] {
+            session.receive(event, Instant::now()).unwrap();
+        }
+        session.assemble().unwrap();
+        assert_eq!(
+            session.frames.back().map(|frame| &frame.lost[..]),
+            Some(&[0][..])
+        );
+        assert!(!session.watch_over());
+        session.frames.clear();
+        assert!(session.watch_over());
+    }
+
+    /// A watcher's world is checked against each checksum every player
+    /// reported alike once it has its own of that frame; a difference ends
+    /// the watch, an equal one or a frame not reached yet does not.
+    #[test]
+    fn a_watcher_stops_where_its_world_differs_from_the_players() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = watcher(houses);
+        let status = |sample| {
+            OrderEvent::Status(OrderStatus {
+                head_frame: 600,
+                oldest_seq: 1,
+                next_seq: 1,
+                active_sources: 3,
+                tick_hz: 30,
+                start_delay_ms: 0,
+                started: true,
+                feedback: Default::default(),
+                watch_sample: Some(sample),
+            })
+        };
+        session.receive(status((240, 7)), Instant::now()).unwrap();
+        session.receive(status((480, 9)), Instant::now()).unwrap();
+        session.samples.extend([(240, 7), (480, 8)]);
+        session.check_watch_samples(300).unwrap();
+        assert!(matches!(
+            session.check_watch_samples(480),
+            Err(SequencedError::WatchDesync {
+                frame: 480,
+                local: 8,
+                remote: 9
+            })
         ));
     }
 }

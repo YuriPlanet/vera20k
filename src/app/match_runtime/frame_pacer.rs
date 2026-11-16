@@ -275,9 +275,9 @@ impl OnlinePacer {
     }
 
     /// The relay seals a turn's frames at once, sent when its last frame is
-    /// due (relay README, ordering).
+    /// due (relay README, ordering); a watcher's come in larger runs.
     fn turn(&self) -> u32 {
-        crate::net::live_commands::turn_frames(self.receipt.frames_per_second)
+        self.receipt.turn_frames.max(1)
     }
 
     /// A turn's frames arrive together, so playout runs a turn's span behind
@@ -1058,6 +1058,7 @@ mod tests {
             received_at: at,
             frames_per_second: 45,
             clock_epoch: 0,
+            turn_frames: crate::net::live_commands::turn_frames(45),
         }
     }
 

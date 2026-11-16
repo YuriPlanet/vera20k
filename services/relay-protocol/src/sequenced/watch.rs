@@ -667,6 +667,14 @@ impl ClientSession {
         self.ticket.source == WATCH_SOURCE
     }
 
+    /// How far behind the players a watcher's relay holds the stream (its
+    /// ticket's delay); `None` for a player's hop.
+    pub fn watch_delay_seconds(&self) -> Option<u32> {
+        WatchTicket::parse(&self.ticket_bytes)
+            .ok()
+            .map(|ticket| ticket.delay_seconds)
+    }
+
     /// A watcher's Ready (request 0, README "Watchers") at `now_ms`:
     /// `[0][agreement 32]`, the startup agreement of the match it watches,
     /// which the relay compares with the players'. `certificate` is the

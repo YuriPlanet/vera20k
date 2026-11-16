@@ -133,6 +133,7 @@ Commands and their payloads:
 | `relay_ready` | `{match_id}` |
 | `latency_ready` | `{match_id,pings:[{source_index,round_trip_ms}]}` |
 | `renew_relay` | `{match_id}` |
+| `watch` / `renew_watch` / `unwatch` | `{match_id}` ([Watching](#watching)) |
 | `map_upload` | `{digest,byte_length,offset,data,resource?}` |
 | `chat` | `{text,to:[name],action}` |
 | `ping` | `{}` |
@@ -182,7 +183,10 @@ lobby from before the Superweapon Limit refuses options that carry `superweapon_
 game then turns it off, says so and sends its options again, keeping the other rules. A
 lobby from before the room's rules refuses them in the same way; the host's game then
 drops the room's rules, says so and sends its options again, before it stops queueing, then turns off Balance automatically and then
-Teams if the lobby still refuses. `map_metadata` is
+Teams if the lobby still refuses. `watching`, the room's Watching, is `off`, `delayed` or
+`live` ([Watching](#watching)). A lobby from before it refuses it in the same way; the
+host's game then turns Watching off, says so and sends its options again, before any of
+the others. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
@@ -216,6 +220,8 @@ Event kinds and payloads:
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?}` |
 | `relay_renewed` | `{match_id,relay:<RelayGrant>}` |
+| `watch_started` | `{match_id,revision,version,rules_digest,staging_digest,seed,users:[{name,flags,source_index}],options:<HostOptions>,pings:[integer],delay_seconds,playing_since,ranked?,relay:<WatchGrant>}` |
+| `watch_renewed` | `{match_id,relay:<WatchGrant>}` |
 | `map_available` | `{digest,byte_length,resource?}` |
 | `start_rejected` | `{message}` |
 | `locales` | `{locales:[{name,locale}]}` |
@@ -566,6 +572,55 @@ notice sender after its `joined`. The line says how many players are online: in 
 public channel, in game rooms, playing, for sessions that play Quick Match searching on
 their version, and elsewhere. It also counts the game rooms the list leaves out for another
 version and, when the list holds none for the session, says how to start a game.
+
+## Watching
+
+A player in the lobby can watch a match being played. Their game runs it from its first
+frame from the relay's command stream, then follows it some time behind its players. A
+watcher is no part of the match: it has no source, sends nothing into it, and the
+players' games never learn it is there (relay README, "Watchers").
+
+`GET /v1/matches` returns
+`{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
+the matches the caller may watch. These are matches in play between two or more humans,
+with watching on, in a room without a password, on a relay that lets watchers in and on
+the caller's version (as `kind=41` lists rooms), that the caller plays no part in. `name`
+is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
+began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans;
+`watchers` counts who watches now, of at most `max_watchers` (10); and `delay_seconds` is
+how far behind its players a watcher sees it: 120, or 0 when the host chose `live`. Quick
+Match and ranked games are always 120 seconds behind; other rooms follow the host's
+`watching`, and options without it leave watching off. A lobby from before watching
+answers 404 `not_found`, and the game lists no running matches.
+
+`watch` replies `watch_started`: what every player's game got at the start (`revision`,
+`version`, `rules_digest`, `seed`, `users` without `player_id`, and that revision's
+`options`), the room's `staging_digest` (empty for an authored map), the `pings` of
+`timing_confirmed`, the delay, `playing_since`, `ranked:true` for a ranked game, and a
+WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
+409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
+its 10 watchers. Watching the same match again, as after the game restarted, keeps the
+watcher's place and identity. While the match plays, its watchers download its map as a
+room member does, naming it: `GET /v1/maps/<source_sha256>?offset=<n>&match_id=<id>`,
+with `resource=preview` for a generated map's preview.
+
+WatchGrant is `{address,ticket,packet_key,payload_key,ordering_certificate}`. The relay is
+the nearest of the match's relays that serves the watcher, one relay even in a federated
+match. `payload_key` and `ordering_certificate` are the match's. The ticket is a version
+3 watch ticket (relay README, "Watchers"): match, expiry, nonce, the watcher's identity
+and the delay, signed with the relay's ticket key; `packet_key` is derived from it as a
+player's is. A grant lasts 300 seconds: `renew_watch` replies `watch_renewed` with a new
+one on the same relay for the same watcher, and the game renews at half its life. Once
+the match ends for its players `renew_watch` fails with 409 `unknown_match`, and the
+watcher plays on to the end of the stream with the grant it holds, which outlasts the
+delay. `unwatch` frees the watcher's place at once; a watcher that stops renewing frees it
+when its grant runs out. Watchers never join the match: `finish`, the players' grants and
+the end of the match are as without them.
+
+A game from before watching never asks for the list. Matches are listed only to their
+own version, and the relay compares a watcher's startup agreement with the players', so
+a watcher always runs the players' build. A relay from before watchers refuses a watch
+ticket, so the lobby lists only matches on relays it knows let watchers in.
 
 ## Quick Match
 
