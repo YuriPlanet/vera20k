@@ -255,6 +255,35 @@ pub(crate) fn foot_on_sold(
         return false;
     };
     crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
+    // Phobos `FootClass`'s `DisplayIncome` label (`Hooks.Selling.cpp:26-27`):
+    // every sold Foot prints its refund at its Location when the global is on,
+    // filtered by the global Houses list.
+    #[cfg(feature = "phobos")]
+    if rules.phobos_globals.display_income
+        && refund != 0
+        && let Some(location) = sim.substrate.entities.get(id).map(|entity| {
+            crate::sim::movement::ground_pose::object_location(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            )
+        })
+    {
+        context.effects().emit_bounty_text(
+            sim,
+            rules,
+            crate::sim::flying_text::BountyText {
+                entity_id: Some(id),
+                amount: refund,
+                coord: crate::sim::projectile::ProjectileCoord::new(
+                    location.x, location.y, location.z,
+                ),
+                z_offset: 0,
+                display_to: Some(rules.phobos_globals.display_income_houses),
+                display_owner: Some(owner),
+                pixel_offset: [0, 0],
+            },
+        );
+    }
     sim.stun(id, context);
     sim.techno_limbo_with_context(id, context);
     sim.uninit_with_context(id, context);

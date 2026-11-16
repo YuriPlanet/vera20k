@@ -199,3 +199,42 @@ fn a_sold_unit_uses_the_types_eva_sold_override() {
         "the text parser drops `EVA.Sold=`, so a blank key keeps the stock line"
     );
 }
+
+/// Phobos `FootClass`'s `DisplayIncome` label (`Hooks.Selling.cpp:26-27`):
+/// a sold Foot prints its refund at its Location when the global is on. Unit
+/// selling is the Ares capability (`production::foot_on_sold`).
+#[cfg(all(feature = "ares", feature = "phobos"))]
+#[test]
+fn a_sold_unit_prints_the_display_income_label() {
+    use crate::sim::flying_text::BountyText;
+    use crate::sim::world::{FrameEffects, UninitContext};
+
+    let rules = rules_with(
+        "[E1]
+Cost=200
+[AudioVisual]
+DisplayIncome=yes
+",
+    );
+    let (rules, mut sim, _owner) = world(rules);
+    let id = sim
+        .spawn_object_at_height("E1", OWNER, 20, 20, 0, 0, &rules)
+        .expect("the unit spawns");
+    let refund = crate::sim::production::techno_refund(&sim, &rules, id).expect("refund");
+    assert!(refund > 0, "the type has a cost and the refund percent");
+    let texts = std::cell::RefCell::new(Vec::new());
+    let observe = |_: &Simulation, _: &crate::rules::ruleset::RuleSet, text: BountyText| {
+        texts.borrow_mut().push(text);
+    };
+    let effects = FrameEffects::empty().with_bounty_text(&observe);
+    assert!(crate::sim::production::foot_on_sold(
+        &mut sim,
+        &rules,
+        id,
+        UninitContext::new(&rules, None).with_effects(effects),
+    ));
+    let texts = texts.into_inner();
+    assert_eq!(texts.len(), 1, "one DisplayIncome label");
+    assert_eq!(texts[0].entity_id, Some(id));
+    assert_eq!(texts[0].amount, refund);
+}

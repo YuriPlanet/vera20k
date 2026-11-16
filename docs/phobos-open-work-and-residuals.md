@@ -204,9 +204,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   战头；VERA 的伤害包必须有活动战头，因此该键未设/未知名时不造成伤害（零售
   `VeinDamage=0` 且未设该键，故零售行为不变）。TS `VeinProof` 能力在 YR 类型上
   没有可读标志，未建模。
-- **DisplayIncome 的卖出标签**：`FootClass::Sell`（`Hooks.Selling.cpp:7-27`）在
-  全局 `DisplayIncome` 开启时立即打印卖出金额；VERA 目前没有玩家单位卖出路径，
-  该臂未接。触发：卖出单位；频率：仅单位卖出；风险：少一条浮动金额。
+- **DisplayIncome 的卖出标签**：无残渣；Ares 单位卖出路径
+  （`production::foot_on_sold`）在全局 `[AudioVisual] DisplayIncome=yes` 时按
+  退款额在单位 `Location` 立即打印（全局 Houses 过滤），
+  `a_sold_unit_prints_the_display_income_label` 覆盖（需 ares+phobos）。
 - **DisplayIncome 的 TS 奴隶矿车臂**：无残渣；非建筑 master 的存款差额在
   `slave_deposit` 中按 `DeploysInto` 建筑类型的 `DisplayIncome=` 开关立即打印
   （全局 Houses 过滤，锚点 master `Location`）；建筑 master 仍累到矿厂周期标签
