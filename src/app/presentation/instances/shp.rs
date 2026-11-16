@@ -920,7 +920,7 @@ pub(crate) fn shp_visitor<'a>(
                                 ),
                                 alpha: 1.0,
                                 draw_state,
-                                z_adjust,
+                                z_adjust: shp_turret_z_adjust(z_adjust),
                                 z_gradient,
                                 zshape_origin,
                             },
@@ -2398,6 +2398,15 @@ fn resolve_object_shp_frame_with_facing(
     Some(animation::infantry_facing_slot(facing))
 }
 
+/// Native `UnitClass_DrawAsSHP_DrawTurret` passes `zAdjust = -32` to the
+/// turret's `Draw_A_SHP` while the body call keeps `0` (or `-16` under a
+/// bridge); both draw from the same location, so the turret term is a fixed
+/// -32 px delta on the body's computed z adjust. The turret call also clears
+/// `Game::bDrawShadow`, and VERA emits no separate turret shadow.
+fn shp_turret_z_adjust(body_z_adjust: f32) -> f32 {
+    body_z_adjust - 32.0
+}
+
 /// Screen delta for the ART `TurretOffset` on the SHP turret draw.
 ///
 /// gamemd-derived: `Ext/Unit/Hooks.DrawIt.cpp:38-49` (`0x73C7AC`) builds a
@@ -2465,6 +2474,15 @@ mod tests {
             height.0.abs() < f32::EPSILON && height.1 < aligned.1,
             "a +Z FLH term moves the turret above the body and keeps X: {height:?}"
         );
+    }
+
+    /// `Ext/Unit/Hooks.DrawIt.cpp:27,51-53`: body zAdjust 0/-16, turret
+    /// zAdjust -32, same location, and the turret call clears the shadow.
+    #[test]
+    fn shp_turret_keeps_the_native_minus_32_z_adjust() {
+        assert_eq!(super::shp_turret_z_adjust(0.0), -32.0);
+        assert_eq!(super::shp_turret_z_adjust(-16.0), -48.0);
+        assert_eq!(super::shp_turret_z_adjust(-2.0), -34.0);
     }
 
     /// Native reads slot 9's `TurretAnim`, offsets and `TurretAnimIsVoxel` from

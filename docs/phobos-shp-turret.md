@@ -90,10 +90,12 @@ None; file probing and frame selection read no RNG.
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **Z adjust and shadow.** Native's SHP turret draw uses zAdjust -32 and
-  disables the shadow; VERA reuses the body's Z policy and emits no separate
-  turret shadow. Trigger: every SHP turret. Frequency: modded turret units.
-  Risk: visual layering.
+- **Z adjust and shadow.** The turret piece now applies the native -32 px
+  `zAdjust` on top of the body's computed value and still emits no turret
+  shadow, matching the `Game::bDrawShadow=false` exchange around the turret
+  `Draw_A_SHP` (`Ext/Unit/Hooks.DrawIt.cpp:51-53`). Trigger: every SHP turret.
+  Frequency: modded turret units. Risk: none beyond the shared body gradient;
+  the body keeps its own `0`/`-16` adjust.
 - **Palette context.** Turret entries use the unit body's `Legacy` palette
   context; a type whose body uses another scheme is not covered. Frequency:
   authored mods. Risk: palette.
