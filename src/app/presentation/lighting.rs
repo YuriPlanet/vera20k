@@ -108,6 +108,29 @@ pub(crate) fn body_extra_light(
             use crate::map::bridge_facts::BRIDGE_FLAG_EXTRA_SIDE;
             use crate::sim::movement::{air_movement, ground_pose};
 
+            #[cfg(feature = "phobos")]
+            if entity
+                .locomotor
+                .as_ref()
+                .and_then(|locomotor| locomotor.jumpjet_runtime())
+                .is_some()
+            {
+                let Some(cells) = cells else {
+                    return 0;
+                };
+                let level = sim
+                    .session()
+                    .lighting()
+                    .profile(sim.lighting_cell_profile())
+                    .level_units;
+                return jumpjet_extra_light(
+                    air_movement::queried_flight_height(entity, Some(cells)),
+                    entity.on_bridge(),
+                    level,
+                    f64::from_bits(rules.phobos_globals.jumpjet_level_light_multiplier.bits()),
+                );
+            }
+
             let extra = rules.general.extra_infantry_light;
             let Some(cells) = cells else {
                 return extra;
@@ -151,9 +174,51 @@ pub(crate) fn body_extra_light(
             crate::sim::movement::air_movement::queried_flight_height(entity, cells),
             crate::sim::superweapon::lightning_storm::raging(sim),
             &sim.session().lighting(),
+            aircraft_level_multiplier(rules),
         ),
         _ => 0,
     }
+}
+
+/// Phobos `[General] AircraftLevelLightMultiplier=` default `1.0`
+/// (`Ext/Rules/Body.cpp:349`, used by `AircraftClass_DrawIt_LevelIntensity`
+/// `Ext/Techno/Hooks.Tint.cpp:330-350`). A plain build keeps the native
+/// integer level count.
+pub(crate) fn aircraft_level_multiplier(rules: &RuleSet) -> f64 {
+    #[cfg(feature = "phobos")]
+    {
+        f64::from_bits(rules.phobos_globals.aircraft_level_light_multiplier.bits())
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = rules;
+        1.0
+    }
+}
+
+/// Phobos jumpjet infantry DrawIt hook (`Ext/Techno/Hooks.Tint.cpp:352-369`):
+/// `GetJumpjetIntensity` replaces the whole stock infantry extra with
+/// `GetLevelIntensity`'s level term plus the bridge bonus. The level step is
+/// `Unsorted::LevelHeight` (two 104-lepton cells), and a bridge subtracts
+/// four levels before the multiplier. `JumpjetLevelLightMultiplier=` defaults
+/// to `0.0`, so an unconfigured jumpjet gets only the cell light.
+pub(crate) fn jumpjet_extra_light(
+    height: i32,
+    on_bridge: bool,
+    level: i32,
+    level_multiplier: f64,
+) -> i32 {
+    let bridge_height: i32 = if on_bridge { 4 } else { 0 };
+    let current_level = f64::from(height)
+        / f64::from(2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
+        - f64::from(bridge_height);
+    let level_intensity = (f64::from(level) * current_level * level_multiplier) as i32;
+    let bridge_bonus = if on_bridge {
+        bridge_height.wrapping_mul(level)
+    } else {
+        0
+    };
+    level_intensity.wrapping_add(bridge_bonus)
 }
 
 /// What AircraftClass::Draw_It (`0x004148D1..0x0041493C`) adds to the
@@ -171,6 +236,7 @@ pub(crate) fn aircraft_extra_light(
     height: i32,
     storm: bool,
     scenario: &crate::sim::scenario_session::ScenarioLightingState,
+    level_multiplier: f64,
 ) -> i32 {
     let level = if storm {
         scenario.ion().level_units
@@ -178,7 +244,17 @@ pub(crate) fn aircraft_extra_light(
         scenario.normal().level_units
     };
     let levels = height / (2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
-    extra_aircraft_light.wrapping_add(levels.wrapping_mul(level))
+    // Phobos `GetLevelIntensity` multiplies the double level count
+    // (`Ext/Techno/Hooks.Tint.cpp:22-31`). At the 1.0 default the stock
+    // integer quotient is kept so ordinary aircraft still match the native
+    // `aircraft_light` rows; an authored multiplier uses the double path.
+    let level_intensity = if level_multiplier == 1.0 {
+        levels.wrapping_mul(level)
+    } else {
+        let level_height = f64::from(2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
+        (f64::from(level) * f64::from(height) / level_height * level_multiplier) as i32
+    };
+    extra_aircraft_light.wrapping_add(level_intensity)
 }
 
 /// Building DrawBody's body and bib (`0x0043D812..0x0043D85F`), whichever
@@ -1566,6 +1642,7 @@ mod palette_producer_tests {
                 int(&row["height"]),
                 row["storm"].as_bool().unwrap(),
                 &scenario,
+                1.0,
             );
             assert_eq!(
                 int(&row["word"]).wrapping_add(extra),
@@ -1573,5 +1650,30 @@ mod palette_producer_tests {
                 "{row}"
             );
         }
+    }
+
+    /// Phobos `AircraftLevelLightMultiplier=` scales the level term only;
+    /// ExtraAircraftLight stays in place (`Ext/Techno/Hooks.Tint.cpp:330-350`).
+    #[test]
+    fn the_aircraft_level_multiplier_scales_only_the_height_term() {
+        let mut scenario = ScenarioLightingState::default();
+        scenario.normal_mut_for_test().level_units = 32;
+        let stock = aircraft_extra_light(200, 1500, false, &scenario, 1.0);
+        assert_eq!(stock, 200 + 7 * 32);
+        let doubled = aircraft_extra_light(200, 1500, false, &scenario, 2.0);
+        assert_eq!(doubled, 200 + 461);
+        assert_eq!(aircraft_extra_light(200, 0, false, &scenario, 2.0), 200);
+    }
+
+    /// Phobos `JumpjetLevelLightMultiplier=` defaults to 0 and scales the
+    /// level term; the bridge bonus is `4 * Level` and is not multiplied
+    /// (`Ext/Techno/Hooks.Tint.cpp:22-31,352-369`).
+    #[test]
+    fn the_jumpjet_level_multiplier_defaults_to_the_cell_light() {
+        assert_eq!(jumpjet_extra_light(1500, false, 32, 0.0), 0);
+        assert_eq!(jumpjet_extra_light(1500, false, 32, 1.0), 230);
+        assert_eq!(jumpjet_extra_light(1500, false, 32, 2.0), 461);
+        assert_eq!(jumpjet_extra_light(0, false, 32, 1.0), 0);
+        assert_eq!(jumpjet_extra_light(0, true, 32, 1.0), -128 + 128);
     }
 }

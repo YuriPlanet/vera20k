@@ -77,7 +77,7 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   起点黑点（`Misc/PhobosToolTip.cpp`、`Misc/Hooks.UI.cpp:29-37`）。细节与残渣：
   `docs/phobos-tooltips-ui.md`。
 
-仍未实现的 4 键及阻塞原因见 §1.7。
+仍未实现的 2 键及阻塞原因见 §1.7。
 
 ### 1.1 ToolTips / uimd.ini（7）——已完成（2026-11-16）
 
@@ -122,7 +122,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `EnablePowerSurplus` | `Ext/Rules/Body.cpp:243` | bool, no（`:150,687`） | `Ext/House/Body.cpp` |
 | `PowerSurplus.ScaleToDrainAmount` | `Ext/Rules/Body.cpp:244` | int, 0（`:151,688`） | `Ext/House/Body.cpp` |
 
-### 1.5 光照 / 视觉（8，含 1 个阻塞）
+### 1.5 光照 / 视觉（8，已完成 7，1 阻塞）
 
 | 键 | 出处 | 类型 / 默认 | 消费者 |
 |---|---|---|---|
@@ -143,11 +143,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 3 项（4 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 2 项（2 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
-| `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 | `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
 
@@ -194,6 +193,13 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `BuildingClass` 奴隶矿车累积、对其 `DeploysInto` 类型立即打印；VERA 的奴隶
   收入统一经 `pay_refinery_owner` 累到矿厂。触发：TS 风格奴隶矿车；频率：仅
   该类单位；风险：标签锚点位置不同（零售无此单位）。
+- **Level 光照倍率的取整与桥面高度**：`AircraftLevelLightMultiplier` 在默认
+  1.0 时保留原生整数 `height/208` 商，仅作者改倍率时走 Phobos 的 binary64
+  `level * height/208 * multiplier`；因此在高度非 208 整数倍时，默认渲染与
+  Phobos 的 double 路径可差几个 intensity。`JumpjetLevelLightMultiplier` 的
+  桥面臂按 Phobos 再减 4 level，而 VERA 的 `queried_flight_height` 已扣除
+  桥面，桥上的 jumpjet 可能比 native 少 4 个 level 的负项。触发：改倍率或
+  jumpjet 停在桥上；频率：低；风险：轻微亮度差。
 - **ExtendedPlayerRepair 的多人数值同步**：Phobos 用自有 `EventClass` 房间事件
   翻转 `PlayerAutoRepair`；VERA 目前把它作为本地 `Command` 队列项，单机/战役
   正确，联机时对端看不到该房标志变化。触发：联机中玩家点修理按钮；频率：每次
