@@ -199,7 +199,6 @@ impl TacticalCaptureSession {
                     options.clone(),
                     None,
                     false,
-                    true,
                 );
                 modal.begin_generate();
                 state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);

@@ -391,16 +391,15 @@ pub enum RandomMapSetupControl {
     Delete0x6c4,
     Cancel0x5c0,
     /// VERA: switches the option rows between the original controls and
-    /// the Advanced sliders (offline Skirmish only).
+    /// the Advanced sliders.
     AdvancedToggle,
     /// VERA: one of the Advanced view's sliders.
     Advanced(AdvancedField),
-    /// VERA: writes the generated map as a `.yrm` file (offline Skirmish
-    /// only).
+    /// VERA: writes the generated map as a `.yrm` file.
     ExportMap,
-    /// VERA: turns Fair Starts on or off (offline Skirmish only).
+    /// VERA: turns Fair Starts on or off.
     FairStartsToggle,
-    /// VERA: applies the next ready-made option set (offline Skirmish only).
+    /// VERA: applies the next ready-made option set.
     PresetCycle,
     /// VERA: a row of the Extras view, top down from 0.
     ExtrasRow(usize),
@@ -1151,28 +1150,26 @@ pub fn random_map_setup_control_at(
     control
 }
 
-/// [`random_map_setup_control_at`] for a dialog that may show the Advanced
-/// view (VERA): there the sliders take the option rows, and an `extended`
-/// dialog also has the Advanced/Basic toggle. With `extras` the Advanced
-/// rows are the Extras view's, by row.
+/// [`random_map_setup_control_at`] with VERA's buttons, for a dialog that may
+/// show the Advanced view: there the sliders take the option rows. With
+/// `extras` the Advanced rows are the Extras view's, by row.
 pub fn random_map_setup_control_at_view(
     layout: &RandomMapSetupLayout,
     x: i32,
     y: i32,
-    extended: bool,
     advanced: bool,
     extras: bool,
 ) -> Option<RandomMapSetupControl> {
-    if extended && layout.advanced.contains(x, y) {
+    if layout.advanced.contains(x, y) {
         return Some(RandomMapSetupControl::AdvancedToggle);
     }
-    if extended && layout.export.contains(x, y) {
+    if layout.export.contains(x, y) {
         return Some(RandomMapSetupControl::ExportMap);
     }
-    if extended && layout.fair_starts.contains(x, y) {
+    if layout.fair_starts.contains(x, y) {
         return Some(RandomMapSetupControl::FairStartsToggle);
     }
-    if extended && layout.preset.contains(x, y) {
+    if layout.preset.contains(x, y) {
         return Some(RandomMapSetupControl::PresetCycle);
     }
     if !advanced {
@@ -1871,28 +1868,23 @@ mod tests {
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true, false),
+            random_map_setup_control_at_view(&setup, cx, cy, true, false),
             Some(RandomMapSetupControl::Advanced(AdvancedField::Water))
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, true, true),
+            random_map_setup_control_at_view(&setup, cx, cy, true, true),
             Some(RandomMapSetupControl::ExtrasRow(AdvancedField::Water.row())),
             "the Extras view takes the sliders' rows"
         );
         assert_eq!(
-            random_map_setup_control_at_view(&setup, cx, cy, true, false, false),
+            random_map_setup_control_at_view(&setup, cx, cy, false, false),
             Some(RandomMapSetupControl::MapType0x405),
             "the basic view keeps the original rows"
         );
         let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
         assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, true, false, false),
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false),
             Some(RandomMapSetupControl::AdvancedToggle)
-        );
-        assert_eq!(
-            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false),
-            None,
-            "network dialogs have no toggle"
         );
     }
 
