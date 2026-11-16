@@ -10,7 +10,7 @@ applies.
 
 The catalog lists every function, event, condition, effect and override the
 API would offer, the engine code that owns each one, and where each idea comes
-from. It does not decide what ships in version 1: that is open question 13 of
+from. It does not decide what ships in version 1: that is open question 12 of
 the RFC. Entries that came from the research are marked with the proposal they
 depend on and whether RFC 0.0.5 adopted it; see
 [Proposed RFC changes](#proposed-rfc-changes).
@@ -263,7 +263,7 @@ cap are kept in order and delivered first in the next frame, and they are
 saved and hashed. A module whose deferred backlog exceeds a fixed number of
 frames' worth of records is disabled, with a message: it cannot keep up. The
 module's frame budget grows by a fixed allowance per delivered record (RFC 5;
-open question 8).
+open question 7).
 A queued action is dropped if the game has ended, or its trigger was disabled
 or removed, before the module phase. A record holds the module action, the
 event kind, the trigger that sprang, the tag holder, the subject handle, the
@@ -290,7 +290,8 @@ point (RFC 5). Because they run at once, they can
 chain within a frame: damage raises `TakeDamage`, its trigger deals damage
 with an atomic action, which raises `TakeDamage` again. When a chain includes
 a module trigger (a trigger that has at least one `Action.wasm` action, was
-created by a module, or is bound through `Wasm.Tags`; a map trigger that
+created by a module, or is bound through `Wasm.Tags` or `Trigger.bindType`;
+a map trigger that
 carries a module action counts), an event VERA adds or an atomic action, the
 engine limits its depth per frame and caps the total number of such
 chained trigger firings per frame; a trigger that would exceed either limit
@@ -301,7 +302,7 @@ frame's batch, and pending deferred triggers are saved and hashed. It is
 dropped if it was disabled or removed meanwhile; its conditions are checked
 again when it springs, its house is the subject's owner at that moment, and
 an action on a subject that is gone gets `Gone`. The limits are open
-question 18 of the RFC. A chain made only of original events and
+question 17 of the RFC. A chain made only of original events and
 original actions is never deferred and runs exactly as in the original (RFC
 Goal 5).
 
@@ -389,13 +390,19 @@ enum Destroy { All, Buildings, Land, Naval }
 enum TeamRatio { AiTriggers, Aircraft, Infantry, Units }
 enum Color { Red, Green, Blue }
 enum Audience { Allies, Spectators }          // later (P5)
-enum Event { }                                // 0..61 (2.1), 62..88 Ares (2.2), new events (2.3, 2.4; numbers: open question 6)
+enum Event { }                                // 0..61 (2.1), 62..88 Ares (2.2), new events (2.3, 2.4; numbers: open question 5)
 class DisguiseInfo { type: TechnoTypeId; house: House; }
 class Path { kind: i32; points: Coord[]; }    // later (RFC 9 level 3): Bezier, parabola, spiral, waypoints
 class LaunchCtx extends Ctx { shooter: Techno; target: Target; }   // later
 class BulletState { p: Projectile; coord: Coord; speed: i32; detonate: bool; }   // later (L4)
 class BulletBatch { count: i32; at(i: i32): BulletState; }        // later (L4); a view into module memory
-class NodeSpec { name: string; type: string; hold: string; parts: NodeSpec[]; }   // the veraui.ini keys (11.2)
+class Every { constructor(frames: Frames); }  // onFrame registration: runs in the frames where frame % frames == 0 (section 1)
+enum Hold { TopLeft, Top, TopRight, Left, Middle, Right, BottomLeft, Bottom, BottomRight }   // the veraui.ini Hold values (11.2)
+class NodeSpec { name: string | null = null; type: string; hold: Hold; parts: NodeSpec[]; }   // the veraui.ini keys (11.2); name: for find
+class Column extends NodeSpec { constructor(hold: Hold, parts: NodeSpec[]); }   // Type=Column
+class Row extends NodeSpec { constructor(hold: Hold, parts: NodeSpec[]); }      // Type=Row
+class Text extends NodeSpec { constructor(label: string); label: string; }      // Type=Text, Label=
+class List extends NodeSpec { constructor(); }                                   // Type=List; items: Node.setItems
 class OrderSpec { kind: i32; units: HandleBuffer; count: i32; target: Target; }   // kind: a Command variant (11.4)
 // Scenario, Objects, MapQuery, RulesReader, Ai: the functions of sections 7.5, 7.1, 7.3, 7.4 and 9
 // View: Objects, MapQuery and the house reads of 7.2, filtered as for a client of one house (7.6)
@@ -484,7 +491,7 @@ Every entry carries these columns or fields:
 
 | Field | Values |
 | --- | --- |
-| **Tier** | `v1` (stage 1 or 2 of the RFC's plan), `v1?` (a candidate under open question 13, or for overrides a v1 candidate under open question 11), `later` |
+| **Tier** | `v1` (stage 1 or 2 of the RFC's plan), `v1?` (a candidate under open question 12, or for overrides a v1 candidate under open question 10), `later` |
 | **World** | `sim` (`rules.wasm`), `client` (`ui.wasm`), `both` |
 | **Owner** | the Rust `file::function` that does the work, or **no owner yet**: then the [gap list](#gaps-in-the-engine) says what must be added |
 | **Sources** | where the entry comes from (abbreviations below) |
@@ -524,7 +531,7 @@ A module exports only what it uses. An export that is absent costs nothing
 | `onFrame` | `onFrame(ctx: Ctx): void`, generated by the SDK; functions are registered with `onFrame(new Every(N), fn)` | once per frame in the module phase, after `onEvents`, when exported; it runs each registration in the frames where `frame % N == 0`, in registration order | v1 | **no owner yet** (module phase in `src/sim/world/master_frame.rs`) | RFC 5; T27 `HoldDuration=yes`; Rc: `GameFrame` |
 | actions | `(ctx: Ctx, e: EventRecord): void`, registered with `action(name, fn)`; the SDK build lists the names in the custom section `vera.actions`, which gives each an index | queued when a trigger with this action springs; runs in the module phase, from the frame's batch (`onEvents`) | v1 | TR `spring_live_trigger` → event record: **no owner yet** | RFC 5, 6a, 12 |
 | `onEvents` | `onEvents(ctx: Ctx, batch: EventBatch): void`, generated by the SDK; dispatches on `EventRecord.action` | once per frame per module with queued records, in the module phase, after `onMessage` and before `onFrame` | v1 | **no owner yet** (batched event writer, G-T9) | RFC 5, 15 |
-| overrides | see [section 8](#8-overrides) | at a fixed step of the frame when the engine reaches the decision, in creation-serial order | v1? (two or three ship in v1, open question 11) | per override | RFC 5, 6 L3 |
+| overrides | see [section 8](#8-overrides) | at a fixed step of the frame when the engine reaches the decision, in creation-serial order | v1? (two or three ship in v1, open question 10) | per override | RFC 5, 6 L3 |
 | `onMessage` | `onMessage(ctx: Ctx, sender: House, source: Source, data: Uint8Array): void`; `source` is the sending client module's (RFC 2) | when a client message has reached the simulation, in the module phase, before `onEvents`; every simulation module receives it; spectators cannot send | v1 (stage 2) | `src/sim/command.rs::Command`: **no module variant yet** | RFC 5, 10; Rc: `RecvLuaMsg(msg, playerID)` |
 | `onLaunch` | `onLaunch(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a type bound to the module path | later | `ProjectileTrajectory` module arm: **no owner yet** | RFC 9 level 3 |
 | `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: ProjectileTypeId, bullets: BulletBatch): void` | once per projectile type per frame | later (L4) | **no owner yet** | RFC 6 L4, 9 level 4 |
@@ -651,12 +658,17 @@ with module actions; only its module actions wait for the module phase
 (`TR::advance_triggers`). All events of one trigger must hold (AND), as in the
 original, and `TagRepeat` keeps the original repeat types.
 
-A trigger is attached through a tag (`Tag.create`, `Techno.setTag`,
-`cell.setTag`) or bound to types. A binding in code acts like `Wasm.Tags=` in
+A module creates a trigger with `Trigger.create` and attaches it through a
+tag (`Tag.create`, `Techno.setTag`, `cell.setTag`) or binds it to types
+(G-T2). A binding in code acts like `Wasm.Tags=` in
 INI; mod and map modules may both use it, and it applies at once to every
 object of the type (G-T3):
 
 ```ts
+Trigger.create(def: TriggerDef): Trigger;   // NO_HANDLE with NotFound (missing waypoint, 4.1) or Unsupported (Ares event without Ares, 2.2)
+Tag.create(triggers: Trigger[], repeat: TagRepeat): Tag;
+Techno.setTag(t: Techno, tag: Tag): Status;   // replaces the object's tag, as in the original
+// class Cell: setTag(tag: Tag): Status;      // a CellTag
 Trigger.bindType(t: Trigger, type: TechnoTypeId): Status;
 Trigger.bindWeaponType(t: Trigger, type: WeaponTypeId): Status;     // weapon events
 Trigger.bindWarheadType(t: Trigger, type: WarheadTypeId): Status;
@@ -786,7 +798,7 @@ way, and the Ares arms would misread it (`RuleSet::ares_form`,
 
 ### 2.3 New delivered events (RFC 6a)
 
-New event numbers come from a range free of Ares and Phobos (open question 6);
+New event numbers come from a range free of Ares and Phobos (open question 5);
 none is assigned here. New delivered events are raised only for objects whose
 type binds a tag with that event (`Wasm.Tags`, or `Trigger.bindType` in code) or whose own tag holds such a
 trigger, never for every object (RFC 5, Goal 6). The weapon events (`Fire`,
@@ -877,7 +889,7 @@ poll: **no owner yet** (a module poll list beside the Logic tags in
 
 ### 2.5 Further candidate events (from the research)
 
-RFC 0.0.5 added these to its further candidate events for open question 13
+RFC 0.0.5 added these to its further candidate events for open question 12
 (proposal P11, RFC 6a). `Stunned`/`Unstunned` and `Decloaked` are catalog
 additions that the RFC's list does not name. `HouseTransferred` is in the
 RFC's main table and listed in 2.3.
@@ -1027,7 +1039,7 @@ is an invalid argument from module code and disables the module (see
 [Errors](#errors); RFC 3). This includes a target kind that can never fit the
 action, that is, one the Target column below does not list for the kind (for
 example `Cell` for `Kill`). Atomic actions written in INI are checked at load
-and reported in the lobby; their INI form is open question 5 of the RFC. A
+and reported in the lobby; their INI form is open question 4 of the RFC. A
 target that turns out not to fit when the trigger runs (for example a
 `TagHolder` that is a cell, for `Kill`) is a data error, not a programming
 error: the action gets `Refused` and the module stays enabled. No module code receives the status of
@@ -1303,7 +1315,7 @@ kind of the same name and takes the target parameter of
 | `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno): Status` | Deal damage through warhead and armor, with credit and experience; `source` may be `NO_HANDLE` | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **adopted in RFC 0.0.5** (P9: add goes through the warhead path) |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | Set or heal health, no credit | none | `combat/object_health.rs::Health::set`, `heal` (no Simulation-level owner) | v1? | RFC 6b; F9 `ModifyHealth` |
 | `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno` | Create a finished object; blocked cell refuses (`NO_HANDLE`) | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`, `place_building_with_cleared_foundation`, `place_foot_with_cleared_cell` (doc says "tests, tools, debug") | v1? | RFC 6b; F10 `CreateUnit` (inheriting triggers/effects: `CreateParams.inheritTag`) |
-| `techno.setMission(m: Mission, target: Target \| null): Status` | Queue a mission as a player order would | none | `src/sim/mission/retask.rs::queue_order_mission`, `queue_megamission` | v1 | RFC 6b, example; F16 `Mission`; F13 `CommandMoveTo` (= `Move` with a cell) |
+| `techno.setMission(m: Mission, target: Target \| null = null): Status` | Queue a mission as a player order would | none | `src/sim/mission/retask.rs::queue_order_mission`, `queue_megamission` | v1 | RFC 6b, example; F16 `Mission`; F13 `CommandMoveTo` (= `Move` with a cell) |
 | `techno.teleport(cell: Cell, rule: Blocked): Status` | Chronosphere-style move; `Blocked.Nearby` picks a nearby cell, `Blocked.Fail` refuses | native | **no owner yet** (`superweapon/chronosphere.rs::warp_object` is private; `trigger_chrono.rs::chronoshift_house_to` is house-wide) | v1? | RFC 6b; F12 `ForceMoveTo` |
 | `techno.clearTarget(): Status` | Drop the current target | none | **no owner yet** (only per-locomotor `clear_target` traits) | v1? | RFC 6b; F15 |
 | `techno.clearDisguise(): Status` | Remove a spy or Mirage disguise | none | `src/sim/cloak_disguise.rs` (`DisguiseRuntime::clear_unit`; no transaction owner) | v1? | RFC 6b; F14 |
@@ -1415,7 +1427,7 @@ Phobos is on. New properties use the same reader (RFC 6b).
 
 ### 5.3 Stacking and exclusive groups
 
-The RFC requires each effect type to declare how it stacks (open question 14).
+The RFC requires each effect type to declare how it stacks (open question 13).
 Proposed mapping onto the Phobos reader:
 
 | Rule | Phobos keys |
@@ -1500,7 +1512,7 @@ marks(t: Techno, out: IdBuffer): i32;    // order: the order the marks were adde
 | `marks` | writes the object's or house's marks into `out` | v1 | RFC 6c ("marks" in object reads) |
 | Effect-carried marks | an effect type lists marks the object carries while the effect is active (new property, e.g. `Marks=`; name unverified) | v1? | F54 "持有带它的行为就获得这个标签" |
 | Mark value and visibility | the `value` and `visibility` of `addMark`, with `markValue` and `setMarkValue`; **adopted in RFC 0.0.5** (P3) | v1 | Rc: rules params with access levels |
-| House marks | the four entries above on `House`; `House` is also a target of the `AddMark` and `RemoveMark` atomic actions (4.1); **adopted in RFC 0.0.5** (P3) | v1 | Rc: `SetTeamRulesParam` |
+| House marks | the mark functions above (`addMark`, `removeMark`, `hasMark`, `markValue`, `setMarkValue`, `marks`) on `House`; `House` is also a target of the `AddMark` and `RemoveMark` atomic actions (4.1); **adopted in RFC 0.0.5** (P3) | v1 | Rc: `SetTeamRulesParam` |
 
 Client modules read marks only of objects they can see, and of those only
 the marks whose visibility level admits their player (RFC 6b, P3).
@@ -1668,7 +1680,7 @@ the mod's module computes a result, the map's module receives it and may
 change it, and the engine uses the final value (RFC 2). A disabled module's
 override is skipped; for the call in which a module failed, the engine uses
 the previous link's value, or the native value (RFC 3). Every row is a v1
-candidate: two or three of them ship in version 1 (open question 11).
+candidate: two or three of them ship in version 1 (open question 10).
 
 Overrides run only inside the simulation's phases, never from local code
 (the sidebar, the cursor, the interface) and never from parallel or batched
@@ -1697,7 +1709,7 @@ previous link's result on.
 
 Overrides bind to types, never globally: a weapon, warhead or TechnoType
 binds the override with an INI key (**adopted in RFC 0.0.5**, P12; the key
-name is open question 5), and the engine calls the module only for those
+name is open question 4), and the engine calls the module only for those
 types. The key's value names a function of the module of the same source:
 the mod's INI binds the mod's module, the map's INI the map's module, and
 the prefixes `mod.` and `map.` reach the other (RFC 2). The engine reads the
@@ -1953,7 +1965,7 @@ takes effect from the next frame, invalidates dependent caches and is saved as
 a rules overlay (RFC 8). Today the `RuleSet` is immutable in a match
 (`src/sim/runtime.rs::SimResources`); an overlay owner does not exist (G-R2).
 Each allowlisted key states what happens to objects already on the map
-(RFC 8). The allowlist is open question 12.
+(RFC 8). The allowlist is open question 11.
 
 **Candidates** (plain values read through `&RuleSet` at use, no derived copy
 found):
@@ -2051,7 +2063,7 @@ setClickable(n: Node, enabled: bool): void;   // routes clicks to the module's o
 | `setClickable` (clicks reach `onClick`), hover, hotkeys | v1 | RFC 10 |
 | data binding (a property bound to a published value) | later | Rc: RmlUi data models |
 
-Widget types (open question 15). Client code uses the `veraui.ini` names
+Widget types (open question 14). Client code uses the `veraui.ini` names
 (`new Column(Hold.BottomLeft, parts)` mirrors `Type=Column`, `Hold=BottomLeft`,
 `Parts=`). The
 RFC example uses `Column`, `Text` and `List`; `veraui.ini` today has `Button`,
@@ -2087,7 +2099,7 @@ Static layout uses the syntax of `veraui.ini` (RFC 10). Keys that exist today
 
 RFC 0.0.5 uses these keys in its example and adds the `List` part type and
 `Label` for `Text` parts (P16). Where a mod and a map keep
-layout sections is open question 15. Client code uses the same names:
+layout sections is open question 14. Client code uses the same names:
 `new Text(label)`, `Node.setLabel` and `Node.setArt` (RFC 10). `Value` keeps
 only its INI meaning, the data source a part shows (`Credits`, `Power`, ...);
 the fill of a `Bar` is set with `node.setFill`, and a number shown over an
@@ -2167,7 +2179,7 @@ implementation.
   new, in core, outside `sim/` hot loops, reaching the Wasm runtime through
   one interface; the runtime is chosen per platform behind platform build
   features, so the core crate stays browser-compatible (RFC 14).
-- **G-H2** Module phase in the simulation frame (open question 9):
+- **G-H2** Module phase in the simulation frame (open question 8):
   `src/sim/world/master_frame.rs` gains a phase that springs deferred chain
   triggers, then runs per module `onMessage`, `onEvents` and `onFrame`;
   `onFrame` scheduling.
@@ -2187,7 +2199,7 @@ implementation.
   replay log's diagnostic hash and the full state hash) cover the whole
   module memory, bounded by the memory cap, with the instrumentation counters
   and the module's random stream (RFC 4, 15); their cost is part of open
-  question 4.
+  question 3.
 - **G-H7** Module call order: a batched or parallel section counts as one
   calculation; the triggers of events raised in it spring after it ends, and
   overrides reached in it are batched (one call per module, then the results
@@ -2257,13 +2269,14 @@ implementation.
 - **G-T11** Per-frame chain depth counter in `TR`, where a trigger springs:
   counts the depth of a chain of triggers sprung at once within a frame when
   the chain includes a module trigger (one with an `Action.wasm` action, one
-  created by a module, or one bound through `Wasm.Tags`), an event VERA adds
+  created by a module, or one bound through `Wasm.Tags` or `Trigger.bindType`),
+  an event VERA adds
   or an atomic action, and the total number of such chained firings per
   frame, and moves a trigger that would exceed either limit to the start of
   the next frame's module phase, saved and hashed while it waits, re-checking
   its conditions when it springs; a chain of only original events and original actions is not
   limited and runs as in the original (RFC 5, Goal 5; the limit is open
-  question 18).
+  question 17).
 
 ### Actions
 
@@ -2425,7 +2438,7 @@ proposal number.
 - **P11 More candidate events.** *Adopted in 0.0.5.* Add the candidates of 2.5 (Built, Idle,
   MoveFailed, Arrived, Promoted, Cloaked, Spotted, Lost, AmmoChanged,
   MissionChanged, HouseDefeated, PlayerLeft, StorageFull, MotionEnded) to the
-  candidate list for open question 13.
+  candidate list for open question 12.
 - **P12 Type-bound subscriptions only.** *Adopted in 0.0.5.* Say that high-frequency events
   (damage, fire, projectile created or detonated, crush, move failed) and every
   override are raised only for bound types, never through a global "all

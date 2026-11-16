@@ -4,7 +4,7 @@
 
 本附录是 [RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的一部分，使用同一个版本号（0.0.6）。两个文件在同一次提交中修改。本清单与 RFC 正文不一致时，以 RFC 正文为准。本附录的中英文两个版本一起修改；两者不一致时，以英文版为准。
 
-本清单列出 API 将提供的每个函数、事件、约束条件、效果和覆盖点，每一项由哪段引擎代码负责，以及每个想法的来源。它不决定版本 1 包含哪些内容：那是 RFC 的待定问题 13。来自调研的条目注明了所依赖的提议编号，以及 RFC 0.0.5 是否采纳，见[提议的 RFC 修改](#提议的-rfc-修改)。
+本清单列出 API 将提供的每个函数、事件、约束条件、效果和覆盖点，每一项由哪段引擎代码负责，以及每个想法的来源。它不决定版本 1 包含哪些内容：那是 RFC 的待定问题 12。来自调研的条目注明了所依赖的提议编号，以及 RFC 0.0.5 是否采纳，见[提议的 RFC 修改](#提议的-rfc-修改)。
 
 所有文件路径都相对于仓库根目录。行号有意省略，因为它们会变。代码事实来自 `main` 的 `16f18f4b7`。
 
@@ -162,9 +162,9 @@ Techno.addMark(techno, PANICKED, 0, Visibility.Allies);
 
 ### 事件投递
 
-引擎不会每个事件或每个动作调用一次模块。触发器触发时，其中的原版动作和原子动作立即执行，与原版中的原版动作一致；其中的每个模块动作（`Action.wasm`）向模块的队列写入一条固定大小的记录，记录带着触发该触发器的那个事件的载荷。模块只能通过这样的触发器收到事件：没有单独的事件记录，每条记录都是一个排队的模块动作。到模块阶段，引擎把整个数组一次调用交给模块（RFC 5、15）：`onEvents(ctx, batch)` 由 SDK 生成，它对每条记录运行对应的动作函数。记录按主体的创建序号排列；同一对象的记录按引擎引发这些事件的顺序排列，这一顺序可能随引擎版本而变化。主体为 `NO_HANDLE` 的记录（所属方和逻辑触发器，以及事件没有主体的格子触发器）排在最前，按触发器运行时触发它们的顺序排列。对象之间的顺序从不取决于引擎的循环顺序（RFC 5）。每个模块的队列每帧最多容纳固定数量的记录；超出上限的记录按顺序保留，在下一帧最先投递，并存档和计入哈希。推迟积压的记录超过固定帧数的量的模块会被停用，并给出提示：它跟不上。模块的每帧额度按每条投递的记录增加固定的一份（RFC 5；待定问题 8）。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的动作会被丢弃。一条记录包含模块动作、事件类型、触发的那个触发器、标签持有者、主体句柄、另一方句柄、所属方、一个抛射体句柄和一个效果句柄、一个类型 ID，以及几个整数载荷字段（`EventRecord`，[第 2 节](#2-事件)）。被绑定的触发器的主体在事件引发时已不存在时（例如绑定在武器上的 `Detonated`，其射手已经死亡），记录保留主体的句柄，读出来是“不存在”；这时触发器的所属方是主体最后存活时拥有它的所属方（对抛射体事件而言，是发射它的所属方），实例是那个已不存在的主体的实例。本清单中每个事件的载荷都写明它填入哪些记录字段；事件没有列出的字段为 `NO_HANDLE` 或 `-1`。每种记录的布局属于接口定义（RFC 12）。SDK 原地读取记录，不为每个事件分配内存。
+引擎不会每个事件或每个动作调用一次模块。触发器触发时，其中的原版动作和原子动作立即执行，与原版中的原版动作一致；其中的每个模块动作（`Action.wasm`）向模块的队列写入一条固定大小的记录，记录带着触发该触发器的那个事件的载荷。模块只能通过这样的触发器收到事件：没有单独的事件记录，每条记录都是一个排队的模块动作。到模块阶段，引擎把整个数组一次调用交给模块（RFC 5、15）：`onEvents(ctx, batch)` 由 SDK 生成，它对每条记录运行对应的动作函数。记录按主体的创建序号排列；同一对象的记录按引擎引发这些事件的顺序排列，这一顺序可能随引擎版本而变化。主体为 `NO_HANDLE` 的记录（所属方和逻辑触发器，以及事件没有主体的格子触发器）排在最前，按触发器运行时触发它们的顺序排列。对象之间的顺序从不取决于引擎的循环顺序（RFC 5）。每个模块的队列每帧最多容纳固定数量的记录；超出上限的记录按顺序保留，在下一帧最先投递，并存档和计入哈希。推迟积压的记录超过固定帧数的量的模块会被停用，并给出提示：它跟不上。模块的每帧额度按每条投递的记录增加固定的一份（RFC 5；待定问题 7）。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的动作会被丢弃。一条记录包含模块动作、事件类型、触发的那个触发器、标签持有者、主体句柄、另一方句柄、所属方、一个抛射体句柄和一个效果句柄、一个类型 ID，以及几个整数载荷字段（`EventRecord`，[第 2 节](#2-事件)）。被绑定的触发器的主体在事件引发时已不存在时（例如绑定在武器上的 `Detonated`，其射手已经死亡），记录保留主体的句柄，读出来是“不存在”；这时触发器的所属方是主体最后存活时拥有它的所属方（对抛射体事件而言，是发射它的所属方），实例是那个已不存在的主体的实例。本清单中每个事件的载荷都写明它填入哪些记录字段；事件没有列出的字段为 `NO_HANDLE` 或 `-1`。每种记录的布局属于接口定义（RFC 12）。SDK 原地读取记录，不为每个事件分配内存。
 
-VERA 新增的每个事件都在安全点引发，即不处在任何计算之中的时刻：一次计算完成之后（例如 `TakeDamage` 在伤害已经提交之后），或一次计算开始之前（例如 `HouseTransfer` 在转移开始之前）。批量或并行的引擎代码段算作一次计算：在其中引发的 VERA 事件会先收集，它们的触发器在该段结束后立即触发，仍在同一帧、在下一阶段之前，按主体的创建序号排序。触发器的原版动作和原子动作从这一点起立即执行（RFC 5）。正因为立即执行，它们可以在一帧之内连锁：伤害引发 `TakeDamage`，它的触发器用原子动作造成伤害，又引发 `TakeDamage`。连锁中含有模块触发器（至少带一个 `Action.wasm` 动作、由模块创建，或通过 `Wasm.Tags` 绑定的触发器；带模块动作的地图触发器也算）、VERA 新增的事件或原子动作时，引擎限制它每帧的深度，并限制每帧这类连锁触发的总次数；会超过任一上限的触发器改到下一帧触发，所以这样的连锁不会无限循环（缺口 G-T11）。它在下一帧模块阶段开始时、该阶段排队的动作之前触发，带着它原有的载荷；它的模块动作加入那一帧的批次，等待中的推迟触发器存档并计入哈希。如果它在此期间被禁用或删除，就会被丢弃；它触发时重新检查条件，它的所属方是那一刻主体的拥有者，对已不存在的主体执行的动作得到 `Gone`。这些上限是 RFC 的待定问题 18。只由原版事件和原版动作组成的连锁从不推迟，与原版中完全一样地运行（RFC 目标 5）。
+VERA 新增的每个事件都在安全点引发，即不处在任何计算之中的时刻：一次计算完成之后（例如 `TakeDamage` 在伤害已经提交之后），或一次计算开始之前（例如 `HouseTransfer` 在转移开始之前）。批量或并行的引擎代码段算作一次计算：在其中引发的 VERA 事件会先收集，它们的触发器在该段结束后立即触发，仍在同一帧、在下一阶段之前，按主体的创建序号排序。触发器的原版动作和原子动作从这一点起立即执行（RFC 5）。正因为立即执行，它们可以在一帧之内连锁：伤害引发 `TakeDamage`，它的触发器用原子动作造成伤害，又引发 `TakeDamage`。连锁中含有模块触发器（至少带一个 `Action.wasm` 动作、由模块创建，或通过 `Wasm.Tags` 或 `Trigger.bindType` 绑定的触发器；带模块动作的地图触发器也算）、VERA 新增的事件或原子动作时，引擎限制它每帧的深度，并限制每帧这类连锁触发的总次数；会超过任一上限的触发器改到下一帧触发，所以这样的连锁不会无限循环（缺口 G-T11）。它在下一帧模块阶段开始时、该阶段排队的动作之前触发，带着它原有的载荷；它的模块动作加入那一帧的批次，等待中的推迟触发器存档并计入哈希。如果它在此期间被禁用或删除，就会被丢弃；它触发时重新检查条件，它的所属方是那一刻主体的拥有者，对已不存在的主体执行的动作得到 `Gone`。这些上限是 RFC 的待定问题 17。只由原版事件和原版动作组成的连锁从不推迟，与原版中完全一样地运行（RFC 目标 5）。
 
 模块不会被重入（RFC 5）：模块的调用还在调用栈上时，对于从它到达的计算，引擎跳过该模块的覆盖点（改用上一环的值或原生值）；它发出的动作所引发的事件照常触发各自的触发器，这些触发器的模块动作进入队列。调用其他模块是允许的。
 
@@ -222,20 +222,26 @@ enum Destroy { All, Buildings, Land, Naval }
 enum TeamRatio { AiTriggers, Aircraft, Infantry, Units }
 enum Color { Red, Green, Blue }
 enum Audience { Allies, Spectators }          // later (P5)
-enum Event { }                                // 0..61 (2.1), 62..88 Ares (2.2), new events (2.3, 2.4; numbers: open question 6)
+enum Event { }                                // 0..61 (2.1), 62..88 Ares (2.2), new events (2.3, 2.4; numbers: open question 5)
 class DisguiseInfo { type: TechnoTypeId; house: House; }
 class Path { kind: i32; points: Coord[]; }    // later (RFC 9 level 3): Bezier, parabola, spiral, waypoints
 class LaunchCtx extends Ctx { shooter: Techno; target: Target; }   // later
 class BulletState { p: Projectile; coord: Coord; speed: i32; detonate: bool; }   // later (L4)
 class BulletBatch { count: i32; at(i: i32): BulletState; }        // later (L4); a view into module memory
-class NodeSpec { name: string; type: string; hold: string; parts: NodeSpec[]; }   // the veraui.ini keys (11.2)
+class Every { constructor(frames: Frames); }  // onFrame registration: runs in the frames where frame % frames == 0 (section 1)
+enum Hold { TopLeft, Top, TopRight, Left, Middle, Right, BottomLeft, Bottom, BottomRight }   // the veraui.ini Hold values (11.2)
+class NodeSpec { name: string | null = null; type: string; hold: Hold; parts: NodeSpec[]; }   // the veraui.ini keys (11.2); name: for find
+class Column extends NodeSpec { constructor(hold: Hold, parts: NodeSpec[]); }   // Type=Column
+class Row extends NodeSpec { constructor(hold: Hold, parts: NodeSpec[]); }      // Type=Row
+class Text extends NodeSpec { constructor(label: string); label: string; }      // Type=Text, Label=
+class List extends NodeSpec { constructor(); }                                   // Type=List; items: Node.setItems
 class OrderSpec { kind: i32; units: HandleBuffer; count: i32; target: Target; }   // kind: a Command variant (11.4)
 // Scenario, Objects, MapQuery, RulesReader, Ai: the functions of sections 7.5, 7.1, 7.3, 7.4 and 9
 // View: Objects, MapQuery and the house reads of 7.2, filtered as for a client of one house (7.6)
 // Override query and result classes: section 8
 ```
 
-代码注释说明：`Source` 是模块在对局中的来源（RFC 2）。`Event` 的取值：0..61 为原版事件（2.1），62..88 为 Ares 事件（2.2），新事件见 2.3 和 2.4（编号属于待定问题 6）。`Audience`（P5）、`Path`（RFC 9 层级 3：贝塞尔曲线、抛物线、螺旋线、路径点）、`LaunchCtx`、`BulletState` 和 `BulletBatch`（L4）属于以后的层级；`BulletBatch` 是模块内存中的一个视图。`NodeSpec` 对应 `veraui.ini` 的键（11.2），`OrderSpec.kind` 是一个 `Command` 变体（11.4）。`Scenario`、`Objects`、`MapQuery`、`RulesReader` 和 `Ai` 是第 7.5、7.1、7.3、7.4 节和第 9 节的函数；`View` 是 `Objects`、`MapQuery` 和 7.2 中的所属方读取，像某一个所属方的客户端那样过滤（7.6）；覆盖点的查询类和结果类见第 8 节。
+代码注释说明：`Source` 是模块在对局中的来源（RFC 2）。`Event` 的取值：0..61 为原版事件（2.1），62..88 为 Ares 事件（2.2），新事件见 2.3 和 2.4（编号属于待定问题 5）。`Audience`（P5）、`Path`（RFC 9 层级 3：贝塞尔曲线、抛物线、螺旋线、路径点）、`LaunchCtx`、`BulletState` 和 `BulletBatch`（L4）属于以后的层级；`BulletBatch` 是模块内存中的一个视图。`Every` 用于注册 `onFrame`：在 `frame % frames == 0` 的帧运行（第 1 节）。`Hold` 是 `veraui.ini` 的 `Hold` 取值（11.2）。`NodeSpec` 对应 `veraui.ini` 的键（11.2），`name` 供 `find` 使用；`Column`、`Row`、`Text` 和 `List` 分别对应 `Type=Column`、`Type=Row`、`Type=Text`（带 `Label=`）和 `Type=List`，`List` 的条目用 `Node.setItems` 设置。`OrderSpec.kind` 是一个 `Command` 变体（11.4）。`Scenario`、`Objects`、`MapQuery`、`RulesReader` 和 `Ai` 是第 7.5、7.1、7.3、7.4 节和第 9 节的函数；`View` 是 `Objects`、`MapQuery` 和 7.2 中的所属方读取，像某一个所属方的客户端那样过滤（7.6）；覆盖点的查询类和结果类见第 8 节。
 
 ### 错误
 
@@ -288,7 +294,7 @@ class Random {
 
 | 字段 | 取值 |
 | --- | --- |
-| **层级** | `v1`（RFC 计划的阶段 1 或 2）、`v1?`（待定问题 13 下的候选，对覆盖点而言是待定问题 11 下的版本 1 候选）、`later` |
+| **层级** | `v1`（RFC 计划的阶段 1 或 2）、`v1?`（待定问题 12 下的候选，对覆盖点而言是待定问题 10 下的版本 1 候选）、`later` |
 | **世界** | `sim`（`rules.wasm`）、`client`（`ui.wasm`）、`both` |
 | **Owner** | 实际完成工作的 Rust `file::function`，或**尚无 owner**：这时[缺口列表](#引擎中的缺口)写明需要补充什么 |
 | **来源** | 条目的出处（缩写见下表） |
@@ -324,7 +330,7 @@ class Random {
 | `onFrame` | `onFrame(ctx: Ctx): void`，由 SDK 生成；函数通过 `onFrame(new Every(N), fn)` 注册 | 导出时每帧一次，在模块阶段、`onEvents` 之后；它在 `frame % N == 0` 的帧按注册顺序运行每个注册的函数 | v1 | **尚无 owner**（`src/sim/world/master_frame.rs` 中的模块阶段） | RFC 5；T27 `HoldDuration=yes`；Rc：`GameFrame` |
 | 动作 | `(ctx: Ctx, e: EventRecord): void`，通过 `action(name, fn)` 注册；SDK 构建时把名字列在自定义段 `vera.actions` 中，并给每个名字一个下标 | 带这个动作的触发器触发时排队；在模块阶段随本帧的批次（`onEvents`）执行 | v1 | TR `spring_live_trigger` → 事件记录：**尚无 owner** | RFC 5、6a、12 |
 | `onEvents` | `onEvents(ctx: Ctx, batch: EventBatch): void`，由 SDK 生成；按 `EventRecord.action` 分派 | 每帧每个有排队记录的模块一次，在模块阶段、`onMessage` 之后、`onFrame` 之前 | v1 | **尚无 owner**（批量事件写入，G-T9） | RFC 5、15 |
-| 覆盖点 | 见[第 8 节](#8-覆盖点) | 引擎走到该决策时，在帧内固定的步骤按创建序号顺序调用 | v1?（两三个进入 v1，待定问题 11） | 每个覆盖点各自的 owner | RFC 5、6 L3 |
+| 覆盖点 | 见[第 8 节](#8-覆盖点) | 引擎走到该决策时，在帧内固定的步骤按创建序号顺序调用 | v1?（两三个进入 v1，待定问题 10） | 每个覆盖点各自的 owner | RFC 5、6 L3 |
 | `onMessage` | `onMessage(ctx: Ctx, sender: House, source: Source, data: Uint8Array): void`；`source` 是发送消息的客户端模块的来源（RFC 2） | 客户端消息已到达模拟时，在模块阶段、`onEvents` 之前；每个模拟模块都会收到；观战者不能发送 | v1（阶段 2） | `src/sim/command.rs::Command`：**尚无模块变体** | RFC 5、10；Rc：`RecvLuaMsg(msg, playerID)` |
 | `onLaunch` | `onLaunch(ctx: LaunchCtx, p: Projectile): Path \| null` | 绑定了模块路径的类型，每个抛射体一次 | later | `ProjectileTrajectory` 的模块分支：**尚无 owner** | RFC 9 层级 3 |
 | `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: ProjectileTypeId, bullets: BulletBatch): void` | 每帧每种抛射体类型一次 | later（L4） | **尚无 owner** | RFC 6 L4、9 层级 4 |
@@ -432,14 +438,20 @@ class EventBatch {           // one per module per frame
 
 原版事件在现有的触发器运行时里求值（`TR::has_occurred`）。触发器的原版动作和原子动作在触发时执行，带模块动作的触发器也是如此；只有模块动作要等到模块阶段（第 4.1 节，RFC 5）。由 House 标签引发的原版事件每 8 帧轮询一次（`TR::raise_house_tags`），Logic 标签的事件每帧轮询（`TR::advance_triggers`）。和原版一样，一个触发器的所有事件都要成立（AND），`TagRepeat` 保留原版的重复类型。
 
-触发器通过标签挂接（`Tag.create`、`Techno.setTag`、`cell.setTag`），或绑定到类型。代码中的绑定和 INI 中的 `Wasm.Tags=` 作用相同；mod 和地图的模块都可以使用，它立即作用于该类型的每个对象（G-T3）：
+模块用 `Trigger.create` 创建触发器，再通过标签挂接（`Tag.create`、`Techno.setTag`、`cell.setTag`），或绑定到类型（G-T2）。代码中的绑定和 INI 中的 `Wasm.Tags=` 作用相同；mod 和地图的模块都可以使用，它立即作用于该类型的每个对象（G-T3）：
 
 ```ts
+Trigger.create(def: TriggerDef): Trigger;   // NO_HANDLE with NotFound (missing waypoint, 4.1) or Unsupported (Ares event without Ares, 2.2)
+Tag.create(triggers: Trigger[], repeat: TagRepeat): Tag;
+Techno.setTag(t: Techno, tag: Tag): Status;   // replaces the object's tag, as in the original
+// class Cell: setTag(tag: Tag): Status;      // a CellTag
 Trigger.bindType(t: Trigger, type: TechnoTypeId): Status;
 Trigger.bindWeaponType(t: Trigger, type: WeaponTypeId): Status;     // weapon events
 Trigger.bindWarheadType(t: Trigger, type: WarheadTypeId): Status;
 Trigger.bindProjectileType(t: Trigger, type: ProjectileTypeId): Status;
 ```
+
+代码注释说明：`Trigger.create` 在路径点不存在时返回 `NO_HANDLE` 并设置 `NotFound`（4.1），在没有 Ares 时使用 Ares 事件则返回 `NO_HANDLE` 并设置 `Unsupported`（2.2）。`Techno.setTag` 和原版一样替换对象原有的标签；`Cell` 类上的 `setTag(tag)` 设置 CellTag。`bindWeaponType` 用于武器事件。
 
 每个绑定对象以各自的实例运行绑定的触发器，有各自的重复状态，所以一次性触发器对每个对象各触发一次；`Trigger.disable` 和 `Trigger.destroy` 作用于所有实例。对于绑定的触发器，触发器的所属方是它触发那一刻主体的所属方，标签持有者（`ActionTarget.TagHolder`）是引发事件的对象。
 
@@ -550,7 +562,7 @@ Trigger.bindProjectileType(t: Trigger, type: ProjectileTypeId): Status;
 
 ### 2.3 新的投递型事件（RFC 6a）
 
-新事件编号取自不与 Ares、Phobos 冲突的范围（待定问题 6），这里不分配编号。新的投递型事件只对两类对象引发：其类型用 `Wasm.Tags`（或代码中的 `Trigger.bindType`）绑定了含该事件的标签，或其自身的标签含有这样的触发器。从不对所有对象引发（RFC 5，目标 6）。武器事件（携带抛射体句柄的 `Fire`、`HitTarget` 和 `Detonated`，RFC 6a）还可以绑定在武器、弹头或抛射体类型上（在其节中写 `Wasm.Tags=`）：这种绑定对使用该类型的每个射手生效，不论射手自身是什么类型，射手就是主体。每个引发点先检查对象所属类型的标志位、对象自身的标志位（在它获得持有这种触发器的标签时置位，所以 `Techno.setTag` 对未绑定类型的对象也有效），或武器、弹头、抛射体类型的标志位（见[旁路表](#旁路表)）；`Cond.isWeaponType` 用来检查武器。每个事件都在安全点引发，即不处在任何计算之中的时刻：产生它的那次计算完成之后，对 `HouseTransfer` 和 `FatalDamage` 来说是下一次计算开始之前（见[事件投递](#事件投递)）。引发点处在批量或并行代码段中时，事件的触发器在该段结束后立即触发（RFC 5）。“引发位置”一列写出该时刻的 owner，不知道确切安全点的地方会注明。`HouseTransfer` 之后，引擎在执行转移前重新检查它是否仍然有效（对象仍然存在，所属方没有改变），如果某个动作改变了这些，就跳过转移，也不引发 `HouseTransferred`。`FatalDamage` 在致命伤害提交之后、死亡流程之前引发；触发器的原版动作和原子动作执行之后，引擎重新检查对象是否仍然存在、伤害是否仍然致命（例如某个动作治疗了它，或给它加上了阻止死亡的效果），只有仍然致命时才执行死亡流程。触发器的模块动作在之后的模块阶段才执行，无法取消死亡（RFC 5）。
+新事件编号取自不与 Ares、Phobos 冲突的范围（待定问题 5），这里不分配编号。新的投递型事件只对两类对象引发：其类型用 `Wasm.Tags`（或代码中的 `Trigger.bindType`）绑定了含该事件的标签，或其自身的标签含有这样的触发器。从不对所有对象引发（RFC 5，目标 6）。武器事件（携带抛射体句柄的 `Fire`、`HitTarget` 和 `Detonated`，RFC 6a）还可以绑定在武器、弹头或抛射体类型上（在其节中写 `Wasm.Tags=`）：这种绑定对使用该类型的每个射手生效，不论射手自身是什么类型，射手就是主体。每个引发点先检查对象所属类型的标志位、对象自身的标志位（在它获得持有这种触发器的标签时置位，所以 `Techno.setTag` 对未绑定类型的对象也有效），或武器、弹头、抛射体类型的标志位（见[旁路表](#旁路表)）；`Cond.isWeaponType` 用来检查武器。每个事件都在安全点引发，即不处在任何计算之中的时刻：产生它的那次计算完成之后，对 `HouseTransfer` 和 `FatalDamage` 来说是下一次计算开始之前（见[事件投递](#事件投递)）。引发点处在批量或并行代码段中时，事件的触发器在该段结束后立即触发（RFC 5）。“引发位置”一列写出该时刻的 owner，不知道确切安全点的地方会注明。`HouseTransfer` 之后，引擎在执行转移前重新检查它是否仍然有效（对象仍然存在，所属方没有改变），如果某个动作改变了这些，就跳过转移，也不引发 `HouseTransferred`。`FatalDamage` 在致命伤害提交之后、死亡流程之前引发；触发器的原版动作和原子动作执行之后，引擎重新检查对象是否仍然存在、伤害是否仍然致命（例如某个动作治疗了它，或给它加上了阻止死亡的效果），只有仍然致命时才执行死亡流程。触发器的模块动作在之后的模块阶段才执行，无法取消死亡（RFC 5）。
 
 | 事件 | 载荷（`EventRecord`） | 引发位置（该时刻的 owner） | 层级 | 来源 |
 | --- | --- | --- | --- | --- |
@@ -602,7 +614,7 @@ T18 `OnBehavior`（效果持续中，每个间隔触发一次）对应下面的�
 
 ### 2.5 其他候选事件（来自调研）
 
-RFC 0.0.5 把这些加入了待定问题 13 的其他候选事件（提议 P11，RFC 6a）。`Stunned`/`Unstunned` 和 `Decloaked` 是本清单补充的，RFC 的清单没有列出。`HouseTransferred` 在 RFC 的主表中，列在 2.3。
+RFC 0.0.5 把这些加入了待定问题 12 的其他候选事件（提议 P11，RFC 6a）。`Stunned`/`Unstunned` 和 `Decloaked` 是本清单补充的，RFC 的清单没有列出。`HouseTransferred` 在 RFC 的主表中，列在 2.3。
 
 | 事件 | 载荷 | 会在哪里引发 | 来源 |
 | --- | --- | --- | --- |
@@ -686,7 +698,7 @@ class Cond {
 - 对象目标的格子是对象所在的格子；`Projectile` 目标也算对象目标，它的格子是抛射体下方的格子；
 - 坐标取给定格子的中心，或目标所在格子的中心；`Projectile` 目标例外，其坐标为抛射体的中心。
 
-`Trigger.create` 检查每个 `Action.atomic` 的参数：非法的参数属于模块代码给出的非法参数，会停用模块（见[错误](#错误)；RFC 3）。这包括永远不适用于该动作的目标种类，即下表“目标”一列没有为该动作列出的种类（例如 `Kill` 的 `Cell`）。写在 INI 中的原子动作在加载时检查，并在大厅中报告；它们的 INI 写法是 RFC 的待定问题 5。触发器执行时才发现目标不适用于该动作（例如 `Kill` 的 `TagHolder` 是一个格子）属于数据错误，不是编程错误：动作得到 `Refused`，模块保持启用。由触发器执行的原子动作，其状态没有模块代码来接收：它失败时，错误状态（`Refused`、`Gone` 或 `NotFound`）写入游戏内日志，该动作被跳过，除此之外什么也不发生（见[错误](#错误)；RFC 3、6b）。立即执行的原版动作和原子动作可能引发新的事件，并在一帧之内连锁；含有模块触发器、VERA 新增的事件或原子动作的连锁，深度受每帧上限约束（见[事件投递](#事件投递)）。
+`Trigger.create` 检查每个 `Action.atomic` 的参数：非法的参数属于模块代码给出的非法参数，会停用模块（见[错误](#错误)；RFC 3）。这包括永远不适用于该动作的目标种类，即下表“目标”一列没有为该动作列出的种类（例如 `Kill` 的 `Cell`）。写在 INI 中的原子动作在加载时检查，并在大厅中报告；它们的 INI 写法是 RFC 的待定问题 4。触发器执行时才发现目标不适用于该动作（例如 `Kill` 的 `TagHolder` 是一个格子）属于数据错误，不是编程错误：动作得到 `Refused`，模块保持启用。由触发器执行的原子动作，其状态没有模块代码来接收：它失败时，错误状态（`Refused`、`Gone` 或 `NotFound`）写入游戏内日志，该动作被跳过，除此之外什么也不发生（见[错误](#错误)；RFC 3、6b）。立即执行的原版动作和原子动作可能引发新的事件，并在一帧之内连锁；含有模块触发器、VERA 新增的事件或原子动作的连锁，深度受每帧上限约束（见[事件投递](#事件投递)）。
 
 ```ts
 class ActionParams {
@@ -935,7 +947,7 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 | `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno): Status` | 经过弹头和护甲造成伤害，计击杀和经验；`source` 可为 `NO_HANDLE` | native | `commit_direct_damage_receiver`；计算在 `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b“修改生命（增减）”；F9；Rc：`AddUnitDamage`；**已在 RFC 0.0.5 采纳**（P9：增减走弹头流程） |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | 设定或回复生命，不计击杀 | none | `combat/object_health.rs::Health::set`、`heal`（没有 Simulation 层的 owner） | v1? | RFC 6b；F9 `ModifyHealth` |
 | `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno` | 创建一个完整的对象；格子被占时拒绝（返回 `NO_HANDLE`） | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`、`place_building_with_cleared_foundation`、`place_foot_with_cleared_cell`（文档注明“用于测试、工具、调试”） | v1? | RFC 6b；F10 `CreateUnit`（继承触发器和效果：`CreateParams.inheritTag`） |
-| `techno.setMission(m: Mission, target: Target \| null): Status` | 像玩家指令一样排入一个任务 | none | `src/sim/mission/retask.rs::queue_order_mission`、`queue_megamission` | v1 | RFC 6b、示例；F16 `Mission`；F13 `CommandMoveTo`（= 带格子的 `Move`） |
+| `techno.setMission(m: Mission, target: Target \| null = null): Status` | 像玩家指令一样排入一个任务 | none | `src/sim/mission/retask.rs::queue_order_mission`、`queue_megamission` | v1 | RFC 6b、示例；F16 `Mission`；F13 `CommandMoveTo`（= 带格子的 `Move`） |
 | `techno.teleport(cell: Cell, rule: Blocked): Status` | 超时空式移动；`Blocked.Nearby` 选附近的格子，`Blocked.Fail` 直接拒绝 | native | **尚无 owner**（`superweapon/chronosphere.rs::warp_object` 是私有的；`trigger_chrono.rs::chronoshift_house_to` 作用于整个所属方） | v1? | RFC 6b；F12 `ForceMoveTo` |
 | `techno.clearTarget(): Status` | 放弃当前目标 | none | **尚无 owner**（只有各移动器的 `clear_target` trait） | v1? | RFC 6b；F15 |
 | `techno.clearDisguise(): Status` | 解除间谍或幻影坦克的伪装 | none | `src/sim/cloak_disguise.rs`（`DisguiseRuntime::clear_unit`；没有事务 owner） | v1? | RFC 6b；F14 |
@@ -1035,7 +1047,7 @@ source(e: Effect): Techno;   // may be NO_HANDLE
 
 ### 5.3 叠加与互斥组
 
-RFC 要求每种效果类型声明自己的叠加方式（待定问题 14）。提议按下表映射到 Phobos 读取器：
+RFC 要求每种效果类型声明自己的叠加方式（待定问题 13）。提议按下表映射到 Phobos 读取器：
 
 | 规则 | Phobos 键 |
 | --- | --- |
@@ -1111,7 +1123,7 @@ marks(t: Techno, out: IdBuffer): i32;    // order: the order the marks were adde
 | `marks` | 把对象或所属方的标记写入 `out` | v1 | RFC 6c（对象读取中的“标记”） |
 | 效果携带的标记 | 效果类型列出若干标记，效果生效期间对象携带它们（新属性，例如 `Marks=`；名称未核实） | v1? | F54“持有带它的行为就获得这个标签” |
 | 标记的值和可见性 | `addMark` 的 `value` 和 `visibility`，以及 `markValue` 和 `setMarkValue`；**已在 RFC 0.0.5 采纳**（P3） | v1 | Rc: 带访问级别的 rules params |
-| 所属方标记 | 上面四个条目用于 `House`；`House` 也是原子动作 `AddMark` 和 `RemoveMark` 的目标（4.1）；**已在 RFC 0.0.5 采纳**（P3） | v1 | Rc: `SetTeamRulesParam` |
+| 所属方标记 | 上面的标记函数（`addMark`、`removeMark`、`hasMark`、`markValue`、`setMarkValue`、`marks`）用于 `House`；`House` 也是原子动作 `AddMark` 和 `RemoveMark` 的目标（4.1）；**已在 RFC 0.0.5 采纳**（P3） | v1 | Rc: `SetTeamRulesParam` |
 
 客户端模块只能读取自己看得到的对象的标记，而且只能读取可见度等级允许其玩家看到的标记（RFC 6b，P3）。
 
@@ -1240,7 +1252,7 @@ ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a
 
 ## 8. 覆盖点
 
-覆盖点返回结果，不能执行动作（RFC 5）。它们可以读状态，可以在模块内存中保存自己的状态，也可以从模块的随机流取数。它们以游戏概念命名。多个模块之间按**链式**处理：mod 的模块先算出结果，地图的模块拿到这个结果后可以再改，引擎使用最终值（RFC 2）。已停用模块的覆盖点会被跳过；对于模块出错的那次调用，引擎使用上一环的值或原生值（RFC 3）。每一行都是版本 1 候选：其中两三个进入版本 1（待定问题 11）。
+覆盖点返回结果，不能执行动作（RFC 5）。它们可以读状态，可以在模块内存中保存自己的状态，也可以从模块的随机流取数。它们以游戏概念命名。多个模块之间按**链式**处理：mod 的模块先算出结果，地图的模块拿到这个结果后可以再改，引擎使用最终值（RFC 2）。已停用模块的覆盖点会被跳过；对于模块出错的那次调用，引擎使用上一环的值或原生值（RFC 3）。每一行都是版本 1 候选：其中两三个进入版本 1（待定问题 10）。
 
 覆盖点只在模拟的阶段内运行，从不由本地代码（侧边栏、光标、界面）调用，也从不在并行或批量代码中调用。每个覆盖点在帧内固定的步骤调用，调用位置写在“频率”一列。这一步是批量或并行代码段时，引擎收集该段的查询，对每个模块调用一次，把它们全部交给模块，然后应用结果（RFC 5）；其他地方则每个查询调用一次模块。下面的签名都是针对单个查询的：对批量调用，SDK 生成的分派函数对每个查询运行一次该函数，就像 `onEvents` 对记录所做的那样。不同对象之间的调用按主体的创建序号排序；同一对象内按引擎引发它们的顺序，这一顺序可能随引擎版本而变化（RFC 5）。本地代码读取模拟最近一次算出的结果。
 
@@ -1248,7 +1260,7 @@ ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a
 
 组合规则（RFC 第 2 节，采纳自 P1）：链上每一环都拿到原生值和上一环的结果（对第一环而言，也就是原生值），后一环可以推翻前一环的否决，数值类覆盖点返回明确的“已处理”标志；不处理该查询的一环把上一环的结果原样传下去。
 
-覆盖点绑定到类型，从不全局生效：由武器、弹头或 TechnoType 用一个 INI 键绑定覆盖点（**已在 RFC 0.0.5 采纳**，P12；键名是待定问题 5），引擎只对这些类型调用模块。键的值指定同一来源的模块中的一个函数：mod 的 INI 绑定 mod 的模块，地图的 INI 绑定地图的模块，用前缀 `mod.` 和 `map.` 可以指向另一个来源（RFC 2）。引擎按来源分别读取绑定，所以地图的绑定是在链上加入地图的一环，从不取代 mod 的那一环。查询类和结果类携带句柄和 ID（弹头、武器、类型），从不携带名字；批量数据直接写入模块内存，再从中读回（RFC 15）。
+覆盖点绑定到类型，从不全局生效：由武器、弹头或 TechnoType 用一个 INI 键绑定覆盖点（**已在 RFC 0.0.5 采纳**，P12；键名是待定问题 4），引擎只对这些类型调用模块。键的值指定同一来源的模块中的一个函数：mod 的 INI 绑定 mod 的模块，地图的 INI 绑定地图的模块，用前缀 `mod.` 和 `map.` 可以指向另一个来源（RFC 2）。引擎按来源分别读取绑定，所以地图的绑定是在链上加入地图的一环，从不取代 mod 的那一环。查询类和结果类携带句柄和 ID（弹头、武器、类型），从不携带名字；批量数据直接写入模块内存，再从中读回（RFC 15）。
 
 ```ts
 class DamageQuery {          // Override.Damage
@@ -1468,7 +1480,7 @@ class RulesWriter extends RulesReader {
 
 ### 10.2 对局中的修改
 
-对局中调用 `rules.set("E1", "Speed", "6")` 时，值像 INI 文本一样解析，从下一帧起生效，让相关缓存失效，并作为规则覆盖层存档（RFC 8）。目前 `RuleSet` 在对局中不可变（`src/sim/runtime.rs::SimResources`），也没有覆盖层的 owner（G-R2）。每个白名单键都要写明它对地图上已有对象的影响（RFC 8）。白名单是待定问题 12。
+对局中调用 `rules.set("E1", "Speed", "6")` 时，值像 INI 文本一样解析，从下一帧起生效，让相关缓存失效，并作为规则覆盖层存档（RFC 8）。目前 `RuleSet` 在对局中不可变（`src/sim/runtime.rs::SimResources`），也没有覆盖层的 owner（G-R2）。每个白名单键都要写明它对地图上已有对象的影响（RFC 8）。白名单是待定问题 11。
 
 **候选**（使用时通过 `&RuleSet` 读取的普通值，没有发现派生副本）：
 
@@ -1560,7 +1572,7 @@ setClickable(n: Node, enabled: bool): void;   // routes clicks to the module's o
 | `setClickable`（点击到达 `onClick`）、悬停、热键 | v1 | RFC 10 |
 | 数据绑定（属性绑定到一个公开的值） | later | Rc：RmlUi 数据模型 |
 
-控件类型（待定问题 15）。客户端代码使用 `veraui.ini` 的名字（`new Column(Hold.BottomLeft, parts)` 对应 `Type=Column`、`Hold=BottomLeft`、`Parts=`）。RFC 示例用到 `Column`、`Text` 和 `List`；`veraui.ini` 目前有 `Button`、`Text`、`Row`、`Column`、`CameoGrid`（`docs/interface-layout.md`）。
+控件类型（待定问题 14）。客户端代码使用 `veraui.ini` 的名字（`new Column(Hold.BottomLeft, parts)` 对应 `Type=Column`、`Hold=BottomLeft`、`Parts=`）。RFC 示例用到 `Column`、`Text` 和 `List`；`veraui.ini` 目前有 `Button`、`Text`、`Row`、`Column`、`CameoGrid`（`docs/interface-layout.md`）。
 
 | 类型 | 来源 | 层级 |
 | --- | --- | --- |
@@ -1589,7 +1601,7 @@ setClickable(n: Node, enabled: bool): void;   // routes clicks to the module's o
 | `Value` | `Credits`、`Power`、`Drain`、`Name`、`Time`、`Kills`、`Losses` |
 | `Tab`、`Columns`、`Rows` | 图标网格 |
 
-RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部件的 `Label` 键（P16）。mod 和地图把布局节放在哪里是待定问题 15。客户端代码使用同样的名字：`new Text(label)`、`Node.setLabel` 和 `Node.setArt`（RFC 10）。`Value` 只保留它在 INI 中的含义，即部件显示的数据来源（`Credits`、`Power`……）；`Bar` 的填充量用 `node.setFill` 设置，对象上方显示的数字用 `display(t).setNumber` 设置（11.3）。
+RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部件的 `Label` 键（P16）。mod 和地图把布局节放在哪里是待定问题 14。客户端代码使用同样的名字：`new Text(label)`、`Node.setLabel` 和 `Node.setArt`（RFC 10）。`Value` 只保留它在 INI 中的含义，即部件显示的数据来源（`Credits`、`Power`……）；`Bar` 的填充量用 `node.setFill` 设置，对象上方显示的数字用 `display(t).setNumber` 设置（11.3）。
 
 ### 11.3 单个对象的显示属性
 
@@ -1644,11 +1656,11 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 ### 模块宿主
 
 - **G-H1** 模块加载器、校验（Wasm 特性白名单、没有 `start` 段、形状上限、按 `Api=` 检查导入、`vera.*` 自定义段的格式版本、通过改写字节码规范化 NaN、`vera.actions` 检查）；带调用深度上限和每种宿主调用计费的计量；初始化函数；初始化函数、`onRules` 和 `onScenarioStart` 各自的一次性额度；实例化时分配的内存上限；不重入规则；以及停用流程（RFC 3、4、5）：新增，位于 core 中，在 `sim/` 热循环之外，通过同一个接口访问 Wasm 运行时；运行时按平台选择，放在平台构建 feature 后面，所以 core crate 仍兼容浏览器（RFC 14）。
-- **G-H2** 模拟帧中的模块阶段（待定问题 9）：`src/sim/world/master_frame.rs` 新增一个阶段，先触发推迟的连锁触发器，再对每个模块运行 `onMessage`、`onEvents` 和 `onFrame`；`onFrame` 调度。
+- **G-H2** 模拟帧中的模块阶段（待定问题 8）：`src/sim/world/master_frame.rs` 新增一个阶段，先触发推迟的连锁触发器，再对每个模块运行 `onMessage`、`onEvents` 和 `onFrame`；`onFrame` 调度。
 - **G-H3** 快照中的模块内存、全局变量和表（以函数下标的形式），以及每 15 帧计入联机每帧同步校验的模块内存哈希（RFC 4、15）：存档、读档、同步校验和 `hash_state` 路径。
 - **G-H4** `ctx.log`、游戏内的出错提示，以及由触发器执行的原子动作失败时的错误状态（RFC 3、14）：模拟侧的一行日志，以类似 `TriggerEffect` 的输出发布，由 app 显示。
 - **G-H5** 模拟到客户端的通知（`ctx.notify`、`ctx.notifySpectators`、`onNotify`），带着来源只投递给目标玩家或观战者，重新加入时的追赶期间不投递，追赶完成后客户端模块收到一次 `onStart`；内容是模块自己的字节，引擎不过滤（RFC 11）。
-- **G-H6** 各种状态哈希（每 15 帧一次的联机同步校验、回放日志的诊断哈希和完整状态哈希）包含全部模块内存（受内存上限约束），以及插桩计数器和模块的随机流（RFC 4、15）；它们的开销属于待定问题 4。
+- **G-H6** 各种状态哈希（每 15 帧一次的联机同步校验、回放日志的诊断哈希和完整状态哈希）包含全部模块内存（受内存上限约束），以及插桩计数器和模块的随机流（RFC 4、15）；它们的开销属于待定问题 3。
 - **G-H7** 模块调用顺序：批量或并行代码段算作一次计算；在其中引发的事件的触发器在该段结束后触发，在其中到达的覆盖点批量处理（每个模块调用一次，然后应用结果）；不同对象之间的调用按主体的创建序号排序，同一对象内按引发顺序，从不按循环顺序（RFC 5）。
 - **G-H8** 地图最低版本键（`[Basic] VeraMinVersion=`，名字未定），由支持模块之前的那个版本读取，对需要更新版本的地图拒绝运行并给出提示（RFC 11）。
 - **G-H9** 大厅检查、存档头和回放头中的模块哈希和 API 版本，以及指明模块或版本的拒绝提示（RFC 11）。
@@ -1667,7 +1679,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 - **G-T8** 原版事件 2（`SpiedBy`）和 3（`ThievedBy`）没有触发点（原本就存在，不是模块造成的）。
 - **G-T9** 批量队列：每个模块一帧一个数组，存放固定大小的 `EventRecord`，每个排队的模块动作一条，带着触发其触发器的那个事件的载荷，在含模块动作的触发器触发时写入，按主体的创建序号排列（G-H7），在 `onFrame` 之前每帧每个模块一次调用交出，每帧有上限，超出的记录移到下一帧，存档并计入哈希，积压超过限度时停用该模块；触发器已被禁用或删除的排队动作会被丢弃，游戏结束后所有排队动作都会被丢弃（RFC 5、15）。
 - **G-T10** 对象类型、武器类型、弹头类型和抛射体类型各带一个模块标志位，有模块绑定该类型时置位；每个对象也带一个标志位，在对象获得持有模块触发器或 VERA 新增事件的触发器的标签时置位；每个事件触发点先检查它们，未绑定的类型和没有这种标签的对象不再运行其他代码（RFC 7、15）。
-- **G-T11** `TR` 中触发器触发处的每帧连锁深度计数器：连锁中含有模块触发器（带 `Action.wasm` 动作、由模块创建，或通过 `Wasm.Tags` 绑定的触发器）、VERA 新增的事件或原子动作时，统计一帧之内立即触发的触发器连锁的深度，以及每帧这类连锁触发的总次数，并把会超过任一上限的触发器改到下一帧的模块阶段开始时，等待期间存档并计入哈希，触发时重新检查它的条件；只由原版事件和原版动作组成的连锁不受限制，与原版中一样运行（RFC 5、目标 5；上限是待定问题 18）。
+- **G-T11** `TR` 中触发器触发处的每帧连锁深度计数器：连锁中含有模块触发器（带 `Action.wasm` 动作、由模块创建，或通过 `Wasm.Tags` 或 `Trigger.bindType` 绑定的触发器）、VERA 新增的事件或原子动作时，统计一帧之内立即触发的触发器连锁的深度，以及每帧这类连锁触发的总次数，并把会超过任一上限的触发器改到下一帧的模块阶段开始时，等待期间存档并计入哈希，触发时重新检查它的条件；只由原版事件和原版动作组成的连锁不受限制，与原版中一样运行（RFC 5、目标 5；上限是待定问题 17）。
 
 ### 动作
 
@@ -1742,7 +1754,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 - **P8 移除抛射体。** *已在 0.0.5 采纳。* 增加“移除抛射体而不引爆”和“立即引爆抛射体”两个独立动作。
 - **P9 伤害与生命。** *已在 0.0.5 采纳。* 把“修改生命（增减或设定）”拆成两项：“经由弹头和护甲流程造成伤害，带用于击杀归属的来源”和“设定生命，不计归属”。
 - **P10 两阶段的所属转移。** *已在 0.0.5 采纳。* RFC 6a 在转移之前触发 HouseTransfer。增加一个转移之后的事件，或者写明处理函数看到的是哪个状态。
-- **P11 更多候选事件。** *已在 0.0.5 采纳。* 把 2.5 中的候选（Built、Idle、MoveFailed、Arrived、Promoted、Cloaked、Spotted、Lost、AmmoChanged、MissionChanged、HouseDefeated、PlayerLeft、StorageFull、MotionEnded）加入待定问题 13 的候选清单。
+- **P11 更多候选事件。** *已在 0.0.5 采纳。* 把 2.5 中的候选（Built、Idle、MoveFailed、Arrived、Promoted、Cloaked、Spotted、Lost、AmmoChanged、MissionChanged、HouseDefeated、PlayerLeft、StorageFull、MotionEnded）加入待定问题 12 的候选清单。
 - **P12 只允许按类型绑定的订阅。** *已在 0.0.5 采纳。* 写明高频事件（伤害、开火、抛射体创建或引爆、碾压、移动失败）和所有覆盖点只对绑定的类型触发，从不通过全局的“所有对象”订阅触发。（已在 0.0.6 中被取代：删除了“抛射体发射”事件，武器事件为 `Fire`、`HitTarget` 和 `Detonated`。）
 - **P13 热点决策先用数据，再用回调。** *已在 0.0.5 采纳。* 目标优先级优先用优先级倍率（一种持续效果）加一个 `TargetChanged` 事件，逐次调用的覆盖点留给不常发生的决策。把 `Override.CommandAllowed` 和 `Override.Death` 列为候选。把自定义排队任务（由模块定义、模块每帧执行的任务）记为以后的 RFC。
 - **P14 无法取消的事件。** *已在 0.0.5 采纳。* 写明投递型事件改变不了哪些原生结果（例如取消一次死亡），因为事件是在模块阶段才到达的；这类需求需要覆盖点或效果（阻止死亡）。（已在 0.0.6 中被取代：原版动作和原子动作现在在触发器触发时执行，只有模块动作等到模块阶段；投递型事件仍然无法取消原生结果。）
