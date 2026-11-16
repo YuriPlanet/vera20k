@@ -141,6 +141,20 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
   missile to the target's Cell when the key is on and the target is not a
   `EntityCategory::Structure`. The native oracle host opts out through
   `phobos_hooks()`, so its recorded vanilla calls stay comparable.
+- `falling_down_targeting_fix`: `Simulation::phobos_falling_down` is the
+  scenario tracker. `Simulation::drop_as_bomb`
+  (`src/sim/world/lifecycle.rs`, `ObjectClass_DropAsBomb_Track 0x005F4160`) and
+  `spawn_parachuted` (`src/sim/aircraft/drop_payload.rs`,
+  `ObjectClass_SpawnParachuted_Track 0x005F5965`) add the Techno when the key
+  is on; `greatest_threat` (`0x006F8DF0`'s owner) appends the tracked falling
+  objects after the airborne pre-pass and before the AA-only `mask == 5` return
+  (`TechnoClass_SelectAutoTarget_Scan_FallingDown 0x006F9398`,
+  `Ext/Techno/Hooks.cpp:1704-1756`). The scan applies the native ally /
+  `OnlyTargetHouseEnemy` gates, the `evaluate_candidate` receiver with
+  `WalkArgs::flags | 0x8006` (Infantry/Unit/Aircraft class bits), appends
+  `DistributedFireCandidate` entries and replaces the best score. Test
+  `falling_down_targeting_fix_offers_a_tracked_fall_to_an_air_capable_guard`
+  covers key-off invisibility and the key-on pick.
 
 ## Residuals
 
@@ -166,14 +180,16 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
   Effect: walls grow past non-node cells, and a wall node with no protecting
   neighbour is still placed. Frequency: every wall placement an AI makes when its
   key is set. Risk: dormant in retail; visible wall spam in a mod that sets it.
-- `FallingDownTargetingFix` (`0x006F9398`): VERA tracks the falling flag per
-  object (`GameEntity::is_falling_down`, `ObjectClass +0x8D`) but has no
-  scenario-level falling list, and `sim::combat::greatest_threat` does not add
-  falling objects as candidates. Trigger: an object falling from `DropAsBomb`
-  (`0x005F4160`) or a paradrop (`0x005F5965`) while an AA scanner looks for
-  targets. Effect: the falling object is never scored, so AA units ignore it
-  until it lands. Frequency: every shot-down aircraft and paradropped unit.
-  Risk: falling units pass through an AA screen unharmed in mods that set the key.
+- `FallingDownTargetingFix` boundaries: the native hook's `skip` reads the
+  `ThreatType::Air | ThreatType::Range` argument, which VERA's scan does not
+  carry; the port gates on an air-capable non-AA-only mask (`mask & 4 != 0`,
+  `mask != 5`). `ObjectClass_Update_Track 0x005F3F86`'s eager remove is a scan
+  filter on `is_falling_down` instead of a `finish_fall` hook, and the tracker
+  is `serde(skip)`/unhashed: after a save load it rebuilds in entity-store order.
+  `CanAutoTargetObject`'s `wantedDist` term is only `evaluate_candidate`'s
+  existing gates, so a tracked fall is considered globally rather than
+  ring-local. Trigger: a scan with the key on. Effect: some fall picks and tie
+  order may differ from native; no retail key means dormant.
 - `BalloonHoverPathingFix` (`Misc/Hooks.BugFixes.cpp:3499`): VERA's hover
   locomotor pathing does not implement the stock shortcut the hook removes.
   Trigger: a balloon/hover object pathing beyond its hover range. Effect: VERA

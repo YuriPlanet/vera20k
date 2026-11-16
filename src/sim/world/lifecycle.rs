@@ -2892,6 +2892,24 @@ impl Simulation {
             .get_mut(stable_id)
             .unwrap()
             .begin_bomb_fall();
+        // Phobos `ObjectClass_DropAsBomb_Track` (`0x5F4160`,
+        // `Ext/Techno/Hooks.cpp:1656-1670`): track the Techno that starts the
+        // fall so the AA auto-target scan can still see it.
+        #[cfg(feature = "phobos")]
+        if rules.phobos_globals.falling_down_targeting_fix
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    matches!(
+                        entity.category(),
+                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                    )
+                })
+        {
+            self.phobos_track_falling_down(stable_id);
+        }
         let foot = self
             .substrate
             .entities

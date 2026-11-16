@@ -321,6 +321,13 @@ pub(crate) fn spawn_parachuted(
             MissionType::Hunt
         })
     };
+    // Phobos `ObjectClass_SpawnParachuted_Track` (`0x5F5965`,
+    // `Ext/Techno/Hooks.cpp:1672-1686`): the paradropped Techno joins the
+    // falling tracker so auto-targeting can see it before it lands.
+    #[cfg(feature = "phobos")]
+    if rules.phobos_globals.falling_down_targeting_fix {
+        sim.phobos_track_falling_down(passenger);
+    }
     #[cfg(any(test, feature = "test-support"))]
     observe(Observed::Queue(passenger, mission));
     if let Some(rider) = sim.substrate.entities.get_mut(passenger) {

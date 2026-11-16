@@ -1608,6 +1608,48 @@ pub(crate) fn greatest_threat(
     if mask & 0x10 != 0 {
         walk.flags |= 4;
     }
+    // Phobos `TechnoClass_SelectAutoTarget_Scan_FallingDown` (`0x6F9398`,
+    // `Ext/Techno/Hooks.cpp:1704-1756`): a falling Techno left the cell lists
+    // and the airborne tracker, so the ordinary walks cannot see it. Native
+    // gates this block on `ThreatType::Air | ThreatType::Range`; VERA's scan
+    // only carries the derived mask, so an air-capable non-AA-only mask stands
+    // in. The hook sits after native's AA-only `mask == 5` early return.
+    #[cfg(feature = "phobos")]
+    if rules.phobos_globals.falling_down_targeting_fix && scan_air && mask != 5 {
+        if let Some(world) = fire_world {
+            // `canTargetWhatAmI |= Infantry|Unit|Aircraft` (`0x6F9398`).
+            let falling_walk = WalkArgs {
+                flags: flags | 0x8006,
+                ..walk
+            };
+            for candidate_id in world.phobos_falling_down_candidates() {
+                if candidate_id == attacker.stable_id {
+                    continue;
+                }
+                let Some(candidate) = entities.get(candidate_id) else {
+                    continue;
+                };
+                if (ctx.is_ally(candidate) && !ctx.attacks_allies())
+                    || !ctx.house_gates_admit(candidate)
+                {
+                    continue;
+                }
+                let Some(score) = evaluate_candidate(&ctx, falling_walk, candidate) else {
+                    continue;
+                };
+                if let Some(entries) = &mut collected {
+                    entries.push(DistributedFireCandidate {
+                        target: Some(super::TargetKind::Entity(candidate_id)),
+                        score,
+                    });
+                }
+                if score > best_score {
+                    best_score = score;
+                    best = Some(candidate_id);
+                }
+            }
+        }
+    }
     if mask == 5 {
         return result(best, collected, &ctx);
     }
@@ -3462,6 +3504,86 @@ mod tests {
                 "{name}",
             );
         }
+    }
+
+    /// Phobos `FallingDownTargetingFix` (`Ext/Techno/Hooks.cpp:1654-1756`):
+    /// a Techno that left the cell lists for a bomb fall is still offered to an
+    /// air-capable Guard scan, and only when the key is on. The target is also
+    /// unmarked in its cell, so neither the ring walk nor the airborne pre-pass
+    /// can find it.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn falling_down_targeting_fix_offers_a_tracked_fall_to_an_air_capable_guard() {
+        let scan = |enabled: bool| {
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=FV\n1=TARGET\n\
+                 [FV]\nStrength=200\nArmor=light\nPrimary=CANNON\n\
+                 [TARGET]\nStrength=200\nArmor=heavy\n\
+                 [WeaponTypes]\n0=CANNON\n\
+                 [CANNON]\nRange=8\nDamage=20\nROF=30\nProjectile=SHOT\nWarhead=AP\n\
+                 [SHOT]\nAG=yes\nAA=yes\nInviso=yes\n\
+                 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [General]\nFallingDownTargetingFix={}\n",
+                if enabled { "yes" } else { "no" }
+            )))
+            .unwrap();
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 64);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let scanner = sim
+                .spawn_object("FV", "Americans", 10, 16, 0, &rules)
+                .unwrap();
+            let target = sim
+                .spawn_object("TARGET", "Russians", 16, 16, 0, &rules)
+                .unwrap();
+            crate::sim::arena_fixture::discover(&mut sim, target);
+            sim.drop_as_bomb(target, crate::sim::world::UninitContext::with_rules(&rules));
+            // The dropped object is gone from its Cell list; clear the marking
+            // bit and unlink it explicitly in case the fixture started unmarked.
+            sim.foot_pick_up(target, &rules, None);
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .lifecycle
+                .set_cell_marked_for_test(false);
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(target)
+                    .unwrap()
+                    .is_falling_down(),
+                "the bomb fall starts"
+            );
+            assert!(
+                !sim.substrate
+                    .entities
+                    .get(target)
+                    .unwrap()
+                    .lifecycle
+                    .cell_marked(),
+                "the ordinary walks cannot see the dropped object"
+            );
+            let tracked = sim.phobos_falling_down.contains(&target);
+            let pick = sim.greatest_threat_represented(
+                &rules,
+                None,
+                scanner,
+                crate::sim::combat::ScanMission::Guard,
+                None,
+            );
+            (
+                tracked,
+                target,
+                pick.and_then(crate::sim::combat::TargetKind::object_id),
+            )
+        };
+        let (tracked_off, _, off) = scan(false);
+        assert!(!tracked_off, "the key off leaves the tracker empty");
+        assert_eq!(off, None, "without the fix the fall is invisible");
+        let (tracked_on, target, on) = scan(true);
+        assert!(tracked_on, "DropAsBomb adds the fall to the tracker");
+        assert_eq!(on, Some(target), "the tracked fall is the best candidate");
     }
 
     /// Supplied gunner state through SetGunnerWeapon, then the production
