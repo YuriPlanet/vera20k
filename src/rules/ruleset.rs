@@ -2051,6 +2051,11 @@ pub struct GeneralRules {
     pub extra_infantry_light: i32,
     /// Signed `[AudioVisual] ExtraAircraftLight=` draw offset (`1000 == 1.0`).
     pub extra_aircraft_light: i32,
+    /// `[General] VeinDamage=`: the damage `AnimExt::VeinAttackAI`
+    /// (`Ext/Anim/Body.cpp:164-195`) gives each qualifying cell occupier every
+    /// even scenario frame. RulesClass constructor default 0; stock retail
+    /// authors 0, so stock veinholes stay inert.
+    pub vein_damage: i32,
 
     // -- Movement arrival --
     /// `Rules+0x1718`, `[General] CloseEnough=` in leptons: a blocked mover
@@ -3090,6 +3095,7 @@ impl Default for GeneralRules {
             extra_unit_light: 0,
             extra_infantry_light: 0,
             extra_aircraft_light: 0,
+            vein_damage: 0,
             // RulesClass constructor 0x00667588.
             close_enough: 0x280,
             stray: 0x200,
@@ -4344,6 +4350,7 @@ impl GeneralRules {
             behind: defaults.behind,
             infantry_death_anims,
             damage_delay_minutes: general.read_double("DamageDelay", 1.0) as f32,
+            vein_damage: general.read_int("VeinDamage", defaults.vein_damage),
             spy_power_blackout: general.read_int("SpyPowerBlackout", defaults.spy_power_blackout),
             spy_money_steal_percent: general
                 .read_double_to_float("SpyMoneyStealPercent", defaults.spy_money_steal_percent),

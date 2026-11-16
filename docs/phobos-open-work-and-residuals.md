@@ -77,7 +77,7 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   起点黑点（`Misc/PhobosToolTip.cpp`、`Misc/Hooks.UI.cpp:29-37`）。细节与残渣：
   `docs/phobos-tooltips-ui.md`。
 
-仍未实现的 2 键及阻塞原因见 §1.7。
+仍未实现的 1 键及阻塞原因见 §1.7。
 
 ### 1.1 ToolTips / uimd.ini（7）——已完成（2026-11-16）
 
@@ -135,20 +135,23 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `UseRetintFix` | `Ext/Rules/Body.cpp:409` | bool, **yes**（`:311,823`） | `Ext/TAction/Hooks.cpp`（retint 后重新激活 LightSource） |
 | `VoxelLightSource` | `Ext/Rules/Body.cpp:352` | `Nullable<Vector3D<float>>`，未设（`:271,780`） | `ReplaceVoxelLightSources`（`Body.cpp:1189-1207`）——**阻塞**，见 §3 |
 
-### 1.6 跳跃（2）与战头（1）
+### 1.6 跳跃（2）与战头（1）——已完成（2026-11-16）
 
 | 键 | 出处 | 类型 / 默认 | 消费者 |
 |---|---|---|---|
 | `JumpjetClimbPredictHeight` | `Ext/Rules/Body.cpp:336` | bool, no（`:242,766`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
-| `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
+| `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（`AnimExt::VeinAttackAI`） |
 
-### 1.7 仍未实现的 2 项（2 键）与阻塞原因（2026-11-16）
+`VeinholeWarhead` 的接线：`[General] VeinDamage=` 伤害经该 warhead 发给
+`IsVeins=` 动画所在格、地面 5 lepton 内的 Techno；`[ObjectType] ImmuneToVeins=`
+和既有 `VEIN_PROOF` 免伤，`UnableToContinue` 条件与原生一致。
+
+### 1.7 仍未实现的 1 项（1 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
-| `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
 
 ## 2. 明确排除（不移植，扫描器已列 disabled）
 
@@ -179,6 +182,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    见下。
 6. **MindControl.Permanent.ReplaceSilent**（`6a261e2cb`）：无残渣；只作用于
    Ares 的 ApplyPermaMC 调用点，Dominator 原生路径不变。
+7. **VeinholeWarhead**（本提交）：`AnimExt::VeinAttackAI` 的 `pOccupier` 高度
+   用 VERA `queried_flight_height`（已含桥面/甲板高度修正），原生用
+   `GetHeight()`；`Unsorted::CurrentFrame % 2` 用 `session.binary_frame() % 2`。
+   触发：桥上或跨帧奇偶边界；频率：低；风险：单帧伤害时序或高度门槛相差。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
 - **`VoxelLightSource`（阻塞）**：apply 需要

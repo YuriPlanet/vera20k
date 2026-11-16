@@ -2646,6 +2646,161 @@ impl Simulation {
 
     /// One Map565730 lookup and Cell+44/+11E read. Live IsAnimatedTiberium
     /// AI424402 and post-load426224 use this same real/dummy field owner.
+    /// Phobos `AnimExt::VeinAttackAI` (`Ext/Anim/Body.cpp:164-195`): a
+    /// `IsVeins=` animation whose map cell has no first occupier, a first
+    /// occupier above ground, a non-126 overlay, a weed frame below `0x30`,
+    /// or any slope stops (`UnableToContinue`). Every even scenario frame it
+    /// gives `[General] VeinDamage=` through `VeinholeWarhead=` to each cell
+    /// techno that is not `ImmuneToVeins=`, lacks `VEIN_PROOF`, is alive and
+    /// within five leptons of the ground.
+    #[cfg(feature = "phobos")]
+    fn vein_attack_ai(
+        &mut self,
+        id: AnimId,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(location) = self.anim_absolute_coord(id) else {
+            return;
+        };
+        let (overlay, overlay_data) = self.anim_cell_overlay_fields(location);
+        let (rx, ry) = (location.x.div_euclid(256), location.y.div_euclid(256));
+        let (Ok(rx), Ok(ry)) = (u16::try_from(rx), u16::try_from(ry)) else {
+            self.mark_anim_unable_to_continue(id);
+            return;
+        };
+        let occupants: Vec<u64> = self
+            .substrate
+            .occupancy
+            .get(rx, ry)
+            .map(|cell| {
+                cell.occupants
+                    .iter()
+                    .map(|member| member.entity_id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        // Read the cell query's slope and every serial height before any
+        // receiver call can mutate the world.
+        let (slope, first_occupier_height, heights) = {
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            let slope = cells.as_ref().map_or(0, |cells| {
+                cells
+                    .ground_fields(cells.lookup_world(location.x, location.y))
+                    .1
+            });
+            let first = occupants.first().map_or(0, |&object| {
+                self.substrate.entities.get(object).map_or(0, |entity| {
+                    crate::sim::movement::air_movement::queried_flight_height(
+                        entity,
+                        cells.as_ref(),
+                    )
+                })
+            });
+            let heights: Vec<(u64, i32)> = occupants
+                .iter()
+                .map(|&object| {
+                    let height = self
+                        .substrate
+                        .entities
+                        .get(object)
+                        .map_or(i32::MAX, |entity| {
+                            crate::sim::movement::air_movement::queried_flight_height(
+                                entity,
+                                cells.as_ref(),
+                            )
+                        });
+                    (object, height)
+                })
+                .collect();
+            (slope, first, heights)
+        };
+        let continues = !occupants.is_empty()
+            && first_occupier_height <= 0
+            && overlay == Some(126)
+            && overlay_data >= 0x30
+            && slope == 0;
+        if !continues {
+            // Native `UnableToContinue=true`; VERA's AnimAI gate retires it on
+            // the next visit.
+            self.mark_anim_unable_to_continue(id);
+        }
+
+        if self.session.binary_frame() % 2 != 0 {
+            return;
+        }
+        let damage = rules.general.vein_damage;
+        if damage <= 0 {
+            return;
+        }
+        let Some(warhead_name) = rules.phobos_globals.veinhole_warhead.as_deref() else {
+            return;
+        };
+        let Some(warhead) = rules.warhead(warhead_name) else {
+            return;
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        // Collect eligibility before committing: each receiver may kill the
+        // target and mutate the cell list.
+        let targets: Vec<u64> = heights
+            .into_iter()
+            .filter_map(|(target, height)| {
+                if height > 5 {
+                    return None;
+                }
+                let entity = self.substrate.entities.get(target)?;
+                if !matches!(
+                    entity.category(),
+                    EntityCategory::Unit
+                        | EntityCategory::Infantry
+                        | EntityCategory::Aircraft
+                        | EntityCategory::Structure
+                ) || !entity.lifecycle.object_alive()
+                    || entity.health.current() <= 0
+                {
+                    return None;
+                }
+                let object_type = self.interner.object_type(entity.type_ref(), rules)?;
+                if object_type.immune_to_veins
+                    || crate::sim::combat::veterancy::has_weapon_ability(
+                        entity.veterancy.rank_kind(),
+                        object_type,
+                        crate::rules::object_type::Ability::VeinProof,
+                    )
+                {
+                    return None;
+                }
+                Some(target)
+            })
+            .collect();
+        for target in targets {
+            let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                target,
+                damage,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: false,
+                    arg6: false,
+                },
+            );
+            self.commit_direct_damage_receiver(rules, overlay_registry, receiver, effects);
+        }
+    }
+
+    #[cfg(feature = "phobos")]
+    fn mark_anim_unable_to_continue(&mut self, id: AnimId) {
+        if let Some(anim) = self.substrate.anims.get_mut(id) {
+            anim.runtime.inactive = true;
+        }
+    }
+
     fn anim_cell_overlay_fields(&self, location: AnimWorldCoord) -> (Option<u8>, u8) {
         let grid_fields = |(rx, ry): (u16, u16)| {
             self.overlay_grid
@@ -2933,6 +3088,16 @@ impl Simulation {
         // FlamingGuyAI can retire this receiver before the ordinary tail.
         if self.substrate.pending_delete.contains_object(&id) {
             return Ok(false);
+        }
+        // Phobos `AnimClass_Update_VeinholeAttack` (`Misc/Hooks.VeinholeMonster.cpp:60-66`,
+        // hook `0x4243BC`) runs before the stock AnimatedTiberium check at the
+        // same site.
+        #[cfg(feature = "phobos")]
+        if config.is_veins {
+            self.vein_attack_ai(id, rules, overlay_registry, frame_effects);
+            if self.anim(id).is_none() || self.substrate.pending_delete.contains_object(&id) {
+                return Ok(false);
+            }
         }
         // AnimAI4243BC..424427: compare the exact CellAnim type at virtual
         // GetCoords minus384 in XY. A mismatch writes inactive but falls
@@ -6952,6 +7117,101 @@ mod tests {
     /// Each `art_text` section is an AnimType, so the ordered Rules processor
     /// reads its fixed-ART Type references (`Next=`, `TrailerAnim=`, ...) as
     /// in production.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_veinhole_warhead_damages_on_even_frames_until_the_cell_loses_its_occupier() {
+        const ANIM: &str = "VEINS";
+        let art_ini = IniFile::from_str("[VEINS]\nIsVeins=yes\nRate=0\nLoopCount=-1\nEnd=1\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[General]\nVeinDamage=10\n\
+                 [CombatDamage]\nVeinholeWarhead=VEINWH\n\
+                 [Warheads]\n0=VEINWH\n\
+                 [VEINWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [VehicleTypes]\n0=VICTIM\n\
+                 [VICTIM]\nStrength=1000\nArmor=heavy\nSpeed=4\n\
+                 [Animations]\n0=VEINS\n",
+            ),
+            &art_ini,
+        )
+        .expect("veinhole rules");
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        art.bind_anim_frame_count_for_test(ANIM, 1);
+        rules.install_art_fixture(art);
+
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        let victim = sim
+            .spawn_object("VICTIM", "Russians", 10, 10, 0, &rules)
+            .expect("victim");
+        let grid = sim
+            .overlay_grid
+            .get_or_insert_with(|| crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        let cell = grid.cell_mut_for_test(10, 10);
+        cell.overlay_id = Some(126);
+        cell.overlay_data = 0x30;
+        let ty = sim.interner.intern(ANIM);
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(
+                    ty,
+                    10,
+                    10,
+                    crate::util::fixed_math::SIM_ZERO,
+                    crate::util::fixed_math::SIM_ZERO,
+                    0,
+                ),
+                AnimWorldCoord {
+                    x: 10 * 256,
+                    y: 10 * 256,
+                    z: 0,
+                },
+            )
+            .expect("the art section spawns the anim");
+
+        // The first AI visit clears the constructor guard only.
+        sim.visit_anim(
+            anim,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.substrate.entities.get(victim).unwrap().health.current(),
+            1000
+        );
+        sim.visit_anim(
+            anim,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.substrate.entities.get(victim).unwrap().health.current(),
+            990,
+            "even scenario frame: one [General] VeinDamage= packet"
+        );
+        assert!(!sim.anim(anim).unwrap().runtime.inactive);
+
+        // No first occupier: UnableToContinue and no further damage.
+        sim.substrate.occupancy.remove(10, 10, victim);
+        sim.visit_anim(
+            anim,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            sim.substrate.entities.get(victim).unwrap().health.current(),
+            990
+        );
+        assert!(sim.anim(anim).unwrap().runtime.inactive);
+    }
+
     fn runtime_rules(art_text: &str, frame_counts: &[(&str, i32)]) -> RuleSet {
         let art_ini = IniFile::from_str(art_text);
         let animations: String = art_ini
