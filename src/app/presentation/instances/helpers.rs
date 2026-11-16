@@ -168,6 +168,30 @@ pub(crate) fn observer_draw_context(
     }
 }
 
+/// The actual UnitType during UnitClass::DrawIt (73CEC0).73D29C saves
+/// Type,73D2C4 temporarily substitutes a Harvester's unloading type while
+/// +6D1 is set, and73D3A2 restores it. Miner owns the display-image latch.
+/// Simple deployment and disguise choose art and leave the actual type alone.
+pub(super) fn unit_draw_type_ref(
+    entity: &ObjectRecord,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> InternedId {
+    let original = entity.type_ref();
+    let Some(rules) = rules else { return original };
+    if entity.category() == EntityCategory::Unit
+        && interner
+            .object_type(original, rules)
+            .is_some_and(|object| object.harvester)
+        && let Some(unloading) = entity.display_type_override.image()
+        && interner.object_type(unloading, rules).is_some()
+    {
+        unloading
+    } else {
+        original
+    }
+}
+
 /// Unit73D2CA..73D38F dispatches on the selected type's Voxel field. The
 /// original identity remains authoritative for animation, pose and lifecycle.
 pub(crate) fn drawn_type_uses_voxel(
