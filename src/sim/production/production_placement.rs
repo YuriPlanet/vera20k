@@ -9,6 +9,8 @@ use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
+#[cfg(feature = "phobos")]
+use crate::sim::mission::MissionType;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
@@ -998,6 +1000,20 @@ fn build_area_scan(
         #[cfg(feature = "phobos")]
         {
             let adjacent_rules = &obj.phobos_adjacent;
+            // Phobos `DisplayClass_BuildingProximityCheck_BuildArea`
+            // (`0x4A8FD7`, `Ext/BuildingType/Hooks.cpp:245`) opens with the
+            // provider's own type flag and its live current mission: a
+            // structure still in `Construction` that sets
+            // `NoBuildAreaOnBuildup=` extends no build area. The allow list
+            // below then runs unchanged, and a queued mission or the placing
+            // type's flag never matters.
+            if e.mission.current().known() == Some(MissionType::Construction)
+                && sim
+                    .entity_object_type(e, rules)
+                    .is_some_and(|provider| provider.phobos_adjacent.no_build_area_on_buildup)
+            {
+                continue;
+            }
             let provider_type = sim.interner.resolve(e.type_ref());
             if !adjacent_rules.permits_provider(provider_type) {
                 continue;
