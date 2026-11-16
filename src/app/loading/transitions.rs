@@ -95,6 +95,8 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             #[cfg(feature = "phobos")]
             briefing_dialog: Default::default(),
             #[cfg(feature = "phobos")]
+            tool_tips: Default::default(),
+            #[cfg(feature = "phobos")]
             sw_sidebar_art: None,
             outcome_banner_side_art: None,
             end_game_banner: None,
@@ -261,6 +263,7 @@ pub(crate) fn install_world_presentation(
         state.match_state.match_presentation.sw_sidebar_art = assets.sw_sidebar_art;
         state.match_state.match_presentation.sidebar_indicators = assets.sidebar_indicators;
         state.match_state.match_presentation.briefing_dialog = assets.briefing_dialog;
+        state.match_state.match_presentation.tool_tips = assets.tool_tips;
         let significance = state
             .match_state
             .match_presentation

@@ -183,6 +183,10 @@ pub(crate) struct MatchPresentationState {
     /// labels, the mod half of the sidebar indicator switches.
     #[cfg(feature = "phobos")]
     pub(crate) sidebar_indicators: crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi,
+    /// Phobos `uimd.ini [ToolTips]` plus `[LoadingScreen]
+    /// DisableEmptySpawnPositions`.
+    #[cfg(feature = "phobos")]
+    pub(crate) tool_tips: crate::rules::phobos_tooltips::ToolTipsUi,
     /// Phobos `0x4A25E0`'s indicator strings resolved for this frame. The
     /// native hook runs in the credits tick, so this follows the same per-frame
     /// pass as the power bar rather than the cameo-driven projection refresh.

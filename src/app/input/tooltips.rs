@@ -601,6 +601,66 @@ fn append_ui_description(tip: String, text: Option<&str>) -> String {
     }
 }
 
+/// Phobos `PhobosToolTip::HelpText_Techno` (`Misc/PhobosToolTip.cpp:124-154`):
+/// the localized name, then one cost/time line, with the cost sign in front of
+/// the label and `MM:SS` from `max(54, TimeToBuild)` ticks at fifteen frames a
+/// second (`:107-116`). The power group is omitted until VERA owns the
+/// `PowerLabel`/unit power chain; see §1.7.
+#[cfg(feature = "phobos")]
+fn extended_techno_tip(
+    ui: &crate::rules::phobos_tooltips::ToolTipsUi,
+    name: &str,
+    cost: i64,
+    build_ticks: i32,
+) -> String {
+    let seconds = build_ticks.max(54).max(0) / 15;
+    let minutes = seconds / 60;
+    let seconds = seconds % 60;
+    format!(
+        "{name}\n{}{}{} {}{minutes:02}:{seconds:02}",
+        if cost < 0 { "+" } else { "" },
+        ui.cost_label,
+        cost.abs(),
+        ui.time_label,
+    )
+}
+
+/// Phobos `PhobosToolTip::HelpText_Super`'s name and recharge line
+/// (`Misc/PhobosToolTip.cpp:160-206`), without the shots/description groups.
+#[cfg(feature = "phobos")]
+fn extended_super_tip(
+    ui: &crate::rules::phobos_tooltips::ToolTipsUi,
+    name: &str,
+    money: i32,
+    recharge_ticks: i32,
+) -> String {
+    let mut text = name.to_string();
+    let mut wrote = false;
+    if money != 0 {
+        text.push('\n');
+        if money > 0 {
+            text.push('+');
+        }
+        text.push_str(&ui.cost_label);
+        text.push_str(&money.unsigned_abs().to_string());
+        wrote = true;
+    }
+    if recharge_ticks > 0 {
+        if !wrote {
+            text.push('\n');
+        }
+        let seconds = recharge_ticks / 15;
+        let minutes = seconds / 60;
+        let seconds = seconds % 60;
+        let separator = if wrote { " " } else { "" };
+        text.push_str(&format!(
+            "{separator}{}{minutes:02}:{seconds:02}",
+            ui.time_label
+        ));
+    }
+    text
+}
+
 /// `RadarClass` slot +0x88 @ 0x00654320 registers the two radar-top buttons
 /// with a CSF label: 0xF2 `Tip:BriefingButton` while GameMode is 0, else
 /// `Tip:DiplomacyButton`, and 0xF3 `Tip:OptionsButton`. A labelled tip is
@@ -735,8 +795,29 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         .csf
                         .as_ref()
                         .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
-                    let tip =
-                        superweapon_money_tip(money_format.as_deref(), &item.display_name, amount);
+                    let tip = superweapon_money_tip(
+                        money_format.as_deref(),
+                        &item.display_name,
+                        amount,
+                    );
+                    #[cfg(feature = "phobos")]
+                    let tip = if state.match_state.match_presentation.tool_tips.extended {
+                        state
+                            .rules()
+                            .and_then(|rules| {
+                                let name = item.super_weapon_section.as_deref()?;
+                                let super_type = rules.super_weapon(name)?;
+                                Some(extended_super_tip(
+                                    &state.match_state.match_presentation.tool_tips,
+                                    &item.display_name,
+                                    amount,
+                                    super_type.recharge_time_frames,
+                                ))
+                            })
+                            .unwrap_or(tip)
+                    } else {
+                        tip
+                    };
                     #[cfg(feature = "phobos")]
                     let tip = with_ui_description(
                         state,
@@ -755,6 +836,30 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         .csf
                         .as_ref()
                         .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
+                    #[cfg(feature = "phobos")]
+                    let tip = if state.match_state.match_presentation.tool_tips.extended {
+                        let build_ticks = state
+                            .rules()
+                            .and_then(|rules| {
+                                rules
+                                    .object(&item.type_id)
+                                    .map(|object| crate::sim::production::type_build_time(object, rules))
+                            })
+                            .unwrap_or(54);
+                        extended_techno_tip(
+                            &state.match_state.match_presentation.tool_tips,
+                            &item.display_name,
+                            item.cost.map(i64::from).unwrap_or(0),
+                            build_ticks,
+                        )
+                    } else {
+                        cameo_tip_text(
+                            money_format.as_deref(),
+                            &item.display_name,
+                            item.cost.map(i64::from),
+                        )
+                    };
+                    #[cfg(not(feature = "phobos"))]
                     let tip = cameo_tip_text(
                         money_format.as_deref(),
                         &item.display_name,
@@ -815,6 +920,23 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                         &entry.view.display_name,
                         amount,
                     );
+                    #[cfg(feature = "phobos")]
+                    let tip = if state.match_state.match_presentation.tool_tips.extended {
+                        state
+                            .rules()
+                            .and_then(|rules| {
+                                let super_type = rules.super_weapon(&entry.type_id)?;
+                                Some(extended_super_tip(
+                                    &state.match_state.match_presentation.tool_tips,
+                                    &entry.view.display_name,
+                                    amount,
+                                    super_type.recharge_time_frames,
+                                ))
+                            })
+                            .unwrap_or(tip)
+                    } else {
+                        tip
+                    };
                     with_ui_description(
                         state,
                         tip,
@@ -925,6 +1047,8 @@ pub(crate) fn build_tooltip_instances(
             state.render_height() as f32,
         ],
         tint,
+        // Phobos `uimd.ini [ToolTips] MaxWidth=`; 0 keeps the render surface.
+        state.match_state.match_presentation.tool_tips.max_width,
         // All three tooltip lanes are drawn by `draw_pooled_ui`, which binds
         // the UI camera. That uniform still carries the rounded *world* camera
         // position and the shader subtracts it, so every screen-space UI lane
@@ -964,6 +1088,7 @@ pub(crate) fn tooltip_quads(
     tip_xy: [i32; 2],
     region: [f32; 4],
     tint: [f32; 3],
+    max_width: i32,
     camera_offset: [f32; 2],
     fill: Option<([f32; 3], f32)>,
 ) -> (
@@ -973,8 +1098,15 @@ pub(crate) fn tooltip_quads(
 ) {
     // Region the popup is sized and placed against. gamemd measures with the
     // selected region's width; which region record it picks is UNCHECKED, so
-    // the render surface width is used here.
-    let (layout, [placement_w, placement_h]) = size_tip_box(font, text, region[2] as u32);
+    // the render surface width is used here. A positive Phobos `MaxWidth`
+    // replaces that wrap limit and reserves five pixels for the border
+    // (`Misc/PhobosToolTip.cpp:305-353`).
+    let wrap_w = if max_width > 0 {
+        (max_width - 5).max(1) as u32
+    } else {
+        region[2] as u32
+    };
+    let (layout, [placement_w, placement_h]) = size_tip_box(font, text, wrap_w);
     let box_w = layout.width as f32 + TIP_DRAW_PAD[0];
     let box_h = layout.height as f32 + TIP_DRAW_PAD[1];
     let bx = place_tip(
@@ -1905,6 +2037,7 @@ mod tests {
             [100, 100],
             region,
             [1.0, 1.0, 0.0],
+            0,
             [0.0, 0.0],
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
@@ -1914,6 +2047,7 @@ mod tests {
             [100, 100],
             region,
             [1.0, 1.0, 0.0],
+            0,
             [640.0, 480.0],
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
@@ -1974,6 +2108,7 @@ mod tests {
             [900, 300],
             screen,
             [1.0, 1.0, 0.0],
+            0,
             [0.0, 0.0],
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
@@ -1992,6 +2127,7 @@ mod tests {
             [1010, 300],
             screen,
             [1.0, 1.0, 0.0],
+            0,
             [0.0, 0.0],
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
@@ -2011,6 +2147,7 @@ mod tests {
                     [100, 100],
                     region,
                     [1.0; 3],
+                    0,
                     [0.0; 2],
                     Some(([0.0, 0.0, 0.0], 1.0)),
                 );
@@ -2046,6 +2183,7 @@ mod tests {
             [985, 300],
             [0.0, 0.0, 1024.0, 768.0],
             [1.0; 3],
+            0,
             [0.0; 2],
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
@@ -2066,6 +2204,7 @@ mod tests {
             [100, 100],
             [0.0, 0.0, 800.0, 600.0],
             [1.0, 1.0, 0.0],
+            0,
             [0.0, 0.0],
             Some(([0.0, 0.0, 0.0], 1.0)),
         );
@@ -2169,10 +2308,60 @@ ToolTip.Background.Opacity={opacity}
             [100, 100],
             [0.0, 0.0, 800.0, 600.0],
             [1.0, 1.0, 0.0],
+            0,
             [0.0, 0.0],
             Some(([0.25, 0.5, 0.75], 0.4)),
         );
         assert_eq!(fill[0].tint, [0.25, 0.5, 0.75]);
         assert_eq!(fill[0].alpha, 0.4);
+    }
+
+    /// Phobos `PhobosToolTip::HelpText_Techno` / `HelpText_Super` with the
+    /// `uimd.ini` labels: one cost/time line for a techno, and a recharge line
+    /// that loses its leading space when no cost line precedes it
+    /// (`Misc/PhobosToolTip.cpp:124-206`).
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn extended_tips_use_the_configured_labels_and_period() {
+        let mut ui = crate::rules::phobos_tooltips::ToolTipsUi::default();
+        ui.cost_label = "CR".to_string();
+        ui.time_label = "T".to_string();
+        assert_eq!(
+            extended_techno_tip(&ui, "Grizzly", 700, 900),
+            "Grizzly\nCR700 T01:00"
+        );
+        assert_eq!(
+            extended_techno_tip(&ui, "Cheap", -500, 54),
+            "Cheap\n+CR500 T00:03"
+        );
+        assert_eq!(extended_super_tip(&ui, "Nuke", 0, 1800), "Nuke\nT02:00");
+        assert_eq!(
+            extended_super_tip(&ui, "Nuke", 1500, 900),
+            "Nuke\n+CR1500 T01:00"
+        );
+    }
+
+    /// `MaxWidth` replaces the surface wrap limit and reserves five pixels:
+    /// the same long line wraps narrower than the unrestricted layout.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn max_width_constrains_the_tooltip_wrap() {
+        let font = make_test_font(&[(b'x' as u16, 6)], 4);
+        let text = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        let (wide, _) = size_tip_box(&font, text, 800);
+        let (narrow, _) = size_tip_box(&font, text, 200 - 5);
+        assert_eq!(wide.lines.len(), 1);
+        assert!(narrow.lines.len() > 1);
+        let (fill, _, _) = tooltip_quads(
+            &font,
+            text,
+            [100, 100],
+            [0.0, 0.0, 800.0, 600.0],
+            [1.0, 1.0, 0.0],
+            200,
+            [0.0, 0.0],
+            Some(([0.0, 0.0, 0.0], 1.0)),
+        );
+        assert!(fill[0].size[0] < wide.width as f32 + 8.0);
     }
 }

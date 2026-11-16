@@ -1510,6 +1510,10 @@ pub struct PresentationLoadAssets {
     /// `.StatusLabel`, read from the same UIMD.INI as the sidebar settings.
     #[cfg(feature = "phobos")]
     pub briefing_dialog: crate::rules::phobos_briefing_ui::BriefingDialogUi,
+    /// Phobos `uimd.ini [ToolTips]` and `[LoadingScreen]
+    /// DisableEmptySpawnPositions`, read from the same UIMD.INI.
+    #[cfg(feature = "phobos")]
+    pub tool_tips: crate::rules::phobos_tooltips::ToolTipsUi,
     #[cfg(feature = "phobos")]
     pub sw_sidebar_art: Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     /// This match's Ares `GraphicalText.Image/Palette` overlay art. `None`

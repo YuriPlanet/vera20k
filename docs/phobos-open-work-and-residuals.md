@@ -13,7 +13,7 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
 ### 1.0 本次进展（2026-11-16，worktree `F:\20k-scratch\wt-keys`，`be130116a`）
 
 已读取全部 25 个非 ToolTips 键（含 `Default`、
-`from_ini` 四个节与回归测试），并接线了机制已存在的 17 键：
+`from_ini` 四个节与回归测试），并接线了机制已存在的 21 键：
 
 - `AllowDeployControlledMCV`：`sim/deploy.rs` 部署门 +
   `world_spawn.rs::construction_yard_redeploy_core_gate`（repack 路径）。
@@ -46,8 +46,14 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   `sim/temporal.rs` 的 Foot 与 Building 闪烁改读延迟；建筑按
   `Building`/`Occupants`/`OccupantSlots` 位选择自身、在场乘员或端口，
   建筑自身闪烁落在 `GetCenterCoords`（`Ext/Building/Hooks.cpp:39-83`）。
+- ToolTips（uimd.ini）：新增 `rules/phobos_tooltips.rs`，从同一份 UIMD.INI
+  读取 `[ToolTips]` 与 `[LoadingScreen] DisableEmptySpawnPositions`；
+  `ExtendedToolTips` 让 cameo 与超武提示改出多行 name + cost + time，
+  `CostLabel`/`TimeLabel` 经 CSF，`MaxWidth` 约束换行并留 5px 边距
+  （`Ext/Misc/PhobosToolTip.cpp:124-206,305-353`）。`AnchoredToolTips`/
+  `SWShotsFormat`/`DisableEmptySpawnPositions` 已读，消费者见 §1.7。
 
-仍未实现的 14 键及阻塞原因见 §1.7。ToolTips 7 键（uimd.ini）本次未动。
+仍未实现的 10 键及阻塞原因见 §1.7。
 
 ### 1.1 ToolTips / uimd.ini（7）
 
@@ -113,11 +119,16 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 14 键与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 10 键与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
-| ToolTips 7 键（`ExtendedToolTips`/`AnchoredToolTips`/`MaxWidth`/`CostLabel`/`TimeLabel`/`SWShotsFormat`/`DisableEmptySpawnPositions`） | 读的是 **uimd.ini**；VERA 目前没有 uimd 读取入口。需先建入口，再对照 `Misc/PhobosToolTip.cpp` 与 `app/input/tooltips.rs` 接线。 |
+| `ExtendedToolTips` | 已实现：`rules/phobos_tooltips.rs` 读取；`app/input/tooltips.rs` 为 techno/SW 生成多行 name+cost+time 文本（power 组待 `PowerLabel` owner）。 |
+| `MaxWidth` | 已实现：`tooltip_quads` 用 `MaxWidth-5` 作换行宽度。 |
+| `CostLabel` / `TimeLabel` | 已实现：经 CSF 解析后进入扩展提示。 |
+| `AnchoredToolTips` | 开关已读；VERA 的 SW 侧边栏按钮布局在 `app/presentation/sw_sidebar.rs`，需把提示框定位到列右侧/侧边栏左侧。 |
+| `SWShotsFormat` | 格式已读；VERA 只在 Ares `SW.Shots` 策略里有剩余次数，尚无对外查询 API。 |
+| `DisableEmptySpawnPositions` | 已读；VERA 尚无 loading screen 出生点选择 UI。 |
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `DisplayIncome.AllowAI` | VERA 尚未实现 `DisplayIncome` 收益累积/周期标签（全仓无消费者）；单实现 AllowAI 无意义，需先补整条 DisplayIncome 链。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |

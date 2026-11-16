@@ -1086,6 +1086,8 @@ impl App {
                     sidebar_indicators:
                         crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::default(),
                     #[cfg(feature = "phobos")]
+                    tool_tips: Default::default(),
+                    #[cfg(feature = "phobos")]
                     sidebar_indicator_text: Vec::new(),
                     #[cfg(feature = "phobos")]
                     show_power_delta: phobos_client.show_power_delta,

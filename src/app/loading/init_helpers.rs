@@ -653,6 +653,17 @@ pub(crate) fn finish_presentation_assets(
     let briefing_dialog = uimd_bytes
         .map(crate::rules::phobos_briefing_ui::BriefingDialogUi::from_uimd_bytes)
         .unwrap_or_default();
+    // `[ToolTips]` and `[LoadingScreen]` share the same file
+    // (`src/Phobos.INI.cpp:139-170`).
+    #[cfg(feature = "phobos")]
+    let tool_tips = uimd_bytes
+        .map(|bytes| {
+            crate::rules::phobos_tooltips::ToolTipsUi::from_uimd_bytes(
+                bytes,
+                &sidebar_label_lookup(csf.as_ref()),
+            )
+        })
+        .unwrap_or_default();
     #[cfg(feature = "phobos")]
     let sw_sidebar_art = sw_sidebar_ui
         .enabled
@@ -787,6 +798,8 @@ pub(crate) fn finish_presentation_assets(
         sidebar_indicators,
         #[cfg(feature = "phobos")]
         briefing_dialog,
+        #[cfg(feature = "phobos")]
+        tool_tips,
         #[cfg(feature = "phobos")]
         sw_sidebar_art,
         outcome_banner_side_art,
