@@ -25,7 +25,9 @@ replays in ~/.local/share/VERA20k. To use another game folder, change ra2_dir
 in that config.toml.
 
 REQUIREMENTS
-  A GPU with Vulkan, DirectX 12 or Metal.
+  A GPU with Vulkan, DirectX 12 or Metal. Some older GPUs with DirectX 12,
+    such as Intel's 4th generation, are not enough; VERA20k then draws with
+    the processor, very slowly, and says so when it starts.
   Windows: VERA20k is not code-signed yet. SmartScreen may warn about an
     unknown app; choose More info, then Run anyway. Smart App Control, which
     some Windows 11 PCs have on, blocks unsigned programs outright: there,
