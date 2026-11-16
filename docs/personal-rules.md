@@ -8,4 +8,4 @@ If your `VERARULES.INI` still holds changes, the game says so when it starts. Co
 sections you changed into the mod's `rulesmd.ini`, then delete `VERARULES.INI`. The game
 removes the file by itself when it is still the unchanged one it made.
 
-Terrain Deformation and the Superweapon Limit are on the Options screen, as before.
+Terrain Deformation and the Superweapon Limit are in the skirmish screen's Game Options.

@@ -15,13 +15,16 @@
 //! after committed input-method text; native's head loop
 //! (`0x0055E42C..0x0055E465`) leaves that to the next key.
 //!
-//! RESIDUAL: WOL's `/page` and
-//! `/reply` commands (`0x0078A6B0`) and its relay mask (`0x0055F056`) are WOL
-//! backend. VERA's `/pause` and `/resume` lines ([`pause_command`]) are not
-//! sent. Typed text arrives as the key event's text, every UTF-16 unit of
-//! it, and input-method text through [`commit_text`]. Native WM_CHAR delivers
-//! one ANSI byte per character (`0x0054F56C`), and Shift/Ctrl+Backspace delete
-//! twice or append `0x7F` there; VERA deletes once.
+//! RESIDUAL: WOL's chat commands, which take a line before the send block
+//! (page `0x0078A6B0`, online `0x0078A470`, reply `0x0078A8F0`), and its relay
+//! mask (`0x0055F056`) are WOL backend. Reply also takes a line that starts
+//! with `TXT_REPLY_COMMAND_SHORT`; a port must leave VERA's `/pause` and
+//! `/resume` lines ([`pause_command`]) to the send block, which sends them like
+//! any line before they ask for the shared pause. Typed text arrives as the
+//! key event's text, every UTF-16 unit of it, and input-method text through
+//! [`commit_text`]. Native WM_CHAR delivers one ANSI byte per character
+//! (`0x0054F56C`), and Shift/Ctrl+Backspace delete twice or append `0x7F`
+//! there; VERA deletes once.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -319,9 +322,11 @@ fn apply_input(state: &mut AppState, key: EditKey) {
         EditInput::Sent(text) => {
             let target = state.match_state.match_presentation.chat.target;
             let whole_line = !state.match_state.match_presentation.chat.overflowed;
-            match pause_command(&text).filter(|_| whole_line) {
-                Some(want) => crate::app::input::pause_menu::chat_command(state, want),
-                None => send(state, target, &text),
+            // The line goes to its recipients like any other, so a `/pause`
+            // or `/resume` line tells them who asked before it asks.
+            send(state, target, &text);
+            if let Some(want) = pause_command(&text).filter(|_| whole_line) {
+                crate::app::input::pause_menu::chat_command(state, want);
             }
             // 0x0055F1BD: result 3 clears the target.
             state.match_state.match_presentation.chat.target = ChatTarget::None;
@@ -336,8 +341,8 @@ fn apply_input(state: &mut AppState, key: EditKey) {
 }
 
 /// VERA: a typed line that is only `/pause` or `/resume`, ASCII
-/// case-insensitively, asks for the shared pause (true) or its end instead
-/// of being sent; gamemd sends such a line as chat. Any other line is chat.
+/// case-insensitively, also asks for the shared pause (true) or its end,
+/// after it is sent as chat like any other line.
 fn pause_command(line: &str) -> Option<bool> {
     let word = line.trim_matches(' ');
     if word.eq_ignore_ascii_case("/pause") {

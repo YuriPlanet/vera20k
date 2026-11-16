@@ -9,12 +9,13 @@
 
 use super::{
     ARES_HELP, ARES_LABEL, AUTO_REPAIR_HELP, AUTO_REPAIR_LABEL, CHECK_FOR_UPDATES_HELP,
-    CHECK_FOR_UPDATES_LABEL, COLOR_VISION_HELP, COLOR_VISION_LABEL, COMPACT_SUPER_TIMERS_HELP,
-    COMPACT_SUPER_TIMERS_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
-    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode,
-    DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
-    DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
+    CHECK_FOR_UPDATES_LABEL, COLOR_VISION_HELP, COLOR_VISION_LABEL, COMMANDER_FEEDBACK_HELP,
+    COMMANDER_FEEDBACK_LABEL, COMPACT_SUPER_TIMERS_HELP, COMPACT_SUPER_TIMERS_LABEL,
+    CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL,
+    CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP,
+    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
+    DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
+    EDIT_LAYOUT_HELP, EDIT_LAYOUT_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
     HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
     HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
     HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
@@ -27,8 +28,7 @@ use super::{
     RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
     SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
     SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, SUPERWEAPON_LIMIT_HELP, SUPERWEAPON_LIMIT_LABEL,
-    Setting, SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
+    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, VERA_ICON_HELP,
     VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
@@ -306,21 +306,21 @@ fn page_rows(settings: &[Setting], first_row: i32, px: impl Fn(RectPx) -> RectPx
     rows
 }
 
-/// The General page's Check for Updates, under its rows where the build has
-/// an updater. Not retail: the column has no tile left for it, so it sits
-/// under the page's boxes, the size of Sound Options' Play and Stop (`0xD6`,
-/// MNBTTN type 3).
-fn check_for_updates(
+/// The button a page holds under its rows: General's Check for Updates where
+/// the build has an updater, and Interface's Edit Layout. Not retail: the
+/// column has no tile left for them, so each sits under its page's boxes, the
+/// size of Sound Options' Play and Stop (`0xD6`, MNBTTN type 3).
+fn page_button(
     category: Category,
     rows: &PageRows,
     px: impl Fn(RectPx) -> RectPx,
 ) -> Option<(LauncherButton, RectPx)> {
-    (category == Category::General && HAS_CHECK_FOR_UPDATES).then(|| {
-        (
-            LauncherButton::CheckForUpdates,
-            px(dlu_rect(ROW_X, rows.end + 6, 83, 15)),
-        )
-    })
+    let id = match category {
+        Category::General if HAS_CHECK_FOR_UPDATES => LauncherButton::CheckForUpdates,
+        Category::Interface => LauncherButton::EditLayout,
+        _ => return None,
+    };
+    Some((id, px(dlu_rect(ROW_X, rows.end + 6, 83, 15))))
 }
 
 impl LauncherOptionsLayout {
@@ -392,7 +392,7 @@ impl LauncherOptionsLayout {
             (dlu(2, 355, 303, 12), PageLabel::Blank),
         ];
         let rows = page_rows(category.settings(), FIRST_ROW, px);
-        buttons.extend(check_for_updates(category, &rows, px));
+        buttons.extend(page_button(category, &rows, px));
         labels.extend(rows.labels);
         Self {
             category,
@@ -421,7 +421,8 @@ impl LauncherOptionsLayout {
     /// `0xBBB` init decides, and `keyboard` whether it holds the Keyboard
     /// button, for a sidebar with no row for one. `window` is the
     /// one the match shares, which the zoom list depends on. `internet` leaves
-    /// room for FF's own group above the Game Options rows.
+    /// room for FF's own group above the Game Options rows, and leaves out
+    /// Commander Clips, which only a skirmish plays.
     pub(crate) fn in_game(
         (width, height): (i32, i32),
         column: &[RectPx],
@@ -458,9 +459,14 @@ impl LauncherOptionsLayout {
             .filter(|setting| {
                 game_speed || *setting != Setting::Slider(LauncherTrackbarId::GameSpeed)
             })
+            // The clips play in a skirmish only (`app::commander_feedback`),
+            // and under FF's group a 640x480 page has no row left for the box.
+            .filter(|setting| {
+                !internet || *setting != Setting::Checkbox(LauncherCheckboxId::CommanderFeedback)
+            })
             .collect();
         let mut rows = page_rows(&settings, first_row, px);
-        buttons.extend(check_for_updates(category, &rows, px));
+        buttons.extend(page_button(category, &rows, px));
         if category == Category::GameControls {
             // One row of buttons the size of Check for Updates ends the page:
             // the Esc menu's Set Window Size under its caption, then the
@@ -734,9 +740,6 @@ impl OptionsDialogState {
             LauncherTrackbarId::HouseColorStrength => {
                 return Cow::Owned(tr(HOUSE_COLOR_STRENGTH_LABEL));
             }
-            LauncherTrackbarId::SuperweaponLimit => {
-                return Cow::Owned(tr(SUPERWEAPON_LIMIT_LABEL));
-            }
             LauncherTrackbarId::GameSpeed => &self.game_speed_caption,
         })
     }
@@ -776,13 +779,13 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::AutoRepair => AUTO_REPAIR_LABEL,
-            LauncherCheckboxId::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
             LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
             LauncherCheckboxId::ShowStringKeys => SHOW_STRING_KEYS_LABEL,
             LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
+            LauncherCheckboxId::CommanderFeedback => COMMANDER_FEEDBACK_LABEL,
             LauncherCheckboxId::DetailedEvaText => DETAILED_EVA_TEXT_LABEL,
             LauncherCheckboxId::CompactSuperTimers => COMPACT_SUPER_TIMERS_LABEL,
         }))
@@ -804,6 +807,7 @@ impl OptionsDialogState {
             LauncherButton::InGameOptions => Cow::Borrowed(&self.labels.options),
             LauncherButton::InGameBack => Cow::Borrowed(&self.labels.back),
             LauncherButton::CheckForUpdates => Cow::Owned(tr(CHECK_FOR_UPDATES_LABEL)),
+            LauncherButton::EditLayout => Cow::Owned(tr(EDIT_LAYOUT_LABEL)),
             LauncherButton::SetWindowSize => {
                 let (width, height) = self.launch_window_size;
                 Cow::Owned(format!("{width}x{height}"))
@@ -858,13 +862,13 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => self.values.auto_repair,
-            LauncherCheckboxId::TerrainDeformation => self.values.terrain_deformation,
             LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => self.values.show_string_keys,
             LauncherCheckboxId::SkipIntro => self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
+            LauncherCheckboxId::CommanderFeedback => self.values.commander_feedback,
             LauncherCheckboxId::DetailedEvaText => self.values.detailed_eva_text,
             LauncherCheckboxId::CompactSuperTimers => self.values.compact_super_timers,
         }
@@ -1074,6 +1078,11 @@ impl OptionsDialogState {
                         NOT_IN_MATCH_HELP
                     }));
                 }
+                // Its help starts with "in a match", so the greyed button
+                // says why as well.
+                LauncherButton::EditLayout => {
+                    return Some(LauncherStatusHelp::Vera(EDIT_LAYOUT_HELP));
+                }
                 LauncherButton::Exit(LauncherParentResult::Mods) => {
                     return Some(LauncherStatusHelp::Vera(
                         crate::ui::mods_shell::BUTTON_HELP_KEY,
@@ -1127,9 +1136,6 @@ impl OptionsDialogState {
                 LauncherTrackbarId::HouseColorStrength => {
                     LauncherStatusHelp::Vera(HOUSE_COLOR_STRENGTH_HELP)
                 }
-                LauncherTrackbarId::SuperweaponLimit => {
-                    LauncherStatusHelp::Vera(SUPERWEAPON_LIMIT_HELP)
-                }
                 // Retail's string for the Game Options speed slider.
                 LauncherTrackbarId::GameSpeed => LauncherStatusHelp::Csf("STT:GameOptSliderSpeed"),
             });
@@ -1139,9 +1145,6 @@ impl OptionsDialogState {
             .iter()
             .find(|(_, rect)| rect.contains(x, y))
         {
-            if !self.checkbox_enabled(*id) {
-                return Some(LauncherStatusHelp::Vera(NOT_IN_MATCH_HELP));
-            }
             return Some(match id {
                 LauncherCheckboxId::Tooltips => LauncherStatusHelp::Csf("STT:MainOptCBoxTooltips"),
                 LauncherCheckboxId::TargetLines => {
@@ -1173,9 +1176,6 @@ impl OptionsDialogState {
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::AutoRepair => LauncherStatusHelp::Vera(AUTO_REPAIR_HELP),
-                LauncherCheckboxId::TerrainDeformation => {
-                    LauncherStatusHelp::Vera(TERRAIN_DEFORMATION_HELP)
-                }
                 LauncherCheckboxId::PerformanceStats => {
                     LauncherStatusHelp::Vera(PERFORMANCE_STATS_HELP)
                 }
@@ -1191,6 +1191,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::CustomEndGameMovie => {
                     LauncherStatusHelp::Vera(CUSTOM_END_GAME_MOVIE_HELP)
+                }
+                LauncherCheckboxId::CommanderFeedback => {
+                    LauncherStatusHelp::Vera(COMMANDER_FEEDBACK_HELP)
                 }
                 LauncherCheckboxId::DetailedEvaText => {
                     LauncherStatusHelp::Vera(DETAILED_EVA_TEXT_HELP)
@@ -1347,6 +1350,9 @@ impl OptionsDialogState {
                 LauncherButton::InGameOptions => self.select_category(Category::ALL[0]),
                 LauncherButton::InGameBack => self.select_category(Category::GameControls),
                 LauncherButton::CheckForUpdates => self.request_update_check(),
+                LauncherButton::EditLayout => self
+                    .pending_events
+                    .push(LauncherOptionsEvent::EditLayoutRequested),
                 LauncherButton::SetWindowSize => self
                     .pending_events
                     .push(LauncherOptionsEvent::SetWindowSizeRequested),
@@ -1600,6 +1606,20 @@ mod tests {
             true,
             (1920, 1080),
         )
+    }
+
+    /// A skirmish's Game Options page keeps the Commander Clips box; an
+    /// Internet match's leaves it out, as no clip plays there.
+    #[test]
+    fn commander_clips_stay_off_an_internet_match_page() {
+        let has_box = |internet| {
+            in_game((800, 600), Category::Gameplay, internet)
+                .checkboxes
+                .iter()
+                .any(|(id, _)| *id == LauncherCheckboxId::CommanderFeedback)
+        };
+        assert!(has_box(false));
+        assert!(!has_box(true));
     }
 
     /// Every in-game page fits left of the sidebar and above the status line
@@ -2236,6 +2256,50 @@ mod tests {
         assert!(!state.drain_output().check_for_updates);
     }
 
+    /// Edit Layout sits under the Interface page's rows in both menus. The
+    /// main menu has no match screen to arrange, so a press there asks
+    /// nothing; in a match it asks for the layout edit mode, which the
+    /// in-game menu starts as it closes.
+    #[test]
+    fn edit_layout_sits_on_the_interface_page_and_asks_in_a_match() {
+        let edit = LauncherButton::EditLayout;
+        for category in Category::ALL {
+            assert_eq!(
+                page(category).buttons.iter().any(|(id, _)| *id == edit),
+                category == Category::Interface,
+                "{category:?}"
+            );
+        }
+        let press = |state: &mut OptionsDialogState, layout: &LauncherOptionsLayout| {
+            let rect = button(layout, edit);
+            state.shell_mouse_down(rect.x + 5, rect.y + 5, layout);
+            state.shell_mouse_up(rect.x + 5, rect.y + 5, layout);
+            state
+                .drain_output()
+                .events
+                .contains(&LauncherOptionsEvent::EditLayoutRequested)
+        };
+        let mut state = state();
+        let layout = page(Category::Interface);
+        let rect = button(&layout, edit);
+        let last_box = layout.checkboxes.last().unwrap().1;
+        assert!(
+            rect.y >= last_box.y + last_box.h,
+            "{rect:?} under {last_box:?}"
+        );
+        assert_eq!(state.shell_button_label(edit), "Edit Layout");
+        assert!(!press(&mut state, &layout), "the main menu has no match");
+
+        state.set_in_game_controls(String::new(), Vec::new(), 0, String::new());
+        let layout = in_game((800, 600), Category::Interface, false);
+        let rect = button(&layout, edit);
+        assert_eq!(
+            state.shell_status_help_key(rect.x + 5, rect.y + 5, &layout),
+            Some(LauncherStatusHelp::Vera(EDIT_LAYOUT_HELP))
+        );
+        assert!(press(&mut state, &layout));
+    }
+
     #[test]
     fn physical_slider_capture_crosses_other_controls_without_activating_them() {
         let mut state = state();
@@ -2568,6 +2632,12 @@ mod tests {
                 YR_ORIGINAL_STYLE_LABEL,
                 LauncherOptionsEvent::YrOriginalStyleChanged,
             ),
+            (
+                Category::Gameplay,
+                CommanderFeedback,
+                COMMANDER_FEEDBACK_LABEL,
+                LauncherOptionsEvent::CommanderFeedbackChanged,
+            ),
         ] {
             let mut state = state();
             let layout = page(category);
@@ -2662,47 +2732,6 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
                 LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::AlwaysExceptFull)
-            ]
-        );
-    }
-
-    /// The Superweapon Limit slider reads Off at its left end and publishes
-    /// the limit, not the position: its first notch allows two.
-    #[test]
-    fn superweapon_limit_slider_publishes_off_then_two_up() {
-        use crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX;
-        let mut state = state();
-        let layout = page(Category::Gameplay);
-        let slider = layout
-            .trackbar_rect(LauncherTrackbarId::SuperweaponLimit)
-            .unwrap();
-        assert_eq!(
-            state.trackbar_plaque_text(LauncherTrackbarId::SuperweaponLimit),
-            tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_OFF)
-        );
-        state.set_trackbar_position(LauncherTrackbarId::SuperweaponLimit, 1);
-        assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
-                LauncherOptionsEvent::SuperweaponLimitChanged(2),
-            ]
-        );
-        state.shell_mouse_down(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
-        state.shell_mouse_up(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
-        assert_eq!(
-            state.trackbar_plaque_text(LauncherTrackbarId::SuperweaponLimit),
-            SUPERWEAPON_LIMIT_MAX.to_string()
-        );
-        state.shell_mouse_down(slider.x + 1, slider.y + slider.h - 3, &layout);
-        state.shell_mouse_up(slider.x + 1, slider.y + slider.h - 3, &layout);
-        assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
-                LauncherOptionsEvent::SuperweaponLimitChanged(SUPERWEAPON_LIMIT_MAX),
-                LauncherOptionsEvent::Cue(LauncherCue::GenericClick),
-                LauncherOptionsEvent::SuperweaponLimitChanged(0),
             ]
         );
     }

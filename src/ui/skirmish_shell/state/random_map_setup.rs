@@ -225,8 +225,7 @@ pub enum RandomMapPreset {
     /// Four players across an archipelago.
     Islands,
     /// Eight players on Team Continents, the landform that gives each team
-    /// a continent; the Skirmish screen's Team Starts sets the teams on
-    /// them.
+    /// a continent.
     Teams,
     /// One of the player's own, by slot from 0: the options the Extras
     /// view's My Preset tool saved (`custom_presets`), all but the seed and

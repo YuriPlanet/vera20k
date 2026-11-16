@@ -16,8 +16,8 @@ mod sequenced;
 mod startup;
 mod timing;
 pub use sequenced::{
-    CommandDeliveryTrace, DeliveryCounters, MatchSpeedChange, MultiplayerPauseStatus,
-    SequencedError, SequencedTiming,
+    CommandDeliveryTrace, DeliveryCounters, MatchPauseChange, MatchSpeedChange,
+    MultiplayerPauseStatus, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
 /// The relay's turn length, which online playout follows.
@@ -279,6 +279,14 @@ impl LiveCommandSession {
             .map_or_else(Vec::new, |session| session.take_speed_changes())
     }
 
+    /// VERA: other players' shared pauses and resumes in frames dispatched so
+    /// far.
+    pub fn take_pause_changes(&mut self) -> Vec<MatchPauseChange> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_pause_changes())
+    }
+
     /// VERA: true once, when this game reaches a pause that found it catching
     /// up. `reached` is whether the simulation has reached the pause.
     pub fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
@@ -414,6 +422,23 @@ impl LiveCommandSession {
             .is_some_and(|session| session.restoring())
     }
 
+    /// VERA: this game watches the match instead of playing in it
+    /// (Networking.md, Watching). It follows the local House and sends
+    /// nothing into the match.
+    pub fn watching(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.watching())
+    }
+
+    /// A watched match is over: every player left it, and every frame before
+    /// that ran here.
+    pub fn watch_over(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.watch_over())
+    }
+
     /// Whether a confirmed UI exit's EXIT waits for the relay to sequence it.
     pub fn exit_requested(&self) -> bool {
         self.sequenced
@@ -433,6 +458,12 @@ impl LiveCommandSession {
 
     pub fn relay_expires(&self) -> Option<u64> {
         self.transport.relay_expires()
+    }
+
+    /// A watcher's delay behind the players, from its watch ticket (relay
+    /// README "Watchers"); `None` for a player.
+    pub fn relay_watch_delay(&self) -> Option<u32> {
+        self.transport.relay_watch_delay()
     }
 
     pub fn renew_relay(

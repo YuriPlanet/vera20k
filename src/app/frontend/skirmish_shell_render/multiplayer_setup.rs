@@ -1102,7 +1102,7 @@ fn push_option_controls(
             ));
         }
         texts.push(text(
-            &crate::i18n::tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_LABEL),
+            &crate::i18n::tr(crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_LABEL),
             layout.superweapon_limit_label,
             ShellAlign::NONE,
         ));
@@ -1166,9 +1166,9 @@ fn push_trackbar(
                 .to_string(),
             // 1 is Teams Off.
             TEAM_COUNT if bar.value < 2 => crate::i18n::tr("VERA:TeamsOff"),
-            SUPERWEAPON_LIMIT if bar.value < 2 => {
-                crate::i18n::tr(crate::ui::main_menu_dialogs::options::SUPERWEAPON_LIMIT_OFF)
-            }
+            SUPERWEAPON_LIMIT => crate::ui::skirmish_shell::game_options::superweapon_limit_text(
+                crate::rules::personal_rules::admitted_superweapon_limit(bar.value),
+            ),
             _ => bar.range.stepped(bar.value).to_string(),
         };
         texts.push(shell_text::draw_in_rect_scaled(

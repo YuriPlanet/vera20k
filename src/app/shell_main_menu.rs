@@ -171,6 +171,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // waiting, so the switch never cuts a line that is halfway said.
         self.persistence.options_profile.custom_end_game_movie = enabled;
     }
+    fn store_commander_feedback(&mut self, enabled: bool) {
+        // The clip layer's next pass reads it, so a match mutes or unmutes
+        // its commanders at once; muted, it still spends what it sees.
+        self.persistence.options_profile.commander_feedback = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
@@ -182,17 +187,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_minimap_beacons(&mut self, enabled: bool) {
         // The next radar click reads it; Options' accept writes it out.
         self.persistence.options_profile.minimap_beacons = enabled;
-    }
-    fn store_terrain_deformation(&mut self, enabled: bool) {
-        // The next game's rules and every later network agreement read it;
-        // Options' accept writes it out.
-        self.persistence.options_profile.terrain_deformation = enabled;
-        self.process_assets.set_terrain_deformation(enabled);
-    }
-    fn store_superweapon_limit(&mut self, limit: u8) {
-        // As Terrain Deformation: the next game's rules read it.
-        self.persistence.options_profile.superweapon_limit = limit;
-        self.process_assets.set_superweapon_limit(i32::from(limit));
     }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
@@ -1176,6 +1170,7 @@ impl App {
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
+        state.frontend.skirmish_shell_state.game_options = None;
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;

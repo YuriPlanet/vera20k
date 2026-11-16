@@ -183,6 +183,11 @@ pub(super) struct Options {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooperative_campaign: Option<String>,
     pub seed: Option<u32>,
+    /// The room's Watching, `delayed` or `live` (docs/lobby-protocol.md
+    /// "Watching"). Absent while it is off, which the lobby reads as off;
+    /// lobbies before it refuse the field. Guests have no use for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watching: Option<String>,
 }
 
 impl Options {
@@ -254,6 +259,39 @@ pub(super) struct ChannelList {
     pub channels: Vec<Channel>,
 }
 
+/// `GET /v1/matches` (docs/lobby-protocol.md "Watching"). The game keeps
+/// only these fields of each match.
+#[derive(Deserialize)]
+pub(super) struct MatchList {
+    pub matches: Vec<Match>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct Match {
+    pub match_id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub map: Option<String>,
+    pub watchers: u32,
+    pub max_watchers: u32,
+    #[serde(default)]
+    pub names: Vec<String>,
+}
+
+impl From<Match> for crate::app::shell_wol::WolMatch {
+    fn from(value: Match) -> Self {
+        Self {
+            match_id: value.match_id,
+            name: value.name.unwrap_or_default(),
+            map: value.map.unwrap_or_default(),
+            watchers: value.watchers,
+            max_watchers: value.max_watchers,
+            names: value.names,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub(super) struct Joined {
     pub channel: Channel,
@@ -297,6 +335,41 @@ pub(super) struct Start {
     pub seed: u32,
     pub users: Vec<StartUser>,
     pub relay: RelayGrant,
+}
+
+/// `watch_started` (docs/lobby-protocol.md "Watching"): the start every
+/// player's game got, with the timing it agreed, and this watcher's grant.
+#[derive(Deserialize)]
+pub(super) struct WatchStarted {
+    pub match_id: String,
+    pub version: String,
+    pub rules_digest: String,
+    pub seed: u32,
+    /// The room's tournament value (`[0xB779C4]`), and whether it is a
+    /// Quick Co-op room: the start terms every player's game took.
+    pub tournament: i32,
+    pub quick_coop: bool,
+    pub users: Vec<WatchedUser>,
+    pub options: Options,
+    pub pings: Vec<i32>,
+    pub relay: WatchGrant,
+}
+
+#[derive(Deserialize)]
+pub(super) struct WatchedUser {
+    pub name: String,
+    pub flags: u32,
+    pub source_index: u8,
+}
+
+// Deliberately no Debug: a watch grant is a credential.
+#[derive(Deserialize)]
+pub(super) struct WatchGrant {
+    pub address: std::net::SocketAddrV4,
+    pub ticket: String,
+    pub packet_key: String,
+    pub payload_key: String,
+    pub ordering_certificate: String,
 }
 
 /// The `ladder` event for the names a `ladder` command asked for, or the

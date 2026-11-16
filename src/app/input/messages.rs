@@ -899,9 +899,10 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
     );
 }
 
-/// A relay speed change (`network_match::post_speed_changes`). gamemd has
-/// no such line, so `text` is VERA's own, not a CSF key.
-pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
+/// A change to the relay's shared timeline (`network_match`): a speed
+/// change, or another player's shared pause or resume. gamemd has no such
+/// lines, so `text` is VERA's own, not a CSF key.
+pub(crate) fn post_relay_notice(state: &mut AppState, text: &str) {
     post_grey_row(state, text, false, false);
 }
 

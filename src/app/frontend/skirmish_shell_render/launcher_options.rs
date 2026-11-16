@@ -100,7 +100,7 @@ pub(super) fn build_controls(
                 } else {
                     crate::ui::shell::button::CheckboxFace::Unchecked
                 },
-                disabled: !dialog.checkbox_enabled(id),
+                disabled: false,
                 rect,
             },
             scale,
@@ -224,11 +224,7 @@ pub(super) fn build_text(
             &dialog.shell_checkbox_label(id),
             text,
             ShellAlign::V_CENTER,
-            if dialog.checkbox_enabled(id) {
-                SHELL_LABEL_TEXT_RGB
-            } else {
-                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
-            },
+            SHELL_LABEL_TEXT_RGB,
             glyph,
         ));
     }

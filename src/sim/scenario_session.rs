@@ -868,6 +868,18 @@ pub struct ScenarioSession {
     /// identity, like `current_house`.
     #[serde(default)]
     local_shared_house_source: Option<i8>,
+    /// VERA watching (docs/Networking.md "Watching"): this process watches
+    /// the match and sends no command records, so no record's sender is its
+    /// own, not even the followed player's. Local identity, like
+    /// `current_house`, outside the shared hash.
+    #[serde(default)]
+    watcher: bool,
+    /// VERA watching: the watcher shows the observer's sidebar, Tab's stop
+    /// after the last player ([`crate::sim::world::Simulation::observe`]),
+    /// while its world keeps the House it last followed. Local identity, like
+    /// the current House, outside the shared hash.
+    #[serde(default)]
+    watcher_observes: bool,
     /// Scenario+11E4 is included in Save689372's complete Scenario block and
     /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
     #[serde(default)]
@@ -1455,6 +1467,25 @@ impl ScenarioSession {
     /// This process's sender while players share Houses.
     pub(crate) fn local_shared_house_source(&self) -> Option<i8> {
         self.local_shared_house_source
+    }
+
+    /// VERA watching: this process watches the match and sends nothing.
+    pub fn watcher(&self) -> bool {
+        self.watcher
+    }
+
+    pub(crate) fn install_watcher(&mut self) {
+        self.watcher = true;
+    }
+
+    /// VERA watching: the watcher shows the observer's sidebar.
+    pub fn watcher_observes(&self) -> bool {
+        self.watcher_observes
+    }
+
+    /// The watcher's Tab moves between a player's sidebar and the observer's.
+    pub(crate) fn show_observer_sidebar(&mut self, shown: bool) {
+        self.watcher_observes = shown;
     }
 
     /// Retire the existing admitted timing row at a shared EXIT/REMOVEPLAYER
@@ -2080,6 +2111,8 @@ impl ScenarioSession {
             network_command_timing: None,
             shared_house_sources: Vec::new(),
             local_shared_house_source: None,
+            watcher: false,
+            watcher_observes: false,
             start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             campaign_map_stage: 0,

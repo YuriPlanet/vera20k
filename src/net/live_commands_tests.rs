@@ -4254,6 +4254,7 @@ fn sequenced_push_advances_without_requests_and_repairs_a_lost_range() {
 
 #[test]
 fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
+    use crate::net::live_commands::MatchPauseChange;
     use crate::net::udp::test_support::MAX_DATAGRAM;
     use crate::sim::command::{Command, MEGAMISSION_OPCODE};
 
@@ -4394,6 +4395,22 @@ fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
         assert!(!world.pending_network_wait());
     }
     assert_eq!(worlds[0].state_hash(), worlds[1].state_hash());
+    // Only the other player is told who paused, once, though it lost the
+    // marker's first delivery.
+    let named: Vec<_> = boundaries
+        .iter()
+        .map(|boundary| boundary.live.borrow_mut().take_pause_changes())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            vec![],
+            vec![MatchPauseChange {
+                house: 0,
+                paused: true
+            }]
+        ]
+    );
 
     let owner = worlds[0].interner.get("Alpha").unwrap();
     let record = worlds[0]
@@ -4466,6 +4483,20 @@ fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
             1
         );
     }
+    let named: Vec<_> = boundaries
+        .iter()
+        .map(|boundary| boundary.live.borrow_mut().take_pause_changes())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            vec![MatchPauseChange {
+                house: 1,
+                paused: false
+            }],
+            vec![]
+        ]
+    );
     let mut compared_after_resume = 0;
     for (frame, hash) in &committed[0] {
         if let Some(other) = committed[1].get(frame) {

@@ -39,6 +39,12 @@ const UNCOMPARED: [&str; 3] = [
     crate::ui::match_layout::FILE_NAME,
     "MOD-FILES.TXT",
 ];
+/// `name`, a file in a mod's folder itself, is one that players need not
+/// share ([`UNCOMPARED`]).
+pub(crate) fn uncompared(name: &str) -> bool {
+    UNCOMPARED.contains(&name_key(name).as_str())
+}
+
 /// The most files of one mod that are compared. A mod has a few thousand;
 /// folders that link into one another can list far more.
 const FILES_LIMIT: usize = 50_000;
