@@ -861,6 +861,14 @@ pub(crate) fn shp_visitor<'a>(
                 && set.shp_vehicle_turret().is_some()
             {
                 let turret_facing = (render_pose.turret >> 8) as u8;
+                let turret_offset = rules
+                    .object(type_str)
+                    .and_then(|object| {
+                        art_reg.and_then(|art| art.resolve_metadata_entry(type_str, &object.image))
+                    })
+                    .map_or(0, |art| art.turret_offset);
+                let (turret_dx, turret_dy) =
+                    shp_turret_offset_screen(turret_offset, render_pose.body, render_pose.turret);
                 let turret_id = rules.unit_turret_shp_id(type_str);
                 let turret_shape_present = turret_id.as_ref().is_some_and(|id| {
                     atlas
@@ -893,7 +901,10 @@ pub(crate) fn shp_visitor<'a>(
                             target: ObjectTexture::ShpPage(turret_entry.page as usize),
                             render_z: parent.policy.render_z,
                             instance: SpriteInstance {
-                                position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
+                                position: [
+                                    sx + turret_entry.offset_x + turret_dx,
+                                    sy + turret_entry.offset_y + turret_dy,
+                                ],
                                 size: turret_entry.pixel_size,
                                 uv_origin: turret_entry.uv_origin,
                                 uv_size: turret_entry.uv_size,
@@ -2387,8 +2398,51 @@ fn resolve_object_shp_frame_with_facing(
     Some(animation::infantry_facing_slot(facing))
 }
 
+/// Screen delta for the ART `TurretOffset` on the SHP turret draw.
+///
+/// gamemd-derived: `Ext/Unit/Hooks.DrawIt.cpp:38-49` (`0x73C7AC`) builds a
+/// `Matrix3D` from the body facing, applies `TechnoTypeExt::ApplyTurretOffset`
+/// (`Ext/TechnoType/Body.cpp:56-65`) and rotates by `turretRad - bodyRad`
+/// before `CoordsToScreen`. With row-vector matrices the translation is
+/// therefore rotated by the facing difference only. VERA reads one integer
+/// (`ArtData::turret_offset`, the FLH X term); the lateral and height terms are
+/// a separate parser gap recorded in `docs/phobos-shp-turret.md`.
+fn shp_turret_offset_screen(turret_offset: i32, body: u16, turret: u16) -> (f32, f32) {
+    if turret_offset == 0 {
+        return (0.0, 0.0);
+    }
+    let diff = f64::from(i32::from(turret) - i32::from(body)) * std::f64::consts::TAU / 65536.0;
+    let x = f64::from(turret_offset);
+    // `res.X` and `-res.Y` are native's leptons; both truncate toward zero
+    // before `CoordsToScreen`.
+    let world_x = (x * diff.cos()) as i32;
+    let world_y = (-(x * diff.sin())) as i32;
+    let (screen_x, screen_y) = crate::util::lepton::absolute_leptons_to_screen(world_x, world_y, 0);
+    let (base_x, base_y) = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
+    (screen_x - base_x, screen_y - base_y)
+}
+
 #[cfg(test)]
 mod tests {
+    /// `Ext/Unit/Hooks.DrawIt.cpp:38-49`: the FLH offset is rotated by the
+    /// turret-minus-body facing before the isometric projection.
+    #[test]
+    fn shp_turret_offset_rotates_with_the_facing_difference() {
+        assert_eq!(super::shp_turret_offset_screen(0, 0, 0), (0.0, 0.0));
+
+        let aligned = super::shp_turret_offset_screen(256, 0, 0);
+        assert!(
+            aligned.0 > 0.0 && aligned.1 > 0.0,
+            "aligned +X leans down-right: {aligned:?}"
+        );
+
+        let quarter = super::shp_turret_offset_screen(256, 0, 0x4000);
+        assert!(
+            quarter.0 > 0.0 && quarter.1 < 0.0,
+            "90 degrees maps the +X FLH term to -Y, which projects up-right: {quarter:?}"
+        );
+    }
+
     /// Native reads slot 9's `TurretAnim`, offsets and `TurretAnimIsVoxel` from
     /// the BuildingType section (`0x00464450..0x004645C9`), not ART. The draw
     /// list must therefore synthesize that entry even when ART declares no

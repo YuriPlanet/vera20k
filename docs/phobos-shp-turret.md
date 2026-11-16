@@ -84,10 +84,12 @@ None; file probing and frame selection read no RNG.
 
 ## Residuals (trigger · impact · frequency · risk)
 
-- **TurretOffset.** Native `ApplyTurretOffset` (`Ext/TechnoType/Body.cpp:56`,
-  Phobos `TurretOffset` FLH) is not applied; the turret is drawn at the body
-  anchor. Trigger: a nonzero unit `TurretOffset`. Frequency: authored mods.
-  Risk: turret sprite offset.
+- **`TurretOffset` lateral/height terms.** The SHP turret draw applies the
+  native matrix translation (`Ext/Unit/Hooks.DrawIt.cpp:38-49`,
+  `TechnoTypeExt::ApplyTurretOffset`), but `ArtData::turret_offset` reads only
+  the first integer of the ART triple. Trigger: a nonzero `Y` or `Z` term.
+  Frequency: authored mods. Risk: the turret pivot ignores lateral/height
+  components; the X term matches native.
 - **Z adjust and shadow.** Native's SHP turret draw uses zAdjust -32 and
   disables the shadow; VERA reuses the body's Z policy and emits no separate
   turret shadow. Trigger: every SHP turret. Frequency: modded turret units.
