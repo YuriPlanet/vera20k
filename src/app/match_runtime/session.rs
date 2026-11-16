@@ -2008,6 +2008,22 @@ impl MatchSession {
         Ok(launch.options.queue.len() != waited)
     }
 
+    /// Resolved room capability, limits, and lock policy for active setup.
+    pub(crate) fn network_effective_policy(
+        &self,
+    ) -> Option<crate::skirmish_modes::EffectiveRoomPolicy> {
+        let network = self.network.as_ref()?;
+        let launch = match &network.phase {
+            NetworkPhase::Setup { launch, .. } => launch,
+            _ => return None,
+        };
+        Some(effective_network_room_policy(
+            network.return_context.session_mode(),
+            network.room,
+            launch.mode.class,
+        ))
+    }
+
     /// Whether this is a VERA room whose mode policy seats players on teams
     /// (`room_teams`), with allying allowed outside a clan room. Its rows list
     /// under team headers.
@@ -2020,9 +2036,10 @@ impl MatchSession {
         else {
             return false;
         };
-        launch.mode.allies_allowed
-            && launch.mode.class.policy().room_teams
-            && !self.network_room().clan
+        let Some(effective) = self.network_effective_policy() else {
+            return false;
+        };
+        launch.mode.allies_allowed && effective.mode_policy.room_teams && !self.network_room().clan
     }
 
     /// The Teams count of a VERA room that seats players on teams
@@ -2475,8 +2492,10 @@ impl MatchSession {
             };
             let session_mode = return_context.session_mode();
             let room = *room;
-            let changed = launch.mode != mode;
-            if changed && !mode.class.policy().observers_allowed {
+            if !effective_network_room_policy(session_mode, room, mode.class)
+                .mode_policy
+                .observers_allowed
+            {
                 *observer_row = None;
             } //5C1A10
             let new_capacity = row_capacity(session_mode, room, &mode, capacity);
@@ -2595,12 +2614,8 @@ impl MatchSession {
             }
         }
         let ordinary = candidate
-            .network_setup()
-            .unwrap()
-            .mode
-            .class
-            .policy()
-            .observers_allowed;
+            .network_effective_policy()
+            .is_some_and(|policy| policy.mode_policy.observers_allowed);
         let default_observer = if new_capacity > 8 {
             NETWORK_PLAYER_SLOT_COUNT as u8 - 1
         } else {
@@ -3086,11 +3101,23 @@ impl MatchSession {
         let max_ahead_frames = network
             .max_ahead_frames
             .ok_or_else(|| anyhow::anyhow!("network start requires accepted timing"))?;
-        let NetworkPhase::Setup { launch, .. } =
+        let NetworkPhase::Setup { mut launch, .. } =
             std::mem::replace(&mut network.phase, NetworkPhase::Lobby)
         else {
             unreachable!()
         };
+        let effective_policy = effective_network_room_policy(
+            network.return_context.session_mode(),
+            network.room,
+            launch.mode.class,
+        );
+        if effective_policy.short_game_locked {
+            let short_game = effective_policy.resolve_short_game(launch.options.short_game);
+            launch.options.short_game = short_game;
+            if short_game {
+                launch.options.bases = true;
+            }
+        }
         let startup = Arc::new(
             crate::app::match_bootstrap::PreparedNetworkStartup::new(
                 launch,
@@ -3410,6 +3437,24 @@ fn row_limit(session_mode: SessionMode, room: NetworkRoom) -> i32 {
     }
 }
 
+/// Effective room capability, bounds, and ShortGame lock combining the mode
+/// row with WOL tournament/clan room rules (`0x78F85E..0x78F907`).
+fn effective_network_room_policy(
+    session_mode: SessionMode,
+    room: NetworkRoom,
+    mode_class: crate::skirmish_modes::MpModeClass,
+) -> crate::skirmish_modes::EffectiveRoomPolicy {
+    let overrides = if session_mode == SessionMode::Wol && room.tournament_or_clan() {
+        crate::skirmish_modes::RoomPolicyOverrides {
+            short_game: Some(true),
+            lock_short_game: Some(true),
+        }
+    } else {
+        crate::skirmish_modes::RoomPolicyOverrides::default()
+    };
+    crate::skirmish_modes::EffectiveRoomPolicy::with_overrides(mode_class, overrides)
+}
+
 /// `0x005EC3A0` (`0x005EC3C4..0x005EC467`): map capacity (`0x005E6520`),
 /// the mode's vtable+98 limit, then in a WOL clan room an even count, in a
 /// tournament room 2. The row limit applies unless the mode lists in
@@ -3420,15 +3465,14 @@ fn row_capacity(
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
     capacity: i32,
 ) -> i32 {
+    let policy = effective_network_room_policy(session_mode, room, mode.class);
     let extended = capacity > 8 && !(session_mode == SessionMode::Wol && room.tournament_or_clan());
-    let mut capacity = capacity.min(mode.class.policy().setup_player_limit.map_or(
-        if extended {
-            NETWORK_PLAYER_SLOT_COUNT as i32
-        } else {
-            8
-        },
-        |limit| limit as i32,
-    ));
+    let base_limit = if extended {
+        NETWORK_PLAYER_SLOT_COUNT
+    } else {
+        8
+    };
+    let mut capacity = capacity.min(policy.max_players_for_capacity(base_limit) as i32);
     if session_mode == SessionMode::Wol {
         if room.clan {
             capacity &= !1;
@@ -3436,7 +3480,7 @@ fn row_capacity(
             capacity = 2;
         }
     }
-    if mode.class.policy().lists_in_skirmish
+    if policy.mode_policy.lists_in_skirmish
         && !(session_mode == SessionMode::Wol && room.tournament_or_clan())
     {
         capacity
@@ -3459,7 +3503,11 @@ fn host_extra_row(
     capacity: i32,
 ) -> bool {
     let wol_room = session_mode == SessionMode::Wol && room.tournament_or_clan();
-    if mode.class.policy().lists_in_skirmish && !wol_room {
+    if effective_network_room_policy(session_mode, room, mode.class)
+        .mode_policy
+        .lists_in_skirmish
+        && !wol_room
+    {
         return true;
     }
     let limit = row_limit(session_mode, room);
@@ -5375,5 +5423,59 @@ mod tests {
             .unwrap();
         assert!(!session.network_team_room());
         assert_eq!(session.network_observer_row(), None);
+    }
+
+    #[test]
+    fn network_effective_policy_locks_short_game_in_wol_tournament_and_clan_rooms() {
+        let mut session = vera_room();
+        let default_policy = session.network_effective_policy().unwrap();
+        assert!(!default_policy.short_game_locked);
+
+        session.set_network_room(NetworkRoom {
+            tournament: true,
+            clan: false,
+        });
+        let tournament_policy = session.network_effective_policy().unwrap();
+        assert!(tournament_policy.short_game_locked);
+        assert!(tournament_policy.resolve_short_game(false));
+
+        session.set_network_room(NetworkRoom {
+            tournament: false,
+            clan: true,
+        });
+        let clan_policy = session.network_effective_policy().unwrap();
+        assert!(clan_policy.short_game_locked);
+        assert!(clan_policy.resolve_short_game(false));
+        let mut stale_opts = session.network_setup().unwrap().options.clone();
+        stale_opts.short_game = false;
+        stale_opts.bases = false;
+        session.set_network_options(stale_opts).unwrap();
+        session.set_network_start_seed(0x4242).unwrap();
+        session.prepare_network_timing(2, || 0).unwrap();
+        let startup = session.freeze_network_start(0x4242).unwrap();
+        let crate::app::match_bootstrap::LoadingStartup::Network(prepared) = startup else {
+            panic!("network variant");
+        };
+        assert!(prepared.launch_session().options.short_game);
+        assert!(prepared.launch_session().options.bases);
+
+        // LAN ignores tournament/clan ShortGame locks.
+        let mut lan = network_fixture();
+        lan.local_player_index = 0;
+        let mut lan_session = MatchSession::default();
+        lan_session.enter_network(super::NetworkReturnContext::LanLobby);
+        lan_session
+            .accept_network_setup(lan, true, Some(7), true)
+            .unwrap();
+        lan_session.set_network_room(NetworkRoom {
+            tournament: true,
+            clan: true,
+        });
+        assert!(
+            !lan_session
+                .network_effective_policy()
+                .unwrap()
+                .short_game_locked
+        );
     }
 }

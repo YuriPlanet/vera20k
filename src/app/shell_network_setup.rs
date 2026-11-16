@@ -906,7 +906,11 @@ fn install_setup(
         // C2's lockout in a tournament or clan room, after the profile
         // restore (0x79132A..0x7913D1): Short Game and Bases on; the AI
         // count is already 0 on WOL.
-        if host && room.tournament_or_clan() && !quick_match {
+        if host
+            && !quick_match
+            && let Some(policy) = state.match_state.session.network_effective_policy()
+            && policy.short_game_locked
+        {
             let mut options = state
                 .match_state
                 .session
@@ -914,8 +918,11 @@ fn install_setup(
                 .expect("admitted setup")
                 .options
                 .clone();
-            options.short_game = true;
-            options.bases = true;
+            let short_game = policy.resolve_short_game(options.short_game);
+            options.short_game = short_game;
+            if short_game {
+                options.bases = true;
+            }
             state.match_state.session.set_network_options(options)?;
         }
     }

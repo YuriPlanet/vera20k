@@ -8,7 +8,7 @@ use crate::app::frontend::skirmish_shell_render::{
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::shell_wol::lobby::player_badge;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
-use crate::skirmish_modes::mode_by_id;
+use crate::skirmish_modes::{EffectiveRoomPolicy, mode_by_id};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
@@ -122,6 +122,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let launch = session.network_setup()?;
     let protocol = state.frontend.network_setup_protocol.as_ref()?;
     let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
+    let effective_policy = session
+        .network_effective_policy()
+        .unwrap_or_else(|| EffectiveRoomPolicy::from_mode(mode.class));
     let host = session.host();
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
@@ -167,7 +170,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         .flatten();
     // The host keeps at least two seats.
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
-    let ai_allowed = !watched && mode.class.policy().lists_in_skirmish;
+    let ai_allowed = !watched && effective_policy.mode_policy.lists_in_skirmish;
     // In a mode with teams, VERA's rooms group their rows under headers:
     // with Teams set, one for each of its teams.
     let grouped = several && session.network_team_room();
@@ -489,7 +492,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     swatch: None,
                 });
                 //5EB060 asks the same vtable+40 used by the Skirmish mode list.
-                if mode.class.policy().lists_in_skirmish && !observer_only {
+                if effective_policy.mode_policy.lists_in_skirmish && !observer_only {
                     for (value, key) in ai_choices {
                         players.push(SetupChoice {
                             value,
@@ -594,7 +597,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // VERA shared control: when the mode policy allows shared start
         // positions, a player may pick a start another player holds to join
         // that player's House. Such starts stay listed, marked "+".
-        let shares = human.is_some() && mode.class.policy().shared_start_positions;
+        let shares = human.is_some() && effective_policy.mode_policy.shared_start_positions;
         let human_starts = launch
             .humans
             .iter()
@@ -770,8 +773,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
-        // checked and disabled in a tournament or clan room.
-        short_game_locked: host && profile_is_wol(state) && room.tournament_or_clan(),
+        // checked and disabled in a tournament or clan room, or when policy locks it.
+        short_game_locked: host && effective_policy.short_game_locked,
         team_header: !clan_room,
         accept_enabled: accept_enabled(state),
         start_requested: protocol.start_requested
@@ -779,7 +782,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         combos,
         trackbars,
         checks: [
-            options.short_game,
+            effective_policy.resolve_short_game(options.short_game),
             options.mcv_redeploy,
             options.crates,
             options.super_weapons,
