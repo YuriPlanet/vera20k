@@ -5507,7 +5507,10 @@ fn warhead_trigger_skips(
 fn warhead_prevents_scatter(rules: &RuleSet, name: &str) -> bool {
     match rules.warhead(name) {
         Some(warhead) => warhead.prevents_scatter(rules),
-        None => cfg!(feature = "phobos") && rules.phobos_globals.warhead_prevent_scatter,
+        #[cfg(feature = "phobos")]
+        None => rules.phobos_globals.warhead_prevent_scatter,
+        #[cfg(not(feature = "phobos"))]
+        None => false,
     }
 }
 

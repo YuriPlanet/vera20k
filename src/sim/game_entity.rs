@@ -2734,6 +2734,7 @@ impl GameEntity {
             production_start_price: 0,
             #[cfg(feature = "phobos")]
             grinding_weapon_accumulated_credits: 0,
+            #[cfg(feature = "phobos")]
             phobos_accumulated_income: 0,
             #[cfg(feature = "phobos")]
             grinding_weapon_last_fired_frame: 0,

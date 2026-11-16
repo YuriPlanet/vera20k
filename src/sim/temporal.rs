@@ -1723,17 +1723,23 @@ impl Simulation {
         let name = rules.general.chrono_sparkle1.name.clone();
         let delay = sparkle_delay(rules);
         #[cfg(feature = "phobos")]
-        let positions = rules
-            .phobos_globals
-            .chrono_sparkle_building_display_positions;
+        let (on_building, on_slots, on_occupants) = {
+            let positions = rules
+                .phobos_globals
+                .chrono_sparkle_building_display_positions;
+            (
+                positions
+                    .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::BUILDING),
+                positions.contains(
+                    crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS,
+                ),
+                positions.contains(
+                    crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANTS,
+                ),
+            )
+        };
         #[cfg(not(feature = "phobos"))]
-        let positions = crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS;
-        let on_building = positions
-            .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::BUILDING);
-        let on_slots = positions
-            .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS);
-        let on_occupants = positions
-            .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANTS);
+        let (on_building, on_slots, on_occupants) = (false, true, false);
         let occupant_count = if on_slots {
             i32::try_from(object.max_number_occupants).unwrap_or(i32::MAX)
         } else if on_occupants {
