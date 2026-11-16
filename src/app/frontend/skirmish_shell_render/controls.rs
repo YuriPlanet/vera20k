@@ -651,7 +651,11 @@ pub(super) fn paint_control(
                 }
             }
             let base = scale.base_rect(rect);
-            if let Some(frame) = chrome.trackbar_frame(plaque, base.w, base.h) {
+            if let Some(frame) = crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                plaque, base.w, base.h, scale,
+            )
+            .and_then(|slot| chrome.trackbar_frames[slot])
+            {
                 push_entry(
                     out,
                     frame,
@@ -1429,6 +1433,7 @@ mod tests {
             };
             // gamemd's setup dialogs and VERA's room; only the room paints
             // its Teams count and Superweapon Limit.
+            let mut drawn = Vec::new();
             for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
@@ -1443,19 +1448,32 @@ mod tests {
             {
                 let layout =
                     MultiplayerSetupLayout::new(dialog, width as i32, height as i32, false);
-                windows.extend(
+                // The room's team bar draws its Teams count at 60% size.
+                drawn.extend(
                     layout
                         .trackbars
                         .into_iter()
                         .filter(|(id, _)| {
                             dialog.modern || (*id != TEAM_COUNT && *id != SUPERWEAPON_LIMIT)
                         })
-                        .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
+                        .map(|(id, rect)| {
+                            let scale = layout.control_scale(id);
+                            (id != DIFFICULTY, scale.base_rect(rect), scale)
+                        }),
                 );
             }
             for (plaque, rect) in windows {
                 assert!(
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),
+                    "{rect:?} at {width}x{height}"
+                );
+            }
+            for (plaque, rect, scale) in drawn {
+                assert!(
+                    crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                        plaque, rect.w, rect.h, scale
+                    )
+                    .is_some(),
                     "{rect:?} at {width}x{height}"
                 );
             }

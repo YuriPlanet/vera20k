@@ -1592,7 +1592,8 @@ pub fn compute_layout_on(scale: ShellScale, screen_w: u32, screen_h: u32) -> Ski
     if scale.is_retail() {
         compute_layout(screen_w, screen_h)
     } else {
-        compute_responsive_layout(screen_w, screen_h)
+        compute_layout_for_rows(SHELL_BASE_W as u32, SHELL_BASE_H as u32, SKIRMISH_ROW_COUNT)
+            .scaled_rects(scale)
     }
 }
 

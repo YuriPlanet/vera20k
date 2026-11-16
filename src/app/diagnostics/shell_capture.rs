@@ -1686,18 +1686,23 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    let scaled_main_menu = checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
+    // So does VERA's game room with teams, which spreads over a wider window.
+    let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
+        || matches!(
+            checkpoint.movies_target(),
+            Some(movies::MoviesTarget::Wol(movies::WolTarget::ModernTeams))
+        ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
         && width >= 640
         && height >= 480;
     ensure!(
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
             || (online_latency && width == 640 && height == 480)
-            || scaled_main_menu,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu), got {width}x{height}",
+            || scaled,
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu and VERA's room), got {width}x{height}",
         checkpoint.as_str()
     );
-    let neutral = if scaled_main_menu {
+    let neutral = if scaled {
         (width / 2, height / 2)
     } else {
         (EXPECTED_CURSOR_X, EXPECTED_CURSOR_Y)
@@ -2244,6 +2249,22 @@ struct MainMenuCaptureSnapshot {
 }
 
 impl MainMenuCaptureSnapshot {
+    /// A capture in a scaled window (the main menu's, or VERA's room's on
+    /// its way there): its own window and centred pointer stand for the
+    /// reference surface and neutral point.
+    fn scaled_as_reference(mut self) -> Self {
+        let window = (self.width, self.height);
+        if window != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
+            && (self.cursor_x, self.cursor_y) == ((window.0 / 2) as f32, (window.1 / 2) as f32)
+        {
+            self.width = EXPECTED_WIDTH;
+            self.height = EXPECTED_HEIGHT;
+            self.cursor_x = EXPECTED_CURSOR_X as f32;
+            self.cursor_y = EXPECTED_CURSOR_Y as f32;
+        }
+        self
+    }
+
     fn from_state(state: &AppState) -> Self {
         let movie_identity = state.frontend.main_menu_movie_identity;
         Self {
@@ -2708,17 +2729,8 @@ impl ShellCaptureSession {
             None => {
                 let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
                 let window = (self.request.width, self.request.height);
-                // A scaled main-menu capture: its own window and centred
-                // pointer stand for the reference surface and neutral point.
-                if window != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
-                    && (snapshot.width, snapshot.height) == window
-                    && (snapshot.cursor_x, snapshot.cursor_y)
-                        == ((window.0 / 2) as f32, (window.1 / 2) as f32)
-                {
-                    snapshot.width = EXPECTED_WIDTH;
-                    snapshot.height = EXPECTED_HEIGHT;
-                    snapshot.cursor_x = EXPECTED_CURSOR_X as f32;
-                    snapshot.cursor_y = EXPECTED_CURSOR_Y as f32;
+                if (snapshot.width, snapshot.height) == window {
+                    snapshot = snapshot.scaled_as_reference();
                 }
                 steady_main_menu_capture_ready(snapshot)
             }

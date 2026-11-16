@@ -21,7 +21,14 @@ pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
         h as i32,
         shell_layout::fills_window(state),
     );
-    if state
+    if dialog.modern {
+        if let Some(listing) = crate::app::shell_network_setup::view::room_listing(state) {
+            layout.arrange_roster(&listing.places);
+            if !listing.grouped {
+                layout.without_team_bar();
+            }
+        }
+    } else if state
         .match_state
         .session
         .network_setup_capacity()
@@ -298,11 +305,15 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         {
             action = Some(SetupAction::Trackbar {
                 control: hold.id,
-                value: bar.pointer_value(x, rect, layout.page.scale),
+                value: bar.pointer_value(x, rect, layout.control_scale(hold.id)),
             });
         }
     } else {
-        ui.buttons.hovered = layout.control_at(&view, x, y);
+        ui.buttons.hovered = if layout.roster {
+            layout.press_target(&view, x, y)
+        } else {
+            layout.control_at(&view, x, y)
+        };
         ui.statics.hover(&help, Instant::now());
         if let Some(popup) = ui.popup_geometry(&view, &layout) {
             ui.popup.pointer_moved(popup, x, y);
@@ -315,6 +326,9 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
             .list
             .scroll
             .pointer_moved(geometry, &mut ui.chat.list.top_index, x, y);
+        if let Some(roster) = layout.roster_scroll(&view) {
+            ui.roster_scroll_moved(roster, x, y);
+        }
     }
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);
@@ -359,9 +373,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     };
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let over = layout
-        .control_at(&view, x, y)
-        .filter(|id| view.enabled(*id));
+    let over = layout.press_target(&view, x, y);
     if pressed
         && over.is_none()
         && preview_box_shows(state, &view, &layout)
@@ -390,26 +402,44 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 });
             }
             cue = press.cue().map(LauncherCue::from);
+        } else if view.open_box.is_none()
+            && !view.map_offer_open
+            && layout
+                .roster_scroll(&view)
+                .is_some_and(|roster| ui.roster_scroll_press(roster, x, y, Instant::now()))
+        {
         } else if let Some(control) = over {
             if let Some(combo) = view.combo(control) {
-                let press = ui.popup.press_face(
-                    control,
-                    layout.control_rect(control).expect("combo rect"),
-                    layout.page.scale,
-                    combo.selected,
-                    x,
-                    y,
-                );
-                cue = press.cue().map(LauncherCue::from);
+                // VERA's roster draws no faces: a press anywhere on a cell
+                // opens its list, while it has more than one item.
+                let press = if layout.roster {
+                    roster_cell_opens(combo).then(|| {
+                        ui.open_list(control, combo.row, combo.selected);
+                        ComboPress::Open
+                    })
+                } else {
+                    Some(ui.popup.press_face(
+                        control,
+                        layout.control_rect(control).expect("combo rect"),
+                        layout.page.scale,
+                        combo.selected,
+                        x,
+                        y,
+                    ))
+                };
+                cue = press.and_then(ComboPress::cue).map(LauncherCue::from);
             } else if CHECKBOXES.contains(&control)
                 || ROOM_CHECKBOXES.contains(&control)
                 || control == AUTO_BALANCE
             {
-                if crate::ui::skirmish_shell::checkbox_icon_rect(
-                    layout.control_rect(control).expect("checkbox rect"),
-                    layout.page.scale,
-                )
-                .contains(x, y)
+                // The team bar's small Balance automatically toggles from
+                // its words too.
+                if control == AUTO_BALANCE
+                    || crate::ui::skirmish_shell::checkbox_icon_rect(
+                        layout.control_rect(control).expect("checkbox rect"),
+                        layout.page.scale,
+                    )
+                    .contains(x, y)
                 {
                     action = Some(SetupAction::Toggle { control });
                     cue = Some(LauncherCue::Checkbox);
@@ -419,7 +449,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     x,
                     y,
                     layout.control_rect(control).expect("trackbar rect"),
-                    layout.page.scale,
+                    layout.control_scale(control),
                 );
                 ui.trackbar_hold = press.hold(control);
                 if let TrackbarPress::Jump(value) = press {
@@ -527,8 +557,42 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     {
         state.platform.window.request_redraw();
     }
+    if let Some(roster) = layout.roster_scroll(&view)
+        && ui.roster_scroll_poll(roster, x, y, Instant::now())
+    {
+        state.platform.window.request_redraw();
+    }
     deadline
         .into_iter()
         .chain(ui.chat.list.scroll.repeat_at())
+        .chain(ui.roster_scroll_repeat_at())
         .min()
+}
+
+/// The wheel over VERA's roster scrolls it, while no list or box is open
+/// over the room; returns whether the wheel was the roster's.
+pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
+    if lines == 0.0 || transfer_active(state) || notice_active(state) {
+        return false;
+    }
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
+        return false;
+    };
+    let layout = layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
+    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+        return false;
+    };
+    let Some(roster) = layout.roster_scroll(&view) else {
+        return false;
+    };
+    if view.open_box.is_some()
+        || view.map_offer_open
+        || ui.popup_geometry(&view, &layout).is_some()
+        || !layout.roster_area.contains(x, y)
+    {
+        return false;
+    }
+    ui.roster_wheel(roster, lines);
+    true
 }

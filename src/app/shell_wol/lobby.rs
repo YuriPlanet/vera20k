@@ -1161,7 +1161,11 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
             log::warn!("WOL reopened room keeps its mode: {error:#}");
         }
         // The players who came back take rows as joiners would, in the
-        // lobby's order, so the host's options name them all.
+        // lobby's order, so the host's options name them all; VERA's room
+        // does not tell them as joins.
+        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+            protocol.quiet_joins();
+        }
         for name in listed
             .iter()
             .map(|member| member.name.clone())
@@ -1737,7 +1741,8 @@ fn joined_game_line(users: &[(String, bool)], room: &str) -> Option<String> {
 /// (`setup::service::auto_accept`).
 const HOST_ROOM_LINE: &str = "VERA:HostRoomHint";
 
-fn modern_lobby(state: &AppState) -> bool {
+/// VERA's own online lobby, not gamemd's.
+pub(crate) fn modern_lobby(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.ui.is_modern())
 }
 
@@ -3849,7 +3854,7 @@ fn popup_screen(state: &AppState) -> (i32, i32) {
     )
 }
 
-fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
+pub(crate) fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
     let (width, height) = popup_screen(state);
     crate::ui::shell::modal::wol_create_game_layout_on(
         width,

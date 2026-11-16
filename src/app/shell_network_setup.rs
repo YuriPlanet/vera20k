@@ -44,6 +44,10 @@ use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlav
 use crate::ui::wol_chat::WolChatLine;
 use crate::util::time::Instant;
 
+/// How long a VERA room keeps quiet about joins: see
+/// `NetworkSetupProtocol::quiet_joins_until`.
+const QUIET_JOINS: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Requests are service-boundary observations. They never create a peer,
 /// acknowledge readiness or complete GO without an admitted response.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +217,10 @@ pub(crate) struct NetworkSetupProtocol {
     balance_roster: Option<(u8, Vec<String>, bool)>,
     balance_due: Option<Instant>,
     balance_sent: bool,
+    /// VERA's rooms tell no join until then (`service::tell_joined`): a LAN
+    /// guest first hears from everyone already there, and an online host's
+    /// room seats the players back from a match again as joiners.
+    quiet_joins_until: Option<Instant>,
     requests: Vec<NetworkSetupRequest>,
 }
 
@@ -439,6 +447,7 @@ impl NetworkSetupProtocol {
             balance_roster: None,
             balance_due: None,
             balance_sent: false,
+            quiet_joins_until: (!dialog.wol() && !host).then(|| Instant::now() + QUIET_JOINS),
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -452,6 +461,11 @@ impl NetworkSetupProtocol {
                 Vec::new()
             },
         }
+    }
+
+    /// No join is told for a moment: see `quiet_joins_until`.
+    pub(crate) fn quiet_joins(&mut self) {
+        self.quiet_joins_until = Some(Instant::now() + QUIET_JOINS);
     }
 
     pub(crate) fn set_online_start_phase(&mut self, phase: OnlineStartPhase) {

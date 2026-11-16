@@ -229,6 +229,12 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
 /// complete launch roster, so it carries both native payloads without a
 /// duplicate relay update.
 pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> anyhow::Result<()> {
+    // VERA's room tells who left, unless the host left (the room closes
+    // with its own line).
+    departed(state, name, operator, !operator)
+}
+
+fn departed(state: &mut AppState, name: &str, operator: bool, tell: bool) -> anyhow::Result<()> {
     play_player_left(state);
     if state
         .frontend
@@ -247,6 +253,9 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
         return Ok(());
     };
     service::service_event(state, service::NetworkSetupEvent::ParticipantLeft { index })?;
+    if tell {
+        service::tell_room(state, super::dialog(state), "VERA:PlayerLeftRoom", name);
+    }
     clear_guest_acceptance(state)?;
     let host = state.match_state.session.host();
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
@@ -571,9 +580,11 @@ fn participant_in(launch: &SkirmishLaunchSession, name: &str) -> Option<usize> {
 
 /// The kick sink `0x7AB670` for another user in this game channel: its
 /// `TXT_USER_KICKED` line in C2/C9 unless `0x5E9510` finds no Open player
-/// row (`0x7AB860..0x7AB8AD`), then its leave.
+/// row (`0x7AB860..0x7AB8AD`), then its leave. VERA's room tells the leave
+/// only where that line was skipped.
 pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> anyhow::Result<()> {
-    if !state.match_state.session.network_no_open_player_row() {
+    let full = state.match_state.session.network_no_open_player_row();
+    if !full {
         crate::app::shell_lan::append_chat(
             state,
             LanChatLine {
@@ -582,7 +593,7 @@ pub(crate) fn user_kicked(state: &mut AppState, name: &str, line: String) -> any
             },
         );
     }
-    user_left(state, name, false)
+    departed(state, name, false, full)
 }
 
 /// The kick sink for this user: `TXT_CHANNEL_FULL` when the session is

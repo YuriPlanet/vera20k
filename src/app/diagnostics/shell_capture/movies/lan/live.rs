@@ -31,7 +31,7 @@ fn setup_control_at_row(
         }) {
             return Ok(Some(combo.id));
         }
-        if view.first_row + view.dialog.rows_per_page() >= view.row_count {
+        if view.first_row + view.page_len >= view.row_count {
             return Ok(None);
         }
         setup_button(state, NEXT_ROWS)?;

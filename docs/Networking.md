@@ -321,6 +321,15 @@ options carrying one with 400 `invalid_options`; the host's game says so and kee
 other options until the host picks a smaller map. A rollback of the game
 returns rooms to the eight-player dialog; one of the lobby refuses these maps again.
 
+The host of a VERA room can also set a seated guest's side, colour, start and team from
+the guest's row. The host's game checks the change as it checks the guest's own pick and
+sends it in its options, as `/balance`'s moves travel, so nothing new goes over the wire:
+a released guest shows it as it shows any row the host sends, and an older host just
+doesn't offer it. A guest's own pick sent at the same moment carries its whole row and
+wins on the host. Online, a game sends its room commands to the lobby one at a time; a
+newer options, map-status or ready command replaces an older one of the same kind that
+is still waiting, and goes out after whatever was queued before it.
+
 ### Room rules
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's

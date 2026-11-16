@@ -1104,9 +1104,9 @@ impl WolCapture {
         match self.phase {
             WolPhase::Main
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready(
+                        MainMenuCaptureSnapshot::from_state(state).scaled_as_reference(),
+                    )? =>
             {
                 // The Options box, read when Internet opens the visit; the
                 // capture never writes the profile out.
@@ -1581,9 +1581,9 @@ impl WolCapture {
             }
             WolPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
-                    && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(
-                        state,
-                    ))? =>
+                    && steady_main_menu_capture_ready(
+                        MainMenuCaptureSnapshot::from_state(state).scaled_as_reference(),
+                    )? =>
             {
                 ensure!(state.frontend.wol.is_none(), "the WOL visit survived");
                 self.event(frame, "new 0xE2 settled");
@@ -2383,16 +2383,9 @@ impl WolCapture {
                 ) {
                     let layout = crate::app::shell_wol::lobby::layout(state);
                     lobby_button(state, &layout, lobby_ui::CREATE)?;
-                    let (width, height) = (
-                        state.renderer.gpu.config.width as i32,
-                        state.renderer.gpu.config.height as i32,
-                    );
-                    // VERA's online box puts OK a row lower.
-                    let create = crate::ui::shell::modal::wol_create_game_layout(
-                        width,
-                        height,
-                        Self::lobby(state)?.ui.is_modern(),
-                    );
+                    // VERA's online box puts OK a row lower, and grows with
+                    // the lobby in a scaled window.
+                    let create = crate::app::shell_wol::lobby::create_layout(state);
                     if self.target.clan() {
                         // 0x78DF35: the clan box is enabled by the squad id.
                         ensure!(
@@ -2630,6 +2623,79 @@ impl WolCapture {
                         colors == [("Tester".into(), Some(4)), ("Natasha".into(), Some(2))],
                         "Team Colors gave {colors:?}"
                     );
+                    // The room told everyone the guest came in, and its host
+                    // sets the guest's side as the guest's own choices would.
+                    let joined =
+                        crate::i18n::tr_fill("VERA:PlayerJoinedRoom", &[("name", &"Natasha")]);
+                    ensure!(
+                        state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
+                            ui.chat
+                                .lines
+                                .iter()
+                                .any(|line| String::from_utf16_lossy(&line.text) == joined)
+                        }),
+                        "the room did not tell {joined:?}"
+                    );
+                    let guest_row = |state: &AppState| {
+                        state
+                            .match_state
+                            .session
+                            .network_setup()
+                            .and_then(|launch| {
+                                launch
+                                    .humans
+                                    .iter()
+                                    .find(|human| human.name == "Natasha")
+                                    .cloned()
+                            })
+                    };
+                    let natasha = guest_row(state).context("Natasha")?;
+                    let view = setup_view(state)?;
+                    let (_, side) = row_combo(
+                        &view,
+                        SetupColumn::Country,
+                        natasha.raw_slot_index.context("Natasha's row")?,
+                    )
+                    .context("Natasha's Side")?;
+                    let current = side.selected.map(|index| side.choices[index].value);
+                    let value = side
+                        .choices
+                        .iter()
+                        .map(|item| item.value)
+                        .filter(|value| *value >= 0 && Some(*value) != current)
+                        .last()
+                        .context("another side")?;
+                    ensure!(side.enabled, "the host cannot set the guest's side");
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Select {
+                            control: side.id,
+                            value,
+                        },
+                    );
+                    let slot = guest_row(state).context("Natasha")?.slot;
+                    ensure!(
+                        !slot.country_random
+                            && slot.country
+                                == crate::skirmish_launch::LaunchCountry::from_country_index(
+                                    value as u32
+                                ),
+                        "the host's side {value} for the guest gave {slot:?}"
+                    );
+                    // The room tells who left too; the guest then comes back.
+                    crate::app::shell_network_setup::user_left(state, "Natasha", false)?;
+                    let left = crate::i18n::tr_fill("VERA:PlayerLeftRoom", &[("name", &"Natasha")]);
+                    ensure!(
+                        guest_row(state).is_none()
+                            && state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
+                                ui.chat.lines.last().is_some_and(|line| {
+                                    String::from_utf16_lossy(&line.text) == left
+                                })
+                            }),
+                        "the room did not tell {left:?}"
+                    );
+                    crate::app::shell_network_setup::user_joined(state, "Natasha".into())?;
+                    ensure!(guest_row(state).is_some(), "Natasha did not come back");
                     // Teams goes up to 15: the Team list then runs from A
                     // to O, and the headers name the teams past D too.
                     crate::app::shell_network_setup::apply_action(
@@ -2670,6 +2736,12 @@ impl WolCapture {
                             "Team Colors": colors,
                             "Teams 15": wide_captions,
                         }),
+                    );
+                    // The frame shows the room, its Teams count in the team
+                    // bar over the chat.
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::OpenBox(None),
                     );
                 }
                 MoviesCapture::restore_neutral_pointer(state);

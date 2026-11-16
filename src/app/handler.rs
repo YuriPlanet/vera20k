@@ -1896,6 +1896,17 @@ impl ApplicationHandler for App {
                 {
                     return;
                 }
+                if screen == ScreenPage::NetworkSetup
+                    && state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    && crate::app::input::multiplayer_setup::wheel(state, lines)
+                {
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 if screen == ScreenPage::Mods {
                     Self::handle_mods_wheel(state, lines);
                     return;

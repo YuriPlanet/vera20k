@@ -343,6 +343,17 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     Ok(true)
 }
 
+/// Each of `count` teams' own colour, as a colour choice: the one Team
+/// Colors gives a lone player on it, mid its range of hues
+/// ([`colors_by_team`]). The room's captions show each team in it.
+pub(super) fn team_swatches(rules: &RuleSet, count: u8) -> Vec<Option<usize>> {
+    let teams: Vec<u8> = (0..count).collect();
+    colors_by_team(&listed_hues(rules), &teams, count)
+        .into_iter()
+        .map(|color| color.map(usize::from))
+        .collect()
+}
+
 /// The colours a room lists ([`crate::rules::skirmish_colors::SkirmishColorMode`]),
 /// YR's eight first, each with the hue of its `[Colors]` entry.
 fn listed_hues(rules: &RuleSet) -> Vec<(u8, u8)> {
@@ -571,6 +582,28 @@ mod tests {
                 rules.color_schemes[entry].name.clone()
             })
             .collect()
+    }
+
+    /// The room's two team captions show a warm and a cool colour.
+    #[test]
+    fn team_captions_show_two_teams_warm_against_cool() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        let listed = listed_hues(&rules);
+        let warm = team_swatches(&rules, 2)
+            .into_iter()
+            .map(|color| {
+                let color = color.expect("a team's colour");
+                let (_, hue) = listed
+                    .iter()
+                    .find(|(listed, _)| usize::from(*listed) == color)
+                    .unwrap();
+                let hue = 2 * i32::from(*hue);
+                hue_gap(hue, 0) < hue_gap(hue, HUES)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(warm, [true, false]);
     }
 
     /// Two teams of four get YR's eight, warm against cool, as a Random
