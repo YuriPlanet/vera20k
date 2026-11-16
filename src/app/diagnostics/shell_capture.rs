@@ -36,6 +36,8 @@ pub(crate) const CAPTURE_FLAG: &str = "--shell-capture";
 const CHECKPOINT_MAIN_MENU_0XE2_STEADY: &str = "main-menu-0xe2-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE: &str = "main-menu-0xe2-entry-sequence";
 const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
+/// VERA's Game Options box, opened over the settled `0x102` by its button.
+const CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS: &str = "skirmish-0x102-game-options";
 const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM: &str = "main-menu-0xe2-exit-confirm";
 const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
@@ -216,6 +218,8 @@ pub enum ShellCaptureCheckpoint {
     MainMenu0xE2Steady,
     MainMenu0xE2EntrySequence,
     Skirmish0x102Steady,
+    /// VERA's Game Options box over `0x102`.
+    Skirmish0x102GameOptions,
     MoviesPage0x101Steady,
     /// Exit Game on `0xE2`: after the teardown slide, the confirmation over
     /// the empty shell backdrop (state 6).
@@ -589,6 +593,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MAIN_MENU_0XE2_STEADY => Ok(Self::MainMenu0xE2Steady),
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
+            CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS => Ok(Self::Skirmish0x102GameOptions),
             CHECKPOINT_SKIRMISH_0X6B_STEADY => Ok(Self::Skirmish0x6BSteady),
             CHECKPOINT_SKIRMISH_0X105_STEADY => Ok(Self::Skirmish0x105Steady),
             CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY => Ok(Self::Skirmish0x105CancelSteady),
@@ -803,6 +808,7 @@ impl ShellCaptureCheckpoint {
             Self::MainMenu0xE2Steady => CHECKPOINT_MAIN_MENU_0XE2_STEADY,
             Self::MainMenu0xE2EntrySequence => CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE,
             Self::Skirmish0x102Steady => CHECKPOINT_SKIRMISH_0X102_STEADY,
+            Self::Skirmish0x102GameOptions => CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS,
             Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
             Self::MainMenu0xE2ExitConfirm => CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM,
             Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
@@ -2498,6 +2504,9 @@ impl ShellCaptureSession {
         let skirmish = match request.checkpoint {
             ShellCaptureCheckpoint::Skirmish0x102Steady => {
                 Some(skirmish::SkirmishCapture::default())
+            }
+            ShellCaptureCheckpoint::Skirmish0x102GameOptions => {
+                Some(skirmish::SkirmishCapture::game_options())
             }
             ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
                 Some(skirmish::SkirmishCapture::slide_out(tick))

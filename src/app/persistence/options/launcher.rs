@@ -46,9 +46,7 @@ pub(crate) fn launcher_values_from_profile(
         shift_queue: profile.shift_queue,
         auto_repair: profile.auto_repair,
         minimap_beacons: profile.minimap_beacons,
-        terrain_deformation: profile.terrain_deformation,
         // Off at the left end, then 2 at the first notch.
-        superweapon_limit_position: profile.superweapon_limit.saturating_sub(1),
         performance_stats: false,
         show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
@@ -147,12 +145,6 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_auto_repair(&mut self, enabled: bool);
     /// Place a beacon with a radar click in Place Beacon mode (`[VERA] MinimapBeacons=`).
     fn store_minimap_beacons(&mut self, enabled: bool);
-    /// Let explosions dent the ground from the next game on
-    /// (`[VERA] TerrainDeformation=`).
-    fn store_terrain_deformation(&mut self, enabled: bool);
-    /// Allow `limit` of each superweapon, each charging its own shot, from
-    /// the next game on; 0 is off (`[VERA] SuperweaponLimit=`).
-    fn store_superweapon_limit(&mut self, limit: u8);
     fn set_performance_stats(&mut self, shown: bool);
     /// Show each label's string-table key instead of its text.
     fn set_show_string_keys(&mut self, shown: bool);
@@ -231,12 +223,6 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::MinimapBeaconsChanged(enabled) => {
             operations.store_minimap_beacons(enabled);
-        }
-        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
-            operations.store_terrain_deformation(enabled);
-        }
-        LauncherOptionsEvent::SuperweaponLimitChanged(limit) => {
-            operations.store_superweapon_limit(limit);
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
@@ -595,7 +581,6 @@ mod tests {
             skip_intro: true,
             mouse_wheel_zoom: true,
             shift_queue: true,
-            terrain_deformation: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
@@ -605,6 +590,5 @@ mod tests {
         assert!(booleans.skip_intro);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
-        assert!(booleans.terrain_deformation);
     }
 }

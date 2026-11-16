@@ -829,61 +829,46 @@ fn push_right_panel_text_draws(
     shell: &SkirmishShellState,
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
-    let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
-    let save = tr("VERA:SaveSetup");
-    let load = tr("VERA:LoadSetup");
-    let team_starts = tr("VERA:TeamStarts");
+    // VERA captions the map button "Choose Map", as its room does
+    // (`SetupDialog::button_label`): retail's "Customize Battle" reads as the
+    // settings Game Options keeps.
+    let choose = tr("VERA:ChooseMap");
+    let game_options = localized_label(
+        state,
+        crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
+        "Game Options",
+    );
     let back = localized_label(state, "GUI:Back", "Back");
-    let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
-    for (label, rect, button, disabled) in [
+    for (label, rect, button) in [
         (
             start.as_str(),
             layout.start_button,
             OwnerDrawButton::StartGame0x617,
-            false,
+        ),
+        (
+            game_options.as_str(),
+            layout.game_options_button,
+            OwnerDrawButton::GameOptions,
         ),
         (
             choose.as_str(),
             layout.choose_map_button,
             OwnerDrawButton::ChooseMap0x5aa,
-            false,
-        ),
-        (
-            save.as_str(),
-            layout.save_setup_button,
-            OwnerDrawButton::SaveSetup,
-            false,
-        ),
-        (
-            load.as_str(),
-            layout.load_setup_button,
-            OwnerDrawButton::LoadSetup,
-            load_disabled,
-        ),
-        (
-            team_starts.as_str(),
-            layout.team_starts_button,
-            OwnerDrawButton::TeamStarts,
-            false,
         ),
         (
             back.as_str(),
             layout.back_button,
             OwnerDrawButton::Back0x5c0,
-            false,
         ),
-    ]
-    .into_iter()
-    .filter(|(_, rect, _, _)| rect.w > 0)
-    {
+    ] {
         push_button_label_draw(
             shell_draws,
             state,
             label,
             rect,
             shell.pressed_owner_draw_button == Some(button),
-            disabled,
+            false,
             0.00041,
             layout.scale,
         );

@@ -1,13 +1,13 @@
-//! VERA's per-map Skirmish setup; gamemd's `0x102` has no counterpart. Save
-//! Setup keeps the selected map's player rows and options, and Load Setup
-//! puts them back, so a map can be played again without setting every row.
-//! The app keeps one setup per map file.
+//! VERA's last Skirmish setup; gamemd's `0x102` has no counterpart. Leaving
+//! the page keeps the selected map's player rows and options, and the next
+//! visit opens on that map and puts them back, so it can be played again
+//! without setting every row. The app keeps the one page last left.
 //!
-//! Loading goes through the page's own combo rules: each saved choice is
-//! picked as a click on its list would pick it, so a row gets only what the
-//! page offers it. A colour or start an earlier row took, a start past the
-//! map's or a team the mode does not list leaves the row as the load opened
-//! it. Both reach every row the map seats, shown or not.
+//! Putting a setup back goes through the page's own combo rules: each saved
+//! choice is picked as a click on its list would pick it, so a row gets only
+//! what the page offers it. A colour or start an earlier row took, a start
+//! past the map's or a team the mode does not list leaves the row as the
+//! page opened it. Both reach every row the map seats, shown or not.
 
 use std::ops::Range;
 
@@ -136,14 +136,14 @@ impl SkirmishSavedSetup {
 }
 
 /// The computer rows the selected map seats, as `opponents` indices.
-pub(super) fn computer_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> Range<usize> {
+fn computer_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> Range<usize> {
     0..selected_player_rows(state, maps)
         .saturating_sub(1)
         .min(state.opponents.len())
 }
 
 /// What the row's Side, Color, Start and Team combos show.
-pub(super) fn seat_shown(state: &SkirmishShellState, row: usize) -> SkirmishSetupSeat {
+fn seat_shown(state: &SkirmishShellState, row: usize) -> SkirmishSetupSeat {
     let shown = |id| selected_combo_item(state, id);
     SkirmishSetupSeat {
         country: match shown(SkirmishComboId::Side(row)) {
@@ -196,7 +196,7 @@ fn pick_seat(
 
 /// Pick `item` as a click on the combo's list would: only on an open combo
 /// that lists it.
-pub(super) fn pick(
+fn pick(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
     id: SkirmishComboId,

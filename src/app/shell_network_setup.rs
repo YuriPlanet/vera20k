@@ -860,9 +860,10 @@ impl App {
                 return false;
             }
         };
-        // VERA: the room plays its host's rules, the Options page's Terrain
-        // Deformation box and Superweapon Limit, which the host can change in
-        // Game Options. Quick Match plays the original game.
+        // VERA: the room plays its host's rules, the Terrain Deformation and
+        // Superweapon Limit of the host's skirmish Game Options, which the host
+        // can change in the room's Game Options. Quick Match plays the
+        // original game.
         if !(dialog.wol() && crate::app::shell_wol::lobby::quick_match_runner(state)) {
             launch.options.host_rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());

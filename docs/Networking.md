@@ -144,11 +144,12 @@ replay and federation are unchanged. Measured traffic is in
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
-button, or type `/pause` or `/resume` as a whole line in match chat. Such a line is
-not sent as chat; in a match without synchronized pause it answers that pausing is
-not available. A pause marker follows the relay's last committed frame; clients finish
-that same frame and stop. Resume uses a separate authenticated control, so it
-works while simulation ticks are stopped. Both markers use the normal ordered
+button, or type `/pause` or `/resume` as a whole line in match chat. Such a line
+goes out as chat to its recipients like any other, so they read who asked; in a
+match without synchronized pause it answers that pausing is not available.
+A pause marker follows the relay's last committed frame; clients finish that
+same frame and stop. Resume uses a separate authenticated control, so it works
+while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery. Connections, chat and ticket renewal keep running;
 accepted gameplay inputs wait for their assigned frames after resume. Opening
 Options alone remains local. After a resume nobody can pause again for 30
@@ -390,7 +391,7 @@ is still waiting, and goes out after whatever was queued before it.
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
 Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
-host's Options have them and the host can change them in Game Options. They travel with the host's options, online as
+host's skirmish Game Options have them and the host can change them in the room's Game Options. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `host_rules` beside VERA's room options. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).

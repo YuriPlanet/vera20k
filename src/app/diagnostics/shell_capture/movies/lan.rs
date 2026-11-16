@@ -4232,6 +4232,28 @@ impl LanCapture {
                     }),
                     "no chat packet to the peer: {requests:?}"
                 );
+                // VERA's `/pause`: sent as chat like any line, then answered
+                // as a command; a LAN match has no shared pause.
+                line(state, Key::Character("\\".into()), "/pause", true);
+                let requests = state.match_state.session.take_network_loading_requests();
+                ensure!(
+                    requests.contains(&NetworkLoadingRequest::Chat {
+                        recipients: vec![1],
+                        text: "/pause ".into(),
+                    }),
+                    "/pause did not go out as chat: {requests:?}"
+                );
+                let shown = rows(state);
+                let echo = format!("{host}:/pause ");
+                let after = shown
+                    .iter()
+                    .rposition(|row| *row == echo)
+                    .map(|at| shown[at + 1..].concat().replace(' ', ""));
+                let answer = crate::i18n::tr("VERA:PauseNotAvailable").replace(' ', "");
+                ensure!(
+                    after == Some(answer),
+                    "/pause echo and answer rows: {shown:?}"
+                );
                 // Backspace: allies, left open for the frame.
                 line(state, Key::Named(NamedKey::Backspace), "typing", false);
                 let edit = state

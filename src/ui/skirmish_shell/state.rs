@@ -68,7 +68,7 @@ pub use saved_seed_browser::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
-pub use team_starts::{apply_team_starts, starts_by_team};
+pub use team_starts::starts_by_team;
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
     handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,
@@ -87,11 +87,8 @@ use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, Skir
 pub enum OwnerDrawButton {
     StartGame0x617,
     ChooseMap0x5aa,
-    /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
-    SaveSetup,
-    LoadSetup,
-    /// VERA's Team Starts ([`apply_team_starts`]).
-    TeamStarts,
+    /// VERA's Game Options ([`super::game_options`]).
+    GameOptions,
     Back0x5c0,
 }
 
@@ -101,9 +98,8 @@ pub enum SkirmishShellAction {
     StartGame,
     BackOrExit,
     ChooseMap,
-    SaveSetup,
-    LoadSetup,
-    TeamStarts,
+    /// The app opens the box on the rules the profile keeps.
+    GameOptions,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }
@@ -169,6 +165,8 @@ pub enum SkirmishHoverTarget {
     FlagPicture,
     GameTypeLabel0x6ec,
     ScenarioLabel0x5a8,
+    /// A control of the open Game Options box, which covers the page.
+    GameOptions(super::game_options::GameOptionsControl),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

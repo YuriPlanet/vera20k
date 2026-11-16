@@ -1371,6 +1371,24 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // VERA's Game Options box takes the keys over the page;
+                // Escape and Enter close it, as they close the room's.
+                if screen == ScreenPage::Skirmish
+                    && state.frontend.skirmish_shell_state.game_options.is_some()
+                {
+                    if event.state.is_pressed()
+                        && !event.repeat
+                        && matches!(
+                            event.physical_key,
+                            PhysicalKey::Code(
+                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                            )
+                        )
+                    {
+                        Self::close_skirmish_game_options(state);
+                    }
+                    return;
+                }
                 if let PhysicalKey::Code(code) = event.physical_key {
                     // ESC always reaches the handler when in-game (even when paused)
                     // so the player can toggle pause regardless of diagnostic GUI focus.
