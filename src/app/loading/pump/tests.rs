@@ -2514,3 +2514,31 @@ fn a_loaded_network_screen_holds_until_its_install_time() {
     assert!(session.holds_loaded_screen(1_000 + NETWORK_LOADED_HOLD_MS - 1));
     assert!(!session.holds_loaded_screen(1_000 + NETWORK_LOADED_HOLD_MS));
 }
+
+/// VERA: a mod's map additions reach Skirmish and online matches on an
+/// authored map, and neither campaign missions, cooperative ones too, nor
+/// random maps, which read their rules while they are made.
+#[test]
+fn map_additions_reach_matches_but_not_missions_or_random_maps() {
+    use crate::app::match_runtime::session::SessionMode;
+    use crate::skirmish_modes::MpModeClass::{Battle, Cooperative};
+    let reach = |class, map: &str, game_mode| {
+        let mut session = test_launch_session(LaunchCountry::America);
+        session.mode.class = class;
+        session.selected_map_file = Some(map.to_owned());
+        crate::app::mod_additions::reach(&LoadingStartup::Replay {
+            session,
+            seed: crate::app::match_bootstrap::MatchSeed {
+                value: 73,
+                source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
+                seed_authority_certifying: false,
+            },
+            game_mode,
+            native_id_prefix: 0,
+        })
+    };
+    assert!(reach(Battle, "mp01t4.map", SessionMode::Lan));
+    assert!(!reach(Cooperative, "mp01t4.map", SessionMode::Lan));
+    assert!(!reach(Battle, "RandMap.Sed", SessionMode::Lan));
+    assert!(!reach(Battle, "mp01t4.map", SessionMode::Campaign));
+}

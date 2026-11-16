@@ -47,6 +47,11 @@ pub(crate) struct ProcessAssets {
     mod_files: std::sync::Arc<std::sync::OnceLock<Result<[u8; 32], String>>>,
     /// [`ProcessAssets::read_mod_files_ahead`] has started its thread.
     mod_files_ahead: std::sync::atomic::AtomicBool,
+    /// That folder's map additions (`app::mod_additions`), read once: the
+    /// matches play what the pre-match check compares.
+    map_additions: std::sync::OnceLock<
+        Result<Option<std::sync::Arc<crate::app::mod_additions::MapAdditions>>, String>,
+    >,
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
@@ -127,6 +132,7 @@ impl ProcessAssets {
             ares_setting: Default::default(),
             mod_files: Default::default(),
             mod_files_ahead: Default::default(),
+            map_additions: Default::default(),
             ini_config: Default::default(),
             selected_ini_roots: None,
             personal_rules: Default::default(),
@@ -207,6 +213,37 @@ impl ProcessAssets {
     fn mod_files(&self) -> Option<&Result<[u8; 32], String>> {
         let dir = self.mod_dir.as_deref()?;
         Some(self.mod_files.get_or_init(|| mod_files_digest(dir)))
+    }
+
+    /// The launch mod's map additions, which the matches they reach
+    /// (`mod_additions::reach`) add to their maps, or why they could not be
+    /// read; `None` without a mod or when its folder holds other files the
+    /// game reads. `assets` name the Rules, Art, AI, sound and theater INIs
+    /// this game reads.
+    pub(crate) fn map_additions(
+        &self,
+        assets: &AssetManager,
+    ) -> Result<Option<std::sync::Arc<crate::app::mod_additions::MapAdditions>>, String> {
+        let Some(dir) = self.mod_dir.as_deref() else {
+            return Ok(None);
+        };
+        self.map_additions
+            .get_or_init(|| {
+                let roots = assets.ini_roots();
+                let mut names: Vec<String> = [
+                    roots.rules(),
+                    roots.art(),
+                    roots.ai(),
+                    roots.sound(),
+                    roots.eva(),
+                ]
+                .map(str::to_owned)
+                .to_vec();
+                names.extend(crate::map::theater::theater_ini_names(assets));
+                crate::app::mod_additions::MapAdditions::read(dir, &names)
+                    .map(|additions| additions.map(std::sync::Arc::new))
+            })
+            .clone()
     }
 
     /// The Options page's Terrain Deformation box: the next offline
@@ -542,6 +579,13 @@ impl ProcessAssets {
         if let Some(files) = self.mod_files() {
             bytes.extend_from_slice(b"mod files\0");
             bytes.extend_from_slice(files.as_ref().map_err(String::clone)?);
+        }
+        // VERA: and the map additions the matches play, as this process read
+        // them. A game that does not add them, such as an older release with
+        // the same files, never agrees with one that does.
+        if let Some(additions) = self.map_additions(assets)? {
+            bytes.extend_from_slice(b"map additions\0");
+            bytes.extend_from_slice(additions.digest().as_bytes());
         }
         Ok(crate::util::sha256::sha256_hex(&bytes))
     }
@@ -1072,6 +1116,42 @@ mod tests {
         assert_eq!(digest(Some("one")), digest(Some("same")));
         assert_ne!(digest(Some("one")), digest(Some("other")));
         assert_ne!(digest(Some("one")), digest(None));
+    }
+
+    /// VERA: the matches play a mod's map additions as the game read them, so
+    /// a player whose file changed after their game read it never agrees with
+    /// one whose game reads the changed file.
+    #[test]
+    fn map_additions_take_part_in_the_agreement_as_they_were_read() {
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("additions");
+        for (name, bytes) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        let hard = dir.path().join("mods-under-test").join("Stronger AI");
+        std::fs::create_dir_all(&hard).unwrap();
+        std::fs::write(hard.join("AI teams.ini"), "[AI]\nValue=2\n").unwrap();
+        let start = || {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_mod_dir(Some(hard.clone()));
+            let assets =
+                AssetManager::with_mod(dir.path(), Some(&hard), MediaArchiveMode::STOCK_DIGITAL)
+                    .unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            process
+        };
+        let early = start();
+        let manager = early.manager().unwrap();
+        assert!(early.map_additions(manager).unwrap().is_some());
+        std::fs::write(hard.join("AI teams.ini"), "[AI]\nValue=3\n").unwrap();
+        assert_ne!(
+            early.multiplayer_rules_digest("").unwrap(),
+            start().multiplayer_rules_digest("").unwrap()
+        );
     }
 
     /// VERA: a theater INI's tilesets decide each cell's land and height, so
