@@ -27,6 +27,10 @@ select Easy, Normal or Hard AI from an open player slot in Battle or Free For Al
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
+Games with two or more human players number their objects from one agreed start, so
+a player whose game already ran the random-map dialog or an earlier match numbers
+them as one just opened does; nothing new is exchanged, and older builds are
+refused by the build check.
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
 [Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
