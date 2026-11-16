@@ -216,7 +216,7 @@ enum Status {
 }
 ```
 
-哪些参数算非法（因而会停用模块）按函数逐一列出：越界的下标（全局变量 0..49，局部变量 0..99）、负数的数量、不在列表中的枚举值。`Trigger.create` 以同样的方式检查每个 `Action.atomic` 的参数，包括永远不适用于该动作的目标种类（[4.1](#41-动作的用法)）。没有匹配的名字返回 `NotFound`，因为名字来自 mod 可能修改的数据。原子动作的目标在其触发器执行时才发现不适用，同样属于数据错误，结果为 `Refused`（[4.1](#41-动作的用法)）。两类错误如何划分是**已在 RFC 0.0.5 采纳**（提议 P18）。
+哪些参数算非法（因而会停用模块）按函数逐一列出：越界的下标（全局变量 0..49，局部变量 0..99）、负数的数量、不在列表中的枚举值。`Trigger.create` 以同样的方式检查每个 `Action.atomic` 的参数，包括永远不适用于该动作的目标种类（[4.1](#41-动作的用法)）。没有匹配的名字返回 `NotFound`，因为名字来自 mod 可能修改的数据。地图上没有的路径点同样如此：原子动作的 `Cell.waypoint(n)` 不存在时，`Trigger.create` 返回 `NO_HANDLE` 并设置 `NotFound`，不停用模块（[4.1](#41-动作的用法)）。原子动作的目标在其触发器执行时才发现不适用，同样属于数据错误，结果为 `Refused`（[4.1](#41-动作的用法)）。两类错误如何划分是**已在 RFC 0.0.5 采纳**（提议 P18）。
 
 对 `NO_HANDLE` 或对象已不存在的句柄发起的调用什么也不做。该调用返回 `Status` 时返回 `Gone`，并把 `ctx.lastStatus()`（客户端模块中为 `ui.lastStatus()`）设为 `Gone`。这适用于句柄上的每个方法，包括返回 `void` 的方法，例如 `Node` 的方法（第 11.1 节）。它从不停用模块（RFC 3）。
 
@@ -611,12 +611,14 @@ class Cond {
 
 在触发器内，原版动作（`Action.original`）和原子动作（`Action.atomic`）在触发器触发时执行，与原版中的原版动作一致，触发器含有模块动作时也是如此。只有 `Action.wasm` 动作排队，每个都带着触发该触发器的那个事件的载荷，在模块阶段按触发顺序、每个模块每帧一批执行（RFC 5；[事件投递](#事件投递)）：动作为 [原版 A、模块 B、原子 C] 的触发器，在触发时执行 A 和 C，B 在同一帧稍后执行。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的模块动作会被丢弃。需要严格顺序的作者，把触发器的全部动作都写成模块代码，再通过下面的函数调用原版动作。由模块代码直接调用时，动作立即执行。
 
-在触发器中，原子动作写作 `Action.atomic(kind, target, params)`：`kind` 指定 [4.3](#43-原子动作rfc-6b与表格中的瞬时效果) 中的一个原子动作（`AtomicKind`），`params` 携带它的参数（`AtomicParams`），`target` 是一个明确的目标参数（`ActionTarget`）。原子动作只用于参数放得下的动作：一个目标、一个 ID、至多两个整数、一个格子和一个所属方。`Log` 是唯一被接受的例外：它另外带它要写的那行文字。需要更多参数的动作（例如 `map.createProjectile`）写成模块动作。各个目标：`Subject`（默认）为记录中的主体；`Other` 为记录中的另一方对象；`TagHolder` 为标签中持有本次触发的触发器的对象，即 4.2 中标为“live”的行所作用的对象，触发器由 CellTag 持有时为那个格子；`Projectile` 为事件中的抛射体；`House` 为 `params.house` 中的所属方，它为 `NO_HANDLE` 时为触发器的所属方；`Cell` 为 `params.cell` 中的格子。路径点以它的格子给出：`Cell.waypoint(n)` 在 `Trigger.create` 运行时解析为路径点所在的格子，因为路径点不会移动。不用目标的动作（`SetTechLevel`、`Log`）忽略 `target`。参数表达不了的部分由固定规则决定：
+在触发器中，原子动作写作 `Action.atomic(kind, target, params)`：`kind` 指定 [4.3](#43-原子动作rfc-6b与表格中的瞬时效果) 中的一个原子动作（`AtomicKind`），`params` 携带它的参数（`AtomicParams`），`target` 是一个明确的目标参数（`ActionTarget`）。原子动作只用于参数放得下的动作：一个目标、一个 ID、至多两个整数、一个格子和一个所属方。`Log` 是唯一被接受的例外：它另外带它要写的那行文字。需要更多参数的动作（例如 `map.createProjectile`）写成模块动作。各个目标：`Subject`（默认）为记录中的主体；`Other` 为记录中的另一方对象；`TagHolder` 为标签中持有本次触发的触发器的对象，即 4.2 中标为“live”的行所作用的对象，触发器由 CellTag 持有时为那个格子；`Projectile` 为事件中的抛射体；`House` 为 `params.house` 中的所属方，它为 `NO_HANDLE` 时为触发器的所属方；`Cell` 为 `params.cell` 中的格子。路径点以它的格子给出：`Cell.waypoint(n)` 在 `Trigger.create` 运行时解析为路径点所在的格子，因为路径点不会移动。地图上没有的路径点是地图数据错误，不是模块错误：`Trigger.create` 返回 `NO_HANDLE` 并设置 `NotFound`，不创建触发器，把错误写入游戏内日志，模块保持启用；写在 INI 中时，它在加载时于大厅中报告。不用目标的动作（`SetTechLevel`、`Log`）忽略 `target`。参数表达不了的部分由固定规则决定：
 
 - 明确的所属方（`House` 目标、`SetOwner` 的新所属方、动作所创建对象的所属方）是 `params.house`；它为 `NO_HANDLE` 时，使用触发器的所属方；
 - 来源（伤害、击杀或引爆的来源：`Kill`、`Damage`、`DetonateWeapon`、`DetonateWarhead`）是记录中的 `other`，并且是可选的：事件没有另一方对象时，动作在没有来源的情况下执行，不计击杀归属；
-- 动作要施加作用的第二个对象（武器射击的对象、乘客）是记录中的 `other`；事件没有另一方对象时，动作得到 `Gone` 并被跳过，状态写入日志；
-- 坐标取给定格子的中心，或目标所在格子的中心。
+- 动作要施加作用的第二个对象（乘客）是记录中的 `other`；事件没有另一方对象时，动作得到 `Gone` 并被跳过，状态写入日志；
+- `FireWeapon` 的瞄准对象按优先顺序为：`params.cell`（若给出）；否则为记录中的 `other`；再否则为射手当前的目标；三者都没有时，动作得到 `Gone` 并被跳过；
+- 对象目标的格子是对象所在的格子；`Projectile` 目标也算对象目标，它的格子是抛射体下方的格子；
+- 坐标取给定格子的中心，或目标所在格子的中心；`Projectile` 目标例外，其坐标为抛射体的中心。
 
 `Trigger.create` 检查每个 `Action.atomic` 的参数：非法的参数属于模块代码给出的非法参数，会停用模块（见[错误](#错误)；RFC 3）。这包括永远不适用于该动作的目标种类，即下表“目标”一列没有为该动作列出的种类（例如 `Kill` 的 `Cell`）。写在 INI 中的原子动作在加载时检查，并在大厅中报告；它们的 INI 写法是 RFC 的待定问题 5。触发器执行时才发现目标不适用于该动作（例如 `Kill` 的 `TagHolder` 是一个格子）属于数据错误，不是编程错误：动作得到 `Refused`，模块保持启用。由触发器执行的原子动作，其状态没有模块代码来接收：它失败时，错误状态（`Refused`、`Gone` 或 `NotFound`）写入游戏内日志，该动作被跳过，除此之外什么也不发生（见[错误](#错误)；RFC 3、6b）。立即执行的原版动作和原子动作可能引发新的事件，并在一帧之内连锁；含有模块触发器、VERA 新增的事件或原子动作的连锁，深度受每帧上限约束（见[事件投递](#事件投递)）。
 
@@ -655,11 +657,11 @@ class AtomicParams {         // the parameters of an atomic action other than it
 }
 ```
 
-`AtomicKind` 列出 4.3 中参数放得下的动作；区域搜索（一个查询）和 `map.createProjectile` 不在其中。下表列出每种动作的目标和用到的字段；它们如何对应到各个函数的参数，属于接口定义（RFC 12）。*对象*指 `Subject`、`Other`，或持有对象的 `TagHolder`；*格子*指 `Cell`，或对象目标所在的格子；`—` 表示不用目标（并忽略目标）或不用字段；`other` 是上面规则中的第二个对象，“可选”表示动作没有它也能执行的来源。
+`AtomicKind` 列出 4.3 中参数放得下的动作；区域搜索（一个查询）和 `map.createProjectile` 不在其中。下表列出每种动作的目标和用到的字段；它们如何对应到各个函数的参数，属于接口定义（RFC 12）。*对象*指 `Subject`、`Other`，或持有对象的 `TagHolder`；*格子*指 `Cell`，或对象目标所在的格子，包括 `Projectile`（抛射体下方的格子；取坐标时为抛射体中心）；`—` 表示不用目标（并忽略目标）或不用字段；`other` 是上面规则中的第二个对象，“可选”表示动作没有它也能执行的来源。
 
 | `AtomicKind` | 目标 | 字段与第二个对象 |
 | --- | --- | --- |
-| `FireWeapon` | 对象（射手） | `id` 武器或 `value` 武器槽位；`cell`；`other` 为射击的对象 |
+| `FireWeapon` | 对象（射手） | `id` 武器或 `value` 武器槽位；瞄准 `cell`（若给出），否则瞄准 `other`，再否则瞄准射手当前的目标 |
 | `LaunchSuperWeapon` | `House` | `id` 超级武器类型，`cell` |
 | `SpawnAnim` | 格子 | `id` 动画 |
 | `Remove` | 对象 | — |
@@ -881,7 +883,7 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 | `techno.setAmmo(n: i32)` / `addAmmo(n: i32)` | 修改弹药 | none | `src/sim/ammo.rs`（`add`、`decrease_by`） | v1? | RFC 6b；F24 |
 | `transport.addPassenger(p: Techno)` / `removePassenger(p: Techno)` | 让乘客登上或离开 | native | **尚无 owner**（`PassengerCargo::board_forced_chain`、`disembark` 只是列表操作，不做 limbo/unlimbo） | v1? | RFC 6b；F25 |
 | `techno.addEffect(...)` / `removeEffect(...)` | 见第 5 节 | — | 第 5 节 | v1 | RFC 6b；F2、F3 |
-| `techno.addMark(...)` / `removeMark(...)` | 见第 6 节 | — | 第 6 节 | v1 | RFC 6b |
+| `techno.addMark(...)` / `removeMark(...)`；`House` 上同样 | 见第 6 节 | — | 第 6 节 | v1 | RFC 6b |
 | `map.createProjectile(p: ProjectileParams): Projectile` | 创建抛射体：类型、起点、目标对象或坐标、用于击杀和经验归属的来源、16 字节的初始模块数据；失败时返回 `NO_HANDLE`。不是 `AtomicKind`：它需要的参数比原子动作能带的多（4.1） | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b、9；Rc：`SpawnProjectile` |
 | `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno): Status` | 不生成抛射体，直接在某个坐标引爆武器；`source` 可为 `NO_HANDLE` | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint`（只支持路径点；G-A1） | v1? | 带坐标的 A42（RFC 6：坐标作为参数） |
 | `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno): Status` | 按给定伤害和来源造成弹头的范围伤害；`source` 可为 `NO_HANDLE` | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **已在 RFC 0.0.5 采纳**（P7）；Rc：`SpawnExplosion` |
@@ -1019,10 +1021,10 @@ RFC 把变形、传送和运动放在同一个互斥组里，由 owner 保证同
 
 ## 6. 标记
 
-标记是对象携带的文字记号，一个对象可以携带任意多个（RFC 6b、术语）。动作和效果负责添加和移除，约束条件负责判断。owner：**尚无 owner**（缺口 G-M1）：需要一个按句柄索引的旁路表（RFC 15），存档并计入哈希，对象移除时清空。调用传入由 `Mark.id(name)` 得到的 `MarkId`（见 [ID](#id)）。
+标记是对象或所属方携带的文字记号，两者都可以携带任意多个（RFC 6b、术语）。所属方标记与对象标记使用相同的调用和层级。动作和效果负责添加和移除，约束条件负责判断。owner：**尚无 owner**（缺口 G-M1）：需要一个按句柄索引的旁路表（RFC 15），存档并计入哈希，对象移除时清空。调用传入由 `Mark.id(name)` 得到的 `MarkId`（见 [ID](#id)）。
 
 ```ts
-// on Techno:
+// on Techno and on House:
 addMark(m: MarkId): Status;
 removeMark(m: MarkId): Status;
 hasMark(m: MarkId): bool;
@@ -1034,10 +1036,10 @@ marks(out: IdBuffer): i32;    // order: the order the marks were added
 | `addMark` | 添加 `m`；重复添加只保留一个 | v1 | RFC 6b；F54 `Mark.Names` |
 | `removeMark` | 移除 `m`；不存在时返回 `Ok` | v1 | RFC 6b |
 | `hasMark` | 按 ID 判断；解析名字时不区分大小写 | v1 | RFC 6b；C10、C11 |
-| `marks` | 把对象的标记写入 `out` | v1 | RFC 6c（对象读取中的“标记”） |
+| `marks` | 把对象或所属方的标记写入 `out` | v1 | RFC 6c（对象读取中的“标记”） |
 | 效果携带的标记 | 效果类型列出若干标记，效果生效期间对象携带它们（新属性，例如 `Marks=`；名称未核实） | v1? | F54“持有带它的行为就获得这个标签” |
 | 标记的值和可见性 | **已在 RFC 0.0.5 采纳**（P3） | later | Rc: 带访问级别的 rules params |
-| 所属方标记 | **已在 RFC 0.0.5 采纳**（P3） | later | Rc: `SetTeamRulesParam` |
+| 所属方标记 | 上面四个条目用于 `House`；`House` 也是原子动作 `AddMark` 和 `RemoveMark` 的目标（4.1）；**已在 RFC 0.0.5 采纳**（P3） | v1 | Rc: `SetTeamRulesParam` |
 
 客户端模块只能读取自己看得到的对象的标记，而且只能读取可见度等级允许其玩家看到的标记（RFC 6b，P3）。
 
@@ -1108,7 +1110,7 @@ class Filter {
 | `map.overlay(c: Cell)`、`ore(c: Cell)` | `OverlayTypeId`（没有时为 `NO_ID`）；数量 | 覆盖物和矿石状态 | v1 | RFC 6c |
 | `map.passable(c: Cell, zone: i32)` | `bool` | 移动区域检查（owner 未核实） | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
-| `Cell.waypoint(n: i32)` | `Cell \| null`（地图没有路径点 `n` 时为 `null`）；路径点不会移动，所以触发器一直使用创建时的格子 | 地图路径点 | v1 | RFC 6c |
+| `Cell.waypoint(n: i32)` | `Cell \| null`（地图没有路径点 `n` 时为 `null`；用于原子动作时，`Trigger.create` 随之返回 `NotFound`，见 4.1）；路径点不会移动，所以触发器一直使用创建时的格子 | 地图路径点 | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag`（没有时为 `NO_HANDLE`） | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
 | `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **已在 RFC 0.0.5 采纳**（P15）；Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **尚无 owner**（`src/sim/ai_base_site.rs` 有一个 AI 用的版本） | later | P15；Rc: `ClosestBuildPos` |

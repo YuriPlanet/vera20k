@@ -596,6 +596,9 @@ the other object of the event, the tag holder (the objects whose tag holds the
 trigger, or the cell for a CellTag), the event's projectile, a house, or a
 cell. A waypoint is given as its cell: `Cell.waypoint(n)` resolves to the
 waypoint's cell when `Trigger.create` runs, since waypoints do not move. A
+waypoint the map does not have is a map data error, not a module error:
+`Trigger.create` returns `NotFound`, creates no trigger and logs it, and the
+module stays enabled; in INI it is reported in the lobby at load. A
 kind that uses no target (for example setting a tech level, or `Log`) ignores
 the target. Fixed rules cover the rest:
 
@@ -604,11 +607,17 @@ the target. Fixed rules cover the rest:
   given, the trigger's house is used.
 - A source (of damage, a kill or a detonation) is the event's other object and
   is optional: when the event has none, the action runs with no source and
-  gives no kill credit. An action that needs a second object to act on (the
-  object a weapon fires at, a passenger) uses the event's other object; when
-  the event has none, the action gets `Gone` and is skipped, and the status
-  is logged.
-- A coordinate is the center of the given cell, or of the target's cell.
+  gives no kill credit. An action that needs a second object to act on (a
+  passenger) uses the event's other object; when the event has none, the
+  action gets `Gone` and is skipped, and the status is logged.
+- `FireWeapon` aims at, in order of precedence: the cell in the parameters if
+  one is given, else the event's other object, else the shooter's current
+  target; with none of them it gets `Gone` and is skipped.
+- The cell of an object target is the cell the object is in; a `Projectile`
+  target counts as an object target, and its cell is the one under the
+  projectile. A coordinate is the center of the given cell, or of the
+  target's cell, except for a projectile target, whose coordinate is the
+  projectile's center.
 - The appendix lists the target kinds and fields each kind uses; the exact
   mapping of each kind to its parameters belongs to the interface definition
   (section 12).
@@ -1111,8 +1120,11 @@ Planned order after acceptance:
   or a detonation) is the event's other object and is optional: for `Kill`,
   `Damage` and the `Detonate` kinds an event without one runs the action with
   no source and no kill credit, and only an action that needs a second object
-  to act on (the object fired at, a passenger) gets `Gone` without one and is
-  skipped; a coordinate is the center of a cell; the appendix lists the target
+  to act on (a passenger) gets `Gone` without one and is skipped, while
+  `FireWeapon` aims at `params.cell` if given, else the event's other object,
+  else the shooter's current target; a coordinate is the center of a cell,
+  and the cell of an object target includes a `Projectile` target, whose cell
+  is the one under the projectile (its center for a coordinate); the appendix lists the target
   kinds and fields each `AtomicKind` uses, and the exact mapping belongs to
   the interface definition (section 12); `Trigger.create` checks the
   arguments of each `Action.atomic`, and an invalid one disables the module,
@@ -1147,7 +1159,14 @@ Planned order after acceptance:
   `setLabel`, `setArt`), a bar's fill is set with `setFill`, and `Value` keeps
   only its INI meaning, a data source such as `Credits` or `Power`;
   notifications carry the module's own bytes, which the engine cannot filter;
-  `Ctx.event()` removed; related text and the appendix updated to match.
+  `Ctx.event()` removed; a waypoint the map does not have is a map data
+  error, not a module error: `Trigger.create` given an atomic action whose
+  `Cell.waypoint(n)` does not exist returns `NotFound`, creates no trigger,
+  logs it and leaves the module enabled, and in INI it is reported in the
+  lobby at load; house marks are part of the mark API with the same tier as
+  object marks (`addMark`, `removeMark`, `hasMark`, `marks` on `House`), and
+  `House` stays a target of `AddMark` and `RemoveMark`; related text and the
+  appendix updated to match.
 - **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
   override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
   visibility and house marks, query order, warhead detonation, projectile

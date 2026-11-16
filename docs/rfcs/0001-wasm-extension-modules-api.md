@@ -330,7 +330,10 @@ function: out-of-range indexes (global 0..49, local 0..99), negative counts,
 an enum value outside its list. `Trigger.create` checks the arguments of each
 `Action.atomic` in the same way, including a target kind that can never fit
 the action ([4.1](#41-using-actions)). A name that matches nothing returns
-`NotFound`, because names come from data that a mod may change. A target that
+`NotFound`, because names come from data that a mod may change. So does a
+waypoint the map does not have: for an atomic action whose `Cell.waypoint(n)`
+does not exist, `Trigger.create` returns `NO_HANDLE` with `NotFound` and does
+not disable the module ([4.1](#41-using-actions)). A target that
 turns out not to fit an atomic action when its trigger runs is a data error as
 well and gives `Refused` ([4.1](#41-using-actions)). The split
 between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
@@ -814,7 +817,11 @@ when the trigger is held by a CellTag; `Projectile` the event's projectile;
 `House` the house in `params.house`, or the trigger's house when that is
 `NO_HANDLE`; `Cell` the cell in `params.cell`. A waypoint is given as its
 cell: `Cell.waypoint(n)` resolves to the waypoint's cell when `Trigger.create`
-runs, since waypoints do not move. A kind that uses no target (`SetTechLevel`,
+runs, since waypoints do not move. A waypoint the map does not have is a map
+data error, not a module error: `Trigger.create` returns `NO_HANDLE` with
+`NotFound`, creates no trigger, writes the error to the in-game log and leaves
+the module enabled; in INI it is reported in the lobby at load. A kind that
+uses no target (`SetTechLevel`,
 `Log`) ignores `target`. Fixed rules cover what the parameters cannot say:
 
 - an explicit house (the `House` target, the new owner of `SetOwner`, the
@@ -824,10 +831,18 @@ runs, since waypoints do not move. A kind that uses no target (`SetTechLevel`,
   `DetonateWeapon`, `DetonateWarhead`) is the record's `other` and is
   optional: when the event has none, the action runs with no source and gives
   no kill credit;
-- a second object the action acts on (the object a weapon fires at, a
-  passenger) is the record's `other`; when the event has none, the action
-  gets `Gone` and is skipped, and the status is logged;
-- a coordinate is the center of the given cell, or of the target's cell.
+- a second object the action acts on (a passenger) is the record's `other`;
+  when the event has none, the action gets `Gone` and is skipped, and the
+  status is logged;
+- `FireWeapon` aims at, in order of precedence: `params.cell` if given, else
+  the record's `other`, else the shooter's current target; with none of them
+  it gets `Gone` and is skipped;
+- the cell of an object target is the cell the object is in; a `Projectile`
+  target counts as an object target, and its cell is the one under the
+  projectile;
+- a coordinate is the center of the given cell, or of the target's cell,
+  except for a `Projectile` target, whose coordinate is the projectile's
+  center.
 
 `Trigger.create` checks the arguments of each `Action.atomic`: an invalid one
 is an invalid argument from module code and disables the module (see
@@ -885,13 +900,14 @@ query) and `map.createProjectile` are not among them. The table lists the
 target and the fields each kind uses; how they map onto each function's
 parameters belongs to the interface definition (RFC 12). *Object* means
 `Subject`, `Other` or a `TagHolder` that holds objects; *cell* means `Cell` or
-the cell of an object target; `—` means the kind uses no target (and ignores
-it) or no field; `other` is the second object of the rules above, and
-"optional" marks a source the action can do without.
+the cell of an object target, including `Projectile` (the cell under the
+projectile; its center for a coordinate); `—` means the kind uses no target
+(and ignores it) or no field; `other` is the second object of the rules
+above, and "optional" marks a source the action can do without.
 
 | `AtomicKind` | Target | Fields and second object |
 | --- | --- | --- |
-| `FireWeapon` | object (the shooter) | `id` weapon or `value` weapon slot; `cell`; `other` as the object fired at |
+| `FireWeapon` | object (the shooter) | `id` weapon or `value` weapon slot; aims at `cell` if given, else `other`, else the shooter's current target |
 | `LaunchSuperWeapon` | `House` | `id` superweapon type, `cell` |
 | `SpawnAnim` | cell | `id` animation |
 | `Remove` | object | — |
@@ -1123,7 +1139,7 @@ kind of the same name and takes the target parameter of
 | `techno.setAmmo(n: i32)` / `addAmmo(n: i32)` | Change ammo | none | `src/sim/ammo.rs` (`add`, `decrease_by`) | v1? | RFC 6b; F24 |
 | `transport.addPassenger(p: Techno)` / `removePassenger(p: Techno)` | Board or eject a passenger | native | **no owner yet** (`PassengerCargo::board_forced_chain`, `disembark` are list operations without limbo/unlimbo) | v1? | RFC 6b; F25 |
 | `techno.addEffect(...)` / `removeEffect(...)` | section 5 | — | section 5 | v1 | RFC 6b; F2, F3 |
-| `techno.addMark(...)` / `removeMark(...)` | section 6 | — | section 6 | v1 | RFC 6b |
+| `techno.addMark(...)` / `removeMark(...)`; the same on `House` | section 6 | — | section 6 | v1 | RFC 6b |
 | `map.createProjectile(p: ProjectileParams): Projectile` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data; `NO_HANDLE` on failure. Not an `AtomicKind`: it needs more parameters than an atomic action has (4.1) | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
 | `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno): Status` | Detonate a weapon at a coordinate with no bullet; `source` may be `NO_HANDLE` | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
 | `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno): Status` | Area damage of a warhead with a given damage and source; `source` may be `NO_HANDLE` | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
@@ -1269,14 +1285,15 @@ Spreadsheet lasting effects not taken as effects:
 
 ## 6. Marks
 
-A mark is a text marker an object carries; an object may carry any number
-(RFC 6b, Terminology). Actions and effects add and remove them; conditions test
+A mark is a text marker an object or a house carries; either may carry any
+number (RFC 6b, Terminology). House marks use the same calls and tier as
+object marks. Actions and effects add and remove them; conditions test
 them. Owner: **no owner yet** (gap G-M1): a side table keyed by handle
 (RFC 15), saved and hashed, cleared by the object's removal. Calls take a
 `MarkId` from `Mark.id(name)` (see [IDs](#ids)).
 
 ```ts
-// on Techno:
+// on Techno and on House:
 addMark(m: MarkId): Status;
 removeMark(m: MarkId): Status;
 hasMark(m: MarkId): bool;
@@ -1288,10 +1305,10 @@ marks(out: IdBuffer): i32;    // order: the order the marks were added
 | `addMark` | adds `m`; adding twice keeps one | v1 | RFC 6b; F54 `Mark.Names` |
 | `removeMark` | removes `m`; absent is `Ok` | v1 | RFC 6b |
 | `hasMark` | test by ID; names compare case-insensitively when resolved | v1 | RFC 6b; C10, C11 |
-| `marks` | writes the object's marks into `out` | v1 | RFC 6c ("marks" in object reads) |
+| `marks` | writes the object's or house's marks into `out` | v1 | RFC 6c ("marks" in object reads) |
 | Effect-carried marks | an effect type lists marks the object carries while the effect is active (new property, e.g. `Marks=`; name unverified) | v1? | F54 "持有带它的行为就获得这个标签" |
 | Mark value and visibility | **adopted in RFC 0.0.5** (P3) | later | Rc: rules params with access levels |
-| House marks | **adopted in RFC 0.0.5** (P3) | later | Rc: `SetTeamRulesParam` |
+| House marks | the four entries above on `House`; `House` is also a target of the `AddMark` and `RemoveMark` atomic actions (4.1); **adopted in RFC 0.0.5** (P3) | v1 | Rc: `SetTeamRulesParam` |
 
 Client modules read marks only of objects they can see, and of those only
 the marks whose visibility level admits their player (RFC 6b, P3).
@@ -1368,7 +1385,7 @@ class Filter {
 | `map.overlay(c: Cell)`, `ore(c: Cell)` | `OverlayTypeId` (`NO_ID` when none); amount | overlay and tiberium state | v1 | RFC 6c |
 | `map.passable(c: Cell, zone: i32)` | `bool` | movement zone check (owner unverified) | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
-| `Cell.waypoint(n: i32)` | `Cell \| null` (`null` when the map has no waypoint `n`); waypoints do not move, so a trigger keeps the cell it was created with | map waypoints | v1 | RFC 6c |
+| `Cell.waypoint(n: i32)` | `Cell \| null` (`null` when the map has no waypoint `n`; in an atomic action, `Trigger.create` then returns `NotFound`, 4.1); waypoints do not move, so a trigger keeps the cell it was created with | map waypoints | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag` (`NO_HANDLE` when none) | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
 | `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | later | P15; Rc: `ClosestBuildPos` |
