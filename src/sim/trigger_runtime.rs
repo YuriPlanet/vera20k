@@ -47,6 +47,8 @@ const ACTION_JUMP_CAMERA: i32 = 112;
 const ACTION_SET_SUPER_CHARGE_PERCENTAGE: i32 = 129;
 const ACTION_SET_ALTERNATE_BASE: i32 = 137;
 const ACTION_CLEAR_ALTERNATE_BASE: i32 = 138;
+/// Phobos `PhobosTriggerAction::SetTeamDelay` (`Ext/TAction/Body.h:30`).
+const ACTION_SET_TEAM_DELAY: i32 = 610;
 
 const EVENT_ATTACKED: i32 = 6;
 const EVENT_ANY: i32 = 8;
@@ -4182,6 +4184,13 @@ impl Simulation {
         let reference = action.reference;
         let value = action.value;
         let sound = action.sound.as_deref();
+        // Native `TActionClass+0x90` is `Value`; `Param3` is the third token
+        // after the action kind (`Ext/TAction/Body.cpp:761`).
+        let param3 = action
+            .entry
+            .params
+            .get(2)
+            .map_or(0, |param| crt_atoi(param));
         let action = &action.entry;
         match action.kind {
             6 => {
@@ -5441,6 +5450,29 @@ impl Simulation {
                 };
                 house.set_preferred_super_weapon_target_kind(value);
             }
+            ACTION_SET_TEAM_DELAY => {
+                // Phobos `TActionExt::SetTeamDelay` (`Ext/TAction/Body.cpp:759`):
+                // `pHouse` is the trigger's incoming House; the signed
+                // `Param3` (`params[2]`) is stored on the House extension and
+                // caps the existing team timer.
+                let Some(owner) = context.incoming_house else {
+                    return false;
+                };
+                let Some(stock_delay) = self
+                    .houses
+                    .get(&owner)
+                    .map(|house| house.difficulty_value(&rules.general.team_delays))
+                else {
+                    return false;
+                };
+                let frame = self.session.binary_frame() as i32;
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                house
+                    .team_creation_mut()
+                    .set_team_delay_action(frame, param3, stock_delay);
+            }
             76..=79 => {
                 // Active76..79 at6DF34F/379/3A3/3CD: a null incoming House
                 // succeeds without reading +90. Each stores that signed dword
@@ -6323,6 +6355,10 @@ mod reveal_zone_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_ai_activation_tests.rs"]
 mod ai_activation_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_team_delay_tests.rs"]
+mod team_delay_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_crate_tests.rs"]

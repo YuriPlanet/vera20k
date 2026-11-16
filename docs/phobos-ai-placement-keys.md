@@ -251,18 +251,19 @@ that its footprint stays the aim point.
   `TargetCoord` recalculation pass, and Approach reads the live target
   coordinate directly in both key states. Trigger: a BalloonHover techno in a
   mod. Effect: no recalculation to skip; no retail route reaches the difference.
-- `TeamDelays.DynamicType` boundaries: the hook's first branch is the per-house
-  `HouseExt::TeamDelay >= 0` override, whose only writer in Phobos is trigger
-  action `SetTeamDelay` (`Ext/TAction/Body.cpp:759-765`,
-  `HouseExt::Fetch(pHouse)->TeamDelay = value`). VERA does not port that action
-  yet, so no house carries an override and the dynamic or stock path always
-  runs. The hook's neutral test is `HouseClass::IsNeutral`; VERA substitutes the
-  `MultiplayPassive=` house flag because it has no separate neutral flag. A
-  `SetTeamDelay` mod therefore sees the dynamic pacing instead of its fixed
-  override, and a map marking a house neutral without `MultiplayPassive=` counts
-  it. Trigger: a mod using `SetTeamDelay`, or a non-retail neutral house.
-  Frequency: per AI team reset in such a mod. Risk: pacing differs there; retail
-  authors neither key.
+- `TeamDelays.DynamicType` neutral boundary: the hook's first branch is the
+  per-house `HouseExt::TeamDelay >= 0` override, written by trigger action
+  `SetTeamDelay` (`Ext/TAction/Body.cpp:759-778`). That action and the
+  override are ported: action 610 stores `Param3` (`params[2]`) on
+  `HouseTeamCreation`, caps the current timer at `Param3` or at the
+  difficulty's stock row, and `update_team_creation` reads the override
+  before `DynamicType` (`Ext/House/Hooks.cpp:606-613`). The remaining
+  boundary is the hook's neutral test: native uses `HouseClass::IsNeutral`,
+  while VERA substitutes the `MultiplayPassive=` house flag because it has no
+  separate neutral flag. A map marking a house neutral without
+  `MultiplayPassive=` counts it. Trigger: such a neutral house with a
+  non-zero dynamic `Count` row. Frequency: per AI team reset in that map.
+  Risk: pacing differs there; retail authors no such map.
 - `BuildingWaypoints` waypoint-node boundary: selection admission (the
   `0x7E4610` vtable answer) and the display drop (`0x4AE95E`,
   `Ext/Building/Hooks.cpp:885-898`) are ported. Planning mode admits a selected

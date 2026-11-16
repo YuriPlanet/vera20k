@@ -54,7 +54,7 @@ use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
 use crate::sim::team_script_vm::{
     TeamAiTriggerDefinition, TeamAiTriggerOwner, TeamMemberTypeIdentity, TeamTypeDefinition,
 };
-use crate::sim::timer::CdTimer;
+use crate::sim::timer::{CdTimer, PAUSED_START_FRAME};
 use crate::sim::world::Simulation;
 use crate::util::native_x87::X87Chop53;
 
@@ -72,6 +72,10 @@ pub struct HouseTeamCreation {
     /// `HouseClass+0x565C`, the percent chance a pass picks an AI trigger:
     /// constructor 100 (`0x004F5BDD`), followed by the map's exact-key read.
     ratio: i32,
+    /// Phobos `HouseExt::TeamDelay`: fixed delay written by TAction 610, or
+    /// `-1` to fall back to the difficulty / dynamic delay path
+    /// (`Ext/House/Body.h:76,114`, save `Ext/House/Body.cpp:711`).
+    team_delay: i32,
 }
 
 impl Default for HouseTeamCreation {
@@ -79,6 +83,7 @@ impl Default for HouseTeamCreation {
         Self {
             timer: CdTimer::started(0, 1),
             ratio: 100,
+            team_delay: -1,
         }
     }
 }
@@ -101,6 +106,35 @@ impl HouseTeamCreation {
         self.timer.start(frame, delay);
     }
 
+    /// `HouseExt::TeamDelay` override read by
+    /// `HouseClass_Update_ResetTeamDelay` (`Ext/House/Hooks.cpp:606-613`).
+    pub(crate) const fn team_delay(&self) -> i32 {
+        self.team_delay
+    }
+
+    /// `TActionExt::SetTeamDelay` (`Ext/TAction/Body.cpp:759-778`, action
+    /// 610): store the signed `Param3`, then cap the current timer at
+    /// `Param3`, or at the difficulty's `[General] TeamDelays` row when the
+    /// value is negative. A paused timer with a non-zero remainder writes the
+    /// shorter remainder back; a running timer restarts from `frame`.
+    pub(crate) fn set_team_delay_action(&mut self, frame: i32, value: i32, stock_delay: i32) {
+        self.team_delay = value;
+        let timer = if value < 0 { stock_delay } else { value };
+        let time = self.timer.remaining(frame).min(timer);
+        if self.timer.start_frame() == PAUSED_START_FRAME && self.timer.duration() != 0 && time > 0
+        {
+            self.timer = CdTimer::from_raw(PAUSED_START_FRAME, time);
+        } else if self.timer.start_frame() != PAUSED_START_FRAME {
+            self.timer.start(frame, time);
+        }
+    }
+
+    /// Test seam for the paused-timer branch of `SetTeamDelay`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_team_timer_for_test(&mut self, timer: CdTimer) {
+        self.timer = timer;
+    }
+
     /// Fold the timer and the ratio, each tagged and only off its
     /// constructor value, so a house that never ran team creation hashes as
     /// earlier schemas.
@@ -113,6 +147,10 @@ impl HouseTeamCreation {
         if self.ratio != constructed.ratio {
             b"house-ai-trigger-ratio-v1".hash(hasher);
             self.ratio.hash(hasher);
+        }
+        if self.team_delay != constructed.team_delay {
+            b"house-team-delay-override-v1".hash(hasher);
+            self.team_delay.hash(hasher);
         }
     }
 
@@ -138,6 +176,11 @@ impl HouseTeamCreation {
 /// Z from `TeamDelays.Count<count>` (`Ext/Rules/Body.cpp:606-613`).
 fn dynamic_team_delay(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Option<i32> {
     let house = sim.houses.get(&owner)?;
+    // `Ext/House/Hooks.cpp:606-613`: a fixed `TeamDelay` answers before the
+    // dynamic type and before the campaign / start-count gates.
+    if house.team_creation().team_delay() >= 0 {
+        return Some(house.team_creation().team_delay());
+    }
     if sim.session.game_mode() == ScenarioGameMode::Campaign {
         return None;
     }
