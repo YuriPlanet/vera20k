@@ -480,7 +480,7 @@ pub(crate) fn render_multiplayer_setup(
                         &crate::i18n::tr(caption),
                         rect,
                         ShellAlign::V_CENTER,
-                        ROOM_TEXT_RGB,
+                        TEAM_BAR_LABEL_RGB,
                         SHELL_CONTROL_TEXT_DEPTH,
                         ROSTER_TEXT_SCALE,
                     ));
@@ -1249,6 +1249,8 @@ const ROSTER_LINE_H: f32 = 20.0;
 /// green, where the shell's is dark red, on what is closed.
 const ROOM_TEXT_RGB: [f32; 3] = [0.0, 1.0, 0.0];
 const ROOM_CLOSED_TEXT_RGB: [f32; 3] = [0.0, 0.5, 0.0];
+/// The team bar's labels: a darker green beside its trackbars' yellow values.
+const TEAM_BAR_LABEL_RGB: [f32; 3] = [0.0, 0.75, 0.0];
 
 /// The local player's row in VERA's roster: a dark red band behind it.
 const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
@@ -1443,21 +1445,11 @@ fn push_trackbar(
         return;
     };
     let scale = layout.control_scale(bar.id);
-    // The team bar's count keeps its value at the roster's text size and
-    // in the room's colours.
-    let (text_factor, [rgb, closed]) = if scale == layout.page.scale {
-        (
-            scale.factor(),
-            [
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
-            ],
-        )
+    // The team bar's trackbars keep their values at the roster's text size.
+    let text_factor = if scale == layout.page.scale {
+        scale.factor()
     } else {
-        (
-            layout.page.scale.factor() * ROSTER_TEXT_SCALE,
-            [ROOM_TEXT_RGB, ROOM_CLOSED_TEXT_RGB],
-        )
+        layout.page.scale.factor() * ROSTER_TEXT_SCALE
     };
     paint_control(
         controls,
@@ -1494,7 +1486,11 @@ fn push_trackbar(
             &state.renderer.bit_font,
             &value,
             rect_to_text_rect(crate::ui::shell::trackbar::value_text_rect(rect, scale)),
-            if view.enabled(bar.id) { rgb } else { closed },
+            if view.enabled(bar.id) {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+            },
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             [0.0; 2],
             text_depth,

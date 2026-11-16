@@ -109,16 +109,16 @@ const ROSTER_SWATCH_LIST_W: i32 = 40;
 /// Balance; in one without, only the host's Room size. Each part is from
 /// its group's top-left corner, their art at 78% of the shell's size
 /// ([`MultiplayerSetupLayout::control_scale`]). A trackbar is the room's
-/// own 129x21 window at that size, so its frame art fits.
+/// own 129x21 window at that size, so its frame art fits. Both trackbars'
+/// labels take one width, so the trackbars line up when they stack, and
+/// the buttons stand the groups' gap apart.
 const TEAM_BAR_H: i32 = 25;
 const TEAM_BAR_INSET: i32 = 8;
 const TEAM_BAR_GAP: i32 = 12;
-const TEAM_BAR_LABEL: RectPx = RectPx::new(0, 3, 65, 18);
-const TEAM_BAR_COUNT: RectPx = RectPx::new(67, 4, 101, 17);
-const TEAM_BAR_ROOM_LABEL: RectPx = RectPx::new(0, 3, 90, 18);
-const TEAM_BAR_ROOM: RectPx = RectPx::new(92, 4, 101, 17);
+const TEAM_BAR_LABEL: RectPx = RectPx::new(0, 3, 90, 18);
+const TEAM_BAR_TRACKBAR: RectPx = RectPx::new(92, 4, 101, 17);
 const TEAM_BAR_STARTS: RectPx = RectPx::new(0, 3, 97, 19);
-const TEAM_BAR_COLORS: RectPx = RectPx::new(105, 3, 97, 19);
+const TEAM_BAR_COLORS: RectPx = RectPx::new(97 + TEAM_BAR_GAP, 3, 97, 19);
 const TEAM_BAR_BALANCE: RectPx = RectPx::new(0, 3, 97, 19);
 /// The chat's log ends here, its edit line under it.
 const CHAT_LOG_BOTTOM: i32 = 529;
@@ -1638,8 +1638,8 @@ impl MultiplayerSetupLayout {
         let columns = self.roster_columns;
         let bar_w = columns.w + 2 * mx;
         let groups: [Option<&[RectPx]>; 4] = [
-            teams.then_some(&[TEAM_BAR_LABEL, TEAM_BAR_COUNT]),
-            room_size.then_some(&[TEAM_BAR_ROOM_LABEL, TEAM_BAR_ROOM]),
+            teams.then_some(&[TEAM_BAR_LABEL, TEAM_BAR_TRACKBAR]),
+            room_size.then_some(&[TEAM_BAR_LABEL, TEAM_BAR_TRACKBAR]),
             (teams && host).then_some(&[TEAM_BAR_STARTS, TEAM_BAR_COLORS]),
             (teams && online).then_some(&[TEAM_BAR_BALANCE]),
         ];
@@ -2488,6 +2488,16 @@ mod tests {
             let (x, y) = center(rect);
             assert_eq!(popup_layout.control_at(&view, x, y), Some(id));
         }
+        // At 800x600 Room size stacks under the Teams count, the two
+        // trackbars in one column, and the buttons stand evenly apart.
+        let [teams, room, starts, colors, balance] =
+            [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE]
+                .map(|id| popup_layout.control_rect(id).unwrap());
+        assert!(teams.y < room.y && teams.x == room.x);
+        assert_eq!(
+            colors.x - (starts.x + starts.w),
+            balance.x - (colors.x + colors.w)
+        );
         // Its art draws at 78% of the shell's size.
         assert_eq!(popup_layout.control_scale(TEAM_COUNT).factor(), 0.78);
         assert_eq!(popup_layout.control_scale(SPEED).factor(), 1.0);
