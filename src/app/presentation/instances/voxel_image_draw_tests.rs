@@ -68,6 +68,7 @@ fn alternate_voxel_models_keep_the_first_drawers_raster_style() {
             EntityDrawBand::Ground,
             sim.session().binary_frame(),
             crate::render::draw_state::ObserverDrawContext::default(),
+            None,
         )
         .unwrap();
         assert_eq!(model, selected);
