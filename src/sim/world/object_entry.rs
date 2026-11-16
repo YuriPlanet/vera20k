@@ -45,6 +45,10 @@ mod phobos_wall_weapon_tests;
 #[path = "plain_entry_tests.rs"]
 mod plain_entry_tests;
 
+#[cfg(all(test, feature = "phobos"))]
+#[path = "phobos_balloon_pathing_tests.rs"]
+mod phobos_balloon_pathing_tests;
+
 /// The +1AC decision reads live simulation state without borrowing the bridge
 /// publisher. Native Map lookups still stamp the canonical shared Dummy through
 /// its existing interior-mutable owner, in the same order as movement/repair.
@@ -477,6 +481,26 @@ impl Simulation {
             .map(crate::sim::movement::infantry_entry::InfantryEntryClass::from_raw)
     }
 
+    /// `BalloonHoverPathingFix` (`Misc/Hooks.BugFixes.cpp:3522-3534`) in both
+    /// `IsCellOccupied` entry points (`0x51BFA2`, `0x73F0A7`) and the
+    /// `FootClass::ApproachTarget_CheckArcCell` hook (`0x4D62C0`): an airborne
+    /// `BalloonHover=` Foot skips the cell walk and answers move-OK. VERA has
+    /// no separate `IsInAir`; its AircraftTracker membership is the airborne
+    /// state, so the bucket is Some exactly while the Foot is tracked in the air.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn phobos_balloon_hover_ignores_cell_entry(&self, id: u64, rules: &RuleSet) -> bool {
+        if !rules.phobos_globals.balloon_hover_pathing_fix {
+            return false;
+        }
+        let Some(e) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        e.air_spatial_bucket().is_some()
+            && self
+                .object_type(e.type_ref(), rules)
+                .is_some_and(|object| object.balloon_hover)
+    }
+
     /// The class's own `Can_Enter_Cell` (+0x1AC) for a live Foot receiver:
     /// Infantry 0x0051BF90 or Unit 0x0073F0A0, as the raw native code 0..7.
     /// Foot4D3920's target query and the Drive/Ship Process continuations
@@ -499,6 +523,10 @@ impl Simulation {
             )
         }) {
             return Err("Foot entry requires a live Infantry or Unit receiver".into());
+        }
+        #[cfg(feature = "phobos")]
+        if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
+            return Ok(0);
         }
         // An installed oracle seam answers before the receiver's type is
         // resolved, as it did before the search shared this receiver.
@@ -812,6 +840,14 @@ impl FootEntryReceiver<'_> {
             args.height,
         ) {
             return Ok(code);
+        }
+        #[cfg(feature = "phobos")]
+        if self
+            .live
+            .sim
+            .phobos_balloon_hover_ignores_cell_entry(self.mover.id, self.live.rules)
+        {
+            return Ok(0);
         }
         classify_foot_entry(&self.live, &self.mover, cell, args)
     }
