@@ -2800,6 +2800,124 @@ impl WolCapture {
                             "Teams 15": wide_captions,
                         }),
                     );
+                    // With Teams set the map does not limit who plays: on a
+                    // two-player map six people play on two teams, and Team
+                    // Starts gives each team one start its people share.
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Trackbar {
+                            control: TEAM_COUNT,
+                            value: 2,
+                        },
+                    );
+                    let mode_id = state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .context("room setup")?
+                        .mode
+                        .id;
+                    let mode =
+                        crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, mode_id)
+                            .context("the room's mode")?;
+                    let two = state
+                        .frontend
+                        .scenario_catalog
+                        .records()
+                        .iter()
+                        .position(|map| {
+                            map.kind
+                                == crate::map::skirmish_scenarios::SkirmishScenarioKind::ConcreteMap
+                                && map.player_capacity == 2
+                                && crate::map::skirmish_scenarios::is_valid_map(map, mode, false)
+                        })
+                        .context("a two-player map")?;
+                    crate::app::shell_network_setup::commit_map_selection(
+                        state, mode_id, two, None,
+                    )?;
+                    for name in ["Boris", "Ivan", "Sofia", "Lena"] {
+                        crate::app::shell_wol::service_event(
+                            state,
+                            WolServiceEvent::UserJoined(member(name, 0, "")),
+                        );
+                    }
+                    let picks = [
+                        ("Natasha", 1),
+                        ("Boris", 0),
+                        ("Ivan", 1),
+                        ("Sofia", 0),
+                        ("Lena", 1),
+                    ];
+                    for (name, team) in picks {
+                        let human = state
+                            .match_state
+                            .session
+                            .network_setup()
+                            .and_then(|launch| {
+                                launch.humans.iter().find(|human| human.name == name)
+                            })
+                            .context("a guest")?;
+                        let mut slot = human.slot.clone();
+                        slot.team = crate::skirmish_launch::LaunchTeam::Team(team);
+                        crate::app::shell_wol::service_event(
+                            state,
+                            WolServiceEvent::PlayerChoices {
+                                from: name.into(),
+                                slot,
+                                observer: false,
+                            },
+                        );
+                    }
+                    let rect = crate::app::input::multiplayer_setup::layout(state)
+                        .control_rect(crate::ui::multiplayer_setup::TEAM_STARTS)
+                        .context("Team Starts")?;
+                    setup_click(state, rect);
+                    let session = &state.match_state.session;
+                    let players: Vec<(String, u8, String)> = session
+                        .network_setup()
+                        .context("room setup")?
+                        .humans
+                        .iter()
+                        .filter(|human| !human.is_observer())
+                        .map(|human| {
+                            let team = match human.slot.team {
+                                crate::skirmish_launch::LaunchTeam::Team(team) => team,
+                                crate::skirmish_launch::LaunchTeam::None => u8::MAX,
+                            };
+                            let start = format!("{:?}", human.slot.start_position);
+                            (human.name.clone(), team, start)
+                        })
+                        .collect();
+                    let start_of = |team: u8| {
+                        let starts: std::collections::BTreeSet<&String> = players
+                            .iter()
+                            .filter(|(_, on, _)| *on == team)
+                            .map(|(.., start)| start)
+                            .collect();
+                        (starts.len() == 1)
+                            .then(|| starts.into_iter().next())
+                            .flatten()
+                    };
+                    ensure!(
+                        session.network_setup_capacity() == Some(2)
+                            && players.len() == 6
+                            && (0..2).all(|team| session.network_team_players(team) == 3)
+                            && start_of(0).is_some()
+                            && start_of(1).is_some()
+                            && start_of(0) != start_of(1)
+                            && !start_of(0).is_some_and(|start| start.contains("Auto")),
+                        "six players on a two-player map gave {players:?}; everyone: {:?}",
+                        session.network_setup().map(|launch| launch
+                            .humans
+                            .iter()
+                            .map(|human| (
+                                human.name.clone(),
+                                human.is_observer(),
+                                human.raw_slot_index
+                            ))
+                            .collect::<Vec<_>>())
+                    );
+                    self.event(frame, json!({"Two-player map": players}));
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
