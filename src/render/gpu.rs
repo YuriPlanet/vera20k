@@ -702,6 +702,17 @@ impl GpuContext {
         GpuAdapterObservation::from(&self.adapter_info)
     }
 
+    /// The adapter's name when it is the system's software renderer, which
+    /// draws with the processor: Windows' Microsoft Basic Render Driver or
+    /// Mesa's llvmpipe. wgpu keeps it as the last choice when no graphics card
+    /// and driver qualify (`request_adapter` sorts `DeviceType::Cpu` last
+    /// instead of leaving it out); Metal never offers one.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub(crate) fn software_renderer(&self) -> Option<&str> {
+        (self.adapter_info.device_type == wgpu::DeviceType::Cpu)
+            .then_some(self.adapter_info.name.as_str())
+    }
+
     /// Whether the window currently owns a render surface.
     #[cfg(target_os = "android")]
     pub(crate) fn has_surface(&self) -> bool {

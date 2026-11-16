@@ -1186,6 +1186,9 @@ pub(crate) struct PresentationFrame {
     /// Every anim's absolute coordinate (`Simulation::anim_absolute_coord`),
     /// which an attached anim takes from its owner object.
     anim_coords: crate::util::lookup_hash::LookupMap<u64, crate::sim::anim_class::AnimWorldCoord>,
+    /// Object+88's held canopy identities, copied from GameEntity at capture.
+    /// The frame rebuilds this sparse lookup each time; ordinary objects add no entry.
+    parachute_animations: crate::util::lookup_hash::LookupMap<u64, u64>,
     /// What the scene's other drawers read of the world's objects
     /// (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
@@ -1238,6 +1241,15 @@ impl PresentationFrame {
         );
         let scene = scene.expect("captured beside the records");
         let anim_coords = sim.anim_absolute_coords().collect();
+        let parachute_animations = sim
+            .entities()
+            .values()
+            .filter_map(|entity| {
+                entity
+                    .parachute_animation()
+                    .map(|animation| (entity.stable_id(), animation))
+            })
+            .collect();
         let psychic_detection = at.psychic.is_some();
         let mut ids = Vec::with_capacity(objects.len());
         let mut spans = Vec::with_capacity(objects.len());
@@ -1264,6 +1276,7 @@ impl PresentationFrame {
             display_members: Default::default(),
             display_order: Default::default(),
             anim_coords,
+            parachute_animations,
             scene,
             psychic_detection,
         }
@@ -1301,15 +1314,15 @@ impl PresentationFrame {
         })
     }
 
-    /// `display`'s order for this frame's draws. `display` is the Display
-    /// registry of the world the frame was captured from.
+    /// `sim`'s draw order for this frame's draws. `sim` is the world the
+    /// frame was captured from.
     pub(crate) fn display_order(
         &self,
-        display: &crate::sim::world::display_layers::DisplayLayers,
+        sim: &Simulation,
     ) -> &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder {
         self.display_order.get_or_init(|| {
-            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_display(
-                display,
+            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_world(
+                sim,
             )
         })
     }
@@ -1317,6 +1330,11 @@ impl PresentationFrame {
     /// `Simulation::anim_absolute_coord` of anim `id`.
     pub(crate) fn anim_coord(&self, id: u64) -> Option<crate::sim::anim_class::AnimWorldCoord> {
         self.anim_coords.get(&id).copied()
+    }
+
+    /// `GameEntity::parachute_animation` of object `id` at capture.
+    pub(crate) fn parachute_animation(&self, id: u64) -> Option<u64> {
+        self.parachute_animations.get(&id).copied()
     }
 
     /// Whether `object` stands for its own sound handles

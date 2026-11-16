@@ -1575,6 +1575,14 @@ fn restore_object_references(
                 "damage_smoke_system_id",
                 entity.damage_smoke_system_id.system(),
             ),
+            (
+                "natural_particle_system",
+                entity.building.natural_particle_system.system(),
+            ),
+            (
+                "destroy_smoke_particle_system",
+                entity.building.destroy_smoke_particle_system.system(),
+            ),
         ]
         .into_iter()
         .filter_map(|(field, system)| system.map(|id| (field, id)))
@@ -1624,7 +1632,12 @@ fn restore_object_references(
     }
 
     for (&system_id, system) in sim.substrate.particle_systems.iter() {
-        if let Some(owner_id) = system.owner_entity() {
+        // A VoxelAnim owns its AttachedSystem (`0x007498A5`); Smoke follows
+        // it through `target_get_coords`, which resolves that store too.
+        if let Some(owner_id) = system
+            .owner_entity()
+            .filter(|&owner| !sim.substrate.voxel_anims.contains_key(owner))
+        {
             require_object_reference(
                 &entity_ids,
                 sim.terrain_objects.objects(),

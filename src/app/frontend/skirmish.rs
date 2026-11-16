@@ -1813,6 +1813,27 @@ mod tests {
         assert_eq!(rng.logical_state(), before);
     }
 
+    /// VERA: where players share bases, as in a room with Teams set, a House
+    /// whose start a later House also asked for starts there too, beside
+    /// it, with no draw. The table keeps the last owner.
+    #[test]
+    fn a_house_sharing_bases_starts_beside_the_later_one() {
+        let mut session = test_session();
+        session.options.teams = Some(2);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        session.opponents[0].start_position = LaunchStartPosition::Position(0);
+        let all_starts = test_launch_starts();
+        let starts = &all_starts[..3];
+        let mut rng = SimRng::new(8);
+        let before = rng.logical_state();
+
+        let assignment = native_assign_launch_starts(&session, starts, &mut rng);
+
+        assert_eq!(assignment.placements, vec![(0, starts[0]), (1, starts[0])]);
+        assert_eq!(assignment.start_table, vec![Some(1), None, None]);
+        assert_eq!(rng.logical_state(), before);
+    }
+
     #[test]
     fn gsi_04_16_standard_three_auto_houses_consume_only_first_draw() {
         let mut session = test_session();

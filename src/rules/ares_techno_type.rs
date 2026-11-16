@@ -220,6 +220,10 @@ pub(crate) type ResolvedTechno =
 /// unset) and +0x648 `RadialIndicatorRadius` (Nullable<int>, unset).
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PresentationTypeRules {
+    /// TechnoTypeExt+0xF0, Valueable<AnimTypeClass*>; constructor 1003C884
+    /// initializes null. An omitted structured field uses that default.
+    #[serde(default)]
+    parachute_anim: Option<String>,
     /// Bound against the fixed sound catalog with the type's other sounds
     /// (`ObjectType::bind_scalar_sound_references`); `Some(None)` is an
     /// explicit silence.
@@ -230,6 +234,12 @@ pub(crate) struct PresentationTypeRules {
 }
 
 impl PresentationTypeRules {
+    /// ObjectClass_SpawnParachuted_Animation (Ares.dll 10047C60,
+    /// hook 0x5F5ADD): the type's canopy precedes its owner's country.
+    pub(crate) fn parachute_anim(&self) -> Option<&str> {
+        self.parachute_anim.as_deref()
+    }
+
     /// The voice an airstrike plays as it starts (`abort` false,
     /// AirstrikeClass_Fire_AirstrikeAttackVoice, Ares.dll 10048D60, hook
     /// 0x41D940) or is called off (`abort` true, AirstrikeClass_PointerGot
@@ -868,6 +878,16 @@ impl CustomMissileRules {
 }
 
 impl AresTechnoTypeRules {
+    /// LoadFromINIFile1003E385 -> Valueable::Read1000EB20 ->
+    /// detail::read<AnimType*>1000C9C0. This Find-only key also reads in a
+    /// stock-way pass, so its presence can enable the run-time Ares switch.
+    pub(crate) fn read_parachute_anim(&mut self, resolve: impl FnOnce(&str) -> Resolved) {
+        let _ares = crate::rules::ares_switch::ares_reads();
+        if let Some(anim) = resolve("Parachute.Anim") {
+            self.presentation.parachute_anim = anim;
+        }
+    }
+
     /// One reached `LoadFromINIFile` pass. `type_name` is the type's ID,
     /// `aircraft` whether it is an AircraftType, and `resolve` the Find-only
     /// pointer read of a key (called in read order), `resolve_techno` and
@@ -929,6 +949,8 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
+        // After IsBomb and its sounds, in the DLL's read order.
+        self.read_parachute_anim(|key| resolve(key, TypeRef::Animation));
         // After Operator, InitialPayload.Types (1000EDD0) and .Nums
         // (ValueableVector<int> 1000ED00), then after the Chronoshift.* and
         // CameoPCX keys the reverse-engineering pair.

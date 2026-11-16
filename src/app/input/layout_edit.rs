@@ -2,7 +2,9 @@
 //! with the mouse, and the game keeps where they put them in the player's own
 //! layout file (`presentation::player_layout`).
 //!
-//! The Edit Layout key turns the mode on. While it is on every part that has
+//! The Edit Layout key turns the mode on, and so does the Edit Layout button
+//! on the Interface page of the in-game menu's Options, which closes the menu
+//! first. While it is on every part that has
 //! a place shows an outline and its name; a press on one grabs it and it
 //! follows the cursor. The mouse reaches nothing else in the match meanwhile.
 //! A drag writes the part's `X` and `Y` into the side's layout section, so it
@@ -87,11 +89,17 @@ pub(crate) fn active(state: &AppState) -> bool {
 /// The Edit Layout key: turn the mode on, or leave it without saving. It
 /// exists in a match only.
 pub(crate) fn toggle(state: &mut AppState) {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
-        return;
-    }
     if active(state) {
         finish(state, false);
+    } else {
+        start(state);
+    }
+}
+
+/// Turn the mode on, for the key or Options' Edit Layout button. A match only,
+/// and a mode already on stays as it is.
+pub(crate) fn start(state: &mut AppState) {
+    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame || active(state) {
         return;
     }
     let presentation = &mut state.match_state.match_presentation;

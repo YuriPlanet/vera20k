@@ -340,7 +340,8 @@ impl App {
 
         let current = state.match_state.match_presentation.in_game_menu;
         if current == InGameMenuState::Menu
-            && crate::app::input::pause_menu::close_options_list(state)
+            && (crate::app::input::pause_menu::close_options_list(state)
+                || crate::app::input::pause_menu::back_from_options(state))
         {
             return;
         }
@@ -633,6 +634,8 @@ impl App {
         // Remote EXIT senders run DestroyConnection first (0x0064C9B1).
         crate::app::match_runtime::network_match::drain_departures(state);
         crate::app::match_runtime::network_match::post_speed_changes(state);
+        crate::app::match_runtime::network_match::post_pause_changes(state);
+        crate::app::match_runtime::network_match::post_connection_changes(state);
         crate::app::match_runtime::network_match::post_caught_up(state);
         let local_owner = crate::app::input::commands::preferred_local_owner(state);
         let local_owner_id = local_owner.as_deref().and_then(|owner| {

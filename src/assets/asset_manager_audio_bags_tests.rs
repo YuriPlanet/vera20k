@@ -30,7 +30,7 @@ fn audio_bags_catalog_uses_native_order_and_correct_backing_pcm() {
     audio_bags_catalog(false);
 }
 
-/// A game that ships `ares.mix` appends Ares' bags in every build.
+/// A selected mod that ships `ares.mix` appends Ares' bags in every build.
 #[test]
 fn a_game_with_ares_mix_appends_the_ares_audio_bags() {
     audio_bags_catalog(true);
@@ -55,7 +55,13 @@ fn audio_bags_catalog(ships_ares: bool) {
     files.push(("audio02.idx".into(), placement_idx));
     files.push(("audio02.bag".into(), 2000i16.to_le_bytes().to_vec()));
     write_archive(&dir, "expandmd20.mix", &files);
-    let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mod_dir = TestDirectory::new("audio-mod");
+    let manager = AssetManager::with_mod(
+        dir.path(),
+        ships_ares.then_some(mod_dir.path()),
+        MediaArchiveMode::STOCK_DIGITAL,
+    )
+    .unwrap();
     assert_eq!(manager.ares_form(), ships_ares || cfg!(feature = "ares"));
     let loaded = manager.load_audio_index().unwrap().unwrap();
     let (entry, bytes) = loaded.index.get("VoIcE").unwrap();

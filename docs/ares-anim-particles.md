@@ -79,9 +79,6 @@ Residuals:
 - `UseLineTrail=` (ARTMD.INI, the particle image's section) is not read for particle
   types and counts as false. Trigger: a mod setting it on a particle image; effect: that
   system runs Ares' simulation instead of ParticleClass; no retail image sets it.
-- `SpawnDirection=` keeps whole leptons (the stock reader's representation); Ares adds
-  its floats. Trigger: a fractional value; effect: sub-lepton spark directions; neither
-  data set authors it.
 - VERA keeps no `LaserFenceFrame` (`+0x618`), so a spark counts a `LaserFence=yes`
   building as an online section; VERA builds no fence sections yet.
 - Native division traps (a zero `SpawnFrames` period, a zero StateAI period) spawn or

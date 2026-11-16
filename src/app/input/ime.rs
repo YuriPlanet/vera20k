@@ -179,6 +179,9 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
                 .map_or(ime.composition.len(), |prefix| {
                     prefix.encode_utf16().count()
                 });
+            if target(state).is_some_and(|(target, _)| target == ImeTarget::InGameChat) {
+                crate::app::input::chat::composition_changed(state);
+            }
         }
         Ime::Commit(text) => {
             state.platform.ime.cancel();

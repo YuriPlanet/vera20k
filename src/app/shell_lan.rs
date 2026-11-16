@@ -428,15 +428,15 @@ fn append_chat_to(
             .as_secs();
         line.text = crate::ui::wol_chat::timed_line(line.text, sent_at, now);
     }
-    let (rect, scale) = if setup {
+    let (rect, scale, text) = if setup {
         let layout = crate::app::input::multiplayer_setup::layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
         let layout = crate::app::shell_wol::lobby::layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, 1.0)
     } else {
         let layout = layout(state);
-        (layout.chat_log, layout.page.scale)
+        (layout.chat_log, layout.page.scale, 1.0)
     };
     let chat = if setup {
         state
@@ -461,9 +461,11 @@ fn append_chat_to(
     if let Some(chat) = chat {
         let visible = chat
             .list
-            .geometry(rect, chat.lines.len(), scale)
+            .geometry_for_text(rect, chat.lines.len(), scale, text)
             .visible_rows;
-        chat.append_message(line, scale.base_rect(rect).w, visible, |units| {
+        // Smaller text fits more of it in the log's width.
+        let width = (scale.base_rect(rect).w as f32 / text) as i32;
+        chat.append_message(line, width, visible, |units| {
             state
                 .renderer
                 .bit_font

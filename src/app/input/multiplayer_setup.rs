@@ -12,16 +12,43 @@ use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
+/// The room's page in the window, before VERA's roster is placed in it.
+fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     let (w, h) = shell_layout::shell_screen_size(state);
-    let dialog = crate::app::shell_network_setup::dialog(state);
-    let mut layout = MultiplayerSetupLayout::new(
-        dialog,
+    MultiplayerSetupLayout::new(
+        crate::app::shell_network_setup::dialog(state),
         w as i32,
         h as i32,
         shell_layout::fills_window(state),
+    )
+}
+
+/// Where VERA's roster's entries end in this window, in 800x600 pixels:
+/// over the team bar, which holds the Teams count in a room with teams and
+/// the host's Room size.
+pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i32 {
+    let mut layout = page_layout(state);
+    layout.fit_team_bar(
+        crate::app::shell_network_setup::dialog(state),
+        teams,
+        room_size,
     );
-    if state
+    layout.roster_bottom
+}
+
+pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
+    let dialog = crate::app::shell_network_setup::dialog(state);
+    let mut layout = page_layout(state);
+    if dialog.modern {
+        if let Some(listing) = crate::app::shell_network_setup::view::room_listing(state) {
+            layout.arrange_roster(&listing.places);
+            layout.fit_team_bar(
+                dialog,
+                listing.grouped,
+                crate::app::shell_network_setup::view::room_size_shown(state),
+            );
+        }
+    } else if state
         .match_state
         .session
         .network_setup_capacity()
@@ -37,9 +64,12 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
-    ui.chat
-        .list
-        .reconcile_geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+    ui.chat.list.reconcile_geometry_for_text(
+        layout.chat_log,
+        ui.chat.lines.len(),
+        layout.page.scale,
+        layout.chat_text_scale(),
+    );
     ui.chat.edit.scroll_to_caret(
         (layout.page.scale.base_rect(layout.chat).w - 3).max(0) as u32,
         |text| state.renderer.bit_font.text_width(text),
@@ -298,23 +328,36 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         {
             action = Some(SetupAction::Trackbar {
                 control: hold.id,
-                value: bar.pointer_value(x, rect, layout.page.scale),
+                value: bar.pointer_value(x, rect, layout.control_scale(hold.id)),
             });
         }
     } else {
-        ui.buttons.hovered = layout.control_at(&view, x, y);
+        ui.buttons.hovered = if layout.roster {
+            layout.press_target(&view, x, y)
+        } else {
+            layout.control_at(&view, x, y)
+        };
+        // The host carries a pressed roster row to another box.
+        ui.drag_row(x, y, |row| {
+            layout
+                .group_box_at(x, y)
+                .filter(|header| view.drop_group(row, *header).is_some())
+        });
+        if ui.row_drag.is_some_and(|drag| drag.carrying) {
+            ui.buttons.hovered = None;
+        }
         ui.statics.hover(&help, Instant::now());
         if let Some(popup) = ui.popup_geometry(&view, &layout) {
             ui.popup.pointer_moved(popup, x, y);
         }
-        let geometry =
-            ui.chat
-                .list
-                .geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+        let geometry = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
         ui.chat
             .list
             .scroll
             .pointer_moved(geometry, &mut ui.chat.list.top_index, x, y);
+        if let Some(roster) = layout.roster_scroll(&view) {
+            ui.roster_scroll_moved(roster, x, y);
+        }
     }
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);
@@ -359,9 +402,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     };
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let over = layout
-        .control_at(&view, x, y)
-        .filter(|id| view.enabled(*id));
+    let over = layout.press_target(&view, x, y);
     if pressed
         && over.is_none()
         && preview_box_shows(state, &view, &layout)
@@ -390,21 +431,37 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 });
             }
             cue = press.cue().map(LauncherCue::from);
+        } else if view.open_box.is_none()
+            && !view.map_offer_open
+            && layout
+                .roster_scroll(&view)
+                .is_some_and(|roster| ui.roster_scroll_press(roster, x, y, Instant::now()))
+        {
         } else if let Some(control) = over {
             if let Some(combo) = view.combo(control) {
-                let press = ui.popup.press_face(
-                    control,
-                    layout.control_rect(control).expect("combo rect"),
-                    layout.page.scale,
-                    combo.selected,
-                    x,
-                    y,
-                );
-                cue = press.cue().map(LauncherCue::from);
-            } else if CHECKBOXES.contains(&control)
-                || ROOM_CHECKBOXES.contains(&control)
-                || control == AUTO_BALANCE
-            {
+                // VERA's roster draws no faces: a press anywhere on a cell
+                // opens its list, while it has more than one item.
+                let press = if layout.roster {
+                    // The host may also drag a player's or AI's row away.
+                    if view.drag_rows.iter().any(|drag| drag.row == combo.row) {
+                        ui.press_row(combo.row, x, y);
+                    }
+                    roster_cell_opens(combo).then(|| {
+                        ui.open_list(control, combo.row, combo.selected);
+                        ComboPress::Open
+                    })
+                } else {
+                    Some(ui.popup.press_face(
+                        control,
+                        layout.control_rect(control).expect("combo rect"),
+                        layout.page.scale,
+                        combo.selected,
+                        x,
+                        y,
+                    ))
+                };
+                cue = press.and_then(ComboPress::cue).map(LauncherCue::from);
+            } else if CHECKBOXES.contains(&control) || ROOM_CHECKBOXES.contains(&control) {
                 if crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.control_rect(control).expect("checkbox rect"),
                     layout.page.scale,
@@ -419,7 +476,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     x,
                     y,
                     layout.control_rect(control).expect("trackbar rect"),
-                    layout.page.scale,
+                    layout.control_scale(control),
                 );
                 ui.trackbar_hold = press.hold(control);
                 if let TrackbarPress::Jump(value) = press {
@@ -428,10 +485,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             } else if control == CHAT {
                 ui.focus_chat();
             } else if control == CHAT_LOG {
-                let geometry =
-                    ui.chat
-                        .list
-                        .geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+                let geometry = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
                 if let Some(part) = geometry.scroll_part_at(x, y) {
                     ui.chat.list.scroll.press(
                         part,
@@ -450,6 +504,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         ui.trackbar_hold = None;
         ui.popup.cancel_pointer();
         ui.chat.list.scroll.cancel();
+        if let Some((row, header)) = ui.drop_row()
+            && let Some(group) = view.drop_group(row, header)
+        {
+            action = Some(SetupAction::DropRow { row, group });
+            cue = Some(LauncherCue::MainButton);
+        }
         if let Some(control) = ui.buttons.release(over) {
             action = match control {
                 START => Some(SetupAction::Start),
@@ -461,7 +521,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 PREVIOUS_ROWS => Some(SetupAction::RosterPage { forward: false }),
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
-                TEAMS => Some(SetupAction::OpenBox(Some(RoomBox::Teams))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
                 TEAM_STARTS => Some(SetupAction::TeamStarts),
                 TEAM_COLORS => Some(SetupAction::TeamColors),
@@ -515,10 +574,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         }
         deadline = ui.popup.scroll.repeat_at();
     }
-    let geometry = ui
-        .chat
-        .list
-        .geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+    let geometry = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
     if ui
         .chat
         .list
@@ -527,8 +583,42 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     {
         state.platform.window.request_redraw();
     }
+    if let Some(roster) = layout.roster_scroll(&view)
+        && ui.roster_scroll_poll(roster, x, y, Instant::now())
+    {
+        state.platform.window.request_redraw();
+    }
     deadline
         .into_iter()
         .chain(ui.chat.list.scroll.repeat_at())
+        .chain(ui.roster_scroll_repeat_at())
         .min()
+}
+
+/// The wheel over VERA's roster scrolls it, while no list or box is open
+/// over the room; returns whether the wheel was the roster's.
+pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
+    if lines == 0.0 || transfer_active(state) || notice_active(state) {
+        return false;
+    }
+    let Some(view) = crate::app::shell_network_setup::view(state) else {
+        return false;
+    };
+    let layout = layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
+    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+        return false;
+    };
+    let Some(roster) = layout.roster_scroll(&view) else {
+        return false;
+    };
+    if view.open_box.is_some()
+        || view.map_offer_open
+        || ui.popup_geometry(&view, &layout).is_some()
+        || !layout.roster_area.contains(x, y)
+    {
+        return false;
+    }
+    ui.roster_wheel(roster, lines);
+    true
 }

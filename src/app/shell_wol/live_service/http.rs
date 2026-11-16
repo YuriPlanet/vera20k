@@ -17,7 +17,7 @@ use std::sync::{
 
 use super::wire::EventBatch;
 use crate::ui::chat_translation::{ChatLanguage, ChatReply};
-use super::wire::{ChannelList, Envelope, Session};
+use super::wire::{ChannelList, Envelope, Match, MatchList, Session};
 use serde_json::Value;
 use serde_json::json;
 
@@ -34,6 +34,9 @@ pub(super) enum Request {
         seed_digest: String,
         digest: String,
         offset: usize,
+        /// A watcher's download names the match it watches
+        /// (docs/lobby-protocol.md "Watching").
+        match_id: Option<String>,
     },
     UploadMapChunk {
         transfer: u64,
@@ -88,6 +91,8 @@ pub(super) enum Request {
         resume: Option<(String, u64)>,
     },
     Channels(u32),
+    /// `GET /v1/matches`, answered by [`Response::Matches`].
+    Matches,
     Command {
         id: u64,
         operation: &'static str,
@@ -179,12 +184,32 @@ impl Request {
             _ => false,
         }
     }
+
+    /// The room's settings and the answers to them, each whole: a newer one
+    /// makes a copy still waiting stale.
+    fn supersedes(&self, waiting: &Self) -> bool {
+        match (self, waiting) {
+            (
+                Self::Command { operation, .. },
+                Self::Command {
+                    operation: waiting_operation,
+                    ..
+                },
+            ) => {
+                matches!(*operation, "options" | "map_status" | "ready")
+                    && operation == waiting_operation
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Queues what arrived during the last request behind `queued`, without a
 /// periodic request that `current` or a queued one repeats. A failing command
 /// takes about 24 s, so copies would otherwise pile up ahead of Ready, Start
-/// and chat for as long as the lobby is unreachable.
+/// and chat for as long as the lobby is unreachable. The room's settings and
+/// the answers to them go out newest only: a host dragging a slider would
+/// otherwise queue a send, and every player two answers, for each step.
 fn queue_arrivals(
     input: &Receiver<Request>,
     current: Option<&Request>,
@@ -196,6 +221,7 @@ fn queue_arrivals(
             .chain(queued.iter())
             .any(|waiting| waiting.repeats(&request))
         {
+            queued.retain(|waiting| !request.supersedes(waiting));
             queued.push_back(request);
         }
     }
@@ -258,6 +284,9 @@ pub(super) enum Response {
         message: Option<String>,
     },
     Channels(ChannelList),
+    /// The matches the player can watch, or `None` from a lobby from before
+    /// watching, which answers 404.
+    Matches(Option<Vec<Match>>),
     Event(Envelope),
     CommandCompleted {
         id: u64,
@@ -476,6 +505,16 @@ impl RequestFailure {
                 code: 0x8004_0070,
             },
             Some("unknown_match") if status == 409 => Self::AlreadyFinished,
+            // A `watch` while this player plays, or of a match with all its
+            // watchers (docs/lobby-protocol.md "Watching").
+            Some("match_active") if status == 409 => Self::ChannelRejected {
+                status,
+                code: crate::app::shell_wol::lobby::WATCH_MATCH_ACTIVE,
+            },
+            Some("watchers_full") if status == 409 => Self::ChannelRejected {
+                status,
+                code: crate::app::shell_wol::lobby::WATCHERS_FULL,
+            },
             Some("invalid_options") if status == 400 => Self::InvalidOptions,
             Some("maintenance") if status == 503 => {
                 Self::Maintenance(plain_message(value.as_ref()))
@@ -546,6 +585,10 @@ impl RequestFailure {
     fn command_failure(&self, operation: &str) -> CommandFailure {
         match self {
             Self::AlreadyFinished if operation == "finish" => CommandFailure::AlreadyFinished,
+            // `watch` of a match that ended or that this player may not watch.
+            Self::AlreadyFinished if operation == "watch" => {
+                CommandFailure::Rejected(crate::app::shell_wol::lobby::WATCH_UNKNOWN_MATCH)
+            }
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
             Self::InvalidOptions => CommandFailure::InvalidOptions,
             _ if matches!(self.status(), 0 | 429 | 500..=599) => CommandFailure::Retryable,
@@ -1052,11 +1095,13 @@ macro_rules! serial_driver {
                 seed_digest,
                 digest,
                 offset,
+                match_id,
             }) => {
                 let result = if crate::map::source::valid_source_sha256(&digest) {
+                    let watched = match_id.map_or_else(String::new, |id| format!("&match_id={id}"));
                     platform_await!(client.request(
                         &format!(
-                            "/v1/maps/{seed_digest}?offset={offset}&resource={}",
+                            "/v1/maps/{seed_digest}?offset={offset}&resource={}{watched}",
                             if resource == crate::map::source::TransferResource::Preview {
                                 "preview"
                             } else {
@@ -1222,6 +1267,25 @@ macro_rules! serial_driver {
                         if !platform_await!(client.session_failed(error, &output)) {
                             let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                         }
+                    }
+                }
+            }
+            Some(Request::Matches) => {
+                match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
+                    serde_json::from_value::<MatchList>(value)
+                        .map_err(|_| RequestFailure::Status(0))
+                }) {
+                    Ok(list) => {
+                        let _ = output.send(Response::Matches(Some(list.matches)));
+                    }
+                    // A lobby from before watching lists no match.
+                    Err(RequestFailure::Status(404)) => {
+                        let _ = output.send(Response::Matches(None));
+                    }
+                    // The game list asked at the same time says when the
+                    // lobby could not be refreshed.
+                    Err(error) => {
+                        let _ = platform_await!(client.session_failed(error, &output));
                     }
                 }
             }
@@ -1434,6 +1498,26 @@ mod tests {
         assert!(decode_session(expired, nickname).is_err());
     }
 
+    /// A refused `watch` reaches the lobby's box with the lobby's reason; a
+    /// lobby that cannot answer gets the usual refusal.
+    #[test]
+    fn a_refused_watch_says_why() {
+        use crate::app::shell_wol::lobby::watch_refusal_key;
+        let refusal = |code: &str| {
+            let body = format!(r#"{{"error":{{"code":"{code}"}}}}"#);
+            let failure = RequestFailure::response(409, body.as_bytes());
+            watch_refusal_key(failure.command_failure("watch").wol_code())
+        };
+        assert_eq!(refusal("unknown_match"), "VERA:WatchUnknownMatch");
+        assert_eq!(refusal("match_active"), "VERA:WatchMatchActive");
+        assert_eq!(refusal("watchers_full"), "VERA:WatchersFull");
+        let busy = RequestFailure::Status(503).command_failure("watch");
+        assert_eq!(
+            watch_refusal_key(busy.wol_code()),
+            "VERA:OnlineRequestRefused"
+        );
+    }
+
     #[test]
     fn command_failures_keep_safe_room_codes_and_retryable_finish_semantics() {
         let wrong_key = RequestFailure::response(
@@ -1644,6 +1728,38 @@ mod tests {
             })
             .collect();
         assert_eq!(ids, [Some(2), Some(4), Some(6), Some(7), Some(8)]);
+    }
+
+    #[test]
+    fn newer_room_settings_replace_waiting_ones() {
+        let (requests, input) = std::sync::mpsc::channel();
+        let command = |id, operation, revision| Request::Command {
+            id,
+            operation,
+            payload: json!({"revision":revision}),
+        };
+        for request in [
+            command(2, "options", 2),
+            command(3, "map_status", 1),
+            command(4, "ready", 1),
+            command(5, "chat", 0),
+            command(6, "options", 3),
+            command(7, "map_status", 2),
+            command(8, "ready", 2),
+        ] {
+            requests.send(request).unwrap();
+        }
+        let mut queued = VecDeque::new();
+        // The one being sent stays.
+        queue_arrivals(&input, Some(&command(1, "options", 1)), &mut queued);
+        let ids: Vec<_> = queued
+            .iter()
+            .map(|request| match request {
+                Request::Command { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, [Some(5), Some(6), Some(7), Some(8)]);
     }
 
     #[test]

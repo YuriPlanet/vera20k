@@ -80,24 +80,18 @@ fn coefficients(object: Option<&ObjectType>) -> FootDepthCoefficients {
     })
 }
 
-/// Unit DrawExtras temporarily selects UnloadingClass (0x73D2C4). Art-only
-/// camouflage/NoSpawnAlt substitutions are not native UnitType substitutions.
 fn draw_type<'a>(
     runtime: &'a crate::sim::runtime::SimRuntime,
     entity: &ObjectRecord,
     unloading_body: bool,
 ) -> Option<&'a ObjectType> {
     let (interner, rules) = (runtime.view().interner(), &runtime.resources.rules);
-    let actual = interner.object_type(entity.type_ref(), rules);
-    if unloading_body && actual.is_some_and(|o| o.harvester) {
-        entity
-            .display_type_override
-            .image()
-            .and_then(|id| interner.object_type(id, rules))
-            .or(actual)
+    let type_ref = if unloading_body {
+        super::helpers::unit_draw_type_ref(entity, interner, Some(rules))
     } else {
-        actual
-    }
+        entity.type_ref()
+    };
+    interner.object_type(type_ref, rules)
 }
 
 /// The world a draw asks for an object's depth: the presentation copy of the

@@ -1736,6 +1736,10 @@ impl Simulation {
             debris.marked_for_deletion().hash(hasher);
             debris.owner_house().hash(hasher);
             debris.bounce().hash_bits(hasher);
+            // CRC74AA63 folds +0x108 only when set; no retail type sets it.
+            if let Some(system) = debris.attached_system() {
+                system.hash(hasher);
+            }
         }
     }
 }
@@ -2769,6 +2773,15 @@ fn hash_entity_owed(entity: &GameEntity, frame: u32, owed_visits: u32, hasher: &
     // The Fire `+0x304` link gates the next fire shot, hashed the same way.
     if let Some(system) = entity.fire_particle_system.system() {
         (0x304_u16, system).hash(hasher);
+    }
+    // A Building's natural `+0x30C` link gates the cloak fade-in's rebuild
+    // and its destroy-smoke `+0x320` link gates that pick; both hashed only
+    // when set, as no retail type sets either key.
+    if let Some(system) = entity.building.natural_particle_system.system() {
+        (0x30C_u16, system).hash(hasher);
+    }
+    if let Some(system) = entity.building.destroy_smoke_particle_system.system() {
+        (0x320_u16, system).hash(hasher);
     }
 }
 

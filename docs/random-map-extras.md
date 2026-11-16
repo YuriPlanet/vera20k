@@ -1,11 +1,12 @@
 # Random map Extras
 
-A VERA feature for offline Skirmish; the original game has no such view.
+A VERA feature for Skirmish, LAN and online rooms; the original game has no such view.
 
 In the Generate Map dialog, the Advanced button steps from Basic to Advanced to **Extras**. The
 Extras view has tools for sharing a map and choices that add to the map the generator makes. Every
 choice starts at Original or Off, and a map with all of them there is the same map as before.
-Online games have no Extras view and carry no Extras.
+In a room the host's Extras travel with the random map's options, and every player's game
+builds the same map from them.
 
 ## Tools
 

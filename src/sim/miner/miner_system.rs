@@ -371,7 +371,7 @@ pub(super) fn process_miner(
         }
     }
     if state_before != snap.state {
-        log::info!(
+        log::debug!(
             "MINER {} state: {:?} → {:?} pos=({},{}) cargo={} stage={}",
             snap.entity_id,
             state_before,

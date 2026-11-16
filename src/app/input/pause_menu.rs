@@ -7,10 +7,10 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{
-    IN_GAME_KEYBOARD_HELP, IN_GAME_LANDING, LauncherOptionsLayout, LauncherStatusHelp,
+    IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    Category, LauncherOptionsEvent, LauncherOptionsPacked, LauncherTrackbarId,
+    Category, LauncherOptionsEvent, LauncherOptionsPacked, LauncherParentResult, LauncherTrackbarId,
 };
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::geom::ShellScale;
@@ -71,7 +71,8 @@ impl InternetPauseControls {
 /// The page the menu opens on is Game Controls: gamemd's `0xBBB` settings and
 /// the three volumes of its Sound child, with the template's own Game
 /// Controls button as its tab. gamemd opens BBB as a dialog of its own from
-/// that button (4F11B0 writes state 5).
+/// that button (4F11B0 writes state 5). Its Options button shows the main
+/// menu's pages with their own column.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InGameOptionsPage {
     pub(crate) dialog: OptionsDialogState,
@@ -135,18 +136,26 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
         shell.button_size,
         current_template(state),
     );
-    // The menu's Options pages have their buttons under Game Controls.
-    layout.add_page_tabs();
     if multiplayer_control(state).is_some() {
         layout.enable_shared_pause();
     }
+    let category = state
+        .match_state
+        .match_presentation
+        .options_page
+        .as_ref()
+        .map(|page| page.dialog.category());
+    // Game Controls has Options under it; the other pages have the main
+    // menu's column in place of the menu's buttons.
+    match category {
+        Some(Category::GameControls) | None => layout.add_options_button(),
+        Some(_) => layout.show_options_column(),
+    }
     // FF's group heads the Game Options page and has no place on the others.
-    if let Some(page) = state.match_state.match_presentation.options_page.as_ref() {
-        if page.dialog.category() == Category::Gameplay {
-            layout.raise_internet_group();
-        } else {
-            layout.internet = None;
-        }
+    match category {
+        Some(Category::Gameplay) => layout.raise_internet_group(),
+        Some(_) => layout.internet = None,
+        None => {}
     }
     Some(layout)
 }
@@ -160,7 +169,7 @@ pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLay
     Some(
         LauncherOptionsLayout::in_game(
             (shell.width, shell.height),
-            menu.page_tabs(),
+            menu.page_column(),
             page.dialog.category(),
             current_template(state) == PauseMenuTemplate::Internet,
             page.game_speed_shown,
@@ -185,11 +194,21 @@ fn run_options_page(state: &mut AppState) {
         .events
         .iter()
         .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
-    let child = output.events.iter().find_map(|event| match event {
-        LauncherOptionsEvent::InGameKeyboardRequested => Some(InGameMenuState::Keyboard),
-        LauncherOptionsEvent::InGameSoundRequested => Some(InGameMenuState::Sound),
-        _ => None,
-    });
+    let edit_layout = output
+        .events
+        .contains(&LauncherOptionsEvent::EditLayoutRequested);
+    // The Options column's Keyboard is the main menu's own button, whose
+    // parent result opens the in-game key page here.
+    let child = output
+        .events
+        .iter()
+        .find_map(|event| match event {
+            LauncherOptionsEvent::InGameKeyboardRequested => Some(InGameMenuState::Keyboard),
+            LauncherOptionsEvent::InGameSoundRequested => Some(InGameMenuState::Sound),
+            _ => None,
+        })
+        .or((output.result == Some(LauncherParentResult::Keyboard))
+            .then_some(InGameMenuState::Keyboard));
     let refit = output.events.iter().any(|event| {
         matches!(
             event,
@@ -223,6 +242,12 @@ fn run_options_page(state: &mut AppState) {
         Some(InGameMenuState::Sound) => crate::app::input::sound::open(state),
         _ => {}
     }
+    // The match ignores the mouse while the menu is open, so Edit Layout
+    // closes it as Resume does before the mode takes the mouse.
+    if edit_layout {
+        activate(state, PauseMenuButton::Resume);
+        crate::app::input::layout_edit::start(state);
+    }
 }
 
 /// The pointer over the Options page: `pressed` is the left button's new
@@ -244,6 +269,19 @@ fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
     }
     run_options_page(state);
     was_taken || state.match_state.match_presentation.options_page.is_none()
+}
+
+/// Esc on a page of the Options column goes back to Game Controls and the
+/// menu's own buttons, as the column's Back does. False on Game Controls.
+pub(crate) fn back_from_options(state: &mut AppState) -> bool {
+    let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
+        return false;
+    };
+    if page.dialog.category() == Category::GameControls {
+        return false;
+    }
+    page.dialog.select_category(Category::GameControls);
+    true
 }
 
 /// Esc closes the page's open list before anything else hears it.
@@ -393,7 +431,7 @@ pub(crate) fn on_open(state: &mut AppState) {
         .match_state
         .match_presentation
         .options_page_category
-        .unwrap_or(IN_GAME_LANDING);
+        .unwrap_or(Category::GameControls);
     // BBB's init (4E1FE0, message 0x497) decides the Game Speed row and
     // reads the speed in effect.
     crate::app::input::in_game_options::on_open(state);
@@ -465,7 +503,7 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
         .match_presentation
         .options_page
         .as_ref()
-        .is_some_and(|page| page.dialog.category() == IN_GAME_LANDING);
+        .is_some_and(|page| page.dialog.category() == Category::GameControls);
     PauseMenuButton::ALL.map(|button| PauseMenuButtonState {
         pressed: interaction.is_pressed(button),
         // C5 timer highlighting is separate from pointer hover. VERA lights
@@ -606,7 +644,7 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
         // dialog. VERA shows BBB's settings as the menu's first page.
         PauseMenuButton::GameControls => {
             if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
-                page.dialog.select_category(IN_GAME_LANDING);
+                page.dialog.select_category(Category::GameControls);
             }
         }
         PauseMenuButton::Resume => {
@@ -784,7 +822,7 @@ mod tests {
             .set_in_game_controls(String::new(), Vec::new(), 0, String::new());
 
         page.dialog.select_category(Category::Display);
-        assert!(page.untouched(&profile), "a tab only shows other controls");
+        assert!(page.untouched(&profile), "a page only shows other controls");
 
         let live = RetailOptionsProfile {
             shift_queue: !profile.shift_queue,
@@ -792,11 +830,12 @@ mod tests {
         };
         assert!(!page.untouched(&live), "a list or box that applies at once");
 
-        let tab = |row| crate::ui::shell::geom::RectPx::new(653, 227 + row * 25, 125, 25);
+        let row = |row| crate::ui::shell::geom::RectPx::new(653, 227 + row * 25, 125, 25);
+        let column: Vec<_> = (0..8).map(row).collect();
         let layout = LauncherOptionsLayout::in_game(
             (800, 600),
-            &[tab(1), tab(2)],
-            Category::Gameplay,
+            &column,
+            Category::Display,
             false,
             true,
             false,

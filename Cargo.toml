@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -140,8 +140,10 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 # off the taskbar), and VERA hides the OS arrow whenever it draws mouse.shp, so the
 # grab mode pins the pointer in place ("mouse won't move").
 raw-window-handle = "0.6"
-# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect;
-# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
+# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect
+# and the startup window's black background (SetClassLongPtrW);
+# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen
+# coords) and the stock black brush.
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
 # Atlas keys carry an object type name. Already built through winit.
 smol_str = "0.2"

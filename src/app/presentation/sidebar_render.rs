@@ -66,11 +66,9 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     else {
         return;
     };
-    if sim
-        .interner()
-        .get(&owner_name)
-        .is_some_and(|owner| sim.session().is_observer_house(owner))
-    {
+    if sim.interner().get(&owner_name).is_some_and(|owner| {
+        crate::app::presentation::observer_strip::shows_observer_sidebar(sim, owner)
+    }) {
         // The observer's counter shows the time the match has run
         // (`0x004A2614..0x004A2678`): Scenario +0x61C plus the running span
         // since +0x614, over 60, set at once and silent.

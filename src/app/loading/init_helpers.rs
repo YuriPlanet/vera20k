@@ -371,7 +371,7 @@ pub(crate) fn bind_rules_asset_closure(
 ) -> anyhow::Result<()> {
     // The asset closures follow the way the game's Rules were read.
     let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
-    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
+    rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name);
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
     let tolerant_roots = tolerant_anim_class_roots(rules);
     let unbound = rules.bind_anim_class_assets(&tolerant_roots, assets, theater_ext, theater_name);

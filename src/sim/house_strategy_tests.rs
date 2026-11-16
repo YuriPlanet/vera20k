@@ -922,7 +922,6 @@ fn all_to_hunt_override_is_persistent_and_follows_designated_enemy() {
     assert!(house.strategy_emergency().all_to_hunt_bias());
 }
 
-#[cfg(feature = "phobos")]
 fn last_legs_fixture(general: &str) -> (Simulation, RuleSet, InternedId, u64) {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\n{general}\n[InfantryTypes]\n0=FOOT\n[VehicleTypes]\n0=WHEELS\n\
@@ -944,7 +943,6 @@ fn last_legs_fixture(general: &str) -> (Simulation, RuleSet, InternedId, u64) {
     (sim, rules, owner, plain)
 }
 
-#[cfg(feature = "phobos")]
 fn last_legs_pass(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     building_strategy(
         sim,
@@ -957,7 +955,6 @@ fn last_legs_pass(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
 
 /// Phobos `[General] AIFireSale=` and `AIAllToHunt=` gate the no-factory
 /// block's two calls independently, and a delayed sale still hunts.
-#[cfg(feature = "phobos")]
 #[test]
 fn ai_last_legs_switches_gate_the_sale_and_the_hunt() {
     let (mut sim, rules, owner, plain) = last_legs_fixture("AIFireSale=no");
@@ -980,7 +977,6 @@ fn ai_last_legs_switches_gate_the_sale_and_the_hunt() {
 
 /// Phobos `[General] AIFireSaleDelay=` arms a per-house timer on the first
 /// trigger and sells only once it completes; All_To_Hunt runs meanwhile.
-#[cfg(feature = "phobos")]
 #[test]
 fn ai_fire_sale_delay_defers_only_the_sale() {
     let (mut sim, rules, owner, plain) = last_legs_fixture("AIFireSaleDelay=100");

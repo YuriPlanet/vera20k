@@ -305,6 +305,25 @@ pub(super) fn push_entry_sized_alpha(
 
 /// Flag and icon art authored at its native size, grown by the layout's stretch,
 /// clipped to and centred in `rect`. Identity on the retail layout.
+/// `entry` whole, shrunk to fit `rect` where it is larger, centred in it.
+pub(super) fn push_entry_fitted(
+    out: &mut Vec<SpriteInstance>,
+    entry: SkirmishShellChromeEntry,
+    rect: RectPx,
+    scale: ShellScale,
+    depth: f32,
+) {
+    let [art_w, art_h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+    if art_w <= 0.0 || art_h <= 0.0 || rect.w <= 0 || rect.h <= 0 {
+        return;
+    }
+    let fit = (rect.w as f32 / art_w).min(rect.h as f32 / art_h).min(1.0);
+    let (w, h) = ((art_w * fit).round(), (art_h * fit).round());
+    let x = rect.x as f32 + ((rect.w as f32 - w) / 2.0).floor();
+    let y = rect.y as f32 + ((rect.h as f32 - h) / 2.0).floor();
+    push_entry_sized(out, entry, x, y, [w, h], depth);
+}
+
 pub(super) fn push_flag_entry_clipped_centered(
     out: &mut Vec<SpriteInstance>,
     mut entry: SkirmishShellChromeEntry,

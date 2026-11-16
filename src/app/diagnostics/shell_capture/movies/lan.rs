@@ -88,6 +88,10 @@ pub enum LanTarget {
     /// both players to the kept room on the next stage, and the host starts it.
     OnlineCoopHost,
     OnlineCoopGuest,
+    /// A third account watches the host's running match from the lobby's
+    /// watch list, past its catch-up, follows the next player with Tab and
+    /// leaves with Escape.
+    OnlineWatch,
     LiveHost,
     LiveGuest,
     LiveTimeoutHost,
@@ -236,6 +240,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("online-live-failure-guest", LanTarget::OnlineFailureGuest),
     ("online-live-coop-host", LanTarget::OnlineCoopHost),
     ("online-live-coop-guest", LanTarget::OnlineCoopGuest),
+    ("online-live-watch", LanTarget::OnlineWatch),
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
@@ -347,6 +352,7 @@ impl LanTarget {
                 | Self::OnlineFailureGuest
                 | Self::OnlineCoopHost
                 | Self::OnlineCoopGuest
+                | Self::OnlineWatch
         )
     }
     pub(crate) fn online_failure(self) -> bool {
@@ -374,6 +380,7 @@ impl LanTarget {
                 | Self::OnlineFailureGuest
                 | Self::OnlineCoopHost
                 | Self::OnlineCoopGuest
+                | Self::OnlineWatch
                 | Self::LiveHost
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost
@@ -4225,6 +4232,28 @@ impl LanCapture {
                     }),
                     "no chat packet to the peer: {requests:?}"
                 );
+                // VERA's `/pause`: sent as chat like any line, then answered
+                // as a command; a LAN match has no shared pause.
+                line(state, Key::Character("\\".into()), "/pause", true);
+                let requests = state.match_state.session.take_network_loading_requests();
+                ensure!(
+                    requests.contains(&NetworkLoadingRequest::Chat {
+                        recipients: vec![1],
+                        text: "/pause ".into(),
+                    }),
+                    "/pause did not go out as chat: {requests:?}"
+                );
+                let shown = rows(state);
+                let echo = format!("{host}:/pause ");
+                let after = shown
+                    .iter()
+                    .rposition(|row| *row == echo)
+                    .map(|at| shown[at + 1..].concat().replace(' ', ""));
+                let answer = crate::i18n::tr("VERA:PauseNotAvailable").replace(' ', "");
+                ensure!(
+                    after == Some(answer),
+                    "/pause echo and answer rows: {shown:?}"
+                );
                 // Backspace: allies, left open for the frame.
                 line(state, Key::Named(NamedKey::Backspace), "typing", false);
                 let edit = state
@@ -4678,8 +4707,8 @@ impl RandomMapInput {
                 if self.phase == 1 {
                     if let Some(players) = self.players {
                         ensure!(
-                            (2..=8).contains(&players),
-                            "random maps support two to eight starts"
+                            (2..=crate::map::rmg::MAX_PLAYERS as usize).contains(&players),
+                            "random maps support two to thirty starts"
                         );
                         let layout =
                             crate::app::frontend::shell_layout::random_map_setup_layout(state);

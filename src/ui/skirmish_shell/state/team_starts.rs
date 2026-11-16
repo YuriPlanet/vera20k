@@ -1,24 +1,17 @@
-//! VERA's Team Starts; gamemd's `0x102` has no counterpart. gamemd gives a
-//! player without a start the free one farthest from the starts already
-//! taken (`0x005D6890`), whatever the teams, so allies can land on opposite
-//! sides of the map. Team Starts fills the page's Start column instead:
-//! each team's players take starts next to each other, and the teams keep
-//! as far from each other as the map allows. Distance is how far a ground
-//! unit drives between two starts (`sim::pathfinding::drive_distance`), so
-//! water and cliffs count; where the page cannot read the map's terrain
-//! (the random map) it is the straight line. The picks are ordinary Start
-//! choices, shown on the page for the player to change, and the launch
-//! reads them as it reads any other. VERA's game room seats its teams the
-//! same way (`app::shell_network_setup::teams`).
+//! VERA's Team Starts, which VERA's game room seats its teams with
+//! (`app::shell_network_setup::teams`): the Teams box's button and the
+//! host's Start Game. gamemd gives a player without a start the free one
+//! farthest from the starts already taken (`0x005D6890`), whatever the
+//! teams, so allies can land on opposite sides of the map. Team Starts
+//! seats each team's players next to each other instead, and keeps the
+//! teams as far from each other as the map allows. Distance is how far a
+//! ground unit drives between two starts
+//! (`sim::pathfinding::drive_distance`), so water and cliffs count; where
+//! the map's terrain cannot be read (the random map) it is the straight
+//! line. The starts it gives are ordinary Start picks, and the launch
+//! reads them as it reads any other.
 
-use crate::map::scenario_menu::MapMenuEntry;
-use crate::skirmish_launch::LaunchStartPosition;
-
-use super::combos::apply_combo_selection;
-use super::saved_setup::{computer_rows, pick, seat_shown};
-use super::{SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishShellState};
-
-/// The Team combo's item data for a row on no team.
+/// A seat on no team, which plays alone: the Team lists' item data for none.
 const NO_TEAM: i32 = -2;
 
 /// Maps with at most this many starts have every seating tried: eight starts
@@ -300,51 +293,6 @@ fn first_guess(
         }
     }
     assigned
-}
-
-/// Fill the Start column by team for the rows that play: the player's row
-/// and every computer row with a player type. `starts` are the selected
-/// map's start cells by start index and `drive` how far a ground unit drives
-/// between them, where the page could measure it; fewer than two starts
-/// leaves the page as it is.
-pub fn apply_team_starts(
-    state: &mut SkirmishShellState,
-    maps: &[MapMenuEntry],
-    starts: &[(i32, i32)],
-    drive: Option<&[Vec<Option<u32>>]>,
-) {
-    if starts.len() < 2 {
-        return;
-    }
-    let rows: Vec<usize> = std::iter::once(0)
-        .chain(
-            computer_rows(state, maps)
-                .filter(|&idx| state.opponents[idx].row_type != SkirmishAiRowType::None)
-                .map(|idx| idx + 1),
-        )
-        .collect();
-    let teams: Vec<i32> = rows
-        .iter()
-        .map(|&row| seat_shown(state, row).team)
-        .collect();
-    // Free every start first, so no claim left on the page blocks a new one.
-    for &row in &rows {
-        apply_combo_selection(
-            state,
-            SkirmishComboId::Start(row),
-            SkirmishComboItem::Start(LaunchStartPosition::Auto),
-        );
-    }
-    for (&row, start) in rows.iter().zip(starts_by_team(starts, drive, &teams, &[])) {
-        if let Some(start) = start.and_then(|start| u8::try_from(start).ok()) {
-            pick(
-                state,
-                maps,
-                SkirmishComboId::Start(row),
-                SkirmishComboItem::Start(LaunchStartPosition::Position(start)),
-            );
-        }
-    }
 }
 
 #[cfg(all(test, tests_ui))]

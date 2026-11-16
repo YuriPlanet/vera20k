@@ -8,7 +8,6 @@ pub(crate) mod cooperative;
 mod persistence;
 mod saved_setups;
 
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -235,11 +234,9 @@ pub(crate) struct MultiplayerShellRuntime {
     #[cfg(feature = "ares")]
     urban_areas_read: bool,
     ini_path: Option<PathBuf>,
-    /// VERA's per-map Skirmish setups, by `SkirmishSetups.ini` section; read
-    /// once at startup like the profile.
-    saved_setups: HashMap<String, SkirmishSavedSetup>,
     /// VERA: the page the player last left Skirmish from, which the next
-    /// visit to its map puts back. Same file, same reading.
+    /// visit puts back; read once at startup from `SkirmishSetups.ini`, like
+    /// the profile.
     last_setup: Option<saved_setups::LastSetup>,
     cooperative_registry: CooperativeRegistry,
     cooperative_progress: CooperativeProgressState,
@@ -518,11 +515,15 @@ impl MultiplayerShellRuntime {
             .ok_or_else(|| anyhow::anyhow!("network setup has no game mode"))?;
         // Modern online setup starts on a computer-capable mode. Select on
         // this working launch only; the retained native profile stays intact.
-        if prefer_computer_mode && !mode.class.lists_in_skirmish() {
+        if prefer_computer_mode && !mode.class.policy().lists_in_skirmish {
             mode = modes
                 .iter()
                 .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Battle)
-                .or_else(|| modes.iter().find(|mode| mode.class.lists_in_skirmish()))
+                .or_else(|| {
+                    modes
+                        .iter()
+                        .find(|mode| mode.class.policy().lists_in_skirmish)
+                })
                 .ok_or_else(|| {
                     anyhow::anyhow!("network setup has no computer-capable game mode")
                 })?;
@@ -530,7 +531,7 @@ impl MultiplayerShellRuntime {
         // 0x5ED5E7..0x5ED628: a WOL tournament or clan room refuses a mode
         // whose vtable+4 holds (Cooperative) for the default mode 5D5E10.
         let room_only = room.tournament_or_clan();
-        if room_only && mode.class.permits_all_allied() {
+        if room_only && mode.class.policy().permits_all_allied {
             mode = modes.first().expect("checked above");
         }
         // 0x5ED69C..0x5ED6E0: a saved map IsValidMap refuses gives way to
@@ -1009,10 +1010,9 @@ impl MultiplayerShellRuntime {
             lan_observer_mode,
             settings_ini,
         ) = load_persistence(ini_path.as_deref(), defaults);
-        let (saved_setups, last_setup) = saved_setups_path(ini_path.as_deref())
+        let last_setup = saved_setups_path(ini_path.as_deref())
             .and_then(|path| crate::util::file_system::read(path).ok())
-            .map(|bytes| saved_setups::read_setups(&bytes))
-            .unwrap_or_default();
+            .and_then(|bytes| saved_setups::read_last_setup(&bytes));
 
         let mut runtime = Self {
             snapshot,
@@ -1028,7 +1028,6 @@ impl MultiplayerShellRuntime {
             #[cfg(feature = "ares")]
             urban_areas_read: false,
             ini_path,
-            saved_setups,
             last_setup,
             cooperative_registry,
             cooperative_progress,
@@ -1071,7 +1070,7 @@ impl MultiplayerShellRuntime {
         // the end, which Start reports as no selected map.
         let last = self.last_setup.as_ref().and_then(|last| {
             let index = records.iter().position(|record| {
-                !record.is_online() && saved_setups::section_name(&record.file_name) == last.map
+                !record.is_online() && saved_setups::map_key(&record.file_name) == last.map
             })?;
             Some((index, &last.setup))
         });
@@ -1085,10 +1084,10 @@ impl MultiplayerShellRuntime {
         }
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(state, modes);
         crate::ui::skirmish_shell::initialize_rows_for_selected_map(state, maps);
-        // VERA: the page left on this map comes back as Load Setup puts a
-        // setup back, with the rows past `[Skirmish]`'s seven and every start
-        // and team. The player's side and colour stay as `[MultiPlayer]` gave
-        // them, which the network rooms share.
+        // VERA: the page left on this map comes back, with the rows past
+        // `[Skirmish]`'s seven and every start and team. The player's side
+        // and colour stay as `[MultiPlayer]` gave them, which the network
+        // rooms share.
         if let Some((_, setup)) = last {
             let shown = SkirmishSavedSetup::capture(state, maps).player;
             let mut setup = setup.clone();
@@ -1551,34 +1550,11 @@ impl MultiplayerShellRuntime {
             .map(|dir| dir.join(cooperative::COOP_SAVE_INI))
     }
 
-    /// The setup Save Setup last kept for the shell's selected map.
-    pub(crate) fn saved_setup(
-        &self,
-        state: &SkirmishShellState,
-        maps: &[MapMenuEntry],
-    ) -> Option<&SkirmishSavedSetup> {
-        let map = maps.get(state.selected_map_idx)?;
-        self.saved_setups
-            .get(&saved_setups::section_name(&map.file_name))
-    }
-
-    /// Save Setup: keep the page as the selected map's setup and write its
-    /// section of `SkirmishSetups.ini`. A failed write keeps it for this run.
-    pub(crate) fn save_setup(&mut self, state: &SkirmishShellState, maps: &[MapMenuEntry]) {
-        let Some(map) = maps.get(state.selected_map_idx) else {
-            return;
-        };
-        let setup = SkirmishSavedSetup::capture(state, maps);
-        let section = saved_setups::section_name(&map.file_name);
-        self.update_setups_file(|file| saved_setups::write_setup(file, &section, &setup));
-        self.saved_setups.insert(section, setup);
-    }
-
     /// VERA: keep the page as shown for the next visit to its map.
     fn remember_last_setup(&mut self, state: &SkirmishShellState, maps: &[MapMenuEntry]) {
         if let Some(map) = maps.get(state.selected_map_idx) {
             self.last_setup = Some(saved_setups::LastSetup {
-                map: saved_setups::section_name(&map.file_name),
+                map: saved_setups::map_key(&map.file_name),
                 setup: SkirmishSavedSetup::capture(state, maps),
             });
         }
@@ -2324,7 +2300,6 @@ mod tests {
             #[cfg(feature = "ares")]
             urban_areas_read: false,
             ini_path: None,
-            saved_setups: HashMap::new(),
             last_setup: None,
             cooperative_registry,
             cooperative_progress,
@@ -2359,7 +2334,6 @@ mod tests {
             #[cfg(feature = "ares")]
             urban_areas_read: false,
             ini_path: None,
-            saved_setups: HashMap::new(),
             last_setup: None,
             cooperative_registry: CooperativeRegistry::default(),
             cooperative_progress: CooperativeProgressState::default(),

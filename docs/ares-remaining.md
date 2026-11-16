@@ -85,12 +85,10 @@ data.
 | Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Paradrop canopy: the dropped type's own `Parachute.Anim` before the Country's and Side's | `0x5F5ADD` (`10047C80`) | [ares-side-defaults.md](ares-side-defaults.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Hover `DeployToLand` landing | `0x513EAA`, `0x514A21`, `0x514DFE` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
-| Infantry `DamageSparks` parse order | `0x5240BD` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | A map house section's `Degrades=` | `0x50114D` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
@@ -118,9 +116,36 @@ receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flag
 ([ares-country-presentation.md](ares-country-presentation.md)), and the side theme and
 dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 
+## WaterImage voxel path
+
+`[VehicleType] WaterImage=OtherVehicleType` retains a registered VehicleType
+through the Rules owner and saved scenario. The exact-case key alone selects the
+runtime Ares switch. The reader is Ares `TechnoTypeClass_LoadFromINI_EarlyReader`
+(`715320`, body `10041DC0`, resume `715326`), with an empty default and a 2048-byte
+Find-only read. Missing, empty and unknown values retain the pointer. The values
+`none` and `<none>` clear it.
+
+The VXL draw uses `GetUnitType10045340` through
+`UnitClass_DrawVXL_WaterType` (`73B4A0`, body `100481E0`, resume `73B4DA`). A water
+cell with OnBridge clear selects the alternate before deployed and disguise art.
+The ordinary type has already selected SHP/VXL dispatch. The shared atlas admits
+the alternate model, including an unloading harvester's alternate, before that
+model has its own unit. The current bounded chain is ordinary base-gun VXL art.
+RNG draws 0, simulation timer writes 0, detach calls 0.
+
+SHP image/frame hooks and mixed actual/alternate indexed-gun modes remain open.
+Native uses actual TurretCount/IsGattling to choose the selected model's base or
+indexed slots, while the current atlas keys derive this from the selected model.
+Custom combinations can show a different gun or omit it. These
+require separate physical slot identities through the existing voxel catalog and
+atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
+
+[Ares WaterImage specification](https://ares-developers.github.io/Ares-docs/restored/amphibiousimagechanges.html)
+
 ## Presentation and UI not ported
 
-- Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
+- Unit art still needs WaterImage's SHP path and mixed indexed-gun draws above,
+  the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
   AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp) beyond a glow following its object
   (`sim/world/alpha_shape.rs` lists the rest), the ore-gather anim under EMP. Listed at
   the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and

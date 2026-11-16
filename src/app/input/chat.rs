@@ -7,21 +7,31 @@
 //! [`NetworkLoadingRequest::Chat`](crate::app::match_runtime::session::NetworkLoadingRequest)
 //! and a received packet arrives as `NetworkMatchEvent::Chat`.
 //!
-//! RESIDUAL: the beacon-message branch of the pre-hook (`0x0055E4E2`), with
-//! an own beacon selected, is the beacon-text residual of
-//! [`crate::app::match_runtime::beacons`]. WOL's `/page` and
-//! `/reply` commands (`0x0078A6B0`) and its relay mask (`0x0055F056`) are WOL
-//! backend. VERA's `/pause` and `/resume` lines ([`pause_command`]) are not
-//! sent. Typed text arrives as the key event's text, every UTF-16 unit of
-//! it, and input-method text through [`commit_text`]. Native WM_CHAR delivers
-//! one ANSI byte per character (`0x0054F56C`), and Shift/Ctrl+Backspace delete
-//! twice or append `0x7F` there; VERA deletes once.
+//! With an own beacon selected, the same three keys open a hidden beacon
+//! edit instead (`0x0055E4F0..0x0055E5F8`): the typed text, with a `_`
+//! cursor, is written into the selected beacon's label as it changes
+//! (`0x0055E642..0x0055E734`) and Enter sends it as the label
+//! (`0x0055E77B..0x0055E7AE`), not as a line. VERA also writes the label
+//! after committed input-method text; native's head loop
+//! (`0x0055E42C..0x0055E465`) leaves that to the next key.
+//!
+//! RESIDUAL: WOL's chat commands, which take a line before the send block
+//! (page `0x0078A6B0`, online `0x0078A470`, reply `0x0078A8F0`), and its relay
+//! mask (`0x0055F056`) are WOL backend. Reply also takes a line that starts
+//! with `TXT_REPLY_COMMAND_SHORT`; a port must leave VERA's `/pause` and
+//! `/resume` lines ([`pause_command`]) to the send block, which sends them like
+//! any line before they ask for the shared pause. Typed text arrives as the
+//! key event's text, every UTF-16 unit of it, and input-method text through
+//! [`commit_text`]. Native WM_CHAR delivers one ANSI byte per character
+//! (`0x0054F56C`), and Shift/Ctrl+Backspace delete twice or append `0x7F`
+//! there; VERA deletes once.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
 use crate::app::input::keyboard::InGameKeyEdge;
+use crate::app::match_runtime::beacons::{self, BeaconTarget};
 use crate::sim::intern::InternedId;
 use crate::ui::messages::{EditInput, EditKey};
 use winit::keyboard::{Key, NamedKey};
@@ -136,6 +146,10 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
         else {
             return false;
         };
+        // 0x0055E4E2: PlayerPtr's selected beacon picks the branch.
+        if beacons::own_selected(state) {
+            return open_beacon_edit(state);
+        }
         return open_edit(state, target);
     }
     if !edge.state.is_pressed() {
@@ -156,6 +170,43 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
     for unit in text.encode_utf16() {
         apply_input(state, EditKey::Unit(unit));
     }
+    // VERA: the label shows the committed text now (see the module notes).
+    if beacons::own_selected(state) {
+        follow_label(state, None);
+    }
+}
+
+/// The pre-hook's composition test `[0x00B7356C]` (`0x0055E671`): while an
+/// input-method composition is open, the selected beacon's label follows
+/// the line and the composition.
+pub(crate) fn composition_changed(state: &mut AppState) {
+    if state.match_state.match_presentation.message_list.editing() && composition(state).is_some() {
+        follow_label(state, None);
+    }
+}
+
+/// The open composition `0x00B73318` the label appends.
+fn composition(state: &AppState) -> Option<Vec<u16>> {
+    state
+        .platform
+        .ime
+        .composition(crate::app::input::ime::ImeTarget::InGameChat)
+        .map(|(units, _)| units.to_vec())
+}
+
+/// `0x0055E6B3..0x0055E734`: GetEditBuffer, then the composition and `_`,
+/// written into the first selected beacon without sending it. `typed`
+/// stands in for the list's buffer once Input has ended the edit.
+fn follow_label(state: &mut AppState, typed: Option<Vec<u16>>) {
+    let mut text = typed
+        .or_else(|| {
+            let list = &state.match_state.match_presentation.message_list;
+            list.edit_typed().map(<[u16]>::to_vec)
+        })
+        .unwrap_or_default();
+    text.extend(composition(state).unwrap_or_default());
+    text.push(u16::from(b'_'));
+    beacons::edit_beacon_message(state, Some(&text), BeaconTarget::Selected, false);
 }
 
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
@@ -197,20 +248,85 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     true
 }
 
+/// The beacon branch `0x0055E4F0..0x0055E5F8`: a `TXT_BEACON_MESSAGE` edit
+/// in the player's colour, hidden (`0x0055E5C1`), without overflow
+/// (`0x0055E5CA`) and with the chat target untouched; the selected beacon's
+/// label becomes the bare cursor.
+fn open_beacon_edit(state: &mut AppState) -> bool {
+    let Some(local) = local_house(state) else {
+        return false;
+    };
+    let prefix =
+        crate::app::frontend::shell_pass::resolve_csf(state, "TXT_BEACON_MESSAGE").into_owned();
+    let rgb = crate::app::input::messages::player_line_rgb(state, local);
+    let list = &mut state.match_state.match_presentation.message_list;
+    if list.add_edit(&prefix, rgb, false) {
+        list.hide_edit();
+    }
+    let cursor = [u16::from(b'_')];
+    beacons::edit_beacon_message(state, Some(&cursor), BeaconTarget::Selected, false);
+    true
+}
+
 fn apply_input(state: &mut AppState, key: EditKey) {
+    // GetEditBuffer 0x005D4400 reads the list's own buffer, which keeps the
+    // last text after Input ends the edit.
+    let before = state
+        .match_state
+        .match_presentation
+        .message_list
+        .edit_typed()
+        .map(<[u16]>::to_vec)
+        .unwrap_or_default();
     let font = &state.renderer.bit_font;
     let presentation = &mut state.match_state.match_presentation;
     let result = presentation
         .message_list
         .input(key, &|text| font.text_width(text) as i32);
+    let typed = match &result {
+        EditInput::Sent(text) => text.encode_utf16().collect(),
+        _ => presentation
+            .message_list
+            .edit_typed()
+            .map_or(before, <[u16]>::to_vec),
+    };
+    // 0x0055E642..0x0055E734: result 1 with an own beacon selected, results
+    // 2 and 4 and an open composition update the first selected beacon;
+    // Escape clears and sends its label instead.
+    let own = beacons::own_selected(state);
+    if (own && result == EditInput::Typed)
+        || matches!(
+            result,
+            EditInput::Deleted | EditInput::Ended | EditInput::Overflowed(_)
+        )
+        || composition(state).is_some()
+    {
+        if key == EditKey::Escape {
+            beacons::edit_beacon_message(state, None, BeaconTarget::Selected, true);
+        } else {
+            follow_label(state, Some(typed.clone()));
+        }
+    }
+    // 0x0055E77B..0x0055E7AE: results 3 and 4 with an own beacon selected
+    // send the buffer as its label, and no line.
+    if matches!(result, EditInput::Sent(_) | EditInput::Overflowed(_)) && own {
+        beacons::edit_beacon_message(state, Some(&typed), BeaconTarget::Selected, true);
+        if matches!(result, EditInput::Sent(_)) {
+            state.match_state.match_presentation.chat.target = ChatTarget::None;
+        }
+        return;
+    }
+    let presentation = &mut state.match_state.match_presentation;
     match result {
         EditInput::Ended if key == EditKey::Escape => presentation.chat.target = ChatTarget::None,
         EditInput::Sent(text) => {
             let target = state.match_state.match_presentation.chat.target;
             let whole_line = !state.match_state.match_presentation.chat.overflowed;
-            match pause_command(&text).filter(|_| whole_line) {
-                Some(want) => crate::app::input::pause_menu::chat_command(state, want),
-                None => send(state, target, &text),
+            // The line goes to its recipients like any other, so a `/pause`
+            // or `/resume` line tells them who asked before it asks.
+            send(state, target, &text);
+            if let Some(want) = pause_command(&text).filter(|_| whole_line) {
+                crate::app::input::pause_menu::chat_command(state, want);
             }
             // 0x0055F1BD: result 3 clears the target.
             state.match_state.match_presentation.chat.target = ChatTarget::None;
@@ -225,8 +341,8 @@ fn apply_input(state: &mut AppState, key: EditKey) {
 }
 
 /// VERA: a typed line that is only `/pause` or `/resume`, ASCII
-/// case-insensitively, asks for the shared pause (true) or its end instead
-/// of being sent; gamemd sends such a line as chat. Any other line is chat.
+/// case-insensitively, also asks for the shared pause (true) or its end,
+/// after it is sent as chat like any other line.
 fn pause_command(line: &str) -> Option<bool> {
     let word = line.trim_matches(' ');
     if word.eq_ignore_ascii_case("/pause") {
@@ -407,7 +523,6 @@ pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text:
             name: name.to_owned(),
             color,
         },
-        crate::ui::chat_translation::ChatPlace::Match,
     );
 }
 

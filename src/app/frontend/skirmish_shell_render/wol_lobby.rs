@@ -105,6 +105,7 @@ pub(super) fn push_edit(
         None,
         rect,
         caret_visible,
+        SHELL_LABEL_TEXT_RGB,
         text_depth,
         scale,
     );
@@ -237,6 +238,7 @@ pub(crate) fn paint_wol_lobby_children(
             .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
         layout.chat,
         ui.popup.is_none() && ui.caret_visible(now),
+        SHELL_LABEL_TEXT_RGB,
         SHELL_CONTROL_TEXT_DEPTH,
         scale,
     );
@@ -369,7 +371,8 @@ pub(crate) fn paint_wol_lobby_children(
         }
         // A -1 ping is the text "???"; any other is an integer cell. The
         // modern list centres it under its Ping header instead of starting
-        // it at the retail column, left of the header's caption.
+        // it at the retail column, left of the header's caption. A match to
+        // watch has no ping.
         let ping = if row.ping == -1 {
             "???".to_owned()
         } else {
@@ -382,7 +385,9 @@ pub(crate) fn paint_wol_lobby_children(
             ),
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
-        paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+        if !row.watch {
+            paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+        }
         if modern {
             if row.keyed
                 && let Some(art) = art
@@ -669,6 +674,39 @@ pub(crate) fn paint_wol_lobby_popup(
                     rgb: SHELL_LABEL_TEXT_RGB,
                     path_a_reveal: None,
                 });
+            }
+            // Watching: its caption, and the box ticked while others may
+            // watch, beside its value.
+            if let (Some(watching), Some((label, rect))) = (create.watching, layout.watching) {
+                paint_control(
+                    &mut paint.controls,
+                    &atlas.control_chrome(),
+                    ControlPaint::Checkbox {
+                        rect,
+                        checked: watching != RoomWatching::Off,
+                    },
+                    scale,
+                );
+                for (key, rect, align) in [
+                    (
+                        "VERA:Watching",
+                        label,
+                        ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+                    ),
+                    (
+                        watching.label_key(),
+                        crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                        ShellAlign::V_CENTER,
+                    ),
+                ] {
+                    labels.push(PaintLabel {
+                        text: crate::i18n::tr(key).into(),
+                        rect,
+                        align,
+                        rgb: SHELL_LABEL_TEXT_RGB,
+                        path_a_reveal: None,
+                    });
+                }
             }
             if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
                 labels.push(PaintLabel {

@@ -184,8 +184,13 @@ fn mods_composition<'a>(
     let active = controller.top_id() == Some(PAGE.dialog);
     let pressed = active.then(|| controller.pressed()).flatten();
     let hovered = active.then(|| controller.hovered()).flatten();
-    // Use This Mod is dark while the selection is nothing to change to.
-    let enabled = |id: u16| id != mods_shell::USE || mods.switch_to().is_some();
+    // Use This Mod is dark while the selection is nothing to change to, Check
+    // Files while it is the original game.
+    let enabled = |id: u16| match id {
+        mods_shell::USE => mods.switch_to().is_some(),
+        mods_shell::CHECK => mods.picked_is_mod(),
+        _ => true,
+    };
     let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
     // While a slide runs the engine draws the whole tile column in place of
     // the buttons (`0x006071E0`).

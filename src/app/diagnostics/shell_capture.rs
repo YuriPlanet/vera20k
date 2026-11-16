@@ -36,6 +36,8 @@ pub(crate) const CAPTURE_FLAG: &str = "--shell-capture";
 const CHECKPOINT_MAIN_MENU_0XE2_STEADY: &str = "main-menu-0xe2-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE: &str = "main-menu-0xe2-entry-sequence";
 const CHECKPOINT_SKIRMISH_0X102_STEADY: &str = "skirmish-0x102-steady";
+/// VERA's Game Options box, opened over the settled `0x102` by its button.
+const CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS: &str = "skirmish-0x102-game-options";
 const CHECKPOINT_MOVIES_0X101_STEADY: &str = "movies-0x101-steady";
 const CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM: &str = "main-menu-0xe2-exit-confirm";
 const CHECKPOINT_MOVIE_LIST_0X129_STEADY: &str = "movie-list-0x129-steady";
@@ -49,6 +51,10 @@ const CHECKPOINT_MODS_STEADY: &str = "mods-steady";
 /// The same after a press on a row the run does not play and on Use This
 /// Mod: the restart question over the page.
 const CHECKPOINT_MODS_RESTART_QUESTION: &str = "mods-restart-question";
+/// The same after a press on a mod's row and on Check Files, once the files
+/// are read: what the check found, over the page.
+const CHECKPOINT_MODS_CHECK_FILES: &str = "mods-check-files";
+const CHECKPOINT_MODS_NEW_MOD: &str = "mods-new-mod";
 const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
@@ -97,7 +103,7 @@ const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
     ("options-0xd5-settings-interface", Category::Interface),
     ("options-0xd5-settings-audio", Category::Audio),
     ("options-0xd5-settings-controls", Category::Controls),
-    ("options-0xd5-settings-developer", Category::Developer),
+    ("options-0xd5-settings-general", Category::General),
 ];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
@@ -115,12 +121,12 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
     (
         "options-0xd5-hover-difficulty",
         Category::Gameplay,
-        (224, 157),
+        (224, 97),
     ),
     (
         "options-0xd5-hover-tooltips",
         Category::Interface,
-        (160, 245),
+        (160, 206),
     ),
     ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
@@ -212,6 +218,8 @@ pub enum ShellCaptureCheckpoint {
     MainMenu0xE2Steady,
     MainMenu0xE2EntrySequence,
     Skirmish0x102Steady,
+    /// VERA's Game Options box over `0x102`.
+    Skirmish0x102GameOptions,
     MoviesPage0x101Steady,
     /// Exit Game on `0xE2`: after the teardown slide, the confirmation over
     /// the empty shell backdrop (state 6).
@@ -229,6 +237,9 @@ pub enum ShellCaptureCheckpoint {
     ModsSteady,
     /// The Mods page's restart question, after a row and Use This Mod.
     ModsRestartQuestion,
+    /// The Mods page's Check Files answer, after a mod's row and Check Files.
+    ModsCheckFiles,
+    ModsNewMod,
     /// Single Player -> New Campaign: campaign selection `0x94` settled.
     Campaign0x94Steady,
     /// The same after a press on the difficulty slider's left or right end.
@@ -582,6 +593,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MAIN_MENU_0XE2_STEADY => Ok(Self::MainMenu0xE2Steady),
             CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE => Ok(Self::MainMenu0xE2EntrySequence),
             CHECKPOINT_SKIRMISH_0X102_STEADY => Ok(Self::Skirmish0x102Steady),
+            CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS => Ok(Self::Skirmish0x102GameOptions),
             CHECKPOINT_SKIRMISH_0X6B_STEADY => Ok(Self::Skirmish0x6BSteady),
             CHECKPOINT_SKIRMISH_0X105_STEADY => Ok(Self::Skirmish0x105Steady),
             CHECKPOINT_SKIRMISH_0X105_CANCEL_STEADY => Ok(Self::Skirmish0x105CancelSteady),
@@ -621,6 +633,8 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
             CHECKPOINT_MODS_STEADY => Ok(Self::ModsSteady),
             CHECKPOINT_MODS_RESTART_QUESTION => Ok(Self::ModsRestartQuestion),
+            CHECKPOINT_MODS_CHECK_FILES => Ok(Self::ModsCheckFiles),
+            CHECKPOINT_MODS_NEW_MOD => Ok(Self::ModsNewMod),
             CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
@@ -794,6 +808,7 @@ impl ShellCaptureCheckpoint {
             Self::MainMenu0xE2Steady => CHECKPOINT_MAIN_MENU_0XE2_STEADY,
             Self::MainMenu0xE2EntrySequence => CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE,
             Self::Skirmish0x102Steady => CHECKPOINT_SKIRMISH_0X102_STEADY,
+            Self::Skirmish0x102GameOptions => CHECKPOINT_SKIRMISH_0X102_GAME_OPTIONS,
             Self::MoviesPage0x101Steady => CHECKPOINT_MOVIES_0X101_STEADY,
             Self::MainMenu0xE2ExitConfirm => CHECKPOINT_MAIN_MENU_0XE2_EXIT_CONFIRM,
             Self::MovieList0x129Steady => CHECKPOINT_MOVIE_LIST_0X129_STEADY,
@@ -803,6 +818,8 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
             Self::ModsSteady => CHECKPOINT_MODS_STEADY,
             Self::ModsRestartQuestion => CHECKPOINT_MODS_RESTART_QUESTION,
+            Self::ModsCheckFiles => CHECKPOINT_MODS_CHECK_FILES,
+            Self::ModsNewMod => CHECKPOINT_MODS_NEW_MOD,
             Self::Campaign0x94Steady => CHECKPOINT_CAMPAIGN_0X94_STEADY,
             Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
@@ -1030,8 +1047,18 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
             Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
-            Self::ModsSteady => movies::MoviesTarget::Mods { ask: false },
-            Self::ModsRestartQuestion => movies::MoviesTarget::Mods { ask: true },
+            Self::ModsSteady => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::Nothing,
+            },
+            Self::ModsRestartQuestion => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::Use,
+            },
+            Self::ModsCheckFiles => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::Check,
+            },
+            Self::ModsNewMod => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::New,
+            },
             Self::Campaign0x94Steady => movies::MoviesTarget::Campaign0x94 {
                 press: None,
                 hold_over: None,
@@ -1325,8 +1352,8 @@ impl ShellCaptureRequest {
                             | movies::WolTarget::ModernTeams
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
-                            | movies::WolTarget::ModernChatTranslation
-                            | movies::WolTarget::ModernChatTranslationList
+                            | movies::WolTarget::ModernOptionsTranslation
+                            | movies::WolTarget::ModernOptionsTranslationList
                     )
             }
             Some(movies::MoviesTarget::WolWelcome {
@@ -1665,18 +1692,23 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    let scaled_main_menu = checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
+    // So does VERA's game room with teams, which spreads over a wider window.
+    let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
+        || matches!(
+            checkpoint.movies_target(),
+            Some(movies::MoviesTarget::Wol(movies::WolTarget::ModernTeams))
+        ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
         && width >= 640
         && height >= 480;
     ensure!(
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
             || (online_latency && width == 640 && height == 480)
-            || scaled_main_menu,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu), got {width}x{height}",
+            || scaled,
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu and VERA's room), got {width}x{height}",
         checkpoint.as_str()
     );
-    let neutral = if scaled_main_menu {
+    let neutral = if scaled {
         (width / 2, height / 2)
     } else {
         (EXPECTED_CURSOR_X, EXPECTED_CURSOR_Y)
@@ -1740,7 +1772,37 @@ where
                 || online_host.is_some(),
             "online guest capture requires --online-host"
         );
+        let watch = matches!(
+            checkpoint,
+            ShellCaptureCheckpoint::Lan(movies::LanTarget::OnlineWatch)
+        );
+        ensure!(
+            !watch
+                || (online_host.is_some()
+                    && online_map.is_none()
+                    && online_players.is_none()
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && online_start.is_none()
+                    && online_frames.is_none()
+                    && !online_simple
+                    && !online_latency
+                    && !online_mass
+                    && !online_quick_match
+                    && !observe_loading
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()
+                    && online_loading_cancel_checkpoint.is_none()),
+            "online watch capture requires --online-host and no other online option; the host's match sets everything else"
+        );
         let host = online_host.unwrap_or_else(|| account.clone());
+        ensure!(
+            !watch || !account.eq_ignore_ascii_case(&host),
+            "the online watcher must be a third account, not the host"
+        );
         for name in [&account, &host] {
             ensure!(
                 crate::ui::wol_account::valid_name(name),
@@ -2223,6 +2285,22 @@ struct MainMenuCaptureSnapshot {
 }
 
 impl MainMenuCaptureSnapshot {
+    /// A capture in a scaled window (the main menu's, or VERA's room's on
+    /// its way there): its own window and centred pointer stand for the
+    /// reference surface and neutral point.
+    fn scaled_as_reference(mut self) -> Self {
+        let window = (self.width, self.height);
+        if window != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
+            && (self.cursor_x, self.cursor_y) == ((window.0 / 2) as f32, (window.1 / 2) as f32)
+        {
+            self.width = EXPECTED_WIDTH;
+            self.height = EXPECTED_HEIGHT;
+            self.cursor_x = EXPECTED_CURSOR_X as f32;
+            self.cursor_y = EXPECTED_CURSOR_Y as f32;
+        }
+        self
+    }
+
     fn from_state(state: &AppState) -> Self {
         let movie_identity = state.frontend.main_menu_movie_identity;
         Self {
@@ -2426,6 +2504,9 @@ impl ShellCaptureSession {
         let skirmish = match request.checkpoint {
             ShellCaptureCheckpoint::Skirmish0x102Steady => {
                 Some(skirmish::SkirmishCapture::default())
+            }
+            ShellCaptureCheckpoint::Skirmish0x102GameOptions => {
+                Some(skirmish::SkirmishCapture::game_options())
             }
             ShellCaptureCheckpoint::Skirmish0x102BackSlideOut(tick) => {
                 Some(skirmish::SkirmishCapture::slide_out(tick))
@@ -2687,17 +2768,8 @@ impl ShellCaptureSession {
             None => {
                 let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
                 let window = (self.request.width, self.request.height);
-                // A scaled main-menu capture: its own window and centred
-                // pointer stand for the reference surface and neutral point.
-                if window != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
-                    && (snapshot.width, snapshot.height) == window
-                    && (snapshot.cursor_x, snapshot.cursor_y)
-                        == ((window.0 / 2) as f32, (window.1 / 2) as f32)
-                {
-                    snapshot.width = EXPECTED_WIDTH;
-                    snapshot.height = EXPECTED_HEIGHT;
-                    snapshot.cursor_x = EXPECTED_CURSOR_X as f32;
-                    snapshot.cursor_y = EXPECTED_CURSOR_Y as f32;
+                if (snapshot.width, snapshot.height) == window {
+                    snapshot = snapshot.scaled_as_reference();
                 }
                 steady_main_menu_capture_ready(snapshot)
             }
@@ -3780,6 +3852,31 @@ mod tests {
         assert!(!config.quick_match);
     }
 
+    /// The watcher is a third account; the host's match sets everything else.
+    #[test]
+    fn online_watch_capture_requires_its_own_account_and_the_host() {
+        let output = new_output_path("online-watch");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-watch".into();
+        values.extend(args(&["--online-account", "Watcher"]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&["--online-host", "Host"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        let config = request.live_online.unwrap();
+        assert_eq!(
+            (config.account.as_str(), config.host.as_str()),
+            ("Watcher", "Host")
+        );
+        let mut own = values.clone();
+        *own.last_mut().unwrap() = "watcher".into();
+        assert!(parse_launch_args(own).is_err());
+        values.extend(args(&["--online-frames", "600"]));
+        assert!(parse_launch_args(values).is_err());
+    }
+
     #[test]
     fn online_quick_match_capture_leaves_the_match_to_the_matchbot() {
         let output = new_output_path("online-quick-match");
@@ -4244,6 +4341,25 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+        // Each point rests on the control its name gives.
+        use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
+        use crate::ui::main_menu_dialogs::options::{LauncherCheckboxId, LauncherTrackbarId};
+        let [difficulty, tooltips, music] = OPTIONS_0XD5_HOVER_CHECKPOINTS
+            .map(|(_, category, (x, y))| (LauncherOptionsLayout::new(800, 600, category), x, y));
+        let slider = |(layout, x, y): &(LauncherOptionsLayout, i32, i32), id| {
+            layout
+                .trackbar_rect(id)
+                .is_some_and(|rect| rect.contains(*x, *y))
+        };
+        assert!(slider(&difficulty, LauncherTrackbarId::Difficulty));
+        assert!(slider(&music, LauncherTrackbarId::Score));
+        let (layout, x, y) = &tooltips;
+        assert!(
+            layout
+                .checkboxes
+                .iter()
+                .any(|(id, rect)| { *id == LauncherCheckboxId::Tooltips && rect.contains(*x, *y) })
+        );
         for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
             assert_eq!(

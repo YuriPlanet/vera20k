@@ -409,6 +409,30 @@ pub fn trackbar_frame_slot(plaque: bool, width: i32, height: i32) -> Option<usiz
         .position(|&(w, h, reserve)| (w, h, reserve > 0) == (width, height, plaque))
 }
 
+/// The [`TRACKBAR_FRAMES`] slot of a `width` x `height` trackbar window
+/// drawn at `scale`. Below the shell's own size (VERA's team bar draws its
+/// controls at 78%) the window's size rounds back from its authored one by
+/// a pixel or two, so it takes the frame of the nearest window within two
+/// pixels each way.
+pub fn drawn_trackbar_frame_slot(
+    plaque: bool,
+    width: i32,
+    height: i32,
+    scale: crate::ui::shell::geom::ShellScale,
+) -> Option<usize> {
+    if scale.factor() >= 1.0 {
+        return trackbar_frame_slot(plaque, width, height);
+    }
+    TRACKBAR_FRAMES
+        .iter()
+        .enumerate()
+        .filter(|&(_, &(w, h, reserve))| {
+            (reserve > 0) == plaque && (w - width).abs() <= 2 && (h - height).abs() <= 2
+        })
+        .min_by_key(|&(_, &(w, h, _))| (w - width).abs() + (h - height).abs())
+        .map(|(slot, _)| slot)
+}
+
 impl ControlChrome {
     /// The frame entry of a `width` x `height` trackbar window.
     pub fn trackbar_frame(
@@ -1345,7 +1369,9 @@ mod tests {
         render_primitive_bevel_entry, render_shp_entry, render_trackbar_frame_geometry, rgba_color,
         setup_background_pair, trackbar_frame_rgba,
     };
+    use super::{TRACKBAR_FRAMES, drawn_trackbar_frame_slot};
     use crate::assets::asset_manager::MediaArchiveMode;
+    use crate::ui::shell::geom::ShellScale;
     use std::collections::HashMap;
 
     /// The hook at `0x622223` keeps the stock selection unless both slots of
@@ -1687,6 +1713,21 @@ mod tests {
         assert_eq!(pixel(&entry, 79, 10), [0, 0, 0, 0]);
         assert_eq!(pixel(&entry, 100, 10), [0, 0, 0, 0]);
         assert_eq!(pixel(&entry, 80, 24), mixed);
+    }
+
+    /// A trackbar drawn below the shell's size takes the nearest window's
+    /// frame; at the shell's own size only its exact window has one.
+    #[test]
+    fn trackbar_below_the_shell_size_takes_the_nearest_frame() {
+        let half = ShellScale::from_screen(400, 300);
+        let slot = |plaque, w, h, scale| {
+            drawn_trackbar_frame_slot(plaque, w, h, scale).map(|slot| TRACKBAR_FRAMES[slot])
+        };
+        assert_eq!(slot(true, 130, 22, half), Some((129, 22, 50)));
+        assert_eq!(slot(true, 129, 21, half), Some((129, 21, 50)));
+        assert_eq!(slot(false, 130, 22, half), None);
+        assert_eq!(slot(true, 132, 22, half), None);
+        assert_eq!(slot(true, 130, 22, ShellScale::RETAIL), None);
     }
 
     #[test]

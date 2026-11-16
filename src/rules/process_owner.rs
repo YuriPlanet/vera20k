@@ -119,15 +119,19 @@ struct NativeRulesSourceSnapshot {
     fixed_sounds: Arc<SoundRegistry>,
     /// The same immutable EVAMD catalog used by process playback.
     fixed_eva: Arc<EvaRegistry>,
-    /// VERA source customization, composed over the root and LANGRULE each
-    /// scenario reads (`scenario_root`, `startup_layers`), never over the
-    /// selected INIs the cold start and the shell's Country reads use. A
-    /// network room swaps in its host's between games
+    /// VERA's Options switches, composed over the root each scenario reads
+    /// (`scenario_root`), never over the selected INIs the cold start and the
+    /// shell's Country reads use. A network room swaps in its host's between
+    /// games
     /// ([`NativeRulesProcessOwner::use_personal_rules`]).
     personal_rules: PersonalRules,
-    /// Startup mounted `ares.mix`: Ares plays in every game this process
-    /// loads (`rules::ares_switch`).
+    /// The game is an Ares game (`AssetManager::ships_ares`: it mounted
+    /// `ares.mix`, or the player's Ares setting is On): Ares plays in every
+    /// game this process loads (`rules::ares_switch`).
     ships_ares: bool,
+    /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
+    /// in a game this process loads.
+    ares_keys_off: bool,
 }
 
 #[derive(Debug)]
@@ -336,14 +340,16 @@ impl NativeRulesProcessOwner {
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
             PersonalRules::default(),
             crate::rules::ares_switch::game_ships_ares(false),
+            crate::rules::ares_switch::launch_keys_off(),
         )
     }
 
     /// Preserve the selector's actual logical names beside the frozen inputs.
     /// These diagnostic labels do not alter Rules processing or saved state.
-    /// `ships_ares`: startup mounted `ares.mix` (`AssetManager::ships_ares`),
+    /// `ships_ares`: the game is an Ares game (`AssetManager::ships_ares`),
     /// so Ares plays and the registry reads every Rules pass the Ares way
-    /// (`rules::ares_switch`).
+    /// (`rules::ares_switch`); `ares_keys_off`: the player's Ares setting is
+    /// Off, so no Ares key turns Ares on.
     pub(crate) fn from_named_cold_start_sources(
         selected_rules_root: IniFile,
         langrule: Option<NativeLangRuleSource>,
@@ -353,6 +359,7 @@ impl NativeRulesProcessOwner {
         rules_art_names: [String; 2],
         personal_rules: PersonalRules,
         ships_ares: bool,
+        ares_keys_off: bool,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -389,6 +396,7 @@ impl NativeRulesProcessOwner {
                 fixed_eva,
                 personal_rules,
                 ships_ares,
+                ares_keys_off,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
@@ -412,13 +420,22 @@ impl NativeRulesProcessOwner {
             sources.rules_art_names,
             sources.personal_rules,
             ships_ares,
+            sources.ares_keys_off,
         )
         .expect("the same sources cold-started once already")
     }
 
+    /// VERA: the owner of a launch whose Ares setting is Off: no Ares key
+    /// turns Ares on in the games it loads.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ares_keys_off(mut self, off: bool) -> Self {
+        self.sources.ares_keys_off = off;
+        self
+    }
+
     /// Session6980C0/475540 against the retained process INI. This mutates the
     /// one live registry before PrepareSession's separate Country body pass.
-    /// VERA: the selected root without personal rules, so every player's
+    /// VERA: the selected root without the Options switches, so every player's
     /// shell registry is the same whichever rules a room plays; Full_Init's
     /// Country prepass reads them.
     pub fn read_multiplayer_country(&mut self, settings: &IniFile, current: i32) -> i32 {
@@ -696,31 +713,31 @@ impl NativeRulesProcessOwner {
         &self.sources.selected_rules_root
     }
 
-    /// VERA's extra source, precedence policy and Options switches as played,
-    /// for the network rules digest (`ProcessAssets::multiplayer_rules_digest`).
+    /// VERA's Options switches as played, for the network rules digest
+    /// (`ProcessAssets::multiplayer_rules_digest`).
     pub fn personal_rules_compatibility_crc(&self) -> Option<u32> {
         self.sources.personal_rules.compatibility_crc()
     }
 
-    /// VERA: play `rules` from the next scenario on, as a network room plays
-    /// its host's. Scenario roots compose them, so the one registry and
-    /// everything the shell read into it stay as they are.
+    /// VERA: play the switches `rules` from the next scenario on, as a network
+    /// room plays its host's. Scenario roots compose them, so the one registry
+    /// and everything the shell read into it stay as they are.
     pub fn use_personal_rules(&mut self, rules: PersonalRules) {
         self.sources.personal_rules = rules;
     }
 
-    /// The Options page's Terrain Deformation box, read by the next scenario.
+    /// The skirmish Game Options' Terrain Deformation box, read by the next scenario.
     pub fn set_terrain_deformation(&mut self, on: bool) {
         self.sources.personal_rules.set_terrain_deformation(on);
     }
 
-    /// The Options page's Superweapon Limit, read by the next scenario.
+    /// The skirmish Game Options' Superweapon Limit, read by the next scenario.
     pub fn set_superweapon_limit(&mut self, limit: i32) {
         self.sources.personal_rules.set_superweapon_limit(limit);
     }
 
     /// The root every scenario's Rules start from: the selected root with the
-    /// personal rules and Options switches applied.
+    /// Options switches applied.
     pub(crate) fn scenario_root(&self) -> Cow<'_, IniFile> {
         self.sources
             .personal_rules
@@ -761,8 +778,7 @@ impl NativeRulesProcessOwner {
     /// Multiplayer agreement follows the frozen process sources, including
     /// LANGRULE. Reopening those files would hash different state from the
     /// sources Full_Init686B20 actually consumes. The root is digested as
-    /// scenarios read it, with the personal rules and Options switches
-    /// applied.
+    /// scenarios read it, with the Options switches applied.
     pub fn multiplayer_source_digests(&self) -> [Option<String>; 3] {
         [
             Some(self.scenario_root().multiplayer_digest()),
@@ -990,7 +1006,7 @@ impl NativeRulesProcessOwner {
         };
         let mut layers = self.startup_layers(langrule.as_ref());
         if !skip_root_color_add_and_mode && let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
+            layers.push(RulesLayerKind::GameMode, mode.clone());
         }
         (layers, skip_root_color_add_and_mode)
     }
@@ -1158,10 +1174,9 @@ impl NativeRulesProcessOwner {
             ),
             NativeScenarioRulesPrefix::Campaign(named) => {
                 let state = self.take_pre_reset_state(true);
-                let named = named.map(|ini| self.personalized_layer(ini));
                 let trace = match process_native_campaign_rules_prepass(
                     state,
-                    named.as_ref(),
+                    named,
                     &self.sources.fixed_art,
                     &self.sources.fixed_eva,
                     &self.sources.fixed_sounds,
@@ -1284,11 +1299,10 @@ impl NativeRulesProcessOwner {
 
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
-            .with_ares_mix(self.sources.ships_ares);
+            .with_ares_mix(self.sources.ships_ares)
+            .with_ares_keys_off(self.sources.ares_keys_off);
         if let Some(langrule) = langrule {
-            let mut langrule = langrule.clone();
-            self.sources.personal_rules.apply_base_layer(&mut langrule);
-            layers.push(RulesLayerKind::LangRule, langrule);
+            layers.push(RulesLayerKind::LangRule, langrule.clone());
         }
         layers
     }
@@ -1303,22 +1317,13 @@ impl NativeRulesProcessOwner {
     ) -> RulesLayerStack {
         let mut layers = self.startup_layers(langrule);
         if !skip_mode && let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
+            layers.push(RulesLayerKind::GameMode, mode.clone());
         }
-        layers.push(
-            RulesLayerKind::Scenario,
-            self.personalized_layer(map_rules_overrides),
-        );
+        layers.push(RulesLayerKind::Scenario, map_rules_overrides.clone());
         if let Some(tmcj4f) = tmcj4f_rules {
-            layers.push(RulesLayerKind::Tmcj4f, self.personalized_layer(tmcj4f));
+            layers.push(RulesLayerKind::Tmcj4f, tmcj4f.clone());
         }
         layers
-    }
-
-    fn personalized_layer(&self, original: &IniFile) -> IniFile {
-        let mut rules = original.clone();
-        self.sources.personal_rules.apply_later_layer(&mut rules);
-        rules
     }
 }
 
@@ -2521,6 +2526,11 @@ mod tests {
     #[test]
     fn langrule_without_a_digest_fails_startup() {
         fn load(with_langrule: bool) -> Result<RuleSet, String> {
+            use crate::assets::asset_manager::{
+                MediaArchiveMode, test_support::audio_test_install,
+            };
+
+            let install = audio_test_install("langrule-digest-install");
             let directory = TestDirectory::new(if with_langrule {
                 "langrule-missing-digest"
             } else {
@@ -2531,7 +2541,12 @@ mod tests {
             if with_langrule {
                 directory.write("langrule.ini", b"[General]\nBuildSpeed=.7\n");
             }
-            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let assets = AssetManager::with_mod(
+                install.path(),
+                Some(directory.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
             let mut owner = RetailRulesSources::select(&assets)
                 .unwrap()
                 .into_owner(Arc::default(), Arc::default())?;
@@ -2564,11 +2579,21 @@ mod tests {
         use crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL as VALID_LANGRULE;
 
         fn startup_color_add(langrule: &str) -> Result<[u8; 3], String> {
+            use crate::assets::asset_manager::{
+                MediaArchiveMode, test_support::audio_test_install,
+            };
+
+            let install = audio_test_install("langrule-color-install");
             let directory = TestDirectory::new("startup-langrule-digest");
             directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.8\n");
             directory.write("artmd.ini", b"");
             directory.write("langrule.ini", langrule.as_bytes());
-            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let assets = AssetManager::with_mod(
+                install.path(),
+                Some(directory.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+            )
+            .unwrap();
             let owner = RetailRulesSources::select(&assets)
                 .unwrap()
                 .into_owner(Arc::default(), Arc::default())?;

@@ -50,6 +50,18 @@ impl ListMetrics {
             min_thumb_h: grow(MIN_THUMB_HEIGHT, scale.factor()),
         }
     }
+
+    /// [`Self::scaled`] with rows for text at `text` times the shell's size.
+    pub fn for_text(scale: ShellScale, text: f32) -> Self {
+        let metrics = Self::scaled(scale);
+        if text == 1.0 {
+            return metrics;
+        }
+        Self {
+            row_h: ((ROW_HEIGHT as f32 * scale.factor() * text).round() as i32).max(1),
+            ..metrics
+        }
+    }
 }
 
 /// Scrollbar capture and repeat from original gamemd61C690: button down arms

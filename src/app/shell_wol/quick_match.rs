@@ -378,9 +378,10 @@ use crate::app::shell_network_setup::agreement::changed_files_text;
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
 /// original game. A mod fails the pre-match check; other INI roots or
 /// changed game files fail the join's rules hash (`0x0079BA60`, silently in
-/// Quick Match), against any opponent without the same. The box says what to
-/// turn off, and the runner ends before it queues. Personal rules and the
-/// Options switches need nothing: its room has no host rules, so its match
+/// Quick Match), against any opponent without the same, and an Ares setting
+/// other than Auto fails the start's rules digest. The box says what to
+/// turn off, and the runner ends before it queues. The Options switches need
+/// nothing: its room has no host rules, so its match
 /// plays without them (`HostRules`).
 fn original_game_refusal(
     mod_in_use: bool,
@@ -390,6 +391,11 @@ fn original_game_refusal(
         Some("VERA:QuickMatchNoMod")
     } else if !assets.stock_ini_roots() {
         Some("VERA:QuickMatchIniProfile")
+    } else if assets.ares_setting() != crate::util::ares_launch::AresSetting::Auto {
+        // On or Off changes the rules digest every opponent compares, and On
+        // can mount the installation's `ares.mix`, which a changed-files box
+        // would send the player to delete.
+        Some("VERA:QuickMatchAresSetting")
     } else if !assets.changed_game_files().is_empty() {
         Some(CHANGED_FILES)
     } else {
@@ -1777,13 +1783,10 @@ mod tests {
         use crate::app::process_assets::ProcessAssets;
         use crate::assets::asset_manager::MediaArchiveMode;
         use crate::rules::personal_rules::PersonalRules;
-        let assets = |file: &str| {
-            ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
-                .with_personal_rules(PersonalRules::from_bytes(file.as_bytes()).unwrap())
-        };
-        // Personal rules and Terrain Deformation stay home: Quick Match's
-        // room shares none, so its match plays without them.
-        let mut changes = assets("[NUKE]\nDeformDepth=10\n");
+        // The Options switches stay home: Quick Match's room shares none,
+        // so its match plays without them.
+        let mut changes = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+            .with_personal_rules(PersonalRules::default());
         changes.set_terrain_deformation(true);
         assert_eq!(original_game_refusal(false, &changes), None);
         // A loose rulesmd.ini the retail archives don't hold, found at startup.
@@ -1797,8 +1800,8 @@ mod tests {
         changes.install_native_ini_hashes(&game, &[]);
         assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
         assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
-        // `ares.mix` makes the same folder an Ares game, which Quick Match
-        // does not play either.
+        // With no mod selected, an installed `ares.mix` is ignored. The
+        // changed rules still refuse Quick Match; removing them permits it.
         dir.write_mix("ares.mix", "ares.txt", b"ares");
         let game = crate::assets::asset_manager::AssetManager::new(
             dir.path(),
@@ -1806,7 +1809,33 @@ mod tests {
         )
         .unwrap();
         changes.install_native_ini_hashes(&game, &[]);
-        assert_eq!(changes.changed_game_files(), ["rulesmd.ini", "ares.mix"]);
+        assert_eq!(changes.changed_game_files(), ["rulesmd.ini"]);
+        assert_eq!(original_game_refusal(false, &changes), Some(CHANGED_FILES));
+        std::fs::remove_file(dir.path().join("rulesmd.ini")).unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(false, &changes), None);
+        // Original mode also skips an installed LANGRULE, even without a
+        // valid Digest; it must not prevent Quick Match from queuing.
+        std::fs::write(
+            dir.path().join("langrule.ini"),
+            b"[General]\nBuildSpeed=9\n",
+        )
+        .unwrap();
+        let game = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        changes.install_native_ini_hashes(&game, &[]);
+        assert!(changes.changed_game_files().is_empty());
+        assert_eq!(original_game_refusal(false, &changes), None);
+        // A selected mod remains ineligible for Quick Match.
         assert_eq!(
             original_game_refusal(true, &changes),
             Some("VERA:QuickMatchNoMod")

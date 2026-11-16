@@ -325,6 +325,32 @@ pub(super) struct LiveService {
     /// The pending Delete Account request's attempt and name. Its answer
     /// forgets this computer's sign-in of the name, popup or not.
     deleting: Option<(u64, String)>,
+    /// VERA: the match this game watches, from its `watch_started` until it
+    /// leaves with `unwatch`.
+    watching: Option<Watching>,
+}
+
+/// VERA: a match this game watches (docs/lobby-protocol.md "Watching"). It
+/// plays no part in it: it renews its grant with `renew_watch`, sends no
+/// `finish`, and leaves with `unwatch`.
+struct Watching {
+    match_id: String,
+    /// The start `watch_started` described, until the match's map is here
+    /// and the relay is asked to let this game in.
+    start: Option<WatchStart>,
+}
+
+struct WatchStart {
+    version: String,
+    rules_digest: String,
+    host_name: String,
+    users: Vec<(String, u32)>,
+    seed: u32,
+    address: SocketAddrV4,
+    grant: DecodedRelayGrant,
+    /// The timing every player's game agreed (`timing_confirmed`).
+    pings: Vec<i32>,
+    terms: crate::app::match_runtime::session::WolStartTerms,
 }
 
 /// Where players download a newer build (README "Download and play").
@@ -663,6 +689,7 @@ impl LiveService {
             signing_in_remembered: false,
             account_attempt: 0,
             deleting: None,
+            watching: None,
         })
     }
 
@@ -718,8 +745,12 @@ impl LiveService {
     }
 
     /// The match returned to the shell: finish it, a lobby match with its
-    /// result and winners. A spawned match reports when the process exits.
+    /// result and winners. A spawned match reports when the process exits,
+    /// and a watched one is only left.
     fn match_returned(&mut self, (result, winners, decided): MatchReport, now: Instant) {
+        if self.stop_watching() {
+            return;
+        }
         if !self.spawned && self.finishing.is_none() {
             self.finish_result = result;
             self.finish_winners = winners;
@@ -902,6 +933,7 @@ impl LiveService {
         self.left_for_match = false;
         self.logging_out = None;
         self.match_id = None;
+        self.watching = None;
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
     }
@@ -913,11 +945,30 @@ impl LiveService {
         self.next_renewal_attempt = None;
     }
 
+    /// This game stops watching: `unwatch` frees its place at once, which
+    /// the lobby frees anyway once its grant runs out. False when it
+    /// watches nothing.
+    fn stop_watching(&mut self) -> bool {
+        let Some(watching) = self.watching.take() else {
+            return false;
+        };
+        self.next_renewal_attempt = None;
+        self.relay_renewal_due = None;
+        self.command("unwatch", json!({"match_id":watching.match_id}));
+        true
+    }
+
     fn poll_renewal(&mut self, now_ms: u32) {
         if self.finishing.is_some() {
             return;
         }
-        let (Some(match_id), Some(due)) = (self.match_id.as_ref(), self.relay_renewal_due) else {
+        // A watcher renews its watch, a player its place in the match.
+        let (operation, match_id) = match (&self.watching, &self.match_id) {
+            (Some(watching), _) => ("renew_watch", &watching.match_id),
+            (None, Some(match_id)) => ("renew_relay", match_id),
+            (None, None) => return,
+        };
+        let Some(due) = self.relay_renewal_due else {
             return;
         };
         // Short-lived grants renew before expiry. Retry a missing reply without
@@ -929,7 +980,7 @@ impl LiveService {
         }
         let match_id = match_id.clone();
         self.next_renewal_attempt = Some(now_ms.wrapping_add(RELAY_RENEWAL_RETRY_MS));
-        self.command("renew_relay", json!({"match_id":match_id}));
+        self.command(operation, json!({"match_id":match_id}));
     }
 
     fn send_report(&mut self, operation: &'static str, payload: Value, now: Instant) {
@@ -1172,6 +1223,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     request,
                     WolServiceRequest::JoinChannel { .. }
                         | WolServiceRequest::CreateChannel { .. }
+                        | WolServiceRequest::Watch { .. }
                         | WolServiceRequest::Connect { .. }
                 )
             {
@@ -1186,7 +1238,13 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             }
         }
         service.poll_cleanup(Instant::now());
-        if state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
+        if service.watching.is_some() {
+            // A watcher's setup is no room's: it tells the lobby nothing.
+            if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+                protocol.take_service_requests();
+            }
+        } else if state.match_state.session_mode()
+            == crate::app::match_runtime::session::SessionMode::Wol
         {
             let requests = state
                 .frontend
@@ -1247,11 +1305,19 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             fail_start(state, &tr("VERA:SettingsNotAgreed"));
         }
         if poll_relay(state, &mut service).is_err() {
-            cancel_pending(state, &mut service);
-            fail_start(state, &tr("VERA:RelayConnectionFailed"));
+            if service.watching.is_some() {
+                fail_watch(state, &mut service, "VERA:RelayConnectionFailed");
+            } else {
+                cancel_pending(state, &mut service);
+                fail_start(state, &tr("VERA:RelayConnectionFailed"));
+            }
         }
         if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
             maps::poll(state, &mut service);
+        }
+        if let Err(error) = poll_watch(state, &mut service) {
+            log::warn!("Could not watch the match: {error:#}");
+            fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
         }
         if crate::app::lan_service::has_online_relay_route(state) {
             service.poll_renewal(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
@@ -1263,6 +1329,16 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     }
     put_service(state, service);
     Some(Instant::now() + POLL_INTERVAL)
+}
+
+/// A lobby that listed matches to watch refused the room's options: it may
+/// have gone back to before watching since, so it is asked for its list
+/// again, and a list it no longer has stops the room's Watching.
+fn recheck_lobby_watches(state: &AppState, service: &LiveService, failure: http::CommandFailure) {
+    if failure == http::CommandFailure::InvalidOptions && super::lobby_watches(state) == Some(true)
+    {
+        let _ = service.requests.send(http::Request::Matches);
+    }
 }
 
 fn notice(state: &mut AppState, text: &str) {
@@ -1655,6 +1731,14 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
         }
+        WolServiceRequest::ListMatches => {
+            let _ = service.requests.send(http::Request::Matches);
+        }
+        WolServiceRequest::Watch { match_id } => {
+            if super::lobby::bind_online_request(state, service.next_request) {
+                service.command("watch", json!({"match_id":match_id}));
+            }
+        }
         WolServiceRequest::JoinChannel { channel, key } => {
             if super::lobby::bind_online_request(state, service.next_request) {
                 service.command("join", json!({"channel":channel.name,"key":key}));
@@ -1731,6 +1815,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
                         request,
                         WolServiceRequest::JoinChannel { .. }
                             | WolServiceRequest::CreateChannel { .. }
+                            | WolServiceRequest::Watch { .. }
                     )
                 });
             }
@@ -1922,6 +2007,13 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .cooperative_difficulty(),
         cooperative_campaign: cooperative_campaign(state),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
+        // Only a host's VERA room has one; a guest publishes no options.
+        watching: state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .and_then(|protocol| protocol.published_watching(super::lobby_watches(state)))
+            .map(str::to_owned),
     })
 }
 
@@ -2198,11 +2290,8 @@ fn request_setup(
             }
         }
         NetworkSetupRequest::RequestPings => service.command("ping", json!({})),
-        // VERA's room: the host's Balance is `/balance` as typed, Balance
-        // automatically the lobby's quiet `balance` command
-        // (docs/lobby-protocol.md).
-        NetworkSetupRequest::Balance { automatic: true } => service.command("balance", json!({})),
-        NetworkSetupRequest::Balance { automatic: false } => {
+        // VERA's room: the host's Balance is `/balance` as typed.
+        NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
         }
         NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new()),
@@ -2343,6 +2432,37 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 channels: list.channels.into_iter().map(Into::into).collect(),
             },
         ),
+        http::Response::Matches(matches) => {
+            let watches = matches.is_some();
+            let before = state
+                .frontend
+                .wol
+                .as_mut()
+                .and_then(|visit| visit.lobby_watches.replace(watches));
+            // A lobby that lists no matches is from before watching, or went
+            // back to it: a room whose options carried its Watching goes on
+            // without it.
+            if !watches
+                && before != Some(false)
+                && state
+                    .frontend
+                    .network_setup_protocol
+                    .as_mut()
+                    .is_some_and(|room| room.stop_watching(None))
+            {
+                notice(state, &tr("VERA:WatchingNotTaken"));
+            }
+            service_event(
+                state,
+                WolServiceEvent::Matches(
+                    matches
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                ),
+            )
+        }
         http::Response::Event(event) => {
             if apply_event(state, service, &event.kind, event.payload).is_err() {
                 log::warn!(
@@ -2357,7 +2477,6 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             "leave" => service.leave_completed(id),
             "logout" => service.logout_completed(id),
             "relay_ready" | "latency_ready" => service.report_completed(id),
-            "balance" => crate::app::shell_network_setup::balance_answered(state),
             _ => {}
         },
         http::Response::CommandFailed {
@@ -2375,6 +2494,11 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     super::lobby::online_request_failed(state, id, failure.wol_code());
                 }
             }
+            // A watch joins no room, so nothing needs leaving; a place it
+            // took anyway frees itself once its grant runs out.
+            "watch" => {
+                super::lobby::online_request_failed(state, id, failure.wol_code());
+            }
             "leave" => service.leave_failed(id, Instant::now()),
             "logout" => service.logout_failed(id, Instant::now()),
             "options"
@@ -2384,19 +2508,18 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     .is_some_and(|start| start.publication_request == Some(id)) =>
             {
                 service.start_preparation = None;
+                recheck_lobby_watches(state, service, failure);
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                // A lobby from before Teams, Balance automatically or the
-                // join queue refuses the field: the room goes on without it
-                // and publishes its options again.
+                // A lobby from before Teams or the join queue refuses the
+                // field: the room goes on without it and publishes its
+                // options again.
                 let text = crate::app::shell_network_setup::lobby_refused_option(state)
                     .unwrap_or("VERA:OnlineRequestRefused");
                 notice(state, &tr(text));
+                recheck_lobby_watches(state, service, failure);
             }
-            // The room no longer balances itself, or the lobby refused it:
-            // the next change of who plays asks again.
-            "balance" => crate::app::shell_network_setup::balance_answered(state),
             "choices"
                 if service
                     .pending_choices
@@ -2446,6 +2569,13 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             // A refused ladder lookup leaves the tables as they were; the
             // high-score sink only logs a failure (`0x007A3B30`).
             "ladder" => {}
+            // The match ended for its players: the watcher plays on to the
+            // end of the stream with the grant it holds, which outlasts the
+            // delay (docs/lobby-protocol.md "Watching").
+            "renew_watch" if failure != http::CommandFailure::Retryable => {
+                service.relay_renewal_due = None;
+            }
+            "renew_watch" | "unwatch" => {}
             "relay_ready" | "latency_ready" => {
                 if !service.report_failed(id, failure, Instant::now()) {
                     notice(state, &tr("VERA:OnlineRequestRefused"));
@@ -2618,39 +2748,61 @@ fn validate_online_identity(player_id: &str, nickname: &str) -> Result<()> {
     Ok(())
 }
 
+/// The ticket, keys and gameplay clock every relay grant carries, decoded
+/// and size-checked; whose they are is the caller's to check.
+fn decode_grant_fields(
+    ticket: &str,
+    packet_key: &str,
+    payload_key: &str,
+    ordering_certificate: &str,
+) -> Result<(DecodedRelayGrant, crate::net::udp::OrderingCertificate)> {
+    ensure!(
+        ticket.len() <= 160
+            && packet_key.len() == 43
+            && payload_key.len() == 43
+            // Base64 of a 66-byte VO1C or a 67-byte VO2C certificate.
+            && matches!(ordering_certificate.len(), 88 | 90),
+        "invalid relay grant"
+    );
+    let decode = |text: &str| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(text)
+            .map_err(|_| anyhow!("invalid relay grant"))
+    };
+    let key = |text: &str| -> Result<[u8; 32]> {
+        decode(text)?
+            .try_into()
+            .map_err(|_| anyhow!("invalid relay grant"))
+    };
+    let (ticket, key, payload_key) = (decode(ticket)?, key(packet_key)?, key(payload_key)?);
+    let ordering_certificate = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(ordering_certificate)
+        .map_err(|_| anyhow!("invalid gameplay clock"))?;
+    let certificate = crate::net::udp::OrderingCertificate::parse(&ordering_certificate)
+        .map_err(|_| anyhow!("invalid gameplay clock"))?;
+    let grant = DecodedRelayGrant {
+        ticket,
+        key,
+        payload_key,
+        ordering_certificate,
+        federation: None,
+    };
+    Ok((grant, certificate))
+}
+
 fn decode_relay_grant(
     grant: &wire::RelayGrant,
     match_id: &str,
     player_id: &str,
 ) -> Result<DecodedRelayGrant> {
-    ensure!(
-        grant.ticket.len() <= 160
-            && grant.packet_key.len() == 43
-            && grant.payload_key.len() == 43
-            // Base64 of a 66-byte VO1C or a 67-byte VO2C certificate.
-            && matches!(grant.ordering_certificate.len(), 88 | 90),
-        "invalid relay grant"
-    );
-    let ticket = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(&grant.ticket)
+    let (mut decoded, certificate) = decode_grant_fields(
+        &grant.ticket,
+        &grant.packet_key,
+        &grant.payload_key,
+        &grant.ordering_certificate,
+    )?;
+    let parsed = crate::net::udp::RelayTicket::parse(&decoded.ticket)
         .map_err(|_| anyhow!("invalid relay grant"))?;
-    let key = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(&grant.packet_key)
-        .map_err(|_| anyhow!("invalid relay grant"))?
-        .try_into()
-        .map_err(|_| anyhow!("invalid relay grant"))?;
-    let payload_key = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(&grant.payload_key)
-        .map_err(|_| anyhow!("invalid relay grant"))?
-        .try_into()
-        .map_err(|_| anyhow!("invalid relay grant"))?;
-    let parsed =
-        crate::net::udp::RelayTicket::parse(&ticket).map_err(|_| anyhow!("invalid relay grant"))?;
-    let ordering_certificate = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(&grant.ordering_certificate)
-        .map_err(|_| anyhow!("invalid gameplay clock"))?;
-    let certificate = crate::net::udp::OrderingCertificate::parse(&ordering_certificate)
-        .map_err(|_| anyhow!("invalid gameplay clock"))?;
     ensure!(
         parsed.source == grant.source_index
             && parsed.room == relay_uuid(match_id)?
@@ -2659,7 +2811,7 @@ fn decode_relay_grant(
             && certificate.sources_mask & (1 << parsed.source) != 0,
         "relay grant identity differs"
     );
-    let federation = grant
+    decoded.federation = grant
         .federation
         .as_ref()
         .map(|roster| {
@@ -2669,13 +2821,26 @@ fn decode_relay_grant(
                 .map_err(|_| anyhow!("invalid relay roster"))
         })
         .transpose()?;
-    Ok(DecodedRelayGrant {
-        ticket,
-        key,
-        payload_key,
-        ordering_certificate,
-        federation,
-    })
+    Ok(decoded)
+}
+
+/// A watcher's grant (`watch_started`, `watch_renewed`): a watch ticket
+/// for `match_id` with that match's keys and gameplay clock, no source of
+/// its own and one relay even in a federated match.
+fn decode_watch_grant(grant: &wire::WatchGrant, match_id: &str) -> Result<DecodedRelayGrant> {
+    let (decoded, certificate) = decode_grant_fields(
+        &grant.ticket,
+        &grant.packet_key,
+        &grant.payload_key,
+        &grant.ordering_certificate,
+    )?;
+    let parsed = crate::net::udp::RelayWatchTicket::parse(&decoded.ticket)
+        .map_err(|_| anyhow!("invalid watch grant"))?;
+    ensure!(
+        parsed.room == relay_uuid(match_id)? && certificate.room == parsed.room,
+        "watch grant identity differs"
+    );
+    Ok(decoded)
 }
 
 /// A spawn.ini `[Relay]` section carries the same `game_started` grant fields
@@ -2727,6 +2892,42 @@ fn apply_event(
                 return Ok(());
             }
             let grant = decode_relay_grant(&renewed.relay, &renewed.match_id, &service.player_id)?;
+            crate::app::lan_service::renew_online_relay(
+                state,
+                renewed.relay.address,
+                &grant.ticket,
+                grant.key,
+                grant.payload_key,
+            )?;
+            service.relay_granted(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
+        }
+        "watch_started" => {
+            let started: wire::WatchStarted = decode(payload)?;
+            // A grant the lobby page gave up waiting for: the player may
+            // have gone on to a room since, so the lobby frees the place.
+            if !super::lobby::awaits_watch(state) {
+                log::info!("Unwatching a match granted too late");
+                service.command("unwatch", json!({"match_id":started.match_id}));
+                return Ok(());
+            }
+            if let Err(error) = begin_watch(state, service, started) {
+                log::warn!("Could not watch the match: {error:#}");
+                fail_watch(state, service, "VERA:WatchCouldNotStart");
+            }
+        }
+        "watch_renewed" => {
+            #[derive(Deserialize)]
+            struct Renewed {
+                match_id: String,
+                relay: wire::WatchGrant,
+            }
+            let renewed: Renewed = decode(payload)?;
+            if service.watching.as_ref().map(|watching| &watching.match_id)
+                != Some(&renewed.match_id)
+            {
+                return Ok(());
+            }
+            let grant = decode_watch_grant(&renewed.relay, &renewed.match_id)?;
             crate::app::lan_service::renew_online_relay(
                 state,
                 renewed.relay.address,
@@ -3163,7 +3364,10 @@ fn enter_timed_start(
         state,
         NetworkSetupEvent::Negotiated { result: 0 },
     )?;
-    service.match_id = Some(match_id);
+    // A watched match is no match of this player's: nothing finishes it.
+    if service.watching.is_none() {
+        service.match_id = Some(match_id);
+    }
     service.pending = None;
     Ok(())
 }
@@ -3266,6 +3470,142 @@ fn begin_start(state: &mut AppState, service: &mut LiveService, start: wire::Sta
             resume_pings: None,
         },
     )
+}
+
+/// The lobby's `watch_started` (docs/lobby-protocol.md "Watching"): this
+/// game sets up the start every player's game set up, standing in the seat
+/// of the first player in source order who plays rather than observes. The
+/// match's map then arrives as a guest's would, and [`poll_watch`] asks the
+/// relay to let this game in.
+fn begin_watch(
+    state: &mut AppState,
+    service: &mut LiveService,
+    started: wire::WatchStarted,
+) -> Result<()> {
+    ensure!(
+        service.watching.is_none() && service.pending.is_none() && service.match_id.is_none(),
+        "a match is already under way"
+    );
+    let grant = decode_watch_grant(&started.relay, &started.match_id)?;
+    for (index, user) in started.users.iter().enumerate() {
+        ensure!(
+            usize::from(user.source_index) == index,
+            "noncanonical source index"
+        );
+    }
+    let hosts: Vec<_> = started
+        .users
+        .iter()
+        .filter(|user| user.flags & 1 != 0)
+        .collect();
+    ensure!(hosts.len() == 1, "start requires one admitted host");
+    let host_name = hosts[0].name.clone();
+    let humans = &started.options.launch.humans;
+    let followed = started
+        .users
+        .iter()
+        .find(|user| {
+            humans
+                .iter()
+                .any(|human| human.name.eq_ignore_ascii_case(&user.name) && !human.is_observer())
+        })
+        .ok_or_else(|| anyhow!("the match has no player to follow"))?
+        .name
+        .clone();
+    let names: Vec<_> = started.users.iter().map(|user| user.name.clone()).collect();
+    let options = started.options.into_options(&followed)?;
+    crate::app::shell_network_setup::install_watch_setup(
+        state,
+        options,
+        crate::app::match_runtime::session::NetworkRoom {
+            tournament: started.tournament != 0,
+            clan: false,
+        },
+    )?;
+    state
+        .match_state
+        .session
+        .canonicalize_online_roster(&names)?;
+    service.watching = Some(Watching {
+        match_id: started.match_id.clone(),
+        start: Some(WatchStart {
+            version: started.version,
+            rules_digest: started.rules_digest,
+            host_name,
+            users: started
+                .users
+                .into_iter()
+                .map(|user| (user.name, user.flags))
+                .collect(),
+            seed: started.seed,
+            address: started.relay.address,
+            grant,
+            pings: started.pings,
+            // The lobby lists no clan room, whose start splits its
+            // players by squad.
+            terms: crate::app::match_runtime::session::WolStartTerms {
+                tournament: started.tournament,
+                squad_lists: Default::default(),
+                quick_coop: started.quick_coop,
+            },
+        }),
+    });
+    maps::watch(service, started.match_id);
+    Ok(())
+}
+
+/// A watch whose map is here asks its relay to let this game in, as a
+/// returning player's game does, with the timing every player's game agreed.
+fn poll_watch(state: &mut AppState, service: &mut LiveService) -> Result<()> {
+    if service.pending.is_some()
+        || service
+            .watching
+            .as_ref()
+            .is_none_or(|watching| watching.start.is_none())
+    {
+        return Ok(());
+    }
+    ensure!(!service.maps.failed(), "the match's map did not arrive");
+    if local_map_status(state, service) != 1 {
+        return Ok(());
+    }
+    let watching = service.watching.as_mut().expect("checked watch");
+    let start = watching.start.take().expect("checked start");
+    let match_id = watching.match_id.clone();
+    let agreement = crate::app::shell_network_setup::agreement::local(state)?;
+    ensure!(
+        agreement.version == start.version && agreement.rules_digest == start.rules_digest,
+        "this game's version or rules differ from the match's"
+    );
+    admit_relay_start(
+        state,
+        service,
+        RelayStart {
+            match_id,
+            host_name: start.host_name,
+            users: start.users,
+            seed: start.seed,
+            address: start.address,
+            gateway: None,
+            grant: start.grant,
+            resume_pings: Some(start.pings),
+        },
+    )?;
+    // The match's own terms, not those of the lobby this game is in.
+    state.match_state.session.set_wol_start(start.terms);
+    Ok(())
+}
+
+/// A watch that could not begin: the lobby frees its place, the setup and
+/// any relay route close, and the lobby says why.
+fn fail_watch(state: &mut AppState, service: &mut LiveService, key: &str) {
+    service.stop_watching();
+    maps::cancel(state, service);
+    cancel_pending(state, service);
+    if state.frontend.network_setup_protocol.is_some() {
+        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    }
+    super::lobby::watch_failed(state, key);
 }
 
 /// One admitted relay start, from the lobby's `game_started` or an external
@@ -3524,9 +3864,14 @@ fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Result<()> {
             )?;
             pending.relay_acknowledged = true;
             let match_id = pending.match_id.clone();
+            // A returning player, or a watcher: the match is under way.
             if let Some(pings) = pending.resume_pings.take() {
                 crate::app::lan_service::mark_online_restore(state)?;
-                return enter_timed_start(state, service, match_id, &pings);
+                enter_timed_start(state, service, match_id, &pings)?;
+                if service.watching.is_some() {
+                    super::lobby::watch_admitted(state);
+                }
+                return Ok(());
             }
             commands.push(("relay_ready", json!({"match_id":match_id})));
         }
@@ -3661,6 +4006,49 @@ mod completion_tests {
         assert!(decode_relay_grant(&grant, match_id, player_id).is_err());
     }
 
+    /// A watch grant admits to the watched match's room only.
+    #[test]
+    fn a_watch_grant_is_for_its_match_only() {
+        use crate::net::udp::{
+            RelayWatchTicket,
+            test_support::{SecretKey, derive_packet_key},
+        };
+        let signing_key = SecretKey::new([9; 32]);
+        let ticket = RelayWatchTicket {
+            room: [0x11; 16],
+            expires: 300,
+            nonce: [3; 16],
+            watcher: [4; 16],
+            delay_seconds: 120,
+        }
+        .sign(&signing_key)
+        .unwrap();
+        let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let grant = wire::WatchGrant {
+            address: "127.0.0.1:5000".parse().unwrap(),
+            ticket: encode(&ticket),
+            packet_key: encode(derive_packet_key(&signing_key, &ticket).expose_for_https()),
+            payload_key: encode(&[7; 32]),
+            ordering_certificate: encode(
+                &crate::net::udp::OrderingCertificate {
+                    room: [0x11; 16],
+                    sources_mask: 3,
+                    tick_hz: 45,
+                    expires: 86400,
+                    pacing: Default::default(),
+                }
+                .sign(&signing_key)
+                .unwrap(),
+            ),
+        };
+        let watched = "11111111-1111-1111-1111-111111111111";
+        assert_eq!(
+            decode_watch_grant(&grant, watched).unwrap().payload_key,
+            [7; 32]
+        );
+        assert!(decode_watch_grant(&grant, "33333333-3333-3333-3333-333333333333").is_err());
+    }
+
     fn control_service(
         match_id: Option<&str>,
     ) -> (LiveService, Receiver<http::Request>, Sender<http::Response>) {
@@ -3703,6 +4091,7 @@ mod completion_tests {
             signing_in_remembered: false,
             account_attempt: 0,
             deleting: None,
+            watching: None,
         };
         (service, input, output)
     }

@@ -329,9 +329,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
     let flashes = rules.weapon("Vulcan2").unwrap().anim.clone();
     assert!(!flashes.is_empty());
     for flash in flashes {
-        rules
-            .bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE")
-            .unwrap();
+        rules.bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE");
     }
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);

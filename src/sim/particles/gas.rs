@@ -45,6 +45,13 @@ impl Simulation {
 
     /// ParticleSystem62E430: construct the explicit ParticleType and append.
     /// +C4 is DynamicVector capacity, not ParticleSystemType.ParticleCap.
+    ///
+    /// RESIDUAL: gamemd's gas spawners (`0x00425032`, `0x00518416`,
+    /// `0x005185AD`, `0x0074D0EF`) pass the cloud global `0x00A8ED78` to
+    /// `0x0062E430` with no null test, so once the cloud has retired the next
+    /// gas particle crashes gamemd at `0x0062E462`. VERA builds a new cloud
+    /// instead. The cloud retires only if a mod or map gives `[GasCloudSys]` a
+    /// `Lifetime=`; retail leaves it at -1, so stock play never gets here.
     pub(crate) fn spawn_gas_particle(
         &mut self,
         kind: ParticleTypeId,
@@ -156,9 +163,13 @@ pub(super) fn tick_particle(
     context: UninitContext<'_>,
 ) -> Result<(), SparkSystemTickError> {
     if sim.session.binary_frame() & 1 == 0 {
-        if sim.particle_rng().next_raw_abs_modulo(8) == 0 {
-            let x_axis = sim.particle_rng().next_raw_abs_modulo(2) == 0;
-            let delta = sim.particle_rng().next_raw_abs_modulo(3) as i32 - 1;
+        // 0x0062BD93..0x0062BE05: each draw takes its absolute value before
+        // the bit test or the IDIV, so a raw i32::MIN gives a delta of -3.
+        let mut draw =
+            |divisor| crate::sim::rng::abs_before_modulo(sim.particle_rng().next_u32(), divisor);
+        if draw(8) == 0 {
+            let x_axis = draw(2) == 0;
+            let delta = draw(3) - 1;
             if x_axis {
                 p.drift_x = p.drift_x.wrapping_add(delta);
             } else {
@@ -236,10 +247,14 @@ fn apply_damage(
     context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
+    // RESIDUAL: a Damage particle with no Warhead= passes a null warhead
+    // (0x0062C2ED); this skips the call. Every retail Gas type names one.
     let Some(warhead) = pt.warhead.as_deref() else {
         return;
     };
     let warhead = sim.interner.intern(warhead);
+    // GetCellAt (0x00565738..0x00565754) truncates toward zero; the shift
+    // differs only at a negative coordinate, which no gas particle reaches.
     let cell = ((p.coords.x >> 8) as u16, (p.coords.y >> 8) as u16);
     let ares = rules.ares_form();
     if ares {
@@ -315,6 +330,10 @@ fn apply_damage(
                     );
                 }
                 CellObjectMember::Terrain(id) => {
+                    // RESIDUAL: under Ares, hook 0x62C2ED (1005CFE0) also
+                    // passes the attacker to a tree, which Ares Culling (hook
+                    // 0x5F5456) reads; the terrain receiver takes none, so a
+                    // Culling= Wood= gas warhead never culls one. Mod data only.
                     sim.commit_direct_terrain_damage_receiver(
                         rules,
                         context.registry(),
@@ -328,7 +347,8 @@ fn apply_damage(
                             warhead_ref: warhead,
                             near_center_ic_isolation_eligible: false,
                         },
-                        true,
+                        // 0x0062C2DC..0x0062C300 push IgnoreDefenses = 0.
+                        false,
                         context.effects(),
                     );
                 }
@@ -460,7 +480,8 @@ fn damage_in_range(
                         warhead_ref: warhead,
                         near_center_ic_isolation_eligible: false,
                     },
-                    true,
+                    // 100297C0's ReceiveDamage (vt+0x16C) passes 0 too.
+                    false,
                     context.effects(),
                 );
             }

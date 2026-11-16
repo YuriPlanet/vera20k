@@ -1671,6 +1671,23 @@ impl MapLoadInitial {
         &self.map_data
     }
 
+    /// VERA: the map with a mod's map additions (`app::mod_additions`), for a
+    /// match they reach (`mod_additions::reach`): after a network room's
+    /// checks of the map file, before anything reads the map's rules, AI or
+    /// triggers. A generated map read its rules while it was made and plays
+    /// without them.
+    pub(crate) fn with_mod_additions(
+        mut self,
+        additions: &crate::app::mod_additions::MapAdditions,
+    ) -> Result<Self> {
+        if matches!(self.map_source, LoadedMapSource::Generated { .. }) {
+            return Ok(self);
+        }
+        log::info!("The mod adds to the map: {}", additions.names().join(", "));
+        self.map_data = self.map_data.with_additions(additions.files())?;
+        Ok(self)
+    }
+
     /// Physical cached .SED names must not become shared Scenario identity.
     /// ReadScenario684620 regenerates from the supplied path, while the
     /// accepted network record remains the common logical seed name.
@@ -2209,14 +2226,12 @@ impl MapLoadInitial {
             &overlay_registry,
             resolved_terrain.tile_animations(),
         );
-        rules
-            .bind_scheduler_anim_assets(
-                &scheduler_roots,
-                asset_manager,
-                theater_ext,
-                &map_data.header.theater,
-            )
-            .expect("retail scheduler animation closure");
+        rules.bind_scheduler_anim_assets(
+            &scheduler_roots,
+            asset_manager,
+            theater_ext,
+            &map_data.header.theater,
+        );
         // Every other AnimClass producer and the building animations: tolerant
         // pass, after the strict one, which rewrites the scheduler-owned set
         // wholesale.
@@ -3415,8 +3430,8 @@ fn load_map_first_step(
                             let variant_table_draws = variant_selector.raw_draw_count();
                             drop(variant_draw);
                             // Bind the complete scheduler closure only after theater Tile##Anim rows
-                            // have resolved, but before any atlas or AnimClass construction. Missing
-                            // tile art is a load error rather than a silently invisible map feature.
+                            // have resolved, but before any atlas or AnimClass construction. A tile
+                            // name no AnimType holds becomes an unread type that draws nothing.
                             let roots = scheduler_anim_roots(
                                 &rules,
                                 &overlay_registry,

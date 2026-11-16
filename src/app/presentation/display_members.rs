@@ -170,6 +170,17 @@ impl DisplayMembers {
             };
             effects.push(EffectMember { id, kind });
         }
+        // The presentation anims hold no Display slot; they follow every
+        // member, as their places in the draw order do
+        // (`NativeDisplayOrder::from_world`).
+        for (id, _) in sim.presentation_anims() {
+            if let Some(anim) = sim.anim(id) {
+                effects.push(EffectMember {
+                    id,
+                    kind: EffectKind::Anim(anim_screen_point(frame, anim, id)),
+                });
+            }
+        }
         Self {
             objects,
             effects,

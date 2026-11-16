@@ -8369,7 +8369,7 @@ fn repro_group_move_of_eight_vehicles_to_one_cell() {
     // (a) What the group-destination distributor rewrites each command to.
     // Same &self read the tick performs, run before any tick mutates state.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     let assigned: Vec<(u64, (u16, u16))> = staged
         .iter()
         .filter_map(|c| match &c.payload {
@@ -8522,7 +8522,7 @@ fn repro_group_move_short_range_traces_every_tick() {
         .collect();
 
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     println!("--- repro_group_move_short_range_traces_every_tick ---");
     println!("(a) distributor assignments:");
     for c in &staged {
@@ -8653,7 +8653,7 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // Different targets => different formation keys => runs of length 1 =>
     // the group-destination distributor cannot touch either command.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     println!("--- repro_two_moving_vehicles_pass_through_each_other ---");
     for c in &staged {
         if let Command::Move {
@@ -9250,6 +9250,7 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
             glam::IVec3::new(1280, 2560, 0),
             true,
             &mut deferred,
+            &rules,
         )
         .expect("in domain");
     }
@@ -9544,7 +9545,7 @@ fn group_spread(sim: &Simulation, rules: &RuleSet, ids: &[u64]) -> Vec<(u16, u16
         .iter()
         .map(|&id| cmd_envelope(sim, "Americans", 1, move_command(id, (20, 20))))
         .collect::<Vec<_>>();
-    sim.adjust_staged_megamission_destinations(&mut staged, rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, rules, None, None);
     staged
         .iter()
         .map(|command| match command.payload {
@@ -9738,6 +9739,126 @@ fn a_captured_war_factory_takes_its_contact_along() {
     }
 }
 
+/// VoxelAnim ctor `0x00749864..0x007498BD` builds the type's AttachedSystem
+/// at the input location, owned by the anim; Smoke `0x0062ED49..0x0062EDB5`
+/// then follows that non-Building Object owner plus the constructor's offset.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn voxel_anim_builds_its_attached_system_and_smoke_follows_the_anim() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n\
+         [Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(17);
+    let mut kind = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("DEBRIS");
+    kind.attached_system = Some("Sys".to_owned());
+    let origin = IVec3::new(1280, 2560, 0);
+    sim.emit_debris_voxel(
+        crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
+        &kind,
+        None,
+        origin,
+        true,
+        &mut Vec::new(),
+        &rules,
+    )
+    .unwrap();
+    let id = sim.voxel_anims().ids()[0];
+    let system = sim.voxel_anims().get(id).unwrap().attached_system();
+    let system = system.expect("the constructor's tail builds AttachedSystem");
+    let sys = sim.particle_systems().get(system).unwrap();
+    assert_eq!(sys.owner_entity(), Some(id));
+    assert_eq!(sys.coords(), origin);
+    let offset = sys.offset();
+
+    let moved = origin + IVec3::new(512, -256, 300);
+    sim.substrate
+        .voxel_anims
+        .get_mut(id)
+        .unwrap()
+        .set_location_for_test(moved);
+    crate::sim::particles::system_ai::tick_particle_system(
+        &mut sim,
+        &rules,
+        system,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+    assert_eq!(
+        sim.particle_systems().get(system).unwrap().coords(),
+        moved + offset
+    );
+}
+
+/// A live DEBRIS VoxelAnim whose type names a Smoke `AttachedSystem=`, built
+/// through the constructor: the world, its rules, the anim and its system.
+#[cfg(not(feature = "ares"))]
+fn voxel_anim_with_attached_smoke() -> (Simulation, RuleSet, u64, u64) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[VoxelAnims]\n0=DEBRIS\n\
+         [Smk]\nBehavesLike=Smoke\nMaxEC=10\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n\
+         [DEBRIS]\nAttachedSystem=Sys\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(17);
+    let kind = rules.voxel_anim_type_id_by_name("DEBRIS").unwrap();
+    sim.emit_debris_voxel(
+        kind,
+        rules.voxel_anim_type(kind),
+        None,
+        IVec3::new(1280, 2560, 0),
+        true,
+        &mut Vec::new(),
+        &rules,
+    )
+    .unwrap();
+    let id = sim.voxel_anims().ids()[0];
+    let system = sim
+        .voxel_anims()
+        .get(id)
+        .unwrap()
+        .attached_system()
+        .unwrap();
+    (sim, rules, id, system)
+}
+
+/// The anim's expiry (`0x00749A11`) takes the generic arm of
+/// `DispatchPointerExpiredCleanup @ 0x007258D0` (`0x00725925`), so its
+/// system's PointerExpired (`0x0062FE90`) drops the owner and stops spawning.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn a_dying_voxel_anim_ends_its_attached_system() {
+    let (mut sim, rules, id, system) = voxel_anim_with_attached_smoke();
+    sim.uninit_with_rules(id, &rules);
+    let sys = sim.particle_systems().get(system).unwrap();
+    assert_eq!(sys.owner_entity(), None);
+    assert!(sys.done_spawning());
+}
+
+/// A save holding a live anim's AttachedSystem loads: the system's owner is
+/// in the VoxelAnim store, which Smoke's owner lookup resolves.
+#[cfg(not(feature = "ares"))]
+#[test]
+fn a_voxel_anims_attached_system_survives_a_save() {
+    let (sim, _rules, id, system) = voxel_anim_with_attached_smoke();
+    let bytes =
+        crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "attached system", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
+        .expect("the anim owner resolves")
+        .sim;
+    restored
+        .restore_after_snapshot_load()
+        .expect("restore the anim and its system");
+    assert_eq!(
+        restored
+            .particle_systems()
+            .get(system)
+            .unwrap()
+            .owner_entity(),
+        Some(id)
+    );
+}
+
 /// Callback-disabled damage fixtures may deliver after another constructor;
 /// they retain the original constructor IDs and spend no second RNG/ID draws.
 #[test]
@@ -9746,8 +9867,16 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     let kind = crate::rules::voxel_anim_type::VoxelAnimType::with_defaults("DEBRIS");
     let type_id = crate::rules::voxel_anim_type::VoxelAnimTypeId(0);
     let mut packets = Vec::new();
-    sim.emit_debris_voxel(type_id, &kind, None, glam::IVec3::ZERO, false, &mut packets)
-        .unwrap();
+    sim.emit_debris_voxel(
+        type_id,
+        &kind,
+        None,
+        glam::IVec3::ZERO,
+        false,
+        &mut packets,
+        &RuleSet::empty_for_test(),
+    )
+    .unwrap();
     assert_eq!(packets.len(), 1);
     let id = packets[0].object.stable_id();
     let native_id = packets[0].object.native_unique_id();
@@ -9759,7 +9888,7 @@ fn deferred_voxel_delivery_keeps_constructor_identity_without_spending_again() {
     let cursor = sim.native_identity_cursor();
     let rng = sim.scenario_rng.logical_state();
     let stable_cursor = sim.next_stable_object_id();
-    sim.admit_death_debris(packets);
+    sim.admit_death_debris(packets, &RuleSet::empty_for_test());
     assert_eq!(
         sim.voxel_anims().get(id).unwrap().native_unique_id(),
         native_id

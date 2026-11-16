@@ -832,8 +832,10 @@ impl App {
     /// network match also records the players who won it.
     pub(crate) fn record_match_result(state: &mut AppState, result: ExternalMatchResult) {
         use crate::app::match_runtime::session::SessionMode;
+        // A watcher has no result: the followed player's is not its own.
         if (!state.frontend.external_launch && state.match_state.session_mode() != SessionMode::Wol)
             || state.frontend.match_result.is_some()
+            || crate::app::match_runtime::watching::active(state)
         {
             return;
         }

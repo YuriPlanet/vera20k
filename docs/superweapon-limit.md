@@ -2,9 +2,9 @@
 
 Each superweapon can be built up to the limit you choose, from 2 to 20, and each building charges
 its own shot. With a limit of ten, ten Nuclear Missile Silos charge ten missiles, each on its own
-timer. It is off by default. Move **Options → Game Options → Superweapon Limit** off its left end
-to switch it on for the next game. A LAN or online room plays its host's setting, which the host
-can change on the room's Game Options slider. A save keeps
+timer. It is off by default. On the skirmish screen, press **Game Options** and move **Superweapon
+Limit** off its left end; every later game plays it. A LAN or online room plays its host's setting,
+which the host can change on the room's Game Options slider. A save keeps
 the rules it was started with. Quick Match plays the original game, without it. Like Terrain
 Deformation, the setting also reaches campaign missions.
 
@@ -22,9 +22,8 @@ or `SuperWeapon2=` and a `BuildLimit=` of at least 1 and below the limit; `Build
 limit. `[VERA] SuperweaponLimit=` in VERA.INI keeps it, 0 for off. In the retail rules those are the six
 superweapons: the Nuclear Missile Silo, Iron Curtain, Weather Control Device, Chronosphere,
 Psychic Dominator and Genetic Mutator. Battle Labs, radars and other buildings that give a
-superweapon have no limit, so they keep the house's one charge. A mod, a map or your
-[personal rules](personal-rules.md) (`VERARULES.INI`) can set the keys as well, with any limit,
-and a map can switch them off for its own game:
+superweapon have no limit, so they keep the house's one charge. A mod or a map can set the
+keys as well, with any limit, and a map can switch them off for its own game:
 
 ```ini
 [NAMISL]

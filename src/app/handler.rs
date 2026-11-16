@@ -576,6 +576,9 @@ impl ApplicationHandler for App {
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
             self.mod_switch.as_ref(),
+            self.spawn_request
+                .as_ref()
+                .and_then(|request| request.ares_setting),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -753,17 +756,35 @@ impl ApplicationHandler for App {
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
         // Playback has presentation-only input. Exit is local and never
-        // schedules EventClass EXIT or changes the recorded simulation.
-        if state.match_state.match_diagnostics.is_replay_playback() {
+        // schedules EventClass EXIT or changes the recorded simulation. A
+        // watcher's is presentation-only too: it gives no orders, Tab follows
+        // the next player and Escape leaves the match.
+        let replay = state.match_state.match_diagnostics.is_replay_playback();
+        let watching = !replay
+            && state.frontend.screen == GameScreen::InGame
+            && crate::app::match_runtime::watching::active(state);
+        if replay || watching {
             match &event {
-                WindowEvent::CloseRequested => {
+                WindowEvent::CloseRequested if replay => {
                     event_loop.exit();
                     return;
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if code == KeyCode::Escape && event.state.is_pressed() {
-                            event_loop.exit();
+                        let pressed = event.state.is_pressed();
+                        if replay && code == KeyCode::Escape {
+                            if pressed {
+                                event_loop.exit();
+                            }
+                        } else if watching
+                            && crate::app::match_runtime::watching::key(
+                                state,
+                                code,
+                                pressed,
+                                event.repeat,
+                            )
+                        {
+                            // Escape and Tab are the watcher's own.
                         } else if matches!(
                             code,
                             KeyCode::ArrowLeft
@@ -771,7 +792,7 @@ impl ApplicationHandler for App {
                                 | KeyCode::ArrowUp
                                 | KeyCode::ArrowDown
                         ) {
-                            if event.state.is_pressed() {
+                            if pressed {
                                 state.match_state.input.keys_held.insert(code);
                             } else {
                                 state.match_state.input.keys_held.remove(&code);
@@ -794,7 +815,9 @@ impl ApplicationHandler for App {
                     crate::app::input::camera::apply_zoom(state, lines);
                     return;
                 }
-                WindowEvent::Resized(_)
+                // A watcher's window closes as a player's does.
+                WindowEvent::CloseRequested
+                | WindowEvent::Resized(_)
                 | WindowEvent::ScaleFactorChanged { .. }
                 | WindowEvent::Focused(_)
                 | WindowEvent::Occluded(_)
@@ -1348,6 +1371,24 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // VERA's Game Options box takes the keys over the page;
+                // Escape and Enter close it, as they close the room's.
+                if screen == ScreenPage::Skirmish
+                    && state.frontend.skirmish_shell_state.game_options.is_some()
+                {
+                    if event.state.is_pressed()
+                        && !event.repeat
+                        && matches!(
+                            event.physical_key,
+                            PhysicalKey::Code(
+                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                            )
+                        )
+                    {
+                        Self::close_skirmish_game_options(state);
+                    }
+                    return;
+                }
                 if let PhysicalKey::Code(code) = event.physical_key {
                     // ESC always reaches the handler when in-game (even when paused)
                     // so the player can toggle pause regardless of diagnostic GUI focus.
@@ -1893,6 +1934,17 @@ impl ApplicationHandler for App {
                 {
                     return;
                 }
+                if screen == ScreenPage::NetworkSetup
+                    && state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    && crate::app::input::multiplayer_setup::wheel(state, lines)
+                {
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 if screen == ScreenPage::Mods {
                     Self::handle_mods_wheel(state, lines);
                     return;
@@ -2062,6 +2114,7 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_mods_scroll(state),
+                Self::poll_mod_files(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.

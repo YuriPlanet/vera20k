@@ -31,6 +31,10 @@
 //!   6. game mode 5 with flag 0x00A8ED91: `TMCJ4F.INI` Process (0x00687B76).
 //! - ART, SOUNDMD, EVAMD, THEMEMD are never layered; only ARTMD enters g_ArtINI
 //!   (0x0052D053, reload 0x00679EE0). A later `Image=` still redirects a type's art.
+//! - VERA's Original/No mod selection deliberately skips LANGRULE, including
+//!   a copy in a language archive, so installations share the same original
+//!   rules. Selected mods retain the native optional layer and Digest check
+//!   (`retail_sources::RetailRulesSources::select`).
 //!
 //! ### Parser: `INIClass::LoadFromStraw` 0x00525A60
 //! - Bytes, not text. LF ends a line, CR is dropped anywhere, 511 bytes are kept and the
@@ -127,6 +131,7 @@ pub mod insignia_type;
 #[cfg(feature = "phobos")]
 pub mod invulnerability_rules;
 pub mod phobos_parallel_ai_queues;
+pub mod phobos_switch;
 #[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
@@ -159,7 +164,11 @@ pub mod phobos_shields;
 /// at build time: Rules loading before that answer exists, launch and network
 /// identity, and the `cfg(feature = "ares")` sites not yet converted.
 pub const ARES_BUILD: bool = cfg!(feature = "ares");
-/// Whether this binary includes the supported Phobos extensions. INIs cannot change it.
+/// Whether this binary compiles all the supported Phobos extensions. Whether
+/// Phobos plays in a game is the per-game switch [`ruleset::RuleSet::phobos`],
+/// decided from the game's data by [`phobos_switch`], which a build with this
+/// feature turns on in every game; this gates the `cfg(feature = "phobos")`
+/// sites not yet moved to that switch, and launch and network identity.
 pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
 /// Whether this binary includes supported NPatch behavior. INIs cannot change it.
 pub const NPATCH_ENABLED: bool = cfg!(feature = "npatch");

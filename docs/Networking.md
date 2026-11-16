@@ -28,18 +28,30 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 Whether Ares plays in a match is decided from that same data: the rules, mode
-and map, and whether the game ships `ares.mix`, which the rules agreement
-covers. Every build mounts `ares.mix` when the game or its mod holds it, and
-reads such a game's INIs and rules the Ares way; without it Ares plays only
+and map, whether the selected mod loads `ares.mix`, and the player's
+[Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
+**No mod** selected and the setting on Auto, the installation's `ares.mix` is ignored and
+ordinary builds keep the original archive order and INI readers. A selected mod
+can load its own `ares.mix` or use the installation's copy; that game's INIs and
+rules are read the Ares way. Without it Ares plays only
 from Ares keys in the rules, mode or map, read the stock way ([Ares](ares.md)).
-A game with `ares.mix` adds one byte to the rules digest, so its digest differs
+A game loading `ares.mix` adds one byte to the rules digest, so its digest differs
 from the same files read without it; a game without it adds nothing.
-Players on one version reach the same answer; a game from before this decides
-differently, is another version and is refused by the build check first, and a
-rollback returns everyone on that build to the earlier reading.
+Players on one build reach the same answer. Older builds, including those that
+load an installed `ares.mix` with No mod selected, are refused by the existing
+build check. A rollback restores that build's earlier selection and INI reading.
+Whether Phobos plays is decided from the same rules, mode and map
+([the Phobos switch](phobos.md#the-phobos-switch)) and adds nothing to the
+digest, so players on one build reach the same answer; older builds are refused
+by the build check.
 
 The rules agreement is one digest of the process's rules sources
-(`ProcessAssets::multiplayer_rules_digest`) and of each theater's INI as the theater
+(`ProcessAssets::multiplayer_rules_digest`). With **No mod** selected, the
+optional `langrule.ini` is neither loaded nor included in agreement or changed-file
+checks, even when it comes from a language archive. Selected mods retain that
+layer and compare it. Translated `.csf` text still loads. Mixed builds are refused
+by the existing build check; a rollback restores that build's LANGRULE selection.
+The agreement also covers each theater's INI as the theater
 loader reads it (`map::theater::theater_ini_names`: the file
 [`theater_suffix`](ini-roots.md) selects, else the stock name such as `snowmd.ini`),
 whose tilesets decide each cell's land and height. It also covers the theater tiles the
@@ -48,17 +60,20 @@ content, each tile file a theater reads whose bytes differ from the ones a retai
 reads, variants included, since map loading picks each cell's variant by how many its tile
 has. A theater MIX that takes a retail one's place counts even if it does not open. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
-folder but `mod.ini`, by path and content, so players whose copies of a mod differ are
-refused as on any rules difference. The files are read once, starting when the player
+folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
+refused as on any rules difference. A mod that adds INI files to every map
+([modding guide](modding.md#add-to-every-map), `app::mod_additions`) also adds those files
+as the game read them for its matches, once per start, so a player whose file changed
+after that is refused rather than playing different maps; older builds are refused by
+the build check, and a rollback plays them as an ordinary mod's files. The files are read once, starting when the player
 opens Network or Internet, and nothing more is exchanged. A game from before the mod
 files, the theater INIs or their tiles were compared is another version and is
 refused by the build check first; a rollback returns to the earlier digest for everyone
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off: a mod in use; `[ini]` roots or a `theater_suffix` in config.toml other than
-YR's; `ares.mix` in the
-game folder, which makes it an Ares game; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
-LANGRULE, the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
+YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
+the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, another INI is compared with the retail archives' own entry, else
 `ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
@@ -71,19 +86,17 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
-Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
-`ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
-`/translate off` stops it. The online lobby's Chat Translation page picks the same
-languages or Off, and sets where lines are translated (lobby, game rooms, matches,
-private messages), whether the source language is named, whether languages sharing the
-reader's alphabet are translated, and which languages the player already reads, all
-saved as `[VERA] Translate*=`. Choosing a language other than English starts with
-shared-alphabet lines translated too. Received chat in another script is sent to the lobby's
-translation service: for a Latin-script language a line with any letter outside it, for
-any other language a line with none of its letters. The original stays; its translation
-follows as a line from the same sender marked `»`, starting with a bracketed note in the
-reader's language that names the source language, unless it only repeats the original
-or the service says it was already in a language the player reads.
+The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
+languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
+by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other
+players' chat in the lobby, game rooms, private messages and, with the box ticked,
+matches is sent to the lobby's translation service when it needs it: for a Latin-script
+language a line with any letter outside it, for any other language a line with none of
+its letters. A reader whose script another listed language shares, English readers
+excepted, also sends the lines in that script, since they may be another language. The
+original stays; its translation follows as a line from the same sender marked `»`,
+without the service's bracketed note naming the source language, unless it only repeats
+the original or the service says it was already in the chosen language.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
@@ -133,16 +146,20 @@ replay and federation are unchanged. Measured traffic is in
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
-button, or type `/pause` or `/resume` as a whole line in match chat. Such a line is
-not sent as chat; in a match without synchronized pause it answers that pausing is
-not available. A pause marker follows the relay's last committed frame; clients finish
-that same frame and stop. Resume uses a separate authenticated control, so it
-works while simulation ticks are stopped. Both markers use the normal ordered
-history and replay recovery. Connections, chat and ticket renewal keep running;
-accepted gameplay inputs wait for their assigned frames after resume. Opening
-Options alone remains local. After a resume nobody can pause again for 30
-seconds. Confirming Leave resumes as needed until the queued
-EXIT executes. Shared paused time is excluded from the score-screen duration.
+button, or type `/pause` or `/resume` as a whole line in match chat. Such a line
+goes out as chat to its recipients like any other, so they read who asked; in a
+match without synchronized pause it answers that pausing is not available.
+A pause marker follows the relay's last committed frame; clients finish that
+same frame and stop. Resume uses a separate authenticated control, so it works
+while simulation ticks are stopped. Both markers use the normal ordered
+history and replay recovery, and each names the player who asked: once a
+client's world reaches one, the other players and watchers read "<name> paused
+the game." or "<name> resumed the game." A rejoining game shows only those its
+world reaches after catching up. Connections, chat and ticket renewal keep
+running; accepted gameplay inputs wait for their assigned frames after resume.
+Opening Options alone remains local. After a resume nobody can pause again for
+30 seconds. Confirming Leave resumes as needed until the queued EXIT executes.
+Shared paused time is excluded from the score-screen duration.
 This feature requires updated clients and relay;
 it is unavailable in a mixed-version room or a direct LAN match.
 
@@ -185,7 +202,14 @@ The relay keeps a bounded RAM cache and the full match journal on disk. The
 journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
-clients continue. After ten minutes of silence the relay removes the player
+clients continue. Once the relay has heard nothing from a player of a started
+match for 10 seconds, the other players read "<name> is not responding.", and
+"<name> is back." when it hears them again; watchers read neither. The relay
+names silent players in each player's status (relay README "Silence"). A
+released game ignores the names. An older relay names nobody, so a game on it
+shows no such line; in a match spread over several relays, players homed on an
+older relay are never named.
+After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:
 its place is gone, and a game whose ticket lapsed gets no answer that says so.
@@ -221,8 +245,8 @@ accepted launch and replays the production frame transaction without connecting
 to the lobby. Startup version, rules, map bytes, seed and initial state must match;
 recorded state hashes are checked during playback. Generated maps, campaigns and
 restored mid-match segments currently lack standalone replay startup; a skirmish or
-network match that cannot be recorded says why in the log. `--replay-verify` loads no personal rules (`VERARULES.INI`)
-and no mod, so it refuses a match played with either as a rules mismatch.
+network match that cannot be recorded says why in the log. `--replay-verify` loads no mod,
+so it refuses a match played with one as a rules mismatch.
 Replay version 4 regenerates shared planning events through the simulation at
 their original frame phases. Earlier JSON logs remain readable for inspection;
 playback requires the current version to avoid executing old internal events twice.
@@ -264,28 +288,80 @@ minutes: their joins get the VERA-only denial reason 9, shown as the join ban.
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
 `teams` beside VERA's room options in the extended options. With it set, the host
-keeps every seated player on one of the room's teams and refuses a guest's pick of a
-full team, so guests only show what the host sends. A LAN guest from before Teams
+keeps every seated player on one of the room's teams, so guests only show what the host
+sends. A LAN guest from before Teams
 ignores the field and is refused at the build check. Online, an older guest cannot
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
 again without it. A room has 2 to 15 teams, named A to O.
 
-Online, the host's Balance automatically travels the same way, as
-`launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every
-game in the room closes its seated players' Team lists and team headers' Join (a
-spectator's Join still asks to play, and the balance places it), and the host's game asks
-the lobby to balance 5 seconds after who plays or the Teams count last changed, holding
-its Start Game until the answer comes. An older guest cannot read those options either,
-as with Teams. A lobby from before Balance automatically refuses the field; the host's
-game turns it off, says so and sends its options again, and a rollback past Teams then
-turns Teams Off too. The lobby decides each player's team, as for `/balance`; the host's
-game applies it.
+In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
+comes in watching while a spectator seat is open and takes a seat with a team header's
+Join; a guest who picks no team watches instead, and with no spectator seat open the
+host seats a newcomer on the team with the fewest players. With Teams Off the room is
+one box without a caption, free-for-all, and seats newcomers as gamemd does: turning
+Teams Off takes every player and AI off their team, the Team lists close and the host
+keeps a guest's team pick off a team. Nothing new travels: guests send their picks as before, and a released guest, whose
+team headers have Join too, takes a seat the same way. An older host still seats a
+newcomer on no team; a newer guest lists that player under a No team header without
+Join. A rollback seats newcomers as before.
+
+With Teams set the map does not limit who plays, only the room's Max players does, so no
+team is ever full: a team's people share its bases where the map runs out of starts
+(`MatchSession::network_shares_bases`). People and AI past the map's seats sit in the
+room's spare rows. A VERA room's LAN options carry all thirty AI rows on any map, where
+gamemd's text carries eight for a map of up to eight players; a guest of another build is
+refused at the build check. At Start Game, Team Starts gives
+each team a start and the spare starts to the teams with the most players for each; a
+team's people on one start share its House, as players who pick the same start do, and
+each AI there starts in its own House beside them, its units on the cells nearby
+(`SkirmishLaunchSession::shares_bases`). The map then needs a start for each team.
+Turning Teams Off, or picking a map or mode with fewer seats, makes the people past the
+seats watch rather than leave the room, and the AI there leave. Nothing new travels: the
+host's options carry each player's row and start as before, and a room of mixed versions
+cannot start. Online the lobby checks the map's starts against the bases the room needs
+([lobby protocol](lobby-protocol.md)). A lobby from before that refuses the host's options
+once more people play than the map has seats; the host's game then turns Teams Off, says
+so and sends its options again, and the people past the seats watch. A rollback seats no
+more players than the map has starts.
+
+AI play in a VERA room while people watch, unlike in gamemd's room (`0x5EC9F0`'s
+TXT_NO_AI_WITH_OBSERVER, and WOL's TXT_NO_AI_OBSERVATION at Start Game): the host keeps
+the spectator seat open with AI in the room, and a guest may watch beside them. Nothing new
+travels. A lobby from before this refuses to start such a game, and the host's game says
+the match could not start. An older host keeps gamemd's rule, and a rollback keeps it
+again.
+
+A VERA room's Max players counts everyone in it, players and spectators, at most its
+thirty rows less its AI. Its host sets it at Create Game and changes it in the room with
+the team bar's Room size, which the host's game advertises again to the lobby; a lower
+size sends no one away, it only keeps newcomers out. The host may watch too, with the
+Spectators' Watch or by dragging its own row there, and plays again with a team's Join,
+as a guest would; someone else, or two or more AI, must play for the match to start.
+Nothing new travels. An older host keeps its Create Game Max players and always plays,
+and a rollback does again.
+
+Everyone in a VERA room may watch while two or more AI play, a match gamemd's room never
+starts. It runs until one AI, or one team of them, is left: no spectator's defeat
+decides it, and the AI left do not band together when one falls (`[AI] Paranoid`). Its
+spectators look on from one start, which the first AI then takes, so the map needs a
+start for each AI. The lobby places its relay by the people watching and does not list
+it to watch, as a watcher's game follows a player. Nothing new travels. A lobby from
+before this refuses to start it, and the host's game says the match could not start; an
+older game keeps its rule that someone plays, and a rollback does again.
+
+Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
+`launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
+plays or the Teams count changed. Current games neither offer it nor send it. In a room
+whose older host has it on, a current guest still closes its seated players' Team lists
+and team headers' Join (a spectator's Join still asks to play, and that host's balance
+places it), as that host's own game does. A released guest in a current host's room
+sees the setting off; the host's Balance button still evens the teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
-is free, with a team header's Join Queue or as a newcomer who prefers to play, joins the
-end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
+is free, with a team header's Join Queue or, in a room without teams, as a newcomer who
+prefers to play, joins the end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
 game owns the queue as it owns seating: when a seat frees (a player leaves or starts
 watching, or the host adds a slot or removes an AI), it seats the first spectator in the
 queue as its own Seat would and publishes its options. The queue's order travels online
@@ -295,28 +371,51 @@ waiting player's own game says its place and when a seat came free. As with Team
 older guest is refused at LAN's build check and online cannot read the options while
 anyone waits. A lobby from before the queue refuses the field; the host's game stops
 queueing in that room, says so and sends its options again, and its spectators keep
-watching. A rollback past Balance automatically and Teams then turns those off too.
+watching. A rollback past Teams then turns Teams Off too.
+
+A room's Create Random Map is Skirmish's whole generator: up to 30 players, the sizes
+past Very Large, the added landform and theaters, Advanced, Fair Starts, Extras, Presets
+and Export Map. A map for more than eight players stages one `W` slot for each start
+(`ScenarioStartStaging::to_w_text`), so its record runs past the native 37 numbers and
+512 bytes, up to 2048 (`maps::checked_staging`); it travels as any random map's does, on
+LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
+The generated rules digest covers VERA's town catalogue and `[Extras]`, which each game
+resolves from its own files, so players whose games would build different towns are
+refused at Start as on any rules difference. A preview larger than the 512 KiB preview
+transfer, as Enormous and Colossal maps make, is written at half size until it fits.
+A LAN guest of another build is refused at the build check. Online, an older guest
+cannot read options carrying such a map and says the update was invalid, in a room that
+cannot start, since its players' versions differ. A lobby from before these maps refuses
+options carrying one with 400 `invalid_options`; the host's game says so and keeps its
+other options until the host picks a smaller map. A rollback of the game
+returns rooms to the eight-player dialog; one of the lobby refuses these maps again.
+
+The host of a VERA room can also set a seated guest's side, colour, start and team from
+the guest's row. The host's game checks the change as it checks the guest's own pick and
+sends it in its options, as `/balance`'s moves travel, so nothing new goes over the wire:
+a released guest shows it as it shows any row the host sends, and an older host just
+doesn't offer it. A guest's own pick sent at the same moment carries its whole row and
+wins on the host. Online, a game sends its room commands to the lobby one at a time; a
+newer options, map-status or ready command replaces an older one of the same kind that
+is still waiting, and goes out after whatever was queued before it.
 
 ### Room rules
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
-Terrain Deformation box and [Superweapon Limit](superweapon-limit.md) and the host's
-`VERARULES.INI` when it changes anything and holds at most 8 KB. The box and the limit
-open as the host's Options have them and the host can change them in Game Options; the
-file has no control. They travel with the host's options, online as
+Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
+host's skirmish Game Options have them and the host can change them in the room's Game Options. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `host_rules` beside VERA's room options. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
-Personal rules compose over the root and LANGRULE each scenario reads, never over the
+The switches compose over the root each scenario reads, never over the
 cold start or the shell's Country reads, so every player's one rules registry is the
 same whichever rules a room plays. Offline games play the player's own, a network
 replay the room's it recorded. A Quick Match room has none: the guest's game drops
 any its host sends, and the lobby refuses them there. A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
 `ExpectedRulesDigest` compares. So the room's door, the native rules hash (LAN's join
-check, online the room's `ex_info`), leaves personal rules out, while the rules
-digest compares the ones each game plays, with their `OverrideMapRules=`. A file
-that does not read, or is longer than 8 KB, is refused, never played. When the door
+check, online the room's `ex_info`), leaves the switches out, while the rules
+digest compares the ones each game plays. When the door
 still refuses a join because the rules files differ, or the digest a start, each game
 says what it changes from the original game, its mod, `config.toml`'s INI roots and
 changed game files, or that it plays the original (`agreement::rules_differ_text`);
@@ -324,13 +423,91 @@ retail's text for it sends the player to Westwood. Nothing more is exchanged for
 that. A game of another build is refused at the build check first, so no released
 game reads `host_rules`; a lobby from before it refuses the field with 400
 `invalid_options`, and the host's game drops the room's rules, says so, and its room
-plays without them. A rollback past it plays every room without them, and each
-player needs the same personal rules again. The Superweapon Limit came later, as
+plays without them. A rollback past it plays every room without them. The Superweapon Limit came later, as
 `host_rules.superweapon_limit` (2 to 20): an older guest cannot read options that carry
 it, in a room that cannot start as its players' versions differ, and an older LAN guest
 is refused at the build check. A lobby from before it refuses the field; the host's game
 turns the limit off, says so and sends its options again with its other rules. A
 rollback past it plays every room without it, as offline games then do.
+
+The player's [Ares setting](ares.md#the-ares-setting) (`[VERA] Ares=`, or a launch
+file's `[Settings] Ares=`) is not a room rule: like the mod, each game reads it at start
+and plays its own. Auto adds nothing to the rules digest, so a game set to Auto agrees
+with a released game as before. On makes every game an Ares game, which adds the byte a
+mounted `ares.mix` adds, and Off adds its own words, so a player whose setting differs
+from the others' is refused at the start, and that game's text names the setting
+(`agreement::own_changes_text`). Nothing new is exchanged. A rollback reads no setting
+and plays Auto.
+
+Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
+also carried the host's file as `personal_rules`. This version never sends it, and
+refuses a room or a replay whose `host_rules` still has it: an older host's room is
+refused at the build check before that, and an older replay plays without it and fails
+its rules check. A guest of an older version is refused at the build check. The lobby
+still accepts the field, so a rollback needs no lobby change; a rolled-back game reads
+`VERARULES.INI` again.
+
+### Watching
+
+A player in VERA's online lobby can watch a match being played (VERA's; gamemd has
+no such thing). The game list shows running matches after the rooms, tagged Watch,
+with how many watch each out of the 10 it takes; Join on one asks the lobby to `watch`
+it ([lobby protocol](lobby-protocol.md#watching)). The lobby lists only matches of the
+watcher's own version between two or more players, on a relay that lets watchers in,
+and never one from a room with a password, a clan room, a generated map or a co-op
+mission: a watcher's game cannot yet rebuild their starts. A host chooses in Create
+Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
+or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
+
+The lobby's grant carries the match's start, its options and a watch ticket. The
+watcher's game downloads the map as a guest does, checks that its version and rules
+digest are the players', and joins the relay as a watcher (`live_service::begin_watch`,
+`poll_watch`): a read-only session that pulls the match's stream from its first frame,
+held back by the delay, and sends nothing into it, not even a checksum
+(relay README, "Watchers"). It loads the world as a returning player does, with no
+progress reports and nobody waiting for it, and then plays the stream's frames. Until
+it reaches the match's delayed present it runs them at speed, in passes of up to 50 ms
+a picture where a returning player's stop at 8 frames or 8 ms, says Catching up, and
+keeps its sounds off. It keeps every frame it has read rather than a returning player's
+64, so a long match is read to its end before the relay forgets it, 300 seconds after
+the end. It checks its world against the checksums all players reported
+alike and stops with the usual message when they differ.
+
+A watcher stands in one player's seat: that player's sidebar, credits and sounds, with
+the whole map shown. Only the picture changes: every House keeps its own fog in the
+shared world. It sends nothing in that seat either (`Simulation::install_watcher`): the
+followed player's records are another game's to it, so their Options opens nothing and
+their leaving ends the watch no more than it ends the other players' match. Tab follows
+the next player still in the match, in House order, also while a frame waits on the
+stream (`match_runtime::watching`): online the current House only chooses this game's
+view and result, so following rebuilds just the objects' owner and discovery bytes from
+the history every player's game keeps (`Simulation::follow_house`). After the last
+player, Tab shows the observer's sidebar as an observer in the room sees it: each
+player's name, kills, units and money, and the time played on the credits counter
+(`Simulation::observe`). Only the sidebar changes: the world keeps the last player's
+House, so the sounds, radar and end of the match stay that player's. The next Tab
+follows the first player again. A watcher gives no
+orders: its input is the camera, zoom, Tab
+and Escape, and it has no chat. Escape leaves at once; the returned transport's relay
+Leave ends the watcher's session. A match that ends with a result ends for the watcher
+as for the player it follows, with the score page, then the online lobby. One that every
+player leaves without a result returns it to the lobby with a line saying the match
+ended. The lobby renews a watcher's relay pass as it does a player's (`renew_watch`).
+
+Older versions and rollbacks: a game from before watching never asks for the list, its
+rooms send no `watching`, and their matches are never watchable. A watcher sees only
+matches of its own version, and its game refuses a start whose version or rules digest
+differs (Could not start watching this match). A lobby from before watching, or rolled
+back to it, answers the list with 404, which the game takes as no matches and as a lobby
+that takes no `watching`: a room's options then leave it out. Before the list's first
+answer a room sends it, and an old lobby refuses those options: the host's game stops
+sending it, says so, and the room plays unwatched. A lobby that lists matches refused
+something else, so the room keeps its Watching and the game asks for the list again; a
+404 then, after a rollback, stops the room's Watching the same way. A grant that comes
+after the player gave up waiting for it is handed back (`unwatch`). A relay rolled back
+to before watchers refuses watch tickets: a new watch
+ends in the lobby with the relay connection message, and a watcher already on it loses
+its connection and returns to the lobby with the usual message.
 
 ## Native behavior and deliberate bounds
 
@@ -446,3 +623,24 @@ both flag every human House to win, both press BC6's Continue, and the kept room
 back on the next stage with no `TXT_SAVE_CAMP_AVAILABLE` line in either setup's chat;
 the host starts it and it must run 90 frames. The manifest's
 `lan.cooperative` records the BC6 result, the room's next map and its startup.
+
+The `online-live-watch` target checks [watching](#watching) from a third account. It
+takes `--online-account <watcher>` and `--online-host <host name>`, both required, and
+refuses every other online option: the host's match sets the rest. From the settled
+online lobby it waits, with only the lobby's own 30-second list poll, until the watch
+list shows a running match whose players include the host, then selects that row and
+presses Join. The grant, the map and the relay's stream must bring it into the match.
+It records whether the game was catching up and the frame where it reached the delayed
+present, then requires 300 more frames without a stop: a desync's "Scenarios do not
+match." or a lost relay's message fails it. It presses Tab until it is back on the
+player it started with, which must pass another player and the observer's sidebar,
+then Escape, which must return it to the online lobby, and leaves for the Main Menu.
+Run it beside `online-live-host` and `online-live-guest` for two other
+accounts. Their `--online-frames` must keep their first match going well past the
+watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
+minutes behind and needs 300 frames after catching up, and it catches up only when it
+joins more than two minutes into the match. The host's room must let everyone watch,
+as the Create Game Watching choice's default does; Quick Match games
+(`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
+records the match, the grant's delay, whether catch-up was seen and the frame it ended,
+the frames played after it, the views Tab went through, and the exit route.

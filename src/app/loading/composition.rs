@@ -393,7 +393,7 @@ pub(crate) fn build_loading_composition(
             let fit = aspect_fit_preview(region, preview.width, preview.height)?;
             let mut image = preview.clone();
             if let Some(bounds) = bounds {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                burn_black_start_indicators(&mut image, &prefix, bounds, 0);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -441,7 +441,8 @@ pub(crate) fn build_random_map_loading_composition(
                 crate::map::preview::START_STAGING_SLOTS as u32,
             );
             if let Some(bounds) = projected_playfield_bounds(launch_map) {
-                burn_black_start_indicators(&mut image, &prefix, bounds);
+                let halvings = random_map_preview_halvings(image.width, bounds);
+                burn_black_start_indicators(&mut image, &prefix, bounds, halvings);
                 markers = build_mmpb_marker_records(&prefix, assignments, bounds, region, fit);
             }
             Some(PreparedLoadingPreview { image, region, fit })
@@ -676,25 +677,42 @@ pub(crate) fn build_mmpb_marker_records(
 
 /// Burn clipped opaque-black `4x4` source rectangles before preview aspect fitting.
 ///
+/// VERA extension: on a `RandMap.img` written at half size `halvings` times
+/// ([`random_map_preview_halvings`]) each rectangle and its place shrink the
+/// same way; at zero this is the native burn.
+///
 /// Returns the number of indicators that wrote at least one in-bounds pixel.
 pub(crate) fn burn_black_start_indicators(
     preview: &mut DecodedPreview,
     prefix: &[Waypoint],
     bounds: ProjectedPlayfieldBounds,
+    halvings: u32,
 ) -> usize {
     if !valid_preview_buffer(preview) {
         return 0;
     }
+    let size = (START_INDICATOR_SIZE >> halvings).max(1);
     let mut written = 0;
     for waypoint in prefix {
         let point = project_waypoint(*waypoint);
-        let x = (i64::from(point.x) - i64::from(bounds.min_x)) * 2 - 1;
-        let y = i64::from(point.y) - i64::from(bounds.min_y) - 1;
-        if fill_black_rect_clipped(preview, x, y) {
+        let x = ((i64::from(point.x) - i64::from(bounds.min_x)) * 2 - 1) >> halvings;
+        let y = (i64::from(point.y) - i64::from(bounds.min_y) - 1) >> halvings;
+        if fill_black_rect_clipped(preview, x, y, size) {
             written += 1;
         }
     }
     written
+}
+
+/// VERA: how many times a random map's preview was halved to fit a room's
+/// preview transfer (`shell_random_map::write_random_map_preview_to_dir`):
+/// the full preview is twice the projected width across. Zero for every size
+/// the original game makes.
+fn random_map_preview_halvings(width: u32, bounds: ProjectedPlayfieldBounds) -> u32 {
+    let full = i64::from(bounds.extent_x) * 2;
+    (0..8)
+        .take_while(|halvings| full >> (halvings + 1) >= i64::from(width))
+        .count() as u32
 }
 
 fn valid_preview_buffer(preview: &DecodedPreview) -> bool {
@@ -712,16 +730,16 @@ fn valid_preview_buffer(preview: &DecodedPreview) -> bool {
         && preview.height != 0
 }
 
-fn fill_black_rect_clipped(preview: &mut DecodedPreview, x: i64, y: i64) -> bool {
+fn fill_black_rect_clipped(preview: &mut DecodedPreview, x: i64, y: i64, size: i64) -> bool {
     let width = i64::from(preview.width);
     let height = i64::from(preview.height);
     let mut wrote = false;
-    for offset_y in 0..START_INDICATOR_SIZE {
+    for offset_y in 0..size {
         let pixel_y = y + offset_y;
         if !(0..height).contains(&pixel_y) {
             continue;
         }
-        for offset_x in 0..START_INDICATOR_SIZE {
+        for offset_x in 0..size {
             let pixel_x = x + offset_x;
             if !(0..width).contains(&pixel_x) {
                 continue;
@@ -924,9 +942,43 @@ mod tests {
                 extent_x: 1,
                 extent_y: 1,
             },
+            0,
         );
         assert_eq!(written, 1);
         assert_eq!(preview.rgba, [0, 0, 0, 255].repeat(9));
+    }
+
+    /// VERA: a random map's preview written at half size takes its black
+    /// squares at half size and half the distance, so a start in its right
+    /// half still gets one.
+    #[test]
+    fn a_halved_random_map_preview_takes_halved_start_squares() {
+        let start = waypoint(0, 0, 0);
+        let point = project_waypoint(start);
+        let bounds = ProjectedPlayfieldBounds {
+            min_x: point.x - 10,
+            min_y: point.y - 2,
+            extent_x: 12,
+            extent_y: 8,
+        };
+        assert_eq!(random_map_preview_halvings(24, bounds), 0);
+        assert_eq!(random_map_preview_halvings(12, bounds), 1);
+        let mut preview = DecodedPreview {
+            width: 12,
+            height: 4,
+            rgba: vec![255; 12 * 4 * 4],
+        };
+        let halvings = random_map_preview_halvings(preview.width, bounds);
+        assert_eq!(
+            burn_black_start_indicators(&mut preview, &[start], bounds, halvings),
+            1
+        );
+        // Full size puts the square at (19, 1); half size at (9, 0), 2x2.
+        let black: Vec<(u32, u32)> = (0..preview.height)
+            .flat_map(|y| (0..preview.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| preview.rgba[((y * preview.width + x) * 4) as usize] == 0)
+            .collect();
+        assert_eq!(black, [(9, 0), (10, 0), (9, 1), (10, 1)]);
     }
 
     #[test]

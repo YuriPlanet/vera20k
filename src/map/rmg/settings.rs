@@ -104,9 +104,11 @@ impl Default for RmgSettings {
 impl RmgSettings {
     /// Agreement over the resolved settings consumed by generation. File
     /// selection and per-key defaults remain owned by `load` and `apply`.
-    /// The Extras are offline-only, so `[Extras]` stays out.
+    /// VERA's town catalogue and `[Extras]` go in too: the catalogue keeps
+    /// only the buildings whose art each player's game has, so two players
+    /// may resolve different towns from the same rules.
     pub fn multiplayer_digest(&self) -> String {
-        let mut bytes = b"VERA20k RMG settings v1\0".to_vec();
+        let mut bytes = b"VERA20k RMG settings v2\0".to_vec();
         for value in [self.min_tiberium, self.max_tiberium, self.max_trees]
             .into_iter()
             .chain(self.level_light.iter().copied())
@@ -114,6 +116,52 @@ impl RmgSettings {
             .chain(self.vegetation_max)
         {
             bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let name = |bytes: &mut Vec<u8>, name: &str| {
+            bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(name.as_bytes());
+        };
+        let urban = &self.vera_urban;
+        for list in [
+            &urban.structures,
+            &urban.props,
+            &urban.farms,
+            &urban.landmarks,
+        ] {
+            bytes.extend_from_slice(&(list.len() as u64).to_le_bytes());
+            for structure in list {
+                name(&mut bytes, &structure.name);
+                let footprint = structure.footprint.as_deref();
+                bytes.push(u8::from(footprint.is_some()));
+                let cells = footprint.unwrap_or_default();
+                bytes.extend_from_slice(&(cells.len() as u64).to_le_bytes());
+                for (x, y) in cells {
+                    bytes.extend_from_slice(&x.to_le_bytes());
+                    bytes.extend_from_slice(&y.to_le_bytes());
+                }
+            }
+        }
+        for list in [&urban.infantry, &urban.vehicles] {
+            bytes.extend_from_slice(&(list.len() as u64).to_le_bytes());
+            for foot in list {
+                name(&mut bytes, &foot.name);
+                bytes.push(u8::from(foot.known));
+            }
+        }
+        let extras = &self.extras;
+        for list in [&urban.trees, &extras.farms, &extras.landmarks] {
+            bytes.extend_from_slice(&(list.len() as u64).to_le_bytes());
+            for entry in list {
+                name(&mut bytes, entry);
+            }
+        }
+        for entry in [&extras.fair_tech, &extras.farm_fence, &extras.town_fence] {
+            name(&mut bytes, entry);
+        }
+        for (ambient, rgb) in extras.moods {
+            for value in [ambient].into_iter().chain(rgb) {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
         }
         #[cfg(feature = "ares")]
         for list in [
@@ -279,6 +327,24 @@ fn int_list<const N: usize>(general: &IniSection, key: &str) -> Option<[i32; N]>
 #[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
+
+    /// VERA: players whose games resolve different towns, or read different
+    /// `[Extras]`, disagree on the settings, so their room refuses the map.
+    #[test]
+    fn multiplayer_digest_covers_the_town_catalogue_and_extras() {
+        use crate::map::rmg::phases::urban_areas::UrbanStructure;
+        let base = RmgSettings::default();
+        let mut towns = base.clone();
+        towns.vera_urban.structures.push(UrbanStructure {
+            name: "CAMIAM01".into(),
+            footprint: Some(vec![(0, 0), (1, 0)]),
+        });
+        let mut extras = base.clone();
+        extras.extras.fair_tech = "CAOUTP".into();
+        assert_ne!(towns.multiplayer_digest(), base.multiplayer_digest());
+        assert_ne!(extras.multiplayer_digest(), base.multiplayer_digest());
+        assert_eq!(base.clone().multiplayer_digest(), base.multiplayer_digest());
+    }
 
     #[test]
     fn absent_file_uses_constructor_defaults() {

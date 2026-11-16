@@ -624,8 +624,9 @@ pub(crate) fn update_coordinates_and_altitude(
     // 0x0054D6A6), so its own cell does not list it while the reference height
     // samples the cell top. The hold and the cruise instead clear +0x74 here
     // and restore the saved byte at the end (0x0054D6B4..0x0054D6BD), leaving
-    // the lists alone. Either way SetZ (0x005F6060) finds +0x74 clear and
-    // skips its own Mark pair.
+    // the lists alone (VERA's host still unlinks a link left in the cell the
+    // owner leaves, `CruiseHost::set_location`). Either way SetZ (0x005F6060)
+    // finds +0x74 clear and skips its own Mark pair.
     let lifted = !hold_or_translate;
     let saved_marked = host.marked();
     if lifted {
