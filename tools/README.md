@@ -14,6 +14,7 @@ oracle families index their own fixtures and producers.
 | Play the latest stable and newest dev build's relay client code against a relay change (CI only) | `.github/workflows/relay-compat.yml`, `tools/relay_compat.py` |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
+| Avoid shell traps that make a failed run look clean | [shell pitfalls](#shell-pitfalls) |
 | Compile and test one optional capability (`ares`, `phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
 | Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
@@ -516,6 +517,28 @@ successful builds, and discovery verifies executable bytes. Cross-target and
 other custom-profile builds (such as `shipping`) still support explicit
 paths/labels; they are not auto-run by host tooling. Conventional target paths
 are not a fallback.
+
+## Shell pitfalls
+
+These fail quietly, so a broken run can read as a clean one.
+
+- **Chain build steps with `&&`.** Some agent shells ignore `set -e`, so a step
+  after a failed `cargo_run` still runs and the log can end in a false OK. Count
+  one `Finished` line per compile before trusting a log.
+- **Don't edit the checkout while `cargo_run` runs.** It compares the sources
+  before and after; an edit anywhere in the checkout, even in another crate, ends
+  the run with "Source changed during Cargo" (or "during the tests") and no
+  results, although Cargo printed `Finished`.
+- **zsh doesn't split unquoted variables.** In `cargo_run -- $args`, `$args` stays
+  one word and `cargo_run` runs nothing; write `${=args}` or spell the arguments
+  out. zsh also reads `$sha:r...` as a modifier, so `$sha:refs/heads/x` loses
+  text; write `"${sha}:refs/heads/x"`.
+- **`git grep -E '\bword\b'` matches nothing on macOS**, with no error. Use
+  `git grep -w word` or `-P`, and before trusting an empty search, check that it
+  finds a known use.
+- **Not every file on `main` is rustfmt-clean.** Run
+  `rustfmt --edition 2024 --check <file>` first; format only if the hunks are
+  your own, otherwise re-apply your edit by hand.
 
 ## Python regression suite
 
