@@ -708,7 +708,14 @@ impl LanLobbyState {
         }
         match self.focused_control {
             NAME => {
-                for character in crate::util::native_string::acp_round_trip(text).chars() {
+                // The name combo's NewEdit is byte-only (`0x4D1(1)`): units at
+                // or above `0x100` are dropped rather than folded to `?`, and
+                // the roster row keeps single bytes.
+                for unit in text.encode_utf16() {
+                    if unit >= 0x100 {
+                        continue;
+                    }
+                    let character = char::from_u32(u32::from(unit)).unwrap_or('?');
                     if self.insert_name_char(character)
                         && let Some(action) = self.name_changed()
                     {
