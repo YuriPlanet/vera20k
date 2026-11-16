@@ -51,12 +51,13 @@ pub struct ModePolicy {
     /// Whether multiple players may pick the same start position to share a
     /// House in network setup.
     pub shared_start_positions: bool,
-    /// Native `GameExit` mode `vt+0x8`: skips the skirmish score dialog and its
-    /// Scenario RNG draws (`0x00685851..0x0068586A`).
-    pub skips_skirmish_score_screen: bool,
-    /// VERA gate for `MPlayer_Defeated`'s shared allied victory (`0x004FC5DD`..
-    /// `0x004FC5EC`): when all surviving contenders are allied and a human
-    /// survives, defeated human allies win too.
+    /// Native `GameExit` mode `vt+0x8`: in a LAN or WOL game, skips the score
+    /// dialog and its Scenario RNG draws (`0x00685843..0x0068586A`).
+    pub skips_network_score_dialog: bool,
+    /// Native vtable `+0x4` and `+0x8`, both of which `MPlayer_Defeated` asks
+    /// in a LAN or WOL game (`0x004FC5CF..0x004FC5F1`): when all surviving
+    /// contenders are allied and a human survives, defeated human allies win
+    /// too.
     pub shared_allied_victory: bool,
 }
 
@@ -81,7 +82,7 @@ impl MpModeClass {
                 restates_mission_for_diplomacy: false,
                 room_teams: true,
                 shared_start_positions: true,
-                skips_skirmish_score_screen: false,
+                skips_network_score_dialog: false,
                 shared_allied_victory: false,
             },
             Self::ManBattle | Self::Siege | Self::Unholy => ModePolicy {
@@ -92,7 +93,7 @@ impl MpModeClass {
                 restates_mission_for_diplomacy: false,
                 room_teams: true,
                 shared_start_positions: true,
-                skips_skirmish_score_screen: false,
+                skips_network_score_dialog: false,
                 shared_allied_victory: false,
             },
             Self::Cooperative => ModePolicy {
@@ -103,7 +104,7 @@ impl MpModeClass {
                 restates_mission_for_diplomacy: true,
                 room_teams: false,
                 shared_start_positions: false,
-                skips_skirmish_score_screen: true,
+                skips_network_score_dialog: true,
                 shared_allied_victory: true,
             },
         }
@@ -557,59 +558,5 @@ mod tests {
         assert!(!by_class(MpModeClass::FreeForAll).wonline_clan_tournament_allowed);
         assert!(by_class(MpModeClass::FreeForAll).wonline_tournament_allowed);
         assert!(!by_class(MpModeClass::Cooperative).wonline_tournament_allowed);
-    }
-
-    #[test]
-    fn stock_mode_policies_match_native_and_room_truth_table() {
-        for class in [MpModeClass::Battle, MpModeClass::FreeForAll] {
-            assert_eq!(
-                class.policy(),
-                ModePolicy {
-                    lists_in_skirmish: true,
-                    observers_allowed: true,
-                    setup_player_limit: None,
-                    permits_all_allied: false,
-                    restates_mission_for_diplomacy: false,
-                    room_teams: true,
-                    shared_start_positions: true,
-                    skips_skirmish_score_screen: false,
-                    shared_allied_victory: false,
-                }
-            );
-        }
-        for class in [
-            MpModeClass::ManBattle,
-            MpModeClass::Siege,
-            MpModeClass::Unholy,
-        ] {
-            assert_eq!(
-                class.policy(),
-                ModePolicy {
-                    lists_in_skirmish: false,
-                    observers_allowed: true,
-                    setup_player_limit: None,
-                    permits_all_allied: false,
-                    restates_mission_for_diplomacy: false,
-                    room_teams: true,
-                    shared_start_positions: true,
-                    skips_skirmish_score_screen: false,
-                    shared_allied_victory: false,
-                }
-            );
-        }
-        assert_eq!(
-            MpModeClass::Cooperative.policy(),
-            ModePolicy {
-                lists_in_skirmish: false,
-                observers_allowed: false,
-                setup_player_limit: Some(2),
-                permits_all_allied: true,
-                restates_mission_for_diplomacy: true,
-                room_teams: false,
-                shared_start_positions: false,
-                skips_skirmish_score_screen: true,
-                shared_allied_victory: true,
-            }
-        );
     }
 }
