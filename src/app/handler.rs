@@ -2283,7 +2283,7 @@ impl ApplicationHandler for App {
                 event_loop.set_control_flow(if deferred {
                     ControlFlow::Poll
                 } else {
-                    ControlFlow::WaitUntil(Instant::now() + std::time::Duration::from_millis(8))
+                    ControlFlow::WaitUntil(Self::match_service_wake(state, Instant::now()))
                 });
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
@@ -2315,9 +2315,10 @@ impl ApplicationHandler for App {
                     {
                         return;
                     }
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE,
-                    ));
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(Self::match_service_wake(
+                        state,
+                        Instant::now(),
+                    )));
                 } else {
                     // Nothing on screen to keep fresh: draw no frames until a
                     // window event (including the un-occlude edge). The shell's
@@ -2346,8 +2347,7 @@ impl ApplicationHandler for App {
                 if pass.completed_frames > 0 {
                     event_loop.set_control_flow(ControlFlow::Poll);
                 } else {
-                    let fallback =
-                        Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                    let fallback = Self::match_service_wake(state, Instant::now());
                     event_loop.set_control_flow(ControlFlow::WaitUntil(
                         shell_scroll_wake.map_or(fallback, |service| service.min(fallback)),
                     ));
@@ -2383,7 +2383,10 @@ impl ApplicationHandler for App {
                             );
                             state.platform.window.request_redraw();
                         } else {
-                            let wake = state.platform.redraw_gate.probe_wake(now);
+                            // The next frame's due time wakes the loop too,
+                            // so its tick and picture come on time.
+                            let frame_due = Self::next_local_frame_due(state, now);
+                            let wake = state.platform.redraw_gate.probe_wake(now, frame_due);
                             event_loop.set_control_flow(ControlFlow::WaitUntil(
                                 shell_scroll_wake.map_or(wake, |service| service.min(wake)),
                             ));

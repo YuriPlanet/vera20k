@@ -154,6 +154,47 @@ impl App {
         }
     }
 
+    /// When the local timer has the match's next frame due, for the frame
+    /// loop's wake (`LocalFramePacer::until_next_frame`): now or earlier once
+    /// it is due. `None` off the battlefield, at GameSpeed 0, before the
+    /// first frame, and in sequenced online play, whose frames the relay's
+    /// clock admits.
+    pub(super) fn next_local_frame_due(state: &AppState, now: Instant) -> Option<Instant> {
+        if state.frontend.screen != GameScreen::InGame
+            || state
+                .match_state
+                .live_network
+                .as_ref()
+                .is_some_and(|live| live.uses_sequenced_lockstep())
+        {
+            return None;
+        }
+        let (game_speed, network_fps) = sim_tick::local_pacing_inputs(state);
+        state
+            .platform
+            .frame_pacer
+            .until_next_frame(
+                crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+                game_speed,
+                network_fps,
+            )
+            .map(|left| now + left)
+    }
+
+    /// When a loop that services the match without drawing should wake:
+    /// after [`SERVICE_WAKE`], or sooner for a frame the local timer has due
+    /// before then ([`Self::next_local_frame_due`]). One already due moves
+    /// nothing: the pass that just ran did not admit it, and waking for it
+    /// again would spin.
+    ///
+    /// [`SERVICE_WAKE`]: crate::app::match_runtime::frame_pacer::SERVICE_WAKE
+    pub(super) fn match_service_wake(state: &AppState, now: Instant) -> Instant {
+        let service = now + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+        Self::next_local_frame_due(state, now)
+            .filter(|due| *due > now)
+            .map_or(service, |due| due.min(service))
+    }
+
     /// Service the match runtime for one pass: the outcome voice wait, the
     /// scenario exit cascade, the quit cascade, the audio pump and, when
     /// admitted, each simulation advance due by now (only the first without
