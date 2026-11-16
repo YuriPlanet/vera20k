@@ -7946,6 +7946,97 @@ fn phobos_multi_weapon_can_fire_ignores_legal_target() {
     );
 }
 
+/// Phobos' stock-ladder hook `0x6F36DB` (`Ext/Techno/Hooks.Firing.cpp:121-165`)
+/// asks `PickWeaponIndex` (`Ext/Techno/WeaponHelpers.cpp:7-100`) before the
+/// native Verses arm at `0x6F36E3`. A primary whose `CanTarget` excludes the
+/// airborne target hands the shot to an otherwise ordinary secondary, which
+/// the stock ladder does not do because neither projectile is AA.
+/// `NoSecondaryWeaponFallback` suppresses the pick; `.AllowAA` restores the
+/// airborne-secondary arm through `secondIsAA`.
+#[cfg(feature = "phobos")]
+#[test]
+fn phobos_stock_weapon_pick_honours_can_target_and_the_fallback_keys() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=PICKER\n1=NOFALL\n2=AAALLOW\n\
+         [AircraftTypes]\n0=PLANE\n\
+         [PICKER]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=GroundOnly\nSecondary=AnyGun\n\
+         [NOFALL]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=GroundOnly\nSecondary=AnyGun\n\
+         NoSecondaryWeaponFallback=yes\n\
+         [AAALLOW]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         Primary=GroundOnly\nSecondary=AnyAA\n\
+         NoSecondaryWeaponFallback=yes\nNoSecondaryWeaponFallback.AllowAA=yes\n\
+         [PLANE]\nStrength=200\nArmor=light\nSpeed=10\nSight=8\n\
+         [GroundOnly]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\n\
+         Warhead=WH\nCanTarget=infantry\n\
+         [AnyGun]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\nWarhead=WH\n\
+         [AnyAA]\nDamage=10\nROF=50\nRange=8\nProjectile=AirShot\nWarhead=WH\n\
+         [GroundShot]\nAA=no\nAG=yes\n[AirShot]\nAA=yes\nAG=no\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let rules = RuleSet::from_ini(&ini).expect("stock-pick rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 19);
+    let picker = sim
+        .spawn_object("PICKER", "Americans", 8, 10, 0, &rules)
+        .expect("picker spawns");
+    let nofall = sim
+        .spawn_object("NOFALL", "Americans", 6, 10, 0, &rules)
+        .expect("nofall spawns");
+    let aaallow = sim
+        .spawn_object("AAALLOW", "Americans", 10, 10, 0, &rules)
+        .expect("aaallow spawns");
+    let plane = sim
+        .spawn_object("PLANE", "Russians", 12, 10, 0, &rules)
+        .expect("plane spawns");
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1024));
+    fn select(
+        sim: &crate::sim::world::Simulation,
+        rules: &RuleSet,
+        attacker: u64,
+        target: u64,
+        type_id: &str,
+    ) -> i32 {
+        let entity = sim.entities().get(attacker).unwrap();
+        let object = rules.object(type_id).unwrap();
+        combat_weapon::select_weapon_against(
+            rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(&TargetKind::Entity(target)),
+            sim,
+            &sim.interner,
+            sim.resolved_terrain.as_ref(),
+            Some(&sim.house_alliances),
+        )
+        .unwrap()
+        .0
+    }
+    assert_eq!(
+        select(&sim, &rules, picker, plane, "PICKER"),
+        1,
+        "the secondary CanTarget admits an airborne target the primary excludes"
+    );
+    assert_eq!(
+        select(&sim, &rules, nofall, plane, "NOFALL"),
+        0,
+        "NoSecondaryWeaponFallback=yes suppresses the pick"
+    );
+    assert_eq!(
+        select(&sim, &rules, aaallow, plane, "AAALLOW"),
+        1,
+        "NoSecondaryWeaponFallback.AllowAA keeps the airborne secondary arm"
+    );
+}
+
 /// `TechnoClass::CanFireAtTarget @ 0x006F7780` is `CanFireAt(target,
 /// SelectWeapon(target))` (`0x006F77B0`, then `InRange @ 0x006F7220`), and
 /// `FootClass::Approach_Target @ 0x004D5690` measures the same way: neither

@@ -3513,7 +3513,7 @@ fn phobos_area_fire_random_cell(
 /// authored. VERA models every group except the CE/health/veterancy trio's
 /// AE lists, which it does carry (`has_attach_effect_gates`).
 #[cfg(feature = "phobos")]
-fn phobos_skip_weapon_picking(weapon: &WeaponType) -> bool {
+pub(crate) fn phobos_skip_weapon_picking(weapon: &WeaponType) -> bool {
     let targeting = weapon.weapon_targeting();
     targeting.can_target == crate::rules::phobos_crit::AffectedTarget::ALL
         && targeting.min_health == 0.0
