@@ -275,6 +275,18 @@ Residuals:
   seconds in, white, expiring) and spends `[Android] ChatHint=no` the way
   `[Intro] Play` is spent, like `persistence::chat_hint`. Later matches stay
   silent until a fresh install.
+- The soft keyboard is not kept out of the way. On a phone it covers the online
+  login's edited field, and the password box's dots are what the player cannot
+  see; the text still reaches the game because the bridge reads the platform's
+  buffer, not the screen. `android-activity` reports the IME height through
+  `MainEvent::InsetsChanged`, which winit drops, so lifting a page above the
+  keyboard is a separate change (IME insets).
+- On a tablet, Gboard's password keyboard arrives as a compact floating panel
+  that a tap expands, while the same build on a phone shows the ordinary
+  full-width secure keyboard. That is the input method's large-screen behaviour
+  for a password field, not the app's editor info, so it stays as it is; if
+  another input method shows a full-width secure keyboard on the tablet, this
+  residual can be dropped.
 
 ## Windows local-build gotchas
 
