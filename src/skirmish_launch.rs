@@ -428,8 +428,9 @@ pub struct SkirmishLaunchOptions {
     #[serde(default, skip_serializing_if = "RoomBans::is_empty")]
     pub bans: RoomBans,
     /// VERA's room Teams setting: how many teams the room seats its players
-    /// on ([`ROOM_TEAMS`]), or `None` for Off. Only the room reads it; the
-    /// match does not. Left out while Off, as the bans are.
+    /// on ([`ROOM_TEAMS`]), or `None` for Off. The match reads it only to
+    /// start players who share bases together ([`SkirmishLaunchSession::shares_bases`]).
+    /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
     /// VERA's room Balance automatically: with Teams set online, the
@@ -1104,6 +1105,15 @@ impl SkirmishLaunchSession {
             && human.raw_slot_index.is_some()
             && !human.is_observer()
             && matches!(human.slot.start_position, LaunchStartPosition::Position(_))
+    }
+
+    /// VERA: whether players share bases, as a network room with Teams set
+    /// seats more players than its map has starts and Team Starts puts a
+    /// team's players on its starts together. Its people on one start share
+    /// a House ([`Self::house_leader`]); each AI keeps its own House and
+    /// starts beside them (`scenario_bootstrap`'s Battle start assignment).
+    pub fn shares_bases(&self) -> bool {
+        self.options.teams.is_some() && self.mode.class.policy().shared_start_positions
     }
 
     /// Gather688415..42F combines source-human nonobservers with Session's

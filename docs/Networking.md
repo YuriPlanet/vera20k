@@ -284,21 +284,23 @@ comes in watching while a spectator seat is open and takes a seat with a team he
 Join; a guest who picks no team watches instead, and with no spectator seat open the
 host seats a newcomer on the team with the fewest players. With Teams Off the room is
 one box without a caption, free-for-all, and seats newcomers as gamemd does: turning
-Teams Off takes every player and AI off their team, and players may still pick gamemd's
-A to D allies. Nothing new travels: guests send their picks as before, and a released guest, whose
+Teams Off takes every player and AI off their team, the Team lists close and the host
+keeps a guest's team pick off a team. Nothing new travels: guests send their picks as before, and a released guest, whose
 team headers have Join too, takes a seat the same way. An older host still seats a
 newcomer on no team; a newer guest lists that player under a No team header without
 Join. A rollback seats newcomers as before.
 
 With Teams set the map does not limit who plays, only the room's Max players does, so no
 team is ever full: a team's people share its bases where the map runs out of starts
-(`MatchSession::network_shares_bases`). People past the map's seats sit in the room's
-spare rows; an AI takes only one of the map's own seats, as each AI needs its own start.
-At Start Game, Team Starts gives each AI and each team with people a start and the spare
-starts to the teams with the most people for each; a team's people on one start share
-its House, as players who pick the same start do. The map then needs a start for each AI
-and each team with people. Turning Teams Off, or picking a map or mode with fewer seats,
-makes those past the seats watch rather than leave the room. Nothing new travels: the
+(`MatchSession::network_shares_bases`). People and AI past the map's seats sit in the
+room's spare rows; on LAN an AI only takes one of the first eight rows on a map of up to
+eight players, the rows gamemd's options text carries. At Start Game, Team Starts gives
+each team a start and the spare starts to the teams with the most players for each; a
+team's people on one start share its House, as players who pick the same start do, and
+each AI there starts in its own House beside them, its units on the cells nearby
+(`SkirmishLaunchSession::shares_bases`). The map then needs a start for each team.
+Turning Teams Off, or picking a map or mode with fewer seats, makes the people past the
+seats watch rather than leave the room, and the AI there leave. Nothing new travels: the
 host's options carry each player's row and start as before, and a room of mixed versions
 cannot start. A rollback seats no more players than the map has starts.
 

@@ -126,8 +126,19 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
         .session
         .network_setup()
         .ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    let all = seats(launch);
+    // Where bases are shared, a start a later team change left to players
+    // of two teams is dealt again with every other: each team shares only
+    // its own.
+    let mixed = all.iter().enumerate().any(|(index, &(_, team, start))| {
+        matches!(start, LaunchStartPosition::Position(_))
+            && all[..index].iter().any(|&(_, other, held)| {
+                held == start && (other != team || team == LaunchTeam::None)
+            })
+    });
+    let keep_picks = keep_picks && !(mixed && state.match_state.session.network_shares_bases());
     // A pick Team Starts cannot place stays out of its seating.
-    let seats: Vec<(u8, LaunchTeam, LaunchStartPosition)> = seats(launch)
+    let seats: Vec<(u8, LaunchTeam, LaunchStartPosition)> = all
         .into_iter()
         .filter(|&(_, _, start)| {
             !keep_picks
@@ -153,20 +164,12 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
             LaunchTeam::None => -2,
         })
         .collect();
-    let kinds: Vec<(bool, i32)> = seats
-        .iter()
-        .zip(&teams)
-        .map(|(&(row, ..), &team)| {
-            let ai = launch.opponents.iter().any(|ai| ai.raw_slot_index == row);
-            (ai, team)
-        })
-        .collect();
     let session = &state.match_state.session;
     let bases = starts
         .len()
         .min(session.network_setup_capacity().unwrap_or(0).max(0) as usize);
     let shared = (session.network_shares_bases() && seats.len() > bases)
-        .then(|| shared_bases(&kinds, bases))
+        .then(|| shared_bases(&teams, bases))
         .flatten();
     let drive = App::map_drive_distances(state, map, &starts);
     let given = if let Some((base_of, base_teams)) = shared {
@@ -195,29 +198,30 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
 }
 
 /// A room sharing bases (`MatchSession::network_shares_bases`) that seats
-/// more players than its map's `starts`: each AI and each person on no team
-/// (-2) needs a base of its own, a team's people at least one, and every
-/// start left over goes to the team with the most people for each base,
-/// the first on a tie. A team's people are dealt over its bases in row
-/// order, and those on one start share its House
-/// ([`crate::skirmish_launch::SkirmishLaunchSession::house_leader`]).
-/// Takes each seat's AI flag and team; returns each seat's base and each
-/// base's team, or `None` when the map has too few starts even for that.
-fn shared_bases(seats: &[(bool, i32)], starts: usize) -> Option<(Vec<usize>, Vec<i32>)> {
-    // Each team with people and how many, in the order they first sit.
+/// more players than its map's `starts`: each player on no team (-2) needs
+/// a base of its own, each team at least one, and every start left over
+/// goes to the team with the most players for each base, the first on a
+/// tie. A team's players are dealt over its bases in row order. The people
+/// on one start share its House
+/// ([`crate::skirmish_launch::SkirmishLaunchSession::house_leader`]), and
+/// an AI there starts beside them in its own. Takes each seat's team;
+/// returns each seat's base and each base's team, or `None` when the map
+/// has too few starts even for that.
+fn shared_bases(seats: &[i32], starts: usize) -> Option<(Vec<usize>, Vec<i32>)> {
+    // Each team with players and how many, in the order they first sit.
     let mut teams: Vec<(i32, usize)> = Vec::new();
     let mut alone = 0;
-    for &(ai, team) in seats {
+    for &team in seats {
         match teams.iter_mut().find(|(on, _)| *on == team) {
-            _ if ai || team < 0 => alone += 1,
-            Some((_, people)) => *people += 1,
+            _ if team < 0 => alone += 1,
+            Some((_, players)) => *players += 1,
             None => teams.push((team, 1)),
         }
     }
     let mut spare = starts.checked_sub(alone + teams.len())?;
     let mut bases = vec![1; teams.len()];
     while spare > 0 {
-        // a/b people for each base is more than c/d when a*d > c*b.
+        // a/b players for each base is more than c/d when a*d > c*b.
         let crowded = (0..teams.len())
             .filter(|&team| bases[team] < teams[team].1)
             .max_by(|&a, &b| {
@@ -240,34 +244,33 @@ fn shared_bases(seats: &[(bool, i32)], starts: usize) -> Option<(Vec<usize>, Vec
     let mut dealt = vec![0; teams.len()];
     let base_of = seats
         .iter()
-        .map(
-            |&(ai, team)| match teams.iter().position(|(on, _)| *on == team) {
-                Some(index) if !ai => {
-                    dealt[index] += 1;
-                    first[index] + (dealt[index] - 1) % bases[index]
-                }
-                _ => {
-                    base_teams.push(team);
-                    base_teams.len() - 1
-                }
-            },
-        )
+        .map(|&team| match teams.iter().position(|(on, _)| *on == team) {
+            Some(index) => {
+                dealt[index] += 1;
+                first[index] + (dealt[index] - 1) % bases[index]
+            }
+            None => {
+                base_teams.push(team);
+                base_teams.len() - 1
+            }
+        })
         .collect();
     Some((base_of, base_teams))
 }
 
-/// The fewest starts a room sharing bases seats its people on, as
-/// [`shared_bases`] gives them: one for each team with people, one for
-/// each person on no team.
-pub(super) fn people_bases(launch: &SkirmishLaunchSession) -> i32 {
+/// The fewest starts a room sharing bases seats its players on, as
+/// [`shared_bases`] gives them: one for each team with players, one for
+/// each player on no team.
+pub(super) fn bases_needed(launch: &SkirmishLaunchSession) -> i32 {
     let mut teams = Vec::new();
     let mut alone = 0;
-    let seated = launch
+    let people = launch
         .humans
         .iter()
-        .filter(|human| human.raw_slot_index.is_some() && !human.is_observer());
-    for human in seated {
-        match human.slot.team {
+        .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
+        .map(|human| human.slot.team);
+    for team in people.chain(launch.opponents.iter().map(|ai| ai.team)) {
+        match team {
             LaunchTeam::Team(team) if !teams.contains(&team) => teams.push(team),
             LaunchTeam::Team(_) => {}
             LaunchTeam::None => alone += 1,
@@ -523,26 +526,18 @@ mod tests {
             .collect()
     }
 
-    /// Four people on Team A, two on B and an AI on a four-start map: the AI
-    /// keeps a base of its own, each team gets one, and the spare start goes
-    /// to A, with more people for each base. Three teams on two starts get
-    /// none.
+    /// Four players on Team A, three on B and one on no team on a
+    /// four-start map: the lone player keeps a base of its own, each team
+    /// gets one, and the spare start goes to A, with more players for each
+    /// base. Three teams on two starts get none.
     #[test]
     fn shared_bases_give_the_spare_start_to_the_crowded_team() {
-        // Rows: A, B, A, the AI on B, A, B, A.
-        let seats = [
-            (false, 0),
-            (false, 1),
-            (false, 0),
-            (true, 1),
-            (false, 0),
-            (false, 1),
-            (false, 0),
-        ];
+        // Rows: A, B, A, B, none, A, B, A.
+        let seats = [0, 1, 0, 1, -2, 0, 1, 0];
         let (base_of, base_teams) = shared_bases(&seats, 4).unwrap();
-        assert_eq!(base_teams, [0, 0, 1, 1]);
-        assert_eq!(base_of, [0, 2, 1, 3, 0, 2, 1]);
-        assert_eq!(shared_bases(&[(false, 0), (false, 1), (false, 2)], 2), None);
+        assert_eq!(base_teams, [0, 0, 1, -2]);
+        assert_eq!(base_of, [0, 2, 1, 2, 3, 0, 2, 1]);
+        assert_eq!(shared_bases(&[0, 1, 2], 2), None);
     }
 
     /// Two teams of four get YR's eight, warm against cool, as a Random

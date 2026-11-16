@@ -843,6 +843,7 @@ fn native_assign_launch_starts_from_preassignment(
     let mut assigned = vec![None; requested.len()];
 
     let slots = normalized_launch_slots(session);
+    let shares_bases = session.shares_bases();
     let mut observer_reserved_first = false;
     let mut observer_claim_complete = false;
     // Battle5D6C70 visits House order; chooser5D6890 shares an observer's
@@ -852,10 +853,27 @@ fn native_assign_launch_starts_from_preassignment(
         let explicit = explicit_owner
             .iter()
             .rposition(|owner| *owner == Some(slot));
+        // VERA: where players share bases, a House whose start a later House
+        // also asked for starts there too, beside it, its units on the cells
+        // nearby. The table keeps the last owner, as gamemd's does.
+        let beside = match requested[slot] {
+            LaunchStartPosition::Position(start)
+                if shares_bases
+                    && explicit.is_none()
+                    && !slots[slot].observer
+                    && usize::from(start) < starts.len() =>
+            {
+                Some(usize::from(start))
+            }
+            _ => None,
+        };
         let first_occupied = explicit_owner.iter().position(Option::is_some);
         let mut write_owner = true;
         let start_index = if let Some(explicit) = explicit {
             explicit
+        } else if let Some(start) = beside {
+            write_owner = false;
+            start
         } else if let Some(first) = first_occupied {
             if observer_reserved_first && !observer_claim_complete {
                 observer_claim_complete = true;

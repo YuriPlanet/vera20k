@@ -2918,6 +2918,59 @@ impl WolCapture {
                             .collect::<Vec<_>>())
                     );
                     self.event(frame, json!({"Two-player map": players}));
+                    // The host adds an AI to Team B past the map's seats too,
+                    // and Team Starts starts it on Team B's start, beside
+                    // its people.
+                    let view = setup_view(state)?;
+                    let team_b = view
+                        .headers
+                        .iter()
+                        .position(|header| {
+                            header.as_ref().is_some_and(|header| {
+                                header.group == crate::ui::multiplayer_setup::SetupGroup::Team(1)
+                            })
+                        })
+                        .context("Team B's header")?;
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::Select {
+                            control: crate::ui::multiplayer_setup::team_add_ai(team_b),
+                            value: 4,
+                        },
+                    );
+                    let rect = crate::app::input::multiplayer_setup::layout(state)
+                        .control_rect(crate::ui::multiplayer_setup::TEAM_STARTS)
+                        .context("Team Starts")?;
+                    setup_click(state, rect);
+                    let launch = state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .context("room setup")?;
+                    let ai = launch.opponents.first().context("Team B's AI")?;
+                    let lena = launch
+                        .humans
+                        .iter()
+                        .find(|human| human.name == "Lena")
+                        .context("Lena")?;
+                    ensure!(
+                        launch.opponents.len() == 1
+                            && ai.raw_slot_index >= 2
+                            && ai.team == crate::skirmish_launch::LaunchTeam::Team(1)
+                            && ai.start_position == lena.slot.start_position
+                            && matches!(
+                                ai.start_position,
+                                crate::skirmish_launch::LaunchStartPosition::Position(_)
+                            ),
+                        "the AI added to Team B gave row {} {:?} {:?}",
+                        ai.raw_slot_index,
+                        ai.team,
+                        ai.start_position
+                    );
+                    self.event(
+                        frame,
+                        json!({"AI on Team B": format!("row {} {:?}", ai.raw_slot_index, ai.start_position)}),
+                    );
                 }
                 MoviesCapture::restore_neutral_pointer(state);
                 crate::app::input::multiplayer_setup::cursor_moved(state);

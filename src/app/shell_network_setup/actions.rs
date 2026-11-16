@@ -582,8 +582,10 @@ fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<
 }
 
 /// The host's Add AI on a box header: an AI of the picked difficulty in
-/// the first free seat, the list's row, on the header's team (with Teams
-/// Off, the mode's default). It publishes as the Player list's AI does.
+/// the list's row, the room's AI seat
+/// (`MatchSession::network_ai_seat`), on the
+/// header's team (with Teams Off, the mode's default). It publishes as the
+/// Player list's AI does.
 fn add_ai(
     state: &mut AppState,
     group: Option<SetupGroup>,
@@ -603,7 +605,7 @@ fn add_ai(
         _ => anyhow::bail!("unknown AI difficulty"),
     };
     anyhow::ensure!(
-        state.match_state.session.network_vacancy(row) == Some(NetworkVacancy::Open),
+        state.match_state.session.network_ai_seat() == Some(row),
         "Add AI's seat is no longer free"
     );
     state

@@ -294,6 +294,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
     let ai_allowed = !watched && mode.class.policy().lists_in_skirmish;
     let teams = session.network_teams();
+    // With Teams Off a room with teams is free-for-all and nobody is on a
+    // team, so, as in a clan room, it has no Team lists.
+    let no_team_lists = clan_room || grouped && teams.is_none();
     // While an older host's Balance automatically is on, nobody picks a team:
     // the Team lists and the headers' Join close for every seated player. A
     // spectator's Join still asks to play, and that host's balance places it.
@@ -312,7 +315,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         .is_some();
     let queue = !seated && !seat_free && session.network_queue_open();
     let ai_seat = (host && ai_allowed)
-        .then(|| session.network_open_seat())
+        .then(|| session.network_ai_seat())
         .flatten();
     let dialog = super::dialog(state);
     // VERA's roster holds the rows its page fits; a native page always has
@@ -381,8 +384,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         && !closed,
                     join: button.map(|(label, _)| label),
                 });
-                // The host's Add AI fills the first free seat of the map's
-                // own in a team's box or the one box.
+                // The host's Add AI in a team's box or the one box fills
+                // the room's AI seat, past the map's own where it shares
+                // bases.
                 let room = matches!(group, SetupGroup::Team(_) | SetupGroup::Players);
                 if let (true, Some(seat)) = (room, ai_seat) {
                     let item = |value: i32, text: String| SetupChoice {
@@ -745,7 +749,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 visible: visible
                     && !bare
                     && (column == SetupColumn::Country || !observer)
-                    && !(column == SetupColumn::Team && clan_room),
+                    && !(column == SetupColumn::Team && no_team_lists),
                 selected,
                 choices,
             });
@@ -890,7 +894,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
         // checked and disabled in a tournament or clan room.
         short_game_locked: host && profile_is_wol(state) && room.tournament_or_clan(),
-        team_header: !clan_room,
+        team_header: !no_team_lists,
         accept_enabled: accept_enabled(state),
         start_requested: protocol.start_requested
             && !session.network_player_ready(launch.local_player_index),

@@ -417,7 +417,7 @@ pub(crate) fn render_multiplayer_setup(
                     SHELL_CONTROL_DEPTH,
                 );
             }
-            // The carried row's name follows the pointer.
+            // The carried row's name follows the pointer, centred on it.
             if let Some(drag) = ui.row_drag.filter(|drag| drag.carrying)
                 && let Some(name) = view
                     .combos
@@ -435,8 +435,8 @@ pub(crate) fn render_multiplayer_setup(
                 let h = (ROSTER_LINE_H * scale.factor()).round() as i32;
                 texts.push(sized(
                     &name.text,
-                    RectPx::new(x + h / 2, y - h / 2, 20 * h, h),
-                    ShellAlign::V_CENTER,
+                    RectPx::new(x - 10 * h, y - h / 2, 20 * h, h),
+                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     ROOM_TEXT_RGB,
                     SHELL_CONTROL_TEXT_DEPTH,
                     ROSTER_TEXT_SCALE,
