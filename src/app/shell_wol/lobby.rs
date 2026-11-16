@@ -2404,12 +2404,17 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             room,
             name,
             ranked,
+            watching,
         } => {
             if let Some(room) = room {
                 state.frontend.room_limits = room;
             }
             if let Some(ranked) = ranked {
                 state.frontend.wol_room_unranked = !ranked;
+            }
+            // The room takes it when its setup opens.
+            if let Some(watching) = watching {
+                state.frontend.wol_room_watching = watching;
             }
             // An untouched Room name keeps gamemd's "%s's_game".
             let default = default_room_name(&nickname(state));
@@ -2585,6 +2590,7 @@ pub(super) fn begin_create(state: &mut AppState) {
     let squad = squad_id(state);
     let room = state.frontend.room_limits;
     let ranked = !state.frontend.wol_room_unranked;
+    let watching = state.frontend.wol_room_watching;
     let name = state
         .frontend
         .wol_room_name
@@ -2597,11 +2603,11 @@ pub(super) fn begin_create(state: &mut AppState) {
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
-    // limits, name and Ranked game, from the host's last choice.
+    // limits, name, Ranked game and Watching, from the host's last choice.
     let room = lobby
         .ui
         .is_modern()
-        .then_some((room, name.as_str(), ranked));
+        .then_some((room, name.as_str(), ranked, watching));
     lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
     state
         .frontend
@@ -3972,6 +3978,7 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((POPUP_PASSWORD, layout.password)),
                 layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
                 layout.ranked.map(|rect| (CREATE_RANKED, rect)),
+                layout.watching.map(|(_, rect)| (CREATE_WATCHING, rect)),
             ]
             .into_iter()
             .flatten()
@@ -4109,11 +4116,18 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         let press = match (picked, over) {
             (Some(RoomLimitsPress::Players), _) => Press::Nothing,
             (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
-            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED))) => {
+            (
+                _,
+                Some(
+                    control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED
+                    | CREATE_WATCHING),
+                ),
+            ) => {
                 let window = match control {
                     CREATE_CLAN => rects.clan,
                     CREATE_LIMIT => Some(rects.limit),
                     CREATE_RANKED => rects.ranked,
+                    CREATE_WATCHING => rects.watching.map(|(_, rect)| rect),
                     _ => rects.observe,
                 };
                 if window.is_some_and(|window| {

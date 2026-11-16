@@ -42,6 +42,7 @@ use crate::app::shell_lan::LanJoinAcceptance;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
 use crate::ui::wol_chat::WolChatLine;
+use crate::ui::wol_lobby::RoomWatching;
 use crate::util::time::Instant;
 
 /// Requests are service-boundary observations. They never create a peer,
@@ -213,6 +214,10 @@ pub(crate) struct NetworkSetupProtocol {
     balance_roster: Option<(u8, Vec<String>, bool)>,
     balance_due: Option<Instant>,
     balance_sent: bool,
+    /// VERA's online room: its host's Watching from Create Game, which its
+    /// options carry until the online lobby refuses it. Off in every other
+    /// setup, whose options leave it out.
+    watching: RoomWatching,
     requests: Vec<NetworkSetupRequest>,
 }
 
@@ -439,6 +444,7 @@ impl NetworkSetupProtocol {
             balance_roster: None,
             balance_due: None,
             balance_sent: false,
+            watching: RoomWatching::Off,
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.
                 vec![
@@ -515,6 +521,30 @@ impl NetworkSetupProtocol {
             NetworkSetupRequest::PublishOptions,
             NetworkSetupRequest::PublishRoster,
         ]);
+    }
+
+    /// The room's Watching as its options carry it (docs/lobby-protocol.md
+    /// "Watching"): `delayed` or `live`, and nothing while it is off, which
+    /// the lobby reads as off and a lobby from before watching never sees.
+    pub(crate) fn published_watching(&self) -> Option<&'static str> {
+        match self.watching {
+            RoomWatching::Delayed => Some("delayed"),
+            RoomWatching::Live => Some("live"),
+            RoomWatching::Off => None,
+        }
+    }
+
+    /// A lobby from before watching refused the room's options: the room
+    /// stops sending its Watching, so nobody watches its games, and
+    /// publishes its options again. Returns whether it was still sending it;
+    /// once stopped it stays stopped, so the next refusal moves on.
+    fn stop_watching(&mut self) -> bool {
+        if self.published_watching().is_none() {
+            return false;
+        }
+        self.watching = RoomWatching::Off;
+        self.requests.push(NetworkSetupRequest::PublishOptions);
+        true
     }
 
     /// Presentation of the active service operation, never map ownership or
@@ -1050,7 +1080,13 @@ fn install_setup(
         setup_ui.show_row(usize::from(row), dialog.rows_per_page());
     }
     state.frontend.multiplayer_setup = Some(setup_ui);
-    state.frontend.network_setup_protocol = Some(NetworkSetupProtocol::new(dialog, quick_match));
+    let mut protocol = NetworkSetupProtocol::new(dialog, quick_match);
+    // VERA's online room publishes its host's Watching from Create Game,
+    // also when it comes back after a match; Quick Match's lobby decides.
+    if dialog.host && dialog.modern && dialog.wol() && !quick_match {
+        protocol.watching = state.frontend.wol_room_watching;
+    }
+    state.frontend.network_setup_protocol = Some(protocol);
     if !quick_match && state.match_state.session.host() {
         note_scenario(state);
     }
@@ -1359,6 +1395,35 @@ mod tests {
         );
         guest.record_remote_user_left(false, false);
         assert!(guest.take_service_requests().is_empty());
+    }
+
+    /// A VERA room's options carry its host's Watching, and leave it out
+    /// while it is off. A lobby from before watching drops it once: the
+    /// room publishes again without it, and a later refusal moves on.
+    #[test]
+    fn a_lobby_from_before_watching_drops_it_once() {
+        let mut room = NetworkSetupProtocol::new(
+            SetupDialog {
+                host: true,
+                flavor: SetupFlavor::Wol,
+                modern: true,
+            },
+            false,
+        );
+        room.take_service_requests();
+        assert_eq!(room.published_watching(), None);
+        room.watching = RoomWatching::Live;
+        assert_eq!(room.published_watching(), Some("live"));
+        room.watching = RoomWatching::Delayed;
+        assert_eq!(room.published_watching(), Some("delayed"));
+        assert!(room.stop_watching());
+        assert_eq!(
+            room.take_service_requests(),
+            [NetworkSetupRequest::PublishOptions]
+        );
+        assert_eq!(room.published_watching(), None);
+        assert!(!room.stop_watching());
+        assert!(room.take_service_requests().is_empty());
     }
 
     /// A guest is told the moves its host made, not the answers to its own

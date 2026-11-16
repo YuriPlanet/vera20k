@@ -1997,6 +1997,13 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .cooperative_difficulty(),
         cooperative_campaign: cooperative_campaign(state),
         seed: Some(crate::app::shell_network_setup::resident_seed(state)),
+        // Only a host's VERA room has one; a guest publishes no options.
+        watching: state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .and_then(|protocol| protocol.published_watching())
+            .map(str::to_owned),
     })
 }
 

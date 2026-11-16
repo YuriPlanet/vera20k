@@ -673,6 +673,39 @@ pub(crate) fn paint_wol_lobby_popup(
                     path_a_reveal: None,
                 });
             }
+            // Watching: its caption, and the box ticked while others may
+            // watch, beside its value.
+            if let (Some(watching), Some((label, rect))) = (create.watching, layout.watching) {
+                paint_control(
+                    &mut paint.controls,
+                    &atlas.control_chrome(),
+                    ControlPaint::Checkbox {
+                        rect,
+                        checked: watching != RoomWatching::Off,
+                    },
+                    scale,
+                );
+                for (key, rect, align) in [
+                    (
+                        "VERA:Watching",
+                        label,
+                        ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+                    ),
+                    (
+                        watching.label_key(),
+                        crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                        ShellAlign::V_CENTER,
+                    ),
+                ] {
+                    labels.push(PaintLabel {
+                        text: crate::i18n::tr(key).into(),
+                        rect,
+                        align,
+                        rgb: SHELL_LABEL_TEXT_RGB,
+                        path_a_reveal: None,
+                    });
+                }
+            }
             if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
                 labels.push(PaintLabel {
                     text: crate::i18n::tr("VERA:RoomName").into(),

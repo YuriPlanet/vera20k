@@ -183,6 +183,11 @@ pub(super) struct Options {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooperative_campaign: Option<String>,
     pub seed: Option<u32>,
+    /// The room's Watching, `delayed` or `live` (docs/lobby-protocol.md
+    /// "Watching"). Absent while it is off, which the lobby reads as off;
+    /// lobbies before it refuse the field. Guests have no use for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watching: Option<String>,
 }
 
 impl Options {
