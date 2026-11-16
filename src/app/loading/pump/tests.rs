@@ -119,8 +119,28 @@ fn recorded_network_mode_stays_in_shell_until_the_world_is_installed() {
 #[test]
 #[ignore = "slow; retail warm/cold ordered online startup"]
 fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
-    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
-    use crate::sim::native_identity::modern_online_native_id_prefix;
+    cold_and_warm_rules_share_world_and_agreement_identity(
+        crate::app::match_runtime::session::NetworkReturnContext::Wol,
+    );
+}
+
+/// The host's Create Random Map dialog or an earlier match warms its Rules
+/// owner; a just-opened guest's is cold. Both must still build one world.
+#[test]
+#[ignore = "slow; retail warm/cold LAN startup"]
+fn lan_cold_and_warm_rules_share_world_and_agreement_identity() {
+    cold_and_warm_rules_share_world_and_agreement_identity(
+        crate::app::match_runtime::session::NetworkReturnContext::LanLobby,
+    );
+}
+
+fn cold_and_warm_rules_share_world_and_agreement_identity(
+    context: crate::app::match_runtime::session::NetworkReturnContext,
+) {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
+    use crate::sim::native_identity::network_native_id_prefix;
+    let wol = context == NetworkReturnContext::Wol;
+    let mode = context.session_mode();
     let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("retail RA2_DIR"));
     let mut launch = test_launch_session(LaunchCountry::America);
     launch.selected_map_file = Some("XMP03T4.MAP".into());
@@ -135,19 +155,22 @@ fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
     launch.humans.push(remote);
     launch.rebuild_house_roster();
     let mut session = MatchSession::default();
-    session.enter_network(NetworkReturnContext::Wol);
+    session.enter_network(context);
     session
         .accept_network_setup(launch, true, Some(7), false)
         .unwrap();
-    session.prepare_wol_timing([0], true).unwrap();
+    if wol {
+        session.prepare_wol_timing([0], true).unwrap();
+    } else {
+        session.set_network_start_seed(73).unwrap();
+        session.prepare_network_timing(2, || 0).unwrap();
+    }
     let startup = session.freeze_network_start(73).unwrap();
     let LoadingStartup::Network(admitted) = &startup else {
         unreachable!()
     };
     let checkpoint = startup.native_id_prefix();
-    assert_eq!(checkpoint, Some(0));
-    assert_eq!(modern_online_native_id_prefix(SessionMode::Lan, 2), None);
-    assert_eq!(modern_online_native_id_prefix(SessionMode::Wol, 1), None);
+    assert_eq!(network_native_id_prefix(mode, 1), None);
 
     let assets = AssetManager::new(
         &root,
@@ -173,7 +196,7 @@ fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
             )
             .unwrap(),
             &Default::default(),
-            SessionMode::Wol,
+            mode,
             prefix,
             rules,
         )
@@ -208,12 +231,17 @@ fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
         let sim = &mut scene.runtime.simulation;
         crate::app::loading::init::install_startup_session_mode(sim, &startup);
         sim.batch_path_searches();
+        // lan_service's start: a relay-ordered match sends every frame;
+        // LAN keeps native FrameSendRate 5 and no sequenced clock.
+        let send_rate = if wol { 1 } else { 5 };
         sim.network_command_queues().install_timing(
             bindings[0].1,
-            std::num::NonZeroU8::new(1).unwrap(),
+            std::num::NonZeroU8::new(send_rate).unwrap(),
             bindings.iter().map(|&(_, house)| house),
         );
-        sim.network_command_queues().configure_sequenced_clock(45);
+        if wol {
+            sim.network_command_queues().configure_sequenced_clock(45);
+        }
         agreements.push(
             crate::net::live_commands::StartupAgreement::new(
                 bindings.iter().copied(),
@@ -221,13 +249,14 @@ fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
                 73,
                 admitted.max_ahead_frames(),
                 45,
-                std::num::NonZeroU32::new(1).unwrap(),
+                std::num::NonZeroU32::new(u32::from(send_rate)).unwrap(),
                 sim.state_hash(),
             )
             .unwrap(),
         );
     }
     assert_eq!(warm.sim().state_hash(), cold.sim().state_hash());
+    assert_eq!(checkpoint, Some(0));
     assert_eq!(warm.sim().native_identity_prefix_checkpoint(), Some(0));
     assert_eq!(
         warm.sim().native_identity_cursor(),

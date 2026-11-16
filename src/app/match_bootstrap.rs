@@ -113,7 +113,7 @@ impl PreparedNetworkStartup {
         wol_start: crate::app::match_runtime::session::WolStartTerms,
     ) -> Self {
         let native_id_prefix =
-            crate::sim::native_identity::modern_online_native_id_prefix(mode, launch.humans.len());
+            crate::sim::native_identity::network_native_id_prefix(mode, launch.humans.len());
         Self {
             launch,
             local_map_source: None,
