@@ -991,6 +991,14 @@ impl App {
         // A tap on the search line asks for the soft keyboard again; the
         // player may have collapsed it while the chooser stayed open.
         if layout.map_search.contains(x, y) {
+            if let Some(modal) = state
+                .frontend
+                .skirmish_shell_state
+                .choose_map_modal
+                .as_mut()
+            {
+                modal.ime_armed = true;
+            }
             crate::util::android_ime::request_show();
         }
         let frontend = &mut state.frontend;

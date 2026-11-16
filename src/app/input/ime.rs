@@ -153,21 +153,34 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             ImeTarget::SkirmishPlayerName,
             crate::app::App::ime_player_name_rect(state),
         ),
-        (
-            ImeTarget::ChooseMapSearch,
-            crate::app::App::choose_map_search_ime_rect(state),
-        ),
+        (ImeTarget::ChooseMapSearch, choose_map_search_rect(state)),
         (
             ImeTarget::WolLobbyChat,
             crate::app::shell_wol::lobby::ime_chat_rect(state),
         ),
-        (
-            ImeTarget::ChooseMapSearch,
-            crate::app::App::choose_map_search_ime_rect(state),
-        ),
     ]
     .into_iter()
     .find_map(|(target, rect)| rect.map(|rect| (target, rect)))
+}
+
+/// The chooser's search line takes the keyboard only once a tap armed it
+/// (`ChooseMapModalState::ime_armed`), so opening the chooser never covers the
+/// list; other platforms keep the line's area for their candidate window.
+fn choose_map_search_rect(state: &AppState) -> Option<RectPx> {
+    let rect = crate::app::App::choose_map_search_ime_rect(state)?;
+    #[cfg(target_os = "android")]
+    {
+        let armed = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .is_some_and(|modal| modal.ime_armed);
+        if !armed {
+            return None;
+        }
+    }
+    Some(rect)
 }
 
 /// Ask for an input method exactly while a supported edit takes keys
