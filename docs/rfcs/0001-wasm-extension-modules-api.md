@@ -170,7 +170,7 @@ Rust SDK each is a newtype. Like handles, IDs are values and allocate nothing.
 | `OverlayTypeId` | overlays | `ctx.overlayTypeId(name)` |
 | `SoundId` | sounds in the simulation API | `ctx.soundId(name)` |
 | `MarkId` | marks | `Mark.id(name)` |
-| `NotifyId` | simulation-to-client notifications | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; checked for collisions across all modules of the match at load |
+| `NotifyId` | simulation-to-client notifications, declared in the module's `vera.notify` custom section | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; declared names are checked for collisions across all modules of the match at load; an undeclared name returns `NO_ID` |
 | `TeamTypeId`, `ScriptTypeId`, `AiTriggerId` | AI team types, team scripts, AI triggers | `ai.teamTypeId(name)`, `ai.scriptTypeId(name)`, `ai.aiTriggerId(name)` |
 
 ```ts
@@ -191,11 +191,14 @@ nothing returns `NO_ID` and sets `ctx.lastStatus()` to `NotFound`: an expected
 outcome under the [error model](#errors), because names come from data a mod
 may change. A call given `NO_ID` returns `NotFound` as well; an ID that no
 lookup returned is an invalid argument. `Mark.id` registers a name it has not
-seen, so it always returns an ID. `Notify.id` always returns an ID as well:
-when it loads the modules, the engine checks the notification names of all
-modules loaded in the match, the mod's and the map's together, for hash
-collisions, and refuses modules whose names collide, with a message (RFC 3,
-step 6; RFC 10).
+seen, so it always returns an ID. Notification names are declared ahead of
+time: the SDK build writes the names a module uses, from a list in the
+module's project configuration, into a Wasm custom section `vera.notify`.
+`Notify.id` returns an ID for every declared name: when it loads the modules,
+the engine checks the declared names of all modules loaded in the match, the
+mod's and the map's together, for hash collisions, and refuses modules whose
+names collide, with a message (RFC 3, step 6; RFC 10). For a name the module
+did not declare, `Notify.id` returns `NO_ID` and sets `NotFound`.
 Types cannot be added during a match (RFC 8), so an ID stays valid for the
 whole scenario and across a save and its load.
 
@@ -233,8 +236,10 @@ after the damage has been committed) or before one begins (for example
 actions run at once from that point (RFC 5). Because they run at once, they can
 chain within a frame: damage raises `TakeDamage`, its trigger deals damage
 with an atomic action, which raises `TakeDamage` again. When a chain includes
-a trigger created or bound by a module, an event VERA adds or an atomic
-action, the engine limits its depth per frame; a trigger that would exceed the
+a module trigger (a trigger that has at least one `Action.wasm` action, was
+created by a module, or is bound through `Wasm.Tags`; a map trigger that
+carries a module action counts), an event VERA adds or an atomic action, the
+engine limits its depth per frame; a trigger that would exceed the
 limit fires in the next frame instead, so no such chain loops forever (gap
 G-T11). The limit is open question 18 of the RFC. A chain made only of
 original events and original actions runs exactly as in the original (RFC
@@ -314,11 +319,24 @@ function: out-of-range indexes (global 0..49, local 0..99), negative counts,
 an enum value outside its list. A name that matches nothing returns
 `NotFound`, because names come from data that a mod may change. A target kind
 that does not fit an atomic action in a trigger is a data error as well and
-returns a status ([4.1](#41-using-actions)). The split
+gives `Refused` ([4.1](#41-using-actions)). The split
 between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
 
+A call on a handle that is `NO_HANDLE` or whose object is gone does nothing.
+It returns `NotFound` where it returns a `Status`, and sets
+`ctx.lastStatus()` (in a client module, `ui.lastStatus()`) to `NotFound`.
+This holds for every method on a handle, including methods that return
+`void`, such as those of `Node` (section 11.1). It never disables the module
+(RFC 3).
+
+An atomic action run by a trigger (`Action.atomic`, [4.1](#41-using-actions))
+has no module code to receive its status. When it fails, its error status
+(`Refused` or `NotFound`) is written to the in-game log and the action is
+skipped; nothing else happens (RFC 3).
+
 `ctx.lastStatus(): Status` repeats the status of the last call for functions
-that return a handle, an ID or a value.
+that return a handle, an ID or a value, and for calls on a missing or gone
+handle as above.
 
 ### Random draws
 
@@ -636,10 +654,10 @@ that moment and says where the exact safe point is not known.
 | `ProjectileIncoming` | `projectile`, `other` launcher (may be `NO_HANDLE`) | projectile admission `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`, after the projectile is admitted; hook **no owner yet** | v1? | RFC 6a; T7 `OnProjectileComing` |
 | `Detonated` | `projectile`, `cell`, `other` source (may be `NO_HANDLE`), `id` warhead (`WarheadTypeId`) | detonation admission in `src/sim/projectile`, after the detonation (exact point unverified); hook **no owner yet** | v1? | RFC 6 L2 ("projectile detonated"), 9 level 2; T36; Rc: `ProjectileDestroyed`, `Explosion` |
 | `Birth` | `other` producer (may be `NO_HANDLE`), `effect` (may be `NO_HANDLE`), `value` build time (-1 none) | `src/sim/world/world_spawn.rs`, production exit, reinforcements, after the object is placed (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T8 `OnBirth`; Rc: `UnitCreated` |
-| `Enter` | `other` transport or building, `value` occupied size, `value2` 1 garrison / 0 transport; passengers by query | `src/sim/building_entry.rs`, transport boarding (`src/sim/passenger.rs` callers), after the entry completes; hook **no owner yet** | v1? | RFC 6a; T13 `OnEntry`; Rc: `UnitLoaded` |
-| `Exit` | as `Enter`, after leaving | unload paths, after the exit completes; hook **no owner yet** | v1? | RFC 6a; T14 `OnExit`; Rc: `UnitUnloaded` |
-| `EnteredBy` (new) | `other` passenger, `value` occupied size, `value2` garrison flag | as `Enter`, raised on the container | v1? | RFC 6a; T15 `OnEntryBy` |
-| `ExitedBy` | as `EnteredBy` | as `Exit` | v1? | RFC 6a; T16 `OnExitBy` |
+| `TransportEntered` | raised on the passenger (`subject`); `other` transport or building, `value` occupied size, `value2` 1 garrison / 0 transport; passengers by query | `src/sim/building_entry.rs`, transport boarding (`src/sim/passenger.rs` callers), after the entry completes; hook **no owner yet** | v1? | RFC 6a; T13 `OnEntry`; Rc: `UnitLoaded` |
+| `TransportExited` | as `TransportEntered`, after leaving | unload paths, after the exit completes; hook **no owner yet** | v1? | RFC 6a; T14 `OnExit`; Rc: `UnitUnloaded` |
+| `PassengerAdded` | raised on the transport or building (`subject`); `other` passenger, `value` occupied size, `value2` garrison flag | as `TransportEntered` | v1? | RFC 6a; T15 `OnEntryBy` |
+| `PassengerRemoved` | as `PassengerAdded` | as `TransportExited` | v1? | RFC 6a; T16 `OnExitBy` |
 | `Crushed` | `other` crusher | crush step in movement (file unverified), after the crush; hook **no owner yet** | v1? | RFC 6a; T25 `OnCrush` |
 | `HouseTransfer` | `house` new house, `value` 1 if by mind control; raised before the transfer | `src/sim/world/mod.rs::change_owner_with_rules`; `src/sim/capture_manager.rs`; before the transfer begins; hook **no owner yet** | v1? | RFC 6a; T28 `OnHouseTransfer`; Rc: `UnitTaken` |
 | `HouseTransferred` | `house` previous house, `value` 1 if by mind control; raised after the transfer | `change_owner_with_rules`, after the transfer completes; hook **no owner yet** | v1? | RFC 6a (P10); Rc: `UnitGiven` (two-phase transfer) |
@@ -753,11 +771,11 @@ class Cond {
 Actions run in two ways:
 
 - inside a trigger: `TriggerDef.actions` holds `Action.original(n, params)`,
-  `Action.wasm(name)` or an atomic action value;
+  `Action.wasm(name)` or `Action.atomic(kind, target, params)`;
 - directly from module code, through the functions below.
 
-Inside a trigger, original actions (`Action.original`) and atomic action
-values run when the trigger springs, as original actions do in the original,
+Inside a trigger, original actions (`Action.original`) and atomic actions
+(`Action.atomic`) run when the trigger springs, as original actions do in the original,
 also when the trigger contains module actions. Only `Action.wasm` actions are
 queued, each with the payload of the event that sprang the trigger; they run
 in the module phase as one batch per module per frame, in firing order (RFC 5;
@@ -769,19 +787,23 @@ order writes all of the trigger's actions as module code and calls original
 actions through the functions below. Called directly from module code, an
 action runs at once.
 
-In a trigger, each atomic action value takes an explicit target parameter
-(`ActionTarget`): `Subject` (the default) is the record's subject; `Other` the
+In a trigger, an atomic action is `Action.atomic(kind, target, params)`:
+`kind` names one atomic action of [4.3](#43-atomic-actions-rfc-6b-and-spreadsheet-instant-effects)
+(`AtomicKind`), `params` carries its parameters (`AtomicParams`: IDs, values,
+a cell), and `target` is an explicit target parameter (`ActionTarget`): `Subject` (the default) is the record's subject; `Other` the
 record's other object; `TagHolder` the objects whose tag holds the springing
 trigger, as the "live" rows of 4.2 act on, or the cell when the trigger is
 held by a CellTag; `House` the trigger's house unless a house is given
 explicitly; `Cell` a cell, given directly or as a waypoint. A target kind that
 does not fit the action (for example `Cell` for `techno.kill`) is a data
-error, not a programming error: the action returns an error status and the
-module stays enabled (see [Errors](#errors); RFC 3, 6b). Original and atomic
-actions that run at once can raise further events and chain within a frame;
-a chain that includes a trigger created or bound by a module, an event VERA
-adds or an atomic action is limited to the per-frame depth (see
-[Event delivery](#event-delivery)).
+error, not a programming error: the action is refused and the module stays
+enabled. No module code receives the status of an atomic action run by a
+trigger: when it fails, its error status (`Refused` or `NotFound`) is written
+to the in-game log and the action is skipped; nothing else happens (see
+[Errors](#errors); RFC 3, 6b). Original and atomic actions that run at once
+can raise further events and chain within a frame; a chain that includes a
+module trigger, an event VERA adds or an atomic action is limited to the
+per-frame depth (see [Event delivery](#event-delivery)).
 
 ```ts
 class ActionParams {
@@ -796,9 +818,30 @@ class ActionParams {
 class Action {
   static original(n: i32, p: ActionParams): Action;
   static wasm(exportName: string): Action;
+  static atomic(kind: AtomicKind, target: ActionTarget, params: AtomicParams): Action;
 }
 enum ActionTarget { Subject, Other, TagHolder, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House defaults to the trigger's house
+enum AtomicKind {            // the atomic actions of 4.3, named after their functions
+  FireWeapon, LaunchSuperWeapon, SpawnAnim, Remove, Kill, Damage, SetHealth, Heal,
+  CreateObject, SetMission, Teleport, ClearTarget, ClearDisguise, PlaySound,
+  AddExperience, SetRank, AddMoney, SetTechLevel, AllowType, SetOwner,
+  ClearMindControl, SetAmmo, AddAmmo, AddPassenger, RemovePassenger,
+  AddEffect, RemoveEffect, AddMark, RemoveMark, CreateProjectile,
+  DetonateWeapon, DetonateWarhead, DetonateProjectile, RemoveProjectile,
+  EndFor, SetScore, AddScore, Log, Convert,
+}
+class AtomicParams {         // the parameters of an atomic action other than its target
+  id: i32 = NO_ID;           // type ID: weapon, warhead, superweapon, animation, techno, sound, effect, mark, projectile
+  value: i32 = 0;            // amount, damage, points, weapon index, mission, rank, ammo, enum value
+  value2: i32 = 0;           // second value where the action needs one
+  cell: Cell | null = null;  // a cell, where the action takes one
+  text: string | null = null; // Log only: the line to write
+}
 ```
+
+`AtomicKind` lists every action of 4.3 except the area search, which is a
+query. How each function's parameters map onto the fields of `AtomicParams`
+belongs to the interface definition (RFC 12).
 
 `Action.original(n, …)` runs the existing arm of
 `TR::execute_live_trigger_action`; with Ares, `TRA::ares_execute_action`
@@ -974,7 +1017,8 @@ Ares actions (only with Ares; otherwise `Unsupported`; owner `TRA::ares_execute_
 ### 4.3 Atomic actions (RFC 6b) and spreadsheet instant effects
 
 One function is one operation with one owner (RFC 6 granularity). In a
-trigger, each takes the target parameter of [4.1](#41-using-actions).
+trigger, each is written `Action.atomic` with the `AtomicKind` of the same
+name and takes the target parameter of [4.1](#41-using-actions).
 
 | Function | Semantics | Draws | Owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- |
@@ -1592,8 +1636,9 @@ class Ui {
   remove(n: Node): Status;
   registerHotkey(name: string, defaultKey: string): Status;
   viewer(): House;                 // NO_HANDLE for a spectator
+  lastStatus(): Status;            // as ctx.lastStatus(); NotFound after a call on a NO_HANDLE or removed node
 }
-class Node {
+class Node {                       // a call on a NO_HANDLE or removed node does nothing (Errors)
   name(): string;
   setLabel(csfOrText: string): void;   // Label
   setArt(name: string): void;          // Art
@@ -1654,7 +1699,8 @@ RFC 0.0.5 uses these keys in its example and adds the `List` part type and
 layout sections is open question 15. Client code uses the same names:
 `Text.label(...)`, `node.setLabel` and `node.setArt` (RFC 10). `Value` keeps
 only its INI meaning, the data source a part shows (`Credits`, `Power`, ...);
-the fill of a `Bar` is set with `node.setFill`.
+the fill of a `Bar` is set with `node.setFill`, and a number shown over an
+object with `display(t).setNumber` (11.3).
 
 ### 11.3 Display properties per object
 
@@ -1665,7 +1711,7 @@ the fill of a `Bar` is set with `node.setFill`.
 | `display(t).setTint(color, intensity)` | **no owner yet** (sim tint is an effect, section 5) | v1? | RFC 10 |
 | `display(t).addAnim(name)` / `removeAnim` | **no owner yet** | v1? | RFC 10 |
 | `display(t).setVisible(v)` | **no owner yet** | v1? | RFC 10 |
-| `display(t).setLabel(text)`, `setValue(v)`, `addButton(name)` | **no owner yet** | v1? | RFC 6b, 10; F38 `Info`, F44 `ShowCSF`, F50 `ShowButton` |
+| `display(t).setLabel(text)`, `setNumber(v)`, `addButton(name)` | **no owner yet** | v1? | RFC 6b, 10; F38 `Info`, F44 `ShowCSF`, F50 `ShowButton` |
 | minimap visibility, map markers (point, line, text) | **no owner yet** | later | Rc: `SetUnitNoMinimap`, `MarkerAddPoint` |
 
 Display properties affect only the local picture. Cloaking and other gameplay
@@ -1721,8 +1767,9 @@ implementation.
 - **G-H3** Module memory in snapshots and in the periodic full state hash,
   not in the per-frame multiplayer checksum (RFC 4, 15): save/load and
   `hash_state` paths.
-- **G-H4** `ctx.log` and in-game failure messages (RFC 3, 14): a sim-side log
-  line published as a `TriggerEffect`-like output, shown by the app.
+- **G-H4** `ctx.log`, in-game failure messages and the error status of a
+  failed atomic action run by a trigger (RFC 3, 14): a sim-side log line
+  published as a `TriggerEffect`-like output, shown by the app.
 - **G-H5** Simulation-to-client notifications (`ctx.notify`, `onNotify`),
   delivered only to the player each is for; the content is the module's own
   bytes, which the engine does not filter (RFC 11).
@@ -1731,8 +1778,10 @@ implementation.
 
 ### Triggers, events and conditions
 
-- **G-T1** Module trigger action (`Action.wasm`): a new action number in
-  `TR::execute_live_trigger_action` that queues a module call (RFC 6a).
+- **G-T1** Module and atomic trigger actions (`Action.wasm`,
+  `Action.atomic`): new action numbers in `TR::execute_live_trigger_action`;
+  `Action.wasm` queues a module call, and `Action.atomic` resolves its target
+  and runs the 4.3 function at once, logging a failure (G-H4) (RFC 6a, 6b).
 - **G-T2** Run-time trigger and tag creation from modules
   (`Trigger.create`, `Tag.create`, `techno.setTag`, `cell.setTag`): today
   definitions come only from `RuntimeDefinitions::read_map`/`read_teams`; IDs
@@ -1764,8 +1813,9 @@ implementation.
   so that nothing else runs for unbound types (RFC 15).
 - **G-T11** Per-frame chain depth counter in `TR`, where a trigger springs:
   counts the depth of a chain of triggers sprung at once within a frame when
-  the chain includes a trigger created or bound by a module, an event VERA
-  adds or an atomic action, and moves a trigger that would exceed the limit to
+  the chain includes a module trigger (one with an `Action.wasm` action, one
+  created by a module, or one bound through `Wasm.Tags`), an event VERA adds
+  or an atomic action, and moves a trigger that would exceed the limit to
   the next frame; a chain of only original events and original actions is not
   limited and runs as in the original (RFC 5, Goal 5; the limit is open
   question 18).
@@ -1851,8 +1901,9 @@ implementation.
   existing registries (`RuleSet` type indexes, sound binding, AI
   definitions), with `NotFound` for an unknown name, a registry of mark
   names for `Mark.id`, and the stable hash of notification names for
-  `Notify.id` with a collision check at load across all modules of the match,
-  the mod's and the map's (RFC 3, 10, 15).
+  `Notify.id`, read from each module's `vera.notify` custom section, with a
+  collision check at load across all modules of the match, the mod's and the
+  map's (RFC 3, 10, 15).
 
 ### Client
 
