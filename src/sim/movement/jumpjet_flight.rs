@@ -261,6 +261,13 @@ impl JumpjetFlight {
         &mut self.facing
     }
 
+    /// The OmniFire hook's `pLoco->LocomotionFacing.SetDesired(tgtDir)`
+    /// (`Ext/Unit/Hooks.Jumpjet.cpp:82-84`): a smooth setter on the
+    /// locomotor's own facing; the body copies it every Update.
+    pub(crate) fn set_desired_facing(&mut self, target: u16, binary_frame: u32) {
+        self.facing.set(target, binary_frame);
+    }
+
     /// See the field. Phobos `JumpjetLocomotionClass_Draw_Matrix` reads this
     /// binary64 directly for the forwards tilt.
     pub const fn current_speed_bits(&self) -> u64 {

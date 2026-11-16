@@ -37,12 +37,9 @@ resolved into `sim::combat::fire_error::FirerTypeFacts::no_turret_track_target`
 by `sim::combat::fire_error_world`. `fire_error::unit` holds the hook's REARM
 arm; its U13 tail returns the base when the locomotor's `Can_Fire` admits.
 
-RESIDUAL — `UnitClass_UpdateFiring_OmniFireTurnToTarget` (`0x736E6E`,
-`Ext/Unit/Hooks.Jumpjet.cpp:51-103`): that hook also reads this key, as the
-REARM guard for an `OmniFire` weapon with `OmniFire.TurnToTarget`. Trigger =
-a jumpjet or other unit firing an omni-fire weapon during rearm; impact = the
-turn-to-target before the stock firing switch is absent, and the `0x7410BB`
-facing check above cannot stand in for it because U12 skips `OmniFire`
-weapons; frequency = low (needs the OmniFire chain); risk = low, the shot
-still waits for the rearm. That hook belongs to the
-`OmniFire.TurnToTarget` chain.
+`UnitClass_UpdateFiring_OmniFireTurnToTarget` (`0x736E6E`,
+`Ext/Unit/Hooks.Jumpjet.cpp:51-103`) also reads this key, as the REARM guard
+for an `OmniFire` weapon with `OmniFire.TurnToTarget`; that hook is implemented
+by the OmniFire chain (`sim::combat::{world_fire,phobos_omni_fire_tests}`,
+including the jumpjet `LocomotionFacing` arm), so this key's part has no
+residual.

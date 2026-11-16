@@ -65,9 +65,10 @@ mutated red and restored.
 
 ## Residuals
 
-- Native writes the jumpjet `LocomotionFacing` for a jumpjet locomotor; VERA
-  keeps one hull facing per unit, so the turn writes that. A jumpjet's hull may
-  therefore rotate at the hull rate instead of its locomotion facing rate.
+- A jumpjet now writes its `LocomotionFacing` desired heading
+  (`JumpjetRuntime::set_desired_facing`) instead of the body facing, matching
+  the hook's `pLoco->LocomotionFacing.SetDesired` arm; the jumpjet Update
+  copies it to the hull. Covered by `a_jumpjet_turns_its_locomotion_facing`.
 - `HasTurret` is not stored; it is derived from `Turret` as native derives it,
   so the gate is exact.
 - The hook is evaluated before the shot and applied after it, once the fire

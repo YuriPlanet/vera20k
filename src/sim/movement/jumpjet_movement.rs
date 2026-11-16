@@ -159,6 +159,18 @@ impl JumpjetRuntime {
         self.phase
     }
 
+    /// `JumpjetLocomotionClass` `+0x54` desired heading, the OmniFire hook's
+    /// `LocomotionFacing.SetDesired` arm (`Ext/Unit/Hooks.Jumpjet.cpp:82-84`).
+    pub(crate) fn set_desired_facing(&mut self, target: u16, binary_frame: u32) {
+        self.flight.set_desired_facing(target, binary_frame);
+    }
+
+    /// The locomotion facing's destination, for the OmniFire regression.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn facing_destination(&self) -> u16 {
+        self.flight.facing().destination()
+    }
+
     /// `JumpjetLocomotionClass::State::Grounded` (`+0x50 == 0`). Phobos's
     /// JumpjetTilt draw arm applies only while the locomotor is airborne.
     pub fn is_grounded(&self) -> bool {

@@ -18,12 +18,21 @@ fn arena(
     weapon_extra: &str,
     turret: bool,
 ) -> (Simulation, RuleSet, u64, u64, u16) {
+    arena_with_type(global_extra, weapon_extra, turret, "")
+}
+
+fn arena_with_type(
+    global_extra: &str,
+    weapon_extra: &str,
+    turret: bool,
+    type_extra: &str,
+) -> (Simulation, RuleSet, u64, u64, u16) {
     let turret_key = if turret { "Turret=yes\n" } else { "" };
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n\
          [VehicleTypes]\n0=FIRER\n\
          [FIRER]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\nCanPassiveAquire=no\n\
-         {turret_key}\
+         {turret_key}{type_extra}\
          [DUMMY]\nStrength=10000\nArmor=heavy\nCanPassiveAquire=no\n\
          [WeaponTypes]\n0=GUN\n\
          [GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=HIT\n\
@@ -141,4 +150,31 @@ fn a_weapon_key_enables_the_turn_alone() {
 fn a_turreted_type_keeps_its_hull_heading() {
     let (mut sim, rules, firer, _target, _heading) = arena("OmniFire.TurnToTarget=yes\n", "", true);
     assert_eq!(destination_after_firing(&mut sim, &rules, firer), EAST);
+}
+
+/// A jumpjet sets `LocomotionFacing.SetDesired`, not the body's facing; its
+/// Update copies the locomotion facing to the body.
+#[test]
+fn a_jumpjet_turns_its_locomotion_facing() {
+    let (mut sim, rules, firer, _target, heading) = arena_with_type(
+        "OmniFire.TurnToTarget=yes\n",
+        "",
+        false,
+        "Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\nJumpjetHeight=500\n",
+    );
+    let body_before = sim.entities().get(firer).unwrap().body_facing.destination();
+    sim.commit_fire_visit(
+        world_fire::FireVisit::UnitTarget(firer),
+        &rules,
+        None,
+        FrameEffects::empty(),
+    );
+    let entity = sim.entities().get(firer).expect("firer");
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .and_then(|loco| loco.jumpjet_runtime())
+        .expect("the type's locomotor is a Jumpjet");
+    assert_eq!(runtime.facing_destination(), heading);
+    assert_eq!(entity.body_facing.destination(), body_before);
 }

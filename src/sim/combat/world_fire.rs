@@ -175,6 +175,9 @@ struct OmniTurn {
     direction: u16,
     rearm_allowed: bool,
     should_turn: bool,
+    /// Native sets the jumpjet `LocomotionFacing`; every other locomotor sets
+    /// `PrimaryFacing`.
+    jumpjet: bool,
 }
 
 /// Evaluate the hook over the pre-shot state: a non-warping unit whose fired
@@ -183,8 +186,8 @@ struct OmniTurn {
 /// `TurretSpins` type, a deployed-fire Unload, and a REARM when
 /// `NoTurret.TrackTarget` resolves no. The fire-error filter and the facing
 /// write stay at the call site. The hull's desired facing is the native
-/// `SetDesired`; the jumpjet `LocomotionFacing` arm has no VERA owner
-/// (recorded residual).
+/// `SetDesired`; a jumpjet unit sets its `LocomotionFacing` instead, which
+/// its Update copies to the body.
 #[cfg(feature = "phobos")]
 fn phobos_omni_fire_turn(
     world: &Simulation,
@@ -238,6 +241,11 @@ fn phobos_omni_fire_turn(
             .phobos_no_turret_track_target
             .unwrap_or(rules.phobos_globals.no_turret_track_target),
         should_turn: entity.body_facing_current(frame) != direction,
+        jumpjet: entity
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.jumpjet_runtime())
+            .is_some(),
     })
 }
 
@@ -4079,9 +4087,18 @@ pub(crate) fn visit_fire(
                         )
                         && (code != fire_error::FireError::Rearm || turn.rearm_allowed)
                         && turn.should_turn
-                        && let Some(update) = emit.unit_facing.last_mut()
                     {
-                        update.hull_destination = Some(turn.direction);
+                        if turn.jumpjet {
+                            let frame = world.session.binary_frame();
+                            if let Some(entity) = world.substrate.entities.get_mut(id)
+                                && let Some(loco) = entity.locomotor.as_mut()
+                                && let Some(runtime) = loco.jumpjet_runtime_mut()
+                            {
+                                runtime.set_desired_facing(turn.direction, frame);
+                            }
+                        } else if let Some(update) = emit.unit_facing.last_mut() {
+                            update.hull_destination = Some(turn.direction);
+                        }
                     }
                 }
                 unit_tail = Some((id, fire_error));
