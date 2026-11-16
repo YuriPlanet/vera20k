@@ -1,19 +1,19 @@
 # Phobos 未完成项与残渣总表（实机测试前必读）
 
-基准：`phobos-local`（2026-11-16）。
+基准：`phobos-local`（2026-11-16，wt-keys 包与 ToolTips/排序/颜色包已合并）。
 扫描器：`G:\20k\scratch\phobos_chain_analysis_v3.py`（**`GAP = 0`**，suspects = 0，
 compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；每关一个键或修一条
 残渣，都在此表划掉并更新扫描器。
 
-## 1. 未移植键（31）——按机制分组
+## 1. 未移植键（已清零，历史分组保留）——按机制分组
 
 出处列为 Phobos 源码，消费者列为真正读取该值的位置，便于下一步定位实现点。
 “默认”均来自构造函数或读取处的 default 参数。
 
 ### 1.0 本次进展（2026-11-16，worktree `F:\20k-scratch\wt-keys`，`be130116a`）
 
-已在 `src/rules/phobos_globals.rs` 读取全部 25 个非 ToolTips 键（含 `Default`、
-`from_ini` 四个节与回归测试），并接线了机制已存在的 11 键：
+已读取全部 25 个非 ToolTips 键（含 `Default`、
+`from_ini` 四个节与回归测试），并接线了机制已存在的 21 键：
 
 - `AllowDeployControlledMCV`：`sim/deploy.rs` 部署门 +
   `world_spawn.rs::construction_yard_redeploy_core_gate`（repack 路径）。
@@ -28,25 +28,38 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   `0x006F8364`、`0x7120DD`）。
 - `RadialIndicatorVisibility`：`app/presentation/radial_indicators.rs` 按
   `0x456776` 的 owner/observer/allied/enemy 分支过滤他人建筑的指示环。
+- `SortCameoByName`：`CameoKey` 增加内部 `Name` 与开关，`inserts_before` 按
+  `0x6A84DB/0x6A86ED` 先 `strcmp` 内部名、相等再 `wcscmp` UIName。
+- `EnablePowerSurplus` / `PowerSurplus.ScaleToDrainAmount`：`PhobosGlobals`
+  增加原生 `[AI] PowerSurplus`（默认 50）；`ai_base_building.rs` 的
+  `power_plant_to_splice` 由“盈余 < 0”改为“盈余 < 目标值”，并支持按
+  `PowerDrain / ScaleToDrainAmount` 缩放（`Ext/House/Body.cpp:655-674`）。
+- `ColorAddUse8BitRGB`：`ColorAddTable::phobos_word` 在开关打开时把
+  `[ColorAdd]` 的三通道按 8-bit 输入经 `Drawing::RGB_To_Int` 收窄为
+  RGB565（`Ext/Rules/Body.cpp:260`）；`app/presentation/lighting.rs` 的
+  空袭激光目标色调用点传入开关。
+- `UseRetintFix`：`app/presentation/lighting.rs` 在正常调色板 retint 后，
+  按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
+  `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
+  deactivate/reactivate）。
+- `ChronoSparkleDisplayDelay` / `ChronoSparkleBuildingDisplayPositions`：
+  `sim/temporal.rs` 的 Foot 与 Building 闪烁改读延迟；建筑按
+  `Building`/`Occupants`/`OccupantSlots` 位选择自身、在场乘员或端口，
+  建筑自身闪烁落在 `GetCenterCoords`（`Ext/Building/Hooks.cpp:39-83`）。
+- ToolTips（uimd.ini）：新增 `rules/phobos_tooltips_ui.rs`，在进程启动时
+  （`ProcessAssets`）从同一份 UIMD.INI 读取 `[ToolTips]` 与 `[LoadingScreen]
+  DisableEmptySpawnPositions`。`ExtendedToolTips` 让 cameo/超武提示改出 Phobos
+  文本：`GetBuildTime`（`max(54, Time_To_Build)` 对本地玩家完整公式）按
+  `TickTimeToSeconds`（15 fps 基准 / `RealTimeTimers` 实测帧率或 `60/GameSpeed`）
+  换算，`CostLabel`/`TimeLabel`/`SWShotsFormat` 经 CSF；`UIDescription` 只在
+  扩展文本下追加。`AnchoredToolTips` 把 cameo 提示固定到侧栏/左超武列，
+  `MaxWidth` 改变 cameo 换行宽度，`DisableEmptySpawnPositions` 关闭载入界面
+  起点黑点（`Misc/PhobosToolTip.cpp`、`Misc/Hooks.UI.cpp:29-37`）。细节与残渣：
+  `docs/phobos-tooltips-ui.md`。
 
-2026-11-16 稍后：`ColorAddUse8BitRGB` 已接线——`ColorAddTable::phobos_word(index,
-use_8bit)` 按 `GetColorFromColorAdd` 的两条臂打包（原始 5/6 位或
-`Drawing::RGB_To_Int` 的 8 位缩放），空袭激光目标色（VERA 唯一直连
-`GetColorFromColorAdd` 的消费者）已按该开关取词；幕布/狂暴/力场三色仍走原生
-绘制转换，残渣见 §3。
-
-2026-11-16 稍后：`SortCameoByName` 已接线——`CameoKey` 两种变体携带类型内部名
-（INI 段名）与开关投影，`inserts_before` 在 UI 名比较前按 `strcmp` 比较内部名
-（`Misc/Hooks.UI.cpp:249-287`）；右侧栏、左超武栏和存档恢复共用同一比较。
-ToolTips 7 键已于 2026-11-16 完成（见 §1.1），仍未实现的键及阻塞原因见 §1.7。
+仍未实现的 10 键及阻塞原因见 §1.7。
 
 ### 1.1 ToolTips / uimd.ini（7）——已完成（2026-11-16）
-
-`src/rules/phobos_tooltips_ui.rs` 读取全部 7 键，`ProcessAssets` 启动时解析；
-消费者为 `app/input/tooltips.rs`（扩展文本、`MaxWidth`、锚定）与
-`app/loading/composition.rs`（载入界面黑点）。残渣见
-[`docs/phobos-tooltips-ui.md`](phobos-tooltips-ui.md)（电力行、Ares 门控的
-`SW.Shots`、`MaxWidth` 的 5 px 绘制内边距）。
 
 | 键 | 出处 | 类型 / 默认 | 消费者 |
 |---|---|---|---|
@@ -98,7 +111,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `RadialIndicatorVisibility` | `Ext/Rules/Body.cpp:172` | AffectedHouse, Allies（`:207,736`） | `Misc/Hooks.UI.cpp` |
 | `ChronoSparkleDisplayDelay` | `Ext/Rules/Body.cpp:118` | int, 24（`:37,577`） | `Ext/Techno/Hooks.Misc.cpp`、`Ext/Building/Hooks.cpp`、`Ext/Aircraft/Hooks.cpp` |
 | `ChronoSparkleBuildingDisplayPositions` | `Ext/Rules/Body.cpp:119` | enum, OccupantSlots（`:38,578`） | `Ext/Building/Hooks.cpp` |
-| `ColorAddUse8BitRGB` | `Ext/Rules/Body.cpp:260` | bool, no（`:178,703`） | `Utilities/GeneralUtils.cpp`（`GetColorFromColorAdd`；VERA 已按开关接线空袭激光色，幕布/狂暴/力场仍缺 `GetTintColor` 钩子族） |
+| `ColorAddUse8BitRGB` | `Ext/Rules/Body.cpp:260` | bool, no（`:178,703`） | `Utilities/GeneralUtils.cpp`（`GetColorFromColorAdd`；VERA 已有 `ColorAddTable::phobos_word`，其注释已记该键为残渣） |
 | `UseRetintFix` | `Ext/Rules/Body.cpp:409` | bool, **yes**（`:311,823`） | `Ext/TAction/Hooks.cpp`（retint 后重新激活 LightSource） |
 | `VoxelLightSource` | `Ext/Rules/Body.cpp:352` | `Nullable<Vector3D<float>>`，未设（`:271,780`） | `ReplaceVoxelLightSources`（`Body.cpp:1189-1207`）——**阻塞**，见 §3 |
 
@@ -110,17 +123,14 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 12 项（14 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 7 项（8 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `DisplayIncome.AllowAI` | VERA 尚未实现 `DisplayIncome` 收益累积/周期标签（全仓无消费者）；单实现 AllowAI 无意义，需先补整条 DisplayIncome 链。 |
-| `EnablePowerSurplus` / `PowerSurplus.ScaleToDrainAmount` | 未定位 VERA 电力盈余显示消费者；需先从 `Ext/House/Body.cpp` 的 `PowerSurplus` 链找等价 owner。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
-| `ChronoSparkleDisplayDelay` / `ChronoSparkleBuildingDisplayPositions` | 需先定位 VERA 的 ChronoSparkle 生成/显示 owner；Phobos hook 同时作用于 Unit/Infantry/Building/Aircraft。 |
-| `ColorAddUse8BitRGB` | `GetColorFromColorAdd` 本身已按开关（空袭色接线）；剩余三色走 `TechnoExt::GetTintColor` 的类词替换钩子（`Ext/Techno/Hooks.Tint.cpp:71-135`），需整族移植并用 Phobos 词替换原生 3 臂词。 |
-| `UseRetintFix` | 需先有 retint 后 LightSource 重新激活的路径（`Ext/TAction/Hooks.cpp`）。 |
+| `ColorAddUse8BitRGB` | `GetColorFromColorAdd` 已按开关（空袭激光色接线）；幕布/狂暴/力场三色走 `TechnoExt::GetTintColor` 的类词替换钩子（`Ext/Techno/Hooks.Tint.cpp:71-135`），需整族移植并用 Phobos 词替换原生 3 臂词。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 | `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut` | 需先对照 `Ext/Unit/Hooks.Jumpjet.cpp` 找到 VERA jumpjet 爬升预测/切出 owner。 |
 | `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
@@ -134,18 +144,6 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `VoxelShadowLightSource` | read（`Ext/Rules/Body.cpp:353`）、Process（`:947`）、apply（`:1200-1207`）全被注释，作者自注 “doesn't really impact anything” |
 
 ## 3. 已记录残渣（按链，含触发/影响/频率/风险）
-
-### 2026-11-16 ToolTips/uimd 链
-- **扩展文本电力行**：`ExtendedToolTips=yes` 时 Phobos 在时间后追加
-  `PowerLabel±电力`。VERA 未接：建筑臂需要实时 PowerPlantEnhancer 结算，单位臂
-  需要未移植的 `UnitPowerDrain`。触发：开启扩展提示；频率：每次悬停电力建筑/单位；
-  风险：文本少一段，无数值错误。
-- **SWShotsFormat 余量**：`SW.Shots` 状态只在 Ares 包（`AresSuperWeaponAvailability`
-  + `ares_launch_count`），仅 phobos 构建没有计数 → 射击行不显示。触发：自定义
-  `SW.Shots` 且开启扩展提示；频率：仅此类超武；风险：少一行提示。
-- **MaxWidth 的 5 px 绘制内边距**（钩子 `0x479029`）：VERA 文字内边距为固定常量，
-  不随 `MaxWidth>0` 收缩。触发：设置 MaxWidth；频率：每次 cameo 提示；风险：边框
-  附近文字间距差 5 px。
 
 ### 本会话新增链
 1. **Warhead.PreventScatter**（`8bacaf9bd`）：rules 解析不到的 warhead 名 → VERA
@@ -173,10 +171,18 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
   生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
   `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
-- **`ColorAddUse8BitRGB` 的其余三色**：`TintColorIronCurtain/ForceShield/Berserk`
-  经 `TechnoExt::GetTintColor` 绘制钩子替换类词（`Ext/Techno/Hooks.Tint.cpp:71-135`），
-  该钩子族尚未移植；VERA 目前仍用原生绘制的 3 臂转换。触发：开启该开关且幕布/狂暴/
-  力场着色；频率：每次此类绘制；风险：色调与非 8 位开关下的含义不一致（空袭色已正确）。
+- **`ColorAddUse8BitRGB` 的其余三色**：`GetColorFromColorAdd` 已按开关打包（空袭色
+  接线）；`TintColorIronCurtain/ForceShield/Berserk` 由 `TechnoExt::GetTintColor`
+  绘制钩子替换类词（`Ext/Techno/Hooks.Tint.cpp:71-135`），该钩子族未移植，VERA
+  仍用原生 3 臂词。触发：开关开启且幕布/狂暴/力场着色；频率：每次此类绘制；
+  风险：这三色与开关语义不一致（空袭色正确）。
+- **ToolTips 扩展文本电力行**：`GetPower` 的建筑臂需要实时
+  `PowerPlantEnhancer` 结算、单位臂需要未移植的 `UnitPowerDrain`，扩展提示暂无
+  电力段。触发：开启扩展提示；频率：每次悬停电力建筑/单位；风险：少一段文本。
+- **`SWShotsFormat` 余量**：`SW.Shots` 状态只在 Ares 包；仅 phobos 构建没有计数，
+  射击行不显示。触发：自定义 `SW.Shots` 且开启扩展提示；风险：少一行提示。
+- **`MaxWidth` 的 5 px 绘制内边距**（钩子 `0x479029`）：VERA 文字内边距为固定
+  常量，不随 `MaxWidth>0` 收缩；触发：设置 MaxWidth；风险：边框附近间距差 5 px。
 - **sim-scale deviations（有意保留，AGENTS.md）**：VERA 自有渲染器与 native
   管线不同（体素光栅/着色、图集）；`sim/` 不依赖 `render/`。实机对比时以
   “玩法可辨差异”为准，不以像素级 native 一致为准。

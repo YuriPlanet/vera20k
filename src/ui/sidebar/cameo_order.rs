@@ -101,12 +101,11 @@ pub(crate) struct Cameo {
 pub(crate) enum CameoKey {
     SuperWeapon {
         recharge_frames: i32,
-        /// `SuperWeaponTypeClass::Name` (the INI section), the `strcmp` input
-        /// of Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:249-267`).
+        /// `SuperWeaponTypeClass` internal `Name` (the INI section id).
         internal_name: String,
-        /// Phobos `RulesExt::Global()->SortCameoByName`, projected with the
-        /// other comparison inputs; both keys of one comparison share it.
-        sort_by_name: bool,
+        /// Phobos `SortCameoByName` (`Ext/Rules/Body.cpp:501`): compare
+        /// `internal_name` before the UI name.
+        sort_by_internal_name: bool,
         name: String,
     },
     Techno {
@@ -116,10 +115,10 @@ pub(crate) enum CameoKey {
         naval: bool,
         tech_level: i32,
         cost: i32,
-        /// `TechnoTypeClass::Name` (the INI section), the `strcmp` input of
-        /// Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:269-287`).
+        /// `TechnoTypeClass` internal `Name` (the INI section id).
         internal_name: String,
-        sort_by_name: bool,
+        /// See [`CameoKey::SuperWeapon::sort_by_internal_name`].
+        sort_by_internal_name: bool,
         name: String,
     },
 }
@@ -131,95 +130,101 @@ impl CameoKey {
         }
     }
 
-    fn sort_by_name(&self) -> bool {
-        match self {
-            Self::SuperWeapon { sort_by_name, .. } | Self::Techno { sort_by_name, .. } => {
-                *sort_by_name
-            }
-        }
-    }
-
     /// Native returns true on an equal name, so this is an insertion
     /// predicate, not a Rust sorting comparator. Both vehicle flags being
     /// set also makes the relation non-strict before the numeric keys.
     pub(crate) fn inserts_before(&self, other: &Self) -> bool {
-        let (left_name, right_name, left_internal, right_internal) = match (self, other) {
-            (
-                Self::SuperWeapon {
-                    recharge_frames: a,
-                    internal_name: ai,
-                    sort_by_name: _,
-                    name: an,
-                },
-                Self::SuperWeapon {
-                    recharge_frames: b,
-                    internal_name: bi,
-                    sort_by_name: _,
-                    name: bn,
-                },
-            ) => {
-                if a != b {
-                    return a < b;
-                }
-                (an, bn, ai, bi)
-            }
-            (Self::SuperWeapon { .. }, Self::Techno { .. }) => return true,
-            (Self::Techno { .. }, Self::SuperWeapon { .. }) => return false,
-            (
-                Self::Techno {
-                    own_side: a_side,
-                    considered_aircraft: a_air,
-                    naval: a_naval,
-                    tech_level: a_level,
-                    cost: a_cost,
-                    internal_name: ai,
-                    sort_by_name: _,
-                    name: an,
-                },
-                Self::Techno {
-                    own_side: b_side,
-                    considered_aircraft: b_air,
-                    naval: b_naval,
-                    tech_level: b_level,
-                    cost: b_cost,
-                    internal_name: bi,
-                    sort_by_name: _,
-                    name: bn,
-                },
-            ) => {
-                if a_side != b_side {
-                    return *a_side;
-                }
-                let a_ground = !a_air && !a_naval;
-                let b_ground = !b_air && !b_naval;
-                if a_ground {
-                    if *b_air {
-                        return true;
+        let (left_name, right_name, left_internal, right_internal, sort_by_internal) =
+            match (self, other) {
+                (
+                    Self::SuperWeapon {
+                        recharge_frames: a,
+                        internal_name: ain,
+                        sort_by_internal_name: asort,
+                        name: an,
+                    },
+                    Self::SuperWeapon {
+                        recharge_frames: b,
+                        internal_name: bin,
+                        sort_by_internal_name: _,
+                        name: bn,
+                    },
+                ) => {
+                    if a != b {
+                        return a < b;
                     }
-                } else if *a_air {
-                    if b_ground {
+                    (an, bn, ain, bin, *asort)
+                }
+                (Self::SuperWeapon { .. }, Self::Techno { .. }) => return true,
+                (Self::Techno { .. }, Self::SuperWeapon { .. }) => return false,
+                (
+                    Self::Techno {
+                        own_side: a_side,
+                        considered_aircraft: a_air,
+                        naval: a_naval,
+                        tech_level: a_level,
+                        cost: a_cost,
+                        internal_name: ain,
+                        sort_by_internal_name: asort,
+                        name: an,
+                    },
+                    Self::Techno {
+                        own_side: b_side,
+                        considered_aircraft: b_air,
+                        naval: b_naval,
+                        tech_level: b_level,
+                        cost: b_cost,
+                        internal_name: bin,
+                        sort_by_internal_name: _,
+                        name: bn,
+                    },
+                ) => {
+                    if a_side != b_side {
+                        return *a_side;
+                    }
+                    let a_ground = !a_air && !a_naval;
+                    let b_ground = !b_air && !b_naval;
+                    if a_ground {
+                        if *b_air {
+                            return true;
+                        }
+                    } else if *a_air {
+                        if b_ground {
+                            return false;
+                        }
+                    } else if *a_naval && (b_ground || *b_air) {
                         return false;
                     }
-                } else if *a_naval && (b_ground || *b_air) {
-                    return false;
+                    if (a_ground || *a_air) && *b_naval {
+                        return true;
+                    }
+                    if a_level != b_level {
+                        return a_level < b_level;
+                    }
+                    if a_cost != b_cost {
+                        return a_cost < b_cost;
+                    }
+                    (an, bn, ain, bin, *asort)
                 }
-                if (a_ground || *a_air) && *b_naval {
-                    return true;
-                }
-                if a_level != b_level {
-                    return a_level < b_level;
-                }
-                if a_cost != b_cost {
-                    return a_cost < b_cost;
-                }
-                (an, bn, ai, bi)
-            }
-        };
-        // Phobos `SortCameoByName` (`Misc/Hooks.UI.cpp:249-287`) replaces the
-        // UIName comparison with the section name's `strcmp`; only an exact
-        // match falls through to the stock `wcscmp(...) <= 0`.
-        if self.sort_by_name() {
-            match left_internal.as_bytes().cmp(right_internal.as_bytes()) {
+            };
+        // Phobos `StripClass_OperatorLessThan_SortCameoByName` hooks
+        // (`0x6A84DB` SW, `0x6A86ED` Techno, `Misc/Hooks.UI.cpp:250-287`):
+        // `strcmp` the internal `Name`, then fall back to the UI-name
+        // `wcscmp` below on equality.
+        if sort_by_internal {
+            let order = left_internal
+                .as_bytes()
+                .split(|byte| *byte == 0)
+                .next()
+                .unwrap_or_default()
+                .cmp(
+                    right_internal
+                        .as_bytes()
+                        .split(|byte| *byte == 0)
+                        .next()
+                        .unwrap_or_default(),
+                );
+            match order {
                 std::cmp::Ordering::Less => return true,
                 std::cmp::Ordering::Greater => return false,
                 std::cmp::Ordering::Equal => {}
@@ -846,7 +851,7 @@ impl CameoStrips {
             key: CameoKey::SuperWeapon {
                 recharge_frames: 0,
                 internal_name: String::new(),
-                sort_by_name: false,
+                sort_by_internal_name: false,
                 name: item.display_name.clone(),
             },
         }));
@@ -873,10 +878,10 @@ impl CameoStrips {
                         own_side: true,
                         considered_aircraft: false,
                         naval: false,
-                        internal_name: String::new(),
-                        sort_by_name: false,
                         tech_level: 0,
                         cost,
+                        internal_name: String::new(),
+                        sort_by_internal_name: false,
                         name: name.to_owned(),
                     },
                 });

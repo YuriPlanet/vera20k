@@ -1677,16 +1677,17 @@ impl Simulation {
         true
     }
 
-    /// A Foot's `ChronoSparkle1=` every 24th frame while BeingWarpedOut or
-    /// WarpingIn (`+0x270 || +0x271`): 0x78 leptons east and south of a Unit's
-    /// or an infantryman's Location, at an Aircraft's own Location (its
-    /// constructor row copies the Location unshifted, `0x00414C38..0x00414C60`).
+    /// A Foot's `ChronoSparkle1=` every `ChronoSparkleDisplayDelay` frames
+    /// (stock 24) while BeingWarpedOut or WarpingIn (`+0x270 || +0x271`): 0x78
+    /// leptons east and south of a Unit's or an infantryman's Location, at an
+    /// Aircraft's own Location (its constructor row copies the Location
+    /// unshifted, `0x00414C38..0x00414C60`).
     fn warp_foot_sparkle(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         if !(entity.is_warped_out() || entity.is_warping_in())
-            || !sparkle_frame(self.session.binary_frame(), 0)
+            || !sparkle_frame(self.session.binary_frame(), 0, sparkle_delay(rules))
         {
             return;
         }
@@ -1705,11 +1706,14 @@ impl Simulation {
         self.spawn_temporal_anim(&name, coord, None, rules);
     }
 
-    /// A frozen building's sparkle (`0x004403D4..0x0044055D`): a type with
-    /// `MaxNumberOccupants=` sparkles at each port `i` on frames where
-    /// `(frame + i) % 24 == 0`, at its `vtable+0xAC` coordinate plus
-    /// `IsometricPixelToWorld(MuzzleFlash<i>)` with ZAdjust -200; any other
-    /// building sparkles at its Location every 24th frame.
+    /// A frozen building's sparkle (`0x004403D4..0x0044055D`) under Phobos
+    /// `ChronoSparkleBuildingDisplayPositions`: with `OccupantSlots` (the
+    /// stock behaviour) each port `i` of a type with `MaxNumberOccupants=`
+    /// sparkles when `(frame + i) % delay == 0`, at its foundation centre plus
+    /// `IsometricPixelToWorld(MuzzleFlash<i>)` with ZAdjust -200; with
+    /// `Occupants` it instead walks the present occupants; with `Building`
+    /// (or when no port sparkles) the building itself sparkles every delay
+    /// frames at its `GetCenterCoords`.
     fn temporal_building_sparkle(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1720,43 +1724,76 @@ impl Simulation {
         let frame = self.session.binary_frame();
         let location = location_coord(entity);
         let name = rules.general.chrono_sparkle1.name.clone();
-        let ports = object.max_number_occupants;
-        if ports == 0 {
-            if sparkle_frame(frame, 0) {
-                self.spawn_temporal_anim(&name, location, None, rules);
-            }
-            return;
-        }
-        let muzzle_flashes = rules
-            .art()
-            .get(&object.image)
-            .or_else(|| rules.art().get(&object.id))
-            .map(|art| art.muzzle_flash_positions.clone())
-            .unwrap_or_default();
-        for port in 0..ports {
-            if !sparkle_frame(frame, port) {
-                continue;
-            }
-            let (px, py) = muzzle_flashes.get(port as usize).copied().unwrap_or((0, 0));
-            let (dx, dy) =
-                crate::util::pixel_conversion::PixelConversionBounds::isometric_pixel_to_leptons(
+        let delay = sparkle_delay(rules);
+        #[cfg(feature = "phobos")]
+        let positions = rules.phobos_globals.chrono_sparkle_building_display_positions;
+        #[cfg(not(feature = "phobos"))]
+        let positions =
+            crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS;
+        let on_building = positions
+            .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::BUILDING);
+        let on_slots = positions
+            .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS);
+        let on_occupants = positions
+            .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANTS);
+        let occupant_count = if on_slots {
+            i32::try_from(object.max_number_occupants).unwrap_or(i32::MAX)
+        } else if on_occupants {
+            i32::try_from(entity.passenger_role.occupants().count()).unwrap_or(i32::MAX)
+        } else {
+            0
+        };
+        let show_occupy = occupant_count > 0 && (on_occupants || on_slots);
+        let center = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        if show_occupy {
+            let muzzle_flashes = rules
+                .art()
+                .get(&object.image)
+                .or_else(|| rules.art().get(&object.id))
+                .map(|art| art.muzzle_flash_positions.clone())
+                .unwrap_or_default();
+            for port in 0..occupant_count {
+                if !sparkle_frame(frame, port as u32, delay) {
+                    continue;
+                }
+                let (px, py) = muzzle_flashes
+                    .get(port as usize)
+                    .copied()
+                    .unwrap_or((0, 0));
+                let (dx, dy) = crate::util::pixel_conversion::PixelConversionBounds::isometric_pixel_to_leptons(
                     px, py,
                 );
-            let (base, _) = crate::sim::movement::ground_pose::building_render_order_parts(
-                crate::sim::components::DriveCoord {
-                    x: location.x,
-                    y: location.y,
-                    z: location.z,
+                let (base, _) = crate::sim::movement::ground_pose::building_render_order_parts(
+                    crate::sim::components::DriveCoord {
+                        x: location.x,
+                        y: location.y,
+                        z: location.z,
+                    },
+                    false,
+                    false,
+                );
+                let coord = AnimWorldCoord {
+                    x: base.x.wrapping_add(dx),
+                    y: base.y.wrapping_add(dy),
+                    z: base.z,
+                };
+                self.spawn_temporal_anim(&name, coord, Some(PORT_SPARKLE_Z_ADJUST), rules);
+            }
+        }
+        if (!show_occupy || on_building) && sparkle_frame(frame, 0, delay) {
+            self.spawn_temporal_anim(
+                &name,
+                AnimWorldCoord {
+                    x: center.x,
+                    y: center.y,
+                    z: center.z,
                 },
-                false,
-                false,
+                None,
+                rules,
             );
-            let coord = AnimWorldCoord {
-                x: base.x.wrapping_add(dx),
-                y: base.y.wrapping_add(dy),
-                z: base.z,
-            };
-            self.spawn_temporal_anim(&name, coord, Some(PORT_SPARKLE_Z_ADJUST), rules);
         }
     }
 }
@@ -1837,8 +1874,18 @@ fn take_idle_trace() -> Vec<u64> {
 }
 
 /// `(frame + phase) % 24 == 0` under the native signed IDIV.
-fn sparkle_frame(frame: u32, phase: u32) -> bool {
-    (frame as i32).wrapping_add(phase as i32) % SPARKLE_PERIOD_FRAMES == 0
+fn sparkle_delay(rules: &RuleSet) -> i32 {
+    #[cfg(feature = "phobos")]
+    let delay = rules.phobos_globals.chrono_sparkle_display_delay;
+    #[cfg(not(feature = "phobos"))]
+    let delay = SPARKLE_PERIOD_FRAMES;
+    // Native divides by this; a configured 0 would fault, so keep a positive
+    // divisor (retail leaves it at the constructor's 24).
+    delay.max(1)
+}
+
+fn sparkle_frame(frame: u32, phase: u32, delay: i32) -> bool {
+    (frame as i32).wrapping_add(phase as i32) % delay == 0
 }
 
 /// `ObjectClass+0x9C` Location, the coordinate WarpAway and the sparkle use.

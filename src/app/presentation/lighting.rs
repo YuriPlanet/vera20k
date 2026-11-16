@@ -925,6 +925,11 @@ pub(crate) struct MatchLighting {
     /// ColorScheme normal RGB survives a same-theater user load and menu
     /// return; fresh installs and a different Init_Theater recreate it.
     theater: Option<String>,
+    /// Phobos `UseRetintFix=` (`Ext/TAction/Hooks.cpp:68-107`): a Retint map
+    /// action leaves native light sources with their old RGB, so the fix
+    /// deactivates and reactivates every active one. VERA re-derives a
+    /// source's cells from its live `PointLight`, which is the same repair.
+    use_retint_fix: bool,
 }
 
 impl Default for MatchLighting {
@@ -942,6 +947,7 @@ impl Default for MatchLighting {
             global_cells: Vec::new(),
             dimensions: [0; 2],
             theater: None,
+            use_retint_fix: false,
         }
     }
 }
@@ -961,6 +967,12 @@ impl MatchLighting {
 
     pub(crate) fn restore_anim_intensities(&mut self, saved: Vec<(u64, i32)>) {
         self.anim_intensities = saved.into_iter().collect();
+    }
+
+    /// Phobos `[AudioVisual] UseRetintFix=`, applied once per loaded match.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_use_retint_fix(&mut self, enabled: bool) {
+        self.use_retint_fix = enabled;
     }
 
     /// The actual pre-Logic save boundary can follow ingress producers but
@@ -1096,7 +1108,24 @@ impl MatchLighting {
                     match palette {
                         PaletteUpdate::Preserve => {}
                         PaletteUpdate::RestoreNormal => self.grid.set_alternate_rgb(None),
-                        PaletteUpdate::Normal(rgb) => self.grid.retint_normal_rgb(*rgb),
+                        PaletteUpdate::Normal(rgb) => {
+                            self.grid.retint_normal_rgb(*rgb);
+                            // Phobos `UseRetintFix` (`Ext/TAction/Hooks.cpp:68-107`):
+                            // a Retint leaves active light sources drawing the old
+                            // RGB, so every affected cell is relit from its live
+                            // source after the palette swap.
+                            if self.use_retint_fix {
+                                let sources: Vec<PointLight> = self
+                                    .buildings
+                                    .values()
+                                    .chain(self.radiation.values())
+                                    .cloned()
+                                    .collect();
+                                for source in &sources {
+                                    self.queue_area(Some(source), self.detail_level, &mut dirty);
+                                }
+                            }
+                        }
                         PaletteUpdate::Alternate(rgb) => self.grid.set_alternate_rgb(Some(*rgb)),
                     }
                     //53AD00 updates Converts before4AE4C0 refreshes Cells.

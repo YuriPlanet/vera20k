@@ -846,3 +846,23 @@ fn ares_retail_soviet_computer_draws_between_both_nod_plants() {
         "one Randomizer(0, 1)"
     );
 }
+
+/// Phobos `Ext/House/Body.cpp:655-674`: the stock splice wants a
+/// non-negative surplus; `EnablePowerSurplus` raises the floor to the house's
+/// `PowerSurplus` target, optionally scaled by `PowerDrain / scale`. Both
+/// totals use native wrapping `SUB`.
+#[test]
+fn power_surplus_floor_raises_the_power_plant_splice_threshold() {
+    // Stock floor 0.
+    assert!(!super::power_surplus_short(100, 60, 30, 0));
+    assert!(super::power_surplus_short(100, 60, 50, 0));
+    // Phobos floor 50: 200 - 100 - 60 = 40 is short; 200 - 100 - 40 = 60 is not.
+    assert!(super::power_surplus_short(200, 100, 60, 50));
+    assert!(!super::power_surplus_short(200, 100, 40, 50));
+    // The scaled target is computed by the caller; this asserts the compare.
+    assert!(super::power_surplus_short(200, 100, 60, 41));
+    assert!(!super::power_surplus_short(200, 100, 60, 40));
+    // Native signed DWORD wrapping.
+    assert!(super::power_surplus_short(0, i32::MAX, 1, 0));
+}
+

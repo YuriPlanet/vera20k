@@ -1365,8 +1365,7 @@ fn object_cameo(
 ) -> Option<Cameo> {
     use crate::rules::object_type::ObjectCategory;
     use crate::ui::sidebar::SidebarTab;
-    let type_name = sim.interner().try_resolve(id)?;
-    let object = rules.object(type_name)?;
+    let object = rules.object(sim.interner().try_resolve(id)?)?;
     let side = sim
         .houses()
         .get(&owner)
@@ -1376,6 +1375,10 @@ fn object_cameo(
         object.category,
         ObjectCategory::Vehicle | ObjectCategory::Aircraft
     );
+    #[cfg(feature = "phobos")]
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
+    #[cfg(not(feature = "phobos"))]
+    let sort_by_internal_name = false;
     Some(Cameo {
         id: CameoId::Object(id),
         tab: SidebarTab::for_category(crate::sim::production::category_for_object(object)),
@@ -1386,25 +1389,11 @@ fn object_cameo(
             naval: vehicle && object.naval,
             tech_level: sim.object_tech_level(object),
             cost,
-            internal_name: type_name.to_owned(),
-            sort_by_name: sort_cameo_by_name(rules),
+            internal_name: object.id.clone(),
+            sort_by_internal_name,
             name: crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf),
         },
     })
-}
-
-/// Phobos `[General] SortCameoByName` (`Ext/Rules/Body.cpp:501`), read once
-/// into the rules globals and projected with the other cameo comparison inputs.
-fn sort_cameo_by_name(rules: &crate::rules::ruleset::RuleSet) -> bool {
-    #[cfg(feature = "phobos")]
-    {
-        rules.phobos_globals.sort_cameo_by_name
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = rules;
-        false
-    }
 }
 
 fn super_cameo(
@@ -1420,25 +1409,29 @@ fn super_cameo(
     let tab = crate::ui::sidebar::SidebarTab::for_sw_tab_index(kind.phobos_tab_index.index());
     #[cfg(not(feature = "phobos"))]
     let tab = crate::ui::sidebar::SidebarTab::Defense;
+    #[cfg(feature = "phobos")]
+    let sort_by_internal_name = rules.phobos_globals.sort_cameo_by_name;
+    #[cfg(not(feature = "phobos"))]
+    let sort_by_internal_name = false;
     Some(Cameo {
         id: CameoId::SuperWeapon(id),
         tab,
         available: true,
-        key: super_weapon_cameo_key(kind, csf, sort_cameo_by_name(rules)),
+        key: super_weapon_cameo_key(kind, csf, sort_by_internal_name),
     })
 }
 
 /// A superweapon's `BuildType::SortsBefore` (0x006A8420) inputs: RechargeTime,
-/// then (Phobos `SortCameoByName`) the section name, then its UI name.
+/// then its UI name.
 pub(crate) fn super_weapon_cameo_key(
     kind: &crate::rules::superweapon_type::SuperWeaponType,
     csf: Option<&crate::assets::csf_file::CsfFile>,
-    sort_by_name: bool,
+    sort_by_internal_name: bool,
 ) -> CameoKey {
     CameoKey::SuperWeapon {
         recharge_frames: kind.recharge_time_frames,
         internal_name: kind.id.clone(),
-        sort_by_name,
+        sort_by_internal_name,
         name: crate::assets::csf_file::type_ui_name(kind.ui_name.as_deref(), csf),
     }
 }
@@ -1786,10 +1779,10 @@ mod tests {
                 own_side: true,
                 considered_aircraft: false,
                 naval: false,
-                internal_name: String::new(),
-                sort_by_name: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: "E2".into(),
             },
         };
@@ -1877,10 +1870,10 @@ mod tests {
             own_side: true,
             considered_aircraft: false,
             naval: false,
-            internal_name: String::new(),
-            sort_by_name: false,
             tech_level: 1,
             cost: 300,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "changed comparison key".into(),
         };
         projection.reconcile_cameos(owner, &[repriced], 3, &[]);
@@ -1958,10 +1951,10 @@ mod tests {
                         own_side: true,
                         considered_aircraft: false,
                         naval: false,
-                        internal_name: String::new(),
-                        sort_by_name: false,
                         tech_level: 0,
                         cost: 0,
+                        internal_name: String::new(),
+                        sort_by_internal_name: false,
                         name: String::new(),
                     },
                 })
@@ -2044,10 +2037,10 @@ mod tests {
                     own_side: true,
                     considered_aircraft: false,
                     naval: false,
-                    internal_name: String::new(),
-                    sort_by_name: false,
                     tech_level: 0,
                     cost: 100,
+                    internal_name: String::new(),
+                    sort_by_internal_name: false,
                     name: String::new(),
                 },
             })
@@ -2102,10 +2095,10 @@ mod tests {
                 own_side: true,
                 considered_aircraft: false,
                 naval: false,
-                internal_name: String::new(),
-                sort_by_name: false,
                 tech_level: 0,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: String::new(),
             },
         };

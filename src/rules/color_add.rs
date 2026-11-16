@@ -96,31 +96,25 @@ impl ColorAddTable {
     }
 
     /// Phobos `GeneralUtils::GetColorFromColorAdd`
-    /// (`src/Utilities/GeneralUtils.cpp:276-300`): its pixel-format switch
-    /// breaks after the RGB565 arm, so unlike [`Self::rgb565_word`] the stock
-    /// word is only `R<<11 | G<<5 | B`. With `[AudioVisual]
-    /// ColorAddUse8BitRGB=yes` the entry is read as 8-bit RGB and packed
-    /// through `Drawing::RGB_To_Int` instead:
-    /// `(B>>3) | ((G>>2)<<5) | ((R>>3)<<11)`. An index outside the table
-    /// answers 0.
+    /// (`src/Utilities/GeneralUtils.cpp`): its pixel-format switch breaks after
+    /// the RGB565 arm, so unlike [`Self::rgb565_word`] the word is only
+    /// `R<<11 | G<<5 | B`. An index outside the table answers 0.
     ///
-    /// RESIDUAL: the same conversion feeds Phobos' cached
-    /// `TintColorIronCurtain`/`TintColorForceShield`/`TintColorBerserk`
-    /// (`Ext/Rules/Body.cpp:734-736`) consumed by the `TechnoExt::GetTintColor`
-    /// draw hooks; VERA's curtain/berserk/force-shield words still come from
-    /// the native draw code, so the switch reaches them only once that hook
-    /// family is ported.
+    /// `use_8bit` is `[AudioVisual] ColorAddUse8BitRGB=`
+    /// (`Ext/Rules/Body.cpp:260`): the entries are then 8-bit channels and
+    /// `Drawing::RGB_To_Int` narrows them to RGB565 before packing.
     #[cfg(feature = "phobos")]
-    pub fn phobos_word(&self, index: i32, use_8bit_rgb: bool) -> u16 {
+    pub fn phobos_word(&self, index: i32, use_8bit: bool) -> u16 {
         let Some(entry) = usize::try_from(index).ok().and_then(|i| self.slots.get(i)) else {
             return 0;
         };
         let [r, g, b] = entry.rgb.map(u32::from);
-        if use_8bit_rgb {
-            ((b >> 3) | ((g >> 2) << 5) | ((r >> 3) << 11)) as u16
+        let word = if use_8bit {
+            (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)
         } else {
-            (r << 11 | g << 5 | b) as u16
-        }
+            r << 11 | g << 5 | b
+        };
+        word as u16
     }
 }
 
@@ -432,39 +426,6 @@ mod tests {
         assert_eq!(rules.color_add.slots[1].rgb, [4, 5, 6]);
     }
 
-    /// Phobos `GetColorFromColorAdd` (`Utilities/GeneralUtils.cpp:276-300`):
-    /// the stock arm packs the stored components raw; with
-    /// `ColorAddUse8BitRGB` the entry is 8-bit RGB and goes through
-    /// `Drawing::RGB_To_Int` instead.
-    #[cfg(feature = "phobos")]
-    #[test]
-    fn phobos_word_scales_entries_only_with_the_8bit_switch() {
-        let table = ColorAddTable::from_ini(&IniFile::from_str(
-            "[ColorAdd]\nRed31=31,0,0\nRgb255=255,64,8\n",
-        ));
-        // Native enumeration is the hash order of section keys, not file
-        // order, so the test locates each slot by name.
-        let slot = |name: &str| {
-            table
-                .entries()
-                .iter()
-                .position(|entry| entry.name.as_deref() == Some(name))
-                .unwrap() as i32
-        };
-        let (red, rgb) = (slot("Red31"), slot("Rgb255"));
-        // Raw pack: 31<<11 is the stored 5-bit red component.
-        assert_eq!(table.phobos_word(red, false), 0xF800);
-        assert_eq!(
-            table.phobos_word(rgb, false),
-            (255u32 << 11 | 64 << 5 | 8) as u16
-        );
-        // 8-bit pack: (B>>3) | ((G>>2)<<5) | ((R>>3)<<11). A value meant as a
-        // 5-bit component loses its low bits under this arm.
-        assert_eq!(table.phobos_word(red, true), (31u16 >> 3) << 11);
-        assert_eq!(table.phobos_word(rgb, true), 0xF800 | 16 << 5 | 1);
-        assert_eq!(table.phobos_word(-1, true), 0);
-    }
-
     #[test]
     fn later_rules_color_add_replaces_prefix_and_retains_tail() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
@@ -483,5 +444,26 @@ mod tests {
         assert_eq!(rules.color_add.slots[0].rgb, [0, 0, 24]);
         assert_eq!(rules.color_add.slots[1].rgb, [4, 5, 6]);
         assert_eq!(rules.color_add.slots[2].rgb, [7, 8, 9]);
+    }
+
+    /// `[AudioVisual] ColorAddUse8BitRGB=yes` feeds `Drawing::RGB_To_Int`
+    /// (`Ext/Rules/Body.cpp:260`, `Utilities/GeneralUtils.cpp`), which narrows
+    /// the 8-bit channels to RGB565 before the `R<<11 | G<<5 | B` pack.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_word_narrows_8bit_channels() {
+        let table = ColorAddTable {
+            slots: std::array::from_fn(|i| ColorAddEntry {
+                name: None,
+                rgb: if i == 0 { [128, 128, 128] } else { [5, 5, 5] },
+            }),
+        };
+        // 128 -> 16 red/blue, 128 -> 32 green.
+        assert_eq!(table.phobos_word(0, true), (16 << 11 | 32 << 5 | 16) as u16);
+        assert_eq!(table.phobos_word(1, true), 32, "5 >> 3 is 0, 5 >> 2 is 1");
+        assert_eq!(
+            table.phobos_word(0, false),
+            (128 << 11 | 128 << 5 | 128) as u16
+        );
     }
 }

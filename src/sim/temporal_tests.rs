@@ -3391,3 +3391,54 @@ fn warp_per_step_needs_a_resolved_warhead_for_the_extension() {
         "a weapon with no warhead keeps its raw Damage"
     );
 }
+
+/// Phobos `ChronoSparkleDisplayDelay` and
+/// `ChronoSparkleBuildingDisplayPositions` (`Ext/Building/Hooks.cpp:39-83`):
+/// `Building` makes the structure itself sparkle on the configured period,
+/// even when it has occupant ports.
+#[test]
+fn chrono_sparkle_delay_and_building_position_globals_drive_the_building_sparkle() {
+    let text = RULES.replace(
+        "[General]\n",
+        "[General]\nChronoSparkleDisplayDelay=8\n\
+         ChronoSparkleBuildingDisplayPositions=Building\n",
+    );
+    let rules = rules_from(&text, ART);
+    let mut sim = sim(7);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 16, 16);
+    let sparkles = |sim: &Simulation| {
+        sim.substrate
+            .anims
+            .iter()
+            .filter(|(_, anim)| {
+                sim.interner.resolve(anim.type_id()) == rules.general.chrono_sparkle1.name
+            })
+            .count()
+    };
+    sim.session.set_binary_frame_for_test(8);
+    sim.temporal_building_sparkle(plant, &rules);
+    assert_eq!(sparkles(&sim), 1, "frame 8 is on the configured period");
+    let center = crate::sim::movement::ground_pose::object_get_coords(
+        entity(&sim, plant),
+        sim.resolved_terrain.as_ref(),
+    );
+    let coord = sim
+        .substrate
+        .anims
+        .iter()
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == rules.general.chrono_sparkle1.name)
+        .find_map(|(&id, _)| sim.anim_absolute_coord(id))
+        .unwrap();
+    assert_eq!(
+        coord,
+        AnimWorldCoord {
+            x: center.x,
+            y: center.y,
+            z: center.z,
+        },
+        "the building sparkle sits at GetCenterCoords"
+    );
+    sim.session.set_binary_frame_for_test(9);
+    sim.temporal_building_sparkle(plant, &rules);
+    assert_eq!(sparkles(&sim), 1, "frame 9 is between periods");
+}
