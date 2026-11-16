@@ -443,7 +443,9 @@ impl Simulation {
             return;
         }
         // VERA: in a match only AI play there is no human for the computers
-        // to turn on together (`Simulation::network_ai_alone`).
+        // to turn on together (`Simulation::network_ai_alone`); Can_Ally
+        // refuses only an alliance that leaves no enemy, so two of three
+        // left would gang up on the third.
         if self.network_ai_alone() {
             return;
         }

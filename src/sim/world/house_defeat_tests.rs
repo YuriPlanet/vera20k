@@ -344,13 +344,15 @@ fn network_match_winners_are_the_humans_the_completion_flags_to_win() {
 
 /// VERA's match where only AI play (`Simulation::network_ai_alone`): the
 /// spectators' defeat decides nothing, a fallen computer turns none of the
-/// others paranoid, and the match ends when one AI is left.
+/// three left paranoid (two of them would gang up on the third: Can_Ally
+/// refuses only an alliance that leaves no enemy), and the match ends when
+/// one AI is left.
 #[test]
 fn a_match_only_ai_play_runs_until_one_ai_is_left() {
     let mut rules = rules(3);
     rules.general.paranoid = true;
     rules.general.allies_allowed = true;
-    let (mut sim, owners) = sim_with_houses(&[0, 1, 2, 2, 2]);
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2, 2, 2, 2]);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
     sim.session.install_network_timing(10);
@@ -391,6 +393,8 @@ fn a_match_only_ai_play_runs_until_one_ai_is_left() {
     );
     assert_eq!(sim.network_match_winners(), None);
     defeat(&mut sim, owners[3]);
+    assert_eq!(sim.network_match_winners(), None);
+    defeat(&mut sim, owners[4]);
     assert_eq!(sim.network_match_winners(), Some(Vec::new()));
 }
 
