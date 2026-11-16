@@ -815,6 +815,20 @@ impl IniSection {
         self.read_phobos_nullable_with(key, current, parse_ares_int)
     }
 
+    /// Phobos `Valueable<int>`: `INI_EX::ReadInteger` is ReadString(2048),
+    /// then `Read<int, 1>`, whose `Parser<int, 1>::Parse`
+    /// (`src/Utilities/Parser.h` at c783774a) converts only the text before
+    /// the first comma, through the `Parser<int>::TryParse` it shares with
+    /// Ares (`$%d` included): the [`scan_ares_fields`] scan with one slot.
+    /// Absent, empty and failed reads keep the current value.
+    pub fn read_phobos_int(&self, key: &str, current: i32) -> i32 {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            let mut value = [current];
+            scan_ares_fields(raw, &mut value);
+            value[0]
+        })
+    }
+
     /// Phobos `Valueable<ColorStruct>` (`INI_EX::Read3Bytes`, then
     /// `Parser<BYTE,3>` at `src/Utilities/TemplateDef.h`): a comma-separated
     /// `R,G,B` needs all three channels inside `0..=255`. Absent, empty and
@@ -2098,6 +2112,19 @@ mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
     use crate::util::native_x87::NativeF32Bits;
+
+    /// Phobos' `Read<int, 1>` converts the text before the first comma, so a
+    /// hex value with more text after it still reads, and a piece of 128
+    /// bytes or more fails its `%[^,]` scan into 0x80 bytes and keeps the
+    /// value.
+    #[test]
+    fn phobos_integer_reader_converts_the_first_comma_piece() {
+        for (value, expected) in [("Ah ,0".to_owned(), 10), (format!("{:0>128},1", 7), -1)] {
+            let ini = IniFile::from_str(&format!("[AI]\nKey={value}\n"));
+            let ai = ini.section("AI").expect("section");
+            assert_eq!(ai.read_phobos_int("Key", -1), expected, "{value:?}");
+        }
+    }
 
     #[test]
     fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {

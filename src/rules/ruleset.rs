@@ -2111,6 +2111,19 @@ pub struct GeneralRules {
     /// ([AI] BlockagePathDelay). Native signed dword, in frames directly.
     /// When this timer expires, the unit re-pathfinds with urgency=2 (scatter).
     pub blockage_path_delay_ticks: i32,
+    /// `Rules+0x1134`, `[AI] PowerSurplus=`: `RulesClass::ReadAI` reads it
+    /// through `CCINIClass::ReadInteger 0x005276D0` (`0x00673A8B..0x00673AB0`)
+    /// over the constructor's 50 (`0x00666DDC`). Stock code never uses it;
+    /// Phobos' `EnablePowerSurplus` makes it the AI's spare power
+    /// (`PowerState::power_surplus`).
+    pub power_surplus: i32,
+    /// Phobos `[AI] EnablePowerSurplus=` (`RulesExt`, default false): computer
+    /// houses plan to keep `PowerSurplus` power spare.
+    pub enable_power_surplus: bool,
+    /// Phobos `[AI] PowerSurplus.ScaleToDrainAmount=` (`RulesExt`, default 0):
+    /// above 0, the spare power is `PowerSurplus` times the house's drain over
+    /// this amount.
+    pub power_surplus_scale_to_drain_amount: i32,
     /// [General] AIAutoDeployFrameDelay, native signed DynamicVector at
     /// Rules+E2C (data+E30), indexed Hard/Normal/Easy by Infantry52155C.
     /// Constructor666932..666961 leaves it empty; stock15,25,100 is authored.
@@ -3061,6 +3074,9 @@ impl Default for GeneralRules {
             path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
             blockage_path_delay_ticks: 60,
+            power_surplus: 50,
+            enable_power_surplus: false,
+            power_surplus_scale_to_drain_amount: 0,
             ai_auto_deploy_frame_delay: Vec::new(),
             #[cfg(feature = "phobos")]
             infantry_auto_deploy: false,
@@ -3782,6 +3798,20 @@ impl GeneralRules {
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
             ai.read_int("BlockagePathDelay", defaults.blockage_path_delay_ticks);
+        let power_surplus = ai.read_int("PowerSurplus", defaults.power_surplus);
+        // Phobos `RulesExt::ExtData::LoadBeforeTypeData` (src/Ext/Rules/Body.cpp
+        // at c783774a) reads these from hook 0x00679A15 in
+        // `RulesClass::ReadTypeData`, which `Process` runs for every Rules pass.
+        // Its `Read<bool, 1>` gives the stock reader's verdict, except that a
+        // first comma piece of 128 bytes or more keeps the value.
+        let enable_power_surplus =
+            phobos_read(|| ai.read_bool("EnablePowerSurplus", defaults.enable_power_surplus));
+        let power_surplus_scale_to_drain_amount = phobos_read(|| {
+            ai.read_phobos_int(
+                "PowerSurplus.ScaleToDrainAmount",
+                defaults.power_surplus_scale_to_drain_amount,
+            )
+        });
         // ReadAudioVisual66B673..66B74E belongs to the retained Process
         // owner; a final merged INI cannot reproduce omitted-key defaults.
         let extra_unit_light = defaults.extra_unit_light;
@@ -3814,6 +3844,9 @@ impl GeneralRules {
                 path_delay,
                 attack_delay,
                 blockage_path_delay_ticks,
+                power_surplus,
+                enable_power_surplus,
+                power_surplus_scale_to_drain_amount,
                 bomb_ticking_sound,
                 bomb_attach_sound,
                 ally_reveal,
@@ -4432,6 +4465,9 @@ impl GeneralRules {
             large_visceroid: None,
             path_delay,
             blockage_path_delay_ticks,
+            power_surplus,
+            enable_power_surplus,
+            power_surplus_scale_to_drain_amount,
             // ReadGeneral670235..670267 uses the same475D70 signed vector
             // reader as the existing Recalc difficulty tables below.
             ai_auto_deploy_frame_delay: general
@@ -9774,6 +9810,12 @@ impl RuleSet {
             self.general.ai_fire_sale_delay.hash(&mut hasher);
             self.general.ai_all_to_hunt.hash(&mut hasher);
             self.general.gather_when_mcv_deploy.hash(&mut hasher);
+            b"phobos-power-surplus-v1".hash(&mut hasher);
+            self.general.enable_power_surplus.hash(&mut hasher);
+            self.general.power_surplus.hash(&mut hasher);
+            self.general
+                .power_surplus_scale_to_drain_amount
+                .hash(&mut hasher);
         }
         self.combat_damage.splash_list.hash(&mut hasher);
         self.combat_damage.death_weapon.hash(&mut hasher);
