@@ -962,11 +962,15 @@ impl Simulation {
     /// non-megamission scan, immediately before staged command execution.
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
+    /// In LAN/WOL, a transferred unit's order will be refused by VERA's
+    /// ownership check in the `0x004C6CB0` event receiver. Exclude it from
+    /// the group so it cannot change the destinations of the remaining units.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        network_owner: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
@@ -983,7 +987,8 @@ impl Simulation {
             while run_end < commands.len() && Self::formation_key(&commands[run_end]) == Some(key) {
                 run_end += 1;
             }
-            if run_end - run_start > 1 {
+            let mut orders = run_end - run_start;
+            if orders > 1 {
                 let clicked_target = (key.1 as i16, key.2 as i16);
                 //64CDE9 resolves the Cell;64CDF6 returns for the shared
                 // dummy before member collection or destination rewrites.
@@ -1001,6 +1006,10 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    if network_owner.is_some_and(|owner| owner != entity.owner()) {
+                        orders -= 1;
+                        continue;
+                    }
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -1027,6 +1036,10 @@ impl Simulation {
                             crate::util::lepton::lepton_to_cell(navigation.y),
                         ),
                     });
+                }
+                if orders < 2 {
+                    run_start = run_end;
+                    continue;
                 }
                 let mut member_target: Option<GroupMemberTarget> = None;
                 let mut assignments = group_destination::distribute_group_destinations(
@@ -1438,9 +1451,19 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
             .compare_frame_info(record, self.sim.session.binary_frame() as i32)
     }
 
-    fn adjust_megamissions(&mut self, _house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        self.sim
-            .adjust_staged_megamission_destinations(entries, self.rules, self.overlay_registry);
+    fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
+        let network_owner = self
+            .sim
+            .session
+            .game_mode()
+            .is_network()
+            .then_some(house.owner);
+        self.sim.adjust_staged_megamission_destinations(
+            entries,
+            self.rules,
+            self.overlay_registry,
+            network_owner,
+        );
     }
 
     fn execute(

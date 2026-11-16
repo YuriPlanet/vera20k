@@ -8369,7 +8369,7 @@ fn repro_group_move_of_eight_vehicles_to_one_cell() {
     // (a) What the group-destination distributor rewrites each command to.
     // Same &self read the tick performs, run before any tick mutates state.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     let assigned: Vec<(u64, (u16, u16))> = staged
         .iter()
         .filter_map(|c| match &c.payload {
@@ -8522,7 +8522,7 @@ fn repro_group_move_short_range_traces_every_tick() {
         .collect();
 
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     println!("--- repro_group_move_short_range_traces_every_tick ---");
     println!("(a) distributor assignments:");
     for c in &staged {
@@ -8653,7 +8653,7 @@ fn repro_two_moving_vehicles_pass_through_each_other() {
     // Different targets => different formation keys => runs of length 1 =>
     // the group-destination distributor cannot touch either command.
     let mut staged = commands.clone();
-    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, &rules, None, None);
     println!("--- repro_two_moving_vehicles_pass_through_each_other ---");
     for c in &staged {
         if let Command::Move {
@@ -9545,7 +9545,7 @@ fn group_spread(sim: &Simulation, rules: &RuleSet, ids: &[u64]) -> Vec<(u16, u16
         .iter()
         .map(|&id| cmd_envelope(sim, "Americans", 1, move_command(id, (20, 20))))
         .collect::<Vec<_>>();
-    sim.adjust_staged_megamission_destinations(&mut staged, rules, None);
+    sim.adjust_staged_megamission_destinations(&mut staged, rules, None, None);
     staged
         .iter()
         .map(|command| match command.payload {
