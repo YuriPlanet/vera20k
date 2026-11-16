@@ -416,13 +416,16 @@ impl LoadingRequest {
     /// Run the request's authoritative initial-map entry. The retained random
     /// preview is intentionally not an argument: active retail's `.SED` reader
     /// regenerates gameplay after Start, while the preview remains a loading-
-    /// composition fallback only.
+    /// composition fallback only. VERA: after a network room's checks of the
+    /// map file, the map takes the mod's map additions
+    /// (`MapLoadInitial::with_mod_additions`).
     fn load_initial_with_assets(
         &self,
         ra2_dir: std::path::PathBuf,
         asset_manager: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         resident: Option<&mut crate::sim::world::Simulation>,
+        map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
         let mut loaded = init::load_map_initial_with_assets(
@@ -466,7 +469,10 @@ impl LoadingRequest {
                 );
             }
         }
-        Ok(loaded)
+        match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions),
+            None => Ok(loaded),
+        }
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
@@ -539,6 +545,7 @@ impl LoadingRequest {
         ra2_dir: PathBuf,
         assets: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
@@ -548,6 +555,7 @@ impl LoadingRequest {
             assets,
             native_rules,
             resident.as_deref_mut(),
+            map_additions,
             progress,
         )?;
         initial.retain_process_state(mapgen_retention, resident);
@@ -566,6 +574,7 @@ impl LoadingRequest {
             ra2_dir,
             assets,
             native_rules,
+            None,
             &mut Default::default(),
             None,
             progress,
@@ -2572,30 +2581,45 @@ fn prepare_loading_session(
                     return Err(err);
                 }
             }
-            let prepared = if !before_first_frame && let Some(native) = native.as_mut() {
-                let mut sink = GatedProgressSink {
-                    progress: &mut native.progress,
-                    cadence: native.progress_cadence,
-                    progress_row: &mut native.progress_row,
-                    network,
-                };
-                request.prepare(
-                    ra2_dir,
-                    assets,
-                    process_assets.native_rules_mut_with_tile_cache().0,
-                    mapgen_retention,
-                    resident.as_deref_mut(),
-                    &mut sink,
-                )
+            // VERA: the mod's map additions, read once a start, for the
+            // matches they reach.
+            let additions = if crate::app::mod_additions::reach(request.startup()) {
+                process_assets.map_additions(assets)
             } else {
-                request.prepare(
-                    ra2_dir,
-                    assets,
-                    process_assets.native_rules_mut_with_tile_cache().0,
-                    mapgen_retention,
-                    resident.as_deref_mut(),
-                    &mut NoopProgressSink,
-                )
+                Ok(None)
+            };
+            let prepared = match additions {
+                Err(err) => Err(anyhow::anyhow!(err)),
+                Ok(additions) => {
+                    let additions = additions.as_deref();
+                    if !before_first_frame && let Some(native) = native.as_mut() {
+                        let mut sink = GatedProgressSink {
+                            progress: &mut native.progress,
+                            cadence: native.progress_cadence,
+                            progress_row: &mut native.progress_row,
+                            network,
+                        };
+                        request.prepare(
+                            ra2_dir,
+                            assets,
+                            process_assets.native_rules_mut_with_tile_cache().0,
+                            additions,
+                            mapgen_retention,
+                            resident.as_deref_mut(),
+                            &mut sink,
+                        )
+                    } else {
+                        request.prepare(
+                            ra2_dir,
+                            assets,
+                            process_assets.native_rules_mut_with_tile_cache().0,
+                            additions,
+                            mapgen_retention,
+                            resident.as_deref_mut(),
+                            &mut NoopProgressSink,
+                        )
+                    }
+                }
             };
             match prepared {
                 Ok(mut prepared) => {

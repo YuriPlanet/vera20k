@@ -1671,6 +1671,23 @@ impl MapLoadInitial {
         &self.map_data
     }
 
+    /// VERA: the map with a mod's map additions (`app::mod_additions`), for a
+    /// match they reach (`mod_additions::reach`): after a network room's
+    /// checks of the map file, before anything reads the map's rules, AI or
+    /// triggers. A generated map read its rules while it was made and plays
+    /// without them.
+    pub(crate) fn with_mod_additions(
+        mut self,
+        additions: &crate::app::mod_additions::MapAdditions,
+    ) -> Result<Self> {
+        if matches!(self.map_source, LoadedMapSource::Generated { .. }) {
+            return Ok(self);
+        }
+        log::info!("The mod adds to the map: {}", additions.names().join(", "));
+        self.map_data = self.map_data.with_additions(additions.files())?;
+        Ok(self)
+    }
+
     /// Physical cached .SED names must not become shared Scenario identity.
     /// ReadScenario684620 regenerates from the supplied path, while the
     /// accepted network record remains the common logical seed name.
