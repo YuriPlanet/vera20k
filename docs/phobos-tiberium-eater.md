@@ -61,10 +61,10 @@ custom_flh_coordinate` for the offsets, the shared
 `spawn_owned_anim` for the anim, and `FootExt::TiberiumEater_Timer` on the
 entity for the delay.
 
-RESIDUAL: the money label's native gate is
-`IsClearlyVisibleTo(HouseClass::CurrentPlayer)`; VERA passes the
-`DisplayToHouse` filter and the owner to the label consumer, which applies
-the house filter but not per-client visibility.
+The money label keeps `FlyingStrings::AddMoneyString`'s gates in the client
+consumer (`flying_credits::admit`): the impact point's shroud for the local
+viewer, the `DisplayToHouse`/owner filter, then the source's
+visual-character (`Hidden`) test; no residual.
 
 RESIDUAL: `GetFLHAbsoluteCoords(..., false)` reuses the shared body-matrix
 FLH port; a building/voxel-weapon pivot chain is not re-projected here (the

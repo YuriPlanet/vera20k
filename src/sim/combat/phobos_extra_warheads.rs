@@ -49,8 +49,10 @@ pub(super) fn emit(
     if settings.is_empty() {
         return;
     }
-    // `ValueableVector<WarheadTypeClass*>` resolves at parse time; VERA keeps
-    // the names and drops the unknown ones here.
+    // `ValueableVector<WarheadTypeClass*>` resolves through `FindOrAllocate`
+    // (`Utilities/TemplateDef.h:1975-1991`); the rules projection materializes
+    // an empty type for every `ExtraWarheads` reference, so a name the
+    // sections omit still keeps its index and detonates.
     let warheads: Vec<(&str, &crate::rules::warhead_type::WarheadType)> = settings
         .warheads
         .iter()

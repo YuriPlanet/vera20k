@@ -7455,6 +7455,27 @@ impl RuleSet {
                 log::trace!("Warhead '{}' referenced but has no section", warhead_id);
             }
         }
+        // `ValueableVector<WarheadTypeClass*>` resolves through
+        // `FindOrAllocate` (`Utilities/TemplateDef.h:1975-1991`): every
+        // `ExtraWarheads` token, even one the sections never define, becomes
+        // a warhead with the constructor defaults, keeps its list index and
+        // detonates.
+        #[cfg(feature = "phobos")]
+        for weapon in &weapon_types {
+            for name in &weapon.phobos_extra_warheads.warheads {
+                if name.is_empty() {
+                    continue;
+                }
+                let canonical = name.to_ascii_uppercase();
+                warheads.entry(canonical.clone()).or_insert_with(|| {
+                    warhead_types.push(WarheadType::from_ini_section(
+                        &canonical,
+                        IniSection::empty(),
+                    ));
+                    WarheadHandle(warhead_types.len() as u32 - 1)
+                });
+            }
+        }
 
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
         let mut projectiles: LookupMap<String, ProjectileHandle> = LookupMap::default();

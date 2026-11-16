@@ -88,6 +88,23 @@ fn extra_warheads_fire_after_the_main_warhead_in_listed_order() {
     );
 }
 
+/// Phobos' `ValueableVector<WarheadTypeClass*>` resolves through
+/// `FindOrAllocate`, so an unknown name keeps its list index as an empty
+/// constructor-default warhead (100% `Verses`) and still detonates.
+#[test]
+fn an_unknown_warhead_name_allocates_an_empty_type() {
+    assert_eq!(
+        damage_taken("ExtraWarheads=EH1,MISSING\n"),
+        30,
+        "main 10 + EH1 10 + the allocated empty type's 10"
+    );
+    assert_eq!(
+        damage_taken("ExtraWarheads=EH1,MISSING\nExtraWarheads.DamageOverrides=3,9\n"),
+        22,
+        "the allocated entry keeps its per-index override slot"
+    );
+}
+
 /// `ExtraWarheads.FullDetonation=` selects the area-damage arm
 /// (`DamageAreaWithTarget`) for the marked index; the default is the full
 /// `DetonateAt` arm. Both still damage the intended target here.

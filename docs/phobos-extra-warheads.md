@@ -64,9 +64,10 @@ NOTE: Phobos creates AirburstWeapon children through
 each child detonation; VERA's child bullets likewise carry
 `installed_weapon`, and extras run for them.
 
-RESIDUAL: `ValueableVector<WarheadTypeClass*>` resolves through
-`WarheadTypeClass::FindOrAllocate` (`Utilities/TemplateDef.h:1982-1991`), so
-an unknown `ExtraWarheads` name allocates a default warhead that still
-detonates. VERA drops the unknown name, which also shifts the per-index
-override lists. Trigger: a misspelled warhead name; effect: native fires an
-empty-warhead detonation, VERA fires nothing for that entry.
+`ValueableVector<WarheadTypeClass*>` resolves through
+`WarheadTypeClass::FindOrAllocate` (`Utilities/TemplateDef.h:1982-1991`);
+the rules projection now allocates a constructor-default `WarheadType` for
+every `ExtraWarheads` token the sections omit (empty section through
+`from_ini_section`, 100% `Verses`), so it keeps its index in the override
+lists and detonates (`an_unknown_warhead_name_allocates_an_empty_type`); no
+residual.
