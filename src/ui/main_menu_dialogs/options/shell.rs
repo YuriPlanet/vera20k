@@ -26,10 +26,11 @@ use super::{
     NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
     PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
     RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
-    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, VERA_ICON_HELP,
-    VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_COLUMNS_HELP,
+    SIDEBAR_COLUMNS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    Setting, SidebarColumns, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -896,6 +897,11 @@ impl OptionsDialogState {
         self.values.sidebar.in_effect(width, height)
     }
 
+    /// The Sidebar Columns face's text: the retained choice.
+    pub(crate) fn shell_selected_sidebar_columns(&self) -> SidebarColumns {
+        self.values.sidebar_columns
+    }
+
     /// The Health Bars face's text: the retained choice.
     pub(crate) fn shell_selected_health_bars(&self) -> HealthBarMode {
         self.values.health_bars
@@ -985,6 +991,13 @@ impl OptionsDialogState {
                 let choices = layout.sidebar_choices();
                 let shown = self.shell_selected_sidebar(layout);
                 let selected = choices.iter().position(|size| *size == shown);
+                (choices.len(), selected)
+            }
+            LauncherComboId::SidebarColumns => {
+                let choices = SidebarColumns::choices();
+                let selected = choices
+                    .iter()
+                    .position(|columns| *columns == self.values.sidebar_columns);
                 (choices.len(), selected)
             }
             LauncherComboId::Display => {
@@ -1211,6 +1224,7 @@ impl OptionsDialogState {
                 LauncherStatusHelp::Vera(match combo {
                     LauncherComboId::Zoom => ZOOM_HELP,
                     LauncherComboId::Sidebar => SIDEBAR_HELP,
+                    LauncherComboId::SidebarColumns => SIDEBAR_COLUMNS_HELP,
                     LauncherComboId::Display => DISPLAY_HELP,
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                     LauncherComboId::ColorVision => COLOR_VISION_HELP,
@@ -1242,6 +1256,12 @@ impl OptionsDialogState {
                 LauncherComboId::Sidebar => {
                     match row.and_then(|row| layout.sidebar_choices().get(row).copied()) {
                         Some(size) => self.select_sidebar(size),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::SidebarColumns => {
+                    match row.and_then(|row| SidebarColumns::choices().get(row).copied()) {
+                        Some(columns) => self.select_sidebar_columns(columns),
                         None => self.open_combo = None,
                     }
                 }
@@ -1372,6 +1392,7 @@ fn list_caption(id: LauncherComboId) -> String {
     tr(match id {
         LauncherComboId::Zoom => ZOOM_LABEL,
         LauncherComboId::Sidebar => SIDEBAR_LABEL,
+        LauncherComboId::SidebarColumns => SIDEBAR_COLUMNS_LABEL,
         LauncherComboId::Display => DISPLAY_LABEL,
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
         LauncherComboId::ColorVision => COLOR_VISION_LABEL,

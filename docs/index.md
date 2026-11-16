@@ -74,6 +74,7 @@ simulation, session and network command owners.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.
 - [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
+- [Sidebar build-list columns](sidebar-columns.md): the Options list that lays three to five build pictures a row inside the sidebar's own width.
 - [Terrain deformation](terrain-deformation.md): the skirmish Game Options box that lets explosions dent the ground and nukes leave craters.
 - [Superweapon Limit](superweapon-limit.md): the skirmish Game Options slider that allows up to 20 of each superweapon, each charging its own shot, and the `SuperWeaponPerBuilding=` key.
 - [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.

@@ -141,6 +141,9 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) original_shape: bool,
     /// The Options page's battle sidebar size.
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
+    /// `[VERA] SidebarColumns=`: the cameo columns the sidebar lays inside its
+    /// own width, 2 to 5. Presentation only.
+    pub(crate) sidebar_columns: crate::ui::main_menu_dialogs::options::SidebarColumns,
     /// `[VERA] YROriginalStyle=`: whether the startup splash, the menu movie,
     /// the offline Skirmish background and the LAN/WOL lobby backgrounds use
     /// Yuri's Revenge's art. Off by default, so new profiles show Red Alert
@@ -381,6 +384,7 @@ impl Default for RetailOptionsProfile {
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
+            sidebar_columns: crate::ui::main_menu_dialogs::options::SidebarColumns::Two,
             yr_original_style: false,
             skip_intro: false,
             show_string_keys: false,
@@ -433,7 +437,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 36],
+    pub(crate) vera: [(&'static str, String); 37],
 }
 
 impl RetailOptionsLoad {
@@ -628,6 +632,10 @@ impl RetailOptionsProfile {
             self.sidebar = crate::ui::main_menu_dialogs::options::SidebarSize::from_ini_value(
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
+            self.sidebar_columns =
+                crate::ui::main_menu_dialogs::options::SidebarColumns::from_ini_value(
+                    vera.read_int("SidebarColumns", self.sidebar_columns.ini_value()),
+                );
             self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
             // `SkipStartupLogo=` named this switch while it skipped only the
             // logo; the writer drops it.
@@ -800,6 +808,10 @@ impl RetailOptionsProfile {
                     format_bool(self.original_shape).to_string(),
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
+                (
+                    "SidebarColumns",
+                    self.sidebar_columns.ini_value().to_string(),
+                ),
                 (
                     "YROriginalStyle",
                     format_bool(self.yr_original_style).to_string(),
@@ -1649,7 +1661,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
 
     #[test]
     fn vera_display_preferences_round_trip_in_their_own_section() {
-        use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
+        use crate::ui::main_menu_dialogs::options::{SidebarColumns, SidebarSize, Zoom};
         let defaults = load_snapshot(
             &RetailStartupOptions::default(),
             b"[Video]\nScreenWidth=800\n",
@@ -1658,6 +1670,11 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(defaults.retained_profile.zoom, Zoom::Auto);
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
+        // The sidebar keeps gamemd's two columns until the list says otherwise.
+        assert_eq!(
+            defaults.retained_profile.sidebar_columns,
+            SidebarColumns::Two
+        );
         assert!(!defaults.retained_profile.yr_original_style);
         // Shift + left click queues one copy, as in gamemd, until it is ticked.
         assert!(!defaults.retained_profile.shift_queue);
@@ -1688,12 +1705,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
         assert_eq!(unknown.retained_profile.zoom, Zoom::Auto);
+        // Nor does an unknown column count leave the original layout.
+        let unknown_columns = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nSidebarColumns=9\n",
+        );
+        assert_eq!(
+            unknown_columns.retained_profile.sidebar_columns,
+            SidebarColumns::Two
+        );
 
         let profile = RetailOptionsProfile {
             full_screen: true,
             zoom: Zoom::Percent(150),
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
+            sidebar_columns: SidebarColumns::Four,
             yr_original_style: true,
             skip_intro: true,
             show_string_keys: true,
@@ -1708,7 +1735,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nSkipIntro=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nSidebarColumns=4\r\nYROriginalStyle=yes\r\nSkipIntro=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
             ),
             "{output}"
         );
@@ -1717,6 +1744,10 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(reread.retained_profile.zoom, Zoom::Percent(150));
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
+        assert_eq!(
+            reread.retained_profile.sidebar_columns,
+            SidebarColumns::Four
+        );
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.skip_intro);
         assert!(reread.retained_profile.show_string_keys);

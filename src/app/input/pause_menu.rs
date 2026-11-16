@@ -214,6 +214,7 @@ fn run_options_page(state: &mut AppState) {
             event,
             LauncherOptionsEvent::ZoomSelected(_)
                 | LauncherOptionsEvent::SidebarSelected(_)
+                | LauncherOptionsEvent::SidebarColumnsSelected(_)
                 | LauncherOptionsEvent::OriginalShapeChanged(_)
                 | LauncherOptionsEvent::HdRadarChanged(_)
                 | LauncherOptionsEvent::SmoothSidebarChanged(_)

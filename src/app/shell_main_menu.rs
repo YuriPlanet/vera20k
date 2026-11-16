@@ -97,6 +97,14 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next battle frame lays out and draws the sidebar at this size.
         self.persistence.options_profile.sidebar = size;
     }
+    fn store_sidebar_columns(
+        &mut self,
+        columns: crate::ui::main_menu_dialogs::options::SidebarColumns,
+    ) {
+        // The spec is rebuilt from this every refresh, so the next frame lays
+        // the cameo grid out again; Options' accept writes it out.
+        self.persistence.options_profile.sidebar_columns = columns;
+    }
     fn store_health_bars(&mut self, mode: crate::ui::main_menu_dialogs::options::HealthBarMode) {
         // Presentation reads it every frame, so the next frame draws the new
         // strip policy; Options' accept writes it out.
