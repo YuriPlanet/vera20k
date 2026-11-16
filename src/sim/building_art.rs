@@ -837,8 +837,11 @@ impl Simulation {
             start_frame: 0,
             ping_pong: false,
         };
-        let registered = rules.anim_type_names.contains(&turret_name.to_ascii_uppercase());
-        let anim = self.allocate_building_anim_slot(id, 9, &turret_name, false, 0, Some(config), rules);
+        let registered = rules
+            .anim_type_names
+            .contains(&turret_name.to_ascii_uppercase());
+        let anim =
+            self.allocate_building_anim_slot(id, 9, &turret_name, false, 0, Some(config), rules);
         log::debug!(
             "building {id}: SHP turret anim {turret_name:?} registered={registered} -> slot 9 anim {anim:?}"
         );
@@ -1677,11 +1680,13 @@ TurretAnim=S
 0=S
 ";
         let run = |type_id: &str| {
-            let art_ini = IniFile::from_str("[T]
+            let art_ini = IniFile::from_str(
+                "[T]
 [V]
 [N]
 [S]
-");
+",
+            );
             let mut rules =
                 RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(ini), &art_ini)
                     .unwrap();
@@ -1704,7 +1709,11 @@ TurretAnim=S
             sim.scenario_rng = crate::sim::rng::SimRng::new(0);
             sim.grand_opening(id, false, false, &rules, None, FrameEffects::default());
             let slot = sim.entities().get(id).unwrap().building_art.anim_slots()[9];
-            slot.map(|anim| sim.interner.resolve(sim.anim(anim).unwrap().type_id()).to_string())
+            slot.map(|anim| {
+                sim.interner
+                    .resolve(sim.anim(anim).unwrap().type_id())
+                    .to_string()
+            })
         };
         assert_eq!(run("T").as_deref(), Some("S"));
         assert_eq!(run("V"), None, "a voxel turret keeps slot 9 empty");

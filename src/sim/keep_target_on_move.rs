@@ -114,7 +114,15 @@ fn close_enough_with_key(
         return false;
     };
     let cfg = obj.phobos_keep_target;
-    in_range_with(sim, id, target, rules, registry, cfg.weapon, cfg.extra_distance)
+    in_range_with(
+        sim,
+        id,
+        target,
+        rules,
+        registry,
+        cfg.weapon,
+        cfg.extra_distance,
+    )
 }
 
 /// `EventClass_Execute_MegaMission_MoveCommand`'s keep arm: latches the unit

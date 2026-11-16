@@ -255,7 +255,10 @@ pub(crate) fn build_banner_instances(
         .map(|sim| {
             banners
                 .iter()
-                .map(|banner| sim.simulation.variable_value(banner.global_variable, banner.variable))
+                .map(|banner| {
+                    sim.simulation
+                        .variable_value(banner.global_variable, banner.variable)
+                })
                 .collect()
         })
         .unwrap_or_default();

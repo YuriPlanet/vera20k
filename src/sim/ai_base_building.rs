@@ -812,10 +812,7 @@ fn append_perimeter_run(
 /// with wrapping arithmetic; the stock floor is `0`, Phobos raises it to
 /// `HouseClass::PowerSurplus`.
 fn power_surplus_short(output: i32, total_drain: i32, new_drain: i32, floor: i32) -> bool {
-    output
-        .wrapping_sub(total_drain)
-        .wrapping_sub(new_drain)
-        < floor
+    output.wrapping_sub(total_drain).wrapping_sub(new_drain) < floor
 }
 
 fn power_plant_to_splice(
@@ -837,8 +834,7 @@ fn power_plant_to_splice(
     let surplus_floor = if rules.phobos_globals.enable_power_surplus {
         let scale = rules.phobos_globals.power_surplus_scale_to_drain_amount;
         if scale > 0 {
-            (f64::from(rules.phobos_globals.power_surplus)
-                * f64::from(power.total_drain())
+            (f64::from(rules.phobos_globals.power_surplus) * f64::from(power.total_drain())
                 / f64::from(scale)) as i32
         } else {
             rules.phobos_globals.power_surplus

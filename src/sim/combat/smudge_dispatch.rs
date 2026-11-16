@@ -504,10 +504,9 @@ mod tests {
                 });
             }
         }
-        for (destroy_tiberium, expected) in [
-            (false, vec!["crater"]),
-            (true, vec!["reduce", "crater"]),
-        ] {
+        for (destroy_tiberium, expected) in
+            [(false, vec!["crater"]), (true, vec!["reduce", "crater"])]
+        {
             let marks = AnimMiddleMarks {
                 scorch: false,
                 crater: true,

@@ -1908,7 +1908,10 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
     assert_eq!(sim.planning_invalid_node_reason(&[3], 3), None);
 
     let last = point(&sim, 3);
-    assert_eq!(sim.planning_press_refusal(&[1], last, Some(&rules)), Some(InvalidNode));
+    assert_eq!(
+        sim.planning_press_refusal(&[1], last, Some(&rules)),
+        Some(InvalidNode)
+    );
     assert_eq!(sim.planning_hover_node(owner, &[1], last), None);
     assert!(sim.planning_release_refused(&[1], last));
     let first = point(&sim, 1);
@@ -1916,21 +1919,36 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
     assert_eq!(sim.planning_hover_node(owner, &[1], first), Some(1));
     assert!(!sim.planning_release_refused(&[1], first));
     // A node hit skips 639DA0, so an aircraft without a token passes.
-    assert_eq!(sim.planning_press_refusal(&[4, 5], first, Some(&rules)), None);
+    assert_eq!(
+        sim.planning_press_refusal(&[4, 5], first, Some(&rules)),
+        None
+    );
     // Radar653CD1 calls639DA0 directly: even a tactical node that admits
     // this selection cannot bypass the radar's selection-only check.
-    assert_eq!(sim.planning_selection_refusal(&[4, 5], Some(&rules)), Some(NoAircraft));
+    assert_eq!(
+        sim.planning_selection_refusal(&[4, 5], Some(&rules)),
+        Some(NoAircraft)
+    );
     assert_eq!(sim.planning_selection_refusal(&[1, 3], Some(&rules)), None);
 
     // 639DA0 with no node hit: the first object that cannot use waypoints.
     let open = [first[0] + 200, first[1] + 200];
-    assert_eq!(sim.planning_press_refusal(&[1, 3], open, Some(&rules)), None);
+    assert_eq!(
+        sim.planning_press_refusal(&[1, 3], open, Some(&rules)),
+        None
+    );
     assert_eq!(
         sim.planning_press_refusal(&[1, 5, 4], open, Some(&rules)),
         Some(NoBuildings)
     );
-    assert_eq!(sim.planning_press_refusal(&[4, 5], open, Some(&rules)), Some(NoAircraft));
-    assert_eq!(sim.planning_press_refusal(&[1, 99], open, Some(&rules)), Some(NoUnknowns));
+    assert_eq!(
+        sim.planning_press_refusal(&[4, 5], open, Some(&rules)),
+        Some(NoAircraft)
+    );
+    assert_eq!(
+        sim.planning_press_refusal(&[1, 99], open, Some(&rules)),
+        Some(NoUnknowns)
+    );
 
     // The press and release loops hit every house's nodes; the hover keeps
     // only own ones.
@@ -1942,15 +1960,24 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
         .set_owner_for_test(rival);
     let foreign = point(&sim, 4);
     assert_eq!(sim.planning_hover_node(owner, &[], foreign), None);
-    assert_eq!(sim.planning_press_refusal(&[1], foreign, Some(&rules)), Some(InvalidNode));
-    assert_eq!(sim.planning_press_refusal(&[4], foreign, Some(&rules)), None);
+    assert_eq!(
+        sim.planning_press_refusal(&[1], foreign, Some(&rules)),
+        Some(InvalidNode)
+    );
+    assert_eq!(
+        sim.planning_press_refusal(&[4], foreign, Some(&rules)),
+        None
+    );
 
     // A loop (token+0x94) refuses every node until the plan is cleared.
     let connect = sim.encode_plan_connect_record(owner, 1, (12, 15)).unwrap();
     apply(&mut sim, &rules, connect);
     assert_eq!(sim.planning.paths[&1].loop_start, Some(0));
     assert_eq!(sim.planning_invalid_node_reason(&[1], 1), Some(1));
-    assert_eq!(sim.planning_press_refusal(&[1], first, Some(&rules)), Some(InvalidNode));
+    assert_eq!(
+        sim.planning_press_refusal(&[1], first, Some(&rules)),
+        Some(InvalidNode)
+    );
 }
 
 /// TechnoClass::Enter_Idle_Mode asks vt+0x430 before the node start

@@ -469,13 +469,11 @@ fn the_producing_progress_columns_map_the_native_factory_chain() {
         let owner = sim.intern("me");
         let type_id = sim.intern("TEST");
         for (order, &category) in categories.iter().enumerate() {
-            assert!(sim.production_mut_for_test().factories_mut_for_test().test_enqueue_kernel(
-                owner,
-                category,
-                type_id,
-                order as u64,
-                100,
-            ));
+            assert!(
+                sim.production_mut_for_test()
+                    .factories_mut_for_test()
+                    .test_enqueue_kernel(owner, category, type_id, order as u64, 100,)
+            );
         }
         if let Some(value) = set_progress {
             sim.production_mut_for_test()

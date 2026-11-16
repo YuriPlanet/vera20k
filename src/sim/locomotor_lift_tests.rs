@@ -1593,7 +1593,6 @@ fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
     assert_eq!(inherited.height(), 500);
     assert_eq!(inherited.deviation(), 40);
     assert!(!inherited.no_wobbles());
-
 }
 
 /// The production attack path hands the fired warhead's Phobos `Jumpjet*`

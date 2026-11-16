@@ -865,4 +865,3 @@ fn power_surplus_floor_raises_the_power_plant_splice_threshold() {
     // Native signed DWORD wrapping.
     assert!(super::power_surplus_short(0, i32::MAX, 1, 0));
 }
-

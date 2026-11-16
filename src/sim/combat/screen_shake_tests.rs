@@ -161,8 +161,10 @@ fn shake_is_local_is_off_by_default() {
     let mut run = super::world_receiver::ReceiverRun::default();
     super::world_receiver::commit_projectiles(&mut world, &mut run, &requests, &rules, None);
     run.finish();
-    assert!(world
-        .screen_shake_updates
-        .iter()
-        .all(|update| !update.local_only));
+    assert!(
+        world
+            .screen_shake_updates
+            .iter()
+            .all(|update| !update.local_only)
+    );
 }

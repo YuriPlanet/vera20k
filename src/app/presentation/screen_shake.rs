@@ -253,11 +253,7 @@ mod tests {
             coord: crate::sim::projectile::ProjectileCoord::new(2688, 2688, 0),
         };
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(2688, 2688, 0);
-        assert!(super::update_is_on_screen(
-            &inside,
-            [x, y],
-            [800.0, 600.0]
-        ));
+        assert!(super::update_is_on_screen(&inside, [x, y], [800.0, 600.0]));
         // Far outside the padded rectangle.
         let outside = ScreenShakeUpdate {
             coord: crate::sim::projectile::ProjectileCoord::new(2688 + 256 * 40, 2688, 0),

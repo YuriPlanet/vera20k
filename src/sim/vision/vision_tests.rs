@@ -2227,10 +2227,8 @@ fn reveal_houses_filters_the_viewer_maps_a_sight_reaches() {
         world.fog = FogState::new(32, 32);
         world.substrate.entities = store;
         world.interner = ti();
-        let alliances = HouseAllianceMap::from([(
-            "AMERICANS".to_string(),
-            ["SOVIET".to_string()].into(),
-        )]);
+        let alliances =
+            HouseAllianceMap::from([("AMERICANS".to_string(), ["SOVIET".to_string()].into())]);
         // Both houses are seated logical clients; the alliance makes the
         // Soviet map the one the default Team must admit.
         seat_fixture_clients(&mut world, &alliances, &[]);

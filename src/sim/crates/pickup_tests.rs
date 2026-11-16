@@ -1365,7 +1365,10 @@ fn phobos_crate_goodie_reroll_chance_rejects_a_drawn_goodie() {
             false
         }
     });
-    assert!(first_is_amcv, "a state drawing the always-rerolled type first");
+    assert!(
+        first_is_amcv,
+        "a state drawing the always-rerolled type first"
+    );
     assert_eq!(
         effects::choose_unit_crate_type(
             &sim.interner,

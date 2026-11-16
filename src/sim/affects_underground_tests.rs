@@ -28,9 +28,8 @@ fn scene(rules: &RuleSet) -> (Simulation, u64) {
 
 fn make_underground(sim: &mut Simulation, id: u64) {
     let entity = sim.substrate.entities.get_mut(id).expect("unit");
-    let mut locomotor = LocomotorState::for_test_kind(
-        crate::rules::locomotor_type::LocomotorKind::Drive,
-    );
+    let mut locomotor =
+        LocomotorState::for_test_kind(crate::rules::locomotor_type::LocomotorKind::Drive);
     locomotor.set_layer_for_test(MovementLayer::Underground);
     entity.locomotor = Some(locomotor);
     entity.set_in_playfield(false);
@@ -44,10 +43,7 @@ fn area(sim: &mut Simulation, rules: &RuleSet, unit: u64) {
     let warhead_ref = sim.interner.intern("UWH");
     let coords = {
         let target = sim.substrate.entities.get(unit).expect("unit");
-        crate::sim::movement::ground_pose::object_get_coords(
-            target,
-            sim.resolved_terrain.as_ref(),
-        )
+        crate::sim::movement::ground_pose::object_get_coords(target, sim.resolved_terrain.as_ref())
     };
     let mut run = crate::sim::combat::world_receiver::ReceiverRun::default();
     let _ = crate::sim::combat::world_receiver::apply_area_damage_in_run_with_target(

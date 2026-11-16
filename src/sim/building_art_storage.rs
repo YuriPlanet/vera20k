@@ -383,10 +383,7 @@ mod tests {
     }
 
     #[cfg(feature = "phobos")]
-    fn phobos_refinery_entity(
-        sim: &mut Simulation,
-        capacity_amount: f32,
-    ) -> u64 {
+    fn phobos_refinery_entity(sim: &mut Simulation, capacity_amount: f32) -> u64 {
         let id = sim.substrate.allocate_stable_id();
         let mut entity = GameEntity::test_default_of_category(
             id,

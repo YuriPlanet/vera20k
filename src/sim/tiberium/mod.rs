@@ -246,9 +246,10 @@ pub(crate) fn tiberium_type_allows_ramps(
 ) -> bool {
     #[cfg(feature = "phobos")]
     {
-        rules.tiberium_types.get(type_id).is_some_and(|ty| {
-            ty.allow_ramps && rules.overlay_registry().has_ramp_art(ty)
-        })
+        rules
+            .tiberium_types
+            .get(type_id)
+            .is_some_and(|ty| ty.allow_ramps && rules.overlay_registry().has_ramp_art(ty))
     }
     #[cfg(not(feature = "phobos"))]
     {
@@ -2325,12 +2326,16 @@ SpreadPercentage=1.0
 "
             );
             for slot in 0..60 {
-                text.push_str(&format!("{slot}=O{slot}
-"));
+                text.push_str(&format!(
+                    "{slot}=O{slot}
+"
+                ));
             }
-            text.push_str("[O39]
+            text.push_str(
+                "[O39]
 Tiberium=yes
-");
+",
+            );
             RuleSet::from_ini(&IniFile::from_str(&text)).expect("ramp rules")
         };
         let spread = |rules: &RuleSet| {
@@ -2353,8 +2358,13 @@ Tiberium=yes
             )
             .unwrap()
         };
-        assert_eq!(spread(&build("AllowRamps=yes
-")), Some(TiberiumTypeId(0)));
+        assert_eq!(
+            spread(&build(
+                "AllowRamps=yes
+"
+            )),
+            Some(TiberiumTypeId(0))
+        );
         assert_eq!(spread(&build("")), None);
 
         // The empty-cell target admission (Phobos 0x48399C) also admits the
@@ -2371,7 +2381,11 @@ Tiberium=yes
             let admission = NewTiberiumAdmission::runtime(&terrain, no_objects.context());
             admit_new_tiberium_target(&grid, &BTreeSet::new(), admission, (0, 0), allow)
         };
-        assert_eq!(admit(true), Some((0, 0)), "empty ramp admitted with the key");
+        assert_eq!(
+            admit(true),
+            Some((0, 0)),
+            "empty ramp admitted with the key"
+        );
         assert_eq!(admit(false), None, "stock refuses the empty ramp");
     }
 }

@@ -33,13 +33,13 @@ pub(crate) mod spyplane_mission;
 mod ai_head_tests;
 #[cfg(test)]
 mod dock_cycle_tests;
-#[cfg(all(test, feature = "phobos"))]
-#[path = "unland_damage_tests.rs"]
-mod unland_damage_tests;
 #[cfg(test)]
 mod release_tests;
 #[cfg(test)]
 mod team_strike_tests;
+#[cfg(all(test, feature = "phobos"))]
+#[path = "unland_damage_tests.rs"]
+mod unland_damage_tests;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -282,10 +282,7 @@ pub(crate) fn dispatch_mission(
             spyplane_mission::overfly(sim, id, rules, ctx.effects)
         }
         Some(
-            MissionType::Capture
-            | MissionType::Sabotage
-            | MissionType::Eaten
-            | MissionType::Rescue,
+            MissionType::Capture | MissionType::Sabotage | MissionType::Eaten | MissionType::Rescue,
         ) => return None,
         _ => MISSION_STUB_FRAMES,
     };

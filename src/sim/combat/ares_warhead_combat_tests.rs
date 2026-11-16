@@ -86,8 +86,11 @@ fn resolved_delta(rules: &RuleSet, health: i32, damage: i32) -> i32 {
 #[cfg(feature = "phobos")]
 #[test]
 fn negative_damage_modifiers_apply_verses_to_a_heal() {
-    let keyed = rules_with("50%", "ApplyModifiersOnNegativeDamage=yes
-");
+    let keyed = rules_with(
+        "50%",
+        "ApplyModifiersOnNegativeDamage=yes
+",
+    );
     assert_eq!(resolved_delta(&keyed, 1000, -100), -50);
     let stock = rules_with("50%", "");
     assert_eq!(resolved_delta(&stock, 1000, -100), -100);

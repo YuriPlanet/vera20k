@@ -308,8 +308,12 @@ mod can_be_built_on {
     /// `zone_class::BUILDING` name for that value.
     #[test]
     fn the_ai_site_search_admits_a_buildable_terrain_with_zone_five() {
-        let mut a = terrain_arena("", "CanBeBuiltOn=yes
-", "");
+        let mut a = terrain_arena(
+            "",
+            "CanBeBuiltOn=yes
+",
+            "",
+        );
         put_terrain(&mut a, "TREE", (16, 16));
         let cell = a
             .sim
@@ -337,15 +341,33 @@ mod can_be_built_on {
                 },
             )
         };
-        a.sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test()[index].zone_type =
-            crate::map::resolved_terrain::zone_class::BUILDING;
-        assert!(admits(&a, true), "HasFreeSpots is admitted while evaluating");
-        assert!(!admits(&a, false), "outside the AI search the terrain blocks");
-        a.sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test()[index].zone_type =
-            crate::map::resolved_terrain::zone_class::CRUSHABLE;
+        a.sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()[index]
+            .zone_type = crate::map::resolved_terrain::zone_class::BUILDING;
+        assert!(
+            admits(&a, true),
+            "HasFreeSpots is admitted while evaluating"
+        );
+        assert!(
+            !admits(&a, false),
+            "outside the AI search the terrain blocks"
+        );
+        a.sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()[index]
+            .zone_type = crate::map::resolved_terrain::zone_class::CRUSHABLE;
         assert!(!admits(&a, true), "crushable is not HasFreeSpots");
-        a.sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test()[index].zone_type =
-            crate::map::resolved_terrain::zone_class::GROUND;
+        a.sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()[index]
+            .zone_type = crate::map::resolved_terrain::zone_class::GROUND;
         assert!(admits(&a, true));
     }
 

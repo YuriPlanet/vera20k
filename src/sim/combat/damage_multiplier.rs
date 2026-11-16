@@ -74,9 +74,9 @@ pub(crate) fn apply(
             .or(globals.damage_enemies_multiplier_berzerk())
             .unwrap_or(globals.damage_enemies_multiplier()),
         // `:69-70`.
-        (DamageRelation::Enemies, false) => {
-            values.enemies.unwrap_or(globals.damage_enemies_multiplier())
-        }
+        (DamageRelation::Enemies, false) => values
+            .enemies
+            .unwrap_or(globals.damage_enemies_multiplier()),
         // `:64-65`.
         (DamageRelation::Allies, true) => values
             .allies_berzerk

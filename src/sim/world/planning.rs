@@ -2047,7 +2047,8 @@ fn building_waypoints(rules: &crate::rules::ruleset::RuleSet) -> bool {
     }
 }
 
-fn valid_planning_record(record: &CommandRecord, actor: u64, flag: u8) -> bool {    if record.opcode() != 4 || record.payload()[22] != flag {
+fn valid_planning_record(record: &CommandRecord, actor: u64, flag: u8) -> bool {
+    if record.opcode() != 4 || record.payload()[22] != flag {
         return false;
     }
     let mut ordinary = record.clone();
