@@ -171,6 +171,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // waiting, so the switch never cuts a line that is halfway said.
         self.persistence.options_profile.custom_end_game_movie = enabled;
     }
+    fn store_commander_feedback(&mut self, enabled: bool) {
+        // The clip layer's next pass reads it, so a match mutes or unmutes
+        // its commanders at once; muted, it still spends what it sees.
+        self.persistence.options_profile.commander_feedback = enabled;
+    }
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;

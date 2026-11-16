@@ -492,16 +492,17 @@ Commands that only work while a key is held, like `CameraUp`, do nothing from a 
 A player can move the parts in a match without writing a file.
 
 1. In a match, press the **Edit Layout** key: Ctrl+Alt+E (Control+Option+E on a Mac),
-   unless you changed it on the keyboard options page. Every part that can move gets an
-   outline and its name, and a **Save** and a **Reset** button show in the middle of
-   the battlefield.
+   unless you changed it on the keyboard options page. Or open the menu, choose
+   **Options**, then **Interface**, and click **Edit Layout** there. Every part that can
+   move gets an outline and its name, and a **Save** and a **Reset** button show in the
+   middle of the battlefield.
 2. Drag a part with the left mouse button. It follows the cursor.
 3. Click **Save** to keep what you moved. Until then the mouse only moves parts.
 
 - **Reset** puts your side's parts back where the mod has them, or where the original
   game has them without a mod. Click **Save** to keep that too.
 - Pressing the key again, or Esc, ends without saving: everything goes back to how it
-  was when you pressed the key.
+  was when you started.
 
 What can be dragged: the sidebar's `Credits`, `Top`, `Radar`, `Middle`, `Cameos` and
 `Power`; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small

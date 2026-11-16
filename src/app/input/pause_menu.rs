@@ -194,6 +194,9 @@ fn run_options_page(state: &mut AppState) {
         .events
         .iter()
         .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
+    let edit_layout = output
+        .events
+        .contains(&LauncherOptionsEvent::EditLayoutRequested);
     // The Options column's Keyboard is the main menu's own button, whose
     // parent result opens the in-game key page here.
     let child = output
@@ -237,6 +240,12 @@ fn run_options_page(state: &mut AppState) {
         ),
         Some(InGameMenuState::Sound) => crate::app::input::sound::open(state),
         _ => {}
+    }
+    // The match ignores the mouse while the menu is open, so Edit Layout
+    // closes it as Resume does before the mode takes the mouse.
+    if edit_layout {
+        activate(state, PauseMenuButton::Resume);
+        crate::app::input::layout_edit::start(state);
     }
 }
 

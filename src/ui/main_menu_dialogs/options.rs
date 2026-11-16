@@ -129,6 +129,9 @@ pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:CustomEndGameScoreHelp";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp";
+/// VERA's commander box (`docs/ini-commander-personalities.md`).
+pub(crate) const COMMANDER_FEEDBACK_LABEL: &str = "VERA:CommanderFeedback";
+pub(crate) const COMMANDER_FEEDBACK_HELP: &str = "VERA:CommanderFeedbackHelp";
 /// VERA's accessibility box: retail's string table has nothing for it.
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
@@ -190,6 +193,11 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:CheckForUpdates";
 pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:CheckForUpdatesHelp";
+/// The Interface page's Edit Layout: in a match the menu closes and the
+/// layout edit mode (`app::input::layout_edit`) takes the mouse, as the Edit
+/// Layout key does. The main menu has no match screen, so it shows it greyed.
+pub(crate) const EDIT_LAYOUT_LABEL: &str = "VERA:LayoutEdit";
+pub(crate) const EDIT_LAYOUT_HELP: &str = "VERA:EditLayoutHelp";
 /// The column's Mods button, which opens VERA's Mods page
 /// (`ui::mods_shell`). The browser build has no Mods folder.
 pub(crate) const HAS_MODS: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
@@ -218,6 +226,8 @@ pub(crate) enum LauncherButton {
     InGameBack,
     /// Check for Updates on the General page.
     CheckForUpdates,
+    /// Edit Layout on the Interface page.
+    EditLayout,
     /// The Esc menu's Set Window Size: the window goes back to how a launch opens it.
     SetWindowSize,
     /// The in-game menu's Keyboard, which opens gamemd's in-game `0xA3`.
@@ -233,7 +243,11 @@ impl LauncherButton {
     pub(crate) const fn on_page(self) -> bool {
         matches!(
             self,
-            Self::CheckForUpdates | Self::SetWindowSize | Self::InGameKeyboard | Self::InGameSound
+            Self::CheckForUpdates
+                | Self::EditLayout
+                | Self::SetWindowSize
+                | Self::InGameKeyboard
+                | Self::InGameSound
         )
     }
 }
@@ -850,6 +864,10 @@ pub(crate) enum LauncherCheckboxId {
     /// losing clip before the score page opens and the battle is torn down.
     /// Read when the match ends, so it needs no live apply either.
     CustomEndGameMovie,
+    /// VERA's box: the computer commanders a mod or map adds play their clips
+    /// in the radar in skirmish. On by default; the clip layer reads it every
+    /// pass, so unticking it in a match silences them at once.
+    CommanderFeedback,
     /// VERA-only accessibility box: detailed EVA text rows, default off.
     DetailedEvaText,
     /// VERA's box: the super weapon timer list shows six lines and pages the
@@ -926,6 +944,7 @@ pub(crate) enum LauncherOptionsEvent {
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
+    CommanderFeedbackChanged(bool),
     DetailedEvaTextChanged(bool),
     CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
@@ -939,6 +958,9 @@ pub(crate) enum LauncherOptionsEvent {
     /// (`app::input::pause_menu`).
     InGameKeyboardRequested,
     InGameSoundRequested,
+    /// Edit Layout, which the in-game menu routes the same way: it closes and
+    /// the layout edit mode starts.
+    EditLayoutRequested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1002,6 +1024,9 @@ pub(crate) struct LauncherOptionsValues {
     /// The exit waits for the closing commander clip; see
     /// [`LauncherCheckboxId::CustomEndGameMovie`].
     pub(crate) custom_end_game_movie: bool,
+    /// The commanders' clips are allowed; see
+    /// [`LauncherCheckboxId::CommanderFeedback`].
+    pub(crate) commander_feedback: bool,
     /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
     pub(crate) detailed_eva_text: bool,
     /// The timer box; see [`LauncherCheckboxId::CompactSuperTimers`].
@@ -1058,6 +1083,7 @@ impl Default for LauncherOptionsValues {
             custom_end_game_banner: false,
             custom_end_game_score: false,
             custom_end_game_movie: false,
+            commander_feedback: true,
             detailed_eva_text: false,
             compact_super_timers: false,
             sidebar: SidebarSize::Normal,
@@ -1310,11 +1336,13 @@ impl OptionsDialogState {
     /// button without an output device (`0x004E2201..0x004E2223`), and the
     /// in-game page's Sound button stands for it. VERA's Check for Updates
     /// leaves the main menu for the update check
-    /// (`ShellExitThen::UpdateCheck`), which a match has no place for.
+    /// (`ShellExitThen::UpdateCheck`), which a match has no place for, and
+    /// Edit Layout arranges a match screen, which only a match has.
     pub(crate) const fn button_enabled(&self, id: LauncherButton) -> bool {
         match id {
             LauncherButton::InGameSound => self.launcher_audio_available,
             LauncherButton::CheckForUpdates => !self.in_match,
+            LauncherButton::EditLayout => self.in_match,
             _ => true,
         }
     }
@@ -1569,6 +1597,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
+            LauncherCheckboxId::CommanderFeedback => &mut self.values.commander_feedback,
             LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
             LauncherCheckboxId::CompactSuperTimers => &mut self.values.compact_super_timers,
         };
@@ -1643,6 +1672,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => self
                 .pending_events
                 .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
+            LauncherCheckboxId::CommanderFeedback => self
+                .pending_events
+                .push(LauncherOptionsEvent::CommanderFeedbackChanged(checked)),
             LauncherCheckboxId::DetailedEvaText => self
                 .pending_events
                 .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
@@ -1888,6 +1920,7 @@ impl Category {
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
+                Setting::Checkbox(Check::CommanderFeedback),
             ],
             Self::Interface => &[
                 Setting::List(List::Sidebar),
@@ -2628,6 +2661,7 @@ mod tests {
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,
                 Check::CustomEndGameMovie,
+                Check::CommanderFeedback,
                 Check::DetailedEvaText,
                 Check::CompactSuperTimers,
             ]
