@@ -53,9 +53,10 @@ both builds (`phobos_range_keys_limit_the_detonation_firer`,
 `phobos_sw_range_defaults_to_minus_one_and_reads`). No residual.
 RESIDUAL: the at-firer coordinate uses the object's `Location` rather than
 `GetCenterCoords`'s centre-height point; cell-based area damage is unaffected.
-RESIDUAL: a phobos-only build does not read `SuperWeapons=`, so a building that
-only that list names is not a firer there (Phobos reads it in
-`Ext/BuildingType/Body.cpp:341`; VERA owns it only for Ares).
+`SuperWeapons=` is read for Ares and Phobos builds alike (Phobos reads it in
+`Ext/BuildingType/Body.cpp:341`), and `type_super_weapons` names the
+detonation firer from it (`a_superweapons_list_names_the_detonation_firer` in
+the phobos-only run). No residual.
 RESIDUAL: the Ares-handler launch tail calls the detonation with no overlay
 registry and default frame effects, so its `MapClass::DamageArea` arm skips
 tiberium reduction and the frame's effect routing.

@@ -6365,13 +6365,13 @@ impl RuleSet {
                     sw.presentation = presentation.clone();
                 }
             }
-            for (name, supers) in processed.additional_super_weapon_states() {
-                if let Some(building) = rules.object_list.iter_mut().find(|object| {
-                    object.category == ObjectCategory::Building
-                        && object.id.eq_ignore_ascii_case(name)
-                }) {
-                    building.project_additional_super_weapons(supers);
-                }
+        }
+        #[cfg(any(feature = "ares", feature = "phobos"))]
+        for (name, supers) in processed.additional_super_weapon_states() {
+            if let Some(building) = rules.object_list.iter_mut().find(|object| {
+                object.category == ObjectCategory::Building && object.id.eq_ignore_ascii_case(name)
+            }) {
+                building.project_additional_super_weapons(supers);
             }
         }
         for (name, settings) in processed.hunter_seeker_states() {
@@ -9090,6 +9090,15 @@ impl RuleSet {
                 .hash(&mut hasher);
             self.side_ids.hash(&mut hasher);
             self.side_extensions.hash(&mut hasher);
+        }
+        #[cfg(all(feature = "phobos", not(feature = "ares")))]
+        {
+            self.object_list
+                .iter()
+                .filter(|object| !object.additional_super_weapons().is_empty())
+                .map(|object| (&object.id, object.additional_super_weapons()))
+                .collect::<Vec<_>>()
+                .hash(&mut hasher);
         }
         #[cfg(feature = "phobos")]
         {

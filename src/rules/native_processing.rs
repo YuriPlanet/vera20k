@@ -2151,7 +2151,7 @@ impl ProcessedRulesLayers {
         })
     }
 
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(crate) fn additional_super_weapon_states(&self) -> impl Iterator<Item = (&str, &[String])> {
         self.member_states(RulesTypeFamily::Building, |member| {
             member.additional_super_weapons.as_slice()
@@ -5642,7 +5642,7 @@ struct ProcessedType {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     super_weapon_phobos_messages: crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages,
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` vectors.
     #[cfg(feature = "phobos")]
@@ -6302,7 +6302,7 @@ impl ProcessedType {
             #[cfg(feature = "phobos")]
             super_weapon_phobos_messages:
                 crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages::default(),
-            #[cfg(feature = "ares")]
+            #[cfg(any(feature = "ares", feature = "phobos"))]
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: crate::rules::object_type::PhobosOreGathering::default(),
@@ -9187,7 +9187,7 @@ impl RulesPassProcessor {
                 }
                 match family {
                     RulesTypeFamily::Building => {
-                        #[cfg(feature = "ares")]
+                        #[cfg(any(feature = "ares", feature = "phobos"))]
                         if let Some(supers) = self.resolve_existing_list_from(
                             &raw,
                             "SuperWeapons",

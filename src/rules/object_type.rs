@@ -2166,8 +2166,10 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
-    /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
-    #[cfg(feature = "ares")]
+    /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references;
+    /// Phobos reads the same key into its BuildingTypeExt
+    /// (`Ext/BuildingType/Body.cpp:341`).
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     additional_super_weapons: Vec<String>,
     /// Phobos `UnitTypeExt`'s three `OreGathering.*` lists, retained per
     /// VehicleType and read by the harvester's gather overlay.
@@ -3828,12 +3830,12 @@ impl ObjectType {
         self.voxel_image_load.as_deref()
     }
 
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(crate) fn additional_super_weapons(&self) -> &[String] {
         &self.additional_super_weapons
     }
 
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     pub(crate) fn project_additional_super_weapons(&mut self, names: &[String]) {
         self.additional_super_weapons = names.to_vec();
     }
@@ -7171,7 +7173,7 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
-            #[cfg(feature = "ares")]
+            #[cfg(any(feature = "ares", feature = "phobos"))]
             additional_super_weapons: Vec::new(),
             #[cfg(feature = "phobos")]
             ore_gathering: PhobosOreGathering::default(),

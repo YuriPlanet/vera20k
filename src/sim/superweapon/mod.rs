@@ -2587,9 +2587,9 @@ pub(crate) fn type_super_weapons(
     ]
     .into_iter()
     .flatten();
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     let names = primary.chain(object.additional_super_weapons().iter().map(String::as_str));
-    #[cfg(not(feature = "ares"))]
+    #[cfg(not(any(feature = "ares", feature = "phobos")))]
     let names = primary;
     names
 }

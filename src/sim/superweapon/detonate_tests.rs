@@ -141,6 +141,26 @@ fn detonate_at_firer_without_a_building_uses_the_empty_coordinate() {
     assert_eq!(health(&sim, target), 100, "the target cell was not hit");
 }
 
+/// Phobos `SuperWeapons=` names a building as the detonation firer; the key
+/// is read without the Ares capability too.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_superweapons_list_names_the_detonation_firer() {
+    let rules = rules_with(
+        "[RootSpecial]
+Detonate.Warhead=WH
+         [PROVIDER]
+SuperWeapon=none
+SuperWeapons=RootSpecial
+",
+    );
+    let provider = rules.object("PROVIDER").expect("provider type");
+    assert!(
+        super::type_super_weapons(provider).any(|name| name.eq_ignore_ascii_case(ROOT)),
+        "the additional list names the detonation firer"
+    );
+}
+
 /// Phobos-only `GetLaunchSiteRange`: the projected `SW.RangeMinimum`/
 /// `.RangeMaximum` reach the detonation firer gate without the Ares metadata.
 #[cfg(all(feature = "phobos", not(feature = "ares")))]
