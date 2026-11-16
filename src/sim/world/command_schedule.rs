@@ -962,21 +962,27 @@ impl Simulation {
     /// non-megamission scan, immediately before staged command execution.
     /// The group spread `0x0064CDA0` per run (`0x0064CB0A..0x0064CB60`): each Foot
     /// member's coordinates (Location) and source cell.
-    /// In LAN/WOL, a transferred unit's order will be refused by VERA's
-    /// ownership check in the `0x004C6CB0` event receiver. Exclude it from
-    /// the group so it cannot change the destinations of the remaining units.
+    ///
+    /// VERA-only: in a LAN or WOL game a member whose order the network
+    /// ownership rule will refuse (`Simulation::network_actor_foreign`) is
+    /// left out, and a run left with fewer than two orders keeps its clicked
+    /// cells, as if `sender` had not ordered that member. Retail's member loop
+    /// (`0x0064CE59..0x0064CEDF`) tests only Foot and tube (`+0x684`), never
+    /// the owner, and `Execute_DoList` spreads every run of two or more
+    /// (`0x0064CBA4..0x0064CBDB`). Fixtures that skip the rule pass `None`.
     pub(super) fn adjust_staged_megamission_destinations(
         &self,
         commands: &mut [impl FormationCommand],
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        network_owner: Option<InternedId>,
+        sender: Option<InternedId>,
     ) {
         let (Some(terrain), Some(zones)) =
             (self.resolved_terrain.as_ref(), self.zone_grid.as_ref())
         else {
             return;
         };
+        let sender = sender.map(|owner| self.interner.resolve(owner));
         let mut run_start = 0;
         while run_start < commands.len() {
             let Some(key) = Self::formation_key(&commands[run_start]) else {
@@ -1006,7 +1012,7 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
-                    if network_owner.is_some_and(|owner| owner != entity.owner()) {
+                    if sender.is_some_and(|owner| self.network_actor_foreign(owner, entity_id)) {
                         orders -= 1;
                         continue;
                     }
@@ -1455,17 +1461,11 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
     }
 
     fn adjust_megamissions(&mut self, house: CommandDispatchHouse, entries: &mut [QueuedCommand]) {
-        let network_owner = self
-            .sim
-            .session
-            .game_mode()
-            .is_network()
-            .then_some(house.owner);
         self.sim.adjust_staged_megamission_destinations(
             entries,
             self.rules,
             self.overlay_registry,
-            network_owner,
+            Some(house.owner),
         );
     }
 

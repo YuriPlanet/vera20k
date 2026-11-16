@@ -3345,6 +3345,9 @@ impl Simulation {
     ///   and execution is dropped, including its planning detach, where
     ///   retail runs it on the new owner's object. The flag-2 planning
     ///   acknowledge stays ahead of this gate, so that actor's latch clears.
+    ///   The group spread (`0x0064CDA0`) leaves that actor out as well, so
+    ///   the sender's other units spread as if it had not been ordered, where
+    ///   retail spreads it with them.
     ///
     /// `ares` is [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     fn network_command_actor_foreign(
@@ -3356,9 +3359,7 @@ impl Simulation {
         if !self.session.game_mode().is_network() {
             return false;
         }
-        let foreign = |id: u64| {
-            self.substrate.entities.get(id).is_some() && !self.entity_owned_by_id(command_owner, id)
-        };
+        let foreign = |id: u64| self.network_actor_foreign(command_owner, id);
         match cmd {
             Command::Stop { entity_id }
             | Command::Scatter { entity_id }
@@ -3399,6 +3400,15 @@ impl Simulation {
                 }),
             _ => cmd.megamission_actor().is_some_and(foreign),
         }
+    }
+
+    /// The actor test of [`Self::network_command_actor_foreign`]: in a LAN or
+    /// WOL game, `id` names an object that a House other than `command_owner`
+    /// owns, so that sender's order for it is refused.
+    pub(super) fn network_actor_foreign(&self, command_owner: &str, id: u64) -> bool {
+        self.session.game_mode().is_network()
+            && self.substrate.entities.get(id).is_some()
+            && !self.entity_owned_by_id(command_owner, id)
     }
 
     /// The acting object's half of the native order-admission gate.
