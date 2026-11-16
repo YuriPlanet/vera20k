@@ -60,6 +60,9 @@ pub struct Hooks {
     pub state: fn() -> TextState,
     /// Replace that buffer, with the caret at `cursor` (in characters).
     pub set_state: fn(&str, usize),
+    /// Tell the input method whether the focused edit hides its text, so it
+    /// cannot learn or suggest a password.
+    pub set_secret: fn(bool),
 }
 
 static HOOKS: OnceLock<Hooks> = OnceLock::new();
@@ -115,6 +118,14 @@ pub fn state() -> TextState {
 pub fn set_state(text: &str, cursor: usize) {
     if let Some(hooks) = HOOKS.get() {
         (hooks.set_state)(text, cursor);
+    }
+}
+
+/// Tell the input method whether the focused edit hides its text, so its
+/// dictionary and suggestions never see a password.
+pub fn set_secret(secret: bool) {
+    if let Some(hooks) = HOOKS.get() {
+        (hooks.set_secret)(secret);
     }
 }
 

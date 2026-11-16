@@ -174,6 +174,21 @@ fn ime_set_state(text: &str, cursor: usize) {
     }
 }
 
+/// Tell the input method whether the focused edit hides its text
+/// (`app::shell_wol::login::ime_secret`), so its dictionary and suggestions
+/// never see a password.
+fn ime_set_secret(secret: bool) {
+    let _ = with_activity(|env, activity| {
+        env.call_method(
+            activity,
+            "setImeKind",
+            "(Z)V",
+            &[jni::objects::JValue::Bool(secret as u8)],
+        )
+        .map(|_| ())
+    });
+}
+
 /// The screen's cutout and corner radius at the window's top-left, in screen
 /// pixels (`util::display_insets`).
 fn display_insets() -> vera20k::util::display_insets::Insets {
@@ -419,6 +434,7 @@ fn android_main(app: AndroidApp) {
         hide: ime_hide,
         state: ime_state,
         set_state: ime_set_state,
+        set_secret: ime_set_secret,
     });
     // The battle view fills the window, so its messages need to know what the
     // screen's corner and cutout hide.

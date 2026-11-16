@@ -46,6 +46,24 @@ class VeraActivity : GameActivity() {
 
     fun displayInsetTop(): Int = displayInsetTop
 
+    /**
+     * Mark the focused edit as a password box (or not), so the keyboard's
+     * dictionary and suggestions never learn it. Called from Rust through
+     * [org.vera20k]'s `ime_secret` hook as the login page's focus moves.
+     */
+    fun setImeKind(secret: Boolean) {
+        val inputType = if (secret) {
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        } else {
+            InputType.TYPE_CLASS_TEXT
+        }
+        setImeEditorInfoFields(
+            inputType,
+            EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_FLAG_NO_FULLSCREEN,
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // GameActivity defaults to TYPE_NULL (0), which puts its InputConnection
         // into raw-key mode (fullEditor = false, mForwardKeyEvents = true). Its

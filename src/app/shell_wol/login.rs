@@ -302,6 +302,21 @@ pub(crate) fn ime_text(state: &AppState) -> Option<(String, usize)> {
     Some((String::from_utf16_lossy(&edit.units), edit.caret))
 }
 
+/// Android: whether the focused edit is a password box, which the input method
+/// must not learn or suggest (`ES_PASSWORD`, `0x00614FDC`).
+pub(crate) fn ime_secret(state: &AppState) -> bool {
+    let Some(login) = state.frontend.wol.as_ref().and_then(|wol| wol.login()) else {
+        return false;
+    };
+    if let Some(popup) = login.account.as_ref() {
+        return popup.focused_is_password();
+    }
+    if let Some(form) = login.form.as_ref() {
+        return form.focused_is_password();
+    }
+    login.focused_control == PASSWORD
+}
+
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     let reverse = state.platform.live_modifiers.shift_key();
     let key = match code {

@@ -90,6 +90,10 @@ pub(crate) struct ImeState {
     /// difference from here on is the player's typing.
     #[cfg(target_os = "android")]
     android_synced: bool,
+    /// Android: whether the input method was last told to hide the focused
+    /// edit's text (a password box).
+    #[cfg(target_os = "android")]
+    android_secret: Option<bool>,
 }
 
 impl ImeState {
@@ -236,11 +240,21 @@ mod android {
             ime.android_text.clear();
             ime.android_reseed = 0;
             ime.android_synced = false;
+            ime.android_secret = None;
             return;
         };
         let Some((text, cursor)) = seed(state, focused) else {
             return;
         };
+        // A password box tells the input method to stop learning and suggesting
+        // it (`ES_PASSWORD`, `0x00614FDC`); the flag follows the focus, so the
+        // username next door keeps its suggestions.
+        let secret = focused == ImeTarget::WolLoginField
+            && crate::app::shell_wol::login::ime_secret(state);
+        if state.platform.ime.android_secret != Some(secret) {
+            state.platform.ime.android_secret = Some(secret);
+            crate::util::android_ime::set_secret(secret);
+        }
         // A tap on an edit asks for the keyboard again, with the edit's text:
         // the player may have collapsed the keyboard with its own hide button,
         // which the engine never sees.
