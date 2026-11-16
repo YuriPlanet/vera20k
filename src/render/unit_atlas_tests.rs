@@ -832,6 +832,52 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
 }
 
 #[test]
+#[cfg(not(feature = "ares"))]
+fn stock_count_shrink_keeps_the_loaded_native_turret() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map_with_patch};
+    use crate::rules::voxel_frame_catalog::voxel_turret_index;
+
+    let Some(battle) = retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str("[FV]\nTurretCount=1\nRepairTurretWeapon=0\nRepairTurretIndex=3\n"),
+    ) else {
+        return;
+    };
+    let (_, assets) = retail_assets().unwrap();
+    let rules = &battle.rules;
+    let object = rules.object("FV").unwrap();
+    assert!(!rules.ares());
+    assert_eq!(object.turret_count, 1);
+    let physical =
+        crate::rules::voxel_asset_catalog::load_voxel_model(&assets, "FV", Some(rules)).unwrap();
+    assert_eq!(
+        physical.indexed_count(),
+        4,
+        "retail FV loads four native slots first"
+    );
+    let current = object.gunner_turrets.turret_for_weapon(0);
+    assert_eq!(voxel_turret_index("FV", Some(rules), current), 3);
+    let model = UnitModel::load(&assets, "FV", Some(rules)).unwrap();
+    assert_eq!(model.guns.len(), 4);
+    let demand = UnitAtlasDemand {
+        ground: BTreeSet::from(["FV".to_owned()]),
+        ..Default::default()
+    };
+    let (keys, _) = needed_unit_keys(&demand, &assets, Some(rules));
+    let key = UnitSpriteKey {
+        type_id: "FV".into(),
+        turret_index: current,
+        facing: 64,
+        layer: VxlLayer::Turret,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    assert!(keys.contains(&key));
+    assert!(model.render(&key, None, None, &mut None).is_some());
+}
+
+#[test]
 fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_ini_fixture::retail_assets;
