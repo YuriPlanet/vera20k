@@ -193,6 +193,15 @@ that its footprint stays the aim point.
   `ai_clean_wall_node_refuses_a_wall_without_a_protected_neighbour` and
   `ai_clean_wall_node_requires_a_protected_neighbour` cover the gate, key-off
   fill and both neighbour answers.
+- `balloon_hover_pathing_fix`: `Simulation::phobos_balloon_hover_ignores_cell_entry`
+  owns "key on, `BalloonHover=`, airborne by AircraftTracker membership". It
+  short-circuits `Simulation::foot_can_enter` (`0x0051BF90` / `0x0073F0A0`)
+  with `0` and `Simulation::approach_admits` (`0x004D62C0`) with `true`, matching
+  the two `IsCellOccupied` entry hooks and the approach-cell clear hook. Tests
+  `balloon_hover_pathing_fix_lets_an_airborne_balloon_enter_an_occupied_cell`,
+  `balloon_hover_pathing_fix_admits_an_airborne_balloons_approach_cell` and
+  `balloon_hover_pathing_fix_requires_an_airborne_balloon_type` cover both key
+  states, the grounded balloon and an airborne non-balloon.
 - `ai_bias_spawn_cell`: `sim::house_strategy` (`0x004FD500`'s owner) calls
   `bias_base_center_to_nearest_conyard` before its enemy/superweapon steps. With
   the key on outside a campaign and more than one `ConstructionYard=` in the
@@ -236,12 +245,12 @@ that its footprint stays the aim point.
   existing gates, so a tracked fall is considered globally rather than
   ring-local. Trigger: a scan with the key on. Effect: some fall picks and tie
   order may differ from native; no retail key means dormant.
-- `BalloonHoverPathingFix` (`Misc/Hooks.BugFixes.cpp:3499`): VERA's hover
-  locomotor pathing does not implement the stock shortcut the hook removes.
-  Trigger: a balloon/hover object pathing beyond its hover range. Effect: VERA
-  takes the uncorrected path in both key states. Frequency: hover movement only.
-  Risk: a mod relying on the stock shortcut sees the corrected route; no retail
-  object is player-visible here.
+- `BalloonHoverPathingFix` target-coordinate boundaries: the three
+  `Game::PreProcessMegaMissionList` bypasses (`0x64D592`, `0x64D575`,
+  `0x64D5C5`) have no VERA owner; VERA does not model that list or a
+  `TargetCoord` recalculation pass, and Approach reads the live target
+  coordinate directly in both key states. Trigger: a BalloonHover techno in a
+  mod. Effect: no recalculation to skip; no retail route reaches the difference.
 - `TeamDelays.DynamicType` boundaries: the hook's first branch is the per-house
   `HouseExt::TeamDelay >= 0` override, whose only writer in Phobos is trigger
   action `SetTeamDelay` (`Ext/TAction/Body.cpp:759-765`,
