@@ -1,7 +1,11 @@
 # Optional Phobos per-category AI clone limits
 
-Build with `--features phobos` to let a skirmish computer house clone-produce
-in parallel except for the categories or TechnoTypes you exclude.
+These keys let a skirmish computer house clone-produce in parallel except for
+the categories or TechnoTypes you exclude. They work in every build: a
+`ForbidParallelAIQueues` key in the rules, mode or map turns Phobos on for the
+game ([the Phobos switch](phobos.md#the-phobos-switch)), and without Phobos on
+none of this runs. `AllowParallelAIQueues`, which Ares reads too, does not turn
+it on.
 
 ```ini
 [GlobalControls]
@@ -33,6 +37,8 @@ Source: `RulesExt` reads in `src/Ext/Rules/Body.cpp`, the TechnoType read in
 
 - `rules/phobos_parallel_ai_queues.rs` — the `[GlobalControls]` reads and the
   category query.
+- `rules/phobos_switch.rs` — whether Phobos plays (`RuleSet::phobos`), which
+  `RuleSet::parallel_ai_queues_act` adds to Ares' gate for every hook below.
 - `rules/ruleset.rs` — projection and configuration hash.
 - `rules/object_type.rs` — per-type `ForbidParallelAIQueues=`.
 - `sim/ai_base_building.rs` — the per-house factory slot per category.

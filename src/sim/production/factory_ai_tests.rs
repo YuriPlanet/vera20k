@@ -558,7 +558,6 @@ fn disable_parallel_ai_queues_serializes_war_factory_production() {
 /// Phobos `ForbidParallelAIQueues`: inert under `AllowParallelAIQueues=no`;
 /// under the default gate the category forbid blocks a second war factory,
 /// and abandoning the first releases the slot.
-#[cfg(feature = "phobos")]
 #[test]
 fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture(
@@ -610,9 +609,30 @@ fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
     );
 }
 
+/// Without a Phobos key Phobos does not play, so an AI factory start claims
+/// none of Phobos' per-house factory slots and a retail game keeps no Phobos
+/// state. `AllowParallelAIQueues=`, which Ares reads too, does not turn it on.
+#[cfg(not(feature = "phobos"))]
+#[test]
+fn without_a_phobos_key_a_factory_start_claims_no_phobos_slot() {
+    use crate::sim::ai_base_building::AiFactorySlot;
+    for general in ["", "\n[GlobalControls]\nAllowParallelAIQueues=yes"] {
+        let (mut f, weap_1, _) = ai_limit_fixture(general, "");
+        assert!(!f.rules.phobos(), "{general:?}");
+        ai_limit_visit(&mut f, weap_1);
+        assert!(ai_limit_holds(&f, weap_1), "the factory starts as stock");
+        assert_eq!(
+            f.sim.houses[&f.owner]
+                .ai_production()
+                .parallel_factory(AiFactorySlot::Vehicle),
+            None,
+            "{general:?}"
+        );
+    }
+}
+
 /// Phobos `[SOMETECHNO] ForbidParallelAIQueues=yes` blocks cloning that
 /// product while the rest of the category stays allowed.
-#[cfg(feature = "phobos")]
 #[test]
 fn parallel_ai_queues_type_forbid_blocks_the_current_product() {
     let (mut f, weap_1, weap_2) = ai_limit_fixture(
@@ -631,7 +651,6 @@ fn parallel_ai_queues_type_forbid_blocks_the_current_product() {
 
 /// The type check reads the native `ProducingUnitTypeIndex` choice
 /// (`House+0x5650`), not the incumbent factory's held object.
-#[cfg(feature = "phobos")]
 #[test]
 fn parallel_ai_queues_type_forbid_follows_the_house_choice() {
     use crate::sim::ai_unit_choice::UnitChoiceKind;

@@ -3,8 +3,21 @@
 VERA20K can build in partial, Rust-native support for some Phobos extensions. It does not load the
 Phobos DLL and is not general mod support.
 
-Default builds use the retail readers and dispatch; an INI or client setting cannot enable omitted
-extensions. Build the supported extensions explicitly:
+## The Phobos switch
+
+Two of these extensions are in every build, the release build too, and play in a game whose rules,
+mode or map hold one of their keys. Such a key turns Phobos on for that game, as loading Phobos.dll
+would, and the game's log names it, e.g.
+`Phobos plays in this game: [GlobalControls] ForbidParallelAIQueues.Building is a Phobos key`.
+`AllowParallelAIQueues`, which Ares reads too, turns neither extension on. Retail data holds no
+such key, so a retail game plays as the original. A save, a replay and every player in an online
+match reach the same answer from the same rules, mode and map
+([Networking](Networking.md)). The two are:
+
+- [Parallel AI queue limits](phobos-parallel-ai-queues.md)
+- [Skirmish AI dehardcoding](phobos-ai-dehardcode.md)
+
+The rest needs a build with the `phobos` feature, which plays Phobos in every game:
 
 ```sh
 cargo run --release --bin vera20k --features phobos

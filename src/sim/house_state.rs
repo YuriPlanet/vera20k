@@ -190,7 +190,6 @@ pub struct HouseStrategyEmergencyState {
     last_attacker_house_index: i32,
     /// Phobos HouseExt `AIFireSaleDelayTimer` (persisted): None until the
     /// first last-legs tick with a positive `[General] AIFireSaleDelay=`.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     ai_fire_sale_delay_timer: Option<CdTimer>,
 }
@@ -202,7 +201,6 @@ impl std::hash::Hash for HouseStrategyEmergencyState {
         self.last_building_attack_frame.hash(hasher);
         self.last_attacker_house_index.hash(hasher);
         // Phobos extension state; keep the native-only hash while unset.
-        #[cfg(feature = "phobos")]
         if let Some(timer) = self.ai_fire_sale_delay_timer {
             b"phobos-ai-fire-sale-delay-v1".hash(hasher);
             timer.hash(hasher);
@@ -245,7 +243,6 @@ impl Default for HouseStrategyEmergencyState {
             all_to_hunt_bias: false,
             last_building_attack_frame: 0,
             last_attacker_house_index: last_attacker_house_index_default(),
-            #[cfg(feature = "phobos")]
             ai_fire_sale_delay_timer: None,
         }
     }
@@ -308,12 +305,10 @@ impl HouseStrategyEmergencyState {
     }
 
     /// Phobos HouseExt `AIFireSaleDelayTimer`, None until first armed.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn ai_fire_sale_delay_timer(&self) -> Option<CdTimer> {
         self.ai_fire_sale_delay_timer
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn start_ai_fire_sale_delay(&mut self, frame: i32, delay: i32) {
         self.ai_fire_sale_delay_timer = Some(CdTimer::started(frame, delay));
     }

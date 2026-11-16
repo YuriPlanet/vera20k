@@ -2936,10 +2936,7 @@ impl Simulation {
             self.refresh_ai_base_after_deploy(owner_id, (rx, ry), rules, registry, frame_effects);
             // Phobos `[General] GatherWhenMCVDeploy=` skips the native
             // regroup (hook at `0x739920`) while keeping every earlier write.
-            #[cfg(feature = "phobos")]
-            let gather = rules.general.gather_when_mcv_deploy;
-            #[cfg(not(feature = "phobos"))]
-            let gather = true;
+            let gather = !rules.phobos() || rules.general.gather_when_mcv_deploy;
             // A command-layer-driven house manages its own forces: the
             // regroup overwrites every own ground unit's NavCom, which the
             // external controller only observes a tick later. Every write

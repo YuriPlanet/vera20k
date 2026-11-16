@@ -1136,7 +1136,6 @@ fn a_computer_yard_deploy_sends_its_ground_force_to_the_base() {
 
 /// Phobos `[General] GatherWhenMCVDeploy=no` skips only the native call at
 /// `0x00739926`: the yard still deploys and every earlier write stays.
-#[cfg(feature = "phobos")]
 #[test]
 fn gather_when_mcv_deploy_no_leaves_the_ground_force_alone() {
     let (mut sim, rules, _mcv, [tank, infantry, _enemy]) =
