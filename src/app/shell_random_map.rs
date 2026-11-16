@@ -972,6 +972,10 @@ pub(super) fn load_custom_presets(dir: &std::path::Path) -> Vec<crate::map::rmg:
 /// Serialize the completed dialog preview at the native common-teardown
 /// boundary into `dir` (`App::random_map_dir`). Passing no directory models
 /// startup without a configured retail install; teardown itself still proceeds.
+///
+/// VERA extension: a preview larger than a room sends to other players
+/// (`TransferResource::Preview`), as the larger sizes make, is written at
+/// half size until it fits. The original's sizes always fit whole.
 fn write_random_map_preview_to_dir(
     dir: Option<&std::path::Path>,
     preview: &crate::map::rmg::preview::PreviewImage,
@@ -979,6 +983,27 @@ fn write_random_map_preview_to_dir(
     let Some(dir) = dir else {
         return;
     };
+    let limit = crate::map::source::TransferResource::Preview.limit();
+    let mut image = std::borrow::Cow::Borrowed(preview);
+    let encoded = loop {
+        let Some(encoded) = encode_random_map_preview(&image) else {
+            return;
+        };
+        if encoded.len() <= limit || image.width < 4 || image.height < 4 {
+            break encoded;
+        }
+        image = std::borrow::Cow::Owned(image.halved());
+    };
+    let path = dir.join(RANDMAP_PREVIEW_FILE);
+    if let Err(err) = crate::util::file_system::create_dir_all(dir)
+        .and_then(|()| crate::util::file_system::write(&path, encoded))
+    {
+        log::warn!("random map: could not write {}: {err}", path.display());
+    }
+}
+
+/// `preview` as the PCX `RandMap.img` holds, in the presentation's colours.
+fn encode_random_map_preview(preview: &crate::map::rmg::preview::PreviewImage) -> Option<Vec<u8>> {
     let (Ok(width), Ok(height)) = (u16::try_from(preview.width), u16::try_from(preview.height))
     else {
         log::warn!(
@@ -986,7 +1011,7 @@ fn write_random_map_preview_to_dir(
             preview.width,
             preview.height
         );
-        return;
+        return None;
     };
     let rgb: Vec<u8> = preview
         .rgba
@@ -998,17 +1023,9 @@ fn write_random_map_preview_to_dir(
                 .storage_roundtrip_rgb8([px[0], px[1], px[2]])
         })
         .collect();
-    match crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb) {
-        Ok(encoded) => {
-            let path = dir.join(RANDMAP_PREVIEW_FILE);
-            if let Err(err) = crate::util::file_system::create_dir_all(dir)
-                .and_then(|()| crate::util::file_system::write(&path, encoded))
-            {
-                log::warn!("random map: could not write {}: {err}", path.display());
-            }
-        }
-        Err(err) => log::warn!("random map: could not encode the preview: {err}"),
-    }
+    crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb)
+        .inspect_err(|err| log::warn!("random map: could not encode the preview: {err}"))
+        .ok()
 }
 
 /// The setup runner's production-owned common teardown: publish the last
@@ -1684,7 +1701,6 @@ impl App {
             &layout,
             x,
             y,
-            modal.extended,
             modal.advanced,
             modal.extras_page.is_some(),
         ) {
@@ -1738,17 +1754,17 @@ impl App {
                     || modal.players_hold.is_some()
                     || modal.advanced_hold.is_some()
             });
-        let (extended, advanced, extras) = state
+        let (advanced, extras) = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref()
-            .map_or((false, false, false), |modal| {
-                (modal.extended, modal.advanced, modal.extras_page.is_some())
+            .map_or((false, false), |modal| {
+                (modal.advanced, modal.extras_page.is_some())
             });
         if !mouse_held {
             let help = crate::ui::skirmish_shell::random_map_setup_control_at_view(
-                &layout, x, y, extended, advanced, extras,
+                &layout, x, y, advanced, extras,
             )
             .map(|control| {
                 // VERA: an Extras row's help is its entry's, not the row's.
@@ -1852,7 +1868,6 @@ impl App {
             &layout,
             x,
             y,
-            modal.extended,
             modal.advanced,
             modal.extras_page.is_some(),
         );
@@ -2591,7 +2606,6 @@ mod tests {
             },
             None,
             false,
-            true,
         ));
         modal
             .as_mut()
@@ -2611,6 +2625,41 @@ mod tests {
             .flat_map(|rgba| rgba[..3].iter().copied())
             .collect();
         assert_eq!(pcx.pixels, expected_rgb);
+    }
+
+    /// VERA: a Colossal map's preview, too large to send whole, is written
+    /// halved so a room can send it; one that fits is written whole.
+    #[test]
+    fn a_preview_too_large_to_send_is_written_halved() {
+        let dir = crate::map::source::test_support::TestDirectory::new("colossal-preview");
+        let (width, height) = (1008u32, 512u32);
+        // Each channel steps along a row so no PCX run packs, and stays under
+        // 0xC0 so no byte needs a run escape.
+        let rgba = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .flat_map(|(x, y)| {
+                [(37, 11), (53, 7), (29, 3)]
+                    .map(|(a, b)| ((x * a + y * b) % 176) as u8)
+                    .into_iter()
+                    .chain([0xFF])
+            })
+            .collect();
+        let preview = crate::map::rmg::preview::PreviewImage {
+            width,
+            height,
+            rgba,
+        };
+        write_random_map_preview_to_dir(Some(dir.path()), &preview);
+        let bytes = std::fs::read(dir.path().join(RANDMAP_PREVIEW_FILE)).unwrap();
+        assert!(bytes.len() <= crate::map::source::TransferResource::Preview.limit());
+        let pcx = crate::assets::pcx_file::PcxFile::from_bytes(&bytes).unwrap();
+        assert_eq!((pcx.width, pcx.height), (504, 256));
+
+        let small = preview.halved().halved();
+        write_random_map_preview_to_dir(Some(dir.path()), &small);
+        let bytes = std::fs::read(dir.path().join(RANDMAP_PREVIEW_FILE)).unwrap();
+        let pcx = crate::assets::pcx_file::PcxFile::from_bytes(&bytes).unwrap();
+        assert_eq!((pcx.width, pcx.height), (252, 128));
     }
 
     #[test]
@@ -2653,7 +2702,7 @@ mod tests {
         let mut retention = RandomMapGenerationRetention::default();
         retention.finish_generation(generated_preview(0x412, 10));
         let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-            options, None, false, true,
+            options, None, false,
         ));
         modal
             .as_mut()
@@ -2690,7 +2739,6 @@ mod tests {
             },
             None,
             false,
-            true,
         ));
         cancel_modal
             .as_mut()
@@ -2978,7 +3026,7 @@ mod tests {
             ..Default::default()
         };
         let mut modal =
-            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false, true);
+            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false);
         modal.begin_generate();
         let mut runtime =
             crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(

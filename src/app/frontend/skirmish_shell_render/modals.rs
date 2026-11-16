@@ -574,7 +574,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             &chrome,
             ControlPaint::Trackbar {
                 rect: players,
-                thumb_left: modal.players_range().thumb_left_in(
+                thumb_left: crate::ui::skirmish_shell::PLAYERS_RANGE.thumb_left_in(
                     modal.options.num_players,
                     players,
                     layout.scale,
@@ -657,16 +657,8 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.preset, RandomMapSetupControl::PresetCycle),
     ]
     .into_iter()
-    .filter(|(_, control)| {
-        let vera = matches!(
-            control,
-            RandomMapSetupControl::AdvancedToggle
-                | RandomMapSetupControl::ExportMap
-                | RandomMapSetupControl::FairStartsToggle
-                | RandomMapSetupControl::PresetCycle
-        );
-        steady && (!vera || modal.extended)
-    }) {
+    .filter(|_| steady)
+    {
         push_right_panel_button_shp(
             out,
             atlas,

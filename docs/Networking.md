@@ -303,6 +303,23 @@ anyone waits. A lobby from before the queue refuses the field; the host's game s
 queueing in that room, says so and sends its options again, and its spectators keep
 watching. A rollback past Balance automatically and Teams then turns those off too.
 
+A room's Create Random Map is Skirmish's whole generator: up to 30 players, the sizes
+past Very Large, the added landform and theaters, Advanced, Fair Starts, Extras, Presets
+and Export Map. A map for more than eight players stages one `W` slot for each start
+(`ScenarioStartStaging::to_w_text`), so its record runs past the native 37 numbers and
+512 bytes, up to 2048 (`maps::checked_staging`); it travels as any random map's does, on
+LAN in the extended options and online as `random_map` ([lobby protocol](lobby-protocol.md)).
+The generated rules digest covers VERA's town catalogue and `[Extras]`, which each game
+resolves from its own files, so players whose games would build different towns are
+refused at Start as on any rules difference. A preview larger than the 512 KiB preview
+transfer, as Enormous and Colossal maps make, is written at half size until it fits.
+A LAN guest of another build is refused at the build check. Online, an older guest
+cannot read options carrying such a map and says the update was invalid, in a room that
+cannot start, since its players' versions differ. A lobby from before these maps refuses
+options carrying one with 400 `invalid_options`; the host's game says so and keeps its
+other options until the host picks a smaller map. A rollback of the game
+returns rooms to the eight-player dialog; one of the lobby refuses these maps again.
+
 ### Room rules
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
