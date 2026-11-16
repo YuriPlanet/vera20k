@@ -839,9 +839,13 @@ fn blocked_or_unconfigured_mcv_deploy_does_not_emit_deploy_sound() {
 /// DeployFacing. The house keeps the base plan of a yard it lost, so the
 /// deploy only re-anchors it.
 fn house_fixture(human: bool, land: &str) -> (Simulation, RuleSet, u64) {
+    house_fixture_with_ai(human, land, "")
+}
+
+fn house_fixture_with_ai(human: bool, land: &str, extra_ai: &str) -> (Simulation, RuleSet, u64) {
     let text = format!(
         "[InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=AMCV\n[BuildingTypes]\n0=YARD\n\
-         [AI]\nBuildConst=YARD\n\
+         [AI]\nBuildConst=YARD\n{extra_ai}\
          [AMCV]\nStrength=1000\nSpeed=5\nROT=5\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nDeploysInto=YARD\n\
          [YARD]\nStrength=1000\nConstructionYard=yes\nDeployFacing=4\n\
          [Hunt]\nRate=0.016\n[Guard]\nRate=0.016\n[Unload]\nRate=0.016\n{land}"
@@ -1145,6 +1149,42 @@ fn a_computer_mcv_on_guard_unloads_when_its_house_has_a_yard() {
     }
     assert_eq!(yard_cells(&sim).len(), 2);
     assert!(yard_cells(&sim).contains(&(19, 21)));
+}
+
+/// Phobos `[AI] AIAutoDeployMCV=no` (`Ext/BuildingType/Hooks.Placing.cpp:5-13`,
+/// hook `0x00740A11`): with a live Construction Yard in the house's BuildConst
+/// vector the Guard arm skips `Queue_Mission(16)`; an empty vector still
+/// queues Unload.
+#[cfg(feature = "phobos")]
+#[test]
+fn ai_auto_deploy_mcv_off_keeps_the_second_yard_out_of_the_guard_arm() {
+    let (mut sim, rules, id) = house_fixture_with_ai(false, BUILDABLE, "AIAutoDeployMCV=no\n");
+    sim.spawn_object("YARD", "Americans", 4, 4, 0, &rules)
+        .unwrap();
+    let owner = sim.interner.get("Americans").unwrap();
+    assert_eq!(
+        sim.houses[&owner].build_const_order().len(),
+        1,
+        "the standing yard is the house's NumConYards"
+    );
+    assert!(
+        !guard_queues_unload(&sim, id, &rules),
+        "the key off and a standing yard skip the Unload arm"
+    );
+    for _ in 0..8 {
+        tick(&mut sim, &rules, None);
+    }
+    assert_eq!(
+        yard_cells(&sim).len(),
+        1,
+        "the MCV stays put instead of deploying a second yard"
+    );
+
+    let (sim, rules, id) = house_fixture_with_ai(false, BUILDABLE, "AIAutoDeployMCV=no\n");
+    assert!(
+        guard_queues_unload(&sim, id, &rules),
+        "a house without a yard still deploys with the key off"
+    );
 }
 
 /// Retail Dustbowl with a skirmish computer house (`Russians`) whose MCV

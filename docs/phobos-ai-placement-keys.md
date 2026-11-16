@@ -121,6 +121,14 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
   (`0x00639DA0`'s owner) admits a selected building when the key is on;
   `planning_press_refusal` and the radar caller pass `RuleSet` in, the
   display-side drop is not ported (see the residual below).
+- `ai_auto_deploy_mcv`: `sim::mcv_deploy::guard_queues_unload` is
+  `0x007408C7..0x00740A19`'s arm. Off with a non-empty
+  `HouseState::build_const_order()` — the `NumConYards` owner, appended by
+  `BuildingClass::Unlimbo`'s port and removed on expiry or owner change —
+  refuses the Unload queue (`0x00740A11` -> `0x00740A50`); on or with no yard
+  it keeps the current queue. Test
+  `ai_auto_deploy_mcv_off_keeps_the_second_yard_out_of_the_guard_arm` covers
+  both states.
 - `missile_spawn_attack_cell`: `sim::spawn_manager`'s `set_destination` sends a
   missile to the target's Cell when the key is on and the target is not a
   `EntityCategory::Structure`. The native oracle host opts out through
@@ -128,17 +136,13 @@ sections (`:2169-2196`) and defaults them in `Default` (`:1676-1690`).
 
 ## Residuals
 
-- `AIAutoDeployMCV` (`0x00740A11`): VERA has no con-yard count owner
-  (`HouseClass::NumConYards`); its MCV deploy path (`sim::mcv_deploy`,
-  `0x00738D30`) decides from the deployment site alone. Trigger: a computer house
-  guarding an MCV while it already holds a Construction Yard. Effect: stock
-  skips the deploy attempt (`0x00740A50`) and Phobos' default lets it deploy;
-  VERA behaves as if the key were on always, which is Phobos' default but wrong
-  for a mod that clears it. Frequency: every AI MCV, once per house. Risk: a
-  second Construction Yard in an AI base that retail stock would not build.
-- `AISetBaseCenter` (`0x00739889`): same missing `NumConYards`; VERA's
-  `house_state::set_base_center` is called unconditionally on deploy. Trigger:
-  deploy with more than one conyard. Effect/frequency/risk as above.
+- `AISetBaseCenter` (`0x00739889`): the deploy path still anchors the base
+  plan and center unconditionally. Trigger: an AI deploy while the house
+  already has two or more conyards and the key is cleared. Effect: the base
+  centre and spawn cell move to the new yard where native skips to
+  `0x0073992B`. Frequency: every such deploy. Risk: AI production shifts to
+  the newest yard in a mod that clears the key; retail's default key on
+  matches VERA.
 - `AIBiasSpawnCell` (`0x004FD538`): VERA's `sim::house_strategy` has no
   `GetSpawnPosition()` reader and no conyard enumeration, so the nearest-conyard
   base-centre rewrite does not run. Trigger: an AI house with two or more
