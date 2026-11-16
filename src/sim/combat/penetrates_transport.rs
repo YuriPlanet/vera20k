@@ -100,6 +100,17 @@ pub(super) fn apply(
         } else {
             adjusted
         };
+        // `Detonate.cpp:813,845,865,916`: `passenger->SetLocation(
+        // transporterCoords)` before ReceiveDamage, so a dying passenger's
+        // death effects leave from the transport. FootClass::SetLocation
+        // (`0x004DB780`) also carries the passenger's own riders.
+        crate::sim::movement::ground_pose::foot_set_location(
+            &mut world.substrate.entities,
+            passenger_id,
+            transport_coord,
+            rules,
+            &world.interner,
+        );
         // `ReceiveDamage(..., ignoreDefenses = fatal, true, sourceHouse)`.
         let event = EntityDamageEvent::direct_receiver(
             passenger_id,
