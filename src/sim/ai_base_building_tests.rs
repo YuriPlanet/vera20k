@@ -470,6 +470,7 @@ fn retail_walls_by_difficulty_and_side() {
 
 const EXIT_RULES: &str = "[General]\nAIAlternateProductionCreditCutoff=2000\n\
     MaximumBuildingPlacementFailures=2\n\
+    [AI]\nAIForbidConYard=yes\n\
     [InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=TANK\n\
     [BuildingTypes]\n0=YARD\n1=PLAIN\n\
     [YARD]\nStrength=1000\nConstructionYard=yes\n\
@@ -533,6 +534,139 @@ fn node_state(sim: &Simulation, owner: InternedId) -> Vec<((i16, i16), i32)> {
         .iter()
         .map(|node| (unpack_base_plan_cell(node.packed_cell), node.retry_count))
         .collect()
+}
+
+/// A skirmish computer house whose yard at (12, 12) holds one open `YARD`
+/// node at (16, 16), with a second `YARD` waiting in limbo. Used for the
+/// `AIForbidConYard` pair.
+fn conyard_exit_fixture_with(rules_text: &str) -> (Simulation, RuleSet, InternedId, u64, u64) {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(rules_text),
+        &IniFile::from_str("[YARD]\nFoundation=2x2\n[PLAIN]\nFoundation=2x2\n"),
+    )
+    .unwrap();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    let owner = sim.interner.intern("AIHouse");
+    let country = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(country), false, 10_000, 10));
+    let yard = sim
+        .spawn_object("YARD", "AIHouse", 12, 12, 0, &rules)
+        .unwrap();
+    let yard_type = rules.building_type_index("YARD").unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_plan_mut()
+        .set_nodes_for_test(vec![BasePlanNode {
+            type_or_control: yard_type,
+            packed_cell: pack_base_plan_cell(16, 16),
+            filled: false,
+            retry_count: 3,
+        }]);
+    for (x, y) in [(16, 16), (17, 16), (16, 17), (17, 17)] {
+        sim.substrate
+            .base_reservations
+            .reserve(sim.resolved_terrain.as_ref(), x, y, 0);
+    }
+    let product = sim
+        .construct_object_limbo_at_height(
+            "YARD",
+            "AIHouse",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    (sim, rules, owner, yard, product)
+}
+
+fn conyard_exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
+    conyard_exit_fixture_with(EXIT_RULES)
+}
+
+fn node_filled(sim: &Simulation, owner: InternedId) -> Vec<bool> {
+    sim.houses[&owner]
+        .base_plan()
+        .nodes()
+        .iter()
+        .map(|node| node.filled)
+        .collect()
+}
+
+#[test]
+fn ai_forbid_conyard_marks_the_open_node_placed_and_fails_the_exit() {
+    let (mut sim, rules, owner, yard, product) = conyard_exit_fixture();
+    let exit = exit_building(
+        &mut sim,
+        &rules,
+        yard,
+        product,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    assert_eq!(exit, BuildingExit::Failed);
+    assert!(
+        sim.substrate
+            .entities
+            .get(product)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+    assert_eq!(node_state(&sim, owner), [((16, 16), 0)]);
+    assert_eq!(node_filled(&sim, owner), [true]);
+}
+
+#[test]
+fn ai_forbid_conyard_off_still_places_the_second_yard() {
+    let rules_text = EXIT_RULES.replace("AIForbidConYard=yes", "AIForbidConYard=no");
+    let (mut sim, rules, owner, yard, product) = conyard_exit_fixture_with(&rules_text);
+    let exit = exit_building(
+        &mut sim,
+        &rules,
+        yard,
+        product,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+
+    assert_eq!(exit, BuildingExit::Placed);
+    let building = sim.substrate.entities.get(product).unwrap();
+    assert!(!building.lifecycle.in_limbo());
+    assert_eq!((building.position.rx(), building.position.ry()), (16, 16));
+    assert_eq!(node_filled(&sim, owner), [true]);
+}
+
+#[test]
+fn a_placed_conyard_node_is_not_open_only_with_the_key() {
+    for (rules_text, expected) in [
+        (EXIT_RULES.to_owned(), None),
+        (
+            EXIT_RULES.replace("AIForbidConYard=yes", "AIForbidConYard=no"),
+            Some(0),
+        ),
+    ] {
+        let (mut sim, rules, owner, _, _) = conyard_exit_fixture_with(&rules_text);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .base_plan_mut()
+            .mark_placed(0);
+        let yard_type = rules.building_type_index("YARD").unwrap();
+        assert_eq!(
+            find_node(&mut sim, &rules, owner, yard_type, None),
+            expected,
+            "{rules_text}"
+        );
+    }
 }
 
 #[test]

@@ -3,7 +3,7 @@
 Eleven Phobos switches that rescan found without a reader: six `[AI]` placement
 switches, four `[General]` bug-fix switches and one `[CombatDamage]` key, plus
 the eight `[General] TeamDelays.Count1..Count8` rows that carry the
-`TeamDelays.DynamicType` delays. `AIAutoDeployMCV`, `AISetBaseCenter`,
+`TeamDelays.DynamicType` delays. `AIAutoDeployMCV`, `AISetBaseCenter`, `AIForbidConYard`,
 `MissileSpawnAttackCell`, `FallingDownTargetingFix`, `BuildingWaypoints`
 (selection half) and `TeamDelays.DynamicType` have consumers ported here; the
 remaining consumers are recorded as residuals.
@@ -165,6 +165,19 @@ that its footprint stays the aim point.
   `DistributedFireCandidate` entries and replaces the best score. Test
   `falling_down_targeting_fix_offers_a_tracked_fall_to_an_air_capable_guard`
   covers key-off invisibility and the key-on pick.
+- `ai_forbid_conyard`: `sim::ai_base_building::exit_building` refuses a
+  `ConstructionYard=` product when the key is on, after `find_node` and before
+  any site or flush: `BasePlanState::mark_placed` writes the node's
+  `filled = true` (`Placed`) and `retry_count = 0` (`Attempts`), and the exit
+  answers `Failed` with the product left in limbo (`0x004451F8` ->
+  `0x00445696`). `find_node` (`BaseClass::GetBaseNodeIndex 0x0042EB50`) skips
+  a `filled` node whose type is a `ConstructionYard=` in both its `-1` and
+  concrete-type branches (`0x0042EB8E` -> invalid), so such a node is never
+  chosen again. Tests
+  `ai_forbid_conyard_marks_the_open_node_placed_and_fails_the_exit`,
+  `ai_forbid_conyard_off_still_places_the_second_yard` and
+  `a_placed_conyard_node_is_not_open_only_with_the_key` cover both hooks and
+  the key-off path.
 - `team_delays_dynamic_type`: `sim::ai_team_creation::dynamic_team_delay` is
   `HouseClass_Update_ResetTeamDelay 0x004F8ACC`'s owner. It leaves the stock
   path when the session is a campaign, the type is `None`, or
@@ -194,13 +207,6 @@ that its footprint stays the aim point.
   on the scenario waypoint instead of the conyard nearest it. Frequency: once per
   house AI update. Risk: AI production concentrates on the far conyard; player
   visible in long AI games.
-- `AIForbidConYard` (`0x004451F8`, `0x0042EB8E`): VERA's `sim::ai_base_building`
-  and `sim::base_plan` place nodes without the `Placed`/`Attempts` pair the hooks
-  write, and `BaseClass::Find_Node`'s two refusals are not ported. Trigger: a
-  key-enabled mod where an AI base plan still holds a Construction Yard node.
-  Effect: the AI rebuilds/buys a conyard the key forbids. Frequency: base-plan
-  rebuild only. Risk: none in retail (the key is absent, so the branch is
-  dormant).
 - `AINodeWallsOnly` (`0x005885D1`, `0x005887C1`) and `AICleanWallNode`
   (`0x004451F8`): VERA's wall fill (`sim::production::wall_placement`,
   `0x00588750`'s owner) expands every cardinal direction from the origin and has

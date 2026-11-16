@@ -1000,6 +1000,17 @@ pub(crate) fn exit_building(
     let node = rules
         .building_type_index(&ty.id)
         .and_then(|index| find_node(sim, rules, owner, index, registry));
+    // `0x004451F8` with `AIForbidConYard`: the node is written `Placed = true`
+    // and `Attempts = 0`, and the exit answers BuildFailed, leaving the
+    // product in limbo (`Ext/BuildingType/Hooks.Placing.cpp:72-92`).
+    if rules.phobos_globals.ai_forbid_conyard && ty.construction_yard {
+        if let Some(index) = node
+            && let Some(house) = sim.houses.get_mut(&owner)
+        {
+            house.base_plan_mut().mark_placed(index);
+        }
+        return BuildingExit::Failed;
+    }
     let site = building_site(sim, rules, owner, ty, node, registry);
     match flush_for_placement(sim, rules, registry, ty, site, owner, effects) {
         Flush::Scattered => {
@@ -1298,6 +1309,18 @@ pub(crate) fn find_node(
     // The count is re-read every step (`0x0042EBAE`).
     while index < sim.houses.get(&owner)?.base_plan().nodes().len() {
         let node = plan_node(&sim.houses, owner, index);
+        // `0x0042EB8E` with `AIForbidConYard`: a placed node of a
+        // `ConstructionYard=` type answers Invalid before stock `0x0050CAD0`
+        // (`Ext/BuildingType/Hooks.Placing.cpp:121-137`).
+        if rules.phobos_globals.ai_forbid_conyard
+            && node.filled
+            && rules
+                .building_type_at(node.type_or_control)
+                .is_some_and(|ty| ty.construction_yard)
+        {
+            index += 1;
+            continue;
+        }
         if wanted == -1 {
             if !node_satisfied(sim, rules, owner, &node, registry) {
                 if !game_mode_nonzero || !node.filled {
