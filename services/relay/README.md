@@ -414,3 +414,48 @@ quota and blocks no match. The relay never deletes these files; preserve them
 for diagnosis and remove them by hand. The
 in-memory `RelayServer::new` constructor remains useful for short protocol
 fixtures; deployed ordering uses `RelayServer::with_journal`.
+
+## Watchers
+
+A watcher follows a started match from its first record, some time behind its
+players, and is no part of it: it has no source, counts for no start, pace,
+checksum or departure, and leaves nothing in the stream, so the players' games
+never learn it is there. Its code is in `../relay-protocol/src/sequenced/watch.rs`.
+
+Its hop holds a version 3 watch ticket of a player ticket's length:
+`[3][match UUID16][0][expiry LEu64][nonce16][watcher UUID16][delay seconds LEu64]`
+then HMAC-SHA256 under the relay ticket key over those 66 bytes with domain
+`VERA20k relay watch ticket v1\0`. Its packet key is derived from the whole
+ticket as a player's is. The delay is at most 240 seconds, below the 300 seconds
+a finished match's records stay, so a watcher that kept up still reads the end.
+A relay from before watchers refuses any ticket version but 2.
+
+HELLO and CONFIRM go as a player's, but a CONFIRM carries only the cookie (no
+federation roster) and spends the players' handshake budgets. The relay admits
+a watcher only to a match that started and whose whole stream is in its journal,
+and at most 10 watchers a match and 1,024 in all (`Full`). A CONFIRM with the
+same watcher and a later expiry renews the hop: a new session that keeps the old
+hop's agreement and budgets, and the old session goes at once. A watcher sends
+only PING, which READY answers, and CONTROL requests: Ready `[0][agreement32]`,
+the startup agreement, which must equal the players' (`AgreementMismatch`
+otherwise) and is answered with STATUS; Pull `[2][next varint]`, refused before
+an agreed Ready (`NotConfigured`), answered with STATUS and at most 4 PACKs (1,020
+records) from `next`; and Leave `[3]`, answered with LEAVE_ACK echoing its
+sequence, which frees the hop at once and writes nothing. Anything else, UPLINK,
+batches, DATA and Pause included, is refused. A watcher whose ticket expires,
+who is silent for 30 seconds, or whose match the relay no longer holds loses its
+hop.
+
+The delay holds in every reply. Once a second the room notes its stream's end
+(frame, next record, active sources), keeping 242 such marks; a watcher reads
+the newest mark at least its delay old, and before the first one nothing. A
+watcher's STATUS is a player's STATUS of that delayed end with the hop feedback,
+then, when there is one, `[frame varint][checksum u32]`: the newest frame at or
+before that end, one in every 240 (16 checksum intervals), whose checksum every
+active player reported alike. The relay keeps the last 128 such samples. A
+watcher compares its own world's checksum at that frame and stops if they differ.
+
+Watchers spend budgets of their own, never the players': each watcher 64 packets,
+32 journal pulls and 256 KiB out a second, all watchers together 4,096 packets,
+512 journal pulls and 8 MiB a second. A Pull that reads the journal pays before
+it reads.

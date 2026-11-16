@@ -414,6 +414,23 @@ impl LiveCommandSession {
             .is_some_and(|session| session.restoring())
     }
 
+    /// VERA: this game watches the match instead of playing in it
+    /// (Networking.md, Watching). It follows the local House and sends
+    /// nothing into the match.
+    pub fn watching(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.watching())
+    }
+
+    /// A watched match is over: every player left it, and every frame before
+    /// that ran here.
+    pub fn watch_over(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.watch_over())
+    }
+
     /// Whether a confirmed UI exit's EXIT waits for the relay to sequence it.
     pub fn exit_requested(&self) -> bool {
         self.sequenced
@@ -433,6 +450,12 @@ impl LiveCommandSession {
 
     pub fn relay_expires(&self) -> Option<u64> {
         self.transport.relay_expires()
+    }
+
+    /// A watcher's delay behind the players, from its watch ticket (relay
+    /// README "Watchers"); `None` for a player.
+    pub fn relay_watch_delay(&self) -> Option<u32> {
+        self.transport.relay_watch_delay()
     }
 
     pub fn renew_relay(

@@ -165,6 +165,9 @@ pub(crate) struct FrontendState {
     /// The host unticked Ranked game at its last Create Game in VERA's
     /// online lobby, which its next Create Game shows.
     pub(crate) wol_room_unranked: bool,
+    /// The host's Watching at its last Create Game in VERA's online lobby,
+    /// which its next Create Game shows and its room publishes.
+    pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
     /// VERA: how this player returns to its LAN room after the match.
     pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// `0x10E`'s background and icon art (`0x0072C7E0`).

@@ -9,6 +9,7 @@ use crate::link::Reader;
 mod downlink;
 pub(crate) mod federation;
 pub(crate) mod pack;
+pub(crate) mod watch;
 
 /// A `VO1C` certificate; `VO2C` adds one flags byte.
 pub const ORDERING_CERTIFICATE_LEN: usize = 66;
@@ -309,6 +310,10 @@ pub struct OrderStatus {
     pub started: bool,
     /// The relay's hop feedback appended to every STATUS (spec §3.4).
     pub feedback: HopFeedback,
+    /// A watcher's STATUS only: the newest `(frame, checksum)` sample every
+    /// player reported alike, of a frame the watcher may read (README
+    /// "Watchers").
+    pub watch_sample: Option<(u32, u32)>,
 }
 
 #[derive(Debug)]
@@ -688,6 +693,7 @@ impl ClientSession {
                         start_delay_ms: reader.varint_u32()?,
                         started: reader.u8()? != 0,
                         feedback: crate::link::read_feedback(reader)?,
+                        watch_sample: watch::read_sample(reader),
                     })
                 };
                 return Ok(read(&mut reader).map_or(OrderEvent::Unrecognized, OrderEvent::Status));
@@ -1073,6 +1079,8 @@ pub(super) struct OrderingRoom {
     pub(super) forward_checksums: Vec<(u8, u32, u32)>,
     // DESYNC records the server has not yet counted for its journal report.
     desyncs: u32,
+    // What delayed watchers may read (README "Watchers").
+    watch: watch::WatchLog,
 }
 
 impl OrderingRoom {
@@ -1124,6 +1132,7 @@ impl OrderingRoom {
             desync_found: false,
             forward_checksums: Vec::new(),
             desyncs: 0,
+            watch: watch::WatchLog::default(),
         }
     }
 
@@ -1159,6 +1168,7 @@ impl OrderingRoom {
                 .filter_map(|source| source.last_batch.as_ref())
                 .map(|(_, _, bytes)| bytes.len() + ENTRY_OVERHEAD)
                 .sum::<usize>()
+            + self.watch.memory()
     }
 
     fn oldest_seq(&self) -> u64 {
@@ -1175,11 +1185,17 @@ impl OrderingRoom {
     /// varint][next_seq varint][active_sources u32][tick_hz u16]
     /// [start_delay_ms varint][started u8]` (compaction spec §7.3).
     fn status(&self, now_ms: u64) -> Vec<u8> {
+        self.status_of(self.head, self.next_seq, self.active, now_ms)
+    }
+
+    /// `status` with the stream ending at `head` and `next_seq`, `active`
+    /// sources then: a watcher's delayed end.
+    fn status_of(&self, head: u32, next_seq: u64, active: u32, now_ms: u64) -> Vec<u8> {
         let mut payload = vec![STATUS_EVENT];
-        varint::write(self.head.into(), &mut payload);
+        varint::write(head.into(), &mut payload);
         varint::write(self.oldest_seq(), &mut payload);
-        varint::write(self.next_seq, &mut payload);
-        payload.extend_from_slice(&self.active.to_le_bytes());
+        varint::write(next_seq, &mut payload);
+        payload.extend_from_slice(&active.to_le_bytes());
         payload.extend_from_slice(&self.certificate.tick_hz.to_le_bytes());
         varint::write(
             self.starts_at.map_or(0, |start| {
@@ -1799,6 +1815,11 @@ impl OrderingRoom {
         reports.retain(|&(reporter, _)| active & (1 << reporter) != 0);
         reports.push((source, checksum));
         let found = desync_outlier(reports, active);
+        if reports.len() == active.count_ones() as usize
+            && reports.iter().all(|&(_, value)| value == checksum)
+        {
+            self.watch.agree(frame, checksum);
+        }
         while self.checksums.len() > CHECKSUM_FRAMES {
             self.checksums.pop_first();
         }
@@ -1835,6 +1856,10 @@ impl OrderingRoom {
     }
 
     fn advance(&mut self, now_ms: u64, federation: Option<&mut federation::Federation>) {
+        // Before this pass seals anything: every record before the mark was
+        // committed by `now_ms`.
+        self.watch
+            .mark(now_ms, self.head, self.next_seq, self.active);
         if self.storage_failed {
             self.failed_at.get_or_insert(now_ms);
             return;

@@ -195,11 +195,18 @@ impl App {
         }
         let started = Instant::now();
         let mut result = RuntimeServiceResult::default();
+        // A watcher catching up plays minutes of its match at once, muted,
+        // with a longer budget a picture (`LocalFramePacer::permits_catch_up`).
+        let watcher_catching_up = crate::app::match_runtime::watching::catching_up(
+            state,
+            crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+        );
         let restoring = state
             .match_state
             .live_network
             .as_ref()
-            .is_some_and(|live| live.restoring_match());
+            .is_some_and(|live| live.restoring_match())
+            || watcher_catching_up;
         let profile = &state.persistence.options_profile;
         let (sound, voice) = (
             f64::from(profile.sound_volume),
@@ -211,10 +218,11 @@ impl App {
             if catch_up_allowed {
                 // The pass decides from this whether its frame is the
                 // service's last (`LocalFramePacer::another_pass_follows`).
-                state
-                    .platform
-                    .frame_pacer
-                    .begin_service_pass(started, attempts);
+                state.platform.frame_pacer.begin_service_pass(
+                    started,
+                    attempts,
+                    watcher_catching_up,
+                );
             }
             let before = state.match_state.sim_runtime.runtime().map(|runtime| {
                 (
@@ -249,6 +257,7 @@ impl App {
                 || !crate::app::match_runtime::frame_pacer::LocalFramePacer::permits_catch_up(
                     attempts,
                     started.elapsed(),
+                    watcher_catching_up,
                 )
                 // A tick is running beside this thread: draw. Another pass
                 // would only find it running; its end wakes the next one.
