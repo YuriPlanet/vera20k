@@ -39,7 +39,7 @@
 - 不用 `try`/`catch`：错误作为返回值（见[错误](#错误)）；
 - 把多个值组合在一起的参数用类，不用对象形状。
 
-在 AssemblyScript 中，`T | null` 只能用于类。缺失的整数写作 `-1`（或其他写明的哨兵值），社区表格也是这样做的（“负数表示无”）。
+在 AssemblyScript 中，`T | null` 只能用于类；缺失的句柄写作 `NO_HANDLE`（见[句柄](#句柄)）。缺失的整数写作 `-1`（或其他写明的哨兵值），社区表格也是这样做的（“负数表示无”）。
 
 ### 值类型
 
@@ -68,7 +68,7 @@ class Rect  { x: i32; y: i32; width: i32; height: i32; }   // cells
 
 对象引用是带代数的句柄（RFC 5）。对象已不存在的句柄读出来是“不存在”，绝不会读到被复用的槽位。位布局不属于 API，它取决于待定问题 2（ABI）。
 
-句柄是值类型。在 TypeScript SDK 中，每种句柄类型都是 `i64` 的别名，`i64` 是 SDK 的可移植整数类型之一，`tsc` 和 AssemblyScript 都接受；在 Rust SDK 中，每种句柄都是一个 newtype。传递、保存或接收句柄都不分配内存（RFC 15）。本清单把调用写成句柄上的方法（`techno.kill(...)`），和 RFC 的示例一致；在 TypeScript SDK 中，这样的调用是一个以句柄为第一个参数的函数，最终写法取决于待定问题 3。`NO_HANDLE`（`0`）从不指向存活的对象；可能出现它的地方，签名写作 `Techno | null`。
+句柄是值类型。在 TypeScript SDK 中，每种句柄类型都是 `i64` 的别名，`i64` 是 SDK 的可移植整数类型之一，`tsc` 和 AssemblyScript 都接受；在 Rust SDK 中，每种句柄都是一个 newtype。传递、保存或接收句柄都不分配内存（RFC 15）。本清单把调用写成句柄上的方法（`techno.kill(...)`），和 RFC 的示例一致；在 TypeScript SDK 中，这样的调用是一个以句柄为第一个参数的函数，最终写法取决于待定问题 3。句柄从不可为空：`NO_HANDLE`（`0`）表示“没有”，从不指向存活的对象。
 
 | 句柄 | 指向 | 何时失效 |
 | --- | --- | --- |
@@ -97,13 +97,18 @@ const NO_HANDLE: i64 = 0;
 
 // on Techno:
 isAlive(): bool;
-asBuilding(): Building | null;   // NO_HANDLE when not a building
-asInfantry(): Infantry | null;
-asVehicle(): Vehicle | null;
-asAircraft(): Aircraft | null;
+asBuilding(): Building;   // NO_HANDLE when not a building
+asInfantry(): Infantry;   // NO_HANDLE when not infantry
+asVehicle(): Vehicle;     // NO_HANDLE when not a vehicle
+asAircraft(): Aircraft;   // NO_HANDLE when not an aircraft
+
+// a handle that may be absent is compared with NO_HANDLE (in an action):
+if (e.other != NO_HANDLE) {
+  ctx.log("attacked");
+}
 ```
 
-可为空的句柄写作 `Techno | null`。事件参数中可能缺失的字段（攻击者、抛射体）都可为空。
+可能不指向任何对象的签名、字段或返回值使用普通的句柄类型，并注明可能为 `NO_HANDLE`。事件参数中可能缺失的字段（攻击者、抛射体）缺失时为 `NO_HANDLE`。`T | null` 只保留给类（见[签名](#签名)）。
 
 类型以及 [ID](#id) 中列出的其他命名种类，在 INI 和初始化调用中用 ID 字符串命名；模块代码持有查找返回的整数 ID。
 
@@ -127,7 +132,7 @@ asAircraft(): Aircraft | null;
 | `OverlayTypeId` | 覆盖物 | `ctx.overlayTypeId(name)` |
 | `SoundId` | 模拟 API 中的声音 | `ctx.soundId(name)` |
 | `MarkId` | 标记 | `Mark.id(name)` |
-| `NotifyId` | 模拟到客户端的通知 | `Notify.id(name)` |
+| `NotifyId` | 模拟到客户端的通知 | `Notify.id(name)`：名字统一大小写后的稳定哈希，在每台机器上、在两侧都相同 |
 | `TeamTypeId`、`ScriptTypeId`、`AiTriggerId` | AI 小队类型、小队脚本、AI 触发器 | `ai.teamTypeId(name)`、`ai.scriptTypeId(name)`、`ai.aiTriggerId(name)` |
 
 ```ts
@@ -143,13 +148,15 @@ const PANICKED = Mark.id("Panicked");
 techno.addMark(PANICKED);
 ```
 
-查找时名字比较不区分大小写（RFC 4）。没有匹配的名字返回 `NO_ID`，并把 `ctx.lastStatus()` 设为 `NotFound`：按[错误模型](#错误)这是预期结果，因为名字来自 mod 可能修改的数据。传入 `NO_ID` 的调用同样返回 `NotFound`；任何查找都不会返回的 ID 属于非法参数。`Mark.id` 遇到没见过的名字会登记它，所以总能返回 ID。对局中不能新增类型（RFC 8），所以一个 ID 在整个场景内一直有效，存档和读档之后也不变。
+查找时名字比较不区分大小写（RFC 4）。没有匹配的名字返回 `NO_ID`，并把 `ctx.lastStatus()` 设为 `NotFound`：按[错误模型](#错误)这是预期结果，因为名字来自 mod 可能修改的数据。传入 `NO_ID` 的调用同样返回 `NotFound`；任何查找都不会返回的 ID 属于非法参数。`Mark.id` 遇到没见过的名字会登记它，所以总能返回 ID。`Notify.id` 也总能返回 ID：引擎在加载模块时检查通知名的哈希冲突，名字发生冲突的模块会被拒绝，并给出提示（RFC 10）。对局中不能新增类型（RFC 8），所以一个 ID 在整个场景内一直有效，存档和读档之后也不变。
 
 名字只保留在初始化和不频繁的调用中：上面的查找、`ctx.house(name)`、`onRules` 的写入和 `rules.set`（第 10 节）、规则读取、`Trigger.create` 以及 `Action.wasm` 的导出名、`Trigger.find` 和 `Tag.find`、AI 定义（9.2）、指定国家、音乐、EVA 语音或 CSF 标签的不频繁场景动作，以及客户端 API 中启动时的 `find`、热键名、声音、CSF 标签和文字（第 11 节）。
 
 ### 事件投递
 
 引擎不会每个事件或每个动作调用一次模块。触发器触发时，其中的原版动作和原子动作立即执行，与原版中的原版动作一致；其中的每个模块动作（`Action.wasm`）向模块的队列写入一条固定大小的记录，记录带着触发该触发器的那个事件的载荷。模块只能通过这样的触发器收到事件：没有单独的事件记录，每条记录都是一个排队的模块动作。到模块阶段，引擎按触发顺序把整个数组一次调用交给模块（RFC 5、15）：`onEvents(ctx, batch)` 由 SDK 生成，它对每条记录运行对应的动作函数。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的动作会被丢弃。一条记录包含模块动作、事件类型、主体句柄、另一方句柄、所属方、一个抛射体句柄和一个效果句柄、一个类型 ID，以及几个整数载荷字段（`EventRecord`，[第 2 节](#2-事件)）。本清单中每个事件的载荷都写明它填入哪些记录字段；事件没有列出的字段为 `NO_HANDLE` 或 `-1`。每种记录的布局属于接口定义（RFC 12）。SDK 原地读取记录，不为每个事件分配内存。
+
+VERA 新增的每个事件都在安全点引发：在产生它的那次计算完成之后（例如 `TakeDamage` 在伤害已经提交之后），从不在计算中途；触发器的原版动作和原子动作从这一点起立即执行（RFC 5）。正因为立即执行，它们可以在一帧之内连锁：伤害引发 `TakeDamage`，它的触发器用原子动作造成伤害，又引发 `TakeDamage`。引擎限制每帧连锁的深度；会超过上限的触发器改到下一帧触发，所以连锁不会无限循环。具体上限是 RFC 的待定问题 18。
 
 ### 查询结果
 
@@ -192,7 +199,7 @@ class IdBuffer {             // the same for IDs
 
 SDK 没有异常。失败分两类：
 
-1. **预期结果**返回 `Status`（返回句柄的函数则返回 `null`），由模块决定如何处理。
+1. **预期结果**返回 `Status`（返回句柄的函数则返回 `NO_HANDLE`），由模块决定如何处理。
 2. **编程错误**（trap、超出运算额度、参数非法）会让模块在所有机器的同一帧被停用，如 RFC 3 所述。
 
 ```ts
@@ -285,8 +292,7 @@ class Ctx {
   map: MapQuery;        // section 7
   rules: RulesReader;   // section 10
   ai: Ai;               // section 9
-  event(): EventRecord | null; // the record being delivered
-  house(name: string): House | null;   // lookup; ID lookups: see IDs
+  house(name: string): House;   // lookup, NO_HANDLE when not found; ID lookups: see IDs
   global(index: i32): Variable;  // 0..49
   local(index: i32): Variable;   // 0..99
   log(text: string): void;
@@ -330,7 +336,7 @@ class EventParam {
 }
 
 class TriggerDef {
-  house: House | null = null;
+  house: House = NO_HANDLE;
   event: i32 = 0;            // an Event value
   param: EventParam = new EventParam();
   conditions: Cond[] = [];
@@ -343,11 +349,11 @@ class TriggerDef {
 class EventRecord {          // fixed size; read in place from the batch (RFC 15)
   action: i32;               // the queued module action (an Action.wasm export); always set
   kind: i32;                 // Event value
-  subject: Techno | null;    // the object the trigger is attached to
-  other: Techno | null;      // attacker, target, transport, producer, ...
-  house: House | null;       // house involved (retained house for E1/E24/E25/E26/E59)
-  projectile: Projectile | null;
-  effect: Effect | null;
+  subject: Techno;           // the object the trigger is attached to; may be NO_HANDLE
+  other: Techno;             // attacker, target, transport, producer, ...; may be NO_HANDLE
+  house: House;              // house involved (retained house for E1/E24/E25/E26/E59); may be NO_HANDLE
+  projectile: Projectile;    // may be NO_HANDLE
+  effect: Effect;            // may be NO_HANDLE
   id: i32;                   // type ID where listed: weapon, warhead, effect type, superweapon type
   value: i32;                // damage, weapon index, stack count, frame, ...
   value2: i32;               // second integer field where listed
@@ -411,14 +417,14 @@ class EventBatch {           // one per module per frame
 | 38 | `FirstDamagedCombat` | 忽略 | R | S、O | `combat/object_health.rs` | 有伤害来源。 |
 | 39 | `HalfHealthCombat` | 忽略 | R | S、O | `combat/object_health.rs` | 黄血。 |
 | 40 | `QuarterHealthCombat` | 忽略 | R | S、O | `combat/object_health.rs` | 红血。 |
-| 41 | `FirstDamagedAny` | 忽略 | R | S、可为空的 O | `combat/object_health.rs`；`world/crash.rs` | |
+| 41 | `FirstDamagedAny` | 忽略 | R | S、O（可为 `NO_HANDLE`） | `combat/object_health.rs`；`world/crash.rs` | |
 | 42 | `HalfHealthAny` | 忽略 | R | S | `combat/object_health.rs` | |
 | 43 | `QuarterHealthAny` | 忽略 | R | S | `combat/object_health.rs` | |
 | 44 | `AttackedByHouse` | `value` 所属方数组下标 | R | S、O | `combat/object_health.rs`；`capture_manager.rs` | Ares 会转换 Player@X。 |
 | 45 | `AmbientLightBelow` | `value` | L | — | 环境光变化时的 `TR::advance_triggers` | |
 | 46 | `AmbientLightAbove` | `value` | L | — | 同上 | |
 | 47 | `ElapsedScenarioTime` | `value` 秒 | L | — | `TR::evaluate_event` | |
-| 48 | `DestroyedByAnything` | 忽略 | R | S、可为空的 O | `record_kill.rs`；`building_entry.rs`；`world/world_orders.rs`；`movement/per_cell.rs`；`vehicle_theft.rs`；`world/crash.rs` | T9 `OnKilled`（粗略形式）。 |
+| 48 | `DestroyedByAnything` | 忽略 | R | S、O（可为 `NO_HANDLE`） | `record_kill.rs`；`building_entry.rs`；`world/world_orders.rs`；`movement/per_cell.rs`；`vehicle_theft.rs`；`world/crash.rs` | T9 `OnKilled`（粗略形式）。 |
 | 49 | `PickupCrate` | 忽略 | R | S | `crates/pickup.rs` | |
 | 50 | `PickupCrateAny` | 忽略 | L | — | 有箱子被捡起时的 `TR::advance_triggers` | |
 | 51 | `RandomDelay` | `value` 秒 | L | — | `TR::advance_triggers` | 随机数：原生（`scenario_rng`，在 `reset_trigger_timers` 中）。 |
@@ -437,7 +443,7 @@ class EventBatch {           // one per module per frame
 
 ### 2.2 Ares 事件 62..88
 
-只有游戏按 Ares 方式读取时（`rules.ares_form()`）才可用；否则 `Trigger.create` 返回 `null`，状态为 `Unsupported`。在 `TRA::ares_has_occurred` 中求值。全部为 `v1`、`sim`，来源是同编号的 `Ar:` 事件。
+只有游戏按 Ares 方式读取时（`rules.ares_form()`）才可用；否则 `Trigger.create` 返回 `NO_HANDLE`，状态为 `Unsupported`。在 `TRA::ares_has_occurred` 中求值。全部为 `v1`、`sim`，来源是同编号的 `Ar:` 事件。
 
 | # | API 名称 | 参数 | 类型 | 引发位置 |
 | --- | --- | --- | --- | --- |
@@ -471,34 +477,34 @@ class EventBatch {           // one per module per frame
 
 ### 2.3 新的投递型事件（RFC 6a）
 
-新事件编号取自不与 Ares、Phobos 冲突的范围（待定问题 6），这里不分配编号。新的投递型事件只对两类对象引发：其类型用 `Wasm.Tags` 绑定了含该事件的标签，或其自身的标签含有这样的触发器。从不对所有对象引发（RFC 5，目标 6）。武器事件（携带抛射体句柄的 `Fire`、`HitTarget` 和 `Detonated`，RFC 6a）还可以绑定在武器、弹头或抛射体类型上（在其节中写 `Wasm.Tags=`）：这种绑定对使用该类型的每个射手生效，不论射手自身是什么类型，射手就是主体。每个引发点先检查对象所属类型、或武器、弹头、抛射体类型的一个标志位（见[旁路表](#旁路表)）；`Cond.isWeaponType` 用来检查武器。
+新事件编号取自不与 Ares、Phobos 冲突的范围（待定问题 6），这里不分配编号。新的投递型事件只对两类对象引发：其类型用 `Wasm.Tags` 绑定了含该事件的标签，或其自身的标签含有这样的触发器。从不对所有对象引发（RFC 5，目标 6）。武器事件（携带抛射体句柄的 `Fire`、`HitTarget` 和 `Detonated`，RFC 6a）还可以绑定在武器、弹头或抛射体类型上（在其节中写 `Wasm.Tags=`）：这种绑定对使用该类型的每个射手生效，不论射手自身是什么类型，射手就是主体。每个引发点先检查对象所属类型、或武器、弹头、抛射体类型的一个标志位（见[旁路表](#旁路表)）；`Cond.isWeaponType` 用来检查武器。每个事件都在安全点引发，即产生它的那次计算完成之后（见[事件投递](#事件投递)）；“引发位置”一列写出该时刻的 owner，不知道确切安全点的地方会注明。
 
 | 事件 | 载荷（`EventRecord`） | 引发位置（该时刻的 owner） | 层级 | 来源 |
 | --- | --- | --- | --- | --- |
-| `TakeDamage` | `other` 来源（可为空），`value` 护甲结算后的伤害 | `src/sim/combat/world_receiver.rs::commit_entities`；引发钩子**尚无 owner** | v1? | RFC 6a；T2 `OnTakeDamage`（历史字段 ③④ 放在模块内存里，RFC 6a）；Rc：`UnitDamaged` |
-| `HitByWarhead` | `id` 弹头（`WarheadTypeId`），`value` 最终伤害，`other` 来源 | `combat/damage/receive.rs::receive_damage`；钩子**尚无 owner** | v1? | RFC 6a；T3 `OnHitBy`（免疫的命中不算） |
-| `AttackedBy` | `other` 攻击者，`value` 武器索引（-1 表示无），`projectile`（可为空） | `src/sim/combat/world_fire.rs` 中的开火步骤（在目标上引发）；钩子**尚无 owner** | v1? | RFC 6a；T4 |
-| `FatalDamage` | `other` 攻击者（可为空），`value` 伤害 | `combat/world_receiver.rs`，在死亡流程之前；钩子**尚无 owner** | v1? | RFC 6a；T22 `OnFatalDamage` |
-| `Killed` | `other` 击杀者（可为空） | `src/sim/combat/record_kill.rs`；钩子**尚无 owner** | v1? | RFC 6a；T9；Rc：`UnitDestroyed` |
-| `Fire` | `other` 目标（可为空），`value` 武器索引，`id` 武器（`WeaponTypeId`），`projectile`（可为空） | `combat/world_fire.rs` 的 FireAt 步骤；`src/sim/aircraft/fire_at.rs::fire_at`；钩子**尚无 owner** | v1? | RFC 6a、9 层级 2；T10 `OnFire` |
-| `SpawnFire` | `other` 子机，`value` 武器索引，`projectile`；目标在记录的 `cell` 中，或通过子机的目标获得 | `src/sim/spawn_manager.rs`（位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T11 `OnSpawnFire` |
-| `HitTarget` | `other` 目标，`value` 伤害，`id` 武器（`WeaponTypeId`），`projectile` | `combat/world_receiver.rs`（在开火者上引发）；钩子**尚无 owner** | v1? | RFC 6a；T21 `OnHitTarget` |
-| `TargetChanged` | `other` 新目标（可为空：清除目标时为 `NO_HANDLE`） | 目标指派和清除（`src/sim/world/techno_ai/scan_batch.rs` 和指令路径；未核实）；钩子**尚无 owner** | v1? | RFC 6a、6（P13）；T6 `OnAimed` |
-| `ProjectileIncoming` | `projectile`，`other` 发射者（可为空） | 抛射体接纳 `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`；钩子**尚无 owner** | v1? | RFC 6a；T7 `OnProjectileComing` |
-| `Detonated` | `projectile`，`cell`，`other` 来源（可为空），`id` 弹头（`WarheadTypeId`） | `src/sim/projectile` 中的引爆判定；钩子**尚无 owner** | v1? | RFC 6 L2（“抛射体引爆”）、9 层级 2；T36；Rc：`ProjectileDestroyed`、`Explosion` |
-| `Birth` | `other` 生产者（可为空），`effect`（可为空），`value` 生产时间（-1 表示无） | `src/sim/world/world_spawn.rs`、生产出厂、增援；钩子**尚无 owner** | v1? | RFC 6a；T8 `OnBirth`；Rc：`UnitCreated` |
-| `Enter` | `other` 载具或建筑，`value` 已占空间，`value2` 1 为驻军 / 0 为载员；乘客通过查询获得 | `src/sim/building_entry.rs`、登上载具（`src/sim/passenger.rs` 的调用方）；钩子**尚无 owner** | v1? | RFC 6a；T13 `OnEntry`；Rc：`UnitLoaded` |
-| `Exit` | 同 `Enter`，在离开之后 | 卸载路径；钩子**尚无 owner** | v1? | RFC 6a；T14 `OnExit`；Rc：`UnitUnloaded` |
+| `TakeDamage` | `other` 来源（可为 `NO_HANDLE`），`value` 护甲结算后的伤害 | `src/sim/combat/world_receiver.rs::commit_entities`，在伤害提交之后；引发钩子**尚无 owner** | v1? | RFC 6a；T2 `OnTakeDamage`（历史字段 ③④ 放在模块内存里，RFC 6a）；Rc：`UnitDamaged` |
+| `HitByWarhead` | `id` 弹头（`WarheadTypeId`），`value` 最终伤害，`other` 来源 | `combat/damage/receive.rs::receive_damage`，在它完成之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T3 `OnHitBy`（免疫的命中不算） |
+| `AttackedBy` | `other` 攻击者，`value` 武器索引（-1 表示无），`projectile`（可为 `NO_HANDLE`） | `src/sim/combat/world_fire.rs` 中的开火步骤（在目标上引发），在该步骤完成之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T4 |
+| `FatalDamage` | `other` 攻击者（可为 `NO_HANDLE`），`value` 伤害 | `combat/world_receiver.rs`，在致命伤害提交之后、死亡流程之前（这是否算安全点未核实）；钩子**尚无 owner** | v1? | RFC 6a；T22 `OnFatalDamage` |
+| `Killed` | `other` 击杀者（可为 `NO_HANDLE`） | `src/sim/combat/record_kill.rs`，在击杀记录之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T9；Rc：`UnitDestroyed` |
+| `Fire` | `other` 目标（可为 `NO_HANDLE`），`value` 武器索引，`id` 武器（`WeaponTypeId`），`projectile`（可为 `NO_HANDLE`） | `combat/world_fire.rs` 的 FireAt 步骤；`src/sim/aircraft/fire_at.rs::fire_at`；在射击完成之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a、9 层级 2；T10 `OnFire` |
+| `SpawnFire` | `other` 子机，`value` 武器索引，`projectile`；目标在记录的 `cell` 中，或通过子机的目标获得 | `src/sim/spawn_manager.rs`（在子机射击之后；确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T11 `OnSpawnFire` |
+| `HitTarget` | `other` 目标，`value` 伤害，`id` 武器（`WeaponTypeId`），`projectile` | `combat/world_receiver.rs`（在开火者上引发），在伤害提交之后；钩子**尚无 owner** | v1? | RFC 6a；T21 `OnHitTarget` |
+| `TargetChanged` | `other` 新目标（清除目标时为 `NO_HANDLE`） | 目标指派和清除（`src/sim/world/techno_ai/scan_batch.rs` 和指令路径；未核实），在目标设定或清除之后；钩子**尚无 owner** | v1? | RFC 6a、6（P13）；T6 `OnAimed` |
+| `ProjectileIncoming` | `projectile`，`other` 发射者（可为 `NO_HANDLE`） | 抛射体接纳 `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`，在抛射体被接纳之后；钩子**尚无 owner** | v1? | RFC 6a；T7 `OnProjectileComing` |
+| `Detonated` | `projectile`，`cell`，`other` 来源（可为 `NO_HANDLE`），`id` 弹头（`WarheadTypeId`） | `src/sim/projectile` 中的引爆判定，在引爆之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6 L2（“抛射体引爆”）、9 层级 2；T36；Rc：`ProjectileDestroyed`、`Explosion` |
+| `Birth` | `other` 生产者（可为 `NO_HANDLE`），`effect`（可为 `NO_HANDLE`），`value` 生产时间（-1 表示无） | `src/sim/world/world_spawn.rs`、生产出厂、增援，在对象放置之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T8 `OnBirth`；Rc：`UnitCreated` |
+| `Enter` | `other` 载具或建筑，`value` 已占空间，`value2` 1 为驻军 / 0 为载员；乘客通过查询获得 | `src/sim/building_entry.rs`、登上载具（`src/sim/passenger.rs` 的调用方），在进入完成之后；钩子**尚无 owner** | v1? | RFC 6a；T13 `OnEntry`；Rc：`UnitLoaded` |
+| `Exit` | 同 `Enter`，在离开之后 | 卸载路径，在离开完成之后；钩子**尚无 owner** | v1? | RFC 6a；T14 `OnExit`；Rc：`UnitUnloaded` |
 | `EnteredBy`（新） | `other` 乘客，`value` 已占空间，`value2` 驻军标志 | 同 `Enter`，在容纳方上引发 | v1? | RFC 6a；T15 `OnEntryBy` |
 | `ExitedBy` | 同 `EnteredBy` | 同 `Exit` | v1? | RFC 6a；T16 `OnExitBy` |
-| `Crushed` | `other` 碾压者 | 移动中的碾压步骤（文件未核实）；钩子**尚无 owner** | v1? | RFC 6a；T25 `OnCrush` |
+| `Crushed` | `other` 碾压者 | 移动中的碾压步骤（文件未核实），在碾压之后；钩子**尚无 owner** | v1? | RFC 6a；T25 `OnCrush` |
 | `HouseTransfer` | `house` 新所属方，`value` 为 1 表示心控；在转移之前引发 | `src/sim/world/mod.rs::change_owner_with_rules`；`src/sim/capture_manager.rs`；钩子**尚无 owner** | v1? | RFC 6a；T28 `OnHouseTransfer`；Rc：`UnitTaken` |
 | `HouseTransferred` | `house` 原所属方，`value` 为 1 表示心控；在转移之后引发 | `change_owner_with_rules`；钩子**尚无 owner** | v1? | RFC 6a（P10）；Rc：`UnitGiven`（两阶段转移） |
-| `EffectStart` | `effect`，`value` 层数 | `src/sim/attach_effect.rs::AttachEffectList::attach`；钩子**尚无 owner** | v1? | RFC 6a；T17 `OnBehaviorStart` |
-| `EffectExpire` | `effect`（投递后读出为不存在），`id` 效果类型（`EffectTypeId`） | `attach_effect.rs` 的更新和移除；钩子**尚无 owner** | v1? | RFC 6a；T19 `OnBehaviorExpire` |
-| `EffectStacks` | `effect`，`value` 新层数 | `attach_effect.rs` 的累加附加；钩子**尚无 owner** | v1? | RFC 6a；T20 `OnBehaviorStack` |
+| `EffectStart` | `effect`，`value` 层数 | `src/sim/attach_effect.rs::AttachEffectList::attach`，在效果附加之后；钩子**尚无 owner** | v1? | RFC 6a；T17 `OnBehaviorStart` |
+| `EffectExpire` | `effect`（投递后读出为不存在），`id` 效果类型（`EffectTypeId`） | `attach_effect.rs` 的更新和移除，在效果移除之后；钩子**尚无 owner** | v1? | RFC 6a；T19 `OnBehaviorExpire` |
+| `EffectStacks` | `effect`，`value` 新层数 | `attach_effect.rs` 的累加附加，在层数增加之后；钩子**尚无 owner** | v1? | RFC 6a；T20 `OnBehaviorStack` |
 | `Timer` | `value` 上一次触发的帧 | 模块触发器计时器：**尚无 owner**（E13 的计时器复用 `CdTimer`） | v1? | RFC 6a；T5 `OnTimer` |
-| `SuperWeaponLaunched` | `id` 超级武器类型（`SuperWeaponTypeId`），`house`，`cell` 目标 | `src/sim/superweapon/fire.rs::fire_super_weapon`；钩子**尚无 owner** | v1? | RFC 6a |
+| `SuperWeaponLaunched` | `id` 超级武器类型（`SuperWeaponTypeId`），`house`，`cell` 目标 | `src/sim/superweapon/fire.rs::fire_super_weapon`，在超级武器发射之后（确切位置未核实）；钩子**尚无 owner** | v1? | RFC 6a |
 
 T18 `OnBehavior`（效果持续中，每个间隔触发一次）对应下面的轮询事件 `EffectStacksPoll`，或在 `Timer` 触发器上加约束条件 `hasEffect`。
 
@@ -597,6 +603,8 @@ class Cond {
 
 在触发器内，原版动作（`Action.original`）和原子动作值在触发器触发时执行，与原版中的原版动作一致，触发器含有模块动作时也是如此。只有 `Action.wasm` 动作排队，每个都带着触发该触发器的那个事件的载荷，在模块阶段按触发顺序、每个模块每帧一批执行（RFC 5；[事件投递](#事件投递)）：动作为 [原版 A、模块 B、原子 C] 的触发器，在触发时执行 A 和 C，B 在同一帧稍后执行。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的模块动作会被丢弃。需要严格顺序的作者，把触发器的全部动作都写成模块代码，再通过下面的函数调用原版动作。由模块代码直接调用时，动作立即执行。
 
+在触发器中，每个原子动作值都带一个明确的目标参数（`ActionTarget`）：`Subject`（默认）为记录中的主体；`Other` 为记录中的另一方对象；`TagHolder` 为标签中持有本次触发的触发器的对象，即 4.2 中标为“live”的行所作用的对象；`House` 为某个所属方；`Cell` 为一个格子，可以直接给出，也可以用路径点给出。立即执行的原版动作和原子动作可能引发新的事件，并在一帧之内连锁，深度受每帧上限约束（见[事件投递](#事件投递)）。
+
 ```ts
 class ActionParams {
   value: i32 = 0;
@@ -611,6 +619,7 @@ class TriggerAction {
   static original(n: i32, p: ActionParams): TriggerAction;
   static wasm(exportName: string): TriggerAction;
 }
+enum ActionTarget { Subject, Other, TagHolder, House, Cell }   // target of an atomic action in a trigger; Subject is the default
 ```
 
 `Action.original(n, …)` 运行 `TR::execute_live_trigger_action` 中现有的分支；启用 Ares 时先走 `TRA::ares_execute_action`。4.2 中的具名函数调用同样的 owner。原版用路径点的地方，API 用 `Cell`；`ctx.map.waypoint(n)` 返回路径点所在的格子。目前读取路径点编号的 owner 需要增加按格子的入口（缺口 G-A1）。标为“live”的行作用于标签中持有本次触发的触发器的对象；它们的直接形式改为接收对象参数。
@@ -625,7 +634,7 @@ class TriggerAction {
 | 1 | `scenario.declareWinner(country: string)` | 国家 | `src/sim/world/house_defeat.rs::request_player_outcome` | 作用于玩家，而不是触发器所属方。 |
 | 2 | `scenario.declareLoser(country: string)` | 国家 | 同上 | |
 | 3 | `house.beginProduction()` | — | `HouseState::enable_scripted_production` | |
-| 4 | `ai.createTeam(teamType: TeamTypeId, house: House \| null): Team \| null` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | 受数量上限限制。小队由 S0–S68 运行。 |
+| 4 | `ai.createTeam(teamType: TeamTypeId, house: House): Team` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | 受数量上限限制。小队由 S0–S68 运行。`house` 可为 `NO_HANDLE`；没有创建小队时返回 `NO_HANDLE`。 |
 | 5 | `ai.destroyTeams(teamType: TeamTypeId)` | TeamType | `TSV/membership.rs::destroy_teams_of_type` | |
 | 6 | `house.allToHunt()` | — | `house_strategy::all_to_hunt` | |
 | 7 | `ai.reinforce(teamType: TeamTypeId)` | TeamType（使用它自己的路径点） | `TSV/reinforcements.rs::spawn_team_reinforcements` | |
@@ -726,7 +735,7 @@ class TriggerAction {
 | 102 | `weather.lightningStormStrike(cell: Cell)` | 格子 | `lightning_storm::start`，使用规则中的持续时间 | 使用触发器所属方。 |
 | 103 | `scenario.timer.setText(csfLabel: string)` | 标签 | `set_scenario_timer_caption` | |
 | 104 | `team.flash(frames: i32)`；`ai.flashTeams(teamType, frames)` | TeamType、帧数 | `TSV/actions.rs::flash_teams_of_type` | |
-| 105 | `scenario.talkBubble(team: Team \| null, frame: i32)` | 小队、帧 | `talk_bubble_set_object_and_frame` | |
+| 105 | `scenario.talkBubble(team: Team, frame: i32)` | 小队、帧 | `talk_bubble_set_object_and_frame` | `team` 可为 `NO_HANDLE`。 |
 | 106 | `rules.setTechLevel(type: TechnoTypeId, level: i32)` | 类型、等级 | `src/sim/world/type_tech_levels.rs::set_object_type_tech_level` | 另见第 10 节。 |
 | 107 | `ai.reinforceByChrono(teamType: TeamTypeId, cell: Cell)` | TeamType、格子 | `spawn_chrono_team_reinforcements` | G-A1。 |
 | 108 | `map.createCrate(kind: i32, cell: Cell)` | 种类（20 为随机） | `crates::place_crate` | 随机时从原生随机流取数。G-A1。 |
@@ -746,7 +755,7 @@ class TriggerAction {
 | 122 | `house.destroyAll(Destroy.Naval)` | — | `house_blowup(Naval)` | |
 | 123 | `house.mindControlBase(of: House)` | 所属方 | `src/sim/capture_manager.rs::control_house_buildings(.., false)` | |
 | 124 | `house.restoreMindControlledBase(of: House)` | 所属方 | `control_house_buildings(.., true)` | |
-| 125 | `map.createBuilding(type: TechnoTypeId, cell: Cell, owner: House): Building \| null` | 类型、格子 | `TR::trigger_create_building_at_waypoint` | G-A1。 |
+| 125 | `map.createBuilding(type: TechnoTypeId, cell: Cell, owner: House): Building` | 类型、格子 | `TR::trigger_create_building_at_waypoint` | G-A1。没有建成时返回 `NO_HANDLE`。 |
 | 126 | `house.restoreStarting(buildingsOnly: false)` | — | `restore_initial_house_technos(.., true)` | |
 | 127 | `scenario.chronoScreenEffect(duration: i32)` | 持续时间 | `start_chrono_screen_effect` | |
 | 128 | `house.teleportAll(cell: Cell)` | 格子 | `src/sim/world/trigger_chrono.rs::chronoshift_house_to` | |
@@ -779,7 +788,7 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 
 ### 4.3 原子动作（RFC 6b）与表格中的瞬时效果
 
-一个函数对应一个操作，这个操作只有一个 owner（RFC 第 6 节的粒度原则）。
+一个函数对应一个操作，这个操作只有一个 owner（RFC 第 6 节的粒度原则）。在触发器中，每个函数都接受 [4.1](#41-动作的用法) 的目标参数。
 
 | 函数 | 语义 | 随机数 | Owner | 层级 | 来源 |
 | --- | --- | --- | --- | --- | --- |
@@ -787,10 +796,10 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 | `house.launchSuperWeapon(type: SuperWeaponTypeId, cell: Cell): Status` | 发射该所属方拥有的超级武器 | native | `src/sim/superweapon/fire.rs::fire_super_weapon` | v1? | RFC 6b；F5 |
 | `map.spawnAnim(anim: AnimTypeId, at: Coord): Status` | 创建动画 | native | `src/sim/anim_class.rs`（按坐标的入口；G-A1） | v1? | RFC 6b；F6 |
 | `techno.remove(): Status` | 移除对象：不死亡、不产生幸存者、不计击杀 | none | `src/sim/world/lifecycle.rs::Simulation::uninit_with_context` | v1? | RFC 6b；F7 `Remove`；Rc：`DestroyUnit(reclaimed)` |
-| `techno.kill(mode: KillMode, source: Techno \| null): Status` | 走伤害流程击杀，伤害等于当前生命并带 `ignore_defenses`（有死亡动画和幸存者，击杀记给 `source`） | native | `src/sim/world/mod.rs::commit_direct_damage_receiver`（`EntityDamageEvent::direct_receiver`） | v1? | RFC 6b；F8 `Suicide` |
-| `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno \| null): Status` | 经过弹头和护甲造成伤害，计击杀和经验 | native | `commit_direct_damage_receiver`；计算在 `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b“修改生命（增减）”；F9；Rc：`AddUnitDamage`；**已在 RFC 0.0.5 采纳**（P9：增减走弹头流程） |
+| `techno.kill(mode: KillMode, source: Techno): Status` | 走伤害流程击杀，伤害等于当前生命并带 `ignore_defenses`（有死亡动画和幸存者，击杀记给 `source`）；`source` 可为 `NO_HANDLE` | native | `src/sim/world/mod.rs::commit_direct_damage_receiver`（`EntityDamageEvent::direct_receiver`） | v1? | RFC 6b；F8 `Suicide` |
+| `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno): Status` | 经过弹头和护甲造成伤害，计击杀和经验；`source` 可为 `NO_HANDLE` | native | `commit_direct_damage_receiver`；计算在 `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b“修改生命（增减）”；F9；Rc：`AddUnitDamage`；**已在 RFC 0.0.5 采纳**（P9：增减走弹头流程） |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | 设定或回复生命，不计击杀 | none | `combat/object_health.rs::Health::set`、`heal`（没有 Simulation 层的 owner） | v1? | RFC 6b；F9 `ModifyHealth` |
-| `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno \| null` | 创建一个完整的对象；格子被占时拒绝 | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`、`place_building_with_cleared_foundation`、`place_foot_with_cleared_cell`（文档注明“用于测试、工具、调试”） | v1? | RFC 6b；F10 `CreateUnit`（继承触发器和效果：`CreateParams.inheritTag`） |
+| `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno` | 创建一个完整的对象；格子被占时拒绝（返回 `NO_HANDLE`） | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`、`place_building_with_cleared_foundation`、`place_foot_with_cleared_cell`（文档注明“用于测试、工具、调试”） | v1? | RFC 6b；F10 `CreateUnit`（继承触发器和效果：`CreateParams.inheritTag`） |
 | `techno.setMission(m: Mission, target: Target \| null): Status` | 像玩家指令一样排入一个任务 | none | `src/sim/mission/retask.rs::queue_order_mission`、`queue_megamission` | v1 | RFC 6b、示例；F16 `Mission`；F13 `CommandMoveTo`（= 带格子的 `Move`） |
 | `techno.teleport(cell: Cell, rule: Blocked): Status` | 超时空式移动；`Blocked.Nearby` 选附近的格子，`Blocked.Fail` 直接拒绝 | native | **尚无 owner**（`superweapon/chronosphere.rs::warp_object` 是私有的；`trigger_chrono.rs::chronoshift_house_to` 作用于整个所属方） | v1? | RFC 6b；F12 `ForceMoveTo` |
 | `techno.clearTarget(): Status` | 放弃当前目标 | none | **尚无 owner**（只有各移动器的 `clear_target` trait） | v1? | RFC 6b；F15 |
@@ -806,9 +815,9 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 | `transport.addPassenger(p: Techno)` / `removePassenger(p: Techno)` | 让乘客登上或离开 | native | **尚无 owner**（`PassengerCargo::board_forced_chain`、`disembark` 只是列表操作，不做 limbo/unlimbo） | v1? | RFC 6b；F25 |
 | `techno.addEffect(...)` / `removeEffect(...)` | 见第 5 节 | — | 第 5 节 | v1 | RFC 6b；F2、F3 |
 | `techno.addMark(...)` / `removeMark(...)` | 见第 6 节 | — | 第 6 节 | v1 | RFC 6b |
-| `map.createProjectile(p: ProjectileParams): Projectile \| null` | 创建抛射体：类型、起点、目标对象或坐标、用于击杀和经验归属的来源、16 字节的初始模块数据 | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b、9；Rc：`SpawnProjectile` |
-| `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno \| null): Status` | 不生成抛射体，直接在某个坐标引爆武器 | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint`（只支持路径点；G-A1） | v1? | 带坐标的 A42（RFC 6：坐标作为参数） |
-| `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno \| null): Status` | 按给定伤害和来源造成弹头的范围伤害 | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **已在 RFC 0.0.5 采纳**（P7）；Rc：`SpawnExplosion` |
+| `map.createProjectile(p: ProjectileParams): Projectile` | 创建抛射体：类型、起点、目标对象或坐标、用于击杀和经验归属的来源、16 字节的初始模块数据；失败时返回 `NO_HANDLE` | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b、9；Rc：`SpawnProjectile` |
+| `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno): Status` | 不生成抛射体，直接在某个坐标引爆武器；`source` 可为 `NO_HANDLE` | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint`（只支持路径点；G-A1） | v1? | 带坐标的 A42（RFC 6：坐标作为参数） |
+| `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno): Status` | 按给定伤害和来源造成弹头的范围伤害；`source` 可为 `NO_HANDLE` | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **已在 RFC 0.0.5 采纳**（P7）；Rc：`SpawnExplosion` |
 | `projectile.detonate(): Status` | 让抛射体立即引爆 | native | `src/sim/projectile` 的引爆准入（没有公开入口） | later | **已在 RFC 0.0.5 采纳**（P8）；Rc：`SetProjectileCollision` |
 | `projectile.remove(): Status` | 移除抛射体，不引爆 | none | **尚无 owner** | later | **已在 RFC 0.0.5 采纳**（P8）；Rc：`DeleteProjectile` |
 | `scenario.endFor(house: House, outcome: Outcome): Status` | 让某个所属方结束游戏，胜利或失败 | none | `house_defeat.rs::request_player_outcome` | v1? | RFC 6b |
@@ -818,17 +827,17 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 
 ```ts
 class WeaponSel { index: i32 = -1; weapon: WeaponTypeId = NO_ID; }
-class Target { techno: Techno | null = null; cell: Cell | null = null; current: bool = false; }
+class Target { techno: Techno = NO_HANDLE; cell: Cell | null = null; current: bool = false; }
 enum KillMode { Normal }          // death animation, survivors, credit
 enum Blocked { Nearby, Fail }
-class CreateParams { inheritTag: Techno | null = null; mission: Mission = Mission.None; }
+class CreateParams { inheritTag: Techno = NO_HANDLE; mission: Mission = Mission.None; }
 class ProjectileParams {
   type: ProjectileTypeId;
   weapon: WeaponTypeId = NO_ID;   // supplies damage and warhead
   from: Coord;
-  toTechno: Techno | null;
+  toTechno: Techno;          // may be NO_HANDLE
   toCoord: Coord | null;
-  source: Techno | null; // kill credit and experience
+  source: Techno;            // kill credit and experience; may be NO_HANDLE
   data: Uint8Array | null;   // up to 16 bytes, saved and hashed
 }
 ```
@@ -843,17 +852,17 @@ owner：`src/sim/attach_effect.rs`（`AttachEffectList`、`AttachEffectInstance`
 class EffectParams {
   duration: Frames = -1;      // -1: the type's Duration
   delay: Frames = -1;         // -1: none
-  source: Techno | null = null;
-  sourceHouse: House | null = null;
+  source: Techno = NO_HANDLE;
+  sourceHouse: House = NO_HANDLE;
 }
 // on Techno:
-addEffect(type: EffectTypeId, p: EffectParams): Effect | null;   // null + Refused when stacking refuses
+addEffect(type: EffectTypeId, p: EffectParams): Effect;   // NO_HANDLE + Refused when stacking refuses
 removeEffect(e: Effect): Status;
 removeEffects(type: EffectTypeId): i32;    // returns how many
 removeEffectGroup(group: EffectGroupId): i32;
 effects(out: HandleBuffer): i32;           // deterministic order: attach order
 // on Effect:
-type(): EffectTypeId; remaining(): Frames; stacks(): i32; source(): Techno | null;
+type(): EffectTypeId; remaining(): Frames; stacks(): i32; source(): Techno;   // source() may be NO_HANDLE
 ```
 
 | 函数 | Owner | 层级 | 来源 |
@@ -971,8 +980,8 @@ marks(out: IdBuffer): i32;    // order: the order the marks were added
 
 ```ts
 class Filter {
-  house: House | null = null;
-  relationTo: House | null = null;  relation: i32 = -1;   // Relation, -1 any
+  house: House = NO_HANDLE;         // NO_HANDLE: any
+  relationTo: House = NO_HANDLE;  relation: i32 = -1;   // Relation, -1 any
   category: i32 = -1;               // Category, -1 any
   type: TechnoTypeId = NO_ID;       // NO_ID: any
   mark: MarkId = NO_ID;             // NO_ID: any
@@ -988,7 +997,7 @@ class Filter {
 | `objects.inRadius(at: Coord, leptons: i32, f: Filter, out: HandleBuffer)` | `i32` 数量 | 空间索引（owner 未核实） | v1 | RFC 6c；F17；Rc: `GetUnitsInCylinder` |
 | `objects.inRect(r: Rect, f: Filter, out: HandleBuffer)` | `i32` 数量 | 同上 | v1 | RFC 6c；Rc: `GetUnitsInRectangle` |
 | `objects.all(f: Filter, out: HandleBuffer)` | `i32` 数量 | 实体存储；按所属方的类型用 `HouseTracking` | v1 | RFC 6c |
-| `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno \| null` | 同上 | v1? | Rc: `GetUnitNearestEnemy` |
+| `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno`（没有时为 `NO_HANDLE`） | 同上 | v1? | Rc: `GetUnitNearestEnemy` |
 | `objects.projectilesInRadius(at: Coord, leptons: i32, out: HandleBuffer)` | `i32` 数量 | 抛射体存储 | v1? | RFC 6c（抛射体类别） |
 | `techno.type()` | `TechnoTypeId` | `ObjectType` ID | v1 | RFC 6c |
 | `techno.owner()` | `House` | 实体的所属方 | v1 | RFC 6c |
@@ -998,7 +1007,7 @@ class Filter {
 | `techno.target()` | `Target` | 目标状态（owner 未核实） | v1 | RFC 6c |
 | `techno.rank()`、`experience()` | `Rank`、`i32` | `combat/veterancy.rs` | v1 | RFC 6c |
 | `techno.ammo()` | `i32` | `src/sim/ammo.rs` | v1 | RFC 6c |
-| `techno.passengers(out: HandleBuffer)`、`transport()` | `i32` 数量、`Techno \| null` | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
+| `techno.passengers(out: HandleBuffer)`、`transport()` | `i32` 数量、`Techno`（没有时为 `NO_HANDLE`） | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
 | `techno.effects(out: HandleBuffer)`、`marks(out: IdBuffer)` | `i32` 数量 | 第 5、6 节 | v1 | RFC 6c |
 | `techno.disguise()` | `DisguiseInfo \| null`（类型 ID、所属方） | `src/sim/cloak_disguise.rs::forced_disguise_type`、`disguise_house` | v1 | 模拟模块读到的是真实状态 |
 | `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | |
@@ -1033,7 +1042,7 @@ class Filter {
 | `map.passable(c: Cell, zone: i32)` | `bool` | 移动区域检查（owner 未核实） | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
 | `map.waypoint(n: i32)` | `Cell \| null` | 地图路径点 | v1 | RFC 6c |
-| `map.cellTag(c: Cell)` | `Tag \| null` | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
+| `map.cellTag(c: Cell)` | `Tag`（没有时为 `NO_HANDLE`） | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
 | `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **已在 RFC 0.0.5 采纳**（P15）；Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **尚无 owner**（`src/sim/ai_base_site.rs` 有一个 AI 用的版本） | later | P15；Rc: `ClosestBuildPos` |
 
@@ -1078,7 +1087,6 @@ ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a
 - 黑幕下的对象不存在；迷雾下、玩家当前看不到的敌方对象也不存在：引擎不保存“最后一次看到”的副本（RFC 10，P17）；
 - 伪装的敌方对象读出来是它伪装成的样子：`type()` 返回伪装类型，`owner()` 返回伪装的所属方，使用 `src/sim/cloak_disguise.rs::is_disguised_to`、`disguise_house`、`disguise_hides_house_from`。过滤器的 owner：**尚无 owner**（G-C3）。Rc: 向非盟友返回诱饵定义；
 - 隐形的敌人除非被侦测到，否则不存在；
-- 发给客户端的事件参数中，玩家看不到的 `other` 对象会被去掉；
 - 观战者看到观战者能看到的范围，房间允许时为整张地图。
 
 ## 8. 覆盖点
@@ -1321,12 +1329,12 @@ class Ui {
   create(n: NodeSpec): Node;
   remove(n: Node): Status;
   registerHotkey(name: string, defaultKey: string): Status;
-  viewer(): House | null;          // null for a spectator
+  viewer(): House;                 // NO_HANDLE for a spectator
 }
 class Node {
   name(): string;
-  setText(csfOrText: string): void;
-  setImage(name: string): void;
+  setLabel(csfOrText: string): void;   // Label
+  setArt(name: string): void;          // Art
   setPosition(x: i32, y: i32): void;
   setSize(w: i32, h: i32): void;
   setVisible(v: bool): void;
@@ -1340,7 +1348,7 @@ class Node {
 | --- | --- | --- |
 | 按名字 `find` | v1 | RFC 10，示例 |
 | `create`、`remove` | v1 | RFC 10，示例 |
-| `setText`、`setImage`、`setPosition`、`setVisible` | v1 | RFC 10 |
+| `setLabel`、`setArt`、`setPosition`、`setVisible` | v1 | RFC 10 |
 | `setItems` | v1 | RFC 10 示例 |
 | `setSize`、`setValue` | v1? | |
 | `onClick`、悬停、热键 | v1 | RFC 10 |
@@ -1375,13 +1383,13 @@ class Node {
 | `Value` | `Credits`、`Power`、`Drain`、`Name`、`Time`、`Kills`、`Losses` |
 | `Tab`、`Columns`、`Rows` | 图标网格 |
 
-RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部件的 `Label` 键（P16）。mod 和地图把布局节放在哪里是待定问题 15。
+RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部件的 `Label` 键（P16）。mod 和地图把布局节放在哪里是待定问题 15。客户端代码使用同样的名字：`Text.label(...)`、`node.setLabel`、`node.setArt` 和 `node.setValue`（RFC 10）。
 
 ### 11.3 单个对象的显示属性
 
 | 属性 | Owner | 层级 | 来源 |
 | --- | --- | --- | --- |
-| `display(t).setImage(name)` | 渲染绑定（**尚无 owner**） | v1? | RFC 10 |
+| `display(t).setArt(name)` | 渲染绑定（**尚无 owner**） | v1? | RFC 10 |
 | `display(t).setPalette(name)` | **尚无 owner** | v1? | RFC 10 |
 | `display(t).setTint(color, intensity)` | **尚无 owner**（模拟中的染色是一种效果，见第 5 节） | v1? | RFC 10 |
 | `display(t).addAnim(name)` / `removeAnim` | **尚无 owner** | v1? | RFC 10 |
@@ -1433,7 +1441,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 - **G-H2** 模拟帧中的模块阶段（待定问题 9）：`src/sim/world/master_frame.rs` 新增一个阶段，先运行 `onEvents`，再运行 `onFrame`；`onFrame` 调度。
 - **G-H3** 快照和定期的完整状态哈希中的模块内存，不计入联机每帧的同步校验（RFC 4、15）：存档、读档和 `hash_state` 路径。
 - **G-H4** `ctx.log` 和游戏内的出错提示（RFC 3、14）：模拟侧的一行日志，以类似 `TriggerEffect` 的输出发布，由 app 显示。
-- **G-H5** 模拟到客户端的通知（`ctx.notify`、`onNotify`），按视野规则逐玩家投递（RFC 11）。
+- **G-H5** 模拟到客户端的通知（`ctx.notify`、`onNotify`），只投递给目标玩家；内容是模块自己的字节，引擎不过滤（RFC 11）。
 - **G-H6** 跟踪模块内存的脏页，让定期的完整状态哈希只覆盖上次哈希之后被写过的内存页（RFC 15）。
 
 ### 触发器、事件和约束条件
@@ -1494,13 +1502,13 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 
 - **G-R1** 一个模块规则层，在 mod 或地图层之后压入 `RulesLayerStack`，并计入大厅校验的哈希。
 - **G-R2** 对局中的规则覆盖层：存档、计入哈希，让以 `rules.serial()` 为键的缓存失效（`movement_tick.rs`、`house_defeat.rs`、`scatter.rs`、`movement_commands.rs`），并为每个键写明对已有对象的规则。
-- **G-R3** 每种 ID 的名字到 ID 查找（见 [ID](#id)），建在现有注册表（`RuleSet` 的类型下标、声音绑定、AI 定义）之上，未知名字返回 `NotFound`；另加供 `Mark.id` 使用的标记名注册表和供 `Notify.id` 使用的通知名注册表（RFC 10、15）。
+- **G-R3** 每种 ID 的名字到 ID 查找（见 [ID](#id)），建在现有注册表（`RuleSet` 的类型下标、声音绑定、AI 定义）之上，未知名字返回 `NotFound`；另加供 `Mark.id` 使用的标记名注册表，以及供 `Notify.id` 使用的通知名稳定哈希和加载时的冲突检查（RFC 10、15）。
 
 ### 客户端
 
 - **G-C1** 由模块驱动的界面树：新建、删除、查找、设置属性，点击和悬停的分发，按渲染帧批量提交，建在 `veraui.ini` 布局读取器之上。
 - **G-C2** 在 `src/sim/command.rs::Command` 中新增模块消息变体，带发送者、大小和频率上限，并记入回放。
-- **G-C3** 客户端查询和参数的视野过滤：黑幕、迷雾规则、隐形、伪装（`cloak_disguise.rs` 中已有辅助函数）。
+- **G-C3** 客户端查询的视野过滤：黑幕、迷雾规则、隐形、伪装（`cloak_disguise.rs` 中已有辅助函数）。
 - **G-C4** 玩家本机上每个 mod 的键值存储。
 - **G-C5** 单个对象的显示属性（图像、调色板、着色、附加动画、可见性、文字、数值、按钮）。
 - **G-C6** 供 `log()` 使用的游戏内控制台。

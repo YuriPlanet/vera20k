@@ -348,6 +348,15 @@ Ordering rules:
   C run first and B runs later in the same frame. An author who needs a strict
   order writes all of the trigger's actions as module code and calls original
   actions through the API (L1).
+- Every event VERA adds is raised at a safe point: after the calculation that
+  produced it has completed (for example `TakeDamage` after the damage has
+  been committed), never in the middle of one. The trigger's original and
+  atomic actions run at once from that point.
+- Original and atomic actions can chain within a frame: damage raises
+  `TakeDamage`, its trigger deals damage with an atomic action, which raises
+  `TakeDamage` again, and so on. The engine limits the depth of such a chain
+  per frame; a trigger that would exceed the limit fires in the next frame
+  instead, so no chain loops forever. The limit is open question 18.
 - A queued module action is dropped when the game has ended, or when its
   trigger was disabled or removed before the module phase. Handles to objects
   that are gone read as gone.
@@ -450,7 +459,10 @@ A trigger has one event, any number of conditions and one or more actions.
 - **Events** come in two kinds. *Delivered events* happen at a moment (damage
   taken, weapon fired, killed); the trigger fires at that moment, its original
   and atomic actions run at once, and its module actions are queued, each with
-  the event's payload, for the module phase (section 5). *Polled events*
+  the event's payload, for the module phase (section 5). A delivered event
+  that VERA adds is raised at a safe point, after the calculation that
+  produced it has completed, never in the middle of one (section 5). *Polled
+  events*
   describe a state (health below a value, money above a value); the
   engine checks them natively at the interval the trigger sets, and the trigger
   fires while the state holds.
@@ -492,17 +504,17 @@ Candidate delivered events for version 1:
 
 | Event | Payload |
 | --- | --- |
-| TakeDamage | source (nullable), damage |
+| TakeDamage | source (optional), damage |
 | HitByWarhead | warhead, final damage |
-| AttackedBy | attacker, weapon index (nullable), projectile (nullable) |
-| FatalDamage | attacker (nullable), damage |
-| Killed | killer (nullable) |
-| Fire | target (nullable), weapon index, projectile (nullable) |
-| SpawnFire | spawned unit, target (nullable), weapon index, projectile (nullable) |
+| AttackedBy | attacker, weapon index (optional), projectile (optional) |
+| FatalDamage | attacker (optional), damage |
+| Killed | killer (optional) |
+| Fire | target (optional), weapon index, projectile (optional) |
+| SpawnFire | spawned unit, target (optional), weapon index, projectile (optional) |
 | HitTarget | target, damage, projectile |
-| TargetChanged | new target (nullable: set when a target is chosen, empty when it is cleared) |
-| ProjectileIncoming | projectile, launcher (nullable) |
-| Birth | producer (nullable), effect (nullable), build time (nullable) |
+| TargetChanged | new target (optional: set when a target is chosen, empty when it is cleared) |
+| ProjectileIncoming | projectile, launcher (optional) |
+| Birth | producer (optional), effect (optional), build time (optional) |
 | Enter / Exit | transport or building, passengers, occupied size, garrison or transport |
 | EnteredBy / ExitedBy | passenger, passengers, occupied size, garrison or transport |
 | Crushed | crusher |
@@ -554,6 +566,12 @@ detonate a warhead at a coordinate with a damage and a source, detonate a
 projectile now, remove a projectile without detonating it,
 end the game for a house (win or lose) and set scores, write a line to the
 in-game log.
+
+In a trigger, each atomic action takes an explicit target parameter: the
+subject (the default), the other object of the event, the objects whose tag
+holds the trigger, a house, or a cell or waypoint. Atomic actions run at once
+and may raise further events, so they can chain within a frame up to the depth
+limit of section 5.
 
 Attached effects are per-object states with a duration, owned by
 `sim/attach_effect.rs` (section 8). Candidates: tint, attached animation,
@@ -697,7 +715,7 @@ fires, with the native one.
 
 **Interface tree.** The engine holds the interface tree, lays it out and draws
 it. A module changes it with a small set of operations: create and remove
-nodes, set properties (text, image, position, visibility), find nodes by name,
+nodes, set properties (label, art, position, visibility), find nodes by name,
 and receive clicks, hover and hotkeys. Changes are batched per render frame;
 the tree is not rebuilt every frame. No graphics API is exposed.
 
@@ -732,7 +750,7 @@ Type=List               ; new part type
 ```ts
 export const onStart = start((ui: Ui) => {
   ui.find("ObjList").setItems(["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);
-  ui.create(Column.hold(Hold.BottomLeft).child(Text.csf("TXT_WAVE")));
+  ui.create(Column.hold(Hold.BottomLeft).child(Text.label("TXT_WAVE")));
 });
 ```
 
@@ -760,9 +778,14 @@ closures, and is not part of the official API.
   so later asset formats (a separate RFC) need no API change.
 - Sounds and messages; `log()` writes to the in-game console.
 - Notifications are named, and a name resolves once to an ID:
-  `Notify.id("WaveStarted")` returns a `NotifyId`. The simulation module sends
-  a notification to one player's client with `notify(player, id, bytes)`; the
-  client module receives it in `onNotify(id, bytes)`.
+  `Notify.id("WaveStarted")` returns a `NotifyId`. The ID is a stable hash of
+  the case-folded name, computed the same way on every machine and in both the
+  simulation and the client module. The engine checks for collisions when it
+  loads the modules and refuses a module whose notification names collide,
+  with a message naming them (section 3), so `Notify.id` always returns an ID.
+  The simulation module sends a notification to one player's client with
+  `notify(player, id, bytes)`; the client module receives it in
+  `onNotify(id, bytes)`.
 - Every query is filtered by what the local player can see. A spectator's
   client modules see what the spectator sees, the whole map when the room
   allows it. An enemy object the player cannot see now is absent from results;
@@ -780,7 +803,8 @@ closures, and is not part of the official API.
 - The engine fills in the sender of every message, so a module cannot forge
   it, and limits message size and messages per frame.
 - Notifications from the simulation module to a client reach only the player
-  they are for, under the same visibility rules as queries.
+  they are for. Their content is the module's own bytes, and the module is
+  responsible for it: the engine cannot filter it.
 - Online play exchanges only commands, never state. A rejoining player
   re-simulates the match from the start, modules included; module messages are
   commands, so nothing extra is sent. A module's cost per frame therefore also
@@ -844,7 +868,9 @@ memory. These rules keep the boundary cheap and are part of the ABI:
   once to integer IDs (`ctx.typeId("E1")`,
   `Mark.id("Panicked")`), usually in `onRules` or `onScenarioStart`. Every
   other call takes IDs. Calls that take names (lookups, `rules.set`, trigger
-  setup) are for setup and rare changes; the SDKs cache the IDs.
+  setup) are for setup and rare changes; the SDKs cache the IDs. A
+  notification ID is a stable hash of its case-folded name, the same on every
+  machine and on both sides (section 10).
 - **One delivery per module per frame.** The frame's queued module actions
   reach each module in one call, as packed fixed-size records in firing order
   (section 5). Each record is one module action with the payload of the event
@@ -971,11 +997,14 @@ Planned order after acceptance:
     translated.
 17. **Campaigns.** Whether a mission's modules start fresh or continue the
     previous mission's state.
+18. **Chain depth.** The per-frame limit on the depth of a chain of original
+    and atomic actions (section 5).
 
 ## Changelog
 
 - **0.0.6** (2026-11-16): performance rules (section 15): IDs instead of
-  names on hot paths, one batched event delivery per module per frame, query
+  names on hot paths, one delivery per module per frame of its queued module
+  actions, each carrying its event, query
   results in module buffers, side tables, staggered polls, module memory only in
   the periodic hash, no allocation per event in the SDKs, budgets for the
   slowest platform; module actions batched per module per frame while original
@@ -988,8 +1017,18 @@ Planned order after acceptance:
   Fire, HitTarget and Detonated); `Aimed` merged into `TargetChanged`, plus a
   target priority multiplier effect; action functions take
   `(ctx, e: EventRecord)`; notification names resolve to a `NotifyId`; client
-  code uses the `veraui.ini` names (`Column.hold(Hold.BottomLeft)`); related
-  text and the appendix updated to match.
+  code uses the `veraui.ini` names (`Column.hold(Hold.BottomLeft)`); original
+  and atomic actions chain within a frame up to a per-frame depth limit, beyond
+  which a trigger fires in the next frame (open question 18); events VERA adds
+  are raised at safe points, after the calculation that produced them; each
+  atomic action in a trigger takes an explicit target (subject, other, tag
+  holder, house, cell or waypoint); notification IDs are a stable hash of the
+  case-folded name, with a collision check at load, so `Notify.id` always
+  returns an ID; handles are never nullable and `NO_HANDLE` means none; client
+  API names follow the layout keys `Label`, `Art` and `Value` (`Text.label`,
+  `setLabel`, `setArt`, `setValue`); notifications carry the module's own
+  bytes, which the engine cannot filter; `Ctx.event()` removed; related text
+  and the appendix updated to match.
 - **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
   override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
   visibility and house marks, query order, warhead detonation, projectile

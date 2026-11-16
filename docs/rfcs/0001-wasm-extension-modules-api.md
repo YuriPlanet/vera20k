@@ -52,7 +52,8 @@ The common subset rules apply to every signature:
 - no `try`/`catch`: errors are return values (see [Errors](#errors));
 - parameters that group several values are classes, not object shapes.
 
-`T | null` works only for classes in AssemblyScript. A missing integer is
+`T | null` works only for classes in AssemblyScript; a missing handle is
+`NO_HANDLE` (see [Handles](#handles)). A missing integer is
 written as `-1` (or another documented sentinel), as the community
 spreadsheet also does ("negative means none").
 
@@ -91,8 +92,8 @@ AssemblyScript accept; in the Rust SDK each is a newtype. Passing, storing or
 receiving a handle allocates nothing (RFC 15). This catalog writes calls as
 methods on a handle (`techno.kill(...)`), as the RFC's examples do; in the
 TypeScript SDK such a call is a function that takes the handle as its first
-argument, and its exact spelling follows open question 3. `NO_HANDLE` (`0`)
-is never a live object; signatures write `Techno | null` where it may appear.
+argument, and its exact spelling follows open question 3. Handles are never
+nullable: `NO_HANDLE` (`0`) means "none" and is never a live object.
 
 | Handle | Refers to | Gone when |
 | --- | --- | --- |
@@ -121,14 +122,21 @@ const NO_HANDLE: i64 = 0;
 
 // on Techno:
 isAlive(): bool;
-asBuilding(): Building | null;   // NO_HANDLE when not a building
-asInfantry(): Infantry | null;
-asVehicle(): Vehicle | null;
-asAircraft(): Aircraft | null;
+asBuilding(): Building;   // NO_HANDLE when not a building
+asInfantry(): Infantry;   // NO_HANDLE when not infantry
+asVehicle(): Vehicle;     // NO_HANDLE when not a vehicle
+asAircraft(): Aircraft;   // NO_HANDLE when not an aircraft
+
+// a handle that may be absent is compared with NO_HANDLE (in an action):
+if (e.other != NO_HANDLE) {
+  ctx.log("attacked");
+}
 ```
 
-A nullable handle is written `Techno | null`. Event payload fields that may be
-absent (an attacker, a projectile) are nullable.
+A signature, field or result that may hold no object has the plain handle
+type and a note that it may be `NO_HANDLE`. Event payload fields that may be
+absent (an attacker, a projectile) are `NO_HANDLE` when absent. `T | null` is
+kept for classes (see [Signatures](#signatures)).
 
 Types and the other named kinds listed under [IDs](#ids) are named by their
 ID string in INI and in setup calls; module code holds the integer ID a lookup
@@ -158,7 +166,7 @@ Rust SDK each is a newtype. Like handles, IDs are values and allocate nothing.
 | `OverlayTypeId` | overlays | `ctx.overlayTypeId(name)` |
 | `SoundId` | sounds in the simulation API | `ctx.soundId(name)` |
 | `MarkId` | marks | `Mark.id(name)` |
-| `NotifyId` | simulation-to-client notifications | `Notify.id(name)` |
+| `NotifyId` | simulation-to-client notifications | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides |
 | `TeamTypeId`, `ScriptTypeId`, `AiTriggerId` | AI team types, team scripts, AI triggers | `ai.teamTypeId(name)`, `ai.scriptTypeId(name)`, `ai.aiTriggerId(name)` |
 
 ```ts
@@ -179,9 +187,11 @@ nothing returns `NO_ID` and sets `ctx.lastStatus()` to `NotFound`: an expected
 outcome under the [error model](#errors), because names come from data a mod
 may change. A call given `NO_ID` returns `NotFound` as well; an ID that no
 lookup returned is an invalid argument. `Mark.id` registers a name it has not
-seen, so it always returns an ID. Types cannot be added during a match
-(RFC 8), so an ID stays valid for the whole scenario and across a save and its
-load.
+seen, so it always returns an ID. `Notify.id` always returns an ID as well: the
+engine checks notification names for hash collisions when it loads the
+modules and refuses a module whose names collide, with a message (RFC 10).
+Types cannot be added during a match (RFC 8), so an ID stays valid for the
+whole scenario and across a save and its load.
 
 Names stay in setup and rare calls: the lookups above, `ctx.house(name)`,
 `onRules` writes and `rules.set` (section 10), rules reads, `Trigger.create`
@@ -209,6 +219,16 @@ an effect handle, a type ID and a few integer payload fields (`EventRecord`,
 fields it fills; fields an event does not list are `NO_HANDLE` or `-1`. The
 layout of each record belongs to the interface definition (RFC 12). The SDK
 reads records in place and allocates nothing per event.
+
+Every event VERA adds is raised at a safe point: after the calculation that
+produced it has completed (for example `TakeDamage` after the damage has been
+committed), never in the middle of one, and the trigger's original and atomic
+actions run at once from that point (RFC 5). Because they run at once, they can
+chain within a frame: damage raises `TakeDamage`, its trigger deals damage
+with an atomic action, which raises `TakeDamage` again. The engine limits the
+depth of such a chain per frame; a trigger that would exceed the limit fires in
+the next frame instead, so no chain loops forever. The limit is open question
+18 of the RFC.
 
 ### Query results
 
@@ -263,7 +283,7 @@ the simulation state.
 
 The SDK has no exceptions. Two kinds of failure exist:
 
-1. **Expected outcomes** return a `Status` (or `null` for a function that
+1. **Expected outcomes** return a `Status` (or `NO_HANDLE` for a function that
    returns a handle). The module decides what to do.
 2. **Programming errors** (a trap, the operation budget exceeded, an invalid
    argument) disable the module at the same frame on every machine, as RFC 3
@@ -369,8 +389,7 @@ class Ctx {
   map: MapQuery;        // section 7
   rules: RulesReader;   // section 10
   ai: Ai;               // section 9
-  event(): EventRecord | null; // the record being delivered
-  house(name: string): House | null;   // lookup; ID lookups: see IDs
+  house(name: string): House;   // lookup, NO_HANDLE when not found; ID lookups: see IDs
   global(index: i32): Variable;  // 0..49
   local(index: i32): Variable;   // 0..99
   log(text: string): void;
@@ -416,7 +435,7 @@ class EventParam {
 }
 
 class TriggerDef {
-  house: House | null = null;
+  house: House = NO_HANDLE;
   event: i32 = 0;            // an Event value
   param: EventParam = new EventParam();
   conditions: Cond[] = [];
@@ -429,11 +448,11 @@ class TriggerDef {
 class EventRecord {          // fixed size; read in place from the batch (RFC 15)
   action: i32;               // the queued module action (an Action.wasm export); always set
   kind: i32;                 // Event value
-  subject: Techno | null;    // the object the trigger is attached to
-  other: Techno | null;      // attacker, target, transport, producer, ...
-  house: House | null;       // house involved (retained house for E1/E24/E25/E26/E59)
-  projectile: Projectile | null;
-  effect: Effect | null;
+  subject: Techno;           // the object the trigger is attached to; may be NO_HANDLE
+  other: Techno;             // attacker, target, transport, producer, ...; may be NO_HANDLE
+  house: House;              // house involved (retained house for E1/E24/E25/E26/E59); may be NO_HANDLE
+  projectile: Projectile;    // may be NO_HANDLE
+  effect: Effect;            // may be NO_HANDLE
   id: i32;                   // type ID where listed: weapon, warhead, effect type, superweapon type
   value: i32;                // damage, weapon index, stack count, frame, ...
   value2: i32;               // second integer field where listed
@@ -511,14 +530,14 @@ unless the row says otherwise.
 | 38 | `FirstDamagedCombat` | ignored | R | S, O | `combat/object_health.rs` | Source present. |
 | 39 | `HalfHealthCombat` | ignored | R | S, O | `combat/object_health.rs` | Yellow health. |
 | 40 | `QuarterHealthCombat` | ignored | R | S, O | `combat/object_health.rs` | Red health. |
-| 41 | `FirstDamagedAny` | ignored | R | S, O nullable | `combat/object_health.rs`; `world/crash.rs` | |
+| 41 | `FirstDamagedAny` | ignored | R | S, O (may be `NO_HANDLE`) | `combat/object_health.rs`; `world/crash.rs` | |
 | 42 | `HalfHealthAny` | ignored | R | S | `combat/object_health.rs` | |
 | 43 | `QuarterHealthAny` | ignored | R | S | `combat/object_health.rs` | |
 | 44 | `AttackedByHouse` | `value` house array index | R | S, O | `combat/object_health.rs`; `capture_manager.rs` | Ares converts Player@X. |
 | 45 | `AmbientLightBelow` | `value` | L | — | `TR::advance_triggers` when ambient changed | |
 | 46 | `AmbientLightAbove` | `value` | L | — | same | |
 | 47 | `ElapsedScenarioTime` | `value` seconds | L | — | `TR::evaluate_event` | |
-| 48 | `DestroyedByAnything` | ignored | R | S, O nullable | `record_kill.rs`; `building_entry.rs`; `world/world_orders.rs`; `movement/per_cell.rs`; `vehicle_theft.rs`; `world/crash.rs` | T9 `OnKilled` (coarse form). |
+| 48 | `DestroyedByAnything` | ignored | R | S, O (may be `NO_HANDLE`) | `record_kill.rs`; `building_entry.rs`; `world/world_orders.rs`; `movement/per_cell.rs`; `vehicle_theft.rs`; `world/crash.rs` | T9 `OnKilled` (coarse form). |
 | 49 | `PickupCrate` | ignored | R | S | `crates/pickup.rs` | |
 | 50 | `PickupCrateAny` | ignored | L | — | `TR::advance_triggers` when a crate was picked up | |
 | 51 | `RandomDelay` | `value` seconds | L | — | `TR::advance_triggers` | Draws: native (`scenario_rng`, in `reset_trigger_timers`). |
@@ -539,7 +558,7 @@ Original events by number stay usable in module-created triggers as
 ### 2.2 Ares events 62..88
 
 Available only when the game reads the Ares way (`rules.ares_form()`);
-otherwise `Trigger.create` returns `null` with `Unsupported`. Evaluated in
+otherwise `Trigger.create` returns `NO_HANDLE` with `Unsupported`. Evaluated in
 `TRA::ares_has_occurred`. All `v1`, `sim`, sources `Ar:` event of that number.
 
 | # | API name | Parameter | Kind | Raised by |
@@ -584,33 +603,37 @@ section): such a binding fires for every shooter that uses the type, whatever
 the shooter's own type, and the shooter is the subject. Each raise site checks
 one flag of the object's type, or of the weapon, warhead or projectile type,
 first (see [Side tables](#side-tables)); `Cond.isWeaponType` tests the weapon.
+Each event is raised at a safe point, after the calculation that produced it
+has completed (see [Event delivery](#event-delivery)); the "Raised at" column
+names the owner of that moment and says where the exact safe point is not
+known.
 
 | Event | Payload (`EventRecord`) | Raised at (owner of the moment) | Tier | Sources |
 | --- | --- | --- | --- | --- |
-| `TakeDamage` | `other` source (nullable), `value` damage after armor | `src/sim/combat/world_receiver.rs::commit_entities`; raise hook **no owner yet** | v1? | RFC 6a; T2 `OnTakeDamage` (history fields ③④ are module memory, RFC 6a); Rc: `UnitDamaged` |
-| `HitByWarhead` | `id` warhead (`WarheadTypeId`), `value` final damage, `other` source | `combat/damage/receive.rs::receive_damage`; hook **no owner yet** | v1? | RFC 6a; T3 `OnHitBy` (immune hits do not count) |
-| `AttackedBy` | `other` attacker, `value` weapon index (-1 none), `projectile` (nullable) | fire step in `src/sim/combat/world_fire.rs` (raised on the target); hook **no owner yet** | v1? | RFC 6a; T4 |
-| `FatalDamage` | `other` attacker (nullable), `value` damage | `combat/world_receiver.rs` before the death chain; hook **no owner yet** | v1? | RFC 6a; T22 `OnFatalDamage` |
-| `Killed` | `other` killer (nullable) | `src/sim/combat/record_kill.rs`; hook **no owner yet** | v1? | RFC 6a; T9; Rc: `UnitDestroyed` |
-| `Fire` | `other` target (nullable), `value` weapon index, `id` weapon (`WeaponTypeId`), `projectile` (nullable) | `combat/world_fire.rs` FireAt steps; `src/sim/aircraft/fire_at.rs::fire_at`; hook **no owner yet** | v1? | RFC 6a, 9 level 2; T10 `OnFire` |
-| `SpawnFire` | `other` spawned unit, `value` weapon index, `projectile`; target in the record's `cell` or via the spawn's target | `src/sim/spawn_manager.rs` (unverified point); hook **no owner yet** | v1? | RFC 6a; T11 `OnSpawnFire` |
-| `HitTarget` | `other` target, `value` damage, `id` weapon (`WeaponTypeId`), `projectile` | `combat/world_receiver.rs` (raised on the firer); hook **no owner yet** | v1? | RFC 6a; T21 `OnHitTarget` |
-| `TargetChanged` | `other` new target (nullable: `NO_HANDLE` when the target is cleared) | target assignment and clearing (`src/sim/world/techno_ai/scan_batch.rs` and order paths; unverified); hook **no owner yet** | v1? | RFC 6a, 6 (P13); T6 `OnAimed` |
-| `ProjectileIncoming` | `projectile`, `other` launcher (nullable) | projectile admission `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`; hook **no owner yet** | v1? | RFC 6a; T7 `OnProjectileComing` |
-| `Detonated` | `projectile`, `cell`, `other` source (nullable), `id` warhead (`WarheadTypeId`) | detonation admission in `src/sim/projectile`; hook **no owner yet** | v1? | RFC 6 L2 ("projectile detonated"), 9 level 2; T36; Rc: `ProjectileDestroyed`, `Explosion` |
-| `Birth` | `other` producer (nullable), `effect` (nullable), `value` build time (-1 none) | `src/sim/world/world_spawn.rs`, production exit, reinforcements; hook **no owner yet** | v1? | RFC 6a; T8 `OnBirth`; Rc: `UnitCreated` |
-| `Enter` | `other` transport or building, `value` occupied size, `value2` 1 garrison / 0 transport; passengers by query | `src/sim/building_entry.rs`, transport boarding (`src/sim/passenger.rs` callers); hook **no owner yet** | v1? | RFC 6a; T13 `OnEntry`; Rc: `UnitLoaded` |
-| `Exit` | as `Enter`, after leaving | unload paths; hook **no owner yet** | v1? | RFC 6a; T14 `OnExit`; Rc: `UnitUnloaded` |
+| `TakeDamage` | `other` source (may be `NO_HANDLE`), `value` damage after armor | `src/sim/combat/world_receiver.rs::commit_entities`, after the damage is committed; raise hook **no owner yet** | v1? | RFC 6a; T2 `OnTakeDamage` (history fields ③④ are module memory, RFC 6a); Rc: `UnitDamaged` |
+| `HitByWarhead` | `id` warhead (`WarheadTypeId`), `value` final damage, `other` source | `combat/damage/receive.rs::receive_damage`, after it completes (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T3 `OnHitBy` (immune hits do not count) |
+| `AttackedBy` | `other` attacker, `value` weapon index (-1 none), `projectile` (may be `NO_HANDLE`) | fire step in `src/sim/combat/world_fire.rs` (raised on the target), after the step completes (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T4 |
+| `FatalDamage` | `other` attacker (may be `NO_HANDLE`), `value` damage | `combat/world_receiver.rs`, after the fatal damage is committed and before the death chain (whether this is a safe point is unverified); hook **no owner yet** | v1? | RFC 6a; T22 `OnFatalDamage` |
+| `Killed` | `other` killer (may be `NO_HANDLE`) | `src/sim/combat/record_kill.rs`, after the kill is recorded (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T9; Rc: `UnitDestroyed` |
+| `Fire` | `other` target (may be `NO_HANDLE`), `value` weapon index, `id` weapon (`WeaponTypeId`), `projectile` (may be `NO_HANDLE`) | `combat/world_fire.rs` FireAt steps; `src/sim/aircraft/fire_at.rs::fire_at`; after the shot is fired (exact point unverified); hook **no owner yet** | v1? | RFC 6a, 9 level 2; T10 `OnFire` |
+| `SpawnFire` | `other` spawned unit, `value` weapon index, `projectile`; target in the record's `cell` or via the spawn's target | `src/sim/spawn_manager.rs` (after the spawn's shot; exact point unverified); hook **no owner yet** | v1? | RFC 6a; T11 `OnSpawnFire` |
+| `HitTarget` | `other` target, `value` damage, `id` weapon (`WeaponTypeId`), `projectile` | `combat/world_receiver.rs` (raised on the firer), after the damage is committed; hook **no owner yet** | v1? | RFC 6a; T21 `OnHitTarget` |
+| `TargetChanged` | `other` new target (`NO_HANDLE` when the target is cleared) | target assignment and clearing (`src/sim/world/techno_ai/scan_batch.rs` and order paths; unverified), after the target is set or cleared; hook **no owner yet** | v1? | RFC 6a, 6 (P13); T6 `OnAimed` |
+| `ProjectileIncoming` | `projectile`, `other` launcher (may be `NO_HANDLE`) | projectile admission `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`, after the projectile is admitted; hook **no owner yet** | v1? | RFC 6a; T7 `OnProjectileComing` |
+| `Detonated` | `projectile`, `cell`, `other` source (may be `NO_HANDLE`), `id` warhead (`WarheadTypeId`) | detonation admission in `src/sim/projectile`, after the detonation (exact point unverified); hook **no owner yet** | v1? | RFC 6 L2 ("projectile detonated"), 9 level 2; T36; Rc: `ProjectileDestroyed`, `Explosion` |
+| `Birth` | `other` producer (may be `NO_HANDLE`), `effect` (may be `NO_HANDLE`), `value` build time (-1 none) | `src/sim/world/world_spawn.rs`, production exit, reinforcements, after the object is placed (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T8 `OnBirth`; Rc: `UnitCreated` |
+| `Enter` | `other` transport or building, `value` occupied size, `value2` 1 garrison / 0 transport; passengers by query | `src/sim/building_entry.rs`, transport boarding (`src/sim/passenger.rs` callers), after the entry completes; hook **no owner yet** | v1? | RFC 6a; T13 `OnEntry`; Rc: `UnitLoaded` |
+| `Exit` | as `Enter`, after leaving | unload paths, after the exit completes; hook **no owner yet** | v1? | RFC 6a; T14 `OnExit`; Rc: `UnitUnloaded` |
 | `EnteredBy` (new) | `other` passenger, `value` occupied size, `value2` garrison flag | as `Enter`, raised on the container | v1? | RFC 6a; T15 `OnEntryBy` |
 | `ExitedBy` | as `EnteredBy` | as `Exit` | v1? | RFC 6a; T16 `OnExitBy` |
-| `Crushed` | `other` crusher | crush step in movement (file unverified); hook **no owner yet** | v1? | RFC 6a; T25 `OnCrush` |
+| `Crushed` | `other` crusher | crush step in movement (file unverified), after the crush; hook **no owner yet** | v1? | RFC 6a; T25 `OnCrush` |
 | `HouseTransfer` | `house` new house, `value` 1 if by mind control; raised before the transfer | `src/sim/world/mod.rs::change_owner_with_rules`; `src/sim/capture_manager.rs`; hook **no owner yet** | v1? | RFC 6a; T28 `OnHouseTransfer`; Rc: `UnitTaken` |
 | `HouseTransferred` | `house` previous house, `value` 1 if by mind control; raised after the transfer | `change_owner_with_rules`; hook **no owner yet** | v1? | RFC 6a (P10); Rc: `UnitGiven` (two-phase transfer) |
-| `EffectStart` | `effect`, `value` stack count | `src/sim/attach_effect.rs::AttachEffectList::attach`; hook **no owner yet** | v1? | RFC 6a; T17 `OnBehaviorStart` |
-| `EffectExpire` | `effect` (reads gone after delivery), `id` effect type (`EffectTypeId`) | `attach_effect.rs` update/removal; hook **no owner yet** | v1? | RFC 6a; T19 `OnBehaviorExpire` |
-| `EffectStacks` | `effect`, `value` new stack count | `attach_effect.rs` cumulative attach; hook **no owner yet** | v1? | RFC 6a; T20 `OnBehaviorStack` |
+| `EffectStart` | `effect`, `value` stack count | `src/sim/attach_effect.rs::AttachEffectList::attach`, after the effect is attached; hook **no owner yet** | v1? | RFC 6a; T17 `OnBehaviorStart` |
+| `EffectExpire` | `effect` (reads gone after delivery), `id` effect type (`EffectTypeId`) | `attach_effect.rs` update/removal, after the effect is removed; hook **no owner yet** | v1? | RFC 6a; T19 `OnBehaviorExpire` |
+| `EffectStacks` | `effect`, `value` new stack count | `attach_effect.rs` cumulative attach, after the stack is added; hook **no owner yet** | v1? | RFC 6a; T20 `OnBehaviorStack` |
 | `Timer` | `value` frame of the previous firing | module trigger timer: **no owner yet** (E13 timers reuse `CdTimer`) | v1? | RFC 6a; T5 `OnTimer` |
-| `SuperWeaponLaunched` | `id` SW type (`SuperWeaponTypeId`), `house`, `cell` target | `src/sim/superweapon/fire.rs::fire_super_weapon`; hook **no owner yet** | v1? | RFC 6a |
+| `SuperWeaponLaunched` | `id` SW type (`SuperWeaponTypeId`), `house`, `cell` target | `src/sim/superweapon/fire.rs::fire_super_weapon`, after the superweapon has fired (exact point unverified); hook **no owner yet** | v1? | RFC 6a |
 
 T18 `OnBehavior` (effect running, every interval) is the polled
 `EffectStacksPoll` event below, or a condition `hasEffect` on a `Timer` trigger.
@@ -732,6 +755,14 @@ order writes all of the trigger's actions as module code and calls original
 actions through the functions below. Called directly from module code, an
 action runs at once.
 
+In a trigger, each atomic action value takes an explicit target parameter
+(`ActionTarget`): `Subject` (the default) is the record's subject; `Other` the
+record's other object; `TagHolder` the objects whose tag holds the springing
+trigger, as the "live" rows of 4.2 act on; `House` a house; `Cell` a cell,
+given directly or as a waypoint. Original and atomic actions that run at once
+can raise further events and chain within a frame, up to the per-frame depth
+limit (see [Event delivery](#event-delivery)).
+
 ```ts
 class ActionParams {
   value: i32 = 0;
@@ -746,6 +777,7 @@ class TriggerAction {
   static original(n: i32, p: ActionParams): TriggerAction;
   static wasm(exportName: string): TriggerAction;
 }
+enum ActionTarget { Subject, Other, TagHolder, House, Cell }   // target of an atomic action in a trigger; Subject is the default
 ```
 
 `Action.original(n, …)` runs the existing arm of
@@ -767,7 +799,7 @@ every row that runs native code, except where noted.
 | 1 | `scenario.declareWinner(country: string)` | country | `src/sim/world/house_defeat.rs::request_player_outcome` | Acts on the player, not the trigger house. |
 | 2 | `scenario.declareLoser(country: string)` | country | same | |
 | 3 | `house.beginProduction()` | — | `HouseState::enable_scripted_production` | |
-| 4 | `ai.createTeam(teamType: TeamTypeId, house: House \| null): Team \| null` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | Max gate applies. S0–S68 run the team. |
+| 4 | `ai.createTeam(teamType: TeamTypeId, house: House): Team` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | Max gate applies. S0–S68 run the team. `house` may be `NO_HANDLE`; returns `NO_HANDLE` when no team is created. |
 | 5 | `ai.destroyTeams(teamType: TeamTypeId)` | TeamType | `TSV/membership.rs::destroy_teams_of_type` | |
 | 6 | `house.allToHunt()` | — | `house_strategy::all_to_hunt` | |
 | 7 | `ai.reinforce(teamType: TeamTypeId)` | TeamType (its own waypoint) | `TSV/reinforcements.rs::spawn_team_reinforcements` | |
@@ -868,7 +900,7 @@ every row that runs native code, except where noted.
 | 102 | `weather.lightningStormStrike(cell: Cell)` | cell | `lightning_storm::start` with rules duration | Uses the trigger house. |
 | 103 | `scenario.timer.setText(csfLabel: string)` | label | `set_scenario_timer_caption` | |
 | 104 | `team.flash(frames: i32)`; `ai.flashTeams(teamType, frames)` | TeamType, frames | `TSV/actions.rs::flash_teams_of_type` | |
-| 105 | `scenario.talkBubble(team: Team \| null, frame: i32)` | team, frame | `talk_bubble_set_object_and_frame` | |
+| 105 | `scenario.talkBubble(team: Team, frame: i32)` | team, frame | `talk_bubble_set_object_and_frame` | `team` may be `NO_HANDLE`. |
 | 106 | `rules.setTechLevel(type: TechnoTypeId, level: i32)` | type, level | `src/sim/world/type_tech_levels.rs::set_object_type_tech_level` | Also section 10. |
 | 107 | `ai.reinforceByChrono(teamType: TeamTypeId, cell: Cell)` | TeamType, cell | `spawn_chrono_team_reinforcements` | G-A1. |
 | 108 | `map.createCrate(kind: i32, cell: Cell)` | kind (20 random) | `crates::place_crate` | Draws native when random. G-A1. |
@@ -888,7 +920,7 @@ every row that runs native code, except where noted.
 | 122 | `house.destroyAll(Destroy.Naval)` | — | `house_blowup(Naval)` | |
 | 123 | `house.mindControlBase(of: House)` | house | `src/sim/capture_manager.rs::control_house_buildings(.., false)` | |
 | 124 | `house.restoreMindControlledBase(of: House)` | house | `control_house_buildings(.., true)` | |
-| 125 | `map.createBuilding(type: TechnoTypeId, cell: Cell, owner: House): Building \| null` | type, cell | `TR::trigger_create_building_at_waypoint` | G-A1. |
+| 125 | `map.createBuilding(type: TechnoTypeId, cell: Cell, owner: House): Building` | type, cell | `TR::trigger_create_building_at_waypoint` | G-A1. Returns `NO_HANDLE` when no building is created. |
 | 126 | `house.restoreStarting(buildingsOnly: false)` | — | `restore_initial_house_technos(.., true)` | |
 | 127 | `scenario.chronoScreenEffect(duration: i32)` | duration | `start_chrono_screen_effect` | |
 | 128 | `house.teleportAll(cell: Cell)` | cell | `src/sim/world/trigger_chrono.rs::chronoshift_house_to` | |
@@ -921,7 +953,8 @@ Ares actions (only with Ares; otherwise `Unsupported`; owner `TRA::ares_execute_
 
 ### 4.3 Atomic actions (RFC 6b) and spreadsheet instant effects
 
-One function is one operation with one owner (RFC 6 granularity).
+One function is one operation with one owner (RFC 6 granularity). In a
+trigger, each takes the target parameter of [4.1](#41-using-actions).
 
 | Function | Semantics | Draws | Owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- |
@@ -929,10 +962,10 @@ One function is one operation with one owner (RFC 6 granularity).
 | `house.launchSuperWeapon(type: SuperWeaponTypeId, cell: Cell): Status` | Fire a superweapon the house holds | native | `src/sim/superweapon/fire.rs::fire_super_weapon` | v1? | RFC 6b; F5 |
 | `map.spawnAnim(anim: AnimTypeId, at: Coord): Status` | Create an animation | native | `src/sim/anim_class.rs` (coordinate entry; G-A1) | v1? | RFC 6b; F6 |
 | `techno.remove(): Status` | Remove with no death, no survivors, no credit | none | `src/sim/world/lifecycle.rs::Simulation::uninit_with_context` | v1? | RFC 6b; F7 `Remove`; Rc: `DestroyUnit(reclaimed)` |
-| `techno.kill(mode: KillMode, source: Techno \| null): Status` | Kill through the damage path with damage = health and `ignore_defenses` (death animation, survivors, kill credit to `source`) | native | `src/sim/world/mod.rs::commit_direct_damage_receiver` (`EntityDamageEvent::direct_receiver`) | v1? | RFC 6b; F8 `Suicide` |
-| `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno \| null): Status` | Deal damage through warhead and armor, with credit and experience | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **adopted in RFC 0.0.5** (P9: add goes through the warhead path) |
+| `techno.kill(mode: KillMode, source: Techno): Status` | Kill through the damage path with damage = health and `ignore_defenses` (death animation, survivors, kill credit to `source`); `source` may be `NO_HANDLE` | native | `src/sim/world/mod.rs::commit_direct_damage_receiver` (`EntityDamageEvent::direct_receiver`) | v1? | RFC 6b; F8 `Suicide` |
+| `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno): Status` | Deal damage through warhead and armor, with credit and experience; `source` may be `NO_HANDLE` | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **adopted in RFC 0.0.5** (P9: add goes through the warhead path) |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | Set or heal health, no credit | none | `combat/object_health.rs::Health::set`, `heal` (no Simulation-level owner) | v1? | RFC 6b; F9 `ModifyHealth` |
-| `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno \| null` | Create a finished object; blocked cell refuses | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`, `place_building_with_cleared_foundation`, `place_foot_with_cleared_cell` (doc says "tests, tools, debug") | v1? | RFC 6b; F10 `CreateUnit` (inheriting triggers/effects: `CreateParams.inheritTag`) |
+| `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno` | Create a finished object; blocked cell refuses (`NO_HANDLE`) | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`, `place_building_with_cleared_foundation`, `place_foot_with_cleared_cell` (doc says "tests, tools, debug") | v1? | RFC 6b; F10 `CreateUnit` (inheriting triggers/effects: `CreateParams.inheritTag`) |
 | `techno.setMission(m: Mission, target: Target \| null): Status` | Queue a mission as a player order would | none | `src/sim/mission/retask.rs::queue_order_mission`, `queue_megamission` | v1 | RFC 6b, example; F16 `Mission`; F13 `CommandMoveTo` (= `Move` with a cell) |
 | `techno.teleport(cell: Cell, rule: Blocked): Status` | Chronosphere-style move; `Blocked.Nearby` picks a nearby cell, `Blocked.Fail` refuses | native | **no owner yet** (`superweapon/chronosphere.rs::warp_object` is private; `trigger_chrono.rs::chronoshift_house_to` is house-wide) | v1? | RFC 6b; F12 `ForceMoveTo` |
 | `techno.clearTarget(): Status` | Drop the current target | none | **no owner yet** (only per-locomotor `clear_target` traits) | v1? | RFC 6b; F15 |
@@ -948,9 +981,9 @@ One function is one operation with one owner (RFC 6 granularity).
 | `transport.addPassenger(p: Techno)` / `removePassenger(p: Techno)` | Board or eject a passenger | native | **no owner yet** (`PassengerCargo::board_forced_chain`, `disembark` are list operations without limbo/unlimbo) | v1? | RFC 6b; F25 |
 | `techno.addEffect(...)` / `removeEffect(...)` | section 5 | — | section 5 | v1 | RFC 6b; F2, F3 |
 | `techno.addMark(...)` / `removeMark(...)` | section 6 | — | section 6 | v1 | RFC 6b |
-| `map.createProjectile(p: ProjectileParams): Projectile \| null` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
-| `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno \| null): Status` | Detonate a weapon at a coordinate with no bullet | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
-| `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno \| null): Status` | Area damage of a warhead with a given damage and source | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
+| `map.createProjectile(p: ProjectileParams): Projectile` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data; `NO_HANDLE` on failure | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
+| `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno): Status` | Detonate a weapon at a coordinate with no bullet; `source` may be `NO_HANDLE` | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
+| `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno): Status` | Area damage of a warhead with a given damage and source; `source` may be `NO_HANDLE` | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
 | `projectile.detonate(): Status` | Detonate a projectile now | native | `src/sim/projectile` detonation admission (no public entry) | later | **adopted in RFC 0.0.5** (P8); Rc: `SetProjectileCollision` |
 | `projectile.remove(): Status` | Remove a projectile without detonation | none | **no owner yet** | later | **adopted in RFC 0.0.5** (P8); Rc: `DeleteProjectile` |
 | `scenario.endFor(house: House, outcome: Outcome): Status` | End the game for one house, won or lost | none | `house_defeat.rs::request_player_outcome` | v1? | RFC 6b |
@@ -960,17 +993,17 @@ One function is one operation with one owner (RFC 6 granularity).
 
 ```ts
 class WeaponSel { index: i32 = -1; weapon: WeaponTypeId = NO_ID; }
-class Target { techno: Techno | null = null; cell: Cell | null = null; current: bool = false; }
+class Target { techno: Techno = NO_HANDLE; cell: Cell | null = null; current: bool = false; }
 enum KillMode { Normal }          // death animation, survivors, credit
 enum Blocked { Nearby, Fail }
-class CreateParams { inheritTag: Techno | null = null; mission: Mission = Mission.None; }
+class CreateParams { inheritTag: Techno = NO_HANDLE; mission: Mission = Mission.None; }
 class ProjectileParams {
   type: ProjectileTypeId;
   weapon: WeaponTypeId = NO_ID;   // supplies damage and warhead
   from: Coord;
-  toTechno: Techno | null;
+  toTechno: Techno;          // may be NO_HANDLE
   toCoord: Coord | null;
-  source: Techno | null; // kill credit and experience
+  source: Techno;            // kill credit and experience; may be NO_HANDLE
   data: Uint8Array | null;   // up to 16 bytes, saved and hashed
 }
 ```
@@ -990,17 +1023,17 @@ switch first (gap G-E1). The only full attach transaction is the warhead path
 class EffectParams {
   duration: Frames = -1;      // -1: the type's Duration
   delay: Frames = -1;         // -1: none
-  source: Techno | null = null;
-  sourceHouse: House | null = null;
+  source: Techno = NO_HANDLE;
+  sourceHouse: House = NO_HANDLE;
 }
 // on Techno:
-addEffect(type: EffectTypeId, p: EffectParams): Effect | null;   // null + Refused when stacking refuses
+addEffect(type: EffectTypeId, p: EffectParams): Effect;   // NO_HANDLE + Refused when stacking refuses
 removeEffect(e: Effect): Status;
 removeEffects(type: EffectTypeId): i32;    // returns how many
 removeEffectGroup(group: EffectGroupId): i32;
 effects(out: HandleBuffer): i32;           // deterministic order: attach order
 // on Effect:
-type(): EffectTypeId; remaining(): Frames; stacks(): i32; source(): Techno | null;
+type(): EffectTypeId; remaining(): Frames; stacks(): i32; source(): Techno;   // source() may be NO_HANDLE
 ```
 
 | Function | Owner | Tier | Sources |
@@ -1131,8 +1164,8 @@ what the local player can see (RFC 10).
 
 ```ts
 class Filter {
-  house: House | null = null;
-  relationTo: House | null = null;  relation: i32 = -1;   // Relation, -1 any
+  house: House = NO_HANDLE;         // NO_HANDLE: any
+  relationTo: House = NO_HANDLE;  relation: i32 = -1;   // Relation, -1 any
   category: i32 = -1;               // Category, -1 any
   type: TechnoTypeId = NO_ID;       // NO_ID: any
   mark: MarkId = NO_ID;             // NO_ID: any
@@ -1148,7 +1181,7 @@ class Filter {
 | `objects.inRadius(at: Coord, leptons: i32, f: Filter, out: HandleBuffer)` | `i32` count | spatial index (owner unverified) | v1 | RFC 6c; F17; Rc: `GetUnitsInCylinder` |
 | `objects.inRect(r: Rect, f: Filter, out: HandleBuffer)` | `i32` count | same | v1 | RFC 6c; Rc: `GetUnitsInRectangle` |
 | `objects.all(f: Filter, out: HandleBuffer)` | `i32` count | entity store; `HouseTracking` for per-house types | v1 | RFC 6c |
-| `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno \| null` | same | v1? | Rc: `GetUnitNearestEnemy` |
+| `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno` (`NO_HANDLE` when none) | same | v1? | Rc: `GetUnitNearestEnemy` |
 | `objects.projectilesInRadius(at: Coord, leptons: i32, out: HandleBuffer)` | `i32` count | projectile store | v1? | RFC 6c (category projectile) |
 | `techno.type()` | `TechnoTypeId` | `ObjectType` id | v1 | RFC 6c |
 | `techno.owner()` | `House` | entity owner | v1 | RFC 6c |
@@ -1158,7 +1191,7 @@ class Filter {
 | `techno.target()` | `Target` | target state (owner unverified) | v1 | RFC 6c |
 | `techno.rank()`, `experience()` | `Rank`, `i32` | `combat/veterancy.rs` | v1 | RFC 6c |
 | `techno.ammo()` | `i32` | `src/sim/ammo.rs` | v1 | RFC 6c |
-| `techno.passengers(out: HandleBuffer)`, `transport()` | `i32` count, `Techno \| null` | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
+| `techno.passengers(out: HandleBuffer)`, `transport()` | `i32` count, `Techno` (`NO_HANDLE` when none) | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
 | `techno.effects(out: HandleBuffer)`, `marks(out: IdBuffer)` | `i32` counts | sections 5, 6 | v1 | RFC 6c |
 | `techno.disguise()` | `DisguiseInfo \| null` (type ID, house) | `src/sim/cloak_disguise.rs::forced_disguise_type`, `disguise_house` | v1 | sim reads the true state |
 | `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | |
@@ -1193,7 +1226,7 @@ class Filter {
 | `map.passable(c: Cell, zone: i32)` | `bool` | movement zone check (owner unverified) | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
 | `map.waypoint(n: i32)` | `Cell \| null` | map waypoints | v1 | RFC 6c |
-| `map.cellTag(c: Cell)` | `Tag \| null` | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
+| `map.cellTag(c: Cell)` | `Tag` (`NO_HANDLE` when none) | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
 | `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | later | P15; Rc: `ClosestBuildPos` |
 
@@ -1249,8 +1282,6 @@ In client modules (RFC 10):
   `disguise_hides_house_from`. Owner of the filter: **no owner yet** (G-C3).
   Rc: decoy defs returned to non-allies;
 - a cloaked enemy is absent unless detected;
-- event payloads sent to the client drop an `other` object the player cannot
-  see;
 - spectators see what the spectator sees, the whole map when the room allows.
 
 ## 8. Overrides
@@ -1540,12 +1571,12 @@ class Ui {
   create(n: NodeSpec): Node;
   remove(n: Node): Status;
   registerHotkey(name: string, defaultKey: string): Status;
-  viewer(): House | null;          // null for a spectator
+  viewer(): House;                 // NO_HANDLE for a spectator
 }
 class Node {
   name(): string;
-  setText(csfOrText: string): void;
-  setImage(name: string): void;
+  setLabel(csfOrText: string): void;   // Label
+  setArt(name: string): void;          // Art
   setPosition(x: i32, y: i32): void;
   setSize(w: i32, h: i32): void;
   setVisible(v: bool): void;
@@ -1559,7 +1590,7 @@ class Node {
 | --- | --- | --- |
 | `find` by name | v1 | RFC 10, example |
 | `create`, `remove` | v1 | RFC 10, example |
-| `setText`, `setImage`, `setPosition`, `setVisible` | v1 | RFC 10 |
+| `setLabel`, `setArt`, `setPosition`, `setVisible` | v1 | RFC 10 |
 | `setItems` | v1 | RFC 10 example |
 | `setSize`, `setValue` | v1? | |
 | `onClick`, hover, hotkeys | v1 | RFC 10 |
@@ -1600,13 +1631,14 @@ Static layout uses the syntax of `veraui.ini` (RFC 10). Keys that exist today
 
 RFC 0.0.5 uses these keys in its example and adds the `List` part type and
 `Label` for `Text` parts (P16). Where a mod and a map keep
-layout sections is open question 15.
+layout sections is open question 15. Client code uses the same names:
+`Text.label(...)`, `node.setLabel`, `node.setArt` and `node.setValue` (RFC 10).
 
 ### 11.3 Display properties per object
 
 | Property | Owner | Tier | Sources |
 | --- | --- | --- | --- |
-| `display(t).setImage(name)` | render binding (**no owner yet**) | v1? | RFC 10 |
+| `display(t).setArt(name)` | render binding (**no owner yet**) | v1? | RFC 10 |
 | `display(t).setPalette(name)` | **no owner yet** | v1? | RFC 10 |
 | `display(t).setTint(color, intensity)` | **no owner yet** (sim tint is an effect, section 5) | v1? | RFC 10 |
 | `display(t).addAnim(name)` / `removeAnim` | **no owner yet** | v1? | RFC 10 |
@@ -1670,7 +1702,8 @@ implementation.
 - **G-H4** `ctx.log` and in-game failure messages (RFC 3, 14): a sim-side log
   line published as a `TriggerEffect`-like output, shown by the app.
 - **G-H5** Simulation-to-client notifications (`ctx.notify`, `onNotify`),
-  per-player delivery under the visibility rules (RFC 11).
+  delivered only to the player each is for; the content is the module's own
+  bytes, which the engine does not filter (RFC 11).
 - **G-H6** Dirty-page tracking of module memory, so the periodic full state
   hash covers only pages written since the last hash (RFC 15).
 
@@ -1787,8 +1820,9 @@ implementation.
   objects.
 - **G-R3** Name-to-ID lookups for each ID kind (see [IDs](#ids)) over the
   existing registries (`RuleSet` type indexes, sound binding, AI
-  definitions), with `NotFound` for an unknown name, and registries of mark
-  names for `Mark.id` and notification names for `Notify.id` (RFC 10, 15).
+  definitions), with `NotFound` for an unknown name, a registry of mark
+  names for `Mark.id`, and the stable hash of notification names for
+  `Notify.id` with a collision check at load (RFC 10, 15).
 
 ### Client
 
@@ -1797,8 +1831,8 @@ implementation.
   `veraui.ini` layout reader.
 - **G-C2** A module message variant in `src/sim/command.rs::Command`, with
   sender, size and rate limits, recorded in replays.
-- **G-C3** Visibility filter for client queries and payloads: shroud, fog
-  rule, cloak, disguise (`cloak_disguise.rs` helpers exist).
+- **G-C3** Visibility filter for client queries: shroud, fog rule, cloak,
+  disguise (`cloak_disguise.rs` helpers exist).
 - **G-C4** Per-mod key-value store on the player's machine.
 - **G-C5** Per-object display properties (image, palette, tint, extra
   animations, visibility, text, values, buttons).
