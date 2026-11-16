@@ -2,7 +2,6 @@
 //! Legal custom-map placement; no shipped water-yard or native playback claim.
 //! Ares BuildingClass_Mi_Selling_PutMcv (1005C5D0, hook 0x449FF8) forces the
 //! Put, so there the water cell takes the MCV.
-#![cfg_attr(feature = "ares", allow(unused_imports, dead_code))]
 use super::*;
 use crate::map::map_file::{MapCell, MapFile};
 use crate::rules::locomotor_type::SpeedType;
@@ -233,7 +232,6 @@ fn ares_forces_the_repacked_mcv_onto_the_water_cell() {
     );
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game() {
     let Some((mut runtime, yard)) = scene() else {

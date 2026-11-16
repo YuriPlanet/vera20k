@@ -466,12 +466,14 @@ fn retail_superweapon_scripts_run_ported_actions() {
     assert_eq!(scripts.len(), 4);
     for script in &scripts {
         for action in &script.actions {
-            assert!(
-                super::super::actions::action_is_ported(action.action_id, crate::rules::ARES_BUILD),
-                "{} runs action {}",
-                sim.interner.resolve(script.id),
-                action.action_id
-            );
+            for ares_way in [false, true] {
+                assert!(
+                    super::super::actions::action_is_ported(action.action_id, ares_way),
+                    "{} runs action {}",
+                    sim.interner.resolve(script.id),
+                    action.action_id
+                );
+            }
         }
     }
     let running = vm

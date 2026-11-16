@@ -1,12 +1,12 @@
 # Optional Ares gameplay bugfixes
 
-Build with `--features ares`. Ares 3.0 corrects a set of gamemd behaviours
+Ares 3.0 corrects a set of gamemd behaviours
 in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
 `Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`; these take no INI
-keys. Default builds keep the original behaviour, bugs included. Each Rust
-port sits in the engine owner of the hooked gamemd function, behind
-`cfg(feature = "ares")` or the per-game switch `RuleSet::ares` (on when the
-game's data uses Ares, see `rules::ares_switch`), with the Ares.dll function
+keys. Every build makes these corrections when the game plays Ares
+([Ares](ares.md)); other games keep the original behaviour, bugs included. Each Rust
+port sits in the engine owner of the hooked gamemd function, behind the game's
+Ares switch (`rules::ares_switch`), with the Ares.dll function
 and the gamemd hook cited next to it. Part 2 (the Buffer and Perf rows at
 the end of the table) also has `sim::ares_bugfixes_buffer_tests` and
 `sim::combat::ares_cliff_tests`.
@@ -18,7 +18,7 @@ allocated for it. Retail registers its list names, except WCLBOLT2 (so the
 Weather Controller shows two bolts) and the systems only DamageParticleSystems
 names (SmallGreySmokeSys). Fixtures that relied on the allocation now
 register their names, and the oracle tests of the original allocation order
-are `cfg(not(feature = "ares"))`.
+run without Ares.
 
 Focused tests: `sim::ares_bugfixes_tests`, plus Ares cases in the owners'
 tests: `techno_ai` (airborne target), `capture_manager_tests` (building
@@ -26,7 +26,7 @@ fate), `unit_repair_seek_tests` (repair bay), `failed_yard_repack_tests`
 (forced MCV Put), `transport_unload` (gunner), `temporal_tests` (Top layer),
 `tesla_charging_tests` (Unit charger), `lifecycle_tests` (wave wall),
 `burst` (kept index). Stock oracle tests whose rows encode a fixed bug take
-the Ares expectation or skip those rows under `ares`: the burst-index
+the Ares expectation or skip those rows when Ares plays: the burst-index
 oracles, `deploy_tests` (Unload return), `recruit_oracle_tests` (rows whose
 squared distances overflow), `genetic_converter_tests` (refused MakeInfantry
 rows) and the client's `pending_production_tests`.
@@ -34,7 +34,7 @@ rows) and the client's `pending_production_tests`.
 Status: **ported**; **presentation** (draws, sounds, UI text: not ported
 unless noted); **n/a** (crash guard for a state VERA cannot reach, or
 DLL/CRT/memory/logging/save plumbing); **equivalent** (VERA already behaves
-as Ares in both builds); **residual** (gameplay, but its host is unported);
+as Ares in every game); **residual** (gameplay, but its host is unported);
 **superweapon** (handed to the superweapon chain).
 
 | gamemd hook | Ares.dll | What Ares changes | Status |
@@ -70,7 +70,7 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x4D5782` | `1005C9F0` | Approach_Target does not chase a passively acquired Target | ported: `foot_approach::approach_foot_target` |
 | `0x4D9EE1` | `1005CA30` | A unit is sold at the depot's dock coordinate | ported: `production::foot_can_be_sold` ([ares-reverse-engineering.md](ares-reverse-engineering.md)) |
 | `0x4DB87E` | `1005CA50` | A Foot's parasite takes its new Location | ported: `ground_pose::foot_set_location` |
-| `0x4FA2E0` | `1005CC10` | SetThreat rejects a negative index | ported: `house_threat::HouseSpatialThreat::adjust` skips a kernel outside its grid in an Ares build, the rebuild's inline kernel too, which natively writes past the grid |
+| `0x4FA2E0` | `1005CC10` | SetThreat rejects a negative index | ported: `house_threat::HouseSpatialThreat::adjust` skips a kernel outside its grid when Ares plays, the rebuild's inline kernel too, which natively writes past the grid |
 | `0x5005CC`, `0x50067C`, `0x5007BE` | `1005CBD0`, `1005CB30`, `1005CBF0` | The infantry production-request flag no longer falls through to the vehicle flag | ported (presentation): `app::sidebar_projection` cameo prediction |
 | `0x50928C` | `1005CC30` | The empty Factory is not deleted (broken destructor) | n/a: Ares leaks the Factory; VERA keeps deleting it (no visible difference) |
 | `0x51DF27` | `1005CD50` | A Teleporter's Limbo clears its Teleport locomotor's Marked coordinate | ported: `lifecycle::techno_limbo_with_context` |

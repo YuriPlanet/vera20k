@@ -1,7 +1,7 @@
 # Optional Ares gate, wall, trench, tunnel and foundation hooks
 
-Build with `--features ares`. Default builds keep every stock path named
-below. This page covers the hooks of `Ext/Building/Hooks.Gates.cpp`,
+Every build takes these hooks when the game plays Ares ([Ares](ares.md));
+other games keep every stock path named below. This page covers the hooks of `Ext/Building/Hooks.Gates.cpp`,
 `Hooks.Infiltrate.cpp` (the sidebar and AllyWith ones), `Hooks.Sensor.cpp`
 (the redraw), `Hooks.Trenches.cpp`, `Hooks.Tunnels.cpp` and
 `Ext/BuildingType/Hooks.cpp` (pips, outline, undeploy) that no other page
@@ -129,7 +129,7 @@ SizeLimit=15              ; the largest Size= that may enter
   Power pips from `width * 60 / 8`, capped by `Storage=` or
   `WeedCapacity=`) is not in VERA either; buildings take the TechnoType
   answer (`0x00716290`), so a retail refinery's pip row has 5 slots where
-  native has 30 (GAREFN, NAREFN) or 15 (YAREFN). Default builds share
+  native has 30 (GAREFN, NAREFN) or 15 (YAREFN). Games without Ares share
   this gap.
 
 ## Hooks

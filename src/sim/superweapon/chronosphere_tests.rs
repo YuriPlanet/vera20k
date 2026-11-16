@@ -610,7 +610,6 @@ fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_carries_a_driving_chrono_miner() {
     use LocomotorKind::{Drive, Teleport};
@@ -697,7 +696,6 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
     use LocomotorKind::{Ship, Teleport};
@@ -1409,7 +1407,6 @@ fn retail_chrono_update_position_matches_native_rows() {
 // replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
 // track to its own coordinates and moves those by the cell offset. Ares
 // coverage: `ares_stock_types_tests`.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_destinations_match_native_rows() {
     if retail_rules().is_none() {

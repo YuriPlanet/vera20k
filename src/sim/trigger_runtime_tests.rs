@@ -4131,7 +4131,6 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
 
 // Ares replaces 60/61 (TEventExt::TechTypeExists 1004FE60): the ares tests
 // cover its case-insensitive first match and owned counts.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     let rules =
@@ -4180,7 +4179,6 @@ fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     assert_eq!(&sim.global_variables()[9..13], &[false; 4]);
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_count_the_last_registered_category_identity() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

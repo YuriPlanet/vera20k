@@ -199,7 +199,8 @@ fn required_corpus() -> AssetManager {
     reject_ambient_write().expect("read-only retail validation");
     let (root, _) =
         super::root::resolve_ra2_dir(None).expect("retail corpus requires RA2_DIR or config.toml");
-    super::root::open_manager(&root, true).expect("mount the complete retail archive corpus")
+    super::root::open_manager(&root, true, Default::default())
+        .expect("mount the complete retail archive corpus")
 }
 
 #[cfg(test)]

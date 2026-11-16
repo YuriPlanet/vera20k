@@ -105,7 +105,6 @@ impl VisceroidScene {
 /// Can_Enter_Cell lets it into that cell (`0x0073F5B5`); gamemd never merges
 /// them, so both are still small visceroids, in one cell. Ares merges them
 /// (`1004C530`, hook `0x00739F21`).
-#[cfg(not(feature = "ares"))]
 #[test]
 fn small_visceroids_seek_each_other_and_stay_small() {
     let Some(mut scene) = two_small_visceroids() else {

@@ -68,7 +68,7 @@ right one; right-click clears the selected superweapon. Clicking the toggle
 collapses or expands the columns and plays the GUI main-button sound, and the
 collapsed state rides the local sidebar envelope in a save. Hovering a cameo
 draws the tooltip-coloured one-pixel outline and the same name/cost tooltip as
-the right cameo. With `--features ares`, a `SidebarPCX=` image replaces the SHP
+the right cameo. When the game plays Ares ([Ares](ares.md)), a `SidebarPCX=` image replaces the SHP
 cameo, and a superweapon with `SW.UseAITargeting=yes` whose
 `SW.AITargeting.Constraints` fail darkens and refuses to launch, on the left
 and, once it can fire, on the right.
@@ -120,7 +120,7 @@ and does not load or redistribute the Phobos DLL.
   sidebar halves the cameo's colour instead.
 - VERA never writes the House's second defensive cell (+0x54F8), so
   `defensive_cell_set` always refuses and `defensive_cell_clear` never does.
-- Builds with Phobos but without Ares do not read Phobos's own copies of
+- In a game without Ares, a Phobos build does not read Phobos's own copies of
   `SidebarPCX`, `Money.Amount` and `SW.UseAITargeting`: the left sidebar draws
   the SHP cameo, never darkens for money, and launches `SW.UseAITargeting`
   types that Phobos without Ares refuses.

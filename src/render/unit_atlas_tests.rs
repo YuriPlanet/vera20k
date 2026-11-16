@@ -832,7 +832,6 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
 }
 
 #[test]
-#[cfg(not(feature = "ares"))]
 fn stock_count_shrink_keeps_the_loaded_native_turret() {
     use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map_with_patch};
     use crate::rules::voxel_frame_catalog::voxel_turret_index;

@@ -7063,8 +7063,8 @@ mod tests {
     }
     /// `0x00713C37`: ReadString 0x80, then each `strtok` token as written to
     /// `ParticleSystemTypeClass::FindOrAllocate` (`0x00644890`).
-    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
-    #[cfg(not(feature = "ares"))]
+    // Read the stock way: Ares reads these lists Find-only through ParseList
+    // (Misc/Bugfixes.Buffer.cpp).
     #[test]
     fn techno_type_parses_damage_particle_systems_csv() {
         let rules = rules(
@@ -7109,10 +7109,7 @@ mod tests {
             sparks("[CYB]\nStrength=90\n[VCYB]\nStrength=90\n"),
             (true, false)
         );
-        // A build with the `ares` feature reads every scope the Ares way.
-        if !cfg!(feature = "ares") {
-            assert_eq!(sparks(""), (false, false));
-        }
+        assert_eq!(sparks(""), (false, false));
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         assert_eq!(sparks(""), (true, false));
     }

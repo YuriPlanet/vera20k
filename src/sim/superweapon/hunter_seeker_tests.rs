@@ -239,7 +239,6 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn hunter_seeker_is_not_admitted_without_ares() {
     let (rules, mut sim, owner, sw_type) = scene();

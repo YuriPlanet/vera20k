@@ -106,7 +106,7 @@ incluidas las extensiones de mods como Ares, debe permanecer desactivada hasta q
 de estas opciones:
 
 - **Una opción de VERA para el jugador**, en **Options**, guardada en la sección `[VERA]` de `VERA.INI`.
-- **Una opción de compilación**, como `--features ares` para las [extensiones de Ares](docs/ares.md)
+- **Una opción de compilación**, como `--features phobos` para las [extensiones de Phobos](docs/phobos.md)
   compatibles.
 - **Una clave INI**, definida por un mod o un mapa.
 

@@ -3587,7 +3587,8 @@ pub(super) fn loading_art_variant_from_launch_country(
 /// answers each loading row's insignia from that row's own HouseType index, so
 /// an added Country draws its `File.Flag` where the stock chain at `0x4E3579`
 /// has no entry. An observer row is not a Country index and keeps the stock
-/// `-3` insignia; a stock build's rules return `None` and keep the table.
+/// `-3` insignia; a game without Ares (`RuleSet::ares`) answers `None` and
+/// keeps the table.
 fn loading_row_insignia(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     variant: Option<LoadingArtVariant>,

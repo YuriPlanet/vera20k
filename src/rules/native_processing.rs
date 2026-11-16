@@ -4625,10 +4625,8 @@ impl Default for NativeRulesRegistryState {
 impl NativeRulesRegistryState {
     /// A fresh RulesClass and empty Type registries, read the Ares way
     /// (Ares' generic prerequisites and armor catalog with them) or the stock
-    /// way for the rest of the process. A build with the `ares` feature reads
-    /// every game the Ares way (`ares_switch::reading_mode`).
+    /// way for the rest of the process.
     pub(crate) fn new(ares_way: bool) -> Self {
-        let ares_way = crate::rules::ares_switch::reading_mode(ares_way);
         // RulesClass constructor values; `GeneralRules::default` owns them.
         let general = crate::rules::ruleset::GeneralRules::default();
         Self {

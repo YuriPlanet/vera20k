@@ -387,7 +387,7 @@ impl ProcessAssets {
                 "sound_count": definitions.sounds().len(),
                 "eva_count": definitions.eva().len(),
             });
-            let source_receipt = if assets.ares_form() {
+            let source_receipt = if assets.ships_ares() {
                 let mut receipt = source_receipt;
                 receipt["additional_indexes"] =
                     serde_json::json!(index.as_ref().map(|loaded| &loaded.additional_sources));
@@ -564,10 +564,8 @@ impl ProcessAssets {
         // setting is On. Such a game adds the byte, so the same files read
         // with and without Ares never agree; with no mod selected and the
         // setting on Auto the installed archive is ignored and adds nothing.
-        // Until the `ares` feature is deleted a build with it writes the byte
-        // for every game, as it always has.
-        if cfg!(feature = "ares") || assets.ships_ares() {
-            bytes.push(u8::from(assets.ships_ares()));
+        if assets.ships_ares() {
+            bytes.push(1);
         }
         // VERA: the player's Ares setting. Off keeps Ares keys from turning
         // Ares on, so such a game never agrees with one set to Auto; Auto

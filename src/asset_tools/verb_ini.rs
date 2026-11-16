@@ -720,8 +720,8 @@ mod tests {
     #[ignore = "requires retail YR installation containing RiverRam.yro; run explicitly"]
     fn retail_yro_scenario_inspection_uses_retained_discovery() {
         let retail = std::path::PathBuf::from(std::env::var("RA2_DIR").expect("set RA2_DIR"));
-        let mut assets =
-            crate::asset_tools::root::open_manager(&retail, false).expect("retail manager");
+        let mut assets = crate::asset_tools::root::open_manager(&retail, false, Default::default())
+            .expect("retail manager");
         let query = IniOptions {
             domain: Some("rules".into()),
             reader: Some("speed".into()),

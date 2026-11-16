@@ -473,9 +473,10 @@ impl VoxQueue {
 #[path = "vox_opening_tests.rs"]
 mod opening_tests;
 
-// Original SetSide/GetFilename hooks are replaced in an Ares build. Its
-// own executed selection controls are covered by ares_eva tests.
-#[cfg(all(test, tests_audio, not(feature = "ares")))]
+// Original SetSide/GetFilename, read the stock way: Ares replaces those
+// hooks, and its own executed selection controls are covered by ares_eva
+// tests.
+#[cfg(all(test, tests_audio))]
 #[path = "eva_selection_tests.rs"]
 mod selection_tests;
 

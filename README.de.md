@@ -104,7 +104,7 @@ VERA20K spielt sich standardmäßig wie das Originalspiel. Jede neue Funktion, a
 aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
 
 - **Eine VERA-Spieleroption** unter **Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
-- **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
+- **Eine Build-Option**, z. B. `--features phobos` für die unterstützten [Phobos-Erweiterungen](docs/phobos.md).
 - **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
 
 Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln

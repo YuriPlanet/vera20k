@@ -1,9 +1,10 @@
 # Optional Ares line of fire, solid buildings and projectile scatter
 
-Build with `--features ares`. Ares replaces the whole line-of-fire walk
-(`0x4CC100`, `0x4CC310`, `0x4CC360`) with `AresTrajectoryHelper` and lets a
-projectile stop at buildings. Default builds keep the original walk with its
-geometry tail (`combat::line_of_fire`) and ignore every key below.
+When a game plays Ares ([Ares](ares.md)), every build replaces the whole
+line-of-fire walk (`0x4CC100`, `0x4CC310`, `0x4CC360`) with Ares'
+`AresTrajectoryHelper` and lets a projectile stop at buildings. Other games keep
+the original walk with its geometry tail (`combat::line_of_fire`) and ignore
+every key below.
 
 ```ini
 [GAPILL]                        ; rulesmd.ini BuildingType
@@ -70,7 +71,7 @@ AlliedSolidTransparency=yes     ; buildings let their owner's allies through
 The restored source steps the walk with `(target - source) * (1.0 / steps)`;
 the 3.0 DLL divides integers (`IDIV` at `1006E411..1006E42B`), which VERA
 follows. The three `0x4CC1xx`/`0x4CC3xx` hooks themselves have no caller in
-an Ares build: their only callers sit inside the code the hooks above skip.
+a game that plays Ares: their only callers sit inside the code the hooks above skip.
 
 `AnimLength` and Ares' own facing conversion of a rotating bullet,
 `0x3FFF - ftol(angle * 65535/2pi)`, which can pick a neighbouring facing at
@@ -87,5 +88,5 @@ DLL, VERA keeps the facing's first frame.
   projectile (`V3AirburstP`) is fired by no weapon. The split keys and the
   airburst tail are in [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md).
 - The original shared probe's oracle vectors
-  (`shared_collision_vectors.json`, which include anchor-bit cliffs) run in
-  default builds only; the Ares bodies are covered by their own tests.
+  (`shared_collision_vectors.json`, which include anchor-bit cliffs) cover
+  the original walk only; the Ares bodies are covered by their own tests.

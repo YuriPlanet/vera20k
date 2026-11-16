@@ -1,7 +1,6 @@
 //! Consumes original execution, never Rust-produced expectations.
 // Ares simulates these Smoke systems itself (hooks 0x62DF05, 0x62FD60): the
-// stock system controls run without the feature; the particle ones run in both.
-#![cfg_attr(feature = "ares", allow(dead_code, unused_imports))]
+// stock system controls hold in a stock game only.
 use super::*;
 use crate::map::bridge_facts::{BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts};
 use crate::map::entities::EntityCategory;
@@ -296,7 +295,6 @@ fn install_system(
     (id, owner)
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_smoke_follows_owner_offset_leaves_trail_and_suppresses_tube_births() {
     let data = corpus();
@@ -398,7 +396,6 @@ fn assert_system(sim: &Simulation, id: u64, owner: Option<u64>, expected: &Value
     }
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_smoke_system_birth_split_emission_cutoff_and_limbo() {
     let data = corpus();
@@ -427,7 +424,6 @@ fn original_smoke_system_birth_split_emission_cutoff_and_limbo() {
     }
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
     let data = corpus();
@@ -475,7 +471,6 @@ fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
     );
 }
 
-#[cfg(not(feature = "ares"))]
 #[test]
 fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
     let data = corpus();

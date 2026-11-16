@@ -643,7 +643,6 @@ fn native_house_result_zero_and_allow_win_heads() {
 }
 
 #[derive(serde::Deserialize)]
-#[cfg(not(feature = "ares"))]
 struct NativeGateCase {
     input: serde_json::Value,
     events: Vec<String>,
@@ -657,7 +656,6 @@ struct NativeGateCase {
 /// (a cancelling sum defeats; BuildRefinery's third type counts only when
 /// set).
 #[test]
-#[cfg(not(feature = "ares"))]
 fn native_defeat_gate_corpus() {
     let cases: Vec<NativeGateCase> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/house_defeat_gate.json",

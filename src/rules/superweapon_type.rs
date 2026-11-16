@@ -2530,13 +2530,13 @@ impl PhobosSuperWeaponAvailability {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_superweapon_eva_uses_fixed_catalog_defaults_and_ordered_retention() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
         use std::sync::Arc;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let eva = Arc::new(EvaRegistry::from_ini(&IniFile::from_str(
             "[DialogList]\n0=EVA_HunterSeekerReady\n1=EVA_HunterSeekerLaunched\n\
              2=EVA_HunterSeekerDetected\n3=Custom\n4=none\n",
@@ -2648,10 +2648,10 @@ mod tests {
 
     use crate::rules::ini_parser::IniFile;
 
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_common_labels_charge_and_launch_fields_retain_ordered_layers() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         let base = IniFile::from_str(
             "[BuildingTypes]\n0=PLANT\n[PLANT]\nStrength=10\n\
              [SuperWeaponTypes]\n0=Seek\n1=Cell\n2=Shield\n\
@@ -2842,9 +2842,8 @@ Type=BogusType
         assert_eq!(default_sw.generic_warhead.as_ref().unwrap().damage, 0);
     }
 
-    #[cfg(not(feature = "ares"))]
     #[test]
-    fn default_build_keeps_unrecognized_types_without_extension_payloads() {
+    fn stock_way_keeps_unrecognized_types_without_extension_payloads() {
         let ini = IniFile::from_str(
             "[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n\
              [Delivery]\nType=UnitDelivery\nDeliver.Types=UNIT\n\
@@ -2869,12 +2868,11 @@ Type=BogusType
         assert!(stock.unit_delivery.is_none());
     }
 
-    /// Without the capability `Type=DropPod` names no Type: the stock reader
+    /// Read the stock way `Type=DropPod` names no Type: the stock reader
     /// keeps the constructor's -1, so nothing drops (Ares SW_DropPod
     /// `1006D7C0` is absent).
-    #[cfg(not(feature = "ares"))]
     #[test]
-    fn default_build_reads_type_drop_pod_as_no_type() {
+    fn stock_way_reads_type_drop_pod_as_no_type() {
         let ini = crate::rules::ini_parser::IniFile::from_str(
             "[Drop]\nType=DropPod\nDropPod.Types=MTNK\n",
         );

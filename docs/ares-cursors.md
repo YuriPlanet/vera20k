@@ -7,9 +7,7 @@ Ares superweapons (`RuleSet::ares_form`, how the Rules were read).
 Only Rules read the Ares way hold the list's lines and the `Cursor.*` keys, so
 a game whose Rules were read the stock way draws the list's defaults. A game
 with neither switch keeps the compiled cursor table (`0x0082D028`) and its
-action switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`). A build
-with the `ares` feature reads every game the Ares way, so there the
-superweapon cursors and the list stay on with retail data too.
+action switches (`DisplayClass::SetCursorFromAction @ 0x004AAE90`).
 
 ```ini
 [MouseCursors]                          ; rulesmd.ini, every Rules pass

@@ -607,16 +607,18 @@ mod tests {
 
     #[test]
     fn mixed_hosts_preserve_gas_source_house_for_allied_and_enemy_receivers() {
-        // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
-        // and never visits their ParticleClass children.
-        let behaviors: &[&str] = if crate::rules::ARES_BUILD {
-            &["Fire"]
-        } else {
-            &["Smoke", "Fire", "Spark"]
-        };
-        for &behavior in behaviors {
-            let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
-                "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            // Ares runs Smoke and Spark hosts itself (hooks 0x62DF05, 0x62FD60)
+            // and never visits their ParticleClass children.
+            let behaviors: &[&str] = if ares_way {
+                &["Fire"]
+            } else {
+                &["Smoke", "Fire", "Spark"]
+            };
+            for &behavior in behaviors {
+                let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+                    "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
                  [TARGET]\nStrength=100\nArmor=light\n\
                  [ParticleSystems]\n0=HOST\n[HOST]\nBehavesLike={behavior}\n\
                  [Particles]\n0=CLOUD\n[CLOUD]\nBehavesLike=Gas\nMaxEC=100\n\
@@ -624,62 +626,63 @@ mod tests {
                  EndStateAI=10\nDeleteOnStateLimit=no\n[Warheads]\n0=PSYCH\n\
                  [PSYCH]\nPsychedelic=yes\n\
                  Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
-            ));
-            let rules = RuleSet::from_ini(&ini).unwrap();
-            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
-            sim.session.set_binary_frame_for_test(1);
-            let owner = sim.interner.intern("Americans");
-            let host = sim
-                .spawn_particle_system(
-                    rules.ps_type_id_by_name("HOST").unwrap(),
-                    IVec3::ZERO,
-                    None,
-                    None,
-                    IVec3::ZERO,
-                    Some(owner),
-                    &rules,
-                )
-                .unwrap();
-            sim.substrate
-                .particle_systems
-                .get_mut(host)
-                .unwrap()
-                .done_spawning = true;
-            let mut targets = Vec::new();
-            for (country, x) in [("Americans", 20), ("Russians", 24)] {
-                let target = sim
-                    .spawn_object("TARGET", country, x, 20, 0, &rules)
+                ));
+                let rules = RuleSet::from_ini(&ini).unwrap();
+                let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+                sim.session.set_binary_frame_for_test(1);
+                let owner = sim.interner.intern("Americans");
+                let host = sim
+                    .spawn_particle_system(
+                        rules.ps_type_id_by_name("HOST").unwrap(),
+                        IVec3::ZERO,
+                        None,
+                        None,
+                        IVec3::ZERO,
+                        Some(owner),
+                        &rules,
+                    )
                     .unwrap();
-                let kind = rules.p_type_id_by_name("CLOUD").unwrap();
-                let cloud = Particle::new(
-                    kind,
-                    IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
-                    IVec3::ZERO,
-                    rules.particle_type(kind),
-                    &mut sim,
-                );
                 sim.substrate
                     .particle_systems
                     .get_mut(host)
                     .unwrap()
-                    .particles
-                    .push(cloud);
-                targets.push(target);
+                    .done_spawning = true;
+                let mut targets = Vec::new();
+                for (country, x) in [("Americans", 20), ("Russians", 24)] {
+                    let target = sim
+                        .spawn_object("TARGET", country, x, 20, 0, &rules)
+                        .unwrap();
+                    let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+                    let cloud = Particle::new(
+                        kind,
+                        IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
+                        IVec3::ZERO,
+                        rules.particle_type(kind),
+                        &mut sim,
+                    );
+                    sim.substrate
+                        .particle_systems
+                        .get_mut(host)
+                        .unwrap()
+                        .particles
+                        .push(cloud);
+                    targets.push(target);
+                }
+                assert!(tick_particle_system(
+                    &mut sim,
+                    &rules,
+                    host,
+                    crate::sim::world::UninitContext::with_rules(&rules),
+                ));
+                assert!(
+                    !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
+                    "{behavior}: the source house protects its ally from Psychedelic"
+                );
+                assert!(
+                    sim.entities().get(targets[1]).unwrap().berserk.is_active(),
+                    "{behavior}: the enemy control must reach the same real damage receiver"
+                );
             }
-            assert!(tick_particle_system(
-                &mut sim,
-                &rules,
-                host,
-                crate::sim::world::UninitContext::with_rules(&rules),
-            ));
-            assert!(
-                !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
-                "{behavior}: the source house protects its ally from Psychedelic"
-            );
-            assert!(
-                sim.entities().get(targets[1]).unwrap().berserk.is_active(),
-                "{behavior}: the enemy control must reach the same real damage receiver"
-            );
         }
     }
 

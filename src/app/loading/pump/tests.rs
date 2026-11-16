@@ -553,7 +553,6 @@ pub(super) fn test_audio() -> crate::app::audio_runtime::AppAudioRuntime {
 /// loading-job lease*, and the audio pump's Theme poll must keep reaching
 /// AI while that lease is out. Exercises the production leaf that
 /// `begin_loading` calls and the resolver `pump_audio_service` uses.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn begin_loading_plays_loading_theme_and_polls_theme_through_the_lease() {
     let dir = std::env::temp_dir().join(format!("vera20k-loading-theme-{}", std::process::id()));
@@ -817,123 +816,130 @@ fn loading_replacement_and_terminal_retirement_preserve_cache_and_admission_orde
 #[test]
 #[ignore = "requires RA2_DIR with the retail game files"]
 fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_admission_failures() {
-    let ra2_dir = PathBuf::from(std::env::var_os("RA2_DIR").expect("RA2_DIR"));
-    let dir = std::env::temp_dir().join(format!(
-        "vera20k-loading-preparation-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let map_path = dir.join("mp01t4.map");
-    #[allow(unused_mut)]
-    let mut retail_assets = AssetManager::new(
-        &ra2_dir,
-        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
-    )
-    .unwrap();
-    for name in ["rulesmd.ini", "artmd.ini", "soundmd.ini", "evamd.ini"] {
-        std::fs::write(
-            dir.join(name),
-            retail_assets.get_ref(name).expect("retail INI"),
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let ra2_dir = PathBuf::from(std::env::var_os("RA2_DIR").expect("RA2_DIR"));
+        let dir = std::env::temp_dir().join(format!(
+            "vera20k-loading-preparation-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let map_path = dir.join("mp01t4.map");
+        let mut retail_assets = AssetManager::new(
+            &ra2_dir,
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         )
         .unwrap();
-    }
-    // Still on the feature: this test opens no scope, so its owner reads the
-    // Ares way only in a build with it (`ares_switch::reading_mode`).
-    #[cfg(feature = "ares")]
-    {
-        retail_assets.register_loading_archives().unwrap();
-        std::fs::write(
-            dir.join("mplsa.pal"),
-            retail_assets.get_ref("mplsa.pal").unwrap(),
-        )
-        .unwrap();
-    }
-    let map_bytes = retail_assets
-        .get("Fight.MAP")
-        .expect("retail Fight.MAP fixture");
-    std::fs::write(&map_path, map_bytes).unwrap();
-    std::fs::write(dir.join("sentinel.bin"), b"keep this cache").unwrap();
-    let mut assets = crate::app::process_assets::ProcessAssets::new(
-        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
-        false,
-    );
-    assets.return_from_loading(AssetManager::from_loose_root_for_test(&dir));
-    let original = assets
-        .manager()
-        .unwrap()
-        .load_file_from_mix("sentinel.bin")
-        .unwrap();
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.selected_map_file = Some(map_path.to_string_lossy().into_owned());
-    let request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(7));
-    let mut session = LoadingSession::from_request(request);
-    session.job.asset_manager = assets.lease_for_loading();
-    let mut retention = crate::app::shell_random_map::RandomMapGenerationRetention::default();
-    #[cfg(feature = "ares")]
-    {
-        ensure_session_job_asset_manager(&mut assets, &mut session, Some(ra2_dir.clone())).unwrap();
-        assets.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), 0);
-        assets.refresh_multiplayer_country_bodies();
-    }
-    let session = prepare_loading_session(
-        &mut assets,
-        &mut test_audio(),
-        &mut retention,
-        None,
-        session,
-        true,
-        Some(ra2_dir.clone()),
-        None,
-    )
-    .unwrap();
-    assert_eq!(session.next_frame, NextLoadingFrame::Blank);
-    assert_eq!(
-        session.native.as_ref().unwrap().progress.current_value(),
-        0.0
-    );
-    let LoadingStage::Prepared(prepared) = &session.stage else {
-        panic!("prepared payload");
-    };
-    assert_eq!(
-        prepared.context.physical_source(),
-        prepared.initial.map_source()
-    );
-    assert_eq!(prepared.context.signed_new_ini_format(), 4);
-    assert!(!prepared.initial.map_data().waypoints.is_empty());
-    session.retire(&mut assets);
-
-    for (selected, expected_error) in [
-        (map_path.to_string_lossy().into_owned(), "Generic startup"),
-        (
-            dir.join("absent.map").to_string_lossy().into_owned(),
-            "absent.map",
-        ),
-    ] {
-        let mut session = LoadingSession::from_request(LoadingRequest::generic_map_load(selected));
+        for name in ["rulesmd.ini", "artmd.ini", "soundmd.ini", "evamd.ini"] {
+            std::fs::write(
+                dir.join(name),
+                retail_assets.get_ref(name).expect("retail INI"),
+            )
+            .unwrap();
+        }
+        // Preparing a game read the Ares way also reads the Country's loading
+        // palette (`MPLSU.PAL` for America, `rules::country_loading`) from
+        // this root.
+        if ares_way {
+            retail_assets.register_loading_archives().unwrap();
+            std::fs::write(
+                dir.join("mplsu.pal"),
+                retail_assets.get_ref("mplsu.pal").unwrap(),
+            )
+            .unwrap();
+        }
+        let map_bytes = retail_assets
+            .get("Fight.MAP")
+            .expect("retail Fight.MAP fixture");
+        std::fs::write(&map_path, map_bytes).unwrap();
+        std::fs::write(dir.join("sentinel.bin"), b"keep this cache").unwrap();
+        let mut assets = crate::app::process_assets::ProcessAssets::new(
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+            false,
+        );
+        assets.return_from_loading(if ares_way {
+            AssetManager::from_loose_root_with_ares_for_test(&dir)
+        } else {
+            AssetManager::from_loose_root_for_test(&dir)
+        });
+        let original = assets
+            .manager()
+            .unwrap()
+            .load_file_from_mix("sentinel.bin")
+            .unwrap();
+        let mut launch = test_launch_session(LaunchCountry::America);
+        launch.selected_map_file = Some(map_path.to_string_lossy().into_owned());
+        let request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(7));
+        let mut session = LoadingSession::from_request(request);
         session.job.asset_manager = assets.lease_for_loading();
-        let err = prepare_loading_session(
+        let mut retention = crate::app::shell_random_map::RandomMapGenerationRetention::default();
+        if ares_way {
+            ensure_session_job_asset_manager(&mut assets, &mut session, Some(ra2_dir.clone()))
+                .unwrap();
+            assets.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), 0);
+            assets.refresh_multiplayer_country_bodies();
+        }
+        let session = prepare_loading_session(
             &mut assets,
             &mut test_audio(),
             &mut retention,
             None,
             session,
-            false,
+            true,
             Some(ra2_dir.clone()),
             None,
         )
-        .err()
         .unwrap();
-        assert!(format!("{err:#}").contains(expected_error), "{err:#}");
-        assert!(assets.is_available() && !assets.is_leased());
-        assert!(std::sync::Arc::ptr_eq(
-            &original.bytes,
-            &assets
-                .manager()
-                .unwrap()
-                .load_file_from_mix("sentinel.bin")
-                .unwrap()
-                .bytes
-        ));
+        assert_eq!(session.next_frame, NextLoadingFrame::Blank);
+        assert_eq!(
+            session.native.as_ref().unwrap().progress.current_value(),
+            0.0
+        );
+        let LoadingStage::Prepared(prepared) = &session.stage else {
+            panic!("prepared payload");
+        };
+        assert_eq!(
+            prepared.context.physical_source(),
+            prepared.initial.map_source()
+        );
+        assert_eq!(prepared.context.signed_new_ini_format(), 4);
+        assert!(!prepared.initial.map_data().waypoints.is_empty());
+        session.retire(&mut assets);
+
+        for (selected, expected_error) in [
+            (map_path.to_string_lossy().into_owned(), "Generic startup"),
+            (
+                dir.join("absent.map").to_string_lossy().into_owned(),
+                "absent.map",
+            ),
+        ] {
+            let mut session =
+                LoadingSession::from_request(LoadingRequest::generic_map_load(selected));
+            session.job.asset_manager = assets.lease_for_loading();
+            let err = prepare_loading_session(
+                &mut assets,
+                &mut test_audio(),
+                &mut retention,
+                None,
+                session,
+                false,
+                Some(ra2_dir.clone()),
+                None,
+            )
+            .err()
+            .unwrap();
+            assert!(format!("{err:#}").contains(expected_error), "{err:#}");
+            assert!(assets.is_available() && !assets.is_leased());
+            assert!(std::sync::Arc::ptr_eq(
+                &original.bytes,
+                &assets
+                    .manager()
+                    .unwrap()
+                    .load_file_from_mix("sentinel.bin")
+                    .unwrap()
+                    .bytes
+            ));
+        }
     }
 }
 

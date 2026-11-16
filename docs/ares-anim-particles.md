@@ -1,12 +1,12 @@
 # Optional Ares anim and particle extensions
 
-Build with `--features ares`. Ares 3.0's AnimTypeExt (`Ext/AnimType`),
-ParticleTypeExt (`Ext/ParticleType`) and ParticleSystemExt
-(`Ext/ParticleSystem`). The AnimType keys are read from the anim's ART
+This page covers Ares 3.0's AnimTypeExt (`Ext/AnimType`), ParticleTypeExt
+(`Ext/ParticleType`) and ParticleSystemExt (`Ext/ParticleSystem`), which every
+build runs when the game plays Ares ([Ares](ares.md)). The AnimType keys are read from the anim's ART
 section by `AnimTypeExt::LoadFromINIFile` (`1000A4B0`, hook
 `1000A760` at `0x4287DC`/`0x4287E9`), after the original body; the ParticleType keys from
-its rules section (`100291A0`, hook `10029230` at `0x645405`). Default builds read none of
-them.
+its rules section (`100291A0`, hook `10029230` at `0x645405`). A game without Ares uses
+none of them.
 
 Focused tests: `sim::ares_anim_type_tests`, `sim::particles::ares_gas_tests`,
 `sim::particles::ares_system::tests`.
@@ -40,9 +40,8 @@ qualifies. Such a system keeps two record vectors instead of
 ParticleClass children and draws from the synchronised Scenario stream in Ares' own
 order, so the records are simulation state: they are saved with the system
 (`ParticleSystem::ares`) and folded into the world hash. Owner: `sim::particles::ares_system`.
-Unlike the type keys above it is in every build: the constructor allocates the extension
-whenever the game's Ares switch (`RuleSet::ares`) is on, so retail data keeps the stock
-particles.
+The constructor allocates the extension whenever the game's Ares switch
+(`RuleSet::ares`) is on, so retail data keeps the stock particles.
 
 | Hook | Ares.dll | Behaviour | Status |
 | --- | --- | --- | --- |

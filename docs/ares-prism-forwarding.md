@@ -1,7 +1,7 @@
 # Optional Ares Prism forwarding
 
-Build with `--features ares`. Default builds ignore every key below and keep
-the stock Prism support: one supporter recruited per Mission_Attack visit,
+When a game plays Ares ([Ares](ares.md)), every build plays the keys below.
+Other games ignore them and keep the stock Prism support: one supporter recruited per Mission_Attack visit,
 the bonus counted in `+0x664`.
 
 ```ini
@@ -22,7 +22,7 @@ PrismForwarding.SupportWeapon=SupBeam   ; written to the first free slot of 2..1
 PrismForwarding.EliteSupportWeapon=     ; same, elite array
 ```
 
-## Behaviour in Ares builds
+## Behaviour in Ares games
 
 - A firing tower recruits its whole network in one Mission_Attack visit,
   stage by stage, nearest first: each tower in range (the support weapon's

@@ -62,12 +62,11 @@ fn audio_bags_catalog(ships_ares: bool) {
         MediaArchiveMode::STOCK_DIGITAL,
     )
     .unwrap();
-    assert_eq!(manager.ares_form(), ships_ares || cfg!(feature = "ares"));
+    assert_eq!(manager.ships_ares(), ships_ares);
     let loaded = manager.load_audio_index().unwrap().unwrap();
     let (entry, bytes) = loaded.index.get("VoIcE").unwrap();
-    // Ares' appended bags belong to a game that ships `ares.mix` (and to a
-    // build with the `ares` feature in every game).
-    let ares = manager.ares_form();
+    // Ares' appended bags belong to a game that ships `ares.mix`.
+    let ares = manager.ships_ares();
     let expected = if ares { 1003 } else { 1000 };
     assert_eq!(entry.offset, 2, "never rebased into a concatenated file");
     assert_eq!(entry.sample_rate, if ares { 22053 } else { 22050 });
@@ -131,7 +130,7 @@ fn audio_bags_missing_base_partial_bad_and_late_pairs_do_not_block_valid_extra()
         "bulk mount exists later"
     );
     let loaded = manager.load_audio_index().unwrap();
-    if manager.ares_form() {
+    if manager.ships_ares() {
         let loaded = loaded.unwrap();
         assert_eq!(loaded.sources.idx.entry_id, mix_hash("audio02.idx"));
         assert!(loaded.additional_sources.is_empty());

@@ -1,8 +1,8 @@
 //! CSF string table parser — localized text for RA2/YR UI, EVA, and menus.
 //!
 //! Active Yuri's Revenge initializes only `ra2md.csf` from the retail language
-//! archive stack. Optional Ares builds compose its supplemental tables through
-//! [`CsfFile::load_active`]. Each entry maps a label name (e.g., `"NAME:MTNK"`) to a
+//! archive stack. A game that ships `ares.mix` composes its supplemental tables
+//! through [`CsfFile::load_active`]. Each entry maps a label name (e.g., `"NAME:MTNK"`) to a
 //! Unicode display string (e.g., `"Grizzly Battle Tank"`).
 //!
 //! ## Binary format
@@ -152,7 +152,7 @@ impl CsfFile {
     /// The process string table used by both the game and asset diagnostics.
     /// Stock YR loads the md table alone. Installed Ares6BD886->10060DF0
     /// appends its fixed candidates, for a game whose files take Ares' forms
-    /// (`ares`, `AssetManager::ares_form`); native controls:
+    /// (`ares`, `AssetManager::ships_ares`); native controls:
     /// tools/rules_oracle/ares_csf.
     pub fn load_active<'a>(
         ares: bool,

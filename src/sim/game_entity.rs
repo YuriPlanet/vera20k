@@ -1163,7 +1163,7 @@ mod gunner;
 mod simple_deploy;
 mod voxel_recoil;
 
-#[cfg(all(test, not(feature = "ares")))]
+#[cfg(test)]
 #[test]
 fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
     let mut entity = GameEntity::test_default_of_category(

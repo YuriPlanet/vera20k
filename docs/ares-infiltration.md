@@ -1,9 +1,9 @@
 # Optional Ares building infiltration and sabotage
 
-Build with `--features ares` to let a BuildingType choose what a spy does to
-it and to let infantry blow buildings up on entry. Default builds keep the
-original one-arm infiltration (`BuildingClass::Infiltrate @ 0x004571E0`);
-INI keys cannot enable the extension there.
+When a game plays Ares ([Ares](ares.md)), every build lets a BuildingType
+choose what a spy does to it and lets infantry blow buildings up on entry.
+Other games keep the original one-arm infiltration
+(`BuildingClass::Infiltrate @ 0x004571E0`).
 
 ```ini
 [BANK]                                  ; rulesmd.ini BuildingType

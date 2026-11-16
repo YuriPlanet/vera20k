@@ -1,9 +1,10 @@
 # Optional Ares audio bags
 
-`--features ares` extends the existing process audio owner to read `audio`,
-`ares`, then `audio01` through `audio99`, at the existing early audio-selection
-boundary. Without that compile feature, only the original `audio.idx`/`audio.bag`
-pair and strict version1/version2 reader remain. No mod names, archive aliases,
+In a game that ships `ares.mix` (`AssetManager::ships_ares`,
+[Ares](../../docs/ares.md)), every build extends the existing process audio owner
+to read `audio`, `ares`, then `audio01` through `audio99`, at the existing early
+audio-selection boundary. Any other game keeps only the original
+`audio.idx`/`audio.bag` pair and strict version1/version2 reader. No mod names, archive aliases,
 resource extraction or asset payloads are part of this implementation.
 
 ## Native behavior established
@@ -71,7 +72,7 @@ Rust consumes these results in `assets::audio_bag::native_tests`. The connected
 SoundRegistry and existing PCM decoder with synthetic archives. It covers all
 four priority levels, correct overriding sample bytes and metadata, a cue in an
 extra bag, missing base/partial/malformed pairs, and later bulk-mount exclusion.
-The same integration tests run with and without the Ares feature. The shared
+The same integration tests run for a game with and without `ares.mix`. The shared
 test IDX writer emits retail version2 bytes accepted by both native policies.
 
 These controls do **not** demonstrate whole-game audio parity. Hook installation,
@@ -85,5 +86,5 @@ are unchanged and are separate from multiple-BAG lookup.
 
 `ProcessAudioCatalog` remains immutable across maps; the same index binds every
 playback consumer. Its source receipt reports the first admitted pair and all
-additional pairs in append order. Feature-off JSON has its original shape.
+additional pairs in append order. Without `ares.mix` the JSON has its original shape.
 Only the owner’s normal process retirement releases these retained buffers.

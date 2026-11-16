@@ -2400,62 +2400,64 @@ mod tests {
 
     #[test]
     fn read_houses_list_matches_native_exact_lookup_and_default_controls() {
-        let native = crate::test_fixture::json(if crate::rules::ARES_BUILD {
-            "tools/input_oracle/ares_allies_reader.json"
-        } else {
-            "tools/input_oracle/campaign_start_houses.json"
-        });
-        let controls = &native["allies_reader_controls"];
-        assert_eq!(controls["delimiter_hex"], "2c00");
-        let names: Vec<_> = controls["registry"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect();
-        let rows = controls["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 27);
-        for row in rows {
-            let mut ini = IniFile::empty();
-            let section = ini.projection_section_mut("Control");
-            for (key, value) in row["sections"]["Control"].as_object().unwrap() {
-                section.set(key, value.as_str().unwrap());
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json(if ares_way {
+                "tools/input_oracle/ares_allies_reader.json"
+            } else {
+                "tools/input_oracle/campaign_start_houses.json"
+            });
+            let controls = &native["allies_reader_controls"];
+            assert_eq!(controls["delimiter_hex"], "2c00");
+            let names: Vec<_> = controls["registry"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect();
+            let rows = controls["rows"].as_array().unwrap();
+            assert_eq!(rows.len(), 27);
+            for row in rows {
+                let mut ini = IniFile::empty();
+                let section = ini.projection_section_mut("Control");
+                for (key, value) in row["sections"]["Control"].as_object().unwrap() {
+                    section.set(key, value.as_str().unwrap());
+                }
+                let actual = section.read_houses_list(
+                    "Allies",
+                    row["default"].as_u64().unwrap() as u32,
+                    |name| names.iter().position(|candidate| *candidate == name),
+                );
+                assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
             }
-            let actual = section.read_houses_list(
-                "Allies",
-                row["default"].as_u64().unwrap() as u32,
-                |name| names.iter().position(|candidate| *candidate == name),
-            );
-            assert_eq!(actual, row["result"].as_u64().unwrap() as u32, "{row}");
         }
     }
 
     #[test]
     fn read_houses_list_matches_extended_native_buffer_controls() {
-        let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
-        let feature = if crate::rules::ARES_BUILD {
-            "ares"
-        } else {
-            "stock"
-        };
-        for row in native["extended_controls"].as_array().unwrap() {
-            // Exercise ReadString's buffer limit directly. Physical INI line
-            // admission belongs to the lexer, independently of this reader.
-            let mut ini = IniFile::empty();
-            let section = ini.projection_section_mut("Control");
-            section.set("Allies", row["value"].as_str().unwrap());
-            let names = row["registry"].as_array().unwrap();
-            let actual = section.read_houses_list("Allies", 0, |name| {
-                names
-                    .iter()
-                    .position(|candidate| candidate.as_str() == Some(name))
-            });
-            assert_eq!(
-                actual,
-                row["observations"][feature]["result"].as_u64().unwrap() as u32,
-                "{} ({feature})",
-                row["name"],
-            );
+        for ares_way in [false, true] {
+            let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+            let native = crate::test_fixture::json("tools/input_oracle/ares_allies_reader.json");
+            let feature = if ares_way { "ares" } else { "stock" };
+            for row in native["extended_controls"].as_array().unwrap() {
+                // Exercise ReadString's buffer limit directly. Physical INI line
+                // admission belongs to the lexer, independently of this reader.
+                let mut ini = IniFile::empty();
+                let section = ini.projection_section_mut("Control");
+                section.set("Allies", row["value"].as_str().unwrap());
+                let names = row["registry"].as_array().unwrap();
+                let actual = section.read_houses_list("Allies", 0, |name| {
+                    names
+                        .iter()
+                        .position(|candidate| candidate.as_str() == Some(name))
+                });
+                assert_eq!(
+                    actual,
+                    row["observations"][feature]["result"].as_u64().unwrap() as u32,
+                    "{} ({feature})",
+                    row["name"],
+                );
+            }
         }
     }
 

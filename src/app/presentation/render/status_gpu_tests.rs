@@ -607,7 +607,6 @@ fn native_carrier_spawn_pips_preserve_color_a_z_and_parent_order() {
 }
 
 // Ares GetPassengerPips (10044C90, hook 0x709D38) starts at the cargo tail.
-#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; original Bio Reactor PIPS cargo-head order and Building pip rows"]
 fn native_bio_reactor_pips_preserve_color_a_z_and_parent_order() {
@@ -744,7 +743,6 @@ fn native_self_heal_draw_fault_order() {
 
 // Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C) replaces
 // the wrench frame.
-#[cfg(not(feature = "ares"))]
 #[test]
 #[ignore = "requires retail assets and GPU; original GAPOWR wrench prefix, MOUSEPAL N1 and both Extras visits"]
 fn native_repair_wrenches_preserve_color_a_z_and_parent_order() {

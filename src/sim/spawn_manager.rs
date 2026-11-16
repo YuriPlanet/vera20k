@@ -494,7 +494,7 @@ pub fn init_spawn_manager(
 
     let missile_family = rules.missile_spawn.family_of(spawn_type_name);
     // The node flag and the post-launch wait: the three Rules families, and
-    // in Ares builds a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
+    // in an Ares game a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
     let kamikaze_wait_frames = rules.spawn_missile_wait_frames(spawn_type_name);
     let is_missile_spawn = kamikaze_wait_frames.is_some();
     let frame = frame as i32;
@@ -557,7 +557,7 @@ trait SpawnHost {
     /// The pool's type is Rules' `CMislType=` (`0x006B74BC`, `0x006B7513`).
     fn pool_is_cmisl(&self) -> bool;
     /// The pool's nodes are missiles: its type is one of the three Rules
-    /// families (`0x006B78F8..0x006B790E`), or in Ares builds a
+    /// families (`0x006B78F8..0x006B790E`), or in an Ares game a
     /// `Missile.Custom` type (SpawnManagerClass_Update_CustomMissile
     /// 100613A0).
     fn pool_is_spawn_missile(&self) -> bool;

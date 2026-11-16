@@ -35,7 +35,6 @@ fn spark_rules() -> RuleSet {
 /// Frame and the ID, the two Scenario draws (Y, then X) and the system's
 /// constructor arguments. Ares hook736135 adds an IsPowered veto to this
 /// stock block (`powered_by_tests`), which these untyped rows would hit.
-#[cfg(not(feature = "ares"))]
 #[test]
 fn offline_sparks_match_original_execution() {
     let vectors: serde_json::Value =
