@@ -88,6 +88,10 @@ pub enum LanTarget {
     /// both players to the kept room on the next stage, and the host starts it.
     OnlineCoopHost,
     OnlineCoopGuest,
+    /// A third account watches the host's running match from the lobby's
+    /// watch list, past its catch-up, follows the next player with Tab and
+    /// leaves with Escape.
+    OnlineWatch,
     LiveHost,
     LiveGuest,
     LiveTimeoutHost,
@@ -236,6 +240,7 @@ pub(crate) const LAN_CHECKPOINTS: &[(&str, LanTarget)] = &[
     ("online-live-failure-guest", LanTarget::OnlineFailureGuest),
     ("online-live-coop-host", LanTarget::OnlineCoopHost),
     ("online-live-coop-guest", LanTarget::OnlineCoopGuest),
+    ("online-live-watch", LanTarget::OnlineWatch),
     ("lan-live-host", LanTarget::LiveHost),
     ("lan-live-guest", LanTarget::LiveGuest),
     ("lan-live-timeout-host", LanTarget::LiveTimeoutHost),
@@ -347,6 +352,7 @@ impl LanTarget {
                 | Self::OnlineFailureGuest
                 | Self::OnlineCoopHost
                 | Self::OnlineCoopGuest
+                | Self::OnlineWatch
         )
     }
     pub(crate) fn online_failure(self) -> bool {
@@ -374,6 +380,7 @@ impl LanTarget {
                 | Self::OnlineFailureGuest
                 | Self::OnlineCoopHost
                 | Self::OnlineCoopGuest
+                | Self::OnlineWatch
                 | Self::LiveHost
                 | Self::LiveGuest
                 | Self::LiveTimeoutHost

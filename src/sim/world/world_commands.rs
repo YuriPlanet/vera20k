@@ -2493,14 +2493,16 @@ impl Simulation {
                 }
                 // A Simulation without a current House (diagnostic and replay
                 // drivers) has no remote senders. A shared House's senders
-                // are told apart by their own sources.
-                let local = match (self.session.local_shared_house_source(), sender) {
-                    (Some(local), Some(sender)) => local == sender,
-                    _ => self
-                        .session
-                        .current_house()
-                        .is_none_or(|local| local == owner),
-                };
+                // are told apart by their own sources. A watcher sends
+                // nothing: the followed player's EXIT is a remote one too.
+                let local = !self.session.watcher()
+                    && match (self.session.local_shared_house_source(), sender) {
+                        (Some(local), Some(sender)) => local == sender,
+                        _ => self
+                            .session
+                            .current_house()
+                            .is_none_or(|local| local == owner),
+                    };
                 if local {
                     // The local sender's EventClass__Execute (0x004C7903)
                     // writes the termination byte at 0x004C7917. The app

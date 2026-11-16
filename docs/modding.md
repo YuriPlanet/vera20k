@@ -112,6 +112,7 @@ run it.
 | `ares.mix` | Makes the game an [Ares](ares.md) game: its INIs load with Ares' syntax and `[#include]`, and its rules are read the Ares way. Read after the `expandmd` archives and before the game's own, as Ares reads it. The string tables `ares.csf` and `ares_<language>.csf` in it add to the game's text. |
 | An archive whose name starts with `ecache` or `elocal`, such as `ecachemd01.mix` | Adds the files inside it, as the original game does. All `ecache` archives load before all `elocal` ones, each group by name. They load after the `expandmd` archives and the game's main, cache and local archives, which keep a file name they share, and before the game's art, cameo and theater archives, whose copies they replace. |
 | Maps | Adds them to the map list while the mod is in use. |
+| Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Says what the mod is called, who made it and what it is. Optional. |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
@@ -264,6 +265,35 @@ mod's.
 Put your version in your mod's folder under the same name, such as `rulesmd.ini` or
 `aimd.ini`. To add new units, buildings or weapons, add them to `rulesmd.ini` and
 `artmd.ini` as in the original, and put their art in the same folder.
+
+### Add to every map
+
+Some files are made to be added to a map, such as an AI's teams and triggers. Put such a
+file, as its maker ships it, in a folder of its own in `Mods`, such as
+`Mods/Stronger AI/Stronger AI.ini`, and [pick that folder](#pick-a-mod). The game then
+adds the file to the map of every Skirmish and online match. Campaign missions,
+cooperative ones too, and random maps play without it.
+
+This works only while the folder holds nothing else the game reads. Besides INI files
+with names the game doesn't use, it may hold notes and pictures (such as `.txt`, `.md`,
+`.pdf` and `.png` files, or a `LICENSE`), subfolders, `mod.ini`, `veraui.ini` and
+`mod-files.txt`. Names that end in `md.ini`, such as `rulesmd.ini` or a mission's
+`all04dmd.ini`, belong to the game. A folder with such a file, or any other, such as an
+archive, is an ordinary mod and adds nothing to maps. The game's log says which files it
+adds.
+
+- Where the map and the file set the same key, the file's value wins, as launchers merge
+  such files. Everything else in the file is added, sections and keys.
+- With more than one such file, they are added in the order of their names, so a later
+  file's value wins.
+- A list such as `[TeamTypes]` takes the file's entries under their own keys. An entry
+  under a key the map already uses replaces the map's, so files made for adding give
+  each entry a key of its own.
+- Keys that only Ares reads work only in an [Ares](ares.md) game.
+- The game reads the files once when it starts: restart it after you change one.
+  Everyone in an online match needs the same files, as with any mod.
+- If a file can't be read, the game names it when a match starts. Fix the file, or pick
+  another mod.
 
 ### Add a map
 

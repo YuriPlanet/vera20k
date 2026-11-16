@@ -17,7 +17,7 @@ use std::sync::{
 
 use super::wire::EventBatch;
 use crate::ui::chat_translation::{ChatLanguage, ChatReply};
-use super::wire::{ChannelList, Envelope, Session};
+use super::wire::{ChannelList, Envelope, Match, MatchList, Session};
 use serde_json::Value;
 use serde_json::json;
 
@@ -34,6 +34,9 @@ pub(super) enum Request {
         seed_digest: String,
         digest: String,
         offset: usize,
+        /// A watcher's download names the match it watches
+        /// (docs/lobby-protocol.md "Watching").
+        match_id: Option<String>,
     },
     UploadMapChunk {
         transfer: u64,
@@ -88,6 +91,8 @@ pub(super) enum Request {
         resume: Option<(String, u64)>,
     },
     Channels(u32),
+    /// `GET /v1/matches`, answered by [`Response::Matches`].
+    Matches,
     Command {
         id: u64,
         operation: &'static str,
@@ -279,6 +284,9 @@ pub(super) enum Response {
         message: Option<String>,
     },
     Channels(ChannelList),
+    /// The matches the player can watch, or `None` from a lobby from before
+    /// watching, which answers 404.
+    Matches(Option<Vec<Match>>),
     Event(Envelope),
     CommandCompleted {
         id: u64,
@@ -497,6 +505,16 @@ impl RequestFailure {
                 code: 0x8004_0070,
             },
             Some("unknown_match") if status == 409 => Self::AlreadyFinished,
+            // A `watch` while this player plays, or of a match with all its
+            // watchers (docs/lobby-protocol.md "Watching").
+            Some("match_active") if status == 409 => Self::ChannelRejected {
+                status,
+                code: crate::app::shell_wol::lobby::WATCH_MATCH_ACTIVE,
+            },
+            Some("watchers_full") if status == 409 => Self::ChannelRejected {
+                status,
+                code: crate::app::shell_wol::lobby::WATCHERS_FULL,
+            },
             Some("invalid_options") if status == 400 => Self::InvalidOptions,
             Some("maintenance") if status == 503 => {
                 Self::Maintenance(plain_message(value.as_ref()))
@@ -567,6 +585,10 @@ impl RequestFailure {
     fn command_failure(&self, operation: &str) -> CommandFailure {
         match self {
             Self::AlreadyFinished if operation == "finish" => CommandFailure::AlreadyFinished,
+            // `watch` of a match that ended or that this player may not watch.
+            Self::AlreadyFinished if operation == "watch" => {
+                CommandFailure::Rejected(crate::app::shell_wol::lobby::WATCH_UNKNOWN_MATCH)
+            }
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
             Self::InvalidOptions => CommandFailure::InvalidOptions,
             _ if matches!(self.status(), 0 | 429 | 500..=599) => CommandFailure::Retryable,
@@ -1073,11 +1095,13 @@ macro_rules! serial_driver {
                 seed_digest,
                 digest,
                 offset,
+                match_id,
             }) => {
                 let result = if crate::map::source::valid_source_sha256(&digest) {
+                    let watched = match_id.map_or_else(String::new, |id| format!("&match_id={id}"));
                     platform_await!(client.request(
                         &format!(
-                            "/v1/maps/{seed_digest}?offset={offset}&resource={}",
+                            "/v1/maps/{seed_digest}?offset={offset}&resource={}{watched}",
                             if resource == crate::map::source::TransferResource::Preview {
                                 "preview"
                             } else {
@@ -1243,6 +1267,25 @@ macro_rules! serial_driver {
                         if !platform_await!(client.session_failed(error, &output)) {
                             let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                         }
+                    }
+                }
+            }
+            Some(Request::Matches) => {
+                match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
+                    serde_json::from_value::<MatchList>(value)
+                        .map_err(|_| RequestFailure::Status(0))
+                }) {
+                    Ok(list) => {
+                        let _ = output.send(Response::Matches(Some(list.matches)));
+                    }
+                    // A lobby from before watching lists no match.
+                    Err(RequestFailure::Status(404)) => {
+                        let _ = output.send(Response::Matches(None));
+                    }
+                    // The game list asked at the same time says when the
+                    // lobby could not be refreshed.
+                    Err(error) => {
+                        let _ = platform_await!(client.session_failed(error, &output));
                     }
                 }
             }
@@ -1453,6 +1496,26 @@ mod tests {
         let mut expired = response.clone();
         expired["expires_at"] = json!(1);
         assert!(decode_session(expired, nickname).is_err());
+    }
+
+    /// A refused `watch` reaches the lobby's box with the lobby's reason; a
+    /// lobby that cannot answer gets the usual refusal.
+    #[test]
+    fn a_refused_watch_says_why() {
+        use crate::app::shell_wol::lobby::watch_refusal_key;
+        let refusal = |code: &str| {
+            let body = format!(r#"{{"error":{{"code":"{code}"}}}}"#);
+            let failure = RequestFailure::response(409, body.as_bytes());
+            watch_refusal_key(failure.command_failure("watch").wol_code())
+        };
+        assert_eq!(refusal("unknown_match"), "VERA:WatchUnknownMatch");
+        assert_eq!(refusal("match_active"), "VERA:WatchMatchActive");
+        assert_eq!(refusal("watchers_full"), "VERA:WatchersFull");
+        let busy = RequestFailure::Status(503).command_failure("watch");
+        assert_eq!(
+            watch_refusal_key(busy.wol_code()),
+            "VERA:OnlineRequestRefused"
+        );
     }
 
     #[test]

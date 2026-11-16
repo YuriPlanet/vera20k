@@ -52,7 +52,7 @@ pub(crate) use live_service::{
 };
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted,
+    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolMatch,
     WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
     service_event,
 };
@@ -244,6 +244,10 @@ pub(crate) struct WolVisit {
     /// VERA: why the last online match ended, until the chat the player
     /// lands in exists.
     problem_line: Option<String>,
+    /// VERA: whether the online lobby lets players watch matches, as its
+    /// list of them last answered (docs/lobby-protocol.md "Watching"); `None`
+    /// before the first answer.
+    lobby_watches: Option<bool>,
     /// VERA: BC6's Continue after a co-op mission: the stage the kept
     /// room's host takes when the room comes back. The runner's post-match
     /// entry drops it unless it waits for that room.
@@ -314,6 +318,7 @@ impl WolVisit {
             in_game: false,
             back_to_room: false,
             problem_line: None,
+            lobby_watches: None,
             cooperative_resume: None,
             connected: false,
             disconnected: false,
@@ -448,6 +453,17 @@ pub(crate) fn in_match(state: &AppState) -> bool {
         .wol
         .as_ref()
         .is_some_and(|visit| visit.in_game)
+}
+
+/// VERA: whether the online lobby lets players watch matches, as its list of
+/// them last answered (docs/lobby-protocol.md "Watching"); `None` before the
+/// first answer.
+pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby_watches)
 }
 
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.

@@ -1766,7 +1766,37 @@ where
                 || online_host.is_some(),
             "online guest capture requires --online-host"
         );
+        let watch = matches!(
+            checkpoint,
+            ShellCaptureCheckpoint::Lan(movies::LanTarget::OnlineWatch)
+        );
+        ensure!(
+            !watch
+                || (online_host.is_some()
+                    && online_map.is_none()
+                    && online_players.is_none()
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && online_start.is_none()
+                    && online_frames.is_none()
+                    && !online_simple
+                    && !online_latency
+                    && !online_mass
+                    && !online_quick_match
+                    && !observe_loading
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()
+                    && online_loading_cancel_checkpoint.is_none()),
+            "online watch capture requires --online-host and no other online option; the host's match sets everything else"
+        );
         let host = online_host.unwrap_or_else(|| account.clone());
+        ensure!(
+            !watch || !account.eq_ignore_ascii_case(&host),
+            "the online watcher must be a third account, not the host"
+        );
         for name in [&account, &host] {
             ensure!(
                 crate::ui::wol_account::valid_name(name),
@@ -3811,6 +3841,31 @@ mod tests {
         assert_eq!(config.host, "Host");
         assert_eq!(config.players, 2);
         assert!(!config.quick_match);
+    }
+
+    /// The watcher is a third account; the host's match sets everything else.
+    #[test]
+    fn online_watch_capture_requires_its_own_account_and_the_host() {
+        let output = new_output_path("online-watch");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-watch".into();
+        values.extend(args(&["--online-account", "Watcher"]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&["--online-host", "Host"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        let config = request.live_online.unwrap();
+        assert_eq!(
+            (config.account.as_str(), config.host.as_str()),
+            ("Watcher", "Host")
+        );
+        let mut own = values.clone();
+        *own.last_mut().unwrap() = "watcher".into();
+        assert!(parse_launch_args(own).is_err());
+        values.extend(args(&["--online-frames", "600"]));
+        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]

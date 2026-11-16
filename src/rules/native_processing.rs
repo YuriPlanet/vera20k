@@ -5767,6 +5767,13 @@ pub(crate) struct TechnoTypeReferences {
     /// `UnloadingClass=` (+6B8, `0x007146E8..0x0071471A`), a UnitType, and
     /// `DeployingAnim=` (+6BC, `0x00714715..0x0071473F`), an AnimType.
     unloading_class: Option<String>,
+    /// Ares TechnoTypeExt ctor1003C9E4 clears +1DC. Early reader10041DC0 in
+    /// Ext/TechnoType/Hooks.cpp
+    /// (hook715320, resumes715326) calls1002EBC0/1002D970 and UnitType
+    /// Find1002DCF0, without allocation. Absent/empty/unknown retains the
+    /// pointer. The values none/<none> clear it. The draw consumes this pointer.
+    #[serde(default)]
+    water_image: Option<String>,
     deploying_anim: Option<String>,
     /// `Enslaves=` (+D40, `0x00714DD7..0x00714DEC`) through the InfantryType
     /// reader `0x0067BAC0`, and `Spawns=` (+D58, `0x00714E9E..0x00714EB3`)
@@ -5816,6 +5823,7 @@ impl TechnoTypeReferences {
             damage_particle_systems: Vec::new(),
             destroy_particle_systems: Vec::new(),
             unloading_class: None,
+            water_image: None,
             deploying_anim: None,
             enslaves: None,
             spawns: None,
@@ -5856,6 +5864,7 @@ impl TechnoTypeReferences {
             .destroy_particle_systems
             .clone_from(&self.destroy_particle_systems);
         object.unloading_class.clone_from(&self.unloading_class);
+        object.bind_water_image(self.water_image.as_deref());
         object.deploying_anim.clone_from(&self.deploying_anim);
         object.enslaves.clone_from(&self.enslaves);
         object.spawns.clone_from(&self.spawns);
@@ -8798,6 +8807,15 @@ impl RulesPassProcessor {
             {
                 self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 self.process_techno_base(family, index, &raw);
+                // Ares TechnoTypeClass_LoadFromINI_EarlyReader10041DC0
+                // replaces lea edi,[ebp+CB8] at715320, then resumes715326.
+                // Reading its isolated pointer in either mode also lets a
+                // key-only game select the runtime Ares switch.
+                if let Some(image) =
+                    self.resolve_existing_type_from(&raw, "WaterImage", RulesTypeFamily::Vehicle)
+                {
+                    self.family_mut(family)[index].techno_references.water_image = image;
+                }
                 // TechnoTypeClass::ReadINI parses `Prerequisite=` (`0x007141C5`)
                 // and `PrerequisiteOverride=` (`0x0071424B`) after `Dock=` and
                 // `DeploysInto=` (`0x00713180`, `0x00713279`), the reads above

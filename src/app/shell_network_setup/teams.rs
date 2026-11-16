@@ -25,14 +25,25 @@ pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Resu
 
 /// A lobby that cannot take the host's options refuses them while they carry
 /// a field it does not know: the room goes on without the newest one it
-/// carries, Superweapon Limit before the rest of the room's rules before the
-/// join queue before Teams, and publishes again.
-/// Returns the line telling the host so, or `None` when none was set.
+/// carries, Watching (while the lobby has not said whether it lists matches
+/// to watch) before Superweapon Limit before the rest of the room's rules
+/// before the join queue before Teams, and publishes again. Returns the line
+/// telling the host so, or `None` when none was set.
 ///
 /// A random map for more than eight players, which a lobby from before them
-/// refuses, comes first: the room keeps its options, and the host picks
-/// another map.
+/// refuses, comes after Watching: the room keeps its options, and the host
+/// picks another map.
 pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
+    // A lobby from before watching: nobody watches the room's games.
+    let lobby_watches = crate::app::shell_wol::lobby_watches(state);
+    if state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .is_some_and(|room| room.stop_watching(lobby_watches))
+    {
+        return Some("VERA:WatchingNotTaken");
+    }
     let random_map = state
         .match_state
         .session

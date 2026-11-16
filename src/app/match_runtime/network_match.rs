@@ -1160,6 +1160,23 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
             state.match_state.network_wait.wait = None;
             return WaitPass::Leave;
         }
+        // VERA watching: every player left a match nobody won, and every
+        // frame before that ran here. A decided match ends in its score.
+        if state.match_state.scenario_exit.is_none()
+            && state
+                .match_state
+                .live_network
+                .as_ref()
+                .is_some_and(|live| live.watch_over())
+        {
+            log::info!("The watched match is over");
+            crate::app::shell_wol::hold_problem_line(
+                state,
+                crate::i18n::tr("VERA:WatchedMatchOver"),
+            );
+            state.match_state.network_wait.wait = None;
+            return WaitPass::Leave;
+        }
         let info = state
             .match_state
             .live_network
@@ -1326,6 +1343,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
 /// the returned transport's relay Leave departs this source in the others'
 /// timeline. Dialog 0xEA stays off relay waits: its timeout and votes remove
 /// peers locally (`0x0064B410`), which only the relay may do in a relay match.
+/// A watcher sends nothing at all, so its Escape leaves this way at once.
 fn exit_awaits_unreachable_relay(
     live: &crate::net::live_commands::LiveCommandSession,
     now_millis: u32,
@@ -1333,7 +1351,8 @@ fn exit_awaits_unreachable_relay(
 ) -> bool {
     // A rejoining process submits nothing until it has caught up.
     live.exit_requested()
-        && (live.restoring_match()
+        && (live.watching()
+            || live.restoring_match()
             || live.recovery_status(now_millis, frame)
                 == Some(crate::net::live_commands::NetworkRecoveryStatus::Reconnecting))
 }

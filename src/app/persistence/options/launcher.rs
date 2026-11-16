@@ -55,6 +55,7 @@ pub(crate) fn launcher_values_from_profile(
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
+        commander_feedback: profile.commander_feedback,
         detailed_eva_text: profile.detailed_eva_text,
         compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
@@ -162,6 +163,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_custom_end_game_score(&mut self, enabled: bool);
     /// Whether the exit lets the closing commander clip finish.
     fn store_custom_end_game_movie(&mut self, enabled: bool);
+    /// Whether computer commanders play their clips.
+    fn store_commander_feedback(&mut self, enabled: bool);
     /// VERA-only accessibility text rows; default off.
     fn store_detailed_eva_text(&mut self, enabled: bool);
     /// VERA's six-line super weapon timer list; default off.
@@ -190,9 +193,11 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.set_full_screen(full_screen);
         }
         LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
-        // The in-game menu opens these dialogs itself (`app::input::pause_menu`).
+        // The in-game menu opens these dialogs, and starts the layout edit
+        // mode, itself (`app::input::pause_menu`).
         LauncherOptionsEvent::InGameKeyboardRequested
-        | LauncherOptionsEvent::InGameSoundRequested => {}
+        | LauncherOptionsEvent::InGameSoundRequested
+        | LauncherOptionsEvent::EditLayoutRequested => {}
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
@@ -250,6 +255,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
             operations.store_custom_end_game_movie(enabled);
+        }
+        LauncherOptionsEvent::CommanderFeedbackChanged(enabled) => {
+            operations.store_commander_feedback(enabled);
         }
         LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
             operations.store_detailed_eva_text(enabled);
