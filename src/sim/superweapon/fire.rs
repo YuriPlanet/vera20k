@@ -958,6 +958,13 @@ fn launch(
         overlay_registry,
         frame_effects,
     );
+    // `sw_ext.ShotCount++` (`Ext/SWType/FireSuperWeapon.cpp:45`) runs at the
+    // shared Launch tail for stock-handled types; the Ares handler kinds
+    // already counted through `finish_ares_launch`.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type_id) {
+        instance.record_launch(sim.session.binary_frame() as i32);
+    }
     true
 }
 

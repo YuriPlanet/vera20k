@@ -224,8 +224,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   ` ⚡±N`）；单位臂仍缺 `UnitPowerDrain` 机制（`[General] UnitPowerDrain` 默认
   no，零售无影响）。触发：`UnitPowerDrain=yes` 且悬停单位；频率：仅该类模组；
   风险：单位提示少电力段，实际电力结算也不含单位。
-- **`SWShotsFormat` 余量**：`SW.Shots` 状态只在 Ares 包；仅 phobos 构建没有计数，
-  射击行不显示。触发：自定义 `SW.Shots` 且开启扩展提示；风险：少一行提示。
+- **`SWShotsFormat` 余量**：无残渣；`SW.Shots` 同时读入 Phobos 元数据
+  （默认 -1），计数在共享 Launch 尾对 stock 类型也自增（Ares 处理臂由
+  `finish_ares_launch` 计数），phobos-only 的可用性与提示行均可用
+  （`an_accepted_stock_launch_counts_one_shot`、`phobos_sw_shots_defaults_to_minus_one_and_reads`）。
 - **`MaxWidth` 的 5 px 绘制内边距**（钩子 `0x479029`）：无残渣；cameo 换行宽度
   在 `MaxWidth>0` 时取 `MaxWidth-5`（回归测试
   `cameo_max_width_reserves_the_five_pixel_padding`）。

@@ -8253,6 +8253,7 @@ impl RulesPassProcessor {
                     {
                         availability.set_neg_technos(neg);
                     }
+                    availability.set_shots(raw.read_ares_int("SW.Shots", availability.shots()));
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
                     // Phobos `SWTypeExt::LoadFromINIFile` then reads

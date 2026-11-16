@@ -2462,17 +2462,47 @@ impl SuperWeaponBuildingRequirements {
 /// definition, so a type whose effect body is unimplemented still answers
 /// availability. Constructor defaults: level 0, both lists empty.
 #[cfg(feature = "phobos")]
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosSuperWeaponAvailability {
     tech_level: i32,
     aux_technos: Vec<String>,
     neg_technos: Vec<String>,
+    /// `SW.Shots=` (`Valueable<int>`, `Ext/SWType/Body.cpp:148`, constructor
+    /// `-1` at `Body.h:157`): a non-negative limit refuses `IsAvailable` once
+    /// the House's `ShotCount` reaches it.
+    #[serde(default = "default_phobos_sw_shots")]
+    shots: i32,
+}
+
+#[cfg(feature = "phobos")]
+fn default_phobos_sw_shots() -> i32 {
+    -1
+}
+
+#[cfg(feature = "phobos")]
+impl Default for PhobosSuperWeaponAvailability {
+    fn default() -> Self {
+        Self {
+            tech_level: 0,
+            aux_technos: Vec::new(),
+            neg_technos: Vec::new(),
+            shots: -1,
+        }
+    }
 }
 
 #[cfg(feature = "phobos")]
 impl PhobosSuperWeaponAvailability {
     pub(crate) fn tech_level(&self) -> i32 {
         self.tech_level
+    }
+
+    pub(crate) fn shots(&self) -> i32 {
+        self.shots
+    }
+
+    pub(crate) fn set_shots(&mut self, shots: i32) {
+        self.shots = shots;
     }
 
     pub(crate) fn set_tech_level(&mut self, level: i32) {
@@ -2505,6 +2535,21 @@ impl PhobosSuperWeaponAvailability {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Phobos `SW.Shots=` (`Valueable<int>`, constructor `-1`): the projected
+    /// type metadata keeps the default and reads a valid integer.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_sw_shots_defaults_to_minus_one_and_reads() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[SuperWeaponTypes]\n0=A\n1=B\n[A]\nType=IronCurtain\n\
+             [B]\nType=IronCurtain\nSW.Shots=2\n",
+        ))
+        .unwrap();
+        assert_eq!(rules.phobos_super_weapon_metadata("A").unwrap().shots(), -1);
+        assert_eq!(rules.phobos_super_weapon_metadata("B").unwrap().shots(), 2);
+    }
 
     #[cfg(feature = "ares")]
     #[test]

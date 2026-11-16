@@ -512,9 +512,9 @@ pub struct SuperWeaponInstance {
     /// and launches. Grant10022710 records the first recharge origin; successful
     /// Launch100226D0 replaces it. The existing Super remains the sole owner
     /// across grant, revoke, snapshot restoration and charge changes.
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     ares_launch_count: i32,
-    #[cfg(feature = "ares")]
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     #[serde(rename = "ares_last_launch_frame")]
     ares_charge_origin_frame: Option<i32>,
 }
@@ -541,17 +541,19 @@ impl SuperWeaponInstance {
         self.store_charge_timer(CdTimer::started(frame, left.wrapping_sub(amount).max(0)));
     }
 
-    /// 100226D0: called only after an admitted Ares Activate returned true.
-    #[cfg(feature = "ares")]
-    fn record_ares_launch(&mut self, frame: i32) {
+    /// One accepted `SuperClass::Launch`: Ares's 100226D0 after an admitted
+    /// Activate, and the Phobos `FireSuperWeaponExt` tail's `ShotCount++`
+    /// (`Ext/SWType/FireSuperWeapon.cpp:45`) at the shared continuation.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    fn record_launch(&mut self, frame: i32) {
         self.ares_launch_count = self.ares_launch_count.wrapping_add(1);
         self.ares_charge_origin_frame = Some(frame);
     }
 
     pub(crate) fn hash_ares_launch_history(&self, hasher: &mut impl std::hash::Hasher) {
-        #[cfg(not(feature = "ares"))]
+        #[cfg(not(any(feature = "ares", feature = "phobos")))]
         let _ = hasher;
-        #[cfg(feature = "ares")]
+        #[cfg(any(feature = "ares", feature = "phobos"))]
         if let Some(frame) = self.ares_charge_origin_frame {
             std::hash::Hash::hash(b"ares-super-launch-history-v1", hasher);
             std::hash::Hash::hash(&(self.ares_launch_count, frame), hasher);
@@ -747,9 +749,9 @@ impl SuperWeaponInstance {
             timer_place: None,
             paid_sequence: 0,
             paid_selection: None,
-            #[cfg(feature = "ares")]
+            #[cfg(any(feature = "ares", feature = "phobos"))]
             ares_launch_count: 0,
-            #[cfg(feature = "ares")]
+            #[cfg(any(feature = "ares", feature = "phobos"))]
             ares_charge_origin_frame: None,
         }
     }
@@ -1781,8 +1783,7 @@ pub struct SuperTooltipFacts {
     /// `SuperClass::GetRechargeTime @ 0x006CC260`, the full charge time.
     pub recharge_frames: i32,
     /// `SW_Shots` and the owner's `HouseExt::SuperExts[].ShotCount`:
-    /// `(remaining, total)`. `None` while the type leaves the key unset or
-    /// without Ares, whose package holds the only `SW.Shots` reader in VERA.
+    /// `(remaining, total)`. `None` while the type leaves the key unset.
     pub shots: Option<(i32, i32)>,
 }
 
@@ -1803,7 +1804,13 @@ pub fn super_tooltip_facts(
         .map(|metadata| metadata.availability().shots())
         .filter(|total| *total > 0)
         .map(|total| (total - instance.ares_launch_count, total));
-    #[cfg(not(feature = "ares"))]
+    #[cfg(all(feature = "phobos", not(feature = "ares")))]
+    let shots = rules
+        .phobos_super_weapon_metadata(section)
+        .map(|metadata| metadata.shots())
+        .filter(|total| *total > 0)
+        .map(|total| (total - instance.ares_launch_count, total));
+    #[cfg(not(any(feature = "ares", feature = "phobos")))]
     let shots = None;
     Some(SuperTooltipFacts {
         recharge_frames: instance.recharge_time(sw),
@@ -2406,9 +2413,31 @@ pub fn super_weapon_available(
     }
 
     #[cfg(not(feature = "ares"))]
-    let allowed = rules
-        .super_weapon(name)
-        .is_some_and(|sw| aux_building_present(sim, rules, owner, sw));
+    let allowed = {
+        let allowed = rules
+            .super_weapon(name)
+            .is_some_and(|sw| aux_building_present(sim, rules, owner, sw));
+        // Phobos `SWTypeExt::IsAvailable` (`Ext/SWType/SWHelpers.cpp:177-180`):
+        // a non-negative `SW.Shots` refuses once the House's shot count
+        // reaches it.
+        #[cfg(feature = "phobos")]
+        let allowed = allowed
+            && rules
+                .phobos_super_weapon_metadata(name)
+                .is_none_or(|metadata| {
+                    let shots = metadata.shots();
+                    if shots < 0 {
+                        return true;
+                    }
+                    let count = sim
+                        .interner
+                        .get(name)
+                        .and_then(|id| sim.super_weapons.get(&owner)?.get(&id))
+                        .map_or(0, |instance| instance.ares_launch_count);
+                    count < shots
+                });
+        allowed
+    };
 
     #[cfg(feature = "ares")]
     let allowed = {
@@ -2644,7 +2673,7 @@ fn finish_ares_launch(
         .map_or(F::NONE, |sw| sw.kind.ares_flags());
     // 100226D0 counts the fired Super's shot before the PostClick switch.
     if let Some(instance) = sim.super_weapons.instance_mut(&owner, &typ) {
-        instance.record_ares_launch(frame);
+        instance.record_launch(frame);
     }
     let data = ares_launch_data_type(sim, rules, owner, typ);
     let data_name = sim.interner.resolve(data).to_owned();
