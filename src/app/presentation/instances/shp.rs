@@ -625,6 +625,15 @@ pub(crate) fn shp_visitor<'a>(
         } else {
             selected_palette_light
         };
+        // Phobos level lighting replaces the blit intensity for aircraft and
+        // jumpjet draws (`Ext/Techno/Hooks.Tint.cpp:320-379`).
+        let palette_light = crate::app::presentation::lighting::phobos_air_unit_light(
+            entity,
+            sim,
+            rules,
+            input.lighting,
+            palette_light,
+        );
         // The shared DrawSHP curtain intensity and the class caller's colour
         // word have separate owners. Infantry tests the Location cell;
         // Building's body/bib/buildup test the object's centre cell.

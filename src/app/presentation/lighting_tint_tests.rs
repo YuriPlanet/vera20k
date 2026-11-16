@@ -648,3 +648,35 @@ fn use_retint_fix_relights_active_light_sources_after_a_normal_retint() {
     let after = lights.grid.cell_light_at((1, 0)).unwrap().profile_id;
     assert_eq!(lights.grid.palette_rgb(after), [1200, 800, 600]);
 }
+
+/// Phobos `GetLevelIntensity` (`Ext/Techno/Hooks.Tint.cpp:27-45`): the blit
+/// intensity from the scenario level, the height in level steps, the
+/// multiplier and the cell scalar.
+#[cfg(feature = "phobos")]
+#[test]
+fn air_unit_level_light_scales_the_height_and_takes_the_cell_scalar() {
+    // Aircraft: two levels above the cell, multiplier 1, level 50, cell 800.
+    assert_eq!(
+        super::air_unit_level_brightness(50, 208, false, false, 1.0, 800),
+        900
+    );
+    assert_eq!(
+        super::air_unit_level_brightness(50, 208, false, false, 0.0, 800),
+        800
+    );
+    // Jumpjet on a bridge: current level 5 - 4, and the cell gains 4*level.
+    assert_eq!(
+        super::air_unit_level_brightness(50, 520, true, true, 0.5, 800),
+        25 + 800 + 200
+    );
+    // Without the bridge the full five levels take the half multiplier.
+    assert_eq!(
+        super::air_unit_level_brightness(50, 520, true, false, 0.5, 800),
+        125 + 800
+    );
+    // `static_cast<int>` truncates toward zero.
+    assert_eq!(
+        super::air_unit_level_brightness(50, -52, false, false, 1.0, 0),
+        -25
+    );
+}

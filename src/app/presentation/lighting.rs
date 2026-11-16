@@ -315,6 +315,93 @@ fn class_tint_word(rules: &RuleSet, index: i32) -> u16 {
     rules.color_add.rgb565_word(index)
 }
 
+/// Phobos `GetLevelIntensity` (`Ext/Techno/Hooks.Tint.cpp:27-45`): the blit
+/// intensity from the scenario level and the object's height in level steps.
+#[cfg(feature = "phobos")]
+pub(crate) fn air_unit_level_brightness(
+    level: i32,
+    height: i32,
+    jumpjet: bool,
+    on_bridge: bool,
+    multiplier: f64,
+    cell_intensity: i32,
+) -> i32 {
+    let bridge_height = if jumpjet && on_bridge { 4 } else { 0 };
+    let current_level = f64::from(height)
+        / f64::from(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
+        - f64::from(bridge_height);
+    // `static_cast<int>` truncates toward zero.
+    let level_intensity = (f64::from(level) * current_level * multiplier) as i32;
+    let cell_intensity = cell_intensity.wrapping_add(bridge_height * level);
+    level_intensity.wrapping_add(cell_intensity)
+}
+
+/// Phobos `AircraftClass_DrawIt_LevelIntensity` (`0x4148F4`) and the
+/// jumpjet arms of `UnitClass_DrawIt_LevelIntensity` (`0x73CFA7`) /
+/// `InfantryClass_DrawIt_LevelIntensity` (`0x51933B`)
+/// (`Ext/Techno/Hooks.Tint.cpp:320-379`): the draw intensity is rebuilt from
+/// the scenario level and the owner's height instead of the cell scalar.
+#[cfg(feature = "phobos")]
+pub(crate) fn phobos_air_unit_light(
+    entity: &crate::sim::game_entity::GameEntity,
+    sim: &Simulation,
+    rules: Option<&RuleSet>,
+    grid: &CellLightGrid,
+    light: crate::render::palette_light::PaletteLight,
+) -> crate::render::palette_light::PaletteLight {
+    use crate::map::entities::EntityCategory;
+    let Some(rules) = rules else {
+        return light;
+    };
+    let aircraft = entity.category() == EntityCategory::Aircraft;
+    let jumpjet = matches!(
+        entity.category(),
+        EntityCategory::Unit | EntityCategory::Infantry
+    ) && entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|locomotor| locomotor.jumpjet_runtime().is_some());
+    if !aircraft && !jumpjet {
+        return light;
+    }
+    // The cell-lighting order is storm, Dominator, nuke. RESIDUAL: the
+    // aircraft hook checks the Dominator before the storm, so an aircraft
+    // drawn while a lightning storm and the Dominator both run uses their
+    // order here (both rare together).
+    let profile = sim.lighting_cell_profile();
+    let level = sim.session().lighting().profile(profile).level_units;
+    let multiplier = if aircraft {
+        f64::from_bits(rules.phobos_globals.aircraft_level_light_multiplier.bits())
+    } else {
+        f64::from_bits(rules.phobos_globals.jumpjet_level_light_multiplier.bits())
+    };
+    let height =
+        crate::sim::movement::air_movement::current_fly_height(entity, sim.resolved_terrain());
+    let cell = (entity.position.rx(), entity.position.ry());
+    let cell_intensity = grid
+        .cell_light_at(cell)
+        .map_or(1000, |light| light.top_scalar);
+    light.with_brightness(air_unit_level_brightness(
+        level,
+        height,
+        jumpjet,
+        entity.on_bridge(),
+        multiplier,
+        cell_intensity,
+    ))
+}
+
+#[cfg(not(feature = "phobos"))]
+pub(crate) fn phobos_air_unit_light(
+    _entity: &crate::sim::game_entity::GameEntity,
+    _sim: &Simulation,
+    _rules: Option<&RuleSet>,
+    _grid: &CellLightGrid,
+    light: crate::render::palette_light::PaletteLight,
+) -> crate::render::palette_light::PaletteLight {
+    light
+}
+
 /// `TechnoExt::ApplyCustomTintValues`'s viewer bucket: the owner's own draw
 /// takes Owner, an ally's Allies and anyone else's Enemies.
 #[cfg(feature = "phobos")]

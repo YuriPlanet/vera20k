@@ -42,6 +42,11 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier`：
+  `app/presentation/lighting.rs::phobos_air_unit_light` 在体素单位/飞机与 SHP
+  飞机的绘制处重建 blit 强度：`int(level * (height/104 - bridge*4) * mult) +
+  Cell.Intensity_Normal + bridge*4*level`（`Ext/Techno/Hooks.Tint.cpp:27-45,
+  320-379`）；等级取场景光照 profile（风暴/支配者/核闪）。默认 1.0/0.0。
 - `VeinholeWarhead`：`IsVeins=` 动画在成熟杂草格（Overlay 126、Data>=0x30、
   平地、低空占位）上每 2 帧用 `[General] VeinDamage=` + `[CombatDamage]
   VeinholeWarhead=` 伤害格内低空 techno；前置失败置 `UnableToContinue`
@@ -143,12 +148,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 3 项（4 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 2 项（2 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
-| `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 
 ## 2. 明确排除（不移植，扫描器已列 disabled）
@@ -187,6 +191,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
   生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
   `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
+- **飞机等级光照与风暴/支配者同时存在的顺序**：Phobos 的飞机钩子先查 Dominator
+  再查风暴，VERA 两种绘制共用 cell-lighting 顺序（风暴优先）；两者同时运行时
+  飞机取 Ion 等级而非 Dominator。触发：雷电风暴与支配者重叠；频率：极低；
+  风险：等级项差一个档位。
 - **Veinhole 的空战头**：`VeinholeWarhead=` 未设时 Phobos 向 `ReceiveDamage` 传 null
   战头；VERA 的伤害包必须有活动战头，因此该键未设/未知名时不造成伤害（零售
   `VeinDamage=0` 且未设该键，故零售行为不变）。TS `VeinProof` 能力在 YR 类型上

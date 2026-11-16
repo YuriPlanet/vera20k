@@ -698,6 +698,15 @@ pub(crate) fn unit_visitor<'a>(
                 (pos.rx(), pos.ry()),
                 extra_light,
             );
+            // Phobos level lighting replaces the blit intensity for aircraft
+            // and jumpjet bodies (`Ext/Techno/Hooks.Tint.cpp:320-379`).
+            let palette_light = crate::app::presentation::lighting::phobos_air_unit_light(
+                entity,
+                sim,
+                state.rules(),
+                state.match_state.match_presentation.lighting.grid(),
+                palette_light,
+            );
             // UnitClass::DrawVoxelBody's curtain arm (`0x0073BF9C..0x0073BFB8`):
             // the intensity of the hull, turret and barrel composite, whose blit
             // (vt+0x55C, `0x0073C1A5`) picks its LightConvert row from it. The
