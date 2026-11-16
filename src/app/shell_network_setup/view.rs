@@ -59,13 +59,19 @@ pub(super) fn team_letter(state: &AppState, team: u8) -> String {
     combo_item_label(state, SkirmishComboItem::Team(i32::from(team)))
 }
 
-/// A row of VERA's room list: a seat or spectator row, or a header over
-/// the rows of its group and how many players they hold.
+/// A row of VERA's room list: a seat or spectator row, a header over the
+/// rows of its group and how many players they hold, or an empty line a
+/// team's box keeps ([`TEAM_BOX_ROWS`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Listed {
     Row(u8),
     Header(SetupGroup, usize),
+    Blank,
 }
+
+/// The lines a team's box in VERA's room keeps, empty or not, so a player
+/// or AI coming in fills one instead of moving the boxes under it.
+const TEAM_BOX_ROWS: usize = 5;
 
 /// VERA's online room: the help under the pointer on the name of a player
 /// with a badge, as the lobby's player list gives it
@@ -331,6 +337,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     for visible_row in 0..rows {
         let row = match shown(visible_row) {
             None => break,
+            Some(Listed::Blank) => continue,
             Some(Listed::Row(row)) => row,
             Some(Listed::Header(group, count)) => {
                 let fill = |key: &str| crate::i18n::tr_fill(key, &[("count", &count)]);
@@ -861,6 +868,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     return None;
                 }
                 Listed::Row(row) => row,
+                Listed::Blank => return None,
             };
             let group = box_of.filter(|group| *group != SetupGroup::ClosedSeats)?;
             let person = launch
@@ -961,7 +969,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
 /// VERA's room list: its seats, the host's Add slot row, then the
 /// spectators, those in the join queue first. In a mode with teams
 /// (`grouped`) a header goes over each group: with Teams set (`fixed`), one
-/// for each of its teams, empty or not, then the players on no team; with
+/// for each of its teams, empty or not and at least [`TEAM_BOX_ROWS`]
+/// lines high, then the players on no team; with
 /// Teams Off, one box of every seated player. The Add slot row and the
 /// spectators follow, each under its header.
 fn listed_rows(
@@ -1023,10 +1032,18 @@ fn listed_rows(
     // and the host fills one with a box header's Add AI.
     let players: Vec<u8> = seated.filter(held).collect();
     let mut listed = Vec::new();
-    // A header, how many players it counts, then its rows.
+    // A header, how many players it counts, then its rows; a team's box
+    // fills up to its lines with empty ones.
     let mut group = |header, count: usize, rows: Vec<u8>| {
+        let lines = if matches!(header, SetupGroup::Team(_)) {
+            TEAM_BOX_ROWS
+        } else {
+            0
+        };
+        let blank = lines.saturating_sub(rows.len());
         listed.push(Listed::Header(header, count));
         listed.extend(rows.into_iter().map(Listed::Row));
+        listed.extend(std::iter::repeat_n(Listed::Blank, blank));
     };
     match fixed {
         // With Teams Off the room is one box, every player for themselves
@@ -1131,12 +1148,13 @@ mod tests {
         );
     }
 
-    /// With Teams set, each of its teams has a header, an empty one too. A
-    /// closed seat lists the host's Add slot row under its own header.
+    /// With Teams set, each of its teams has a header, an empty one too,
+    /// and room for five under it. A closed seat lists the host's Add slot
+    /// row under its own header.
     #[test]
     fn a_room_with_teams_set_lists_every_team() {
         use crate::app::match_runtime::session::NetworkRowKind;
-        use Listed::{Header, Row};
+        use Listed::{Blank, Header, Row};
         use SetupGroup::{ClosedSeats, Spectators, Team};
         let mut session = vera_room();
         session.set_network_teams(Some(3)).unwrap();
@@ -1144,20 +1162,22 @@ mod tests {
         assert_eq!(
             listed_rows(&session, limit, None, true, session.network_teams()),
             [
-                Header(Team(0), 1),
-                Row(0),
-                Header(Team(1), 1),
-                Row(1),
-                Header(Team(2), 0),
-                Header(Spectators, 0),
+                [Header(Team(0), 1), Row(0)].as_slice(),
+                &[Blank; 4],
+                &[Header(Team(1), 1), Row(1)],
+                &[Blank; 4],
+                &[Header(Team(2), 0)],
+                &[Blank; 5],
+                &[Header(Spectators, 0)],
             ]
+            .concat()
         );
         session
             .choose_network_row_kind(3, NetworkRowKind::Closed)
             .unwrap();
         let listed = listed_rows(&session, limit, Some(3), true, session.network_teams());
         assert_eq!(
-            listed[5..],
+            listed[18..],
             [Header(ClosedSeats, 1), Row(3), Header(Spectators, 0)]
         );
     }

@@ -2760,7 +2760,8 @@ impl WolCapture {
                         "Natasha did not come back watching"
                     );
                     // Teams goes up to 15: the Team list then runs from A
-                    // to O, and the headers name the teams past D too.
+                    // to O, and the headers name the teams past D too, down
+                    // the roster's scroll, each box five lines high.
                     crate::app::shell_network_setup::apply_action(
                         state,
                         SetupAction::Trackbar {
@@ -2778,9 +2779,31 @@ impl WolCapture {
                                 .collect()
                         })
                         .unwrap_or_default();
+                    let roster = crate::app::input::multiplayer_setup::layout(state)
+                        .roster_scroll(&wide)
+                        .context("the roster's scroll")?;
+                    let ui = state
+                        .frontend
+                        .multiplayer_setup
+                        .as_mut()
+                        .context("room page")?;
+                    // A notch moves at most 30 places: four reach the foot.
+                    for _ in 0..4 {
+                        ui.roster_wheel(roster, -100.0);
+                    }
+                    let foot = setup_view(state)?;
+                    let ui = state
+                        .frontend
+                        .multiplayer_setup
+                        .as_mut()
+                        .context("room page")?;
+                    for _ in 0..4 {
+                        ui.roster_wheel(roster, 100.0);
+                    }
                     let wide_captions: Vec<&str> = wide
                         .headers
                         .iter()
+                        .chain(&foot.headers)
                         .flatten()
                         .map(|header| header.caption.as_str())
                         .collect();
@@ -2789,7 +2812,8 @@ impl WolCapture {
                             && letters.len() == 15
                             && letters.first() == Some(&"A")
                             && letters.last() == Some(&"O")
-                            && wide_captions.contains(&"Team E"),
+                            && wide_captions.first() == Some(&"Team A")
+                            && wide_captions.contains(&"Team O"),
                         "Teams 15 gave the Team list {letters:?} and headers {wide_captions:?}"
                     );
                     self.event(
