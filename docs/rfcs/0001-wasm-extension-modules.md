@@ -56,8 +56,10 @@ every published version running.
    any supported platform, including the browser build.
 3. Outside modules never stop the game. A module that fails is disabled and the
    player is told why.
-4. A module cannot read files, use the network, read the clock or see what the
-   player is not allowed to see.
+4. No module can read files, use the network or read the clock. The engine's
+   queries never leak hidden information: client modules see only what their
+   player may see. What a simulation module chooses to notify a player of is
+   its author's responsibility (section 11).
 5. With no module present, the game plays exactly as it does today.
 6. Battles of 20,000 units do not get slower because of modules that only a few
    types use.
@@ -83,13 +85,13 @@ follow this table.
 | Term | Meaning |
 | --- | --- |
 | **Extension module** | A compiled `.wasm` file. Not called a *script*: in RA2, scripts are AI team scripts (`[ScriptTypes]`). |
-| **Trigger** | As in maps: an event plus one or more actions, owned by a house, with difficulty flags. VERA adds optional conditions. |
-| **Event** | A trigger's condition. Original event numbers keep their meaning. |
+| **Trigger** | As in maps: one or more events (all must hold) plus one or more actions, owned by a house, with difficulty flags and the original repeat types. VERA adds optional conditions. |
+| **Event** | What springs a trigger. Original event numbers keep their meaning. |
 | **Action** | What a trigger does. Original actions keep their numbers. A new action runs a module function. |
-| **Module trigger** | A trigger that has at least one module action (`Action.wasm`), was created by a module, or is bound through `Wasm.Tags`. A map trigger that carries a module action counts. |
+| **Module trigger** | A trigger that has at least one module action (`Action.wasm`), was created by a module, or is bound through `Wasm.Tags` or `Trigger.bindType`. A map trigger that carries a module action counts. |
 | **Condition** | A filter the engine checks natively before a trigger's actions run. |
 | **Tag** | What attaches triggers to an object or a cell (CellTag). An object holds one tag. |
-| **Mark** | A text marker an object or a house carries, tested by conditions, with an optional integer value and a visibility level. Not a tag: an object may carry any number of marks. |
+| **Mark** | A text marker an object or a house carries, tested by conditions, with an integer value and a visibility level. Not a tag: an object may carry any number of marks. |
 | **Attached effect** | A per-object state with a duration, such as a multiplier or an immunity (the Phobos AttachEffect term). |
 | **Mission** | An object's order: Move, Attack, Guard, Area Guard, Hunt, Sleep and the rest. |
 | **Local / Global** | Local and global variables, as in maps. |
@@ -98,7 +100,8 @@ follow this table.
 | **Override** | A named decision point where a module may change the engine's result. |
 | **House, Techno, Building, Vehicle, Infantry, Aircraft, Projectile, Weapon, Warhead** | As in the INI files. |
 | **Cell, lepton** | Map coordinates. One cell is 256 leptons. |
-| **Operation budget** | How much work a module may do per call, measured in deterministic operation units. |
+| **Operation budget** | How much work a module may do per frame, measured in deterministic operation units: a base amount plus an allowance per record delivered that frame (section 5). |
+| **Creation serial** | A number the engine gives every object and projectile when it is created. It orders query results, override calls and delivered records, independently of how the engine stores objects or the order of its loops. |
 
 ## What a modder sees
 
@@ -106,8 +109,8 @@ follow this table.
 
 ```
 Mods/MyMod/
-  mod.ini        ; Needs=, WasmApi=1, policy keys
-  rulesmd.ini    ; binds tags to types
+  mod.ini        ; Needs= and the other mod.ini keys; no module keys
+  rulesmd.ini    ; [VeraWasm] API version, budgets, map policy; binds tags to types
   rules.wasm     ; simulation module
   ui.wasm        ; interface module
 ```
@@ -116,8 +119,11 @@ A map carries its modules as text, the way it already carries `IsoMapPack5`:
 compressed, base64-encoded and split into numbered lines.
 
 ```ini
+[Basic]
+VeraMinVersion=0.9.0     ; example; older releases refuse the map with a message (section 11)
+
 [VeraWasm]
-Api=1
+Api=1.0                  ; major.minor of the API the modules need (section 12)
 RulesSize=48213          ; decoded size, checked on load
 UISize=9120
 
@@ -144,11 +150,12 @@ Trigger=GIPanic
 
 [GIPanic]
 Event=TakeDamage
-Action=Wasm:giPanic      ; calls the function giPanic exported by rules.wasm
+Action=Wasm:giPanic      ; runs the module action giPanic of rules.wasm
 Repeat=yes
 ```
 
-The key names and the exact section format are not final (see
+Each E1 runs `GIPanic` as its own instance (section 7). The key names and the
+exact section format are not final (see
 [Unresolved questions](#unresolved-questions)). Map triggers edited in
 FinalAlert2 can also call module functions through the new action.
 
@@ -159,16 +166,16 @@ the author's tools. The same module in the two official SDKs:
 
 ```ts
 // TypeScript (AssemblyScript-compatible)
-import { action, onFrame, Mission, EventRecord, Ctx } from "@vera20k/sdk";
+import { action, onFrame, Every, Techno, Mission, EventRecord, Ctx } from "@vera20k/sdk";
 
-export const giPanic = action((ctx: Ctx, e: EventRecord) => {
+action("giPanic", (ctx: Ctx, e: EventRecord): void => {
   const techno = e.subject;
-  if (techno.healthPercent < 30) {
-    techno.setMission(Mission.Hunt);
+  if (Techno.healthPercent(techno) < 30) {
+    Techno.setMission(techno, Mission.Hunt);
   }
 });
 
-export const checkWaves = onFrame({ every: 15 }, (ctx: Ctx) => {
+onFrame(new Every(15), (ctx: Ctx): void => {
   if (ctx.local(3).get()) {
     // ...
   }
@@ -179,7 +186,7 @@ export const checkWaves = onFrame({ every: 15 }, (ctx: Ctx) => {
 // Rust SDK
 use vera20k_sdk::prelude::*;
 
-#[vera::action(export = "giPanic")]
+#[vera::action(name = "giPanic")]
 fn gi_panic(ctx: &mut Ctx, e: EventRecord) {
     let techno = e.subject();
     if techno.health_percent() < 30 {
@@ -195,8 +202,10 @@ fn check_waves(ctx: &mut Ctx) {
 }
 ```
 
-Each SDK builds `rules.wasm` or `ui.wasm` with one command. Package names are
-placeholders. See section 5a for languages and SDKs.
+Each SDK builds `rules.wasm` or `ui.wasm` with one command. The build lists
+the module's action names in a Wasm custom section `vera.actions`, which gives
+each name an index (section 12). Package names are placeholders. See section
+5a for languages and SDKs.
 
 ## Design
 
@@ -224,27 +233,47 @@ engine grants them.
 | | Mod | Map |
 | --- | --- | --- |
 | Order | first | after the mod, as INI layers |
-| `onRules` | after the mod's INI layer | after the map's INI layer, sees the mod's result |
-| Operation budget | declared by the mod, capped by the engine | smaller default, the mod may raise it |
+| `onRules` | after `RULESMD.INI`, `LANGRULE.INI` and the mode layer | after the map layer, sees the mod's result |
+| Operation budget | declared in the mod's `[VeraWasm]`, capped by the engine | smaller default, the mod's `[VeraWasm]` may raise it |
 | Size | file size | embedded size limit |
 | Interface | may replace or rearrange the match screen | overlays only, unless the mod allows more |
 
-The mod controls what a map's modules may do:
+The mod controls what a map's modules may do, in a `[VeraWasm]` section of its
+`rulesmd.ini`:
 
 ```ini
-[Mod]
-WasmApi=1
+; rulesmd.ini in the mod
+[VeraWasm]
+Api=1.0              ; major.minor of the API the mod's modules need
+Budget=200000        ; the mod module's base budget per frame, capped by the engine
+MapBudget=50000      ; the base budget a map's module may use under this mod
 MapWasm=yes          ; no: a map with modules cannot start under this mod
 MapUI=overlay        ; overlay, full or no
 ```
 
-With no mod selected, map modules are allowed and map interfaces are overlays.
+These keys live in `rulesmd.ini` because the mod digest covers that file and
+not `mod.ini`, so every player in a room compares them (section 11). The
+engine reads them from the mod's own `rulesmd.ini` before any other layer, so
+a map cannot change them by layering; a map's own `[VeraWasm]` section carries
+only its embedding keys. Key names and values are placeholders (open questions
+5 and 8).
+
+With no mod selected, map modules are allowed, map interfaces are overlays and
+map modules get the engine's default budget.
+
+The rules layers run in this order: `RULESMD.INI`, `LANGRULE.INI`, the mode
+layer, the mod module's `onRules`, the map layer, the map module's `onRules`.
+Each `onRules` reads the rules as processed after the layers before it, and the
+engine processes the rules again after its writes, as for INI text. A type ID
+never changes once assigned: a later layer may add types, which get new IDs,
+but never invalidates an existing one, so an ID resolved in the mod's
+`onRules` stays valid for the whole scenario.
 
 Conflict rules:
 
-- **Tag bindings on types** come only from the mod's rules layer. Map modules
-  create triggers and tags in code (section 7), so a map's INI cannot erase a
-  mod's binding by layering.
+- **Tag bindings on types** come from the mod's rules (`Wasm.Tags`). Modules,
+  a map's included, bind types in code with `Trigger.bindType` (section 7),
+  so a map's INI cannot erase a mod's binding by layering.
 - **Triggers** from both sources fire. The mod's module runs first.
 - **Overrides** chain: the mod's module computes a result, the map's module
   receives it and may change it, and the engine uses the final value. Each link
@@ -261,28 +290,63 @@ Conflict rules:
 On load the engine:
 
 1. decodes embedded modules and checks their declared size;
-2. parses the module and accepts imports only from `vera:*` interfaces whose
-   versions this release supports;
+2. parses the module, accepts imports only from `vera:*` interfaces whose
+   major version this release supports at the minor version the module needs
+   (section 12), and refuses a module beyond the load-time shape limits
+   (number of functions, size of a function body, locals, imports), so a map
+   cannot stall the lobby while it compiles;
 3. rejects threads, relaxed SIMD and 64-bit memory, and canonicalizes NaN
-   results of floating-point operations;
-4. adds operation metering and sets the memory limit;
-5. checks that the exports the INI and the lifecycle need exist and have the
-   right signatures;
+   results of floating-point operations by rewriting the bytecode, not by an
+   engine flag, so every engine, the browser's included, gets the same NaNs;
+4. adds operation metering and a call-depth counter to the bytecode, in one
+   instrumentation pass: the depth limit is set well below the real stack
+   limit of every supported engine, so a deep recursion stops at the same
+   call on every machine; and reserves the module's memory cap when it
+   instantiates the module, so `memory.grow` fails only at the cap and never
+   because one machine is short of memory;
+5. checks that the exports the lifecycle needs exist and have the right
+   signatures, and that every module action the INI names
+   (`Action=Wasm:name`) is in the module's `vera.actions` table;
 6. checks the notification names that the simulation modules loaded in the
    match declare in their `vera.notify` custom section, the mod's and the
    map's together, for hash collisions (section 10).
 
 A failure before the match is shown in the lobby with its reason, and the match
-cannot start with that module. A failure during a match (trap, budget exceeded,
-invalid argument) disables that module at the same frame on every machine, and
-the game tells the players which module stopped and why. The match continues,
-and what the module left behind is handled this way:
+cannot start with that module. A failure in `onRules` also stops the match
+from starting, with a message naming the module, because the rules it was
+writing are incomplete. A failure during a match, `onScenarioStart` included
+(trap, budget exceeded, call depth exceeded, invalid argument), disables that
+module at the same frame on every machine, and the game tells the players
+which module stopped and why. A failure of the host itself, such as running
+out of memory while reserving the cap or an internal error of the Wasm
+engine, is not a module failure, because it cannot be shown to happen on
+every machine at the same frame: it is a match error, and the game stops the
+match with a message, as it does for a desync.
 
-- its triggers are disabled;
+The match continues after a module is disabled, and what the module left
+behind is handled this way:
+
+- triggers the module created are disabled. In every other trigger (a map
+  trigger, or one bound through `Wasm.Tags`) only its module actions are
+  skipped, and the trigger's original and atomic actions keep running; its
+  queued module actions are dropped;
 - its overrides are skipped: the next module in the chain, or the native
-  result, applies;
+  result, applies. For the override call that failed, the engine uses the
+  previous link's value, or the native value;
 - its projectiles on a module path fly on straight toward their target;
-- attached effects and marks it added stay, because the engine owns them.
+- what stays: attached effects and marks it added, because the engine owns
+  them; its rules writes from `onRules` and its `rules.set` overlays; the AI
+  definitions, tags and triggers it created (the triggers disabled); and
+  whatever the failing call had already done, since actions run at once are
+  not undone;
+- its memory stays in snapshots and in the periodic state hash, unchanged
+  from the moment it stopped, so saves and rejoining reproduce it.
+
+Client modules run on one machine, so their failures are local. Each client
+module has a time budget per render frame, measured by the local clock: an
+overrun skips that frame's call, and a module that overruns persistently or
+traps is disabled on that machine only, with a message to that player. It
+cannot affect the match.
 
 Errors that are part of normal play return a status and the module carries on:
 a handle that is `NO_HANDLE` or whose object is gone gives `Gone`, a name that
@@ -297,7 +361,8 @@ its status: its error status (`Refused`, `Gone` or `NotFound`) is written to
 the in-game log and the action is skipped; nothing else happens. Errors that
 show a broken module disable it: an invalid argument (including an invalid
 atomic action argument, such as a target kind that can never fit the action,
-found when `Trigger.create` runs, section 6b), a trap, an exceeded budget.
+found when `Trigger.create` runs, section 6b), a trap, an exceeded budget or
+call depth.
 
 `docs/modding.md` currently says a mod is only data and VERA20k never runs a
 program from one. That text changes to say modules run only in a sandbox with
@@ -309,9 +374,11 @@ mark mods and maps that contain modules.
 All machines run the same module bytes, so results depend only on how the
 engine executes them.
 
-- No threads, no relaxed SIMD, canonical NaNs.
-- No clock, no host random source, no WASI. Modules draw random numbers from
-  a stream of their own, derived from the scenario seed, so a module never
+- No threads, no relaxed SIMD, canonical NaNs (by bytecode rewriting,
+  section 3), and a call-depth limit counted by the instrumentation.
+- No clock, no host random source, no WASI. Each module draws random numbers
+  from a stream of its own, seeded from the scenario seed and the module's
+  slot (mod or map), so a module never
   shifts the native streams: a module that draws nothing leaves every native
   result unchanged. Actions that run native code draw from the native streams
   exactly as that code does. Each API call documents its draws.
@@ -324,58 +391,90 @@ engine executes them.
   (leptons, fixed-point raw values). Fractions and multipliers use the
   simulation's fixed-point format, `I16F16` raw values (`SimFixed`). A module
   may use floating point internally.
-- Module memory, mutable globals and tables are part of the simulation state:
-  saved in snapshots and included in the periodic state hash (section 15).
+- Module memory, mutable globals and tables, the instrumentation's counters
+  (operations used, call depth) and the module's random stream are part of
+  the simulation state: saved in snapshots and included in the periodic state
+  hash (section 15). Saves are taken only between module calls.
+- Calls into a simulation module never come from parallel code, and their
+  order across objects does not depend on the engine's loop order
+  (section 5).
 
 ### 5. Execution model
 
-Simulation module exports:
+Simulation module exports (each simulation call also receives `ctx`, each
+client call `ui`, as the appendix shows):
 
 | Export | When |
 | --- | --- |
-| `onRules` | once, after the INI layers load; may change and add types |
-| `onScenarioStart` | once, at the start of the scenario |
-| `onFrame` | once per frame per subscribed module, or every N frames |
+| `onRules(rules)` | once, at the module's place in the rules layers (section 2); may change and add types |
+| `onScenarioStart(ctx)` | once, at the start of the scenario |
+| `onFrame(ctx)` | once per frame when exported; the SDK runs each registration in the frames where `frame % N == 0` |
 | actions | in the module phase, queued when their trigger fires |
-| overrides | synchronously, when the engine reaches that decision |
-| `onMessage(player, bytes)` | when a client message reaches the simulation |
+| overrides | at a fixed step of the frame when the engine reaches that decision, in the order below |
+| `onMessage(ctx, sender, data)` | in the module phase, when a client message has reached the simulation |
 
-Client module exports: `onStart`, `onRender(dt, alpha)` once per render
-frame, and interface callbacks such as clicks and hotkeys.
+Client module exports: `onStart(ui)`, `onRender(ui, dt, alpha)` once per
+render frame, and interface callbacks such as clicks and hotkeys.
 
-Module calls run in one fixed phase of the simulation frame, in module load
-order. The module actions of triggers that fire during the frame are queued,
-each with the payload of the event that fired its trigger, and delivered in
-that phase, before `onFrame`, as one batch per module (section 15). A module
-receives events only this way: there are no stand-alone event records.
-Overrides are the exception: they run when the engine needs the answer. Object
-references are generational handles, so a handle to an object that died before
-delivery reads as gone and never as a reused slot.
+Simulation module code runs only inside the simulation's phases. Local code,
+such as the sidebar, the cursor, the interface, rendering and client queries,
+never calls a simulation module; it reads the result the simulation last
+computed. For example, `Override.ProductionAllowed` is evaluated in the
+simulation and the sidebar shows its cached result (appendix section 8).
+
+Module calls run in one fixed phase of the simulation frame, module by module
+in load order (the mod's, then the map's). Each module first receives its
+`onMessage` calls, then its `onEvents` batch, then `onFrame`. The module
+actions of triggers that fire during the frame are queued, each with the
+payload of the event that fired its trigger, and delivered in that phase as
+one batch per module (section 15). A module receives events only this way:
+there are no stand-alone event records. Overrides are the exception: they run
+when the engine needs the answer. Object references are generational handles,
+so a handle to an object that died before delivery reads as gone and never as
+a reused slot.
+
+Calls into a module are never made from parallel code. Where the engine
+reaches an override or raises an event inside a parallel section, it collects
+those calls and issues them after the section. The order of calls across
+objects, for overrides and for the records of a batch, is the subject's
+creation serial, then a sequence number per object, never the engine's loop
+order. An engine change that reorders or parallelizes its loops for speed
+therefore does not change what a module sees. Records without a subject
+object (house, logic and cell triggers) come first, in the order the trigger
+runtime springs them.
 
 Ordering rules:
 
 - Original actions and the atomic actions of section 6b run when their
   trigger fires, exactly as original actions do in the original, also in
   triggers that contain module actions. Only module actions (module functions)
-  are queued; they run in the module phase as one batch per module, in firing
-  order. In a trigger with the actions [original A, module B, atomic C], A and
-  C run first and B runs later in the same frame. An author who needs a strict
-  order writes all of the trigger's actions as module code and calls original
-  actions through the API (L1).
+  are queued; they run in the module phase as one batch per module, in the
+  order above. In a trigger with the actions [original A, module B, atomic C],
+  A and C run first and B runs later in the same frame. An author who needs a
+  strict order writes all of the trigger's actions as module code and calls
+  original actions through the API (L1).
 - Every event VERA adds is raised at a safe point: a moment that is not inside
   any calculation. After a calculation has completed is a safe point (for
   example `TakeDamage` after the damage has been committed), and so is before
   one begins (for example `HouseTransfer` before the transfer begins). The
-  trigger's original and atomic actions run at once from that point.
+  trigger's original and atomic actions run at once from that point. After an
+  event raised before a calculation, the engine re-checks that the
+  calculation is still valid before doing it: when an action has removed the
+  object or changed its owner, the transfer does not happen and
+  `HouseTransferred` is not raised.
 - Actions that run at once can chain within a frame: damage raises
   `TakeDamage`, its trigger deals damage with an atomic action, which raises
   `TakeDamage` again, and so on. The engine limits the depth of a chain per
   frame when the chain includes a module trigger (see
   [Terminology](#terminology)), an event VERA adds or an atomic action; a
   trigger that would exceed the limit fires in the next frame instead, so no
-  such chain loops forever. The limit is open question 18. A chain made only
-  of original events and original actions runs exactly as in the original
-  (Goal 5).
+  such chain loops forever. Such a deferred trigger springs at the start of
+  the next frame's module phase, before that phase's queued actions, with the
+  payload it had: its original and atomic actions run then, so one frame later
+  than without the limit, and its module actions join that frame's batch.
+  Pending deferred triggers are saved and hashed. The limit is open question
+  18. A chain made only of original events and original actions is never
+  deferred and runs exactly as in the original (Goal 5).
 - A queued module action is dropped when the game has ended, or when its
   trigger was disabled or removed before the module phase. Handles to objects
   that are gone read as gone.
@@ -383,8 +482,12 @@ Ordering rules:
   module action dealt damage) runs its original and atomic actions at once;
   its module actions are queued for the next frame's module phase, so module
   code cannot loop within one frame.
-- Overrides only read state and return a result. They cannot run actions,
-  because the engine is in the middle of a calculation when it calls them.
+- Overrides return a result and cannot run actions, because the engine is in
+  the middle of a calculation when it calls them. They may read state and keep
+  their own state in module memory and draw from the module's random stream:
+  the call order above makes that deterministic and keeps it the same across
+  engine versions. `Override.Fire` returns a shot plan that the engine
+  carries out itself (section 9).
 - A delivered event reports what already happened and cannot cancel a native
   result such as a death. Changing that needs an override or an attached
   effect (for example, prevent death).
@@ -396,9 +499,16 @@ Ordering rules:
   `onScenarioStart` does not run again and there is no separate load call.
   Handles stored in module memory refer to the same objects after loading.
 
-Each module has an operation budget per frame. Subscriptions are opt-in: a
-module that exports no `onFrame` and binds no triggers costs nothing per
-frame.
+Each module has an operation budget per frame: a base amount plus an
+allowance for each record delivered to it that frame, so a binding that
+produces more records in a larger battle also gets more budget. Override calls
+draw from the same frame budget, each adding the same allowance as a record.
+Each module's queue holds at most a fixed number of records per frame; records
+beyond the cap are kept, in order, and delivered first in the next frame, so a
+large battle delays a module's reactions instead of disabling it. Deferred
+records are saved and hashed. The base amount, the allowance and the cap are
+open question 8. Subscriptions are opt-in: a module that exports no `onFrame`
+and binds no triggers costs nothing per frame.
 
 ### 5a. Languages and SDKs
 
@@ -415,10 +525,17 @@ and the engine treats every module the same way.
   Its API stays inside the common subset of TypeScript and AssemblyScript: no
   `any`, no union types other than `T | null`, no callbacks that capture outer
   variables, no `try`/`catch`, and parameters that are classes rather than
-  object shapes. The same source then type-checks with `tsc` and compiles with
-  AssemblyScript, and the examples in this RFC are valid in both.
+  object shapes. Handles are plain integers, so they have no methods: the
+  TypeScript SDK uses namespace functions that take the handle first
+  (`Techno.healthPercent(t)`, `Techno.setMission(t, Mission.Hunt)`), and
+  setup arguments are classes built with their constructors
+  (`new TriggerDef(...)`), not object literals. Every handle value is below
+  2^53, so an SDK built on a JavaScript engine can hold it in a number. The
+  same source then type-checks with `tsc` and compiles with AssemblyScript,
+  and the examples in this RFC are valid in both.
 - **Rust SDK.** For authors who want full control and speed, and the SDK the
-  engine's own compatibility fixtures are written in.
+  engine's own compatibility fixtures are written in. It may keep methods on
+  its handle newtypes (`techno.health_percent()`).
 - **Other languages** (C, C++, Zig, Go, ...) use the published interface
   definition; their bindings are community work.
 - **Imports.** A module may import only `vera:*` interfaces. The engine does
@@ -435,7 +552,7 @@ and the engine treats every module the same way.
 | --- | --- | --- |
 | L1 Actions and missions | every original trigger action, missions, production, house and object commands | yes |
 | L2 Triggers | original events plus new ones (weapon fired, projectile detonated, ...) delivered to actions | yes |
-| L3 Overrides | named decisions: target choice, damage, production permission, taking over a weapon's shot, ... | two or three, chosen from modder requests |
+| L3 Overrides | named decisions: target choice, damage, production permission, taking over a weapon's shot, ... | two or three, chosen from modder requests (open question 11) |
 | L4 Per-frame behaviors | batched per-frame control of objects of a bound type | no, later |
 
 Queries are read-only and iterate in a deterministic order. Every L1 action
@@ -444,8 +561,9 @@ calls the existing Rust port of that action (for example in
 
 Overrides are named after game concepts, such as `Override.Damage` or
 `Override.TargetChoice`, never after native functions, so they survive engine
-refactors. `Override.Fire` lets a module take over a weapon's shot, so the
-native projectile is not created (section 9).
+refactors. `Override.Fire` lets a module take over a weapon's shot: it returns
+a shot plan, a list of projectiles with their parameters, which the engine
+creates at once in place of the native projectile (section 9).
 
 For decisions made very often, data comes before callbacks: target priority is
 a multiplier carried as an attached effect, plus a `TargetChanged` event, and
@@ -473,7 +591,9 @@ position and still runs collision.
 
 ### 6a. Triggers: events, conditions and actions
 
-A trigger has one event, any number of conditions and one or more actions.
+As in the original, a trigger has one or more events, all of which must hold,
+any number of conditions, one or more actions and one of the original repeat
+types.
 
 - **Events** come in two kinds. *Delivered events* happen at a moment (damage
   taken, weapon fired, killed); the trigger fires at that moment, its original
@@ -484,7 +604,11 @@ A trigger has one event, any number of conditions and one or more actions.
   before one begins, as `HouseTransfer` is raised before the transfer begins
   (section 5). *Polled events* describe a state (health below a value, money
   above a value); the engine checks them natively at the interval the trigger
-  sets, and the trigger fires while the state holds.
+  sets, and the event fires on the edge: at the check where the state has
+  become true, and not again until it has been false at a check. The checks
+  of different objects are staggered: an object is checked in the frames
+  where `frame % interval == serial % interval`, with `serial` its creation
+  serial.
 - **Conditions** filter a trigger before any module code runs. The engine
   checks them natively and calls the module only when all of them hold. A
   condition can be negated. Logic beyond that (OR across conditions,
@@ -508,15 +632,18 @@ A trigger has one event, any number of conditions and one or more actions.
   Wasm.Tags=MissileFiredTag   ; every shooter of RedEye2 raises its Fire triggers
   ```
 
-```ts
-const PANICKED = Mark.id("Panicked");   // resolved once; calls take the ID
+- A trigger bound to a type or to a weapon, warhead or projectile type runs
+  as its own instance on each bound object, with its own repeat state: a
+  one-time trigger fires once per object. The trigger's house is the
+  subject's owner at that moment, and the tag holder is the object that
+  raised the event (section 7).
 
-Trigger.create({
-  event: Event.TakeDamage,
-  conditions: [Cond.healthBelowPercent(30), Cond.not(Cond.hasMark(PANICKED))],
-  actions: [Action.wasm("giPanic")],
-  difficulty: Difficulty.All,
-});
+```ts
+const PANICKED = Mark.id("Panicked");   // resolved once, in onScenarioStart; calls take the ID
+
+const def = new TriggerDef([new EventDef(Event.TakeDamage)], [Action.wasm("giPanic")]);
+def.conditions = [Cond.healthBelowPercent(30), Cond.not(Cond.hasMark(PANICKED))];
+Trigger.create(def);
 ```
 
 Candidate delivered events for version 1:
@@ -540,8 +667,9 @@ Candidate delivered events for version 1:
 | Crushed | crusher |
 | HouseTransfer | new house, whether by mind control; raised before the transfer |
 | HouseTransferred | previous house, whether by mind control; raised after the transfer |
-| EffectStart / EffectExpire / EffectStacks | effect, stack count |
-| Timer | frame of the previous firing |
+| EffectStart / EffectStacks | effect, stack count |
+| EffectExpire | effect type (the effect itself is gone) |
+| Timer | frame of the previous firing; fires every period the trigger sets |
 | SuperWeaponLaunched | superweapon type, house, target cell; lets a module implement a superweapon's effect |
 
 Candidate polled events: health, ammo, passengers, transport space, ore
@@ -594,17 +722,20 @@ An action that needs more, such as creating a projectile, is written as a
 module action. The target is an explicit parameter: the subject (the default),
 the other object of the event, the tag holder (the objects whose tag holds the
 trigger, or the cell for a CellTag), the event's projectile, a house, or a
-cell. A waypoint is given as its cell: `Cell.waypoint(n)` resolves to the
-waypoint's cell when `Trigger.create` runs, since waypoints do not move. A
-waypoint the map does not have is a map data error, not a module error:
-`Trigger.create` returns `NotFound`, creates no trigger and logs it, and the
-module stays enabled; in INI it is reported in the lobby at load. A
-kind that uses no target (for example setting a tech level, or `Log`) ignores
-the target. Fixed rules cover the rest:
+cell. A waypoint is given as a cell that carries its number:
+`Cell.waypoint(n)` returns such a cell, and `Trigger.create` resolves it to
+the waypoint's cell, since waypoints do not move. A waypoint the map does not
+have is a map data error, not a module error: `Trigger.create` returns
+`NO_HANDLE` with `NotFound`, creates no trigger and logs it, and the module
+stays enabled; in INI it is reported in the lobby at load. A kind that uses no
+target (for example setting a tech level, or `Log`) ignores the target. For a
+trigger bound to a type or a weapon, warhead or projectile type, the tag
+holder is the object that raised the event. Fixed rules cover the rest:
 
 - An explicit house (the house target, the new owner of a transfer, the owner
   of created objects) is the house given in the parameters; when none is
-  given, the trigger's house is used.
+  given, the trigger's house is used, which for a bound trigger is the
+  subject's owner at that moment.
 - A source (of damage, a kill or a detonation) is the event's other object and
   is optional: when the event has none, the action runs with no source and
   gives no kill credit. An action that needs a second object to act on (a
@@ -655,14 +786,18 @@ be selected, ignores player orders, not a legal target, house power off.
   (section 10), not effects.
 
 An object carries any number of marks, and so does a house. Actions and
-effects add and remove them; conditions test them. A mark may carry one
-integer value and a visibility level: its own house, allies, players who can
-see the object, or everyone. Client queries return only the marks their
-player may see. Marks do not nest.
+effects add and remove them; conditions test them. A mark carries one integer
+value and a visibility level: its own house, allies, players who can see the
+object, or everyone. Both are given when the mark is added
+(`addMark(t, mark, value, visibility)`); `markValue` reads the value and
+`setMarkValue` changes it. Client queries return only the marks their player
+may see. Marks do not nest. Mark names are registered only by simulation code;
+the registry is simulation state, saved and hashed, and a client module only
+looks names up (appendix, IDs).
 
 ### 6c. Queries
 
-Queries are read-only. Results come in object creation order, a rule that does
+Queries are read-only. Results are sorted by creation serial, a rule that does
 not depend on how the engine stores objects, and are written into a buffer
 the module provides (section 15). In client modules
 they are filtered by what the local player can see.
@@ -676,9 +811,10 @@ they are filtered by what the local player can see.
   movement zone, whether a house can see it; waypoints and cell tags.
 - **Rules:** any key of any type, as a parsed value.
 - **Scenario:** frame number, difficulty, game mode, number of players.
-- **Probes:** whether a weapon could fire at a target now, whether a target is
-  in range, whether a type can be placed at a cell for a house, and the closest
-  cell where it can be. They reuse the engine's own rules.
+- **Probes** (candidates for version 1, open question 13): whether a weapon
+  could fire at a target now, whether a target is in range, whether a type can
+  be placed at a cell for a house, and the closest cell where it can be. They
+  reuse the engine's own rules.
 
 ### 6d. AI
 
@@ -694,16 +830,16 @@ a later RFC.
 Modules create triggers and tags with the same model as maps:
 
 ```ts
-const t = Trigger.create({
-  house: ctx.house("Americans"),
-  event: Event.Killed,
-  actions: [Action.wasm("onConvoyLost")],
-  difficulty: Difficulty.All,
-});
+const def = new TriggerDef([new EventDef(Event.Killed)], [Action.wasm("onConvoyLost")]);
+def.house = ctx.house("Americans");
+const t = Trigger.create(def);
 const tag = Tag.create([t], TagRepeat.Repeating);
-techno.setTag(tag);     // replaces the object's tag, as in the original
-cell.setTag(tag);       // CellTag
-t.disable();
+Techno.setTag(techno, tag);   // replaces the object's tag, as in the original
+cell.setTag(tag);             // CellTag; Cell is a class, not a handle
+Trigger.disable(t);
+
+const panic = Trigger.create(new TriggerDef([new EventDef(Event.TakeDamage)], [Action.wasm("giPanic")]));
+Trigger.bindType(panic, ctx.typeId("E1"));   // as Wasm.Tags=: every E1 runs its own instance
 ```
 
 - Created triggers and tags live in the existing trigger runtime's lists, next
@@ -713,9 +849,17 @@ t.disable();
 - An object holds one tag (`ObjectClass` `AttachedTag`, `+0x34`). A tag may
   link several triggers. Attaching several tags to one object would be a VERA
   extension and needs its own RFC.
-- Type bindings (`Wasm.Tags`) do not use that slot. They are kept as separate
-  subscriptions of the object, so an object placed on the map with its own tag
-  keeps it and still receives its type's triggers.
+- Type bindings (`Wasm.Tags` in INI, `Trigger.bindType` in code, and
+  `Trigger.bindWeaponType`, `bindWarheadType` and `bindProjectileType` for
+  the weapon events) do not use that slot. They are kept as separate
+  subscriptions, so an object placed on the map with its own tag keeps it and
+  still receives its type's triggers. A binding made in code applies at once
+  to every object of the type, mod and map modules alike.
+- Each bound object runs a bound trigger as its own instance: its repeat
+  state is per object, so a one-time trigger fires once for each object.
+  Disabling or removing the trigger acts on every instance. The trigger's
+  house is the subject's owner at the moment it springs, and its tag holder
+  is the object that raised the event.
 - Removing an object or a tag clears the links through the trigger runtime's
   existing cleanup.
 
@@ -733,7 +877,9 @@ with Ares or Phobos.
 - Per-object multipliers reuse the owner that already exists in
   `sim/attach_effect.rs`. Part of that code is still behind
   `cfg(feature = "phobos")`; it moves to a run-time switch before modules can
-  use it, as the project contract requires.
+  use it, as the project contract requires. The attached effects modules need
+  are available whenever the module feature is on (section 14), independent
+  of the Phobos switch; the effect kinds only VERA has switch on the same way.
 - Each allowlisted key documents what a change does to objects already on the
   map (for example, how current health follows a new `Strength`).
 - New types cannot be added during a match.
@@ -764,12 +910,19 @@ To fire several projectiles with different paths at once, an action on the
 weapon's Fire event creates them, each with its own type and module data, and
 `onLaunch` gives each one its path. The action is a module function, which
 reads the shooter, the target and the native projectile from its event record
-(`e.subject`, `e.other`, `e.projectile`). With `Override.Fire` the module takes
-over the shot and the native projectile is not created. Without it, the native
-projectile leaves during the unit's update and the module's projectiles in the
-module phase of the same frame, one frame of movement behind. Creating a
-projectile takes more parameters than an atomic action has (section 6b), so a
-trigger creates projectiles only through a module action.
+(`e.subject`, `e.other`, `e.projectile`). The native projectile leaves during
+the unit's update and the module's projectiles in the module phase, so they
+trail it by the time between the two: up to one frame of movement, depending
+on where the module phase sits (open question 9). Creating a projectile takes
+more parameters than an atomic action has (section 6b), so a trigger creates
+projectiles only through a module action.
+
+`Override.Fire` avoids that delay. It returns a shot plan: a list of
+projectiles to create, each with its type, module data and parameters. The
+engine creates them at once, at the moment the native shot would leave, and
+creates no native projectile; an empty plan fires nothing, and "not handled"
+keeps the native shot. The `Fire` event is still raised, with `projectile`
+set to `NO_HANDLE`.
 
 ### 10. Client module
 
@@ -808,9 +961,9 @@ Type=List               ; new part type
 ```
 
 ```ts
-export const onStart = start((ui: Ui) => {
-  ui.find("ObjList").setItems(["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);
-  ui.create(Column.hold(Hold.BottomLeft).child(Text.label("TXT_WAVE")));
+start((ui: Ui): void => {
+  Node.setItems(ui.find("ObjList"), ["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);
+  ui.create(new Column(Hold.BottomLeft, [new Text("TXT_WAVE")]));
 });
 ```
 
@@ -830,16 +983,19 @@ closures, and is not part of the official API.
 - A client module may issue standard player orders (select, move, attack,
   deploy, build), which the engine validates like any player input.
   `sendMessage` is for custom logic.
-- Each mod gets a small key-value store on the player's machine for campaign
-  progress, achievements and settings. Only client modules can use it. Data
-  that should affect a match reaches the simulation through `sendMessage`, so
-  it is part of the command stream.
+- Each mod and each map has its own small key-value store on the player's
+  machine, with a size quota, for campaign progress, achievements and
+  settings. A map's client module uses the map's store, also under a mod, so
+  a downloaded map cannot read or change the mod's data. Only client modules
+  can use a store. Data that should affect a match reaches the simulation
+  through `sendMessage`, so it is part of the command stream.
 - Images, animations and models are referenced by name, never by file format,
   so later asset formats (a separate RFC) need no API change.
 - Sounds and messages; `log()` writes to the in-game console.
 - Notifications are named, and a name resolves once to an ID:
-  `Notify.id("WaveStarted")` returns a `NotifyId`. The ID is a stable hash of
-  the case-folded name, computed the same way on every machine and in both the
+  `Notify.id("WaveStarted")` returns a `NotifyId`. The ID is the 32-bit
+  FNV-1a hash of the name's UTF-8 bytes after ASCII case folding (only `A` to
+  `Z` fold), computed the same way on every machine and in both the
   simulation and the client module. A simulation module declares ahead of
   time the names it sends: the SDK build writes them, from a list in the
   module's project configuration, into a Wasm custom section `vera.notify`.
@@ -856,8 +1012,12 @@ closures, and is not part of the official API.
   whose names collide, with a message naming them (section 3, step 6), so
   `Notify.id` returns an ID for every declared name.
   The simulation module sends a notification to one player's client with
-  `notify(player, id, bytes)`; the client module receives it in
-  `onNotify(id, bytes)`.
+  `ctx.notify(house, id, data)`, or to every spectator's client with
+  `ctx.notifySpectators(id, data)`; the client module receives it in
+  `onNotify(ui, id, data)`. A replay viewer receives the notifications of the
+  player whose view they watch, or the spectators' ones. Spectators cannot
+  send messages into the simulation: `sendMessage` from a spectator's client
+  is refused.
 - Every query is filtered by what the local player can see. A spectator's
   client modules see what the spectator sees, the whole map when the room
   allows it. An enemy object the player cannot see now is absent from results;
@@ -871,12 +1031,15 @@ closures, and is not part of the official API.
   mod file check.
 - The lobby compares module hashes and required API versions. A player whose
   game does not support a required version is refused with a message that
-  names the version needed.
+  names the version needed. The mod's `[VeraWasm]` keys (budgets, map policy,
+  API version) are in its `rulesmd.ini`, which the mod digest covers, so every
+  player compares them; `mod.ini`, which the digest leaves out, holds no
+  module keys.
 - The engine fills in the sender of every message, so a module cannot forge
   it, and limits message size and messages per frame.
 - Notifications from the simulation module to a client reach only the player
-  they are for. Their content is the module's own bytes, and the module is
-  responsible for it: the engine cannot filter it.
+  they are for, or the spectators. Their content is the module's own bytes,
+  and the module's author is responsible for it: the engine cannot filter it.
 - Online play exchanges only commands, never state. A rejoining player
   re-simulates the match from the start, modules included; module messages are
   commands, so nothing extra is sent. A module's cost per frame therefore also
@@ -885,6 +1048,17 @@ closures, and is not part of the official API.
   not match is refused with a message.
 - Saves record the module hashes. A save whose modules do not match the
   installed mod or map is refused with a message naming them.
+- Rooms require every player to run the same version, so a mixed room never
+  starts and online play is safe.
+- Offline, a build from before module support plays a module map without its
+  modules: it ignores the `[VeraWasm*]` sections, and its triggers' module
+  actions do nothing. This is a stated residual, since released builds cannot
+  change. To cover later releases, the release before module support adds a
+  map key, `[Basic] VeraMinVersion=` (name not final), and refuses a map that
+  needs a later version with a message naming it; module maps set it, so
+  every release from then on refuses them instead of playing them wrongly.
+- Saves and replays record the game version and the module hashes; an older
+  build refuses those a later version made, with a message.
 - The change updates [Networking](../Networking.md) and states what a released
   game, a mixed room and a rollback do with modules.
 
@@ -892,19 +1066,36 @@ closures, and is not part of the official API.
 
 - One interface definition (WIT syntax) is the source of the API, the SDK
   bindings, the reference documentation and the compatibility checks.
-- Interfaces are versioned packages: `vera:sim@1`, `vera:client@1`.
-  Unstable interfaces live under `vera:unstable/*`, require an explicit opt-in
-  and may change without notice.
+- Interfaces are versioned packages: `vera:sim@1`, `vera:client@1`. A
+  version is major.minor. A new major is incompatible, and every major is
+  kept forever through adapters; a new minor only adds. A module states the
+  major and the lowest minor it needs through its imports, and the map or mod
+  states the same in `[VeraWasm] Api=`; the lobby checks that every player's
+  game supports that major at that minor or later.
+- Unstable interfaces live under `vera:unstable/*`, require an explicit
+  opt-in and may change without notice. They and the `0.x` previews are not
+  published versions: they keep no adapters, and a module that uses them runs
+  only on the build it was made for.
 - Every published version keeps working. Older versions are thin adapters over
-  the current implementation, never a second implementation.
-- For every published version, CI runs a set of committed `.wasm` fixtures.
-  Breaking one fails the build.
+  the current implementation, never a second implementation. An adapter never
+  hands an old module a value its version did not define: records of events
+  that version does not know are not delivered to it, and a newer status or
+  enum value reaches it as a value its version defines, chosen per enum in the
+  interface definition.
+- For every published version, CI builds a set of compatibility fixtures from
+  Rust SDK sources committed in the repository and runs them; no `.wasm`
+  binaries are committed. Breaking one fails the build.
 - Functions may be deprecated, with a warning to the module author, but a
   published version is never removed.
 - A published function never changes its units or meaning. A change is a new
   function or a new version.
 - Whether the binary interface is a core-module ABI (integer handles, pointer
-  and length pairs) or the Component Model is an open question.
+  and length pairs) or the Component Model is open question 2. The rules of
+  section 15 hold under either.
+- `Trigger.create` and the INI resolve an `Action.wasm` name through the
+  module's `vera.actions` table to an index; `EventRecord.action` carries
+  that index, and the SDK's generated `onEvents` dispatches on it. Action
+  functions therefore need not be Wasm exports.
 
 ### 13. Tooling
 
@@ -913,7 +1104,7 @@ closures, and is not part of the official API.
 | Start | templates for `rules.wasm` and `ui.wasm` in TypeScript and Rust; an example mod in both |
 | Size | SDK release settings for small modules; documented size guidance per language; map embedding limit |
 | Maps | `asset` commands to embed, extract and validate modules |
-| Iteration | the SDK's watch mode rebuilds on save; in development mode the game watches the `.wasm` file and reloads it (module state resets) |
+| Iteration | the SDK's watch mode rebuilds on save; in development mode, offline only, the game watches the `.wasm` file and reloads it (module state resets) |
 | Errors | the failing export and the error in game; the SDKs pass messages and source locations to the engine |
 | Cost | an overlay with each module's operations and trigger deliveries per frame |
 | Docs | reference generated from the interface definition; task-based guides |
@@ -922,8 +1113,16 @@ closures, and is not part of the official API.
 
 ### 14. Project contract
 
-- The feature is in every build and turns on only when a mod or map provides a
-  module. It is never behind a build feature.
+- The feature is in every build and turns on at run time when a mod or map
+  provides a module or uses any of its keys (`Wasm.Tags`, INI atomic actions,
+  `[VeraWasm]`). It is never behind a build feature. The attached effects
+  modules need are available whenever it is on, independent of the Phobos
+  switch.
+- The Wasm runtime is chosen per platform behind platform build features,
+  which the project contract allows for platform features: a native engine on
+  desktop, and the browser's own WebAssembly or another engine in the browser
+  build (open question 1). The simulation reaches the runtime through one
+  interface, so `vera20k-core` and `sim/` keep compiling for the browser.
 - Every module call reaches state through its existing owner. The API adds no
   competing state.
 - The feature is documented under `docs/` for modders.
@@ -933,37 +1132,46 @@ closures, and is not part of the official API.
 
 The engine keeps one copy of the game state. Modules hold integer handles and
 IDs and ask for data when they need it; nothing mirrors the world into module
-memory. These rules keep the boundary cheap and are part of the ABI:
+memory. These rules keep the boundary cheap and are part of the interface
+definition, whichever binary interface open question 2 picks:
 
 - **IDs, not names, on hot paths.** Type, house, weapon, warhead, projectile,
   mark and effect names, and the other named kinds the appendix lists, resolve
   once to integer IDs (`ctx.typeId("E1")`,
-  `Mark.id("Panicked")`), usually in `onRules` or `onScenarioStart`. Every
-  other call takes IDs. Calls that take names (lookups, `rules.set`, trigger
-  setup) are for setup and rare changes; the SDKs cache the IDs. A
-  notification ID is a stable hash of its case-folded name, the same on every
-  machine and on both sides (section 10).
+  `Mark.id("Panicked")`), usually in `onRules` or `onScenarioStart`; an ID
+  never changes once assigned (section 2). Every other call takes IDs. Calls
+  that take names (lookups, `rules.set`, trigger setup) are for setup and rare
+  changes; the SDKs cache the IDs. A notification ID is a stable hash of its
+  case-folded name, the same on every machine and on both sides (section 10).
 - **One delivery per module per frame.** The frame's queued module actions
-  reach each module in one call, as packed fixed-size records in firing order
-  (section 5). Each record is one module action with the payload of the event
-  that fired its trigger; there are no stand-alone event records. The record
-  layouts are part of the interface definition.
+  reach each module in one call, as fixed-size records in the order of
+  section 5 (subject creation serial, then a sequence per object). Each
+  record is one module action with the payload of the event that fired its
+  trigger; there are no stand-alone event records. The record layouts are
+  part of the interface definition. The SDK reserves the delivery area in
+  module memory and states its size at load; the per-frame queue cap
+  (section 5) bounds what one call delivers.
 - **Queries write into the module's buffer.** Results go straight into a
-  buffer the module provides; the engine allocates nothing per query. Large
-  results are paged. Creation order comes from a creation serial the engine
-  keeps, so results need no sorting by storage.
+  buffer the module provides; the engine allocates nothing per query. Results
+  are sorted by creation serial, at a cost that grows with the size of the
+  result, not of the world. Large results are paged: a paged query's result
+  set is fixed when its first page is read within a module call, and later
+  pages in the same call continue that set even if the world changes between
+  them.
 - **Side tables.** Marks, type bindings, subscriptions and module data per
   projectile live in side tables keyed by handle, so only objects that use them
   pay. Each event site checks one flag of the object's type; with no module
   bound to that type, nothing else runs.
 - **Polled events** have a minimum interval, and the engine spreads the checks
-  of different objects over different frames.
+  of different objects over different frames by creation serial modulo the
+  interval (section 6a).
 - **Module memory in hashes.** The per-frame multiplayer checksum does not
   include module memory. The periodic full state hash (every 15 frames today)
-  includes it, hashing only the pages written since the last hash.
+  covers the whole module memory, which the memory cap bounds; its cost is
+  part of open question 4.
 - **No allocation per event in the SDKs.** Handles and IDs are value types:
-  64-bit integers in TypeScript, newtypes in Rust. Objects are created only for
-  setup calls such as `Trigger.create`.
+  64-bit integers below 2^53 in TypeScript, newtypes in Rust. Objects are
+  created only for setup calls such as `Trigger.create`.
 - **Per-frame batches** (L4 behaviors, module projectile paths) are written
   directly into module memory and read back from it, a few dozen bytes per
   object.
@@ -983,10 +1191,12 @@ memory. These rules keep the boundary cheap and are part of the ABI:
 3. **Accepted.** The maintainer marks a version as accepted. Development starts
    only then.
 4. **Preview.** The API ships as `0.x`. Breaking changes are allowed and listed
-   in a changelog. At least one real mission or mode is rebuilt with it, and
-   outside modders try it.
+   in a changelog; a preview is not a published version (section 12). At
+   least one real mission or mode is rebuilt with it, and outside modders try
+   it.
 5. **Stable.** `vera:sim@1` and `vera:client@1` freeze, limited to what the
-   preview used. The compatibility fixtures go into CI.
+   preview used, the two or three first overrides of open question 11
+   included. The compatibility fixtures go into CI.
 6. **Growth.** Each new interface or override is a small follow-up RFC and a
    new minor version.
 
@@ -994,10 +1204,10 @@ Planned order after acceptance:
 
 | Phase | Content |
 | --- | --- |
-| P1 | `rules.wasm`: `onRules`, `onScenarioStart`, `onFrame`, L1, L2 with conditions, attached effects, marks, queries, AI teams, type tag bindings, the trigger action, map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
+| P1 | `rules.wasm`: `onRules`, `onScenarioStart`, `onFrame`, L1, L2 with conditions, attached effects, marks, queries, AI teams, type tag bindings, the trigger action, the two or three first overrides (open question 11), map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
 | P2 | `ui.wasm`: interface tree with INI layout, display properties, visibility filter, messages |
 | P3 | real mission rebuilt with modules, outside modder trial, freeze of version 1 |
-| Later | overrides one by one, L4 behaviors, peer calls, player interface modules |
+| Later | further overrides one by one, L4 behaviors, peer calls, player interface modules |
 
 ## Alternatives considered
 
@@ -1011,6 +1221,9 @@ Planned order after acceptance:
 - **Native plugins.** Not portable to the browser build, not sandboxed.
 - **Simulation queries as a given house.** Not adopted for now. Simulation
   queries see everything; client queries are filtered.
+- **Overrides kept pure by the host** (state written during an override
+  thrown away, no random draws). Not adopted: a fixed call order (section 5)
+  makes override state deterministic at a lower cost.
 - **Messages between client modules.** Not adopted. All traffic between
   players goes through the simulation, so online play keeps one channel.
 - **Only more INI keys.** Keeps working for simple cases and stays the first
@@ -1039,20 +1252,26 @@ Planned order after acceptance:
 1. **Browser build.** Can the browser build run modules with results identical
    to the native build, and with which engine? Wasmtime may not run inside a
    browser.
-2. **ABI.** Core-module ABI or Component Model?
+2. **ABI.** Core-module ABI or Component Model? The rules of section 15 hold
+   under either.
 3. **TypeScript compiler.** Which compiler the TypeScript SDK uses: a
    compiler for a TypeScript subset to Wasm (such as AssemblyScript), or a
    JavaScript engine compiled into each module. The engine is the same either
    way; the choice decides module size, speed and how much ordinary TypeScript
    works.
-4. **Metering.** Which instrumentation, and what does it cost at 20,000 units?
+4. **Metering.** Which instrumentation for the operation count and the call
+   depth, and what does it cost at 20,000 units? What does hashing the whole
+   module memory every 15 frames cost?
 5. **INI format.** Named sections as shown, the original comma-separated
    trigger encoding so FinalAlert2 can edit bindings, or both? What prefix do
-   the keys use?
+   the keys use, given that bindings, conditions and atomic actions also work
+   without a module?
 6. **Event and action numbers.** Which range is free of Ares and Phobos?
 7. **FinalAlert2.** Does it keep unknown sections such as `[VeraWasmRulesPack]`
    when it saves a map?
-8. **Limits.** Embedded size, memory and default operation budgets for mods and
+8. **Limits.** Embedded size, memory, load-time shape limits, the base
+   operation budget and per-record allowance, the per-frame queue cap, the
+   client modules' time per render frame, and the store quota, for mods and
    maps.
 9. **Frame phase.** Where in the simulation frame the module phase sits, and
    where the module projectile arm sits relative to collision and detonation.
@@ -1166,7 +1385,58 @@ Planned order after acceptance:
   lobby at load; house marks are part of the mark API with the same tier as
   object marks (`addMark`, `removeMark`, `hasMark`, `marks` on `House`), and
   `House` stays a target of `AddMark` and `RemoveMark`; related text and the
-  appendix updated to match.
+  appendix updated to match. Changes after an independent review, in the same
+  version: simulation module code runs only inside simulation phases, and
+  local code (sidebar, cursor, interface, rendering) reads the result the
+  simulation last computed; calls into modules never come from parallel code,
+  and override calls and delivered records are ordered by the subject's
+  creation serial, then a sequence per object, not by the engine's loop order,
+  so overrides may keep module state (new term: creation serial); load
+  checks add shape limits, NaN canonicalization by bytecode rewriting, a call
+  depth limit counted in the metering pass, a memory cap reserved at
+  instantiation, and host failures become match errors; a failure in
+  `onRules` stops the match from starting; disabling a module disables the
+  triggers it created and only skips its module actions elsewhere, uses the
+  previous link's value for a failed override, and keeps its memory in
+  snapshots and the hash; client modules have a time budget per render frame
+  and are disabled only locally; the mod's budget and map policy keys move
+  from `mod.ini` to `[VeraWasm]` in the mod's `rulesmd.ini`, which the mod
+  digest covers; the mark registry is simulation state and client modules
+  only look names up; online rooms require equal versions, an older offline
+  build playing a module map without its modules is a stated residual, and
+  the release before module support adds a minimum-version map key; the
+  budget is per frame, a base amount plus an allowance per delivered record,
+  with a queue cap beyond which records move to the next frame; overrides
+  are v1 candidates, two or three of which ship in version 1;
+  `Override.Fire` returns a shot plan the engine carries out at once;
+  type- and weapon-bound triggers run one instance per object, with the
+  subject's owner as the trigger's house and the subject as tag holder;
+  `Trigger.bindType` and its weapon, warhead and projectile forms; the module
+  feature switches on from modules or any of its keys, and the attached
+  effects modules need do not depend on the Phobos switch; `Cell.waypoint(n)`
+  returns a cell carrying the waypoint number, which `Trigger.create`
+  resolves; a trigger has one or more events, all of which must hold, and the
+  original repeat types; the mod module's `onRules` runs after `RULESMD.INI`,
+  `LANGRULE.INI` and the mode layer, the map module's after the map layer,
+  and IDs never change once assigned; API versions are major.minor, previews
+  and unstable interfaces are not published, adapters never pass values an
+  old version did not define, and section 15 holds under either ABI;
+  `Action.wasm` names resolve through a `vera.actions` table to the index
+  `EventRecord.action` carries; TypeScript examples use namespace functions
+  and constructors, and handles stay below 2^53; marks carry a value and a
+  visibility given when added, with `markValue` and `setMarkValue`; polled
+  events fire on the edge, staggered by creation serial; deferred chain
+  triggers spring at the start of the next frame's module phase; after
+  `HouseTransfer` the engine re-checks the transfer; the periodic hash covers
+  the whole module memory; notifications may go to a player or all
+  spectators, who cannot send messages; each mod and each map has its own
+  store; query results are sorted by creation serial and a paged result set
+  is fixed within a module call; the Wasm runtime is chosen per platform;
+  Goal 4 reworded; event terminology, the `EffectExpire` payload, the
+  `Timer` period, export signatures, phase order, probe tiers, the
+  notification hash (32-bit FNV-1a, ASCII case folding), the module random
+  stream per slot, offline-only hot reload, CI fixtures built from sources
+  and the `Override.Fire` timing clarified.
 - **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
   override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
   visibility and house marks, query order, warhead detonation, projectile
