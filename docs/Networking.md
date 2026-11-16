@@ -144,11 +144,12 @@ replay and federation are unchanged. Measured traffic is in
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
-button, or type `/pause` or `/resume` as a whole line in match chat. Such a line is
-not sent as chat; in a match without synchronized pause it answers that pausing is
-not available. A pause marker follows the relay's last committed frame; clients finish
-that same frame and stop. Resume uses a separate authenticated control, so it
-works while simulation ticks are stopped. Both markers use the normal ordered
+button, or type `/pause` or `/resume` as a whole line in match chat. Such a line
+goes out as chat to its recipients like any other, so they read who asked; in a
+match without synchronized pause it answers that pausing is not available.
+A pause marker follows the relay's last committed frame; clients finish that
+same frame and stop. Resume uses a separate authenticated control, so it works
+while simulation ticks are stopped. Both markers use the normal ordered
 history and replay recovery. Connections, chat and ticket renewal keep running;
 accepted gameplay inputs wait for their assigned frames after resume. Opening
 Options alone remains local. After a resume nobody can pause again for 30
@@ -329,7 +330,7 @@ returns rooms to the eight-player dialog; one of the lobby refuses these maps ag
 
 A network room plays its host's rules (`skirmish_launch::HostRules`): the host's
 Terrain Deformation box and [Superweapon Limit](superweapon-limit.md). They open as the
-host's Options have them and the host can change them in Game Options. They travel with the host's options, online as
+host's skirmish Game Options have them and the host can change them in the room's Game Options. They travel with the host's options, online as
 `launch.options.host_rules` ([lobby protocol](lobby-protocol.md)) and on LAN as
 `host_rules` beside VERA's room options. Every player's game, the host's too, plays
 them in place of its own from the next scenario (`ProcessAssets::use_personal_rules`).
@@ -372,6 +373,68 @@ refused at the build check before that, and an older replay plays without it and
 its rules check. A guest of an older version is refused at the build check. The lobby
 still accepts the field, so a rollback needs no lobby change; a rolled-back game reads
 `VERARULES.INI` again.
+
+### Watching
+
+A player in VERA's online lobby can watch a match being played (VERA's; gamemd has
+no such thing). The game list shows running matches after the rooms, tagged Watch,
+with how many watch each out of the 10 it takes; Join on one asks the lobby to `watch`
+it ([lobby protocol](lobby-protocol.md#watching)). The lobby lists only matches of the
+watcher's own version between two or more players, on a relay that lets watchers in,
+and never one from a room with a password, a clan room, a generated map or a co-op
+mission: a watcher's game cannot yet rebuild their starts. A host chooses in Create
+Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
+or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
+
+The lobby's grant carries the match's start, its options and a watch ticket. The
+watcher's game downloads the map as a guest does, checks that its version and rules
+digest are the players', and joins the relay as a watcher (`live_service::begin_watch`,
+`poll_watch`): a read-only session that pulls the match's stream from its first frame,
+held back by the delay, and sends nothing into it, not even a checksum
+(relay README, "Watchers"). It loads the world as a returning player does, with no
+progress reports and nobody waiting for it, and then plays the stream's frames. Until
+it reaches the match's delayed present it runs them at speed, in passes of up to 50 ms
+a picture where a returning player's stop at 8 frames or 8 ms, says Catching up, and
+keeps its sounds off. It keeps every frame it has read rather than a returning player's
+64, so a long match is read to its end before the relay forgets it, 300 seconds after
+the end. It checks its world against the checksums all players reported
+alike and stops with the usual message when they differ.
+
+A watcher stands in one player's seat: that player's sidebar, credits and sounds, with
+the whole map shown. Only the picture changes: every House keeps its own fog in the
+shared world. It sends nothing in that seat either (`Simulation::install_watcher`): the
+followed player's records are another game's to it, so their Options opens nothing and
+their leaving ends the watch no more than it ends the other players' match. Tab follows
+the next player still in the match, in House order, also while a frame waits on the
+stream (`match_runtime::watching`): online the current House only chooses this game's
+view and result, so following rebuilds just the objects' owner and discovery bytes from
+the history every player's game keeps (`Simulation::follow_house`). After the last
+player, Tab shows the observer's sidebar as an observer in the room sees it: each
+player's name, kills, units and money, and the time played on the credits counter
+(`Simulation::observe`). Only the sidebar changes: the world keeps the last player's
+House, so the sounds, radar and end of the match stay that player's. The next Tab
+follows the first player again. A watcher gives no
+orders: its input is the camera, zoom, Tab
+and Escape, and it has no chat. Escape leaves at once; the returned transport's relay
+Leave ends the watcher's session. A match that ends with a result ends for the watcher
+as for the player it follows, with the score page, then the online lobby. One that every
+player leaves without a result returns it to the lobby with a line saying the match
+ended. The lobby renews a watcher's relay pass as it does a player's (`renew_watch`).
+
+Older versions and rollbacks: a game from before watching never asks for the list, its
+rooms send no `watching`, and their matches are never watchable. A watcher sees only
+matches of its own version, and its game refuses a start whose version or rules digest
+differs (Could not start watching this match). A lobby from before watching, or rolled
+back to it, answers the list with 404, which the game takes as no matches and as a lobby
+that takes no `watching`: a room's options then leave it out. Before the list's first
+answer a room sends it, and an old lobby refuses those options: the host's game stops
+sending it, says so, and the room plays unwatched. A lobby that lists matches refused
+something else, so the room keeps its Watching and the game asks for the list again; a
+404 then, after a rollback, stops the room's Watching the same way. A grant that comes
+after the player gave up waiting for it is handed back (`unwatch`). A relay rolled back
+to before watchers refuses watch tickets: a new watch
+ends in the lobby with the relay connection message, and a watcher already on it loses
+its connection and returns to the lobby with the usual message.
 
 ## Native behavior and deliberate bounds
 
@@ -487,3 +550,24 @@ both flag every human House to win, both press BC6's Continue, and the kept room
 back on the next stage with no `TXT_SAVE_CAMP_AVAILABLE` line in either setup's chat;
 the host starts it and it must run 90 frames. The manifest's
 `lan.cooperative` records the BC6 result, the room's next map and its startup.
+
+The `online-live-watch` target checks [watching](#watching) from a third account. It
+takes `--online-account <watcher>` and `--online-host <host name>`, both required, and
+refuses every other online option: the host's match sets the rest. From the settled
+online lobby it waits, with only the lobby's own 30-second list poll, until the watch
+list shows a running match whose players include the host, then selects that row and
+presses Join. The grant, the map and the relay's stream must bring it into the match.
+It records whether the game was catching up and the frame where it reached the delayed
+present, then requires 300 more frames without a stop: a desync's "Scenarios do not
+match." or a lost relay's message fails it. It presses Tab until it is back on the
+player it started with, which must pass another player and the observer's sidebar,
+then Escape, which must return it to the online lobby, and leaves for the Main Menu.
+Run it beside `online-live-host` and `online-live-guest` for two other
+accounts. Their `--online-frames` must keep their first match going well past the
+watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
+minutes behind and needs 300 frames after catching up, and it catches up only when it
+joins more than two minutes into the match. The host's room must let everyone watch,
+as the Create Game Watching choice's default does; Quick Match games
+(`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
+records the match, the grant's delay, whether catch-up was seen and the frame it ended,
+the frames played after it, the views Tab went through, and the exit route.

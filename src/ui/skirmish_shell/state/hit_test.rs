@@ -49,6 +49,11 @@ pub fn hovered_shell_control(
     if state.choose_map_modal.is_some() || state.validation_modal.is_some() {
         return None;
     }
+    if state.game_options.is_some() {
+        return crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(layout)
+            .control_at(x, y)
+            .map(SkirmishHoverTarget::GameOptions);
+    }
 
     if let Some(target) = hover_open_combo_item(state, layout, maps, x, y) {
         return Some(target);
@@ -163,9 +168,10 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::LoadSetup) => {
             Some("VERA:LoadSetupHelp")
         }
-        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::TeamStarts) => {
-            Some("VERA:TeamStartsHelp")
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::GameOptions) => {
+            Some(crate::ui::skirmish_shell::game_options::GAME_OPTIONS_HELP)
         }
+        SkirmishHoverTarget::GameOptions(control) => control.status_help_key(),
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
             Some("STT:SkirmishButtonBack")
         }
@@ -381,7 +387,7 @@ pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAct
         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
         OwnerDrawButton::SaveSetup => SkirmishShellAction::SaveSetup,
         OwnerDrawButton::LoadSetup => SkirmishShellAction::LoadSetup,
-        OwnerDrawButton::TeamStarts => SkirmishShellAction::TeamStarts,
+        OwnerDrawButton::GameOptions => SkirmishShellAction::GameOptions,
         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
     }
 }
@@ -403,8 +409,8 @@ pub fn hit_test_owner_draw_button(
     if layout.load_setup_button.contains(x, y) {
         return Some(OwnerDrawButton::LoadSetup);
     }
-    if layout.team_starts_button.contains(x, y) {
-        return Some(OwnerDrawButton::TeamStarts);
+    if layout.game_options_button.contains(x, y) {
+        return Some(OwnerDrawButton::GameOptions);
     }
     if layout.back_button.contains(x, y) {
         return Some(OwnerDrawButton::Back0x5c0);
@@ -449,7 +455,7 @@ pub fn apply_action(
         // The app owns the saved setups.
         SkirmishShellAction::SaveSetup => SkirmishShellAction::SaveSetup,
         SkirmishShellAction::LoadSetup => SkirmishShellAction::LoadSetup,
-        SkirmishShellAction::TeamStarts => SkirmishShellAction::TeamStarts,
+        SkirmishShellAction::GameOptions => SkirmishShellAction::GameOptions,
         SkirmishShellAction::SelectMap(idx) => {
             accept_selected_map(state, maps, idx);
             SkirmishShellAction::None

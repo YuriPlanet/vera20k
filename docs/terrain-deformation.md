@@ -1,7 +1,8 @@
 # Terrain deformation
 
-Explosions can dent the ground, as in Tiberian Sun. It is off by default. Tick **Options → Game
-Options → Terrain Deformation** to switch it on for the next game; a nuke then leaves a crater too.
+Explosions can dent the ground, as in Tiberian Sun. It is off by default. On the skirmish screen,
+press **Game Options** and tick **Terrain Deformation**; every later game plays it, and a nuke then
+leaves a crater too.
 A LAN or online room plays its host's setting, which the host can change in the room's Game
 Options, and a save keeps the rules it was started with. Quick Match plays the original game,
 without it.

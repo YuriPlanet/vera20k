@@ -2,9 +2,9 @@
 
 Each superweapon can be built up to the limit you choose, from 2 to 20, and each building charges
 its own shot. With a limit of ten, ten Nuclear Missile Silos charge ten missiles, each on its own
-timer. It is off by default. Move **Options → Game Options → Superweapon Limit** off its left end
-to switch it on for the next game. A LAN or online room plays its host's setting, which the host
-can change on the room's Game Options slider. A save keeps
+timer. It is off by default. On the skirmish screen, press **Game Options** and move **Superweapon
+Limit** off its left end; every later game plays it. A LAN or online room plays its host's setting,
+which the host can change on the room's Game Options slider. A save keeps
 the rules it was started with. Quick Match plays the original game, without it. Like Terrain
 Deformation, the setting also reaches campaign missions.
 

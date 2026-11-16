@@ -431,6 +431,8 @@ pub struct WolCreateGameLayout {
     pub name: Option<(RectPx, RectPx)>,
     /// VERA's online popup's Ranked game box, below Allow spectators.
     pub ranked: Option<RectPx>,
+    /// VERA's online popup's Watching caption and box, below Ranked game.
+    pub watching: Option<(RectPx, RectPx)>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
@@ -447,9 +449,9 @@ const ONLINE_STATUS_INSET: i32 = 10;
 
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
 /// observer box (the lobby's own Observe box still seats an observer); Room
-/// name, Password, Limit Screen Resolution, Max players, Allow spectators and
-/// Ranked game in the field column clear of the art's Tesla Trooper, and the
-/// status line inside the frame.
+/// name, Password, Limit Screen Resolution, Max players, Allow spectators,
+/// Ranked game and Watching in the field column clear of the art's Tesla
+/// Trooper, and the status line inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
     let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
@@ -468,6 +470,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         room: None,
         name: None,
         ranked: None,
+        watching: None,
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status,
@@ -475,13 +478,14 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
-    // Room name and Password, then the four option rows at the native
-    // 17-unit pitch, and the buttons a row lower than the native box's.
+    // Room name and Password, then the five option rows at the native
+    // 17-unit pitch, and the buttons under the last of them.
     let row = |y| child(133, y, 140, 12);
     let caption = |y| child(11, y + 1, 113, 12);
     let password_label = caption(58);
     let password = row(58);
     let check = |y| RectPx::new(password.x, child(34, y, 234, 14).y, password.w, clan.h);
+    let watching = check(147);
     WolCreateGameLayout {
         password_label,
         password: new_edit_window(password),
@@ -496,8 +500,13 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         )),
         name: Some((caption(40), new_edit_window(row(40)))),
         ranked: Some(check(130)),
-        ok: child(33, 152, 83, 15),
-        cancel: child(184, 152, 83, 15),
+        // Its caption beside the box, as Max players' beside its trackbar.
+        watching: Some((
+            RectPx::new(password_label.x, watching.y, password_label.w, watching.h),
+            watching,
+        )),
+        ok: child(33, 169, 83, 15),
+        cancel: child(184, 169, 83, 15),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -538,6 +547,7 @@ pub fn wol_create_game_layout_on(
             }),
         name: base.name.map(|(label, edit)| (s(label), s(edit))),
         ranked: base.ranked.map(s),
+        watching: base.watching.map(|(label, rect)| (s(label), s(rect))),
         ok: s(base.ok),
         cancel: s(base.cancel),
         status: s(base.status),
@@ -1294,13 +1304,17 @@ mod tests {
         // Limit sits between the password field and the buttons.
         assert!(online.limit.y >= online.password.y + online.password.h);
         assert!(online.limit.y + online.limit.h <= online.ok.y);
-        // Ranked game sits below Allow spectators, above the buttons, which
-        // stay above the status line.
+        // Ranked game sits below Allow spectators and Watching below it,
+        // above the buttons, which stay above the status line.
         let ranked = online.ranked.unwrap();
         let spectators = online.room.unwrap().spectators;
+        let (caption, watching) = online.watching.unwrap();
         assert!(inside(ranked), "{ranked:?}");
+        assert!(inside(caption) && inside(watching), "{watching:?}");
         assert!(ranked.y >= spectators.y + spectators.h);
-        assert!(ranked.y + ranked.h <= online.ok.y);
+        assert!(watching.y >= ranked.y + ranked.h);
+        assert!(caption.x + caption.w <= watching.x);
+        assert!(watching.y + watching.h <= online.ok.y);
         assert!(online.ok.y + online.ok.h <= online.status.y);
     }
 

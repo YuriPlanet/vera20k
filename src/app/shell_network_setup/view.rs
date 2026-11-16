@@ -741,11 +741,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         SetupTrackbar {
             id: SUPERWEAPON_LIMIT,
             value: i32::from(options.host_rules.superweapon_limit.max(1)),
-            range: TrackbarRange::new(
-                1,
-                i32::from(crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX),
-                1,
-            ),
+            range: crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_RANGE,
             enabled: host,
             visible: dialog.modern,
         },

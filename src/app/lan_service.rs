@@ -1291,8 +1291,11 @@ pub(crate) fn install_online_transport(
         transport.relay_ready(),
         "relay has not completed its UDP probe"
     );
+    // A watcher has no source of its own: it stands in the seat of the
+    // player it follows (relay README "Watchers").
     anyhow::ensure!(
-        transport.relay_source().map(usize::from) == Some(launch.local_player_index),
+        transport.relay_watch_delay().is_some()
+            || transport.relay_source().map(usize::from) == Some(launch.local_player_index),
         "relay identity differs from the admitted local participant"
     );
     for source in 0..launch.humans.len() {
