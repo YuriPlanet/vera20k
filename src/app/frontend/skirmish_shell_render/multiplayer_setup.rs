@@ -480,7 +480,7 @@ pub(crate) fn render_multiplayer_setup(
                         &crate::i18n::tr(caption),
                         rect,
                         ShellAlign::V_CENTER,
-                        TEAM_BAR_LABEL_RGB,
+                        ROOM_TEXT_RGB,
                         SHELL_CONTROL_TEXT_DEPTH,
                         ROSTER_TEXT_SCALE,
                     ));
@@ -1247,10 +1247,8 @@ const ROSTER_LINE_H: f32 = 20.0;
 
 /// VERA's room's own text: green, where the shell's is yellow, and a dim
 /// green, where the shell's is dark red, on what is closed.
-const ROOM_TEXT_RGB: [f32; 3] = [0.0, 1.0, 0.0];
+const ROOM_TEXT_RGB: [f32; 3] = [0.0, 0.75, 0.0];
 const ROOM_CLOSED_TEXT_RGB: [f32; 3] = [0.0, 0.5, 0.0];
-/// The team bar's labels: a darker green beside its trackbars' yellow values.
-const TEAM_BAR_LABEL_RGB: [f32; 3] = [0.0, 0.75, 0.0];
 
 /// The local player's row in VERA's roster: a dark red band behind it.
 const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];

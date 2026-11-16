@@ -108,15 +108,19 @@ const ROSTER_SWATCH_LIST_W: i32 = 40;
 /// trackbar, the host's Room size, Team Starts and Team Colors and, online,
 /// Balance; in one without, only the host's Room size. Each part is from
 /// its group's top-left corner, their art at 78% of the shell's size
-/// ([`MultiplayerSetupLayout::control_scale`]). A trackbar is the room's
-/// own 129x21 window at that size, so its frame art fits. Both trackbars'
-/// labels take one width, so the trackbars line up when they stack, and
-/// the buttons stand the groups' gap apart.
+/// ([`MultiplayerSetupLayout::control_scale`]). A trackbar is a
+/// [`TEAM_BAR_TRACKBAR_WINDOW`] window at that size. Both trackbars' labels
+/// take one width, so the trackbars line up when they stack, and the
+/// buttons stand the groups' gap apart.
 const TEAM_BAR_H: i32 = 25;
 const TEAM_BAR_INSET: i32 = 8;
 const TEAM_BAR_GAP: i32 = 12;
 const TEAM_BAR_LABEL: RectPx = RectPx::new(0, 3, 90, 18);
-const TEAM_BAR_TRACKBAR: RectPx = RectPx::new(92, 4, 101, 17);
+const TEAM_BAR_TRACKBAR: RectPx = RectPx::new(92, 4, 151, 17);
+/// The team bar's trackbar window: the room's 129x21 half again as wide,
+/// its plaque the same, so its rail is longer. It has its own frame
+/// (`render::skirmish_shell_chrome::TRACKBAR_FRAMES`).
+const TEAM_BAR_TRACKBAR_WINDOW: (i32, i32) = (194, 21);
 const TEAM_BAR_STARTS: RectPx = RectPx::new(0, 3, 97, 19);
 const TEAM_BAR_COLORS: RectPx = RectPx::new(97 + TEAM_BAR_GAP, 3, 97, 19);
 const TEAM_BAR_BALANCE: RectPx = RectPx::new(0, 3, 97, 19);
@@ -1706,7 +1710,8 @@ impl MultiplayerSetupLayout {
             }
             if let Some((_, bar)) = self.trackbars.iter_mut().find(|(bar, _)| *bar == id) {
                 let corner = small.base_rect(at(trackbar));
-                *bar = small.scale_rect(RectPx::new(corner.x, corner.y, 129, 21));
+                let (w, h) = TEAM_BAR_TRACKBAR_WINDOW;
+                *bar = small.scale_rect(RectPx::new(corner.x, corner.y, w, h));
             }
         }
         if let Some(&[starts, colors]) = starts.as_deref() {
@@ -2494,6 +2499,16 @@ mod tests {
             [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE]
                 .map(|id| popup_layout.control_rect(id).unwrap());
         assert!(teams.y < room.y && teams.x == room.x);
+        // Their windows are half again as wide as the room's, with a frame.
+        let small = popup_layout.control_scale(TEAM_COUNT);
+        let base = small.base_rect(teams);
+        assert!(
+            base.w > 190
+                && crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                    true, base.w, base.h, small
+                )
+                .is_some()
+        );
         assert_eq!(
             colors.x - (starts.x + starts.w),
             balance.x - (colors.x + colors.w)
