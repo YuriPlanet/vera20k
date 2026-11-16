@@ -2563,8 +2563,8 @@ impl WolCapture {
                     use crate::ui::multiplayer_setup::{
                         BALANCE, SetupAction, SetupColumn, TEAM_COUNT,
                     };
-                    // A room with teams lets the guest in watching; the
-                    // guest takes a seat by picking Team B.
+                    // With Teams Off the room is free-for-all and seats the
+                    // guest as it comes in; the guest then picks Team B.
                     let natasha = state
                         .match_state
                         .session
@@ -2574,7 +2574,7 @@ impl WolCapture {
                         })
                         .cloned()
                         .context("Natasha")?;
-                    ensure!(natasha.is_observer(), "Natasha came in on a seat");
+                    ensure!(!natasha.is_observer(), "Natasha came in watching");
                     let mut slot = natasha.slot;
                     slot.team = crate::skirmish_launch::LaunchTeam::Team(1);
                     crate::app::shell_wol::service_event(
@@ -2695,6 +2695,53 @@ impl WolCapture {
                                     value as u32
                                 ),
                         "the host's side {value} for the guest gave {slot:?}"
+                    );
+                    // The host drags the guest's name onto Team A's box: the
+                    // list the press opened closes, and the guest moves.
+                    let view = setup_view(state)?;
+                    let layout = crate::app::input::multiplayer_setup::layout(state);
+                    let (_, name) = row_combo(
+                        &view,
+                        SetupColumn::Player,
+                        natasha.raw_slot_index.context("Natasha's row")?,
+                    )
+                    .context("Natasha's name")?;
+                    let from = layout
+                        .control_rect(name.id)
+                        .context("Natasha's name cell")?;
+                    let team_a = view
+                        .headers
+                        .iter()
+                        .position(|header| {
+                            header.as_ref().is_some_and(|header| {
+                                header.group == crate::ui::multiplayer_setup::SetupGroup::Team(0)
+                            })
+                        })
+                        .and_then(|row| layout.group_boxes[row])
+                        .context("Team A's box")?;
+                    set_window_pointer_to_rect_center(state, from);
+                    crate::app::input::multiplayer_setup::cursor_moved(state);
+                    crate::app::input::multiplayer_setup::mouse(
+                        state,
+                        winit::event::MouseButton::Left,
+                        true,
+                    );
+                    set_window_pointer_to_rect_center(state, team_a);
+                    crate::app::input::multiplayer_setup::cursor_moved(state);
+                    crate::app::input::multiplayer_setup::mouse(
+                        state,
+                        winit::event::MouseButton::Left,
+                        false,
+                    );
+                    let moved = guest_row(state).context("Natasha")?;
+                    ensure!(
+                        !moved.is_observer()
+                            && moved.slot.team == crate::skirmish_launch::LaunchTeam::Team(0)
+                            && state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
+                                ui.popup.control.is_none() && ui.row_drag.is_none()
+                            }),
+                        "dragging Natasha onto Team A gave {:?}",
+                        moved.slot.team
                     );
                     // The room tells who left too; the guest then comes back.
                     crate::app::shell_network_setup::user_left(state, "Natasha", false)?;

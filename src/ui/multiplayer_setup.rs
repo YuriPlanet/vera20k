@@ -75,7 +75,7 @@ const ROSTER_HEADER_H: i32 = 23;
 const ROSTER_LABEL_Y: i32 = 8;
 const ROSTER_LABEL_H: i32 = 18;
 /// The space between one group's box and the next one's.
-const ROSTER_GROUP_GAP: i32 = 10;
+const ROSTER_GROUP_GAP: i32 = 14;
 /// A group's box reaches this far past its entries' left and right edges,
 /// and above and below them.
 const ROSTER_BOX_MARGIN: (i32, i32) = (5, 3);
@@ -699,7 +699,10 @@ pub(crate) struct SetupRowIcon {
 pub(crate) enum SetupGroup {
     /// The players on one team, by its number (0 is Team A).
     Team(u8),
-    /// The players on no team.
+    /// Every seated player of a room with Teams Off, in one box without a
+    /// caption.
+    Players,
+    /// The players on no team, in an older host's room with Teams set.
     NoTeam,
     /// The host's closed seats, over the Add slot row that opens one again.
     ClosedSeats,
@@ -717,6 +720,32 @@ pub(crate) struct SetupHeader {
     pub(crate) join: Option<String>,
     pub(crate) join_enabled: bool,
 }
+
+/// A roster row the host of VERA's room may drag to another box: a
+/// person's or an AI's, and the box it stands in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DragRow {
+    pub(crate) row: u8,
+    pub(crate) group: SetupGroup,
+    /// Whether it may go to the spectators: a guest's, not the host's own or
+    /// an AI's.
+    pub(crate) may_watch: bool,
+}
+
+/// The host's drag of a roster row: pressed on `row`, carried once the
+/// pointer leaves the press by [`ROW_DRAG_START`], over the box whose header
+/// is page row `target`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RowDrag {
+    pub(crate) row: u8,
+    from: (i32, i32),
+    pub(crate) at: (i32, i32),
+    pub(crate) carrying: bool,
+    pub(crate) target: Option<usize>,
+}
+/// How far, in window pixels, the pointer moves before a pressed row is
+/// carried; a shorter press stays a click on its cell.
+const ROW_DRAG_START: i32 = 6;
 
 /// A box VERA's room opens over itself; it takes the room's input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -763,6 +792,8 @@ pub(crate) struct SetupView {
     pub(crate) team_colors_enabled: bool,
     /// Online, the host's Balance: the room's mode seats players on teams.
     pub(crate) balance_enabled: bool,
+    /// The rows the host may drag to another box, in a room with teams.
+    pub(crate) drag_rows: Vec<DragRow>,
     /// VERA's missing-map offer is open over the room.
     pub(crate) map_offer_open: bool,
     pub(crate) mode_label: String,
@@ -786,6 +817,19 @@ impl SetupView {
     }
     pub(crate) fn combo(&self, id: u16) -> Option<&SetupCombo> {
         self.combos.iter().find(|combo| combo.id == id)
+    }
+    /// The box a dragged `row` lands in when dropped on the box whose
+    /// header is page row `header`: a team or the one box of a room with
+    /// Teams Off, the spectators for a guest; not the box it is in.
+    pub(crate) fn drop_group(&self, row: u8, header: usize) -> Option<SetupGroup> {
+        let drag = self.drag_rows.iter().find(|drag| drag.row == row)?;
+        let group = self.headers.get(header)?.as_ref()?.group;
+        let fits = match group {
+            SetupGroup::Team(_) | SetupGroup::Players => true,
+            SetupGroup::Spectators => drag.may_watch,
+            SetupGroup::NoTeam | SetupGroup::ClosedSeats => false,
+        };
+        (fits && group != drag.group && !self.locked).then_some(group)
     }
     /// The header whose Join button is `id`, while it shows one.
     pub(crate) fn header_button(&self, id: u16) -> Option<&SetupHeader> {
@@ -872,6 +916,11 @@ pub(crate) enum SetupAction {
     MapOffer {
         download: bool,
     },
+    /// The host drops a dragged roster row on another box.
+    DropRow {
+        row: u8,
+        group: SetupGroup,
+    },
 }
 
 /// VERA asks a guest before downloading a room map it does not have, then
@@ -913,6 +962,8 @@ pub(crate) struct MultiplayerSetupState {
     /// never changes whoever took its place.
     popup_row: Option<u8>,
     pub(crate) trackbar_hold: Option<TrackbarHold<u16>>,
+    /// The host's drag of a roster row, while the button is down.
+    pub(crate) row_drag: Option<RowDrag>,
     pub(crate) statics: SkirmishStatics,
     pub(crate) shown: bool,
     pub(crate) focused_control: u16,
@@ -942,6 +993,7 @@ impl Default for MultiplayerSetupState {
             popup: ComboPopupInteraction::default(),
             popup_row: None,
             trackbar_hold: None,
+            row_drag: None,
             statics: SkirmishStatics::default(),
             shown: false,
             focused_control: CHAT,
@@ -984,6 +1036,40 @@ impl MultiplayerSetupState {
     pub(crate) fn open_list(&mut self, control: u16, row: u8, selected: Option<usize>) {
         self.popup.open(control, selected);
         self.popup_row = Some(row);
+    }
+    /// The host presses roster row `row` at `x`, `y`: it may drag it.
+    pub(crate) fn press_row(&mut self, row: u8, x: i32, y: i32) {
+        self.row_drag = Some(RowDrag {
+            row,
+            from: (x, y),
+            at: (x, y),
+            carrying: false,
+            target: None,
+        });
+    }
+    /// The pointer moves with a row pressed: once it has left the press the
+    /// row is carried, its list closing, over the box `target` gives.
+    pub(crate) fn drag_row(&mut self, x: i32, y: i32, target: impl FnOnce(u8) -> Option<usize>) {
+        let Some(drag) = self.row_drag.as_mut() else {
+            return;
+        };
+        drag.at = (x, y);
+        if !drag.carrying && (x - drag.from.0).abs().max((y - drag.from.1).abs()) >= ROW_DRAG_START
+        {
+            drag.carrying = true;
+            self.popup.close();
+            self.popup_row = None;
+        }
+        drag.target = if drag.carrying {
+            target(drag.row)
+        } else {
+            None
+        };
+    }
+    /// The button comes up: the row and the box it was carried to.
+    pub(crate) fn drop_row(&mut self) -> Option<(u8, usize)> {
+        let drag = self.row_drag.take()?;
+        Some((drag.row, drag.target?))
     }
     /// The place VERA's roster shows, of the last `max_top`.
     pub(crate) fn roster_top(&self, max_top: usize) -> usize {
@@ -1133,6 +1219,7 @@ impl MultiplayerSetupState {
         self.buttons = ShellButtonInteraction::default();
         self.popup.cancel_pointer();
         self.trackbar_hold = None;
+        self.row_drag = None;
         self.chat.list.scroll.cancel();
         self.roster_scrollbar.cancel();
     }
@@ -1631,6 +1718,12 @@ impl MultiplayerSetupLayout {
             ));
         }
     }
+    /// The page row of the header whose box in VERA's roster holds `x`, `y`.
+    pub(crate) fn group_box_at(&self, x: i32, y: i32) -> Option<usize> {
+        self.group_boxes
+            .iter()
+            .position(|rect| rect.is_some_and(|rect| rect.contains(x, y)))
+    }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
     pub(crate) fn arrange_extended_rows(&mut self) {
@@ -1956,6 +2049,7 @@ mod tests {
             team_starts_enabled: true,
             team_colors_enabled: true,
             balance_enabled: true,
+            drag_rows: Vec::new(),
             map_offer_open: false,
             mode_label: String::new(),
             map_label: String::new(),
@@ -2153,6 +2247,54 @@ mod tests {
         assert!(!ui.accept_highlight(false, now + std::time::Duration::from_millis(1500)));
         assert!(!ui.accept_highlight(true, now + std::time::Duration::from_millis(1600)));
         assert!(ui.accept_highlight(true, now + std::time::Duration::from_millis(2600)));
+    }
+
+    /// The host's press on a row carries it only once the pointer has left
+    /// the press, closing the list the press opened. It drops on another
+    /// team, and a guest's on the spectators too; never on its own box or the
+    /// closed seats, and a row the host may not drag drops nowhere.
+    #[test]
+    fn a_carried_row_drops_only_on_another_box() {
+        let mut view = vera_room_view();
+        let header = |group| {
+            Some(SetupHeader {
+                group,
+                caption: String::new(),
+                join: None,
+                join_enabled: false,
+            })
+        };
+        view.headers[0] = header(SetupGroup::Team(0));
+        view.headers[2] = header(SetupGroup::Team(1));
+        view.headers[4] = header(SetupGroup::Spectators);
+        view.headers[5] = header(SetupGroup::ClosedSeats);
+        let drag = |row, group, may_watch| DragRow {
+            row,
+            group,
+            may_watch,
+        };
+        view.drag_rows = vec![
+            drag(1, SetupGroup::Team(0), true),
+            drag(3, SetupGroup::Team(1), false),
+        ];
+        assert_eq!(view.drop_group(1, 2), Some(SetupGroup::Team(1)));
+        assert_eq!(view.drop_group(1, 0), None);
+        assert_eq!(view.drop_group(1, 4), Some(SetupGroup::Spectators));
+        assert_eq!(view.drop_group(3, 4), None);
+        assert_eq!(view.drop_group(3, 5), None);
+        assert_eq!(view.drop_group(3, 0), Some(SetupGroup::Team(0)));
+        assert_eq!(view.drop_group(2, 2), None);
+
+        let mut ui = MultiplayerSetupState::default();
+        ui.open_list(SetupColumn::Player.control(1), 1, Some(0));
+        ui.press_row(1, 100, 100);
+        ui.drag_row(103, 105, |_| Some(2));
+        assert!(ui.popup.control.is_some());
+        assert_eq!(ui.row_drag.and_then(|drag| drag.target), None);
+        ui.drag_row(100, 106, |_| Some(2));
+        assert!(ui.popup.control.is_none());
+        assert_eq!(ui.drop_row(), Some((1, 2)));
+        assert_eq!(ui.row_drag, None);
     }
 
     /// VERA's game room trades a guest's Accept for Game Options in its

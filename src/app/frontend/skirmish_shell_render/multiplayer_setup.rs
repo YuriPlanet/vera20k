@@ -397,16 +397,18 @@ pub(crate) fn render_multiplayer_setup(
             },
         ));
         // VERA's roster: a box around each group, lit while a press in it
-        // joins the group.
+        // joins the group or the host carries a row over it.
         if layout.roster {
+            let target = ui.row_drag.and_then(|drag| drag.target);
             for (row, header) in view.headers.iter().enumerate() {
                 let (Some(header), Some(rect)) = (header, layout.group_boxes[row]) else {
                     continue;
                 };
                 let id = team_join(row);
-                let lit = header.join.is_some()
-                    && view.enabled(id)
-                    && (ui.buttons.hovered == Some(id) || ui.buttons.is_pressed(id));
+                let lit = target == Some(row)
+                    || header.join.is_some()
+                        && view.enabled(id)
+                        && (ui.buttons.hovered == Some(id) || ui.buttons.is_pressed(id));
                 push_rect_outline(
                     &mut controls,
                     atlas,
@@ -414,6 +416,31 @@ pub(crate) fn render_multiplayer_setup(
                     if lit { ROOM_TEXT_RGB } else { ROSTER_BOX_RGB },
                     SHELL_CONTROL_DEPTH,
                 );
+            }
+            // The carried row's name follows the pointer.
+            if let Some(drag) = ui.row_drag.filter(|drag| drag.carrying)
+                && let Some(name) = view
+                    .combos
+                    .iter()
+                    .find(|combo| {
+                        combo.row == drag.row
+                            && matches!(
+                                SetupColumn::decode(combo.id),
+                                Some((SetupColumn::Player, _))
+                            )
+                    })
+                    .and_then(|combo| combo.choices.get(combo.selected?))
+            {
+                let (x, y) = drag.at;
+                let h = (ROSTER_LINE_H * scale.factor()).round() as i32;
+                texts.push(sized(
+                    &name.text,
+                    RectPx::new(x + h / 2, y - h / 2, 20 * h, h),
+                    ShellAlign::V_CENTER,
+                    ROOM_TEXT_RGB,
+                    SHELL_CONTROL_TEXT_DEPTH,
+                    ROSTER_TEXT_SCALE,
+                ));
             }
             // The shell's own scrollbar, when the groups do not all fit.
             if let Some(roster) = layout.roster_scroll(&view)
@@ -1208,6 +1235,8 @@ fn player_badge(
 /// The box around a group of VERA's roster, while a press in it does not
 /// join the group.
 const ROSTER_BOX_RGB: [f32; 3] = [96.0 / 255.0, 96.0 / 255.0, 96.0 / 255.0];
+/// A roster row's height in 800x600 pixels, for the name a drag carries.
+const ROSTER_LINE_H: f32 = 20.0;
 
 /// VERA's room's own text: green, where the shell's is yellow, and a dim
 /// green, where the shell's is dark red, on what is closed.

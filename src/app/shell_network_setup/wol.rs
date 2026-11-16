@@ -169,7 +169,7 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
 /// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
 /// is taken, so it stays open until its host's Max players, and one with
-/// teams lets the newcomer watch first (`MatchSession::network_join_row`).
+/// Teams set lets the newcomer watch first (`MatchSession::network_join_row`).
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {

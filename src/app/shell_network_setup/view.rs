@@ -163,7 +163,7 @@ impl RoomListing {
 pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
-    let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
+    mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
     let capacity = session
         .network_setup_capacity()?
         .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
@@ -198,7 +198,7 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
             session,
             visible_limit,
             add_slot,
-            grouped.then(|| skirmish_shell::team_choices(mode.must_ally)),
+            grouped,
             session.network_teams(),
         )
     } else {
@@ -357,6 +357,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         joins(LaunchTeam::Team(team))
                             .then(|| join(!session.network_team_full(team))),
                     ),
+                    // The one box of a room with Teams Off has no caption;
+                    // a spectator's Join seats it there.
+                    SetupGroup::Players => (
+                        String::new(),
+                        (placed && !seated && !host).then(|| join(true)),
+                    ),
                     // Only an older host seats players on no team.
                     SetupGroup::NoTeam => (fill("VERA:NoTeamGroup"), None),
                     SetupGroup::ClosedSeats => (fill("VERA:ClosedSeatsGroup"), None),
@@ -380,11 +386,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         && !closed,
                     join: button.map(|(label, _)| label),
                 });
-                // The host's Add AI fills the first free seat on this team,
-                // while the team has one.
-                if let (SetupGroup::Team(team), Some(seat)) = (group, ai_seat)
-                    && !session.network_team_full(team)
-                {
+                // The host's Add AI fills the first free seat in this box,
+                // while its team has one.
+                let room = match group {
+                    SetupGroup::Team(team) => !session.network_team_full(team),
+                    SetupGroup::Players => true,
+                    _ => false,
+                };
+                if let (true, Some(seat)) = (room, ai_seat) {
                     let item = |value: i32, text: String| SetupChoice {
                         value,
                         text,
@@ -848,6 +857,40 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .find(|human| human.raw_slot_index == Some(row))?;
         ping_icon(protocol.ping(&human.name)?)
     });
+    // The host drags people and AI between the boxes of a room with teams;
+    // it never sends itself to watch.
+    let mut box_of = None;
+    let drag_rows = listing
+        .listed
+        .iter()
+        .filter(|_| host && grouped)
+        .filter_map(|listed| {
+            let row = match *listed {
+                Listed::Header(group, _) => {
+                    box_of = Some(group);
+                    return None;
+                }
+                Listed::Row(row) => row,
+            };
+            let group = box_of.filter(|group| *group != SetupGroup::ClosedSeats)?;
+            let person = launch
+                .humans
+                .iter()
+                .position(|human| human.raw_slot_index == Some(row));
+            let may_watch = match person {
+                Some(index) if index == launch.local_player_index => {
+                    (group != SetupGroup::Spectators).then_some(false)?
+                }
+                Some(_) => true,
+                None => session.network_display_ai(row).map(|_| false)?,
+            };
+            Some(DragRow {
+                row,
+                group,
+                may_watch,
+            })
+        })
+        .collect();
     Some(SetupView {
         first_row,
         row_count,
@@ -894,6 +937,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
+        drag_rows,
         map_offer_open: state
             .frontend
             .multiplayer_setup
@@ -926,16 +970,15 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
 
 /// VERA's room list: its seats, the host's Add slot row, then the
 /// spectators, those in the join queue first. In a mode with teams
-/// (`teams`, the Team list's items) a header for each team in use and for
-/// the list's next free letter goes over its players (with Teams set,
-/// `fixed`, one for each of its teams, empty or not), then come the players
-/// on no team, the free seats with the Add slot row, and the spectators,
-/// each group under its header.
+/// (`grouped`) a header goes over each group: with Teams set (`fixed`), one
+/// for each of its teams, empty or not, then the players on no team; with
+/// Teams Off, one box of every seated player. The Add slot row and the
+/// spectators follow, each under its header.
 fn listed_rows(
     session: &MatchSession,
     visible_limit: usize,
     add_slot: Option<u8>,
-    teams: Option<Vec<SkirmishComboItem>>,
+    grouped: bool,
     fixed: Option<u8>,
 ) -> Vec<Listed> {
     let Some(launch) = session.network_setup() else {
@@ -967,7 +1010,7 @@ fn listed_rows(
     };
     let mut spectators: Vec<u8> = rows.filter(|row| watching(*row) == Some(true)).collect();
     spectators.sort_by_key(place);
-    let Some(choices) = teams else {
+    if !grouped {
         return seated
             .chain(add_slot)
             .chain(spectators)
@@ -986,53 +1029,38 @@ fn listed_rows(
             .network_row_choices(*row)
             .map_or(LaunchTeam::None, |slot| slot.team)
     };
-    // The free seats show no group: players take them by their team's Join,
-    // and the host fills one with a team header's Add AI. Only an older
-    // host's room seats players on no team.
+    // The free seats show no group: players take them by their box's Join,
+    // and the host fills one with a box header's Add AI.
     let players: Vec<u8> = seated.filter(held).collect();
-    let teams: Vec<u8> = match fixed {
-        Some(count) => (0..count).collect(),
-        None => {
-            let mut teams: Vec<u8> = players
-                .iter()
-                .filter_map(|row| match team_of(row) {
-                    LaunchTeam::Team(team) => Some(team),
-                    LaunchTeam::None => None,
-                })
-                .collect();
-            let next = choices.into_iter().find_map(|item| match item {
-                SkirmishComboItem::Team(team) => {
-                    u8::try_from(team).ok().filter(|team| !teams.contains(team))
-                }
-                _ => None,
-            });
-            teams.extend(next);
-            teams.sort_unstable();
-            teams.dedup();
-            teams
-        }
-    };
     let mut listed = Vec::new();
     // A header, how many players it counts, then its rows.
     let mut group = |header, count: usize, rows: Vec<u8>| {
         listed.push(Listed::Header(header, count));
         listed.extend(rows.into_iter().map(Listed::Row));
     };
-    for &team in &teams {
-        let members: Vec<u8> = players
-            .iter()
-            .copied()
-            .filter(|row| team_of(row) == LaunchTeam::Team(team))
-            .collect();
-        group(SetupGroup::Team(team), members.len(), members);
-    }
-    let loners: Vec<u8> = players
-        .iter()
-        .copied()
-        .filter(|row| !matches!(team_of(row), LaunchTeam::Team(team) if teams.contains(&team)))
-        .collect();
-    if !loners.is_empty() {
-        group(SetupGroup::NoTeam, loners.len(), loners);
+    match fixed {
+        // With Teams Off the room is one box, every player for themselves
+        // unless they pick an ally letter in the Team list.
+        None => group(SetupGroup::Players, players.len(), players),
+        Some(count) => {
+            for team in 0..count {
+                let members: Vec<u8> = players
+                    .iter()
+                    .copied()
+                    .filter(|row| team_of(row) == LaunchTeam::Team(team))
+                    .collect();
+                group(SetupGroup::Team(team), members.len(), members);
+            }
+            // Only an older host's room seats players on no team.
+            let loners: Vec<u8> = players
+                .iter()
+                .copied()
+                .filter(|row| !matches!(team_of(row), LaunchTeam::Team(team) if team < count))
+                .collect();
+            if !loners.is_empty() {
+                group(SetupGroup::NoTeam, loners.len(), loners);
+            }
+        }
     }
     // The host's Add slot opens a closed seat again.
     if let Some(row) = add_slot {
@@ -1085,44 +1113,30 @@ mod tests {
         session
     }
 
-    /// In a mode with teams each team in use and the next free letter head
-    /// their players, then the spectators; the free seats show no group. A
-    /// guest who starts watching moves under Spectators.
+    /// In a mode with teams and Teams Off, every seated player lists in one
+    /// box, then the spectators; the free seats show no group. A guest who
+    /// starts watching moves under Spectators.
     #[test]
-    fn a_room_with_teams_lists_its_players_under_team_headers() {
+    fn a_room_with_teams_off_lists_its_players_in_one_box() {
         use Listed::{Header, Row};
-        use SetupGroup::{Spectators, Team};
+        use SetupGroup::{Players, Spectators};
         let mut session = vera_room();
         let limit = usize::from(session.network_player_row_limit());
-        let teams = || Some(skirmish_shell::team_choices(false));
         assert_eq!(
-            listed_rows(&session, limit, None, teams(), None),
-            [
-                Header(Team(0), 1),
-                Row(0),
-                Header(Team(1), 1),
-                Row(1),
-                Header(Team(2), 0),
-                Header(Spectators, 0),
-            ]
+            listed_rows(&session, limit, None, true, None),
+            [Header(Players, 2), Row(0), Row(1), Header(Spectators, 0)]
         );
         let guest = session.network_setup().unwrap().humans[1].slot.clone();
         session
             .accept_network_peer_choices(1, guest, true, None)
             .unwrap();
         assert_eq!(
-            listed_rows(&session, limit, None, teams(), None),
-            [
-                Header(Team(0), 1),
-                Row(0),
-                Header(Team(1), 0),
-                Header(Spectators, 1),
-                Row(4),
-            ]
+            listed_rows(&session, limit, None, true, None),
+            [Header(Players, 1), Row(0), Header(Spectators, 1), Row(4)]
         );
         // A mode without teams lists its rows as before.
         assert_eq!(
-            listed_rows(&session, limit, None, None, None),
+            listed_rows(&session, limit, None, false, None),
             [Row(0), Row(1), Row(2), Row(3), Row(4)]
         );
     }
@@ -1137,9 +1151,8 @@ mod tests {
         let mut session = vera_room();
         session.set_network_teams(Some(3)).unwrap();
         let limit = usize::from(session.network_player_row_limit());
-        let teams = || Some(skirmish_shell::team_choices(false));
         assert_eq!(
-            listed_rows(&session, limit, None, teams(), session.network_teams()),
+            listed_rows(&session, limit, None, true, session.network_teams()),
             [
                 Header(Team(0), 1),
                 Row(0),
@@ -1152,7 +1165,7 @@ mod tests {
         session
             .choose_network_row_kind(3, NetworkRowKind::Closed)
             .unwrap();
-        let listed = listed_rows(&session, limit, Some(3), teams(), session.network_teams());
+        let listed = listed_rows(&session, limit, Some(3), true, session.network_teams());
         assert_eq!(
             listed[5..],
             [Header(ClosedSeats, 1), Row(3), Header(Spectators, 0)]
@@ -1182,7 +1195,7 @@ mod tests {
             .unwrap();
         let limit = usize::from(session.network_player_row_limit());
         assert_eq!(
-            listed_rows(&session, limit, None, None, None),
+            listed_rows(&session, limit, None, false, None),
             [Listed::Row(0), Listed::Row(5), Listed::Row(4)]
         );
     }

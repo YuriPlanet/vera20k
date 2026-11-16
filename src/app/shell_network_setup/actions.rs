@@ -84,6 +84,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
         SetupAction::Trackbar { control, value } => trackbar(state, control, value),
         SetupAction::Select { control, value } => select(state, control, value),
         SetupAction::Join { control } => join(state, control),
+        SetupAction::DropRow { row, group } => drop_row(state, row, group),
         SetupAction::Chat(text) if dialog.wol() => {
             super::wol::chat(state, text);
             Ok(())
@@ -522,6 +523,10 @@ fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             slot.team = LaunchTeam::Team(team);
             false
         }
+        SetupGroup::Players => {
+            slot.team = state.match_state.session.network_default_team();
+            false
+        }
         SetupGroup::NoTeam => anyhow::bail!("no team has no Join"),
         SetupGroup::ClosedSeats => anyhow::bail!("closed seats have no Join"),
         SetupGroup::Spectators => true,
@@ -529,17 +534,66 @@ fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
     commit_row(state, row, slot, observer)
 }
 
-/// The host's Add AI on a team header: an AI of the picked difficulty in
-/// the first free seat, the list's row, on the header's team. It publishes
-/// as the Player list's AI does.
+/// The host drops a dragged roster row on another box: a person moves
+/// there as the host's Team list or Seat and Move to spectators would move
+/// them (`service::move_player`), an AI as its Team list would.
+fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    let page_row = current
+        .headers
+        .iter()
+        .position(|header| header.as_ref().is_some_and(|header| header.group == group));
+    anyhow::ensure!(
+        page_row.is_some_and(|header| current.drop_group(row, header) == Some(group)),
+        "the row does not drop there"
+    );
+    let session = &state.match_state.session;
+    let team = match group {
+        SetupGroup::Team(team) => LaunchTeam::Team(team),
+        SetupGroup::Players => session.network_default_team(),
+        _ => LaunchTeam::None,
+    };
+    let observer = group == SetupGroup::Spectators;
+    let launch = session.network_setup().expect("view has setup");
+    if let Some(index) = launch
+        .humans
+        .iter()
+        .position(|human| human.raw_slot_index == Some(row))
+    {
+        let team = if observer {
+            launch.humans[index].slot.team
+        } else {
+            team
+        };
+        let change = super::service::move_player(state, index, team, observer)?;
+        super::service::publish_choices(state, change);
+        return Ok(());
+    }
+    let mut slot = session
+        .network_row_choices(row)
+        .ok_or_else(|| anyhow::anyhow!("the AI's row has no choices"))?;
+    slot.team = team;
+    state
+        .match_state
+        .session
+        .set_network_row_choices(row, slot)?;
+    queue(state, NetworkSetupRequest::PublishOptions);
+    Ok(())
+}
+
+/// The host's Add AI on a box header: an AI of the picked difficulty in
+/// the first free seat, the list's row, on the header's team (with Teams
+/// Off, the mode's default). It publishes as the Player list's AI does.
 fn add_ai(
     state: &mut AppState,
     group: Option<SetupGroup>,
     row: u8,
     value: i32,
 ) -> anyhow::Result<()> {
-    let Some(SetupGroup::Team(team)) = group else {
-        anyhow::bail!("Add AI belongs to a team header");
+    let team = match group {
+        Some(SetupGroup::Team(team)) => LaunchTeam::Team(team),
+        Some(SetupGroup::Players) => state.match_state.session.network_default_team(),
+        _ => anyhow::bail!("Add AI belongs to a box header"),
     };
     let difficulty = match value {
         0 => return Ok(()),
@@ -561,7 +615,7 @@ fn add_ai(
         .session
         .network_row_choices(row)
         .ok_or_else(|| anyhow::anyhow!("the AI's row has no choices"))?;
-    slot.team = LaunchTeam::Team(team);
+    slot.team = team;
     state
         .match_state
         .session

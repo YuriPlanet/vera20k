@@ -279,11 +279,13 @@ that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
 again without it. A room has 2 to 15 teams, named A to O.
 
-In a VERA room whose mode has teams, people play only on a team, gamemd's A to D while
-Teams is Off. A newcomer comes in watching while a spectator seat is open and takes a
-seat with a team header's Join; a guest who picks no team watches instead. With no
-spectator seat open, the host seats a newcomer on the team with the fewest players.
-Nothing new travels: guests send their picks as before, and a released guest, whose
+In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
+comes in watching while a spectator seat is open and takes a seat with a team header's
+Join; a guest who picks no team watches instead, and with no spectator seat open the
+host seats a newcomer on the team with the fewest players. With Teams Off the room is
+one box without a caption, free-for-all, and seats newcomers as gamemd does: turning
+Teams Off takes every player and AI off their team, and players may still pick gamemd's
+A to D allies. Nothing new travels: guests send their picks as before, and a released guest, whose
 team headers have Join too, takes a seat the same way. An older host still seats a
 newcomer on no team; a newer guest lists that player under a No team header without
 Join. A rollback seats newcomers as before.

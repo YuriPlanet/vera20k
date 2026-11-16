@@ -1,6 +1,7 @@
 //! VERA's room Teams: the host's Teams count, Team Starts, Team Colors and,
-//! online, the balance. The session keeps every seated player on one of the
-//! room's teams (`MatchSession::set_network_teams`); Team Starts seats each
+//! online, the balance. With Teams set the session keeps every seated player
+//! on one of the room's teams (`MatchSession::set_network_teams`); with it
+//! Off the room is one free-for-all box. Team Starts seats each
 //! team's players next to each other, as it does in skirmish
 //! ([`crate::ui::skirmish_shell::starts_by_team`]), and Team Colors gives
 //! each team its own range of hues ([`colors_by_team`]). The lobby weighs

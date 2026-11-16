@@ -332,6 +332,15 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         } else {
             layout.control_at(&view, x, y)
         };
+        // The host carries a pressed roster row to another box.
+        ui.drag_row(x, y, |row| {
+            layout
+                .group_box_at(x, y)
+                .filter(|header| view.drop_group(row, *header).is_some())
+        });
+        if ui.row_drag.is_some_and(|drag| drag.carrying) {
+            ui.buttons.hovered = None;
+        }
         ui.statics.hover(&help, Instant::now());
         if let Some(popup) = ui.popup_geometry(&view, &layout) {
             ui.popup.pointer_moved(popup, x, y);
@@ -428,6 +437,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 // VERA's roster draws no faces: a press anywhere on a cell
                 // opens its list, while it has more than one item.
                 let press = if layout.roster {
+                    // The host may also drag a player's or AI's row away.
+                    if view.drag_rows.iter().any(|drag| drag.row == combo.row) {
+                        ui.press_row(combo.row, x, y);
+                    }
                     roster_cell_opens(combo).then(|| {
                         ui.open_list(control, combo.row, combo.selected);
                         ComboPress::Open
@@ -486,6 +499,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         ui.trackbar_hold = None;
         ui.popup.cancel_pointer();
         ui.chat.list.scroll.cancel();
+        if let Some((row, header)) = ui.drop_row()
+            && let Some(group) = view.drop_group(row, header)
+        {
+            action = Some(SetupAction::DropRow { row, group });
+            cue = Some(LauncherCue::MainButton);
+        }
         if let Some(control) = ui.buttons.release(over) {
             action = match control {
                 START => Some(SetupAction::Start),
