@@ -4829,6 +4829,10 @@ pub struct RuleSet {
     /// handle records a native slot the older name-based object projection
     /// cannot represent uniquely, so exact lookup must not silently alias it.
     native_techno_type_order: Vec<(ObjectCategory, String, Option<TypeHandle>)>,
+    /// Uppercase ID → the first [`Self::native_techno_type_order`] slot of
+    /// that ID ignoring ASCII case: [`Self::ares_find_techno_type`]'s answer,
+    /// built with the order and never changed.
+    ares_techno_type_first: LookupMap<String, usize>,
     /// Case-insensitive identity of each type in the four native TechnoType
     /// registries to its ordered array index (`+0xDF8`).
     type_array_indices: CategoryIndex<i32>,
@@ -5506,6 +5510,12 @@ impl RuleSet {
             rules
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
+        }
+        for (slot, (_, id, _)) in rules.native_techno_type_order.iter().enumerate() {
+            rules
+                .ares_techno_type_first
+                .entry(id.to_ascii_uppercase())
+                .or_insert(slot);
         }
         for (category, id, coefficients) in processed.techno_threat_coefficients() {
             if let Some(handle) = rules.object_category_index.get(category, id)
@@ -7327,6 +7337,7 @@ impl RuleSet {
             serial: next_rule_set_serial(),
             object_category_index,
             native_techno_type_order: Vec::new(),
+            ares_techno_type_first: LookupMap::default(),
             type_array_indices,
             weapons,
             weapon_types,
@@ -7589,10 +7600,11 @@ impl RuleSet {
         if crate::rules::ini_parser::is_native_none_type_name(id) {
             return None;
         }
-        self.native_techno_type_order
-            .iter()
-            .find(|(_, stored_id, _)| stored_id.eq_ignore_ascii_case(id))
-            .and_then(|(_, _, handle)| *handle)
+        // The first slot of the ID, indexed once: trigger events ask this
+        // every frame (VERA-only; the same answer as the scan).
+        self.ares_techno_type_first
+            .get(&*upper_name_key(id))
+            .and_then(|&slot| self.native_techno_type_order[slot].2)
             .map(|handle| self.object_by_handle(handle))
     }
 
@@ -12222,6 +12234,41 @@ fn parse_particle_system_types(
 
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {
+    /// Ares TechnoTypeClass::Find (10007EA0): the first TechnoType whose ID
+    /// matches ignoring ASCII case, none for `none`/`<none>` or an unknown
+    /// name; indexed once, the answers of the scan.
+    #[test]
+    fn ares_find_techno_type_matches_ignoring_case() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]
+0=E1
+[VehicleTypes]
+0=MTNK
+[AircraftTypes]
+             [BuildingTypes]
+0=GAPOWR
+[E1]
+Strength=125
+[MTNK]
+Strength=300
+             [GAPOWR]
+Strength=750
+",
+        ))
+        .unwrap();
+        let find = |name| {
+            rules
+                .ares_find_techno_type(name)
+                .map(|object| object.id.as_str())
+        };
+        assert_eq!(find("mtnk"), Some("MTNK"));
+        assert_eq!(find("E1"), Some("E1"));
+        assert_eq!(find("gaPowr"), Some("GAPOWR"));
+        assert_eq!(find("none"), None);
+        assert_eq!(find("<none>"), None);
+        assert_eq!(find("HTNK"), None);
+    }
+
     #[test]
     fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
         use crate::rules::{
