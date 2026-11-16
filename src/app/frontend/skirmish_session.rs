@@ -518,11 +518,15 @@ impl MultiplayerShellRuntime {
             .ok_or_else(|| anyhow::anyhow!("network setup has no game mode"))?;
         // Modern online setup starts on a computer-capable mode. Select on
         // this working launch only; the retained native profile stays intact.
-        if prefer_computer_mode && !mode.class.lists_in_skirmish() {
+        if prefer_computer_mode && !mode.class.policy().lists_in_skirmish {
             mode = modes
                 .iter()
                 .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Battle)
-                .or_else(|| modes.iter().find(|mode| mode.class.lists_in_skirmish()))
+                .or_else(|| {
+                    modes
+                        .iter()
+                        .find(|mode| mode.class.policy().lists_in_skirmish)
+                })
                 .ok_or_else(|| {
                     anyhow::anyhow!("network setup has no computer-capable game mode")
                 })?;
@@ -530,7 +534,7 @@ impl MultiplayerShellRuntime {
         // 0x5ED5E7..0x5ED628: a WOL tournament or clan room refuses a mode
         // whose vtable+4 holds (Cooperative) for the default mode 5D5E10.
         let room_only = room.tournament_or_clan();
-        if room_only && mode.class.permits_all_allied() {
+        if room_only && mode.class.policy().permits_all_allied {
             mode = modes.first().expect("checked above");
         }
         // 0x5ED69C..0x5ED6E0: a saved map IsValidMap refuses gives way to

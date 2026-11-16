@@ -94,9 +94,14 @@ pub(super) fn build_controls(
         paint_control(
             &mut out,
             &chrome,
-            ControlPaint::Checkbox {
+            ControlPaint::StatefulCheckbox {
+                face: if dialog.shell_checkbox_checked(id) {
+                    crate::ui::shell::button::CheckboxFace::Checked
+                } else {
+                    crate::ui::shell::button::CheckboxFace::Unchecked
+                },
+                disabled: !dialog.checkbox_enabled(id),
                 rect,
-                checked: dialog.shell_checkbox_checked(id),
             },
             scale,
         );
@@ -219,7 +224,11 @@ pub(super) fn build_text(
             &dialog.shell_checkbox_label(id),
             text,
             ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
+            if dialog.checkbox_enabled(id) {
+                SHELL_LABEL_TEXT_RGB
+            } else {
+                SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+            },
             glyph,
         ));
     }

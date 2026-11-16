@@ -518,6 +518,18 @@ impl App {
             event_loop.owned_display_handle(),
             capture || hidden_spawn_window,
         )?;
+        // On the processor, building the renderers and reaching the first
+        // picture can take minutes, and the window stays blank until then: a
+        // player is told why while the start goes on.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(adapter) = gpu.software_renderer() {
+            log::warn!(
+                "{adapter} is a software renderer: no graphics card and driver qualified, so the processor draws and the game will be very slow"
+            );
+            if !capture && !hidden_spawn_window {
+                crate::app::system_dialog::report_software_renderer(adapter);
+            }
+        }
         let quickplay_allowed = replay_retail_directory.is_none();
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         let pending = (

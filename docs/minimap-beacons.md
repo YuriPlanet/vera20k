@@ -3,8 +3,8 @@
 A VERA feature; in the original game a beacon can only be placed on the
 battlefield.
 
-Tick **Minimap Beacons** on the Controls page of Options, or on the Gameplay
-page of the Options menu inside a match. Then press **B** (Place Beacon) and
+Tick **Minimap Beacons** on the Controls page of Options, in the main menu or
+in the menu Escape opens during a match. Then press **B** (Place Beacon) and
 left-click the minimap: the beacon goes on the cell you clicked, as if you had
 scrolled there and clicked the battlefield. It is off by default, takes effect
 at once and is saved with your other options (`[VERA] MinimapBeacons=` in the

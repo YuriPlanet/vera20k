@@ -284,8 +284,9 @@ impl Simulation {
     /// runs in stock YR, despite 126 of the 141 stock `DamageParticleSystems=`
     /// entries naming a Spark system. Its top gate at `0x006FACD9` reads
     /// `TechnoType+0xC8F`, which only `InfantryTypeClass::ReadINI` writes:
-    /// cleared on every Rules pass (`0x005240BD`) and set at `0x005243E7` on a
-    /// pass that reads the type's section while `Cyborg=` holds — and no stock
+    /// cleared on every Rules pass (`0x005240BD`, not under Ares) and set at
+    /// `0x005243E7` on a pass that reads the type's section while `Cyborg=`
+    /// holds — and no stock
     /// INI authors `Cyborg=` (`rulesmd.ini:3581` mentions it only in a
     /// TS-inherited comment). Enabling it for vehicles would add
     /// sparks retail does not show and consume `ScenarioClass::Random` draws

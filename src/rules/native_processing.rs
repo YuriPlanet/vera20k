@@ -5533,8 +5533,8 @@ struct ProcessedType {
     #[serde(default)]
     infantry_civilian: bool,
     /// TechnoType+C8F: InfantryType ReadINI clears it on every pass
-    /// (`0x005240BD`), then a reached body sets it from the retained
-    /// `Cyborg` byte (`0x005243DD..0x005243E7`).
+    /// (`0x005240BD`, skipped under Ares), then a reached body sets it from
+    /// the retained `Cyborg` byte (`0x005243DD..0x005243E7`).
     #[serde(default)]
     infantry_damage_sparks: bool,
     #[serde(default)]
@@ -8786,7 +8786,11 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(family) {
-            if family == RulesTypeFamily::Infantry {
+            // `0x005240BD` clears +C8F on every pass, before the section
+            // check. Ares hooks that instruction and jumps past it
+            // (`InfantryTypeClass_LoadFromINI_DamageSparks`, Ares.dll
+            // `0x100499E0`), so under Ares a set flag stays set.
+            if family == RulesTypeFamily::Infantry && !ares_way {
                 self.family_mut(family)[index].infantry_damage_sparks = false;
             }
             if let Some((native_stored_id, raw, effective)) =
@@ -8849,8 +8853,8 @@ impl RulesPassProcessor {
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
                     // `effective` holds every pass so far, so its `Cyborg` is
-                    // the retained +EAC.
-                    member.infantry_damage_sparks = effective.read_bool("Cyborg", false);
+                    // the retained +EAC; `0x005243E5..0x005243E7` only sets.
+                    member.infantry_damage_sparks |= effective.read_bool("Cyborg", false);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
                 // ObjectType ReadINI (`0x005F92F8..0x005F933B`) reads Image

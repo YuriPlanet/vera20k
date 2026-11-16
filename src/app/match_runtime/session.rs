@@ -2008,8 +2008,8 @@ impl MatchSession {
         Ok(launch.options.queue.len() != waited)
     }
 
-    /// Whether this is a VERA room whose mode seats its players on teams:
-    /// allying allowed, outside Cooperative and a clan room. Its rows list
+    /// Whether this is a VERA room whose mode policy seats players on teams
+    /// (`room_teams`), with allying allowed outside a clan room. Its rows list
     /// under team headers.
     pub(crate) fn network_team_room(&self) -> bool {
         let Some(NetworkPhase::Setup {
@@ -2021,7 +2021,7 @@ impl MatchSession {
             return false;
         };
         launch.mode.allies_allowed
-            && !launch.mode.class.uses_cooperative_setup()
+            && launch.mode.class.policy().room_teams
             && !self.network_room().clan
     }
 
@@ -2475,10 +2475,13 @@ impl MatchSession {
             };
             let session_mode = return_context.session_mode();
             let room = *room;
-            let changed = launch.mode != mode;
-            if changed && mode.class.uses_cooperative_setup() {
+            // Cooperative's +0x20 (`0x005C1A10`) clears the observer
+            // reservation whenever the mode becomes current: LAN and WOL setup
+            // (`0x005ED6FE`, `0x00791293`) call it without comparing with the
+            // previous mode, so a restored setup's first map pick clears it too.
+            if !mode.class.policy().observers_allowed {
                 *observer_row = None;
-            } //5C1A10
+            }
             let new_capacity = row_capacity(session_mode, room, &mode, capacity);
             let host_extra = i32::from(
                 *observer_row == launch.local_player().raw_slot_index
@@ -2599,7 +2602,8 @@ impl MatchSession {
             .unwrap()
             .mode
             .class
-            .allows_observers();
+            .policy()
+            .observers_allowed;
         let default_observer = if new_capacity > 8 {
             NETWORK_PLAYER_SLOT_COUNT as u8 - 1
         } else {
@@ -3420,7 +3424,7 @@ fn row_capacity(
     capacity: i32,
 ) -> i32 {
     let extended = capacity > 8 && !(session_mode == SessionMode::Wol && room.tournament_or_clan());
-    let mut capacity = capacity.min(mode.class.setup_player_limit().map_or(
+    let mut capacity = capacity.min(mode.class.policy().setup_player_limit.map_or(
         if extended {
             NETWORK_PLAYER_SLOT_COUNT as i32
         } else {
@@ -3435,7 +3439,7 @@ fn row_capacity(
             capacity = 2;
         }
     }
-    if mode.class.lists_in_skirmish()
+    if mode.class.policy().lists_in_skirmish
         && !(session_mode == SessionMode::Wol && room.tournament_or_clan())
     {
         capacity
@@ -3458,7 +3462,7 @@ fn host_extra_row(
     capacity: i32,
 ) -> bool {
     let wol_room = session_mode == SessionMode::Wol && room.tournament_or_clan();
-    if mode.class.lists_in_skirmish() && !wol_room {
+    if mode.class.policy().lists_in_skirmish && !wol_room {
         return true;
     }
     let limit = row_limit(session_mode, room);
@@ -3613,9 +3617,9 @@ fn network_start_in_use(
     let crate::skirmish_launch::LaunchStartPosition::Position(position) = start else {
         return false;
     };
-    // VERA shared control: outside Cooperative a player may take a start
-    // other players hold, to share their House.
-    let shared = launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative;
+    // VERA shared control: when the mode policy enables shared starts, a player
+    // may take a start other players hold to share their House.
+    let shared = launch.mode.class.policy().shared_start_positions;
     !shared
         && launch
             .humans
@@ -5358,5 +5362,41 @@ mod tests {
         assert!(!SessionMode::Campaign.is_network());
         assert!(!SessionMode::Skirmish.is_network());
         assert!(!SessionMode::Other.is_network());
+    }
+
+    #[test]
+    fn mode_policy_controls_team_room_and_clears_observer_row_when_disallowed() {
+        let mut session = vera_room();
+        assert!(session.network_team_room());
+        assert!(session.network_observer_row().is_some());
+
+        let mut coop = session.network_setup().unwrap().mode.clone();
+        coop.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        coop.allies_allowed = true;
+        session
+            .select_network_map(coop, "COOP.MAP".into(), 2)
+            .unwrap();
+        assert!(!session.network_team_room());
+        assert_eq!(session.network_observer_row(), None);
+    }
+
+    /// Cooperative's +0x20 (`0x005C1A10`) clears the observer reservation
+    /// whenever the mode becomes current, so a host whose restored setup is
+    /// already Cooperative keeps no observer row from its first map pick.
+    #[test]
+    fn a_restored_cooperative_setup_keeps_no_observer_row() {
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, true, Some(7), true)
+            .unwrap();
+        session
+            .select_network_map(mode, "COOP.MAP".into(), 2)
+            .unwrap();
+        assert_eq!(session.network_observer_row(), None);
     }
 }

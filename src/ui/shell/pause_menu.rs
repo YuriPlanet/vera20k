@@ -10,9 +10,10 @@
 //! settings change mid-match from the menu Escape opens. The Options dialog's
 //! own `LauncherOptionsLayout::in_game` lays them out. The menu opens on Game
 //! Controls, which the template's own Game Controls button shows: gamemd
-//! opens those settings as dialog BBB from it. Two more pages have buttons in
-//! the sidebar rows under it ([`PauseMenuLayout::add_page_tabs`]), and FF's
-//! group heads the first of those.
+//! opens those settings as dialog BBB from it. An Options button in the
+//! sidebar row under it ([`PauseMenuLayout::add_options_button`]) hands the column
+//! to the main menu's Options pages ([`PauseMenuLayout::show_options_column`]),
+//! and FF's group heads the Game Options page.
 
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
@@ -30,8 +31,8 @@ pub enum PauseMenuButton {
     /// VERA relay control, independent of the native local Options dialog.
     SharedPause,
     /// VERA's own row for gamemd's in-game Keyboard dialog (A3), which
-    /// gamemd opens from BBB's 0x52C. [`PauseMenuLayout::add_page_tabs`]
-    /// places it under the page buttons where the sidebar has a row for it.
+    /// gamemd opens from BBB's 0x52C. [`PauseMenuLayout::add_options_button`]
+    /// places it under the Options button where the sidebar has a row for it.
     Keyboard,
 }
 
@@ -334,19 +335,19 @@ impl InternetControlsLayout {
     }
 }
 
-/// VERA's Options pages under Game Controls on the in-game menu, one sidebar
-/// button each. A sidebar too short for them all shows the first ones
-/// ([`PauseMenuLayout::add_page_tabs`]).
-pub const PAGE_TABS: usize = 2;
+/// The main menu's Options column as the in-game menu's other pages show it:
+/// Keyboard, a button per category, then Back
+/// ([`PauseMenuLayout::show_options_column`]).
+pub const OPTIONS_COLUMN: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
     pub template: PauseMenuTemplate,
     buttons: [Option<RectPx>; 8],
-    /// The page buttons' rows, of which [`Self::add_page_tabs`] shows the
-    /// first `shown_tabs`.
-    page_tabs: [RectPx; PAGE_TABS],
-    shown_tabs: Option<usize>,
+    /// The rows of the Options page's own sidebar buttons, of which
+    /// [`Self::page_column`] gives the first `shown_rows`.
+    page_rows: [RectPx; OPTIONS_COLUMN],
+    shown_rows: Option<usize>,
     pub title: RectPx,
     pub footer: RectPx,
     pub internet: Option<InternetControlsLayout>,
@@ -366,27 +367,27 @@ impl PauseMenuLayout {
             .filter_map(|button| Some((*button, self.button(*button)?)))
     }
 
-    /// The Options page buttons that show, in page order: none before
-    /// [`Self::add_page_tabs`].
-    pub fn page_tabs(&self) -> &[RectPx] {
-        &self.page_tabs[..self.shown_tabs.unwrap_or(0)]
+    /// The sidebar rows of the Options page's own buttons, top to bottom:
+    /// none before [`Self::add_options_button`] or [`Self::show_options_column`].
+    pub fn page_column(&self) -> &[RectPx] {
+        &self.page_rows[..self.shown_rows.unwrap_or(0)]
     }
 
-    /// Give VERA's Options page buttons the rows under Game Controls, so the
-    /// menu's settings buttons stand together. gamemd has no such buttons:
-    /// 60B000 puts the template's next buttons in those rows, and here they
-    /// stand that many rows lower. Game Controls and Resume keep their places.
+    /// Give VERA's Options button the row under Game Controls, so the menu's
+    /// settings buttons stand together. gamemd has no such button: 60B000
+    /// puts the template's next buttons in that row, and here they stand a
+    /// row lower. Game Controls and Resume keep their places.
     ///
-    /// A sidebar without a row for every page shows the first ones only.
-    /// Retail art has the rows: B5's seven end where Resume begins in a
-    /// 640x480 frame, the shortest sidebar. BBA and FF keep a row for the
-    /// relay's button whether or not it shows.
+    /// A sidebar without a row for it shows none. Retail art has the rows:
+    /// B5's seven end where Resume begins in a 640x480 frame, the shortest
+    /// sidebar. BBA and FF keep a row for the relay's button whether or not
+    /// it shows.
     ///
-    /// Keyboard takes the row under the page buttons when one is left. B5
-    /// has none in a frame under 503 pixels high (SIDE2 tiles are 50), where
-    /// the Game Controls page holds the button instead.
-    pub fn add_page_tabs(&mut self) {
-        if self.shown_tabs.is_some() {
+    /// Keyboard takes the row under Options when one is left, as it is in
+    /// every stock frame. Without one, the Game Controls page holds the
+    /// button instead.
+    pub fn add_options_button(&mut self) {
+        if self.shown_rows.is_some() {
             return;
         }
         let (Some(controls), Some(resume)) = (
@@ -406,19 +407,47 @@ impl PauseMenuLayout {
         // 60B000's rows are one button high.
         let rows = usize::try_from((resume.y - controls.y) / controls.h.max(1)).unwrap_or(0);
         let free = rows.saturating_sub(1 + below);
-        let shown = free.min(PAGE_TABS);
-        let keyboard = free > PAGE_TABS;
+        let shown = free.min(1);
+        let keyboard = free > 1;
         let rows_down = |rect: RectPx, rows: usize| rect.translate(0, rows as i32 * controls.h);
         for button in PauseMenuButton::ALL.iter().filter(|b| moved(*b)) {
             if let Some(rect) = self.buttons[*button as usize].as_mut() {
                 *rect = rows_down(*rect, shown + usize::from(keyboard));
             }
         }
-        self.page_tabs = std::array::from_fn(|tab| rows_down(controls, tab + 1));
-        self.shown_tabs = Some(shown);
+        self.page_rows = std::array::from_fn(|row| rows_down(controls, row + 1));
+        self.shown_rows = Some(shown);
         if keyboard {
             self.buttons[PauseMenuButton::Keyboard as usize] = Some(rows_down(controls, shown + 1));
         }
+    }
+
+    /// Hand the column to the main menu's Options column, for the in-game
+    /// menu's pages other than Game Controls: Keyboard in Game Controls' row,
+    /// a button per category in the rows under it, and Back in Resume's
+    /// place. The template's own buttons and the relay's are gone until Back.
+    /// B5's seven rows above Resume in a 640x480 frame, the shortest sidebar,
+    /// hold the seven.
+    pub fn show_options_column(&mut self) {
+        if self.shown_rows.is_some() {
+            return;
+        }
+        let (Some(controls), Some(resume)) = (
+            self.button(PauseMenuButton::GameControls),
+            self.button(PauseMenuButton::Resume),
+        ) else {
+            return;
+        };
+        // 60B000's rows are one button high.
+        self.page_rows = std::array::from_fn(|row| {
+            if row + 1 < OPTIONS_COLUMN {
+                controls.translate(0, row as i32 * controls.h)
+            } else {
+                resume
+            }
+        });
+        self.shown_rows = Some(OPTIONS_COLUMN);
+        self.buttons = [None; 8];
     }
 
     /// FF's group heads the Game Options page, which VERA shows on the left of
@@ -439,8 +468,11 @@ impl PauseMenuLayout {
         if self.template == PauseMenuTemplate::Offline {
             return;
         }
+        // None once the Options column has the sidebar.
+        let Some(abort) = self.button(PauseMenuButton::Abort) else {
+            return;
+        };
         // 60B000's rows are one button high.
-        let abort = self.button(PauseMenuButton::Abort).unwrap();
         self.buttons[PauseMenuButton::SharedPause as usize] = Some(abort.translate(0, abort.h));
     }
 }
@@ -479,8 +511,8 @@ pub fn pause_menu_layout(
     PauseMenuLayout {
         template,
         buttons,
-        page_tabs: [RectPx::new(0, 0, 0, 0); PAGE_TABS],
-        shown_tabs: None,
+        page_rows: [RectPx::new(0, 0, 0, 0); OPTIONS_COLUMN],
+        shown_rows: None,
         title: in_game_shell::right_panel_title_rect(width),
         footer: in_game_shell::status_line_rect(height),
         internet,
@@ -583,12 +615,12 @@ mod tests {
         }
     }
 
-    /// VERA's page buttons take rows 1 and 2 under Game Controls and
-    /// Keyboard the row after them. The template's later buttons and the
-    /// relay's follow, and Resume stays. B5's own seven rows end at Resume at
-    /// 640x480, so Keyboard has no row there.
+    /// VERA's Options button takes the row under Game Controls and Keyboard
+    /// the row after it. The template's later buttons and the relay's
+    /// follow, and Resume stays. B5's own seven rows end at Resume at
+    /// 640x480, so a sidebar of any stock size has the rows.
     #[test]
-    fn page_tabs_stand_under_game_controls_and_move_the_later_buttons_down() {
+    fn the_options_button_stands_under_game_controls_and_moves_the_later_buttons_down() {
         use PauseMenuButton::*;
         let fixture = geometry();
         for case in fixture["cases"].as_array().unwrap() {
@@ -599,35 +631,63 @@ mod tests {
             let menu = |template| pause_menu_layout(width, height, shell, [125, 25], template);
 
             let native = menu(PauseMenuTemplate::Offline);
-            assert!(native.page_tabs().is_empty());
+            assert!(native.page_column().is_empty());
             let mut b5 = native;
-            b5.add_page_tabs();
-            b5.add_page_tabs();
-            let keyboard = height > 480;
-            let tabs = PAGE_TABS as i32 + i32::from(keyboard);
-            assert_eq!(b5.page_tabs(), [row(1), row(2)]);
-            assert_eq!(b5.button(Keyboard), keyboard.then(|| row(3)));
+            b5.add_options_button();
+            b5.add_options_button();
+            assert_eq!(b5.page_column(), [row(1)]);
+            assert_eq!(b5.button(Keyboard), Some(row(2)));
             assert_eq!(b5.button(GameControls), Some(row(0)));
-            for (button, at) in [(Load, 1), (Save, 2), (Delete, 3), (Abort, 4)] {
-                assert_eq!(b5.button(button), Some(row(tabs + at)), "{button:?}");
+            for (button, at) in [(Load, 3), (Save, 4), (Delete, 5), (Abort, 6)] {
+                assert_eq!(b5.button(button), Some(row(at)), "{button:?}");
             }
             let resume = native.button(Resume).unwrap();
             assert_eq!(b5.button(Resume), Some(resume));
-            assert!(row(tabs + 5).y <= resume.y, "{width}x{height}");
+            assert!(row(7).y <= resume.y, "{width}x{height}");
 
             for template in [PauseMenuTemplate::Network, PauseMenuTemplate::Internet] {
-                let mut tabs_first = menu(template);
-                tabs_first.add_page_tabs();
-                tabs_first.enable_shared_pause();
+                let mut button_first = menu(template);
+                button_first.add_options_button();
+                button_first.enable_shared_pause();
                 let mut relay_first = menu(template);
                 relay_first.enable_shared_pause();
-                relay_first.add_page_tabs();
-                assert_eq!(tabs_first, relay_first);
-                assert_eq!(tabs_first.page_tabs(), [row(1), row(2)]);
-                assert_eq!(tabs_first.button(Keyboard), Some(row(3)));
-                assert_eq!(tabs_first.button(Abort), Some(row(4)));
-                assert_eq!(tabs_first.button(SharedPause), Some(row(5)));
-                assert!(row(6).y <= tabs_first.button(Resume).unwrap().y);
+                relay_first.add_options_button();
+                assert_eq!(button_first, relay_first);
+                assert_eq!(button_first.page_column(), [row(1)]);
+                assert_eq!(button_first.button(Keyboard), Some(row(2)));
+                assert_eq!(button_first.button(Abort), Some(row(3)));
+                assert_eq!(button_first.button(SharedPause), Some(row(4)));
+                assert!(row(5).y <= button_first.button(Resume).unwrap().y);
+            }
+        }
+    }
+
+    /// The Options column takes Game Controls' row and the six under it, and
+    /// Resume's place for Back, at every stock size; the menu's own buttons,
+    /// the relay's included, are gone.
+    #[test]
+    fn the_options_column_fills_the_rows_above_resume_and_takes_its_place() {
+        let fixture = geometry();
+        for case in fixture["cases"].as_array().unwrap() {
+            let width = case["width"].as_i64().unwrap() as i32;
+            let height = case["height"].as_i64().unwrap() as i32;
+            let shell = shell_for(&fixture, case);
+            let row = |row: i32| RectPx::new(width - 147, 227 + row * 25, 125, 25);
+            for template in [
+                PauseMenuTemplate::Offline,
+                PauseMenuTemplate::Network,
+                PauseMenuTemplate::Internet,
+            ] {
+                let native = pause_menu_layout(width, height, shell, [125, 25], template);
+                let resume = native.button(PauseMenuButton::Resume).unwrap();
+                let mut menu = native;
+                menu.enable_shared_pause();
+                menu.show_options_column();
+                let (back, rows) = menu.page_column().split_last().unwrap();
+                assert_eq!(rows, (0..7).map(row).collect::<Vec<_>>());
+                assert!(row(6).y + row(6).h <= resume.y, "{width}x{height}");
+                assert_eq!(*back, resume);
+                assert_eq!(menu.buttons().count(), 0);
             }
         }
     }

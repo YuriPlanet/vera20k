@@ -4213,6 +4213,7 @@ impl ObjectType {
     /// (`0x005240BD`) and a pass that reads the type's section sets it when
     /// `Cyborg` holds (`0x005243DD..0x005243E7`). So the last Rules pass
     /// (usually the map) must have the section; other leaves keep the ctor 0.
+    /// Ares skips the clear, so there any pass that sets it keeps it set.
     /// Dormant in stock YR (no `Cyborg=yes` types).
     pub fn emits_damage_spark(&self) -> bool {
         self.damage_sparks
@@ -7030,7 +7031,7 @@ mod tests {
 
     /// TechnoType+0xC8F: `InfantryTypeClass::ReadINI` clears it on every pass
     /// (`0x005240BD`) and sets it only on a pass that reads the type's section
-    /// (`0x005243E7`); no other type writes it.
+    /// (`0x005243E7`); no other type writes it. Ares jumps past the clear.
     #[test]
     fn damage_sparks_need_the_infantry_section_in_the_last_rules_pass() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
@@ -7049,7 +7050,12 @@ mod tests {
             sparks("[CYB]\nStrength=90\n[VCYB]\nStrength=90\n"),
             (true, false)
         );
-        assert_eq!(sparks(""), (false, false));
+        // A build with the `ares` feature reads every scope the Ares way.
+        if !cfg!(feature = "ares") {
+            assert_eq!(sparks(""), (false, false));
+        }
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        assert_eq!(sparks(""), (true, false));
     }
 
     #[test]

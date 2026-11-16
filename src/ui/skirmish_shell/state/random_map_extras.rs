@@ -1,4 +1,4 @@
-//! VERA's Extras view of the Generate Map dialog (offline Skirmish only);
+//! VERA's Extras view of the Generate Map dialog;
 //! gamemd's `0x105` has no counterpart.
 //!
 //! The Advanced toggle steps Basic, Advanced, Extras. The Extras view takes

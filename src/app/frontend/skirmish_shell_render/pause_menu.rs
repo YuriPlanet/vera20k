@@ -203,12 +203,13 @@ pub(crate) fn render_pause_menu_shell(
     let page = state.match_state.match_presentation.options_page.as_ref();
     if let (Some(page_layout), Some(page)) = (&page_layout, page) {
         let dialog = &page.dialog;
-        // The tabs are the menu's own buttons, on this side's art. A page's
-        // own buttons are drawn with its controls below.
-        for &(tab, rect) in page_layout.buttons.iter().filter(|(id, _)| !id.on_page()) {
+        // The page's sidebar buttons, Options or the Options column, are the
+        // menu's own buttons, on this side's art. A page's own buttons are
+        // drawn with its controls below.
+        for &(id, rect) in page_layout.buttons.iter().filter(|(id, _)| !id.on_page()) {
             let button = PauseMenuButtonState {
-                pressed: dialog.shell_button_pressed(tab),
-                highlighted: dialog.shell_button_selected(tab),
+                pressed: dialog.shell_button_pressed(id),
+                highlighted: dialog.shell_button_selected(id),
                 enabled: true,
             };
             let frame = button_frame(button);
@@ -219,7 +220,7 @@ pub(crate) fn render_pause_menu_shell(
             }
             texts.push(text_draw(
                 font,
-                &dialog.shell_button_label(tab),
+                &dialog.shell_button_label(id),
                 button_text_rect(rect, button.pressed),
                 // Yellow is hard to read on the lit face, so the page that
                 // shows takes the art's own dark label colour.
