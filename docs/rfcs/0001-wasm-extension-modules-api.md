@@ -3,7 +3,7 @@
 **English** · [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
 This appendix is part of [RFC 0001](0001-wasm-extension-modules.md) and carries
-its version (0.0.5). The two files change in the same commit. Where this
+its version (0.0.6). The two files change in the same commit. Where this
 catalog and the RFC text differ, the RFC text applies. The two language
 versions of this appendix change together; where they differ, the English text
 applies.
@@ -65,7 +65,9 @@ spreadsheet also does ("negative means none").
 | `Coord` | `x`, `y`, `z` in leptons | One cell is 256 leptons. |
 | `Cell` | `x`, `y` in cells | |
 | `Frames` | A count of logic frames | 15 logic frames per game second (`RA2_LOGIC_FRAMES_PER_SECOND`, `src/util/fixed_math.rs`). |
-| `string` | A name | Type IDs, section names, CSF labels. Compared without regard to case (RFC 4). |
+| `string` | A name | Section names and keys, setup lookups, trigger and export names, CSF labels, client text. Compared without regard to case (RFC 4). Calls made during play take IDs instead (see [IDs](#ids)). |
+| `Techno`, `House`, ... | A generational handle | An `i64` value; see [Handles](#handles). |
+| `TechnoTypeId`, `MarkId`, ... | The integer ID of a named thing | An `i32` value; see [IDs](#ids). |
 | `Uint8Array` | Bytes | Messages, module data. |
 
 ```ts
@@ -83,6 +85,15 @@ Object references are generational handles (RFC 5). A handle whose object is
 gone reads as gone and never as a reused slot. The bit layout is not part of
 the API; it depends on open question 2 (ABI).
 
+Handles are values. In the TypeScript SDK each handle type is an alias of
+`i64`, one of the SDK's portable integer types that both `tsc` and
+AssemblyScript accept; in the Rust SDK each is a newtype. Passing, storing or
+receiving a handle allocates nothing (RFC 15). This catalog writes calls as
+methods on a handle (`techno.kill(...)`), as the RFC's examples do; in the
+TypeScript SDK such a call is a function that takes the handle as its first
+argument, and its exact spelling follows open question 3. `NO_HANDLE` (`0`)
+is never a live object; signatures write `Techno | null` where it may appear.
+
 | Handle | Refers to | Gone when |
 | --- | --- | --- |
 | `Techno` | any unit or building | the object is removed from the game |
@@ -95,25 +106,140 @@ the API; it depends on open question 2 (ABI).
 | `Effect` | one attached effect instance | it expires or is removed |
 
 ```ts
-class Techno {
-  isAlive(): bool;
-  asBuilding(): Building | null;
-  asInfantry(): Infantry | null;
-  asVehicle(): Vehicle | null;
-  asAircraft(): Aircraft | null;
-}
-class Building extends Techno {}
-class Infantry extends Techno {}
-class Vehicle  extends Techno {}
-class Aircraft extends Techno {}
+type Techno     = i64;   // any unit or building
+type Building   = i64;   // a Techno of that category
+type Infantry   = i64;
+type Vehicle    = i64;
+type Aircraft   = i64;
+type Projectile = i64;
+type House      = i64;
+type Team       = i64;
+type Trigger    = i64;
+type Tag        = i64;
+type Effect     = i64;
+const NO_HANDLE: i64 = 0;
+
+// on Techno:
+isAlive(): bool;
+asBuilding(): Building | null;   // NO_HANDLE when not a building
+asInfantry(): Infantry | null;
+asVehicle(): Vehicle | null;
+asAircraft(): Aircraft | null;
 ```
 
 A nullable handle is written `Techno | null`. Event payload fields that may be
 absent (an attacker, a projectile) are nullable.
 
-Types (TechnoTypes, weapons, warheads, projectiles, superweapons, animations)
-are named by their ID string. Types cannot be added during a match (RFC 8),
-so a name stays valid for the whole scenario.
+Types and the other named kinds listed under [IDs](#ids) are named by their
+ID string in INI and in setup calls; module code holds the integer ID a lookup
+returns.
+
+### IDs
+
+Named things a module uses during play have integer IDs. A module resolves
+each name once, usually in `onRules` or `onScenarioStart`, keeps the ID in its
+memory and passes the ID to every other call (RFC 15). The SDKs cache the IDs
+they resolve. In the TypeScript SDK each ID type is an alias of `i32`; in the
+Rust SDK each is a newtype. Like handles, IDs are values and allocate nothing.
+
+| ID type | Names | Lookup |
+| --- | --- | --- |
+| `TechnoTypeId` | infantry, vehicle, aircraft and building types | `ctx.typeId(name)` |
+| `WeaponTypeId` | weapons | `ctx.weaponTypeId(name)` |
+| `WarheadTypeId` | warheads | `ctx.warheadTypeId(name)` |
+| `ProjectileTypeId` | projectiles (BulletTypes) | `ctx.projectileTypeId(name)` |
+| `AnimTypeId` | animations | `ctx.animTypeId(name)` |
+| `VoxelAnimTypeId` | voxel animations | `ctx.voxelAnimTypeId(name)` |
+| `ParticleSystemTypeId` | particle systems | `ctx.particleSystemTypeId(name)` |
+| `SuperWeaponTypeId` | superweapons | `ctx.superWeaponTypeId(name)` |
+| `EffectTypeId` | attached effect types (`[AttachEffectTypes]`) | `ctx.effectTypeId(name)` |
+| `EffectGroupId` | effect type groups (`Groups`) | `ctx.effectGroupId(name)` |
+| `ArmorId` | armor names | `ctx.armorId(name)` |
+| `OverlayTypeId` | overlays | `ctx.overlayTypeId(name)` |
+| `SoundId` | sounds in the simulation API | `ctx.soundId(name)` |
+| `MarkId` | marks | `Mark.id(name)` |
+| `TeamTypeId`, `ScriptTypeId`, `AiTriggerId` | AI team types, team scripts, AI triggers | `ai.teamTypeId(name)`, `ai.scriptTypeId(name)`, `ai.aiTriggerId(name)` |
+
+```ts
+type TechnoTypeId = i32;   // every ID type above is an alias of i32
+type WarheadTypeId = i32;
+type MarkId = i32;
+const NO_ID: i32 = -1;
+
+// once, in onScenarioStart:
+const E1 = ctx.typeId("E1");          // NO_ID and NotFound when nothing matches
+const PANICKED = Mark.id("Panicked");
+// during play:
+techno.addMark(PANICKED);
+```
+
+A lookup compares names without regard to case (RFC 4). A name that matches
+nothing returns `NO_ID` and sets `ctx.lastStatus()` to `NotFound`: an expected
+outcome under the [error model](#errors), because names come from data a mod
+may change. A call given `NO_ID` returns `NotFound` as well; an ID that no
+lookup returned is an invalid argument. `Mark.id` registers a name it has not
+seen, so it always returns an ID. Types cannot be added during a match
+(RFC 8), so an ID stays valid for the whole scenario and across a save and its
+load.
+
+Names stay in setup and rare calls: the lookups above, `ctx.house(name)`,
+`onRules` writes and `rules.set` (section 10), rules reads, `Trigger.create`
+with the export names of `Action.wasm`, `Trigger.find` and `Tag.find`, AI
+definitions (9.2), rare scenario actions that name a country, theme, EVA line
+or CSF label, and in the client API `find` at start, hotkey names, sounds, CSF
+labels and text (section 11).
+
+### Event delivery
+
+The engine does not call a module once per event or per action. When a
+trigger springs, its original actions run at once, as in the original, and
+each of its module actions (`Action.wasm`) writes one fixed-size record into
+the module's queue; events for the module are queued the same way. In the
+module phase the engine hands the module the whole array, in firing order, in
+one call (RFC 5, 15): `onEvents(ctx, batch)`, generated by the SDK, which runs
+the matching action function for each record. A queued action is dropped if
+the game has ended, or its trigger was disabled or removed, before the module
+phase. A record holds the event kind, the subject handle,
+the other handle, the house, a projectile and an effect handle, a type ID and
+a few integer payload fields (`EventRecord`, [section 2](#2-events)). Each
+event's payload in this catalog names the record fields it fills; fields an
+event does not list are `NO_HANDLE` or `-1`. The layout of each record belongs
+to the interface definition (RFC 12). The SDK reads records in place and
+allocates nothing per event.
+
+### Query results
+
+A query writes its results into a buffer the module provides and returns how
+many it wrote; the engine allocates nothing per query (RFC 6c, 15). Results
+come in object creation order, taken from a creation serial the engine assigns
+to every object and projectile when it is created, so no result is sorted by
+storage position. When more results exist than fit, the query sets
+`out.cursor`, and a second call with the same buffer continues after the last
+result written; `out.cursor` is `0` once the last page has been written.
+
+```ts
+class HandleBuffer {         // allocated once by the module and reused
+  constructor(capacity: i32);
+  items: i64[];              // handles, from index 0
+  cursor: i64;               // paging: 0 starts a query, non-zero continues it
+}
+class IdBuffer {             // the same for IDs
+  constructor(capacity: i32);
+  items: i32[];
+  cursor: i64;
+}
+// objects.inRadius(at: Coord, leptons: i32, f: Filter, out: HandleBuffer): i32
+```
+
+### Side tables
+
+State that only some objects use lives in side tables keyed by handle, not in
+every object: marks (section 6), type tag bindings and other subscriptions
+(`Wasm.Tags`, RFC 7), and the 16 bytes of module data per projectile (RFC 9).
+An object that uses none of them costs nothing. Each object, weapon, warhead
+and projectile type carries one flag that says whether a module binds it; an event site checks that flag and does
+nothing more when it is clear (RFC 15). Side tables are saved and hashed with
+the simulation state.
 
 ### Enumerations
 
@@ -157,7 +283,7 @@ an enum value outside its list. A name that matches nothing returns
 between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
 
 `ctx.lastStatus(): Status` repeats the status of the last call for functions
-that return a handle or a value.
+that return a handle, an ID or a value.
 
 ### Random draws
 
@@ -220,12 +346,13 @@ A module exports only what it uses. An export that is absent costs nothing
 | --- | --- | --- | --- | --- | --- |
 | `onRules` | `onRules(rules: RulesWriter): void` | once, after the INI layers load (mod: after the mod layer; map: after the map layer) | v1 | `src/rules/native_processing.rs::RulesLayerStack::push`/`process`; module layer: **no owner yet** | RFC 5, 8; Rc: defs post-processing stage |
 | `onScenarioStart` | `onScenarioStart(ctx: Ctx): void` | once, at the start of the scenario | v1 | **no owner yet** (module host) | RFC 5; Rc: `GameStart` |
-| `onFrame` | `onFrame(ctx: Ctx): void`, registered with `onFrame({ every: N }, fn)` | every N frames, in the module phase, after queued trigger actions | v1 | **no owner yet** (module phase in `src/sim/world/master_frame.rs`) | RFC 5; T27 `HoldDuration=yes`; Rc: `GameFrame` |
-| actions | `(ctx: Ctx, subject: Techno \| null): void`, wrapped by `action(fn)` | when a trigger with this action springs; delivered in the module phase | v1 | TR `spring_live_trigger` → module call: **no owner yet** | RFC 5, 6a |
+| `onFrame` | `onFrame(ctx: Ctx): void`, registered with `onFrame({ every: N }, fn)` | every N frames, in the module phase, after `onEvents` | v1 | **no owner yet** (module phase in `src/sim/world/master_frame.rs`) | RFC 5; T27 `HoldDuration=yes`; Rc: `GameFrame` |
+| actions | `(ctx: Ctx, e: EventRecord): void`, wrapped by `action(fn)` | queued when a trigger with this action springs; runs in the module phase, from the frame's batch (`onEvents`) | v1 | TR `spring_live_trigger` → event record: **no owner yet** | RFC 5, 6a |
+| `onEvents` | `onEvents(ctx: Ctx, batch: EventBatch): void`, generated by the SDK | once per frame per module with queued records, in the module phase, before `onFrame` | v1 | **no owner yet** (batched event writer, G-T9) | RFC 5, 15 |
 | overrides | see [section 8](#8-overrides) | synchronously, when the engine reaches the decision | later (v1 picks two or three) | per override | RFC 5, 6 L3 |
 | `onMessage` | `onMessage(ctx: Ctx, sender: House, data: Uint8Array): void` | when a client message reaches the simulation, in the module phase | v1 (P2) | `src/sim/command.rs::Command`: **no module variant yet** | RFC 5, 10; Rc: `RecvLuaMsg(msg, playerID)` |
 | `onLaunch` | `onLaunch(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a type bound to the module path | later | `ProjectileTrajectory` module arm: **no owner yet** | RFC 9 level 3 |
-| `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: string, bullets: BulletBatch): void` | once per projectile type per frame | later (L4) | **no owner yet** | RFC 6 L4, 9 level 4 |
+| `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: ProjectileTypeId, bullets: BulletBatch): void` | once per projectile type per frame | later (L4) | **no owner yet** | RFC 6 L4, 9 level 4 |
 | `onLoad` | — | not defined: module memory is restored with the snapshot, and `onScenarioStart` does not run again | **adopted in RFC 0.0.5** (P2) | — | Rc: `Load`, notes 6.10 |
 
 `ctx` is the one entry point to the simulation API:
@@ -239,8 +366,8 @@ class Ctx {
   map: MapQuery;        // section 7
   rules: RulesReader;   // section 10
   ai: Ai;               // section 9
-  event(): EventInfo | null;   // the delivery that called this action
-  house(name: string): House | null;
+  event(): EventRecord | null; // the record being delivered
+  house(name: string): House | null;   // lookup; ID lookups: see IDs
   global(index: i32): Variable;  // 0..49
   local(index: i32): Variable;   // 0..99
   log(text: string): void;
@@ -264,7 +391,7 @@ Sources: A28, A29, A56, A57, S12, S38, S39, S40.
 | `onClick` | `onClick(ui: Ui, node: Node): void` | a node with a click handler was clicked | v1 (P2) | **no owner yet** | RFC 10; T39 `OnButtonClick` |
 | `onHover` | `onHover(ui: Ui, node: Node, inside: bool): void` | the cursor entered or left a node | v1 (P2) | **no owner yet** | RFC 10 |
 | `onHotkey` | `onHotkey(ui: Ui, name: string): void` | a hotkey the module registered was pressed | v1 (P2) | **no owner yet** | RFC 10 |
-| `onSelect` | `onSelect(ui: Ui, selection: TechnoList): void` | the local selection changed | v1 (P2) | selection owner in `src/app/input/` (unverified) | RFC 10; T38 `OnSelect` |
+| `onSelect` | `onSelect(ui: Ui): void`; the selection is read with `client.selection(out)` | the local selection changed | v1 (P2) | selection owner in `src/app/input/` (unverified) | RFC 10; T38 `OnSelect` |
 | `onNotify` | `onNotify(ui: Ui, name: string, data: Uint8Array): void` | a simulation notification for the local player arrived | v1 (P2) | **no owner yet** | RFC 1, 11 ("local notifications"); export name **adopted in RFC 0.0.5** (P19) |
 | `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | an ally's or spectator's client sent a message | later | **no owner yet** | **not adopted in RFC 0.0.5** (P5); Rc: `SendLuaUIMsg` |
 
@@ -296,27 +423,36 @@ class TriggerDef {
   transferOnCapture: bool = false;   // TriggerType token 8
 }
 
-class EventInfo {
+class EventRecord {          // fixed size; read in place from the batch (RFC 15)
+  action: i32;               // the queued module action (an Action.wasm export)
   kind: i32;                 // Event value
   subject: Techno | null;    // the object the trigger is attached to
   other: Techno | null;      // attacker, target, transport, producer, ...
   house: House | null;       // house involved (retained house for E1/E24/E25/E26/E59)
-  cell: Cell | null;
-  value: i32;                // damage, weapon index, stack count, frame, ...
-  value2: i32;               // second integer field where listed
   projectile: Projectile | null;
   effect: Effect | null;
-  name: string | null;       // warhead, superweapon or type name where listed
+  id: i32;                   // type ID where listed: weapon, warhead, effect type, superweapon type
+  value: i32;                // damage, weapon index, stack count, frame, ...
+  value2: i32;               // second integer field where listed
+  cellX: i32;                // "cell" in the tables; -1 when none
+  cellY: i32;
+}
+class EventBatch {           // one per module per frame
+  count: i32;
+  at(i: i32): EventRecord;   // a view into module memory, not a copy
 }
 ```
 
-`EventInfo` fields not listed for an event are `null` or `-1`. RFC 6a: every
-event names the object it is attached to and, where there is one, the other
-object involved.
+`EventRecord` fields not listed for an event are `NO_HANDLE` or `-1`. Records
+come in firing order and hold both queued module actions and events; the
+layout belongs to the interface definition (see [Event delivery](#event-delivery)). RFC 6a: every event names
+the object it is attached to and, where there is one, the other object
+involved.
 
 Original events evaluate in the existing trigger runtime
-(`TR::has_occurred`). A trigger with a module action runs all its actions in
-the module phase (RFC 5). Original events raised by House tags are polled every
+(`TR::has_occurred`). A trigger's original actions run when it springs, also
+in a trigger with module actions; only its module actions wait for the module
+phase (section 4.1, RFC 5). Original events raised by House tags are polled every
 8th frame (`TR::raise_house_tags`), Logic tags every frame
 (`TR::advance_triggers`). All events of one trigger must hold (AND), as in the
 original.
@@ -437,21 +573,27 @@ otherwise `Trigger.create` returns `null` with `Unsupported`. Evaluated in
 New event numbers come from a range free of Ares and Phobos (open question 6);
 none is assigned here. New delivered events are raised only for objects whose
 type binds a tag with that event (`Wasm.Tags`) or whose own tag holds such a
-trigger, never for every object (RFC 5, Goal 6).
+trigger, never for every object (RFC 5, Goal 6). The weapon events (`Fire`,
+`HitTarget`, `Detonated`, and projectile launched, RFC 6a) can also be bound on
+a weapon, warhead or projectile type (`Wasm.Tags=` in its section): such a
+binding fires for every shooter that uses the type, whatever the shooter's own
+type, and the shooter is the subject. Each raise site checks one flag of the
+object's type, or of the weapon, warhead or projectile type, first (see
+[Side tables](#side-tables)); `Cond.isWeaponType` tests the weapon.
 
-| Event | Payload (`EventInfo`) | Raised at (owner of the moment) | Tier | Sources |
+| Event | Payload (`EventRecord`) | Raised at (owner of the moment) | Tier | Sources |
 | --- | --- | --- | --- | --- |
 | `TakeDamage` | `other` source (nullable), `value` damage after armor | `src/sim/combat/world_receiver.rs::commit_entities`; raise hook **no owner yet** | v1? | RFC 6a; T2 `OnTakeDamage` (history fields ③④ are module memory, RFC 6a); Rc: `UnitDamaged` |
-| `HitByWarhead` | `name` warhead, `value` final damage, `other` source | `combat/damage/receive.rs::receive_damage`; hook **no owner yet** | v1? | RFC 6a; T3 `OnHitBy` (immune hits do not count) |
+| `HitByWarhead` | `id` warhead (`WarheadTypeId`), `value` final damage, `other` source | `combat/damage/receive.rs::receive_damage`; hook **no owner yet** | v1? | RFC 6a; T3 `OnHitBy` (immune hits do not count) |
 | `AttackedBy` | `other` attacker, `value` weapon index (-1 none), `projectile` (nullable) | fire step in `src/sim/combat/world_fire.rs` (raised on the target); hook **no owner yet** | v1? | RFC 6a; T4 |
 | `FatalDamage` | `other` attacker (nullable), `value` damage | `combat/world_receiver.rs` before the death chain; hook **no owner yet** | v1? | RFC 6a; T22 `OnFatalDamage` |
 | `Killed` | `other` killer (nullable) | `src/sim/combat/record_kill.rs`; hook **no owner yet** | v1? | RFC 6a; T9; Rc: `UnitDestroyed` |
-| `Fire` | `other` target (nullable), `value` weapon index, `projectile` (nullable) | `combat/world_fire.rs` FireAt steps; `src/sim/aircraft/fire_at.rs::fire_at`; hook **no owner yet** | v1? | RFC 6a, 9 level 2; T10 `OnFire` |
-| `SpawnFire` | `other` spawned unit, `value` weapon index, `projectile`; target in `EventInfo.cell` or via the spawn's target | `src/sim/spawn_manager.rs` (unverified point); hook **no owner yet** | v1? | RFC 6a; T11 `OnSpawnFire` |
-| `HitTarget` | `other` target, `value` damage, `projectile` | `combat/world_receiver.rs` (raised on the firer); hook **no owner yet** | v1? | RFC 6a; T21 `OnHitTarget` |
+| `Fire` | `other` target (nullable), `value` weapon index, `id` weapon (`WeaponTypeId`), `projectile` (nullable) | `combat/world_fire.rs` FireAt steps; `src/sim/aircraft/fire_at.rs::fire_at`; hook **no owner yet** | v1? | RFC 6a, 9 level 2; T10 `OnFire` |
+| `SpawnFire` | `other` spawned unit, `value` weapon index, `projectile`; target in the record's `cell` or via the spawn's target | `src/sim/spawn_manager.rs` (unverified point); hook **no owner yet** | v1? | RFC 6a; T11 `OnSpawnFire` |
+| `HitTarget` | `other` target, `value` damage, `id` weapon (`WeaponTypeId`), `projectile` | `combat/world_receiver.rs` (raised on the firer); hook **no owner yet** | v1? | RFC 6a; T21 `OnHitTarget` |
 | `Aimed` | `other` target | target assignment (`src/sim/world/techno_ai/scan_batch.rs` and order paths; unverified); hook **no owner yet** | v1? | RFC 6a; T6 `OnAimed` |
 | `ProjectileIncoming` | `projectile`, `other` launcher (nullable) | projectile admission `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`; hook **no owner yet** | v1? | RFC 6a; T7 `OnProjectileComing` |
-| `Detonated` | `projectile`, `cell`, `other` source (nullable), `name` warhead | detonation admission in `src/sim/projectile`; hook **no owner yet** | v1? | RFC 6 L2 ("projectile detonated"), 9 level 2; T36; Rc: `ProjectileDestroyed`, `Explosion` |
+| `Detonated` | `projectile`, `cell`, `other` source (nullable), `id` warhead (`WarheadTypeId`) | detonation admission in `src/sim/projectile`; hook **no owner yet** | v1? | RFC 6 L2 ("projectile detonated"), 9 level 2; T36; Rc: `ProjectileDestroyed`, `Explosion` |
 | `Birth` | `other` producer (nullable), `effect` (nullable), `value` build time (-1 none) | `src/sim/world/world_spawn.rs`, production exit, reinforcements; hook **no owner yet** | v1? | RFC 6a; T8 `OnBirth`; Rc: `UnitCreated` |
 | `Enter` | `other` transport or building, `value` occupied size, `value2` 1 garrison / 0 transport; passengers by query | `src/sim/building_entry.rs`, transport boarding (`src/sim/passenger.rs` callers); hook **no owner yet** | v1? | RFC 6a; T13 `OnEntry`; Rc: `UnitLoaded` |
 | `Exit` | as `Enter`, after leaving | unload paths; hook **no owner yet** | v1? | RFC 6a; T14 `OnExit`; Rc: `UnitUnloaded` |
@@ -459,14 +601,15 @@ trigger, never for every object (RFC 5, Goal 6).
 | `ExitedBy` | as `EnteredBy` | as `Exit` | v1? | RFC 6a; T16 `OnExitBy` |
 | `Crushed` | `other` crusher | crush step in movement (file unverified); hook **no owner yet** | v1? | RFC 6a; T25 `OnCrush` |
 | `HouseTransfer` | `house` new house, `value` 1 if by mind control; raised before the transfer | `src/sim/world/mod.rs::change_owner_with_rules`; `src/sim/capture_manager.rs`; hook **no owner yet** | v1? | RFC 6a; T28 `OnHouseTransfer`; Rc: `UnitTaken` |
+| `HouseTransferred` | `house` previous house, `value` 1 if by mind control; raised after the transfer | `change_owner_with_rules`; hook **no owner yet** | v1? | RFC 6a (P10); Rc: `UnitGiven` (two-phase transfer) |
 | `EffectStart` | `effect`, `value` stack count | `src/sim/attach_effect.rs::AttachEffectList::attach`; hook **no owner yet** | v1? | RFC 6a; T17 `OnBehaviorStart` |
-| `EffectExpire` | `effect` (reads gone after delivery), `name` effect type | `attach_effect.rs` update/removal; hook **no owner yet** | v1? | RFC 6a; T19 `OnBehaviorExpire` |
+| `EffectExpire` | `effect` (reads gone after delivery), `id` effect type (`EffectTypeId`) | `attach_effect.rs` update/removal; hook **no owner yet** | v1? | RFC 6a; T19 `OnBehaviorExpire` |
 | `EffectStacks` | `effect`, `value` new stack count | `attach_effect.rs` cumulative attach; hook **no owner yet** | v1? | RFC 6a; T20 `OnBehaviorStack` |
 | `Timer` | `value` frame of the previous firing | module trigger timer: **no owner yet** (E13 timers reuse `CdTimer`) | v1? | RFC 6a; T5 `OnTimer` |
-| `SuperWeaponLaunched` | `name` SW type, `house`, `cell` target | `src/sim/superweapon/fire.rs::fire_super_weapon`; hook **no owner yet** | v1? | RFC 6a |
+| `SuperWeaponLaunched` | `id` SW type (`SuperWeaponTypeId`), `house`, `cell` target | `src/sim/superweapon/fire.rs::fire_super_weapon`; hook **no owner yet** | v1? | RFC 6a |
 
 T18 `OnBehavior` (effect running, every interval) is the polled
-`EffectStacks` event below, or a condition `hasEffect` on a `Timer` trigger.
+`EffectStacksPoll` event below, or a condition `hasEffect` on a `Timer` trigger.
 
 ### 2.4 New polled events (RFC 6a)
 
@@ -488,13 +631,14 @@ poll: **no owner yet** (a module poll list beside the Logic tags in
 | `HouseMoneyPoll` | the trigger house's available money | `src/sim/economy.rs::Economy` (`available_money`) | v1? | RFC 6a; T31 |
 | `HousePowerPoll` | output minus drain | `src/sim/power_system.rs::PowerState::total_output`, `total_drain` | v1? | RFC 6a; T32 |
 | `EffectStacksPoll` | stacks of effect type `name` | `attach_effect.rs` (`active_count`) | v1? | RFC 6a; T18, T20 |
-| `DistancePoll` | distance in leptons to `EventInfo.other` | coordinates of both objects | v1? | RFC 6a; T37 `Compare` (distance only; other comparisons are module code) |
+| `DistancePoll` | distance in leptons to the record's `other` | coordinates of both objects | v1? | RFC 6a; T37 `Compare` (distance only; other comparisons are module code) |
 
 ### 2.5 Further candidate events (from the research)
 
-Not in the RFC's candidate list. RFC 6 L2 allows new events, so these are
-catalog candidates for `later`, each a small follow-up RFC (RFC Process 6).
-Listed in proposal P11.
+RFC 0.0.5 added these to its further candidate events for open question 13
+(proposal P11, RFC 6a). `Stunned`/`Unstunned` and `Decloaked` are catalog
+additions that the RFC's list does not name. `HouseTransferred` is in the
+RFC's main table and listed in 2.3.
 
 | Event | Payload | Where it would be raised | Sources |
 | --- | --- | --- | --- |
@@ -505,7 +649,6 @@ Listed in proposal P11.
 | `Promoted` | `value` new rank | `src/sim/combat/veterancy.rs` | Rc: `UnitExperience` |
 | `Cloaked` / `Decloaked` | — | `src/sim/cloak_disguise.rs` cloak tick | Rc: `UnitCloaked` |
 | `Spotted` / `Lost` | `house` the house that now sees or lost it | `src/sim/vision/mod.rs` | Rc: `UnitEnteredLos`, `UnitLeftLos` |
-| `HouseTransferred` | `house` old house; after the change | `change_owner_with_rules` | Rc: `UnitGiven` (two-phase transfer) |
 | `AmmoChanged` | `value` old, `value2` new | `src/sim/ammo.rs` | Rc: `StockpileChanged` |
 | `MissionChanged` | `value` mission | `src/sim/mission/` | Rc: `UnitCommand` |
 | `HouseDefeated` | `house` | `src/sim/world/house_defeat.rs` | Rc: `TeamDied` |
@@ -530,7 +673,7 @@ gives integers, as the RFC requires.
 ## 3. Conditions
 
 A condition filters a trigger natively before module code runs (RFC 6a). It
-tests the subject by default, or `EventInfo.other` when built with `.onOther()`.
+tests the subject by default, or `EventRecord.other` when built with `.onOther()`.
 `Cond.not(c)` negates. All conditions are `sim`. Evaluation owner: **no owner
 yet** (a condition list on the TriggerType, checked in `TR` before springing).
 
@@ -546,8 +689,9 @@ class Cond {
 | `Cond.relation(r: Relation)` | relation of the tested object's house to the trigger house | `src/sim/house_diplomacy.rs` | v1 | RFC 6a; C5 |
 | `Cond.category(c: Category)` | object category | `ObjectType` category / projectile | v1 | RFC 6a; C3, C14 |
 | `Cond.layer(l: Layer)` | object layer | entity layer (unverified getter) | v1 | RFC 6a; C4 |
-| `Cond.isType(name: string)` | type ID equals `name` | `ObjectType` id; projectile type | v1 | RFC 6a; C12, C13 (negated), C15 (projectile type) |
-| `Cond.armor(name: string)` | armor name | `src/rules/armor.rs::armor_index`; Ares `ares_armor.rs` | v1 | RFC 6a; C18 |
+| `Cond.isType(type: TechnoTypeId)`; `Cond.isProjectileType(type: ProjectileTypeId)` | type equals `type` | `ObjectType` id; projectile type | v1 | RFC 6a; C12, C13 (negated), C15 (projectile type) |
+| `Cond.isWeaponType(type: WeaponTypeId)` | the weapon of a weapon event (`Fire`, `HitTarget`) equals `type` | the record's `id` | v1 | RFC 6a (weapon, warhead and projectile bindings) |
+| `Cond.armor(armor: ArmorId)` | armor | `src/rules/armor.rs::armor_index`; Ares `ares_armor.rs` | v1 | RFC 6a; C18 |
 | `Cond.civilianHouse()` | owner is a civilian house | `HouseState` side/country (rule unverified) | v1 | RFC 6a; C16 |
 | `Cond.health(cmp: Compare, value: i32)` | health points | `combat/object_health.rs::Health` | v1 | RFC 6a; C19 |
 | `Cond.healthPercent(cmp: Compare, percent: i32)` | health percent | `Health` | v1 | RFC 6a; C19 |
@@ -555,9 +699,9 @@ class Cond {
 | `Cond.landType(t: LandType)` | land type of the object's cell | map cell land | v1 | RFC 6a; C2 |
 | `Cond.housePower(state: PowerLevel)` | `Full` or `Low` | `src/sim/power_system.rs::PowerState::is_low_power` | v1 | RFC 6a; C6 (red/yellow/green: a third level is unverified in the engine) |
 | `Cond.houseMoney(cmp: Compare, value: i32)` | the tested object's house money | `src/sim/economy.rs` | v1 | RFC 6a; C7 |
-| `Cond.hasEffect(type: string, minStacks: i32)` | effect present with at least `minStacks` | `attach_effect.rs` `active_count` | v1 | RFC 6a; C8, C9 (negated) |
-| `Cond.hasMark(name: string)` | mark present | marks: **no owner yet** | v1 | RFC 6a; C10, C11 (negated) |
-| `Cond.effectSource(type: string, r: Relation)` | the source of effect `type` has relation `r` | `AttachEffectInstance` source (`is_self_owned`) | v1? | RFC 6a; C21 |
+| `Cond.hasEffect(type: EffectTypeId, minStacks: i32)` | effect present with at least `minStacks` | `attach_effect.rs` `active_count` | v1 | RFC 6a; C8, C9 (negated) |
+| `Cond.hasMark(m: MarkId)` | mark present | marks: **no owner yet** | v1 | RFC 6a; C10, C11 (negated) |
+| `Cond.effectSource(type: EffectTypeId, r: Relation)` | the source of effect `type` has relation `r` | `AttachEffectInstance` source (`is_self_owned`) | v1? | RFC 6a; C21 |
 | `Cond.inWeaponRange(weaponIndex: i32)` | `other` is within the subject's weapon range | range owner `attach_effect.rs::range_with_attach_effects` and weapon `Range` | v1? | RFC 6a; C20 |
 | `Cond.isStandIn()` | object is a "stand" (替身) | not in the RFC; no engine concept | — (not taken) | C17 |
 
@@ -570,6 +714,17 @@ Actions run in two ways:
 - inside a trigger: `TriggerDef.actions` holds `Action.original(n, params)`,
   `Action.wasm(name)` or an atomic action value;
 - directly from module code, through the functions below.
+
+Inside a trigger, original actions (`Action.original`) run when the trigger
+springs, as in the original, also when the trigger contains module actions.
+`Action.wasm` actions are queued and run in the module phase as one batch per
+module per frame, in firing order (RFC 5; [Event delivery](#event-delivery)):
+a trigger with the actions [original A, module B, original C] runs A and C
+when it springs and B later in the same frame. A queued module action is
+dropped if the game has ended, or its trigger was disabled or removed, before
+the module phase. An author who needs a strict order writes all of the
+trigger's actions as module code and calls original actions through the
+functions below. Called directly from module code, an action runs at once.
 
 ```ts
 class ActionParams {
@@ -606,10 +761,10 @@ every row that runs native code, except where noted.
 | 1 | `scenario.declareWinner(country: string)` | country | `src/sim/world/house_defeat.rs::request_player_outcome` | Acts on the player, not the trigger house. |
 | 2 | `scenario.declareLoser(country: string)` | country | same | |
 | 3 | `house.beginProduction()` | — | `HouseState::enable_scripted_production` | |
-| 4 | `ai.createTeam(teamType: string, house: House \| null): Team \| null` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | Max gate applies. S0–S68 run the team. |
-| 5 | `ai.destroyTeams(teamType: string)` | TeamType | `TSV/membership.rs::destroy_teams_of_type` | |
+| 4 | `ai.createTeam(teamType: TeamTypeId, house: House \| null): Team \| null` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | Max gate applies. S0–S68 run the team. |
+| 5 | `ai.destroyTeams(teamType: TeamTypeId)` | TeamType | `TSV/membership.rs::destroy_teams_of_type` | |
 | 6 | `house.allToHunt()` | — | `house_strategy::all_to_hunt` | |
-| 7 | `ai.reinforce(teamType: string)` | TeamType (its own waypoint) | `TSV/reinforcements.rs::spawn_team_reinforcements` | |
+| 7 | `ai.reinforce(teamType: TeamTypeId)` | TeamType (its own waypoint) | `TSV/reinforcements.rs::spawn_team_reinforcements` | |
 | 8 | `map.dropZoneFlare(cell: Cell)` | cell | `src/sim/anim_class.rs::trigger_drop_zone_flare` | G-A1. |
 | 9 | `house.fireSale()` | — | `strategy_emergency_mut().set_state_four()` | |
 | 10 | `scenario.playMovie(index: i32)` | movie index | `TriggerEffect::FullscreenMovie` | Presentation effect for every player. |
@@ -621,7 +776,7 @@ every row that runs native code, except where noted.
 | 16 | `map.revealAll()` | — | `src/sim/world/shroud_refresh.rs::trigger_reveal_entire_map` | |
 | 17 | `map.revealAround(cell: Cell)` | cell | `trigger_reveal_at_waypoint` | G-A1. |
 | 18 | `map.revealZone(cell: Cell)` | cell | `trigger_reveal_zone_at_waypoint` | G-A1. |
-| 19 | `sound.play(name: string)` | sound | `SimSoundEvent::VocCentered` | |
+| 19 | `sound.play(sound: SoundId)` | sound | `SimSoundEvent::VocCentered` | |
 | 20 | `scenario.playTheme(name: string)` | theme | `TriggerEffect::MusicTheme` | |
 | 21 | `scenario.playSpeech(eva: string)` | EVA name | `SimSoundEvent::TriggerEva` | |
 | 22 | `trigger.force()`; `Trigger.forceType(id: string)` | trigger | `TR::apply_live_trigger_action` | Springs with no actor and a zero cell. |
@@ -635,7 +790,7 @@ every row that runs native code, except where noted.
 | 30 | `house.setAutoBaseBuilding(on: bool)` | flag | `src/sim/world/house_base.rs::trigger_auto_base_building` | |
 | 31 | `map.growShroud()` | — | `grow_shroud` | |
 | 32 | live; direct form `techno.kill(KillMode.Normal)` (4.3) | — | C4 direct damage + `apply_damage_to_cell` (bridge) in TR | Ares survivor rule applies. |
-| 33 | `house.grantSuperWeapon(type: string, oneTime: bool)` | SW type | `src/sim/superweapon/mod.rs::trigger_grant_super` | `oneTime = true`. |
+| 33 | `house.grantSuperWeapon(type: SuperWeaponTypeId, oneTime: bool)` | SW type | `src/sim/superweapon/mod.rs::trigger_grant_super` | `oneTime = true`. |
 | 34 | same, `oneTime = false` | SW type | same | |
 | 35 | `house.setPreferredTargetKind(value: i32)` | value | `set_preferred_super_weapon_target_kind` | |
 | 36 | `house.transferAllTo(to: House)` | house | `trigger_change_all_house_objects` | |
@@ -643,9 +798,9 @@ every row that runs native code, except where noted.
 | 38 | `house.makeEnemy(other: House)` | house | `house_diplomacy.rs::make_enemy` | Both ways. |
 | 39 | — | — | no arm (returns false) | Not exposed. |
 | 40 | `scenario.setVisibleMapArea(r: Rect)` | rectangle | `change_visible_map_area` | |
-| 41 | `map.playAnim(anim: string, cell: Cell)` | AnimType | `anim_class.rs::trigger_play_anim_at_waypoint` | G-A1. Ares `MakeInfantry=` owner rule. |
-| 42 | `map.explode(weapon: string, cell: Cell)` | WeaponType | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` | G-A1. Coordinate form in 4.3. |
-| 43 | `map.playVoxelAnim(type: string, cell: Cell)` | VoxelAnimType | `trigger_play_voxel_anim_at_waypoint` | G-A1. |
+| 41 | `map.playAnim(anim: AnimTypeId, cell: Cell)` | AnimType | `anim_class.rs::trigger_play_anim_at_waypoint` | G-A1. Ares `MakeInfantry=` owner rule. |
+| 42 | `map.explode(weapon: WeaponTypeId, cell: Cell)` | WeaponType | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` | G-A1. Coordinate form in 4.3. |
+| 43 | `map.playVoxelAnim(type: VoxelAnimTypeId, cell: Cell)` | VoxelAnimType | `trigger_play_voxel_anim_at_waypoint` | G-A1. |
 | 44 | `weather.startIonStorm(duration: i32)` | duration | `superweapon/lightning_storm::start` | Refused if raging. |
 | 45 | `weather.stopIonStorm()` | — | `lightning_storm::request_end` | Refused if not raging. |
 | 46 | `scenario.lockInput()` | — | `TriggerEffect::InputLockChanged` | |
@@ -682,7 +837,7 @@ every row that runs native code, except where noted.
 | 77 | `house.setTeamRatio(TeamRatio.Aircraft, v)` | value | `set_aircraft_team_ratio` | |
 | 78 | `house.setTeamRatio(TeamRatio.Infantry, v)` | value | `set_infantry_team_ratio` | |
 | 79 | `house.setTeamRatio(TeamRatio.Units, v)` | value | `set_unit_team_ratio` | |
-| 80 | `ai.reinforceAt(teamType: string, cell: Cell)` | TeamType, cell | `spawn_team_reinforcements(waypoint)` | G-A1. |
+| 80 | `ai.reinforceAt(teamType: TeamTypeId, cell: Cell)` | TeamType, cell | `spawn_team_reinforcements(waypoint)` | G-A1. |
 | 81 | live; direct form `techno.wakeUp()` | — | Guard for sleeping/harmless (TR) | |
 | 82 | `house.wakeSleepers()` | — | TR (Sleep foots not owned by the house) | |
 | 83 | `house.wakeHarmless()` | — | TR (Harmless foots owned by the house) | |
@@ -690,7 +845,7 @@ every row that runs native code, except where noted.
 | 85 | `map.setVeinGrowth(v: i32)` | value | `session.set_vein_growth` | |
 | 86 | `map.setOreGrowth(v: i32)` | value | `ore_growth_config.set_enabled_from_trigger` | |
 | 87 | `map.setIceGrowth(v: i32)` | value | `session.set_ice_growth` | |
-| 88 | `map.createParticleSystem(type: string, cell: Cell)` | ParticleSystem | `particles/spawn.rs::trigger_create_particle_system_at_waypoint` | G-A1. |
+| 88 | `map.createParticleSystem(type: ParticleSystemTypeId, cell: Cell)` | ParticleSystem | `particles/spawn.rs::trigger_create_particle_system_at_waypoint` | G-A1. |
 | 89 | `map.removeParticleSystems(cell: Cell)` | cell | `trigger_mark_particle_systems_done_at_waypoint` | G-A1. |
 | 90 | `weather.lightningStrike(cell: Cell)` | cell | `lightning_storm::create_cloud_bolt` | G-A1. |
 | 91 | live; direct form `infantry.goBerserk()` | — | `make_psycho` | |
@@ -700,16 +855,16 @@ every row that runs native code, except where noted.
 | 95 | `map.nukeStrike(cell: Cell)` | cell | `src/sim/world/trigger_strikes.rs::trigger_nuke_strike` | G-A1. |
 | 96 | `map.chemStrike(cell: Cell)` | cell | `trigger_chemical_strike` | G-A1. |
 | 97 | `scenario.toggleTrainCargo()` | — | `session.toggle_train_crate` | |
-| 98 | `sound.playAtRandomWaypoint(name: string)` | sound | `src/sim/world/object_sound.rs::trigger_play_sound_at_random_waypoint` | Ares variant; draws native. |
-| 99 | `sound.playAt(name: string, cell: Cell)` | sound, cell | `trigger_play_sound_at_waypoint` | G-A1. |
+| 98 | `sound.playAtRandomWaypoint(sound: SoundId)` | sound | `src/sim/world/object_sound.rs::trigger_play_sound_at_random_waypoint` | Ares variant; draws native. |
+| 99 | `sound.playAt(sound: SoundId, cell: Cell)` | sound, cell | `trigger_play_sound_at_waypoint` | G-A1. |
 | 100 | `scenario.playRadarMovie(index: i32, pause: bool)` | movie | `TriggerEffect::RadarMovie{pause:false}` | |
 | 101 | `map.reshroudAt(cell: Cell)` | cell | `trigger_conceal_at_waypoint` | G-A1. |
 | 102 | `weather.lightningStormStrike(cell: Cell)` | cell | `lightning_storm::start` with rules duration | Uses the trigger house. |
 | 103 | `scenario.timer.setText(csfLabel: string)` | label | `set_scenario_timer_caption` | |
 | 104 | `team.flash(frames: i32)`; `ai.flashTeams(teamType, frames)` | TeamType, frames | `TSV/actions.rs::flash_teams_of_type` | |
 | 105 | `scenario.talkBubble(team: Team \| null, frame: i32)` | team, frame | `talk_bubble_set_object_and_frame` | |
-| 106 | `rules.setTechLevel(type: string, level: i32)` | type, level | `src/sim/world/type_tech_levels.rs::set_object_type_tech_level` | Also section 10. |
-| 107 | `ai.reinforceByChrono(teamType: string, cell: Cell)` | TeamType, cell | `spawn_chrono_team_reinforcements` | G-A1. |
+| 106 | `rules.setTechLevel(type: TechnoTypeId, level: i32)` | type, level | `src/sim/world/type_tech_levels.rs::set_object_type_tech_level` | Also section 10. |
+| 107 | `ai.reinforceByChrono(teamType: TeamTypeId, cell: Cell)` | TeamType, cell | `spawn_chrono_team_reinforcements` | G-A1. |
 | 108 | `map.createCrate(kind: i32, cell: Cell)` | kind (20 random) | `crates::place_crate` | Draws native when random. G-A1. |
 | 109 | `map.ironCurtainAt(cell: Cell)` | cell | `superweapon::iron_curtain::at_waypoint` | G-A1. |
 | 110 | `scenario.pause(duration: i32)` | duration | `session.pause_scenario` | |
@@ -717,7 +872,7 @@ every row that runs native code, except where noted.
 | 112 | `scenario.jumpCamera(cell: Cell)` | cell | `TriggerEffect::CameraAtCoord{velocity:None}` | |
 | 113 | `house.cheer()` | — | `house_cheer` | |
 | 114 | `scenario.setSidebarTab(tab: i32)` | 0..3 | `TriggerEffect::SelectSidebarTab` | |
-| 115 | `scenario.flashCameo(type: string, duration: i32)` | type | `TriggerEffect::FlashSidebarCameo` | |
+| 115 | `scenario.flashCameo(type: TechnoTypeId, duration: i32)` | type | `TriggerEffect::FlashSidebarCameo` | |
 | 116 | `sound.stopAt(cell: Cell)` | cell | `trigger_stop_sound_at_waypoint` | G-A1. |
 | 117 | `scenario.playRadarMovie(index, true)` | movie | `RadarMovie{pause:true}` | |
 | 118 | `map.clearSmudges()` | — | `src/sim/world/time_warp.rs::trigger_clear_all_smudges` | |
@@ -727,13 +882,13 @@ every row that runs native code, except where noted.
 | 122 | `house.destroyAll(Destroy.Naval)` | — | `house_blowup(Naval)` | |
 | 123 | `house.mindControlBase(of: House)` | house | `src/sim/capture_manager.rs::control_house_buildings(.., false)` | |
 | 124 | `house.restoreMindControlledBase(of: House)` | house | `control_house_buildings(.., true)` | |
-| 125 | `map.createBuilding(type: string, cell: Cell, owner: House): Building \| null` | type, cell | `TR::trigger_create_building_at_waypoint` | G-A1. |
+| 125 | `map.createBuilding(type: TechnoTypeId, cell: Cell, owner: House): Building \| null` | type, cell | `TR::trigger_create_building_at_waypoint` | G-A1. |
 | 126 | `house.restoreStarting(buildingsOnly: false)` | — | `restore_initial_house_technos(.., true)` | |
 | 127 | `scenario.chronoScreenEffect(duration: i32)` | duration | `start_chrono_screen_effect` | |
 | 128 | `house.teleportAll(cell: Cell)` | cell | `src/sim/world/trigger_chrono.rs::chronoshift_house_to` | |
 | 129 | `house.superWeapon(type).setChargePercent(p: i32)` | SW, percent | `SuperWeaponInstance::set_charge_percentage` | |
 | 130 | `house.restoreStarting(buildingsOnly: true)` | — | `restore_initial_house_technos(.., false)` | |
-| 131 | `house.flashBuildings(type: string, duration: i32)` | type | `entity.flashing.start` | |
+| 131 | `house.flashBuildings(type: TechnoTypeId, duration: i32)` | type | `entity.flashing.start` | |
 | 132 | `house.superWeapon(type).setRechargeTime(frames: i32)` | SW, time | `SuperWeaponInstance::set_recharge_time` | |
 | 133 | `house.superWeapon(type).resetRechargeTime()` | SW | `reset_recharge_time` | |
 | 134 | `house.superWeapon(type).reset()` | SW | `superweapon::reset_super` | |
@@ -764,20 +919,20 @@ One function is one operation with one owner (RFC 6 granularity).
 
 | Function | Semantics | Draws | Owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- |
-| `techno.fireWeapon(w: WeaponSel, at: Target): Status` | Fire the weapon in slot `w.index` or named `w.name` at a cell, an object or the current target, through FireAt. Refused when the weapon cannot fire now | native | **no owner yet** (FireAt is reached only from the fire update in `src/sim/combat/world_fire.rs::visit_fire`) | v1? | RFC 6b; F4 `LaunchWeapon`; Rc: `UnitWeaponFire` |
-| `house.launchSuperWeapon(type: string, cell: Cell): Status` | Fire a superweapon the house holds | native | `src/sim/superweapon/fire.rs::fire_super_weapon` | v1? | RFC 6b; F5 |
-| `map.spawnAnim(anim: string, at: Coord): Status` | Create an animation | native | `src/sim/anim_class.rs` (coordinate entry; G-A1) | v1? | RFC 6b; F6 |
+| `techno.fireWeapon(w: WeaponSel, at: Target): Status` | Fire the weapon in slot `w.index` or of type `w.weapon` at a cell, an object or the current target, through FireAt. Refused when the weapon cannot fire now | native | **no owner yet** (FireAt is reached only from the fire update in `src/sim/combat/world_fire.rs::visit_fire`) | v1? | RFC 6b; F4 `LaunchWeapon`; Rc: `UnitWeaponFire` |
+| `house.launchSuperWeapon(type: SuperWeaponTypeId, cell: Cell): Status` | Fire a superweapon the house holds | native | `src/sim/superweapon/fire.rs::fire_super_weapon` | v1? | RFC 6b; F5 |
+| `map.spawnAnim(anim: AnimTypeId, at: Coord): Status` | Create an animation | native | `src/sim/anim_class.rs` (coordinate entry; G-A1) | v1? | RFC 6b; F6 |
 | `techno.remove(): Status` | Remove with no death, no survivors, no credit | none | `src/sim/world/lifecycle.rs::Simulation::uninit_with_context` | v1? | RFC 6b; F7 `Remove`; Rc: `DestroyUnit(reclaimed)` |
 | `techno.kill(mode: KillMode, source: Techno \| null): Status` | Kill through the damage path with damage = health and `ignore_defenses` (death animation, survivors, kill credit to `source`) | native | `src/sim/world/mod.rs::commit_direct_damage_receiver` (`EntityDamageEvent::direct_receiver`) | v1? | RFC 6b; F8 `Suicide` |
-| `techno.damage(amount: i32, warhead: string, source: Techno \| null): Status` | Deal damage through warhead and armor, with credit and experience | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **adopted in RFC 0.0.5** (P9: add goes through the warhead path) |
+| `techno.damage(amount: i32, warhead: WarheadTypeId, source: Techno \| null): Status` | Deal damage through warhead and armor, with credit and experience | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **adopted in RFC 0.0.5** (P9: add goes through the warhead path) |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | Set or heal health, no credit | none | `combat/object_health.rs::Health::set`, `heal` (no Simulation-level owner) | v1? | RFC 6b; F9 `ModifyHealth` |
-| `map.createObject(type: string, at: Cell, owner: House, c: CreateParams): Techno \| null` | Create a finished object; blocked cell refuses | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`, `place_building_with_cleared_foundation`, `place_foot_with_cleared_cell` (doc says "tests, tools, debug") | v1? | RFC 6b; F10 `CreateUnit` (inheriting triggers/effects: `CreateParams.inherit`) |
+| `map.createObject(type: TechnoTypeId, at: Cell, owner: House, c: CreateParams): Techno \| null` | Create a finished object; blocked cell refuses | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`, `place_building_with_cleared_foundation`, `place_foot_with_cleared_cell` (doc says "tests, tools, debug") | v1? | RFC 6b; F10 `CreateUnit` (inheriting triggers/effects: `CreateParams.inheritTag`) |
 | `techno.setMission(m: Mission, target: Target \| null): Status` | Queue a mission as a player order would | none | `src/sim/mission/retask.rs::queue_order_mission`, `queue_megamission` | v1 | RFC 6b, example; F16 `Mission`; F13 `CommandMoveTo` (= `Move` with a cell) |
 | `techno.teleport(cell: Cell, rule: Blocked): Status` | Chronosphere-style move; `Blocked.Nearby` picks a nearby cell, `Blocked.Fail` refuses | native | **no owner yet** (`superweapon/chronosphere.rs::warp_object` is private; `trigger_chrono.rs::chronoshift_house_to` is house-wide) | v1? | RFC 6b; F12 `ForceMoveTo` |
 | `techno.clearTarget(): Status` | Drop the current target | none | **no owner yet** (only per-locomotor `clear_target` traits) | v1? | RFC 6b; F15 |
 | `techno.clearDisguise(): Status` | Remove a spy or Mirage disguise | none | `src/sim/cloak_disguise.rs` (`DisguiseRuntime::clear_unit`; no transaction owner) | v1? | RFC 6b; F14 |
 | `objects.inRadius(...)` | Search an area (a query) | none | section 7 | v1 | RFC 6b; F17 `SearchArea` |
-| `sound.playAt(name: string, at: Coord)` | Play a sound | none | `SimSoundEvent` | v1? | RFC 6b; F18 `PlayAudio` |
+| `sound.playAt(sound: SoundId, at: Coord)` | Play a sound | none | `SimSoundEvent` | v1? | RFC 6b; F18 `PlayAudio` |
 | `techno.addExperience(points: i32)` / `setRank(r: Rank)` | Add experience or set a rank | none | `src/sim/combat/veterancy.rs::Veterancy` (`set_elite`, `set_veteran`, `set_rookie`, `set_from_percent`) | v1? | RFC 6b; F19 `GetEXP` |
 | `house.addMoney(amount: i32): Status` | Add or take money | none | `src/sim/economy.rs::Economy::add_credits`, `spend_money` | v1? | RFC 6b; F20 `GetMoney` |
 | `rules.setTechLevel(type, level)` / `house.allowType(type, allowed)` | Change the tech tree | none | `set_object_type_tech_level` exists; per-house prerequisite change: **no owner yet** | v1? | RFC 6b; F21 `TechModifier` |
@@ -788,24 +943,24 @@ One function is one operation with one owner (RFC 6 granularity).
 | `techno.addEffect(...)` / `removeEffect(...)` | section 5 | — | section 5 | v1 | RFC 6b; F2, F3 |
 | `techno.addMark(...)` / `removeMark(...)` | section 6 | — | section 6 | v1 | RFC 6b |
 | `map.createProjectile(p: ProjectileParams): Projectile \| null` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
-| `map.detonateWeapon(weapon: string, at: Coord, source: Techno \| null): Status` | Detonate a weapon at a coordinate with no bullet | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
-| `map.detonateWarhead(warhead: string, damage: i32, at: Coord, source: Techno \| null): Status` | Area damage of a warhead with a given damage and source | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
+| `map.detonateWeapon(weapon: WeaponTypeId, at: Coord, source: Techno \| null): Status` | Detonate a weapon at a coordinate with no bullet | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
+| `map.detonateWarhead(warhead: WarheadTypeId, damage: i32, at: Coord, source: Techno \| null): Status` | Area damage of a warhead with a given damage and source | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
 | `projectile.detonate(): Status` | Detonate a projectile now | native | `src/sim/projectile` detonation admission (no public entry) | later | **adopted in RFC 0.0.5** (P8); Rc: `SetProjectileCollision` |
 | `projectile.remove(): Status` | Remove a projectile without detonation | none | **no owner yet** | later | **adopted in RFC 0.0.5** (P8); Rc: `DeleteProjectile` |
 | `scenario.endFor(house: House, outcome: Outcome): Status` | End the game for one house, won or lost | none | `house_defeat.rs::request_player_outcome` | v1? | RFC 6b |
 | `house.setScore(points: i32)` / `addScore` | Set scores | none | `Economy::add_score` (no setter) | v1? | RFC 6b |
 | `ctx.log(text: string)` | Write a line to the in-game log | none | **no owner yet** | v1 | RFC 6b, 10 |
-| `techno.convert(type: string): Status` | Change type (as Ares conversion) | native | `src/sim/game_entity/type_conversion.rs::convert_techno_type` | v1? | RFC 8 (per-object type change); S68 |
+| `techno.convert(type: TechnoTypeId): Status` | Change type (as Ares conversion) | native | `src/sim/game_entity/type_conversion.rs::convert_techno_type` | v1? | RFC 8 (per-object type change); S68 |
 
 ```ts
-class WeaponSel { index: i32 = -1; name: string | null = null; }
+class WeaponSel { index: i32 = -1; weapon: WeaponTypeId = NO_ID; }
 class Target { techno: Techno | null = null; cell: Cell | null = null; current: bool = false; }
 enum KillMode { Normal }          // death animation, survivors, credit
 enum Blocked { Nearby, Fail }
 class CreateParams { inheritTag: Techno | null = null; mission: Mission = Mission.None; }
 class ProjectileParams {
-  type: string;          // projectile (BulletType) ID
-  weapon: string | null; // supplies damage and warhead
+  type: ProjectileTypeId;
+  weapon: WeaponTypeId = NO_ID;   // supplies damage and warhead
   from: Coord;
   toTechno: Techno | null;
   toCoord: Coord | null;
@@ -833,13 +988,13 @@ class EffectParams {
   sourceHouse: House | null = null;
 }
 // on Techno:
-addEffect(type: string, p: EffectParams): Effect | null;   // null + Refused when stacking refuses
+addEffect(type: EffectTypeId, p: EffectParams): Effect | null;   // null + Refused when stacking refuses
 removeEffect(e: Effect): Status;
-removeEffects(type: string): i32;          // returns how many
-removeEffectGroup(group: string): i32;
-effects(): EffectList;                     // deterministic order: attach order
+removeEffects(type: EffectTypeId): i32;    // returns how many
+removeEffectGroup(group: EffectGroupId): i32;
+effects(out: HandleBuffer): i32;           // deterministic order: attach order
 // on Effect:
-type(): string; remaining(): Frames; stacks(): i32; source(): Techno | null;
+type(): EffectTypeId; remaining(): Frames; stacks(): i32; source(): Techno | null;
 ```
 
 | Function | Owner | Tier | Sources |
@@ -933,59 +1088,62 @@ Spreadsheet lasting effects not taken as effects:
 
 A mark is a text marker an object carries; an object may carry any number
 (RFC 6b, Terminology). Actions and effects add and remove them; conditions test
-them. Owner: **no owner yet** (gap G-M1): a per-object set, saved and hashed,
-cleared by the object's removal.
+them. Owner: **no owner yet** (gap G-M1): a side table keyed by handle
+(RFC 15), saved and hashed, cleared by the object's removal. Calls take a
+`MarkId` from `Mark.id(name)` (see [IDs](#ids)).
 
 ```ts
 // on Techno:
-addMark(name: string): Status;
-removeMark(name: string): Status;
-hasMark(name: string): bool;
-marks(): StringList;    // order: name order, case-insensitive
+addMark(m: MarkId): Status;
+removeMark(m: MarkId): Status;
+hasMark(m: MarkId): bool;
+marks(out: IdBuffer): i32;    // order: the order the marks were added
 ```
 
 | Entry | Semantics | Tier | Sources |
 | --- | --- | --- | --- |
-| `addMark` | adds `name`; adding twice keeps one | v1 | RFC 6b; F54 `Mark.Names` |
-| `removeMark` | removes `name`; absent is `Ok` | v1 | RFC 6b |
-| `hasMark` | case-insensitive test | v1 | RFC 6b; C10, C11 |
-| `marks` | list | v1 | RFC 6c ("marks" in object reads) |
+| `addMark` | adds `m`; adding twice keeps one | v1 | RFC 6b; F54 `Mark.Names` |
+| `removeMark` | removes `m`; absent is `Ok` | v1 | RFC 6b |
+| `hasMark` | test by ID; names compare case-insensitively when resolved | v1 | RFC 6b; C10, C11 |
+| `marks` | writes the object's marks into `out` | v1 | RFC 6c ("marks" in object reads) |
 | Effect-carried marks | an effect type lists marks the object carries while the effect is active (new property, e.g. `Marks=`; name unverified) | v1? | F54 "持有带它的行为就获得这个标签" |
 | Mark value and visibility | **adopted in RFC 0.0.5** (P3) | later | Rc: rules params with access levels |
 | House marks | **adopted in RFC 0.0.5** (P3) | later | Rc: `SetTeamRulesParam` |
 
-Client modules read marks only of objects they can see. Whether they see all
-marks or only "public" ones depends on P3.
+Client modules read marks only of objects they can see, and of those only
+the marks whose visibility level admits their player (RFC 6b, P3).
 
 ## 7. Queries
 
-Queries are read-only and iterate in a deterministic order (RFC 6c). The order
-is not specified by the RFC; this catalog uses "object creation order"
-**adopted in RFC 0.0.5** (P6). In client modules every query is filtered by what
-the local player can see (RFC 10).
+Queries are read-only (RFC 6c). Results come in object creation order
+(**adopted in RFC 0.0.5**, P6), taken from the creation serial the engine
+keeps (RFC 15), and are written into a buffer the module provides: a query
+returns how many results it wrote, and large results are paged (see
+[Query results](#query-results)). In client modules every query is filtered by
+what the local player can see (RFC 10).
 
 ```ts
 class Filter {
   house: House | null = null;
   relationTo: House | null = null;  relation: i32 = -1;   // Relation, -1 any
   category: i32 = -1;               // Category, -1 any
-  type: string | null = null;
-  mark: string | null = null;
+  type: TechnoTypeId = NO_ID;       // NO_ID: any
+  mark: MarkId = NO_ID;             // NO_ID: any
 }
-class TechnoList { length: i32; at(i: i32): Techno; }
+// results: HandleBuffer or IdBuffer (Conventions)
 ```
 
 ### 7.1 Objects
 
 | Function | Returns | Read owner | Tier | Sources |
 | --- | --- | --- | --- | --- |
-| `objects.inCell(c: Cell, f: Filter)` | `TechnoList` | cell occupancy (owner unverified) | v1 | RFC 6c |
-| `objects.inRadius(at: Coord, leptons: i32, f: Filter)` | `TechnoList` | spatial index (owner unverified) | v1 | RFC 6c; F17; Rc: `GetUnitsInCylinder` |
-| `objects.inRect(r: Rect, f: Filter)` | `TechnoList` | same | v1 | RFC 6c; Rc: `GetUnitsInRectangle` |
-| `objects.all(f: Filter)` | `TechnoList` | entity store; `HouseTracking` for per-house types | v1 | RFC 6c |
+| `objects.inCell(c: Cell, f: Filter, out: HandleBuffer)` | `i32` count | cell occupancy (owner unverified) | v1 | RFC 6c |
+| `objects.inRadius(at: Coord, leptons: i32, f: Filter, out: HandleBuffer)` | `i32` count | spatial index (owner unverified) | v1 | RFC 6c; F17; Rc: `GetUnitsInCylinder` |
+| `objects.inRect(r: Rect, f: Filter, out: HandleBuffer)` | `i32` count | same | v1 | RFC 6c; Rc: `GetUnitsInRectangle` |
+| `objects.all(f: Filter, out: HandleBuffer)` | `i32` count | entity store; `HouseTracking` for per-house types | v1 | RFC 6c |
 | `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno \| null` | same | v1? | Rc: `GetUnitNearestEnemy` |
-| `objects.projectilesInRadius(at: Coord, leptons: i32)` | `ProjectileList` | projectile store | v1? | RFC 6c (category projectile) |
-| `techno.type()` | `string` | `ObjectType` id | v1 | RFC 6c |
+| `objects.projectilesInRadius(at: Coord, leptons: i32, out: HandleBuffer)` | `i32` count | projectile store | v1? | RFC 6c (category projectile) |
+| `techno.type()` | `TechnoTypeId` | `ObjectType` id | v1 | RFC 6c |
 | `techno.owner()` | `House` | entity owner | v1 | RFC 6c |
 | `techno.health()`, `strength()`, `healthPercent` | `i32` | `combat/object_health.rs::Health`; `Strength` | v1 | RFC 6c, example |
 | `techno.coord()`, `cell()` | `Coord`, `Cell` | entity position | v1 | RFC 6c |
@@ -993,12 +1151,12 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `techno.target()` | `Target` | target state (owner unverified) | v1 | RFC 6c |
 | `techno.rank()`, `experience()` | `Rank`, `i32` | `combat/veterancy.rs` | v1 | RFC 6c |
 | `techno.ammo()` | `i32` | `src/sim/ammo.rs` | v1 | RFC 6c |
-| `techno.passengers()`, `transport()` | `TechnoList`, `Techno \| null` | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
-| `techno.effects()`, `marks()` | lists | sections 5, 6 | v1 | RFC 6c |
-| `techno.disguise()` | `DisguiseInfo \| null` (type, house) | `src/sim/cloak_disguise.rs::forced_disguise_type`, `disguise_house` | v1 | sim reads the true state |
+| `techno.passengers(out: HandleBuffer)`, `transport()` | `i32` count, `Techno \| null` | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
+| `techno.effects(out: HandleBuffer)`, `marks(out: IdBuffer)` | `i32` counts | sections 5, 6 | v1 | RFC 6c |
+| `techno.disguise()` | `DisguiseInfo \| null` (type ID, house) | `src/sim/cloak_disguise.rs::forced_disguise_type`, `disguise_house` | v1 | sim reads the true state |
 | `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | |
 | `techno.layer()`, `landType()` | enums | entity layer; map | v1 | RFC 6a conditions |
-| `projectile.type()`, `coord()`, `source()`, `target()`, `data()` | values | `src/sim/projectile` | v1? | RFC 9 |
+| `projectile.type()`, `coord()`, `source()`, `target()`, `data()` | values; `type()` is a `ProjectileTypeId` | `src/sim/projectile` | v1? | RFC 9 |
 | `objects.canFireAt(t: Techno, w: i32, at: Target)`, `inRange(...)` | `bool` | **no owner yet** (structured legality probe) | later | **adopted in RFC 0.0.5** (P15); Rc: `GetUnitWeaponTestTarget` |
 
 ### 7.2 Houses
@@ -1008,14 +1166,14 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `house.name()`, `country()`, `side()` | `string`, `string`, `i32` | `src/sim/house_state.rs::HouseState` (`name`, `country`, `side_index`) | v1 | RFC 6c |
 | `house.money()` | `i32` | `Economy::available_money` | v1 | RFC 6c |
 | `house.powerOutput()`, `powerDrain()`, `isLowPower()` | `i32`, `bool` | `src/sim/power_system.rs::PowerState::total_output`, `total_drain`, `is_low_power` | v1 | RFC 6c |
-| `house.buildings(f)` / `count(type)` | lists, `i32` | `src/sim/house_tracking.rs::HouseTracking` | v1 | RFC 6c |
-| `house.canBuild(type: string)` | `bool` (prerequisites met) | `src/sim/production/can_build.rs::can_build`, `requirements_met`, `owns_prerequisites` | v1 | RFC 6c |
+| `house.buildings(f, out: HandleBuffer)` / `count(type: TechnoTypeId)` | `i32` count, `i32` | `src/sim/house_tracking.rs::HouseTracking` | v1 | RFC 6c |
+| `house.canBuild(type: TechnoTypeId)` | `bool` (prerequisites met) | `src/sim/production/can_build.rs::can_build`, `requirements_met`, `owns_prerequisites` | v1 | RFC 6c |
 | `house.techLevel()` | `i32` | `HouseState::tech_level` | v1 | RFC 6c |
-| `house.isAlly(other)`, `allies()`, `enemies()` | `bool`, lists | `src/sim/house_diplomacy.rs` | v1 | RFC 6c |
+| `house.isAlly(other)`, `allies(out: HandleBuffer)`, `enemies(out: HandleBuffer)` | `bool`, `i32` counts | `src/sim/house_diplomacy.rs` | v1 | RFC 6c |
 | `house.isDefeated()`, `isHuman()` | `bool` | `HouseState.is_defeated`, `is_human` | v1 | RFC 6c |
-| `house.superWeapon(type)` | `SuperWeapon \| null` (ready, charge) | `src/sim/superweapon/mod.rs::HouseSuperWeapons` | v1? | |
+| `house.superWeapon(type: SuperWeaponTypeId)` | `SuperWeapon \| null` (ready, charge) | `src/sim/superweapon/mod.rs::HouseSuperWeapons` | v1? | |
 | `house.stats()` | lost/destroyed counts | `MatchStatistics` | v1? | E15, E16 |
-| `scenario.houses()` | `HouseList`, order: house array order | `src/sim/houses.rs::Houses` | v1 | RFC 6c |
+| `scenario.houses(out: HandleBuffer)` | `i32` count, order: house array order | `src/sim/houses.rs::Houses` | v1 | RFC 6c |
 
 ### 7.3 Map
 
@@ -1024,13 +1182,13 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `map.size()` | `Rect` | map | v1 | RFC 6c |
 | `map.landType(c: Cell)` | `LandType` | terrain semantics (`src/rules/terrain_rules.rs`) | v1 | RFC 6c |
 | `map.height(c: Cell)` | `i32` | cell level | v1 | RFC 6c |
-| `map.overlay(c: Cell)`, `ore(c: Cell)` | name or `null`; amount | overlay and tiberium state | v1 | RFC 6c |
+| `map.overlay(c: Cell)`, `ore(c: Cell)` | `OverlayTypeId` (`NO_ID` when none); amount | overlay and tiberium state | v1 | RFC 6c |
 | `map.passable(c: Cell, zone: i32)` | `bool` | movement zone check (owner unverified) | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
 | `map.waypoint(n: i32)` | `Cell \| null` | map waypoints | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag \| null` | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
-| `map.canPlace(type: string, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
-| `map.closestPlaceable(type: string, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | later | P15; Rc: `ClosestBuildPos` |
+| `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
+| `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | later | P15; Rc: `ClosestBuildPos` |
 
 ### 7.4 Rules
 
@@ -1075,8 +1233,9 @@ simulation queries stay full knowledge. Tier `later`, **not adopted in RFC 0.0.5
 
 In client modules (RFC 10):
 
-- objects under shroud are absent; the rule for objects under fog (last seen
-  or absent) is unverified in the engine and needs a decision (P17);
+- objects under shroud are absent, and so is an enemy object under fog that
+  the player cannot see now: the engine keeps no last-seen copies (RFC 10,
+  P17);
 - an enemy disguised object reads as its disguise: `type()` returns the
   disguised type and `owner()` the disguised house, using
   `src/sim/cloak_disguise.rs::is_disguised_to`, `disguise_house`,
@@ -1102,22 +1261,26 @@ value override returns an explicit "handled" flag.
 Overrides bind to types, never globally: a weapon, warhead or TechnoType names
 the override in INI, and the engine calls the module only for those types
 (**adopted in RFC 0.0.5**, P12; the binding key name is open question 5).
+Query and result classes (`DamageQuery`, `ShotQuery`, `OrderQuery`,
+`DeathQuery`, `DeathResult`, `TargetBatch`) carry handles and IDs (warhead,
+weapon, type), never names; batches are written into module memory and read
+back from it (RFC 15).
 
 | Override | Signature | Frequency | Batching | Decision owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- | --- |
 | `Override.Damage` | `(ctx: Ctx, d: DamageQuery, current: i32): DamageResult` (damage, `handled`) | per damage packet on a bound warhead or receiver type | none (one call per packet; low count expected for bound types) | `src/sim/combat/damage/receive.rs::receive_damage` | later (v1 candidate) | RFC 6 L3; Rc: `UnitPreDamaged`; LUS `HitByWeapon` |
 | `Override.TargetChoice` | `(ctx: Ctx, batch: TargetBatch): void` — writes one choice (or "keep native") per searcher | once per bound weapon type per frame, with every searcher of that type and its native candidates | **batched**, never per candidate | target scan `src/sim/world/techno_ai/scan_batch.rs` | later (v1 candidate) | RFC 6 L3; Rc: `AllowWeaponTarget` (per-candidate hot spot, #3087) |
-| `Override.ProductionAllowed` | `(ctx: Ctx, house: House, type: string, current: bool): bool` | when the engine checks buildability for a bound type (sidebar refresh, AI choice) | none; result may be cached per frame (unverified) | `src/sim/production/can_build.rs::can_build` | later (v1 candidate) | RFC 6 L3; Rc: `AllowUnitCreation` |
+| `Override.ProductionAllowed` | `(ctx: Ctx, house: House, type: TechnoTypeId, current: bool): bool` | when the engine checks buildability for a bound type (sidebar refresh, AI choice) | none; result may be cached per frame (unverified) | `src/sim/production/can_build.rs::can_build` | later (v1 candidate) | RFC 6 L3; Rc: `AllowUnitCreation` |
 | `Override.Fire` | `(ctx: Ctx, shot: ShotQuery): bool` — `true` takes over the shot; the native projectile is not created | per shot of a bound weapon | none | FireAt steps `src/sim/combat/world_fire.rs`; aircraft `fire_at.rs` | later (v1 candidate) | RFC 6 L3, 9 |
 | `onLaunch` | `(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a bound type | none | module arm of `ProjectileTrajectory` (RFC 9): **no owner yet** | later | RFC 9 level 3 |
-| `onTrajectoryFrame` | `(ctx: Ctx, type: string, bullets: BulletBatch): void` | once per bound projectile type per frame | **batched** per type (L4) | same | later | RFC 6 L4, 9 level 4 |
+| `onTrajectoryFrame` | `(ctx: Ctx, type: ProjectileTypeId, bullets: BulletBatch): void` | once per bound projectile type per frame | **batched** per type (L4) | same | later | RFC 6 L4, 9 level 4 |
 | `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, current: bool): bool` | per player or AI order for a bound type | none | command admission `src/sim/command.rs` (function unverified) | later | **adopted in RFC 0.0.5** (P13); Rc: `AllowCommand` |
 | `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery): DeathResult` (death weapon, survivors, wreck) | per death of a bound type | none | death chain `combat/record_kill.rs` and survivor rules (unverified) | later | **adopted in RFC 0.0.5** (P13); LUS `Killed -> wreckLevel` |
 
 The overrides of the RFC's examples (target choice, damage, production
 permission, taking over a weapon's shot) are covered. "Prefer data plus an
 event" for target priority (a priority multiplier as an attached effect and a
-`TargetChanged` event) is proposal P13.
+`TargetChanged` event) is **adopted in RFC 0.0.5** (P13, RFC 6).
 
 ## 9. AI
 
@@ -1138,15 +1301,18 @@ All entries are `sim`.
 | `ai.createTeamUnlimited(teamType, house)` | start a team without the Max gate | `Simulation::construct_team_unlimited` | v1? | S18 path |
 | `team.disband()` | destroy the team, record the AI trigger outcome, release members | `TSV/membership.rs::destroy_team` | v1 | RFC 6d; A5 |
 | `team.addMember(t: Techno)` / `removeMember(t: Techno)` | join or leave (runs `team_can_add`) | `team_add_member`, `team_remove_member` | v1? | |
-| `team.setScript(id: string)` | change a live team's script | **no owner yet** (only S17 writes it inline) | v1 | RFC 6d "assign AI team scripts" |
+| `team.setScript(script: ScriptTypeId)` | change a live team's script | **no owner yet** (only S17 writes it inline) | v1 | RFC 6d "assign AI team scripts" |
 | `team.jumpTo(line: i32)` | move a team's cursor | **no owner yet** (only S6 inline, and test-only helpers) | v1? | |
-| `ai.setAiTriggerEnabled(id: string, on: bool)` | enable or disable one AI trigger | **no owner yet** (`enabled` is set only at load) | v1 | RFC 6d |
-| `ai.setAiTriggerWeights(id, start, min, max)` | change weights at run time | **no owner yet** (`ai_trigger_records` private) | later | |
+| `ai.setAiTriggerEnabled(trigger: AiTriggerId, on: bool)` | enable or disable one AI trigger | **no owner yet** (`enabled` is set only at load) | v1 | RFC 6d |
+| `ai.setAiTriggerWeights(trigger: AiTriggerId, start, min, max)` | change weights at run time | **no owner yet** (`ai_trigger_records` private) | later | |
 | `house.setAiTriggersActive(on)` | house-wide switch | `HouseState::set_ai_triggers_active` | v1 | A74, A75 |
 | `house.setTeamRatio(kind, v)` | house ratios | `HouseTeamCreation::set_trigger_ratio` and siblings | v1 | A76–A79 |
-| reads: `ai.teams()`, `team.type()`, `team.script()`, `team.cursor()`, `team.members()`, `team.succeeded()` | | `TeamScriptVm::teams_in_order`, `TeamScriptState` getters | v1 | |
+| reads: `ai.teams(out: HandleBuffer)`, `team.type()`, `team.script()`, `team.cursor()`, `team.members(out: HandleBuffer)`, `team.succeeded()` | | `TeamScriptVm::teams_in_order`, `TeamScriptState` getters | v1 | |
 
 ### 9.2 Definitions
+
+Definitions are setup calls and take names; run-time calls take the IDs of
+`ai.teamTypeId`, `ai.scriptTypeId` and `ai.aiTriggerId` (see [IDs](#ids)).
 
 ```ts
 class TaskForceEntry { count: i32; type: string; }
@@ -1448,8 +1614,8 @@ properties belong to the simulation module (RFC 10).
 
 | Function | Owner | Tier | Sources |
 | --- | --- | --- | --- |
-| `client.selection()` | selection state in `src/app/input/` (unverified) | v1 | RFC 10 |
-| `client.select(list: TechnoList, append: bool)` | `Command::Select` (`src/sim/command.rs`) | v1 | RFC 10 |
+| `client.selection(out: HandleBuffer)` | selection state in `src/app/input/` (unverified) | v1 | RFC 10 |
+| `client.select(list: HandleBuffer, count: i32, append: bool)` | `Command::Select` (`src/sim/command.rs`) | v1 | RFC 10 |
 | `client.order(o: OrderSpec)` | `Command` variants: `Move`, `MoveToObject`, `Stop`, `Attack`, `AttackMove`, `Guard`, `DeployMcv`, `UndeployBuilding`, `SetRally`, `QueueProduction`, `SuspendProduction`, `CancelProductionByType`, `PlaceReadyBuilding`, `SellBuilding`, `ToggleRepair`, `EjectBunker`, `UnloadPassengers`, `CaptureBuilding`, `PlantC4`, `LaunchSuperWeapon`, `ToggleInfantryDeploy`, `ForceAttackCell`, `SellWallAtCell` | v1 | RFC 10 (validated like any player input) |
 | `client.sendMessage(data: Uint8Array): Status` | command stream: **no module variant yet** (G-C2) | v1 | RFC 1, 10, 11; Rc: `SendLuaRulesMsg` |
 | `client.broadcast(to: Audience, data: Uint8Array)` | **no owner yet** | later | **not adopted in RFC 0.0.5** (P5); Rc: `SendLuaUIMsg` |
@@ -1475,8 +1641,8 @@ The engine fills in the sender of every message and limits size and rate
 
 ### 11.6 Client queries
 
-The query functions of section 7 exist in the client with the same names,
-filtered as in 7.7. `ui.viewer()` names the local house.
+The query functions of section 7 exist in the client with the same names and
+the same buffers, filtered as in 7.7. `ui.viewer()` names the local house.
 
 ## Gaps in the engine
 
@@ -1489,14 +1655,17 @@ implementation.
 - **G-H1** Module loader, validation, metering and disable path (RFC 3, 4):
   new, in core, outside `sim/` hot loops.
 - **G-H2** Module phase in the simulation frame (open question 9):
-  `src/sim/world/master_frame.rs` gains a phase; delivery queue for module
-  actions; `onFrame` scheduling.
-- **G-H3** Module memory in snapshots and the state hash (RFC 4):
-  save/load and `hash_state` paths.
+  `src/sim/world/master_frame.rs` gains a phase that runs `onEvents`, then
+  `onFrame`; `onFrame` scheduling.
+- **G-H3** Module memory in snapshots and in the periodic full state hash,
+  not in the per-frame multiplayer checksum (RFC 4, 15): save/load and
+  `hash_state` paths.
 - **G-H4** `ctx.log` and in-game failure messages (RFC 3, 14): a sim-side log
   line published as a `TriggerEffect`-like output, shown by the app.
 - **G-H5** Simulation-to-client notifications (`ctx.notify`, `onNotify`),
   per-player delivery under the visibility rules (RFC 11).
+- **G-H6** Dirty-page tracking of module memory, so the periodic full state
+  hash covers only pages written since the last hash (RFC 15).
 
 ### Triggers, events and conditions
 
@@ -1507,18 +1676,30 @@ implementation.
   definitions come only from `RuntimeDefinitions::read_map`/`read_teams`; IDs
   that cannot collide with the map's (RFC 7).
 - **G-T3** Type tag bindings (`Wasm.Tags`) kept outside the `AttachedTag` slot
-  as per-object subscriptions (RFC 7).
+  as subscriptions in a side table keyed by handle (RFC 7, 15), and
+  `Wasm.Tags` on weapon, warhead and projectile types for the weapon events
+  (RFC 6a).
 - **G-T4** Condition list on a TriggerType, checked natively before the
   spring (RFC 6a).
 - **G-T5** Polled event list with an interval per trigger (RFC 6a), beside
-  the Logic tags.
+  the Logic tags; a minimum interval, and checks of different objects spread
+  over different frames (RFC 15).
 - **G-T6** Raise hooks for each new delivered event of 2.3, at the owners
-  named there; raised only for bound types.
-- **G-T7** Event payload (`EventInfo`) carried from the raise site to the
-  module call; today `dispatch_object_tag_event` carries actor and source
-  only.
+  named there; raised only for bound types (G-T10).
+- **G-T7** Event payload carried from the raise site into the module's
+  `EventRecord` (section 2); today `dispatch_object_tag_event` carries actor
+  and source only.
 - **G-T8** Original events 2 (`SpiedBy`) and 3 (`ThievedBy`) have no raise
   site (pre-existing; not caused by modules).
+- **G-T9** Batched queue: per module, the frame's array of fixed-size
+  `EventRecord`s for queued module actions and events, written in firing order
+  when a trigger springs or an event is raised, and handed over in one call per
+  module per frame, before `onFrame`; it drops queued actions whose trigger was
+  disabled or removed, and every queued action once the game has ended
+  (RFC 5, 15).
+- **G-T10** Per-type module flag on object, weapon, warhead and projectile
+  types, set when a module binds the type, checked first at each event site so that nothing else runs for unbound types
+  (RFC 15).
 
 ### Actions
 
@@ -1544,9 +1725,9 @@ implementation.
 - **G-A11** Create object for gameplay (not tests): `spawn_object` is
   documented for tests and tools; a production entry with ownership,
   publication and blocked-cell refusal.
-- **G-A12** Remove or force-detonate one projectile (pending P8).
+- **G-A12** Remove or force-detonate one projectile (P8, adopted in RFC 0.0.5).
 - **G-A13** Detonate a warhead with damage and source at a coordinate
-  (pending P7): `apply_area_damage` exists, the API wrapper with credit does
+  (P7, adopted in RFC 0.0.5): `apply_area_damage` exists, the API wrapper with credit does
   not.
 
 ### Attached effects and marks
@@ -1560,7 +1741,17 @@ implementation.
   selected, ignores orders, not a legal target, house power off.
 - **G-E4** New effect properties: interval, maximum firings, "refuse newer"
   stacking, exclusive group, effect-carried marks.
-- **G-M1** Marks: per-object set, saved, hashed, cleared on removal.
+- **G-M1** Marks: a side table keyed by handle (RFC 15), saved, hashed,
+  cleared on removal.
+
+### Queries
+
+- **G-Q1** Creation serial: assigned to every object and projectile at
+  creation, saved, and used as the query order and paging position (RFC 6c,
+  15).
+- **G-Q2** Query entry points that write handles or IDs into a module buffer,
+  return the count and page large results; nothing is allocated per query
+  (RFC 15).
 
 ### Overrides
 
@@ -1568,7 +1759,8 @@ implementation.
   (damage in `receive_damage`, batched target choice in `scan_batch.rs`,
   production in `can_build`, fire in the FireAt steps).
 - **G-O2** Module projectile arm in `ProjectileTrajectory`, 16 bytes of
-  module data per projectile, clamps (RFC 9).
+  module data per projectile in a side table keyed by handle, clamps (RFC 9,
+  15).
 
 ### AI
 
@@ -1585,6 +1777,10 @@ implementation.
   `rules.serial()`-keyed caches (`movement_tick.rs`, `house_defeat.rs`,
   `scatter.rs`, `movement_commands.rs`), and per-key rules for existing
   objects.
+- **G-R3** Name-to-ID lookups for each ID kind (see [IDs](#ids)) over the
+  existing registries (`RuleSet` type indexes, sound binding, AI
+  definitions), with `NotFound` for an unknown name, and a registry of mark
+  names for `Mark.id` (RFC 15).
 
 ### Client
 
@@ -1600,7 +1796,7 @@ implementation.
   animations, visibility, text, values, buttons).
 - **G-C6** In-game console for `log()`.
 
-Total: 45 gaps (H 5, T 8, A 13, E/M 5, O 2, AI 4, R 2, C 6). G-T8 is a
+Total: 51 gaps (H 6, T 10, A 13, E/M 5, Q 2, O 2, AI 4, R 3, C 6). G-T8 is a
 pre-existing gap of the original trigger system.
 
 ## Proposed RFC changes

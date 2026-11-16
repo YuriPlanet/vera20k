@@ -7,7 +7,7 @@ commit. Where they differ, the English text applies.
 
 | | |
 | --- | --- |
-| RFC version | 0.0.5 |
+| RFC version | 0.0.6 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | API covered | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -142,7 +142,7 @@ Wasm.Tags=GIPanicTag     ; every E1 receives this tag's triggers
 Trigger=GIPanic
 
 [GIPanic]
-Event=Damaged
+Event=TakeDamage
 Action=Wasm:giPanic      ; calls the function giPanic exported by rules.wasm
 Repeat=yes
 ```
@@ -309,7 +309,7 @@ engine executes them.
   simulation's fixed-point format, `I16F16` raw values (`SimFixed`). A module
   may use floating point internally.
 - Module memory, mutable globals and tables are part of the simulation state:
-  saved in snapshots and included in the state hash.
+  saved in snapshots and included in the periodic state hash (section 15).
 
 ### 5. Execution model
 
@@ -328,17 +328,25 @@ Client module exports: `onStart`, `onRender(dt, alpha)` once per render
 frame, and interface callbacks such as clicks and hotkeys.
 
 Module calls run in one fixed phase of the simulation frame, in module load
-order. Triggers raised during the frame whose actions call module functions are
-queued and delivered in that phase, before `onFrame`. Overrides are the
+order. The module actions of triggers that fire during the frame, and the
+events for modules, are queued and delivered in that phase, before `onFrame`,
+as one batch per module (section 15). Overrides are the
 exception: they run when the engine needs the answer. Object references are
 generational handles, so a handle to an object that died before delivery reads
 as gone and never as a reused slot.
 
 Ordering rules:
 
-- A trigger whose actions include a module function runs all its actions, in
-  their order, in the module phase. A trigger without module actions runs as in
-  the original.
+- Original actions run when their trigger fires, exactly as in the original,
+  also in triggers that contain module actions. Module actions are queued and
+  run in the module phase as one batch per module, in firing order. In a
+  trigger with the actions [original A, module B, original C], A and C run
+  first and B runs later in the same frame. An author who needs a strict order
+  writes all of the trigger's actions as module code and calls original actions
+  through the API (L1).
+- A queued module action is dropped when the game has ended, or when its
+  trigger was disabled or removed before the module phase. Handles to objects
+  that are gone read as gone.
 - Events raised while the module phase runs are delivered in the next frame's
   module phase, so triggers cannot loop within one frame.
 - Overrides only read state and return a result. They cannot run actions,
@@ -347,8 +355,9 @@ Ordering rules:
   result such as a death. Changing that needs an override or an attached
   effect (for example, prevent death).
 - Frequent events (damage, fire, projectile created or detonated, crush, move
-  failed) and every override are raised only for bound types. There is no
-  subscription to all objects.
+  failed) and every override are raised only for bound types (object, weapon,
+  warhead or projectile types; section 6a). There is no subscription to all
+  objects.
 - After a save is loaded, module memory is restored with the snapshot.
   `onScenarioStart` does not run again and there is no separate load call.
   Handles stored in module memory refer to the same objects after loading.
@@ -433,7 +442,8 @@ position and still runs collision.
 A trigger has one event, any number of conditions and one or more actions.
 
 - **Events** come in two kinds. *Delivered events* happen at a moment (damage
-  taken, weapon fired, killed) and are queued for the module phase. *Polled
+  taken, weapon fired, killed); the trigger fires at that moment, and its
+  module actions are queued for the module phase (section 5). *Polled
   events* describe a state (health below a value, money above a value); the
   engine checks them natively at the interval the trigger sets, and the trigger
   fires while the state holds.
@@ -446,11 +456,23 @@ A trigger has one event, any number of conditions and one or more actions.
 - Every event names the object it is attached to and, where there is one, the
   other object involved (attacker, target, transport, producer). Conditions can
   test either.
+- Events are raised only for bound objects: an object whose type binds the
+  trigger (`Wasm.Tags`), an object whose own tag holds it, and, for weapon
+  events (Fire, HitTarget, projectile launched and detonated), any object that
+  uses a weapon, warhead or projectile type binding it. A weapon binding fires
+  for every shooter of that weapon, whatever its type:
+
+  ```ini
+  [RedEye2]                   ; a weapon
+  Wasm.Tags=MissileFiredTag   ; every shooter of RedEye2 raises its Fire triggers
+  ```
 
 ```ts
+const PANICKED = Mark.id("Panicked");   // resolved once; calls take the ID
+
 Trigger.create({
   event: Event.TakeDamage,
-  conditions: [Cond.healthBelowPercent(30), Cond.not(Cond.hasMark("Panicked"))],
+  conditions: [Cond.healthBelowPercent(30), Cond.not(Cond.hasMark(PANICKED))],
   actions: [Action.wasm("giPanic")],
   difficulty: Difficulty.All,
 });
@@ -553,7 +575,8 @@ player may see. Marks do not nest.
 ### 6c. Queries
 
 Queries are read-only. Results come in object creation order, a rule that does
-not depend on how the engine stores objects. In client modules
+not depend on how the engine stores objects, and are written into a buffer
+the module provides (section 15). In client modules
 they are filtered by what the local player can see.
 
 - **Objects:** in a cell, in a radius or a rectangle, by type, house or
@@ -585,7 +608,7 @@ Modules create triggers and tags with the same model as maps:
 ```ts
 const t = Trigger.create({
   house: ctx.house("Americans"),
-  event: Event.Destroyed,
+  event: Event.Killed,
   actions: [Action.wasm("onConvoyLost")],
   difficulty: Difficulty.All,
 });
@@ -795,6 +818,48 @@ closures, and is not part of the official API.
 - The feature is documented under `docs/` for modders.
 - Module failures are reported in game, never only in the log.
 
+### 15. Performance
+
+The engine keeps one copy of the game state. Modules hold integer handles and
+IDs and ask for data when they need it; nothing mirrors the world into module
+memory. These rules keep the boundary cheap and are part of the ABI:
+
+- **IDs, not names, on hot paths.** Type, house, weapon, warhead, projectile,
+  mark and effect names, and the other named kinds the appendix lists, resolve
+  once to integer IDs (`ctx.typeId("E1")`,
+  `Mark.id("Panicked")`), usually in `onRules` or `onScenarioStart`. Every
+  other call takes IDs. Calls that take names (lookups, `rules.set`, trigger
+  setup) are for setup and rare changes; the SDKs cache the IDs.
+- **One delivery per module per frame.** The frame's queued module actions
+  and events reach each module in one call, as packed fixed-size records in
+  firing order (section 5). The record layouts are part of the interface
+  definition.
+- **Queries write into the module's buffer.** Results go straight into a
+  buffer the module provides; the engine allocates nothing per query. Large
+  results are paged. Creation order comes from a creation serial the engine
+  keeps, so results need no sorting by storage.
+- **Side tables.** Marks, type bindings, subscriptions and module data per
+  projectile live in side tables keyed by handle, so only objects that use them
+  pay. Each event site checks one flag of the object's type; with no module
+  bound to that type, nothing else runs.
+- **Polled events** have a minimum interval, and the engine spreads the checks
+  of different objects over different frames.
+- **Module memory in hashes.** The per-frame multiplayer checksum does not
+  include module memory. The periodic full state hash (every 15 frames today)
+  includes it, hashing only the pages written since the last hash.
+- **No allocation per event in the SDKs.** Handles and IDs are value types:
+  64-bit integers in TypeScript, newtypes in Rust. Objects are created only for
+  setup calls such as `Trigger.create`.
+- **Per-frame batches** (L4 behaviors, module projectile paths) are written
+  directly into module memory and read back from it, a few dozen bytes per
+  object.
+- **Budgets for the slowest platform.** Metering slows module code, and the
+  browser build may interpret modules. In lockstep the slowest machine sets the
+  pace, so default budgets are sized for the slowest supported platform and
+  measured before acceptance (open questions 1 and 4).
+- **No module, no cost.** Without modules, each event site costs one flag
+  check and nothing else runs.
+
 ## Process
 
 1. **Draft.** This document is discussed in public. Changes bump the RFC
@@ -893,6 +958,14 @@ Planned order after acceptance:
 
 ## Changelog
 
+- **0.0.6** (2026-11-16): performance rules (section 15): IDs instead of
+  names on hot paths, one batched event delivery per module per frame, query
+  results in module buffers, side tables, staggered polls, module memory only in
+  the periodic hash, no allocation per event in the SDKs, budgets for the
+  slowest platform; module actions batched per module per frame while original
+  actions keep their original timing (replaces the 0.0.3 rule that deferred
+  whole mixed triggers); weapon, warhead and projectile bindings for weapon
+  events; more ID kinds; related text and the appendix updated to match.
 - **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
   override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
   visibility and house marks, query order, warhead detonation, projectile
