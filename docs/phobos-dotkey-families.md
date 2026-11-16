@@ -107,9 +107,11 @@ Chronosphere's chronoshift departure fires nothing. VERA:
 `ObjectType::phobos_warp_away` (unknown names filtered before the draw) in
 `temporal.rs::temporal_erase`; `WarpInWeaponRules::warp_out_weapon` with its
 `FindOrAllocate` reference and `teleport_movement::apply_warp_out_weapon`
-called from `object_turn.rs`. RESIDUALS: the erase anim's owner house has no
-VERA spawn parameter; an all-unknown list falls back instead of drawing a null
-pick.
+called from `object_turn.rs`. The erase anim now spawns through
+`spawn_random_owned_anim` with the target's house
+(`a_phobos_warp_away_anim_is_owned_by_the_target_house`); the vector parser
+drops unknown names, so an all-unknown list resolves empty and keeps the stock
+anim, as VERA's fallback does; no residual.
 
 ## ChargeTurret.Delays
 

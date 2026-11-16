@@ -868,9 +868,7 @@ impl Simulation {
             if !apply_multiplier && !apply_versus {
                 return warp;
             }
-            if apply_multiplier
-                && let Some(entity) = self.substrate.entities.get(attacker)
-            {
+            if apply_multiplier && let Some(entity) = self.substrate.entities.get(attacker) {
                 warp = (f64::from(warp)
                     * crate::sim::combat::crit::current_firepower_multiplier(self, rules, entity))
                     as i32;
@@ -899,7 +897,8 @@ impl Simulation {
                 }
                 if apply_versus {
                     if let Some(target_entity) = self.substrate.entities.get(target)
-                        && target_entity.category() == crate::map::entities::EntityCategory::Infantry
+                        && target_entity.category()
+                            == crate::map::entities::EntityCategory::Infantry
                     {
                         // `Damage.Deployed=` is the Ares warhead key; a
                         // phobos-only build carries no Ares combat rules and
@@ -983,36 +982,34 @@ impl Simulation {
         let warp_away: Option<String> = Some(rules.general.warp_away.name.clone());
         // Phobos TechnoType `WarpAway=` (hook `0x71A8BD`,
         // `Ext/Techno/Hooks.cpp:1476-1490`): a non-empty list replaces the
-        // erase anim with `CreateRandomAnim`'s one Scenario pick
-        // (`RandomRanged(0, n-1)`) over the known names, ahead of the
-        // vanilla/Ares arm. RESIDUAL: the hook's anim owner house
-        // (`pTarget->Owner`) has no VERA spawn path parameter, and an
-        // all-unknown list falls back instead of drawing a null pick.
+        // `pExt->WarpAway.size() > 0` replaces the native single anim with
+        // `AnimExt::CreateRandomAnim(list, location, nullptr, pTarget->Owner)`
+        // (`Ext/Techno/Hooks.cpp:1476-1490`); an empty resolved vector leaves
+        // the stock arm. The vector parser drops unknown names, so a raw list
+        // with no resolvable name is empty natively too.
         #[cfg(feature = "phobos")]
-        let warp_away = self
+        let phobos_warp_away = self
             .substrate
             .entities
             .get(target)
-            .and_then(|entity| self.entity_object_type(entity, rules))
-            .and_then(|object| Some(&object.phobos_warp_away))
-            .map(|list| {
-                list.iter()
-                    .filter(|name| {
-                        rules
-                            .anim_type_names
-                            .contains(name.to_ascii_uppercase().as_str())
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
+            .and_then(|entity| {
+                self.entity_object_type(entity, rules)
+                    .map(|object| (entity.owner(), object.phobos_warp_away.clone()))
             })
-            .filter(|list| !list.is_empty())
-            .map(|list| {
-                let index = self
-                    .scenario_rng
-                    .next_range_i32_inclusive(0, list.len() as i32 - 1);
-                list[index as usize].clone()
-            })
-            .or(warp_away);
+            .filter(|(_, list)| !list.is_empty())
+            .and_then(|(owner, list)| {
+                let name = self.resolve_random_anim_name(rules, &list)?.to_owned();
+                let location = self.substrate.entities.get(target).map(location_coord)?;
+                let type_name = self.interner.intern(&name);
+                self.spawn_owned_anim(rules, type_name, location, owner, None, None);
+                Some(())
+            });
+        #[cfg(feature = "phobos")]
+        let warp_away = if phobos_warp_away.is_some() {
+            None
+        } else {
+            warp_away
+        };
         if let Some(entity) = self.substrate.entities.get(target)
             && let Some(warp_away) = warp_away
         {
@@ -1726,10 +1723,11 @@ impl Simulation {
         let name = rules.general.chrono_sparkle1.name.clone();
         let delay = sparkle_delay(rules);
         #[cfg(feature = "phobos")]
-        let positions = rules.phobos_globals.chrono_sparkle_building_display_positions;
+        let positions = rules
+            .phobos_globals
+            .chrono_sparkle_building_display_positions;
         #[cfg(not(feature = "phobos"))]
-        let positions =
-            crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS;
+        let positions = crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS;
         let on_building = positions
             .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::BUILDING);
         let on_slots = positions
@@ -1759,10 +1757,7 @@ impl Simulation {
                 if !sparkle_frame(frame, port as u32, delay) {
                     continue;
                 }
-                let (px, py) = muzzle_flashes
-                    .get(port as usize)
-                    .copied()
-                    .unwrap_or((0, 0));
+                let (px, py) = muzzle_flashes.get(port as usize).copied().unwrap_or((0, 0));
                 let (dx, dy) = crate::util::pixel_conversion::PixelConversionBounds::isometric_pixel_to_leptons(
                     px, py,
                 );

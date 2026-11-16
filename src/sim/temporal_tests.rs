@@ -1553,6 +1553,49 @@ fn a_chrono_legionnaire_erases_a_tank() {
     );
 }
 
+/// Phobos `WarpAway=` replaces the stock single anim with
+/// `CreateRandomAnim(list, location, nullptr, pTarget->Owner)`
+/// (`Ext/Techno/Hooks.cpp:1476-1490`); the erase anim therefore carries the
+/// target's house, which the stock `AnimClass(WarpAway, ...)` construction
+/// does not.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_phobos_warp_away_anim_is_owned_by_the_target_house() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let rules = rules_from(
+        &RULES.replace("[HTNK]\n", "[HTNK]\nWarpAway=WARPAWAY\n"),
+        ART,
+    );
+    let (mut sim, grid) = arena(13, &rules);
+    let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let owner = sim.interner.intern("Americans");
+    sim.queue_command(CommandEnvelope::new(
+        owner,
+        sim.session.tick() + 1,
+        Command::Attack {
+            attacker_id: cleg,
+            target_id: tank,
+        },
+    ));
+    for _ in 0..700 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if erased(&sim, tank) {
+            break;
+        }
+    }
+    assert!(erased(&sim, tank), "the tank is erased");
+    let anim = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "WARPAWAY")
+        .map(|(_, anim)| anim)
+        .expect("the override anim plays");
+    assert_eq!(anim.owner_house(), Some(owner));
+}
+
 /// The normal loader must bind both General references before Temporal can
 /// construct them. Synthetic temporal fixtures already supplied frame counts,
 /// which hid missing roots in the production asset closure.
@@ -3348,14 +3391,15 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
 fn warp_per_step_needs_a_resolved_warhead_for_the_extension() {
     use crate::util::native_x87::NativeF64Bits;
     let armed = rules_from(
-        &RULES.replace(
-            "OpenToppedWarpDistance=7\n",
-            "OpenToppedWarpDistance=7\nTemporal.ApplyMultiplier=yes\n",
-        )
-        .replace(
-            "[ChronoBeam]\nTemporal=yes\n",
-            "[ChronoBeam]\nTemporal=yes\nTemporal.ApplyMultiplier=yes\n",
-        ),
+        &RULES
+            .replace(
+                "OpenToppedWarpDistance=7\n",
+                "OpenToppedWarpDistance=7\nTemporal.ApplyMultiplier=yes\n",
+            )
+            .replace(
+                "[ChronoBeam]\nTemporal=yes\n",
+                "[ChronoBeam]\nTemporal=yes\nTemporal.ApplyMultiplier=yes\n",
+            ),
         ART,
     );
     // The same rules with weapon 0's `Warhead=` removed: no warhead pointer.
@@ -3426,7 +3470,9 @@ fn chrono_sparkle_delay_and_building_position_globals_drive_the_building_sparkle
         .substrate
         .anims
         .iter()
-        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == rules.general.chrono_sparkle1.name)
+        .filter(|(_, anim)| {
+            sim.interner.resolve(anim.type_id()) == rules.general.chrono_sparkle1.name
+        })
         .find_map(|(&id, _)| sim.anim_absolute_coord(id))
         .unwrap();
     assert_eq!(
