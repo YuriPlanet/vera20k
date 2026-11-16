@@ -15,10 +15,15 @@ use std::collections::BTreeSet;
 /// constructor-only `DFANIM` AnimType is bound so the wind-up anim can spawn;
 /// no retail INI/ART is involved.
 fn arena(weapon_extra: &str) -> (Simulation, RuleSet, u64, u64) {
+    arena_with_firer(weapon_extra, "")
+}
+
+/// [`arena`] with extra `[FIRER]` keys, for the type-level pause gate.
+fn arena_with_firer(weapon_extra: &str, firer_extra: &str) -> (Simulation, RuleSet, u64, u64) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
         "[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n\
          [VehicleTypes]\n0=FIRER\n\
-         [FIRER]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\nOmniFire=yes\nCanPassiveAquire=no\n\
+         [FIRER]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\nOmniFire=yes\nCanPassiveAquire=no\n{firer_extra}\
          [DUMMY]\nStrength=10000\nArmor=heavy\nCanPassiveAquire=no\n\
          [WeaponTypes]\n0=GUN\n\
          [GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=HIT\n{weapon_extra}\
@@ -281,4 +286,98 @@ fn a_refused_shot_never_starts_the_delay() {
         "the delay starts on the first admitted shot"
     );
     assert_eq!(anim_ids(&sim).difference(&before).count(), 1);
+}
+
+/// `Hooks.Firing.cpp:658-662` routes `PauseFiringSequence` only through
+/// Infantry and turretless non-Voxel SHP Units. A turreted or Voxel Unit still
+/// gets its shot delayed, but `0x736480` / `0x6FABC4` must not freeze its
+/// counter or Stage.
+#[test]
+fn a_turreted_or_voxel_unit_delays_without_freezing_its_counter() {
+    for (firer_extra, art) in [("Turret=yes\n", ""), ("", "[FIRER]\nVoxel=yes\n")] {
+        let (mut sim, mut rules, firer, _) = arena_with_firer(
+            "DelayedFire.Duration=4\nDelayedFire.Animation=DFANIM\n\
+             DelayedFire.PauseFiringSequence=yes\n",
+            firer_extra,
+        );
+        if !art.is_empty() {
+            rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+                &crate::rules::ini_parser::IniFile::from_str(art),
+            ));
+        }
+        sim.entities_mut_for_test()
+            .get_mut(firer)
+            .unwrap()
+            .unit_firing_counter
+            .set_for_test(5);
+        let before = anim_ids(&sim);
+        assert_eq!(visit(&mut sim, &rules, firer), 0, "the shot is delayed");
+        assert_eq!(start_frame(&sim, firer), 100, "the timer starts");
+        assert_eq!(
+            anim_ids(&sim).difference(&before).count(),
+            1,
+            "the wind-up anim still spawns"
+        );
+        assert!(
+            !sim.entities()
+                .get(firer)
+                .unwrap()
+                .phobos_delayed_fire_sequence_paused(),
+            "the pause hooks do not apply to this type"
+        );
+        crate::sim::animation::tick_unit_firing_counter(
+            sim.entities_mut_for_test().get_mut(firer).unwrap(),
+        );
+        assert_eq!(
+            sim.entities().get(firer).unwrap().unit_firing_counter.get(),
+            4,
+            "the stock counter cadence continues"
+        );
+    }
+}
+
+/// Phobos `TechnoClass_DetachAnim @ 0x710415` (`Body.cpp:1256-1267`) clears
+/// `CurrentDelayedFireAnim` when the wind-up anim is detached or expires; the
+/// pointer is non-owning, so the timer's later reset must not destroy it a
+/// second time.
+#[test]
+fn an_expired_wind_up_anim_clears_the_tracked_pointer() {
+    let (mut sim, rules, firer, _) = arena(
+        "DelayedFire.Duration=4\nDelayedFire.Animation=DFANIM\n\
+         DelayedFire.AnimIsAttached=yes\nDelayedFire.RemoveAnimOnNoDelay=yes\n",
+    );
+    let before = anim_ids(&sim);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        0,
+        "frame 100 starts the timer"
+    );
+    let spawned: Vec<u64> = anim_ids(&sim).difference(&before).copied().collect();
+    assert_eq!(spawned.len(), 1);
+    assert_eq!(
+        sim.entities()
+            .get(firer)
+            .unwrap()
+            .phobos_delayed_fire_anim(),
+        Some(spawned[0]),
+        "the attached anim is tracked"
+    );
+    // Natural expiry/detach runs the shared destroy owner, as today.
+    sim.destroy_anim(spawned[0], &rules);
+    assert_eq!(
+        sim.entities()
+            .get(firer)
+            .unwrap()
+            .phobos_delayed_fire_anim(),
+        None,
+        "0x710415 clears the tracked pointer without destroying again"
+    );
+    sim.session.set_binary_frame_for_test(104);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "the timer still discharges"
+    );
+    assert_eq!(start_frame(&sim, firer), -1, "reset clears the timer");
+    assert!(sim.substrate.pending_delete.contains_object(&spawned[0]));
 }

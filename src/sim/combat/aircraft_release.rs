@@ -77,6 +77,9 @@ fn live_shot_for<'r>(
         target_coords,
         target_type_ref,
         is_garrison: false,
+        // Aircraft release is its own admitted shot; the class pause hooks
+        // never apply to Aircraft (`Hooks.Firing.cpp:658-662`).
+        at_firing_frame: true,
     });
     Some((burst, shot))
 }

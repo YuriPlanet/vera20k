@@ -3173,6 +3173,15 @@ impl GameEntity {
     /// ObjectClass::DetachParachute5F6DA0: owner+60 clears only matching
     /// retained Anim identities, before the child's owner reference clears.
     pub(crate) fn attached_anim_expired(&mut self, animation: u64) {
+        // Phobos `TechnoClass_DetachAnim @ 0x710415`
+        // (`Ext/Techno/Body.cpp:1256-1267`): an AnimClass leaving this owner
+        // clears `CurrentDelayedFireAnim` when it is the tracked wind-up. The
+        // pointer is non-owning, so this only clears it; the shared anim owner
+        // finishes the one destroy.
+        #[cfg(feature = "phobos")]
+        if self.phobos_delayed_fire_anim == Some(animation) {
+            self.phobos_delayed_fire_anim = None;
+        }
         self.expire_behind_anim(animation);
         self.drain.expire_anim(animation);
         self.mind_control.anim_pointer_expired(animation);

@@ -188,6 +188,15 @@ pub(crate) struct FireSource {
     /// TarCom (`+0x2B4`) as the shot reads it; a building's fire facings aim
     /// at it.
     pub tar_com: Option<TargetKind>,
+    /// `DelayedFire.AnimOffset` (`Ext/Techno/Body.cpp:727-733`): when set, the
+    /// FLH handed to `GetFLHAbsoluteCoords`, replacing the selected weapon
+    /// FLH instead of adding to it. Only the wind-up anim sets this; every
+    /// shot passes `None`.
+    pub flh_override: Option<Flh>,
+    /// `GetFLHAbsoluteCoords`'s `isOnTurret` (`Ext/Techno/Body.cpp:680`,
+    /// `Ext/Techno/Body.Internal.cpp:68-76`). Stock callers keep the regular
+    /// arm's `true`; the wind-up anim passes `DelayedFire.AnimOnTurret`.
+    pub on_turret: bool,
 }
 
 impl FireSource {
@@ -208,6 +217,8 @@ impl FireSource {
             veterancy: entity.veterancy.rank(),
             garrison_fire_index: None,
             tar_com: entity.attack_target.target(),
+            flh_override: None,
+            on_turret: true,
         }
     }
 }
@@ -230,6 +241,8 @@ impl From<&AttackerSnapshot> for FireSource {
             // A building's FireAt runs inside the visit whose TarCom its shot
             // carries (`world_fire::fireat_tarcom`).
             tar_com: snap.building_shot.map(|shot| shot.target()),
+            flh_override: None,
+            on_turret: true,
         }
     }
 }
@@ -475,7 +488,7 @@ pub(crate) fn fire_coordinate(
     let (burst_flh, simple_flh) = (None, None);
     // GetFLH6F3B28 reads virtual GetWeapon's complete record, including an
     // installed upgrade's normal FLH (Building4526F0), at this query point.
-    let flh = if let Some(burst) = burst_flh {
+    let selected_flh = if let Some(burst) = burst_flh {
         burst
     } else if let Some(simple) = simple_flh {
         simple
@@ -496,6 +509,12 @@ pub(crate) fn fire_coordinate(
         };
         record.map_or_else(Flh::default, |record| record.flh)
     };
+    // `DelayedFire.AnimOffset` is assigned to `firingCoords`, replacing
+    // `GetWeapon(weaponIndex)->FLH` before `GetFLHAbsoluteCoords`
+    // (`Ext/Techno/Body.cpp:727-733`). The override takes the same matrix and
+    // world-Y mirror as any FLH and does not pass through the Phobos GetFLH
+    // hook's lateral negation.
+    let flh = snap.flh_override.unwrap_or(selected_flh);
     // Phobos's hook negates the lateral of the FLH it selected
     // (`Hooks.Firing.cpp:1058`) and only then adds the base argument (`:1083`),
     // so the base is never mirrored, and its alternate arm (`weaponIndex < 0`,
@@ -504,7 +523,7 @@ pub(crate) fn fire_coordinate(
     // (`0x006F3B37..0x006F3B58`, `0x006F3C82`).
     #[cfg(feature = "phobos")]
     let (mirrored_lateral, burst_parity) = (
-        if burst_flh.is_some() || weapon_index < 0 {
+        if snap.flh_override.is_some() || burst_flh.is_some() || weapon_index < 0 {
             flh.lateral
         } else {
             crate::util::flh_transform::flh_lateral_for_burst(flh.lateral, burst_index)
@@ -531,7 +550,7 @@ pub(crate) fn fire_coordinate(
         obj.alternate_flh_on_turret()
             .unwrap_or(rules.phobos_globals.alternate_flh_on_turret)
     } else {
-        true
+        snap.on_turret
     };
     #[cfg(feature = "phobos")]
     let hull_space =
@@ -1377,12 +1396,14 @@ mod tests {
     fn rules() -> RuleSet {
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(
-                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n0=ALT\n[AircraftTypes]\n\
+                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n0=ALT\n1=ALT2\n2=TUR\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
              [Animations]\n0=F0\n1=F1\n2=F2\n3=F3\n4=F4\n5=F5\n6=F6\n7=F7\n8=GUNFIRE\n9=SPARE\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
              [ALT]\nStrength=200\nPrimary=CANNON\n\
+             [ALT2]\nStrength=200\nPrimary=CANNON\n\
+             [TUR]\nStrength=200\nPrimary=CANNON\nTurret=yes\n\
              [BUNK]\nStrength=500\nCanBeOccupied=yes\n\
              [TOWER]\nStrength=500\nPrimary=M60\nSecondary=BARE\n\
              [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOccupantAnim=UCFLASH\n\
@@ -1404,6 +1425,8 @@ mod tests {
         rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
             "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
              [ALT]\nPrimaryFireFLH=100,20,30\n\
+             [ALT2]\nPrimaryFireFLH=200,80,40\n\
+             [TUR]\nPrimaryFireFLH=100,20,30\nTurretOffset=20\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
              [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
         )));
@@ -1425,6 +1448,8 @@ mod tests {
             veterancy: 0,
             garrison_fire_index: None,
             tar_com: None,
+            flh_override: None,
+            on_turret: true,
         }
     }
 
@@ -2306,6 +2331,93 @@ mod tests {
             ProjectileCoord::new(X + 50, Y, 0),
             "((6 / 3) % 4) - 1 = 1 is past the authored list"
         );
+    }
+
+    /// `DelayedFire.AnimOffset` is **assigned** to `firingCoords`
+    /// (`Ext/Techno/Body.cpp:727-733`), replacing
+    /// `GetWeapon(weaponIndex)->FLH`; `GetFLHAbsoluteCoords`
+    /// (`Body.Internal.cpp:80-89`) then transforms it. Two VehicleTypes whose
+    /// ART `PrimaryFireFLH` differs must therefore land on the same anim
+    /// coordinate when the override is the same; an added base would separate
+    /// them by the FLH difference.
+    #[test]
+    fn delafire_anim_offset_replaces_the_weapon_flh_instead_of_adding_it() {
+        let rules = rules();
+        let world = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let mut source = source(EntityCategory::Unit);
+        source.flh_override = Some(Flh {
+            forward: 10,
+            lateral: 5,
+            height: 30,
+        });
+        let overridden = |name: &str, src: &FireSource| {
+            fire_coordinate(
+                &world,
+                &rules,
+                src,
+                rules.object(name).unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+            .coord
+        };
+        assert_eq!(
+            overridden("ALT", &source),
+            overridden("ALT2", &source),
+            "the override ignores the type's own FLH"
+        );
+        source.flh_override = None;
+        assert_ne!(
+            overridden("ALT", &source),
+            overridden("ALT2", &source),
+            "the fixture types do have different weapon FLHs"
+        );
+    }
+
+    /// `DelayedFire.AnimOnTurret` is `GetFLHAbsoluteCoords`'s `isOnTurret`
+    /// (`Ext/Techno/Body.cpp:680`, `Body.Internal.cpp:54`): `no` keeps the FLH
+    /// on the hull — body facing, no ART `TurretOffset` — and ignores the
+    /// barrel heading; `yes` follows the turret.
+    #[test]
+    fn delafire_anim_on_turret_false_uses_the_hull_basis() {
+        let rules = rules();
+        let world = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let mut source = source(EntityCategory::Unit);
+        source.hull_facing = crate::sim::movement::FacingClass::new(0x4000, 0);
+        source.barrel_facing = Some(crate::sim::movement::FacingClass::new(0, 0));
+        source.flh_override = Some(Flh {
+            forward: 10,
+            lateral: 5,
+            height: 30,
+        });
+        let coord = |src: &FireSource| {
+            fire_coordinate(
+                &world,
+                &rules,
+                src,
+                rules.object("TUR").unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+            .coord
+        };
+        source.on_turret = true;
+        let turret = coord(&source);
+        source.on_turret = false;
+        let hull = coord(&source);
+        assert_ne!(turret, hull, "the two bases differ for a rotated turret");
+        // On the hull basis the barrel heading is irrelevant.
+        let mut east = source.clone();
+        east.barrel_facing = Some(crate::sim::movement::FacingClass::new(0x4000, 0));
+        assert_eq!(
+            hull,
+            coord(&east),
+            "`AnimOnTurret=no` does not read the barrel facing"
+        );
+        east.on_turret = true;
+        assert_ne!(turret, coord(&east));
     }
 }
 
