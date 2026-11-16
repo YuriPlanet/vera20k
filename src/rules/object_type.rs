@@ -6211,9 +6211,11 @@ impl ObjectType {
             #[cfg(feature = "phobos")]
             phobos_hover_drown:
                 crate::rules::phobos_hover_drown::PhobosHoverDrown::from_section(section),
+            // `UnitTypeExt::LoadFromINI` (`Ext/UnitType/Body.cpp:100-134`)
+            // reads these from the ART section; keep constructor defaults here
+            // until `RuleSet::project_art_data` supplies the art block.
             #[cfg(feature = "phobos")]
-            phobos_turret_barrel:
-                crate::rules::phobos_turret_barrel::PhobosTurretBarrel::from_section(section),
+            phobos_turret_barrel: Default::default(),
             #[cfg(feature = "phobos")]
             phobos_kill_weapon_suppress:
                 crate::rules::phobos_kill_weapon::PhobosKillWeaponSuppress::from_section(section),

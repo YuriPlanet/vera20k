@@ -73,6 +73,10 @@ pub struct ArtEntry {
     /// Image filename override (from art.ini `Image=` key).
     /// None means use the section name as the filename base.
     pub image: Option<String>,
+    /// Phobos `UnitTypeExt` multi-barrel / multi-turret block
+    /// (`Ext/UnitType/Body.cpp:100-134`), read from this ART section.
+    #[cfg(feature = "phobos")]
+    pub phobos_turret_barrel: crate::rules::phobos_turret_barrel::PhobosTurretBarrel,
     /// Sidebar cameo/image override from `Cameo=`.
     pub cameo: Option<String>,
     /// Alternate sidebar cameo/image override from `AltCameo=`.
@@ -1631,6 +1635,10 @@ impl ArtRegistry {
                 section.read_bool("ZShapePointMove.OnBuildup", false);
             let normal_z_adjust: i32 = section.read_int("NormalZAdjust", 0);
 
+            #[cfg(feature = "phobos")]
+            let phobos_turret_barrel =
+                crate::rules::phobos_turret_barrel::PhobosTurretBarrel::from_section(section);
+
             let section_key = section_name.to_uppercase();
             can_hide_things.insert(section_key.clone(), can_hide);
             occupy_heights.insert(section_key.clone(), occupy_height);
@@ -1641,6 +1649,8 @@ impl ArtRegistry {
                 section_name.to_owned(),
                 ArtEntry {
                     image,
+                    #[cfg(feature = "phobos")]
+                    phobos_turret_barrel,
                     cameo,
                     alt_cameo,
                     #[cfg(feature = "ares")]

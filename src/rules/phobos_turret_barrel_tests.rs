@@ -2,13 +2,76 @@
 //! [`crate::rules::phobos_turret_barrel`]: the indexed loops, the two count
 //! clamps and the gated `BurstPerTurret=`.
 
+use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::phobos_turret_barrel::PhobosTurretBarrel;
+use crate::rules::ruleset::RuleSet;
 
 fn read(keys: &str) -> PhobosTurretBarrel {
     PhobosTurretBarrel::from_section(
         IniFile::from_str(&format!("[Q]\n{keys}")).section_or_empty("Q"),
     )
+}
+
+#[cfg(feature = "phobos")]
+fn project(rules_keys: &str, art_sections: &str) -> PhobosTurretBarrel {
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nTurret=yes\n{rules_keys}"
+        )),
+        &IniFile::from_str(art_sections),
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(art_sections)));
+    rules.object("MTNK").unwrap().phobos_turret_barrel.clone()
+}
+
+/// `Ext/UnitType/Body.cpp:100-134`: every key comes from the ART section, and
+/// `RuleSet::project_art_data` copies the block onto the Vehicle type.
+#[cfg(feature = "phobos")]
+#[test]
+fn projection_reads_the_multi_turret_block_from_art() {
+    let set = project(
+        "",
+        "[MTNK]\nBarrelOverTurret=yes\nBarrelOffset=16\n\
+         ExtraBarrelCount=1\nExtraBarrelOffset0=-4\n\
+         ExtraTurretCount=2\nExtraTurretOffset0=1,2,3\n\
+         ExtraTurretOffset1=-4,5,-6\nBurstPerTurret=2\n",
+    );
+    assert_eq!(set.barrel_over_turret, Some(true));
+    assert_eq!(set.barrel_offset, 16);
+    assert_eq!(set.extra_barrel_count, 1);
+    assert_eq!(set.extra_barrel_offsets, [-4]);
+    assert_eq!(set.extra_turret_count, 2);
+    assert_eq!(set.extra_turret_offsets, [[1, 2, 3], [-4, 5, -6]]);
+    assert_eq!(set.burst_per_turret, 2);
+}
+
+/// Native `UnitTypeExt` reads ART only: the same keys in the rule section
+/// leave the constructor defaults in place.
+#[cfg(feature = "phobos")]
+#[test]
+fn rules_section_keys_do_not_supply_the_multi_turret_block() {
+    let set = project(
+        "ExtraTurretCount=2\nExtraTurretOffset0=1,2,3\n\
+         ExtraBarrelCount=1\nExtraBarrelOffset0=9\nBurstPerTurret=2\n",
+        "[MTNK]\n",
+    );
+    assert_eq!(set, PhobosTurretBarrel::default());
+}
+
+/// `Image=` selects the ART section: keys under the unrenamed type ID are not
+/// consulted.
+#[cfg(feature = "phobos")]
+#[test]
+fn the_image_override_selects_the_art_section() {
+    let set = project(
+        "Image=MTNKX\n",
+        "[MTNKX]\nExtraTurretCount=1\nExtraTurretOffset0=7,8,9\n\
+         [MTNK]\nExtraTurretCount=2\nExtraTurretOffset0=1,2,3\n",
+    );
+    assert_eq!(set.extra_turret_count, 1);
+    assert_eq!(set.extra_turret_offsets, [[7, 8, 9]]);
 }
 
 /// `Ext/UnitType/Body.h:135-141`: one unset `Nullable` and five zeros.

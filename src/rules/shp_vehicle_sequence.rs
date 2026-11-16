@@ -440,6 +440,8 @@ mod tests {
             #[cfg(feature = "phobos")]
             phobos_fire_up_reset_in_retarget: true,
             image: None,
+            #[cfg(feature = "phobos")]
+            phobos_turret_barrel: Default::default(),
             cameo: None,
             alt_cameo: None,
             #[cfg(feature = "ares")]

@@ -12290,6 +12290,16 @@ impl RuleSet {
             // Every TechnoType's ReadINI reads CanBeHidden from the ART
             // section of its own ID (0x007121EB); art is not layered.
             obj.can_be_hidden = art.can_be_hidden(&obj.id);
+            // `UnitTypeExt::LoadFromINI` (`Ext/UnitType/Body.cpp:100-134`)
+            // reads the multi-barrel block from the type's `ImageFile` ART
+            // section, not the rule section. Project it before the
+            // building-only merge below.
+            #[cfg(feature = "phobos")]
+            if obj.category == crate::rules::object_type::ObjectCategory::Vehicle {
+                obj.phobos_turret_barrel = entry
+                    .map(|entry| entry.phobos_turret_barrel.clone())
+                    .unwrap_or_default();
+            }
             // Infantry Crawls and discharge frames come from the per-pass
             // ART reads (`InfantryArt`), not this final-image projection.
             if obj.category != crate::rules::object_type::ObjectCategory::Building {
