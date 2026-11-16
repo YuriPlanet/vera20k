@@ -380,3 +380,27 @@ fn grinding_engineer_row_uses_the_type_gates() {
     assert_eq!(run(true), Some(EngineerBuildingAction::EnterGrinder));
     assert_eq!(run(false), Some(EngineerBuildingAction::Repair(false)));
 }
+
+/// Phobos `DoGrindingExtras` also feeds the grinder's `AccumulatedIncome`
+/// (`Ext/Building/Body.cpp:266-271`), the value the periodic `DisplayIncome`
+/// label prints.
+#[test]
+fn grinding_refund_feeds_the_display_income_accumulator() {
+    let (mut sim, rules) = fixture("");
+    let grinder = spawn(&mut sim, &rules, "GRINDER", "Americans", 18, 10);
+    let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
+    stand_on_grinder(&mut sim, grinder, civ, 10, 10);
+    let owner = sim.interner().get("Americans").unwrap();
+    let before = crate::sim::credit_income::available_money(&sim.houses, owner);
+    assert!(sim.foot_per_cell_eaten(civ, &rules, None, FrameEffects::default()));
+    let after = crate::sim::credit_income::available_money(&sim.houses, owner);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(grinder)
+            .unwrap()
+            .phobos_accumulated_income(),
+        after.wrapping_sub(before),
+        "the accumulator takes the refund the owner was credited"
+    );
+}

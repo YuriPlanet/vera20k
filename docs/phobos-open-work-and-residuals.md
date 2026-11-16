@@ -42,6 +42,12 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `DisplayIncome`（含 `DisplayIncome.AllowAI`）：建筑 `AccumulatedIncome`
+  在研磨退款（`DoGrindingExtras`）、精炼厂/奴隶卸矿入账（`pay_refinery_owner`
+  余额差）、间谍渗透（`infiltrate_building` 受害者余额差）处累积；
+  `BuildingClass_AI` 后按 `frame % delay == 0` 在建筑 `GetRenderCoords` 发出
+  `FlyingStrings` 金钱标签（`Ext/Building/Body.cpp:12-36`）。类型级
+  `DisplayIncome`/`.Delay` 现已读取（0 强制为 1）。
 - `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut`：
   `sim/movement/jumpjet_flight.rs` 的参考高度改为
   `JumpjetLocomotionPredictHeight` 五格预测（前沿、二分之一侧格、`Skip` 置位），
@@ -128,12 +134,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 6 项（7 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 5 项（6 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
-| `DisplayIncome.AllowAI` | VERA 尚未实现 `DisplayIncome` 收益累积/周期标签（全仓无消费者）；单实现 AllowAI 无意义，需先补整条 DisplayIncome 链。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `ColorAddUse8BitRGB` | `GetColorFromColorAdd` 已按开关（空袭激光色接线）；幕布/狂暴/力场三色走 `TechnoExt::GetTintColor` 的类词替换钩子（`Ext/Techno/Hooks.Tint.cpp:71-135`），需整族移植并用 Phobos 词替换原生 3 臂词。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
@@ -175,6 +180,13 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
   生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
   `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
+- **DisplayIncome 的卖出标签**：`FootClass::Sell`（`Hooks.Selling.cpp:7-27`）在
+  全局 `DisplayIncome` 开启时立即打印卖出金额；VERA 目前没有玩家单位卖出路径，
+  该臂未接。触发：卖出单位；频率：仅单位卖出；风险：少一条浮动金额。
+- **DisplayIncome 的 TS 奴隶矿车臂**：`Hooks.Refinery.cpp:40-61` 对
+  `BuildingClass` 奴隶矿车累积、对其 `DeploysInto` 类型立即打印；VERA 的奴隶
+  收入统一经 `pay_refinery_owner` 累到矿厂。触发：TS 风格奴隶矿车；频率：仅
+  该类单位；风险：标签锚点位置不同（零售无此单位）。
 - **Jumpjet 预测的三角/开方**：Phobos `JumpjetLocomotionPredictHeight` 用
   `Math::cos/sin`（MSVC CRT，binary64）与 `Foot::DistanceFrom`；VERA 用 Rust
   `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上

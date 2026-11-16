@@ -588,6 +588,11 @@ pub(crate) fn pay_refinery_owner(
         return;
     };
     let owner_name = sim.interner.resolve(owner).to_string();
+    // Phobos `BuildingClass_InfiltratedBy`-style balance sampling for the
+    // `DisplayIncome` label: the unload hook records the dock's House balance
+    // before the mission's deposits (`Hooks.Refinery.cpp:20-38`).
+    #[cfg(feature = "phobos")]
+    let money_before = crate::sim::credit_income::available_money(&sim.houses, owner);
     let purifiers = super::miner_system::effective_purifier_count(sim, rules, &owner_name);
     let amount = X87::store_f32_masked_chop(X87::load_i32(bales));
     //73E42B..73E441 /522DCD..522DE3: count * bonus * amount,
@@ -619,6 +624,19 @@ pub(crate) fn pay_refinery_owner(
             house
                 .economy_mut()
                 .add_tiberium_credits(value, bonus, income);
+        }
+    }
+    // The dock accumulates the cash the deposit actually credited; the
+    // periodic `DisplayIncome` label reads it (`Ext/Building/Body.cpp:12-36`).
+    #[cfg(feature = "phobos")]
+    {
+        let credited = crate::sim::credit_income::available_money(&sim.houses, owner)
+            .wrapping_sub(money_before);
+        if credited != 0
+            && let Some(dock) = sim.substrate.entities.get_mut(building)
+        {
+            let income = dock.phobos_accumulated_income().wrapping_add(credited);
+            dock.set_phobos_accumulated_income(income);
         }
     }
 }

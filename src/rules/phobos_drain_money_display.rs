@@ -73,12 +73,17 @@ impl DrainMoneyDisplaySettings {
     }
 }
 
-/// The two `BuildingTypeExt` display-income keys the drain target label
-/// reads (`Ext/BuildingType/Body.cpp:216-217`, `Body.h:48-49`): `Houses` is
-/// `Nullable<AffectedHouse>`, `Offset` a `Valueable<Point2D>` defaulting to
-/// `0,0`.
+/// The `BuildingTypeExt` display-income keys (`Ext/BuildingType/Body.cpp:
+/// 208-217`, `Body.h:46-49`): `DisplayIncome` and `.Delay` are `Nullable`,
+/// `Houses` is `Nullable<AffectedHouse>`, `Offset` a `Valueable<Point2D>`
+/// defaulting to `0,0`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DisplayIncomeSettings {
+    /// `DisplayIncome=`, falling back to the global switch.
+    pub enabled: Option<bool>,
+    /// `DisplayIncome.Delay=`: frames between labels; an authored zero is
+    /// forced to one (`Body.cpp:211-214`).
+    pub delay: Option<i32>,
     /// `DisplayIncome.Houses=`.
     pub houses: Option<AffectedHouse>,
     /// `DisplayIncome.Offset=`.
@@ -88,7 +93,12 @@ pub struct DisplayIncomeSettings {
 impl DisplayIncomeSettings {
     pub fn from_section(section: &IniSection) -> Self {
         let defaults = Self::default();
+        let delay = section
+            .read_phobos_nullable_int("DisplayIncome.Delay", defaults.delay)
+            .map(|delay| if delay == 0 { 1 } else { delay });
         Self {
+            enabled: section.read_phobos_nullable_bool("DisplayIncome", defaults.enabled),
+            delay,
             houses: section.read_phobos_nullable_with(
                 "DisplayIncome.Houses",
                 defaults.houses,

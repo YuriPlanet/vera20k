@@ -1133,6 +1133,10 @@ fn techno_ai_shell(
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
             techno_common_post(sim, id, rules, ctx.effects);
+            // Phobos `BuildingClass_AI` hook `0x43FE69`: the periodic
+            // `DisplayIncome` label, right after `TechnoClass_AI`.
+            #[cfg(feature = "phobos")]
+            crate::sim::building_display_income::display_income_string(sim, id, rules, ctx.effects);
             // Ares BuildingClass_Update_SensorArray10016E30 (hook43FE69),
             // after Update's IsAlive test.
             #[cfg(feature = "ares")]

@@ -144,6 +144,12 @@ pub struct GameEntity {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     grinding_weapon_last_fired_frame: i32,
+    /// Phobos `BuildingExt::AccumulatedIncome` (`Ext/Building/Body.h:23`,
+    /// serialized at `Body.cpp:598`): credits gained since the last periodic
+    /// `DisplayIncome` label.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    phobos_accumulated_income: i32,
     /// Phobos `TechnoExt` delayed-fire state (`src/Ext/Techno/Body.h:60-63`,
     /// serialized at `src/Ext/Techno/Body.cpp:1183-1186`). `DelayedFireTimer`
     /// is a frame-based `CDTimerClass`: VERA keeps the absolute start frame
@@ -2284,6 +2290,16 @@ impl GameEntity {
     }
 
     #[cfg(feature = "phobos")]
+    pub(crate) const fn phobos_accumulated_income(&self) -> i32 {
+        self.phobos_accumulated_income
+    }
+
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_accumulated_income(&mut self, income: i32) {
+        self.phobos_accumulated_income = income;
+    }
+
+    #[cfg(feature = "phobos")]
     pub(crate) const fn phobos_delayed_fire_start_frame(&self) -> i32 {
         self.phobos_delayed_fire_start_frame
     }
@@ -2718,6 +2734,7 @@ impl GameEntity {
             production_start_price: 0,
             #[cfg(feature = "phobos")]
             grinding_weapon_accumulated_credits: 0,
+            phobos_accumulated_income: 0,
             #[cfg(feature = "phobos")]
             grinding_weapon_last_fired_frame: 0,
             #[cfg(feature = "phobos")]

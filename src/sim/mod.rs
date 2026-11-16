@@ -138,6 +138,8 @@ pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
 // unless the browser package opts into its Web Worker pool.
 #[cfg(feature = "phobos")]
+pub(crate) mod building_display_income; // Phobos BuildingExt::DisplayIncomeString
+#[cfg(feature = "phobos")]
 pub(crate) mod grinding; // Phobos BuildingExt CanGrindTechno / DoGrindingExtras (Grinding.*)
 #[cfg(feature = "phobos")]
 pub(crate) mod kill_weapon; // Phobos TechnoExt::ApplyKillWeapon (KillWeapon.*, 0x702672)

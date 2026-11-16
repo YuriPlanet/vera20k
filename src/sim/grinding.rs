@@ -139,6 +139,10 @@ impl Simulation {
             .get_mut(building_id)
             .expect("the grinder stays represented");
         building.set_phobos_grinding_weapon_accumulated_credits(if fire { 0 } else { accumulated });
+        // Phobos `DoGrindingExtras` opens with `AccumulatedIncome += refund`
+        // (`Ext/Building/Body.cpp:266-271`) for the `DisplayIncome` label.
+        let income = building.phobos_accumulated_income().wrapping_add(refund);
+        building.set_phobos_accumulated_income(income);
         if fire {
             building.set_phobos_grinding_weapon_last_fired_frame(current_frame);
         }
