@@ -1187,6 +1187,48 @@ fn ai_auto_deploy_mcv_off_keeps_the_second_yard_out_of_the_guard_arm() {
     );
 }
 
+/// Phobos `[AI] AISetBaseCenter=no` (`Ext/BuildingType/Hooks.Placing.cpp:15-23`,
+/// hook `0x00739889`): with more than one standing yard the deploy skips the
+/// base-centre/base-plan block; with one yard the default block still runs.
+#[cfg(feature = "phobos")]
+#[test]
+fn ai_set_base_center_off_skips_the_rewrite_only_above_one_yard() {
+    let (mut sim, rules, id) = house_fixture_with_ai(false, BUILDABLE, "AISetBaseCenter=no\n");
+    for cell in [(4, 4), (12, 4)] {
+        sim.spawn_object("YARD", "Americans", cell.0, cell.1, 0, &rules)
+            .unwrap();
+    }
+    let owner = sim.interner.get("Americans").unwrap();
+    assert_eq!(sim.houses[&owner].build_const_order().len(), 2);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .anchor_base_plan((10, 10));
+    assert!(sim.deploy_mcv(id, &rules, None, crate::sim::world::FrameEffects::default()));
+    assert_eq!(yard_cells(&sim).len(), 3, "the MCV still deploys");
+    assert_eq!(
+        sim.houses[&owner].base_plan_center(),
+        (10, 10),
+        "two yards and the key off keep the old base plan anchor"
+    );
+
+    let (mut sim, rules, id) = house_fixture_with_ai(false, BUILDABLE, "AISetBaseCenter=no\n");
+    sim.spawn_object("YARD", "Americans", 4, 4, 0, &rules)
+        .unwrap();
+    let owner = sim.interner.get("Americans").unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .anchor_base_plan((10, 10));
+    assert!(sim.deploy_mcv(id, &rules, None, crate::sim::world::FrameEffects::default()));
+    assert_eq!(yard_cells(&sim).len(), 2);
+    assert_ne!(
+        sim.houses[&owner].base_plan_center(),
+        (10, 10),
+        "one yard is not > 1, so the block anchors the new yard"
+    );
+}
+
 /// Retail Dustbowl with a skirmish computer house (`Russians`) whose MCV
 /// stands on flat, empty buildable ground nearest the map centre, set up as
 /// `ScenarioClass::Create_Houses` sets up a computer slot (`MaxIQLevels`, an
