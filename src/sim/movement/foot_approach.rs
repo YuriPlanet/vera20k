@@ -1272,6 +1272,16 @@ impl Simulation {
     /// CloseRange= mover is picked up around it: Mark(UP) and Mark(DOWN)
     /// (vt+0x124(0) and vt+0x124(1), `0x004D62C0..0x004D637D` and
     /// `0x004D6586..0x004D664D`).
+    #[cfg(test)]
+    pub(crate) fn phobos_balloon_approach_admits_for_test(
+        &mut self,
+        id: u64,
+        candidate: (i16, i16),
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        self.approach_admits(id, candidate, false, rules, None, FrameEffects::default())
+    }
+
     fn approach_admits(
         &mut self,
         id: u64,
@@ -1281,6 +1291,10 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
+        #[cfg(feature = "phobos")]
+        if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
+            return Ok(true);
+        }
         if close_range {
             self.foot_mark_remove(id, rules, registry, frame_effects);
         }
