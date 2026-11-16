@@ -364,6 +364,8 @@ enum RequestFailure {
     AlreadyFinished,
     /// 400 `invalid_options` ([`CommandFailure::InvalidOptions`]).
     InvalidOptions,
+    /// 409 `stale_revision` ([`CommandFailure::StaleRevision`]).
+    StaleRevision,
     /// 426 `upgrade_required` (docs/lobby-protocol.md), with the lobby's
     /// message when it is one short line of plain text.
     UpgradeRequired(Option<String>),
@@ -464,6 +466,9 @@ pub(super) enum CommandFailure {
     /// 400 `invalid_options`: the lobby cannot take the room's options, as
     /// one from before a field they carry (`launch.options.teams`) does.
     InvalidOptions,
+    /// 409 `stale_revision`: the room's settings changed while a `ready`,
+    /// `map_status` or `start` for the older ones was on its way.
+    StaleRevision,
 }
 
 impl CommandFailure {
@@ -516,6 +521,7 @@ impl RequestFailure {
                 code: crate::app::shell_wol::lobby::WATCHERS_FULL,
             },
             Some("invalid_options") if status == 400 => Self::InvalidOptions,
+            Some("stale_revision") if status == 409 => Self::StaleRevision,
             Some("maintenance") if status == 503 => {
                 Self::Maintenance(plain_message(value.as_ref()))
             }
@@ -591,6 +597,7 @@ impl RequestFailure {
             }
             Self::ChannelRejected { code, .. } => CommandFailure::Rejected(*code),
             Self::InvalidOptions => CommandFailure::InvalidOptions,
+            Self::StaleRevision => CommandFailure::StaleRevision,
             _ if matches!(self.status(), 0 | 429 | 500..=599) => CommandFailure::Retryable,
             _ => CommandFailure::Rejected(0x8000_4005),
         }
@@ -599,7 +606,7 @@ impl RequestFailure {
     fn status(&self) -> u16 {
         match self {
             Self::Status(status) | Self::ChannelRejected { status, .. } => *status,
-            Self::LostCursor | Self::AlreadyFinished => 409,
+            Self::LostCursor | Self::AlreadyFinished | Self::StaleRevision => 409,
             Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
@@ -1571,6 +1578,13 @@ mod tests {
         assert_eq!(
             left.command_failure("options"),
             CommandFailure::Rejected(0x8000_4005)
+        );
+        // Settings that moved on while a status for the older ones was on
+        // its way: the room says nothing and answers the newer ones.
+        let stale = RequestFailure::response(409, br#"{"error":{"code":"stale_revision"}}"#);
+        assert_eq!(
+            stale.command_failure("map_status"),
+            CommandFailure::StaleRevision
         );
     }
 

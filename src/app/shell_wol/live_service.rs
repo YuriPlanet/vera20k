@@ -2554,6 +2554,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     );
                 }
             }
+            // The host changed the settings again before these reached the
+            // lobby, as a dragged slider does at each step: the newer
+            // options event sends both again for its revision.
+            "map_status" | "ready" if failure == http::CommandFailure::StaleRevision => {}
             "finish" => {
                 let first_failure = service
                     .finishing
