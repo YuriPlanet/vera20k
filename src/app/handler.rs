@@ -2044,6 +2044,10 @@ impl ApplicationHandler for App {
             // final admission. Ordinary input starts only with the full state.
             return;
         }
+        // For the performance panel's Ticks row.
+        if let Some(state) = self.state.as_mut() {
+            state.platform.frame_pacer.count_loop_turn();
+        }
         // A tick on the simulation thread has ended (its wake brought this
         // call): finish it, replay the window events it held, then service
         // the match at once, so the next tick leaves without waiting for a
