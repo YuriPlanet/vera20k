@@ -130,6 +130,9 @@ pub enum WolTarget {
     GuestAccept,
     /// C9 Back: Leave, then the channel-left event rejoins the chat lobby.
     GuestBack,
+    /// C9's host leaves VERA's lobby room and the guest's game takes it
+    /// over (docs/lobby-protocol.md "Host handover").
+    HostHandover,
     /// A started WOL match left through FF/B6: the chat lobby rejoined.
     AbortReturn,
     /// A started WOL match's FF menu after a physical speed-trackbar jump.
@@ -616,7 +619,7 @@ impl WolTarget {
     fn guest(self) -> bool {
         matches!(
             self,
-            Self::JoinAccepted | Self::GuestAccept | Self::GuestBack
+            Self::JoinAccepted | Self::GuestAccept | Self::GuestBack | Self::HostHandover
         )
     }
 
@@ -727,6 +730,7 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-c2-start-loading", WolTarget::SetupStart),
     ("wol-c9-accept", WolTarget::GuestAccept),
     ("wol-c9-back", WolTarget::GuestBack),
+    ("wol-c9-host-handover", WolTarget::HostHandover),
     ("wol-abort-return", WolTarget::AbortReturn),
     ("wol-0xff-menu", WolTarget::InternetMenu),
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
@@ -3340,6 +3344,49 @@ impl WolCapture {
                 );
                 self.event(frame, "C9 Accept");
             }
+            WolTarget::HostHandover => {
+                // VERA's lobby gives the room to the player in it longest when
+                // its host leaves: `host_changed`, then the old host's
+                // `member_left`. This guest's game hosts it on, chat and all.
+                crate::app::shell_lan::append_chat(
+                    state,
+                    crate::ui::lan_shell::LanChatLine {
+                        text: "before the host left".encode_utf16().collect(),
+                        color: u32::MAX,
+                    },
+                );
+                setup_requests(state);
+                service_event(state, WolServiceEvent::HostChanged(NICKNAME.into()));
+                service_event(state, WolServiceEvent::UserLeft(PEER.into()));
+                let names: Vec<String> = state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .context("C2 setup")?
+                    .humans
+                    .iter()
+                    .map(|human| human.name.clone())
+                    .collect();
+                let host = state.match_state.session.host();
+                let requests = setup_requests(state);
+                ensure!(
+                    host && names == [NICKNAME]
+                        && state.frontend.shell_route.network_setup()
+                        && requests.contains(&NetworkSetupRequest::PublishOptions)
+                        && requests.contains(&NetworkSetupRequest::Advertise),
+                    "the guest did not take the room over: host {host}, humans {names:?}, \
+                     requests {requests:?}"
+                );
+                let left = crate::i18n::tr_fill("VERA:PlayerLeftRoom", &[("name", &PEER)]);
+                let now_host = crate::i18n::tr("VERA:NowHost");
+                for line in ["before the host left", left.as_str(), now_host.as_str()] {
+                    ensure!(
+                        setup_chat_has(state, line)?,
+                        "the room's chat lacks {line:?}"
+                    );
+                }
+                self.event(frame, "C9's host left: the guest hosts the room");
+            }
             WolTarget::GuestBack => {
                 setup_button(state, setup_ui::BACK)?;
                 let requests = setup_requests(state);
@@ -4510,7 +4557,10 @@ impl WolCapture {
                 );
                 self.event(frame, "0xE1 opened");
             }
-            WolTarget::JoinAccepted | WolTarget::GuestAccept | WolTarget::GuestBack => {
+            WolTarget::JoinAccepted
+            | WolTarget::GuestAccept
+            | WolTarget::GuestBack
+            | WolTarget::HostHandover => {
                 game_row_click(state, 0)?;
                 lobby_button(state, &layout, lobby_ui::JOIN)?;
                 self.event(frame, "Join on Alpha's_game");

@@ -1176,24 +1176,105 @@ fn room_reopened(state: &mut AppState, joined: WolJoined) {
         {
             log::warn!("WOL reopened room keeps its mode: {error:#}");
         }
-        // The players who came back take rows as joiners would, in the
-        // lobby's order, so the host's options name them all; VERA's room
-        // does not tell them as joins.
-        if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-            protocol.quiet_joins();
-        }
-        for name in listed
-            .iter()
-            .map(|member| member.name.clone())
-            .filter(|name| !name.eq_ignore_ascii_case(&me))
-        {
-            if let Err(error) = setup::user_joined(state, name) {
-                log::warn!("WOL reopened room: {error:#}");
-            }
-        }
+        seat_again(state, &listed, &me);
     } else {
         enter_game_as_guest(state);
     }
+}
+
+/// The others in a room this game hosts again take rows as joiners would,
+/// in the lobby's order, so the host's options name them all; VERA's room
+/// does not tell them as joins.
+fn seat_again(state: &mut AppState, listed: &[WolMember], me: &str) {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.quiet_joins();
+    }
+    for name in listed
+        .iter()
+        .map(|member| member.name.clone())
+        .filter(|name| !name.eq_ignore_ascii_case(me))
+    {
+        if let Err(error) = setup::user_joined(state, name) {
+            log::warn!("WOL room seats its players again: {error:#}");
+        }
+    }
+}
+
+/// VERA: the host left, and the lobby made `name` the room's host
+/// (`host_changed`, docs/lobby-protocol.md "Host handover"); the old host's
+/// `member_left` follows. The room opens again as after a match: the new
+/// host's game from its own room settings, seating everyone still here, and
+/// the others' games enter it as after a join. The chat stays.
+fn host_changed(state: &mut AppState, name: String) {
+    let Some(room) = lobby_mut(state) else {
+        return;
+    };
+    let old = room
+        .members
+        .iter()
+        .find(|member| member.flags & MEMBER_OPERATOR != 0)
+        .map(|member| member.name.clone());
+    // The old host is out of the room already, and the new one leads the
+    // list, where a guest's game takes its host from
+    // (`setup::guest_users_listed`).
+    room.members
+        .retain(|member| Some(&member.name) != old.as_ref());
+    for member in &mut room.members {
+        member.flags &= !MEMBER_OPERATOR;
+    }
+    if let Some(index) = room
+        .members
+        .iter()
+        .position(|member| member.name.eq_ignore_ascii_case(&name))
+    {
+        let mut host = room.members.remove(index);
+        host.flags |= MEMBER_OPERATOR;
+        room.members.insert(0, host);
+    }
+    refill_players(state);
+    if !in_setup_channel(state) || quick_match_runner(state) {
+        return;
+    }
+    let chat = state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .map(|ui| std::mem::take(&mut ui.chat));
+    let me = nickname(state);
+    let host = name.eq_ignore_ascii_case(&me);
+    if host {
+        let observe = state
+            .match_state
+            .session
+            .network_setup()
+            .is_some_and(|launch| launch.local_player().is_observer());
+        let listed = lobby(state)
+            .map(|lobby| lobby.members.clone())
+            .unwrap_or_default();
+        // As Create does before the host's row is made (`send_create`).
+        super::persona::take_side_and_color(state, &me);
+        commit_create(state, observe);
+        seat_again(state, &listed, &me);
+    } else {
+        enter_game_as_guest(state);
+    }
+    if let (Some(chat), Some(ui)) = (chat, state.frontend.multiplayer_setup.as_mut()) {
+        ui.chat = chat;
+    }
+    if let Some(old) = old {
+        message_line(
+            state,
+            crate::i18n::tr_fill("VERA:PlayerLeftRoom", &[("name", &old)]),
+        );
+    }
+    message_line(
+        state,
+        if host {
+            crate::i18n::tr("VERA:NowHost")
+        } else {
+            crate::i18n::tr_fill("VERA:NewHost", &[("name", &name)])
+        },
+    );
 }
 
 fn new_runner(
@@ -3340,6 +3421,7 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             }
         }
         WolServiceEvent::RoomReopened(joined) => room_reopened(state, joined),
+        WolServiceEvent::HostChanged(name) => host_changed(state, name),
         WolServiceEvent::ChannelLeft if awaiting_room(state) => room_not_returned(state, true),
         WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
         WolServiceEvent::ChannelLeft => leave_finished(state, true),

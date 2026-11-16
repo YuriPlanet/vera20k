@@ -301,6 +301,9 @@ pub(crate) enum WolServiceEvent {
     /// VERA: the match ended and the lobby gave back the game room this
     /// player stayed in (`room_reopened`), owner first.
     RoomReopened(super::lobby::WolJoined),
+    /// VERA: the host left and the lobby made this user the game room's
+    /// host (`host_changed`, docs/lobby-protocol.md "Host handover").
+    HostChanged(String),
     /// OnJoin for another user of the current channel.
     UserJoined(WolMember),
     /// OnPart of another user (by name).
@@ -1040,6 +1043,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         event @ (WolServiceEvent::Channels { .. }
         | WolServiceEvent::Joined(_)
         | WolServiceEvent::RoomReopened(_)
+        | WolServiceEvent::HostChanged(_)
         | WolServiceEvent::UserJoined(_)
         | WolServiceEvent::UserLeft(_)
         | WolServiceEvent::ChannelLeft
