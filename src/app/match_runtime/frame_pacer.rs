@@ -168,6 +168,30 @@ pub(crate) struct LocalFramePacer {
     /// forces.
     inline_frame_cost: Option<Duration>,
     lent_frame_cost: Option<Duration>,
+    counts: LoopCounts,
+}
+
+/// Running counts the performance panel reads once a second: the frames
+/// ticked on the main thread and on the simulation thread
+/// ([`LocalFramePacer::record_frame_cost`]), and the event loop's turns
+/// ([`LocalFramePacer::count_loop_turn`]). A loop that never rests shows in
+/// the turns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LoopCounts {
+    pub(crate) inline_frames: u64,
+    pub(crate) lent_frames: u64,
+    pub(crate) turns: u64,
+}
+
+impl LoopCounts {
+    /// The counts since `before`, or `None` when they started over.
+    pub(crate) fn since(self, before: Self) -> Option<Self> {
+        Some(Self {
+            inline_frames: self.inline_frames.checked_sub(before.inline_frames)?,
+            lent_frames: self.lent_frames.checked_sub(before.lent_frames)?,
+            turns: self.turns.checked_sub(before.turns)?,
+        })
+    }
 }
 
 #[cfg(feature = "dev-overlays")]
@@ -611,6 +635,11 @@ impl LocalFramePacer {
             service_pass: None,
             inline_frame_cost: None,
             lent_frame_cost: None,
+            counts: LoopCounts {
+                inline_frames: 0,
+                lent_frames: 0,
+                turns: 0,
+            },
         }
     }
 
@@ -625,13 +654,25 @@ impl LocalFramePacer {
         self.service_pass = None;
     }
 
-    /// Record a frame's tick time, for [`Self::another_pass_follows`].
+    /// Record a frame's tick time, for [`Self::another_pass_follows`], and
+    /// count the frame for the thread that ticked it.
     pub(crate) fn record_frame_cost(&mut self, cost: Duration, lent: bool) {
         if lent {
             self.lent_frame_cost = Some(cost);
+            self.counts.lent_frames += 1;
         } else {
             self.inline_frame_cost = Some(cost);
+            self.counts.inline_frames += 1;
         }
+    }
+
+    /// Count one turn of the event loop (`about_to_wait`).
+    pub(crate) fn count_loop_turn(&mut self) {
+        self.counts.turns += 1;
+    }
+
+    pub(crate) fn loop_counts(&self) -> LoopCounts {
+        self.counts
     }
 
     /// Whether the catch-up service will run another pass after a frame

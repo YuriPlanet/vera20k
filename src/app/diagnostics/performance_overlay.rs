@@ -164,10 +164,12 @@ impl PanelPlacement {
     }
 }
 
-/// A match the panel reads its unit count and Most CPU areas from.
+/// A match the panel reads its unit count, Most CPU areas and tick counts
+/// from.
 pub(crate) struct MatchPanel<'a> {
     pub(crate) placement: PanelPlacement,
     pub(crate) host: &'a SimHost,
+    pub(crate) loop_counts: crate::app::match_runtime::frame_pacer::LoopCounts,
 }
 
 /// The panel over the battlefield of the match on screen, if one is.
@@ -189,6 +191,7 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
             scale,
         ),
         host: &state.match_state.sim_runtime,
+        loop_counts: state.platform.frame_pacer.loop_counts(),
     })
 }
 
@@ -311,8 +314,8 @@ impl PerformanceOverlay {
         }
         let size = [destination.width(), destination.height()];
         let over_battlefield = in_match.is_some();
-        let (placement, host) = match in_match {
-            Some(panel) => (panel.placement, Some(panel.host)),
+        let (placement, source) = match in_match {
+            Some(panel) => (panel.placement, Some((panel.host, panel.loop_counts))),
             // Loading and menu screens: the window's own pixels.
             None => (
                 PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
@@ -325,7 +328,7 @@ impl PerformanceOverlay {
             let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, tps, host.and_then(match_sample), gpu_ms);
+                .close_window(now, frame_ms, tps, source.and_then(match_sample), gpu_ms);
         }
         let mut rows = panel::rows(&frame.stats.shown);
         let mut instances = Vec::new();
@@ -494,11 +497,14 @@ impl PerformanceOverlay {
 /// buildings, counted from the frame drawing reads: while a tick runs on the
 /// simulation thread, the world [`SimHost::runtime`] lends for reading is
 /// drawing's copy, which holds no objects (`Simulation::presentation_copy`).
-fn match_sample(host: &SimHost) -> Option<panel::MatchSample> {
+fn match_sample(
+    (host, loop_counts): (&SimHost, crate::app::match_runtime::frame_pacer::LoopCounts),
+) -> Option<panel::MatchSample> {
     let frame = host.frame()?;
     Some(panel::MatchSample {
         units: frame.objects().len() - frame.structures().len(),
         profile: host.runtime()?.simulation.frame_profile().totals_ns(),
+        loop_counts,
     })
 }
 
@@ -683,7 +689,8 @@ mod tests {
         }
         let mut host = SimHost::default();
         host.install(Some(SimRuntime::from_simulation(sim)));
-        let units = |host: &SimHost| match_sample(host).map(|sample| sample.units);
+        let units =
+            |host: &SimHost| match_sample((host, Default::default())).map(|sample| sample.units);
         assert_eq!(units(&host), Some(2));
         let (go, wait) = std::sync::mpsc::channel::<()>();
         assert!(host.lend(Box::new(move |_| {

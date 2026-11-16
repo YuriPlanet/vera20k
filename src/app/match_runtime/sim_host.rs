@@ -643,6 +643,9 @@ type LentJob = (SimRuntime, SimJob, Option<SimWake>);
 fn run_jobs(jobs: &Handoff<Option<LentJob>>, returned: &Handoff<Returned>) {
     while let Some((mut runtime, job, wake)) = jobs.wait() {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut runtime)));
+        // For the performance panel's Threads row, before the main thread
+        // can read it for this job.
+        crate::app::diagnostics::thread_load::note_simulation_thread();
         returned.put((runtime, result));
         if let Some(wake) = wake {
             wake();
