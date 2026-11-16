@@ -150,6 +150,61 @@ pub(crate) fn update_ai_superweapon_delay(
     let _ = (sim, rules, owner, registry, frame_effects);
 }
 
+/// `HouseClass_AIHouseUpdate_CheckAIBaseCenter @ 0x004FD538`
+/// (`Ext/BuildingType/Hooks.Placing.cpp:25-69`): with `AIBiasSpawnCell` on
+/// outside a campaign, a house with more than one `ConstructionYard=` moves
+/// its retained waypoint center to the nearest live, healthy, out-of-limbo
+/// conyard by cell squared distance. VERA has one published `base_center`
+/// (the launch waypoint owner), so both native center writes collapse to it.
+#[cfg(feature = "phobos")]
+fn bias_base_center_to_nearest_conyard(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    if !rules.phobos_globals.ai_bias_spawn_cell
+        || sim.session.game_mode() == ScenarioGameMode::Campaign
+    {
+        return;
+    }
+    let Some(center) = sim
+        .houses
+        .get(&owner)
+        .and_then(crate::sim::house_state::HouseState::base_center)
+    else {
+        return;
+    };
+    let mut yards = 0;
+    let mut new_center = center;
+    let mut nearest = 131_072.0_f64;
+    for entity in sim.substrate.entities.values() {
+        let Some(ty) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        if entity.owner() != owner || !ty.construction_yard {
+            continue;
+        }
+        yards += 1;
+        if !entity.lifecycle.object_alive()
+            || entity.health.current() <= 0
+            || entity.lifecycle.in_limbo()
+        {
+            continue;
+        }
+        let cell = (entity.position.rx(), entity.position.ry());
+        let dx = i32::from(cell.0) - i32::from(center.0);
+        let dy = i32::from(cell.1) - i32::from(center.1);
+        let distance = f64::from(dx * dx + dy * dy);
+        if distance < nearest {
+            nearest = distance;
+            new_center = cell;
+        }
+    }
+    if yards > 1 && new_center != center {
+        if let Some(house) = sim.houses.get_mut(&owner) {
+            house.set_base_center(new_center);
+        }
+    }
+}
+
 /// `HouseClass::AI_Building_Strategy @ 0x004FD500` for an existing house:
 /// the module doc's steps; returns the timer's next delay.
 fn building_strategy(
@@ -159,6 +214,10 @@ fn building_strategy(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> i32 {
+    // `0x004FD538`: Phobos biases the retained start center toward the nearest
+    // live construction yard when `AIBiasSpawnCell` is on in a non-campaign.
+    #[cfg(feature = "phobos")]
+    bias_base_center_to_nearest_conyard(sim, rules, owner);
     pick_enemy(
         &sim.interner,
         &sim.session,
