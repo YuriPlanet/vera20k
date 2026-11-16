@@ -158,9 +158,10 @@ the author's tools. The same module in the two official SDKs:
 
 ```ts
 // TypeScript (AssemblyScript-compatible)
-import { action, onFrame, Mission, Techno, Ctx } from "@vera20k/sdk";
+import { action, onFrame, Mission, EventRecord, Ctx } from "@vera20k/sdk";
 
-export const giPanic = action((ctx: Ctx, techno: Techno) => {
+export const giPanic = action((ctx: Ctx, e: EventRecord) => {
+  const techno = e.subject;
   if (techno.healthPercent < 30) {
     techno.setMission(Mission.Hunt);
   }
@@ -178,7 +179,8 @@ export const checkWaves = onFrame({ every: 15 }, (ctx: Ctx) => {
 use vera20k_sdk::prelude::*;
 
 #[vera::action(export = "giPanic")]
-fn gi_panic(ctx: &mut Ctx, techno: Techno) {
+fn gi_panic(ctx: &mut Ctx, e: EventRecord) {
+    let techno = e.subject();
     if techno.health_percent() < 30 {
         techno.set_mission(Mission::Hunt);
     }
@@ -320,7 +322,7 @@ Simulation module exports:
 | `onRules` | once, after the INI layers load; may change and add types |
 | `onScenarioStart` | once, at the start of the scenario |
 | `onFrame` | once per frame per subscribed module, or every N frames |
-| actions | when a trigger runs them |
+| actions | in the module phase, queued when their trigger fires |
 | overrides | synchronously, when the engine reaches that decision |
 | `onMessage(player, bytes)` | when a client message reaches the simulation |
 
@@ -328,33 +330,37 @@ Client module exports: `onStart`, `onRender(dt, alpha)` once per render
 frame, and interface callbacks such as clicks and hotkeys.
 
 Module calls run in one fixed phase of the simulation frame, in module load
-order. The module actions of triggers that fire during the frame, and the
-events for modules, are queued and delivered in that phase, before `onFrame`,
-as one batch per module (section 15). Overrides are the
-exception: they run when the engine needs the answer. Object references are
-generational handles, so a handle to an object that died before delivery reads
-as gone and never as a reused slot.
+order. The module actions of triggers that fire during the frame are queued,
+each with the payload of the event that fired its trigger, and delivered in
+that phase, before `onFrame`, as one batch per module (section 15). A module
+receives events only this way: there are no stand-alone event records.
+Overrides are the exception: they run when the engine needs the answer. Object
+references are generational handles, so a handle to an object that died before
+delivery reads as gone and never as a reused slot.
 
 Ordering rules:
 
-- Original actions run when their trigger fires, exactly as in the original,
-  also in triggers that contain module actions. Module actions are queued and
-  run in the module phase as one batch per module, in firing order. In a
-  trigger with the actions [original A, module B, original C], A and C run
-  first and B runs later in the same frame. An author who needs a strict order
-  writes all of the trigger's actions as module code and calls original actions
-  through the API (L1).
+- Original actions and the atomic actions of section 6b run when their
+  trigger fires, exactly as original actions do in the original, also in
+  triggers that contain module actions. Only module actions (module functions)
+  are queued; they run in the module phase as one batch per module, in firing
+  order. In a trigger with the actions [original A, module B, atomic C], A and
+  C run first and B runs later in the same frame. An author who needs a strict
+  order writes all of the trigger's actions as module code and calls original
+  actions through the API (L1).
 - A queued module action is dropped when the game has ended, or when its
   trigger was disabled or removed before the module phase. Handles to objects
   that are gone read as gone.
-- Events raised while the module phase runs are delivered in the next frame's
-  module phase, so triggers cannot loop within one frame.
+- A trigger that fires while the module phase runs (for example because a
+  module action dealt damage) runs its original and atomic actions at once;
+  its module actions are queued for the next frame's module phase, so module
+  code cannot loop within one frame.
 - Overrides only read state and return a result. They cannot run actions,
   because the engine is in the middle of a calculation when it calls them.
 - A delivered event reports what already happened and cannot cancel a native
   result such as a death. Changing that needs an override or an attached
   effect (for example, prevent death).
-- Frequent events (damage, fire, projectile created or detonated, crush, move
+- Frequent events (damage, fire, projectile detonated, crush, move
   failed) and every override are raised only for bound types (object, weapon,
   warhead or projectile types; section 6a). There is no subscription to all
   objects.
@@ -442,9 +448,10 @@ position and still runs collision.
 A trigger has one event, any number of conditions and one or more actions.
 
 - **Events** come in two kinds. *Delivered events* happen at a moment (damage
-  taken, weapon fired, killed); the trigger fires at that moment, and its
-  module actions are queued for the module phase (section 5). *Polled
-  events* describe a state (health below a value, money above a value); the
+  taken, weapon fired, killed); the trigger fires at that moment, its original
+  and atomic actions run at once, and its module actions are queued, each with
+  the event's payload, for the module phase (section 5). *Polled events*
+  describe a state (health below a value, money above a value); the
   engine checks them natively at the interval the trigger sets, and the trigger
   fires while the state holds.
 - **Conditions** filter a trigger before any module code runs. The engine
@@ -452,15 +459,18 @@ A trigger has one event, any number of conditions and one or more actions.
   condition can be negated. Logic beyond that (OR across conditions,
   comparisons between two objects, counting) belongs in module code.
 - **Actions** are original trigger actions, the atomic actions of section 6b,
-  or module functions.
+  or module functions. Original and atomic actions run when the trigger
+  fires; module functions are queued for the module phase (section 5). A
+  module function is also the only way a module receives an event.
 - Every event names the object it is attached to and, where there is one, the
   other object involved (attacker, target, transport, producer). Conditions can
   test either.
 - Events are raised only for bound objects: an object whose type binds the
   trigger (`Wasm.Tags`), an object whose own tag holds it, and, for weapon
-  events (Fire, HitTarget, projectile launched and detonated), any object that
-  uses a weapon, warhead or projectile type binding it. A weapon binding fires
-  for every shooter of that weapon, whatever its type:
+  events (Fire, which carries the projectile handle, HitTarget and projectile
+  Detonated), any object that uses a weapon, warhead or projectile type
+  binding it. A weapon binding fires for every shooter of that weapon, whatever
+  its type:
 
   ```ini
   [RedEye2]                   ; a weapon
@@ -490,7 +500,7 @@ Candidate delivered events for version 1:
 | Fire | target (nullable), weapon index, projectile (nullable) |
 | SpawnFire | spawned unit, target (nullable), weapon index, projectile (nullable) |
 | HitTarget | target, damage, projectile |
-| Aimed | target |
+| TargetChanged | new target (nullable: set when a target is chosen, empty when it is cleared) |
 | ProjectileIncoming | projectile, launcher (nullable) |
 | Birth | producer (nullable), effect (nullable), build time (nullable) |
 | Enter / Exit | transport or building, passengers, occupied size, garrison or transport |
@@ -549,9 +559,9 @@ Attached effects are per-object states with a duration, owned by
 `sim/attach_effect.rs` (section 8). Candidates: tint, attached animation,
 prevent death, transform into another type, replace a weapon, motion (thrown,
 pushed), teleport, multipliers for damage taken, firepower, speed and rate of
-fire, range, cloak, immunity to a warhead or attack type, cannot fire, no
-target search, damage modifier, cannot be selected, ignores player orders, not
-a legal target, house power off.
+fire, range, target priority multiplier (section 6), cloak, immunity to a
+warhead or attack type, cannot fire, no target search, damage modifier, cannot
+be selected, ignores player orders, not a legal target, house power off.
 
 - Each effect type declares how it stacks: stack up to a limit, replace the
   older one, or refuse the newer one. Effects that cannot run together
@@ -674,10 +684,14 @@ projectile has 16 bytes of module data that is saved and hashed.
 
 To fire several projectiles with different paths at once, an action on the
 weapon's Fire event creates them, each with its own type and module data, and
-`onLaunch` gives each one its path. With `Override.Fire` the module takes over
-the shot and the native projectile is not created. Without it, the native
+`onLaunch` gives each one its path. The action is a module function, which
+reads the shooter, the target and the native projectile from its event record
+(`e.subject`, `e.other`, `e.projectile`). With `Override.Fire` the module takes
+over the shot and the native projectile is not created. Without it, the native
 projectile leaves during the unit's update and the module's projectiles in the
-module phase of the same frame, one frame of movement behind.
+module phase of the same frame, one frame of movement behind. A projectile
+created by an atomic action in the trigger itself leaves when the trigger
+fires, with the native one.
 
 ### 10. Client module
 
@@ -718,7 +732,7 @@ Type=List               ; new part type
 ```ts
 export const onStart = start((ui: Ui) => {
   ui.find("ObjList").setItems(["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);
-  ui.create(Panel.anchor(Anchor.BottomLeft).child(Text.csf("TXT_WAVE")));
+  ui.create(Column.hold(Hold.BottomLeft).child(Text.csf("TXT_WAVE")));
 });
 ```
 
@@ -745,9 +759,10 @@ closures, and is not part of the official API.
 - Images, animations and models are referenced by name, never by file format,
   so later asset formats (a separate RFC) need no API change.
 - Sounds and messages; `log()` writes to the in-game console.
-- The simulation module sends named notifications to one player's client with
-  `notify(player, name, bytes)`; the client module receives them in
-  `onNotify(name, bytes)`.
+- Notifications are named, and a name resolves once to an ID:
+  `Notify.id("WaveStarted")` returns a `NotifyId`. The simulation module sends
+  a notification to one player's client with `notify(player, id, bytes)`; the
+  client module receives it in `onNotify(id, bytes)`.
 - Every query is filtered by what the local player can see. A spectator's
   client modules see what the spectator sees, the whole map when the room
   allows it. An enemy object the player cannot see now is absent from results;
@@ -831,9 +846,10 @@ memory. These rules keep the boundary cheap and are part of the ABI:
   other call takes IDs. Calls that take names (lookups, `rules.set`, trigger
   setup) are for setup and rare changes; the SDKs cache the IDs.
 - **One delivery per module per frame.** The frame's queued module actions
-  and events reach each module in one call, as packed fixed-size records in
-  firing order (section 5). The record layouts are part of the interface
-  definition.
+  reach each module in one call, as packed fixed-size records in firing order
+  (section 5). Each record is one module action with the payload of the event
+  that fired its trigger; there are no stand-alone event records. The record
+  layouts are part of the interface definition.
 - **Queries write into the module's buffer.** Results go straight into a
   buffer the module provides; the engine allocates nothing per query. Large
   results are paged. Creation order comes from a creation serial the engine
@@ -965,7 +981,15 @@ Planned order after acceptance:
   slowest platform; module actions batched per module per frame while original
   actions keep their original timing (replaces the 0.0.3 rule that deferred
   whole mixed triggers); weapon, warhead and projectile bindings for weapon
-  events; more ID kinds; related text and the appendix updated to match.
+  events; more ID kinds; atomic actions in a trigger run when it fires, and only
+  module functions are queued; no stand-alone event records: a module receives
+  events only through triggers whose action is a module function, one record
+  per queued action; "projectile launched" event removed (weapon events are
+  Fire, HitTarget and Detonated); `Aimed` merged into `TargetChanged`, plus a
+  target priority multiplier effect; action functions take
+  `(ctx, e: EventRecord)`; notification names resolve to a `NotifyId`; client
+  code uses the `veraui.ini` names (`Column.hold(Hold.BottomLeft)`); related
+  text and the appendix updated to match.
 - **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
   override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
   visibility and house marks, query order, warhead detonation, projectile

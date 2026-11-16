@@ -127,6 +127,7 @@ asAircraft(): Aircraft | null;
 | `OverlayTypeId` | 覆盖物 | `ctx.overlayTypeId(name)` |
 | `SoundId` | 模拟 API 中的声音 | `ctx.soundId(name)` |
 | `MarkId` | 标记 | `Mark.id(name)` |
+| `NotifyId` | 模拟到客户端的通知 | `Notify.id(name)` |
 | `TeamTypeId`、`ScriptTypeId`、`AiTriggerId` | AI 小队类型、小队脚本、AI 触发器 | `ai.teamTypeId(name)`、`ai.scriptTypeId(name)`、`ai.aiTriggerId(name)` |
 
 ```ts
@@ -148,7 +149,7 @@ techno.addMark(PANICKED);
 
 ### 事件投递
 
-引擎不会每个事件或每个动作调用一次模块。触发器触发时，其中的原版动作立即执行，与原版一致；其中的每个模块动作（`Action.wasm`）向模块的队列写入一条固定大小的记录；发给模块的事件也以同样方式排队。到模块阶段，引擎按触发顺序把整个数组一次调用交给模块（RFC 5、15）：`onEvents(ctx, batch)` 由 SDK 生成，它对每条记录运行对应的动作函数。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的动作会被丢弃。一条记录包含事件类型、主体句柄、另一方句柄、所属方、一个抛射体句柄和一个效果句柄、一个类型 ID，以及几个整数载荷字段（`EventRecord`，[第 2 节](#2-事件)）。本清单中每个事件的载荷都写明它填入哪些记录字段；事件没有列出的字段为 `NO_HANDLE` 或 `-1`。每种记录的布局属于接口定义（RFC 12）。SDK 原地读取记录，不为每个事件分配内存。
+引擎不会每个事件或每个动作调用一次模块。触发器触发时，其中的原版动作和原子动作立即执行，与原版中的原版动作一致；其中的每个模块动作（`Action.wasm`）向模块的队列写入一条固定大小的记录，记录带着触发该触发器的那个事件的载荷。模块只能通过这样的触发器收到事件：没有单独的事件记录，每条记录都是一个排队的模块动作。到模块阶段，引擎按触发顺序把整个数组一次调用交给模块（RFC 5、15）：`onEvents(ctx, batch)` 由 SDK 生成，它对每条记录运行对应的动作函数。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的动作会被丢弃。一条记录包含模块动作、事件类型、主体句柄、另一方句柄、所属方、一个抛射体句柄和一个效果句柄、一个类型 ID，以及几个整数载荷字段（`EventRecord`，[第 2 节](#2-事件)）。本清单中每个事件的载荷都写明它填入哪些记录字段；事件没有列出的字段为 `NO_HANDLE` 或 `-1`。每种记录的布局属于接口定义（RFC 12）。SDK 原地读取记录，不为每个事件分配内存。
 
 ### 查询结果
 
@@ -289,7 +290,7 @@ class Ctx {
   global(index: i32): Variable;  // 0..49
   local(index: i32): Variable;   // 0..99
   log(text: string): void;
-  notify(to: House, name: string, data: Uint8Array): Status;  // section 11
+  notify(to: House, id: NotifyId, data: Uint8Array): Status;  // section 11
   lastStatus(): Status;
 }
 class Variable { get(): bool; set(value: bool): Status; }
@@ -309,7 +310,7 @@ class Variable { get(): bool; set(value: bool): Status; }
 | `onHover` | `onHover(ui: Ui, node: Node, inside: bool): void` | 光标进入或离开节点 | v1（P2） | **尚无 owner** | RFC 10 |
 | `onHotkey` | `onHotkey(ui: Ui, name: string): void` | 模块注册的热键被按下 | v1（P2） | **尚无 owner** | RFC 10 |
 | `onSelect` | `onSelect(ui: Ui): void`；选择用 `client.selection(out)` 读取 | 本地选择发生变化 | v1（P2） | `src/app/input/` 中的选择 owner（未核实） | RFC 10；T38 `OnSelect` |
-| `onNotify` | `onNotify(ui: Ui, name: string, data: Uint8Array): void` | 发给本地玩家的模拟通知到达 | v1（P2） | **尚无 owner** | RFC 1、11（“本地通知”）；导出名为**已在 RFC 0.0.5 采纳**（P19） |
+| `onNotify` | `onNotify(ui: Ui, id: NotifyId, data: Uint8Array): void` | 发给本地玩家的模拟通知到达 | v1（P2） | **尚无 owner** | RFC 1、11（“本地通知”）；导出名为**已在 RFC 0.0.5 采纳**（P19） |
 | `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | 盟友或观战者的客户端发来消息 | later | **尚无 owner** | **RFC 0.0.5 未采纳**（P5）；Rc：`SendLuaUIMsg` |
 
 客户端允许使用浮点：客户端世界本来就不是确定性的（RFC 1）。
@@ -340,7 +341,7 @@ class TriggerDef {
 }
 
 class EventRecord {          // fixed size; read in place from the batch (RFC 15)
-  action: i32;               // the queued module action (an Action.wasm export)
+  action: i32;               // the queued module action (an Action.wasm export); always set
   kind: i32;                 // Event value
   subject: Techno | null;    // the object the trigger is attached to
   other: Techno | null;      // attacker, target, transport, producer, ...
@@ -359,9 +360,9 @@ class EventBatch {           // one per module per frame
 }
 ```
 
-某个事件没有列出的 `EventRecord` 字段为 `NO_HANDLE` 或 `-1`。记录按触发顺序排列，既包括排队的模块动作，也包括事件；布局属于接口定义（见[事件投递](#事件投递)）。RFC 6a：每个事件都标明它所附着的对象，以及涉及的另一个对象（如果有的话）。
+某个事件没有列出的 `EventRecord` 字段为 `NO_HANDLE` 或 `-1`。记录按触发顺序排列；每条记录是一个排队的模块动作，加上触发其触发器的那个事件的载荷，没有单独的事件记录。布局属于接口定义（见[事件投递](#事件投递)）。RFC 6a：每个事件都标明它所附着的对象，以及涉及的另一个对象（如果有的话）。
 
-原版事件在现有的触发器运行时里求值（`TR::has_occurred`）。触发器的原版动作在触发时执行，带模块动作的触发器也是如此；只有模块动作要等到模块阶段（第 4.1 节，RFC 5）。由 House 标签引发的原版事件每 8 帧轮询一次（`TR::raise_house_tags`），Logic 标签的事件每帧轮询（`TR::advance_triggers`）。和原版一样，一个触发器的所有事件都要成立（AND）。
+原版事件在现有的触发器运行时里求值（`TR::has_occurred`）。触发器的原版动作和原子动作在触发时执行，带模块动作的触发器也是如此；只有模块动作要等到模块阶段（第 4.1 节，RFC 5）。由 House 标签引发的原版事件每 8 帧轮询一次（`TR::raise_house_tags`），Logic 标签的事件每帧轮询（`TR::advance_triggers`）。和原版一样，一个触发器的所有事件都要成立（AND）。
 
 ### 2.1 原版事件 0..61
 
@@ -470,7 +471,7 @@ class EventBatch {           // one per module per frame
 
 ### 2.3 新的投递型事件（RFC 6a）
 
-新事件编号取自不与 Ares、Phobos 冲突的范围（待定问题 6），这里不分配编号。新的投递型事件只对两类对象引发：其类型用 `Wasm.Tags` 绑定了含该事件的标签，或其自身的标签含有这样的触发器。从不对所有对象引发（RFC 5，目标 6）。武器事件（`Fire`、`HitTarget`、`Detonated` 以及抛射体发射，RFC 6a）还可以绑定在武器、弹头或抛射体类型上（在其节中写 `Wasm.Tags=`）：这种绑定对使用该类型的每个射手生效，不论射手自身是什么类型，射手就是主体。每个引发点先检查对象所属类型、或武器、弹头、抛射体类型的一个标志位（见[旁路表](#旁路表)）；`Cond.isWeaponType` 用来检查武器。
+新事件编号取自不与 Ares、Phobos 冲突的范围（待定问题 6），这里不分配编号。新的投递型事件只对两类对象引发：其类型用 `Wasm.Tags` 绑定了含该事件的标签，或其自身的标签含有这样的触发器。从不对所有对象引发（RFC 5，目标 6）。武器事件（携带抛射体句柄的 `Fire`、`HitTarget` 和 `Detonated`，RFC 6a）还可以绑定在武器、弹头或抛射体类型上（在其节中写 `Wasm.Tags=`）：这种绑定对使用该类型的每个射手生效，不论射手自身是什么类型，射手就是主体。每个引发点先检查对象所属类型、或武器、弹头、抛射体类型的一个标志位（见[旁路表](#旁路表)）；`Cond.isWeaponType` 用来检查武器。
 
 | 事件 | 载荷（`EventRecord`） | 引发位置（该时刻的 owner） | 层级 | 来源 |
 | --- | --- | --- | --- | --- |
@@ -482,7 +483,7 @@ class EventBatch {           // one per module per frame
 | `Fire` | `other` 目标（可为空），`value` 武器索引，`id` 武器（`WeaponTypeId`），`projectile`（可为空） | `combat/world_fire.rs` 的 FireAt 步骤；`src/sim/aircraft/fire_at.rs::fire_at`；钩子**尚无 owner** | v1? | RFC 6a、9 层级 2；T10 `OnFire` |
 | `SpawnFire` | `other` 子机，`value` 武器索引，`projectile`；目标在记录的 `cell` 中，或通过子机的目标获得 | `src/sim/spawn_manager.rs`（位置未核实）；钩子**尚无 owner** | v1? | RFC 6a；T11 `OnSpawnFire` |
 | `HitTarget` | `other` 目标，`value` 伤害，`id` 武器（`WeaponTypeId`），`projectile` | `combat/world_receiver.rs`（在开火者上引发）；钩子**尚无 owner** | v1? | RFC 6a；T21 `OnHitTarget` |
-| `Aimed` | `other` 目标 | 目标指派（`src/sim/world/techno_ai/scan_batch.rs` 和指令路径；未核实）；钩子**尚无 owner** | v1? | RFC 6a；T6 `OnAimed` |
+| `TargetChanged` | `other` 新目标（可为空：清除目标时为 `NO_HANDLE`） | 目标指派和清除（`src/sim/world/techno_ai/scan_batch.rs` 和指令路径；未核实）；钩子**尚无 owner** | v1? | RFC 6a、6（P13）；T6 `OnAimed` |
 | `ProjectileIncoming` | `projectile`，`other` 发射者（可为空） | 抛射体接纳 `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`；钩子**尚无 owner** | v1? | RFC 6a；T7 `OnProjectileComing` |
 | `Detonated` | `projectile`，`cell`，`other` 来源（可为空），`id` 弹头（`WarheadTypeId`） | `src/sim/projectile` 中的引爆判定；钩子**尚无 owner** | v1? | RFC 6 L2（“抛射体引爆”）、9 层级 2；T36；Rc：`ProjectileDestroyed`、`Explosion` |
 | `Birth` | `other` 生产者（可为空），`effect`（可为空），`value` 生产时间（-1 表示无） | `src/sim/world/world_spawn.rs`、生产出厂、增援；钩子**尚无 owner** | v1? | RFC 6a；T8 `OnBirth`；Rc：`UnitCreated` |
@@ -594,7 +595,7 @@ class Cond {
 - 在触发器内：`TriggerDef.actions` 中放 `Action.original(n, params)`、`Action.wasm(name)` 或一个原子动作值；
 - 由模块代码通过下面的函数直接调用。
 
-在触发器内，原版动作（`Action.original`）在触发器触发时执行，与原版一致，触发器含有模块动作时也是如此。`Action.wasm` 动作排队，在模块阶段按触发顺序、每个模块每帧一批执行（RFC 5；[事件投递](#事件投递)）：动作为 [原版 A、模块 B、原版 C] 的触发器，在触发时执行 A 和 C，B 在同一帧稍后执行。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的模块动作会被丢弃。需要严格顺序的作者，把触发器的全部动作都写成模块代码，再通过下面的函数调用原版动作。由模块代码直接调用时，动作立即执行。
+在触发器内，原版动作（`Action.original`）和原子动作值在触发器触发时执行，与原版中的原版动作一致，触发器含有模块动作时也是如此。只有 `Action.wasm` 动作排队，每个都带着触发该触发器的那个事件的载荷，在模块阶段按触发顺序、每个模块每帧一批执行（RFC 5；[事件投递](#事件投递)）：动作为 [原版 A、模块 B、原子 C] 的触发器，在触发时执行 A 和 C，B 在同一帧稍后执行。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的模块动作会被丢弃。需要严格顺序的作者，把触发器的全部动作都写成模块代码，再通过下面的函数调用原版动作。由模块代码直接调用时，动作立即执行。
 
 ```ts
 class ActionParams {
@@ -914,6 +915,7 @@ RFC 把变形、传送和运动放在同一个互斥组里，由 owner 保证同
 | 速度倍率 | `SpeedMultiplier` | 叠加 | — | `stat_multipliers` | v1 | RFC 6b；F37 |
 | 射速倍率 | `ROFMultiplier`、`ROFMultiplier.ApplyOnCurrentTimer` | 叠加 | — | `stat_multipliers` | v1 | RFC 6b；F37 |
 | 射程 | `WeaponRange.Multiplier`、`WeaponRange.ExtraRange`、`.AllowWeapons`、`.DisallowWeapons` | 叠加 | — | `range_with_attach_effects` | v1 | RFC 6b；F37 |
+| 目标优先级倍率 | 无键 | 叠加 | — | **尚无 owner**（目标扫描 `src/sim/world/techno_ai/scan_batch.rs`） | v1? | RFC 6、6b（P13）；与 `TargetChanged`（2.3）配合 |
 | 隐形 | `Cloakable`；`ForceDecloak` | 替换 | — | `attach_effect.rs` 加 `cloak_disguise.rs` | v1 | RFC 6b；F37 |
 | 对某弹头或攻击类型免疫 | 部分可用倍率为 0 的 `ArmorMultiplier.AllowWarheads`（未核实）；没有免疫键 | 替换 | — | **尚无 owner** | v1? | RFC 6b；F40 `ImmuneTo` |
 | 禁止开火 | `DisableWeapons` | 替换 | — | `weapon_attach_effects_allow` | v1 | RFC 6b；F41 `Silence` |
@@ -1344,14 +1346,13 @@ class Node {
 | `onClick`、悬停、热键 | v1 | RFC 10 |
 | 数据绑定（属性绑定到一个公开的值） | later | Rc：RmlUi 数据模型 |
 
-控件类型（待定问题 15）。RFC 示例用到 `Panel`、`Text` 和一个列表；`veraui.ini` 目前有 `Button`、`Text`、`Row`、`Column`、`CameoGrid`（`docs/interface-layout.md`）。
+控件类型（待定问题 15）。客户端代码使用 `veraui.ini` 的名字（`Column.hold(Hold.BottomLeft)` 对应 `Type=Column`、`Hold=BottomLeft`）。RFC 示例用到 `Column`、`Text` 和 `List`；`veraui.ini` 目前有 `Button`、`Text`、`Row`、`Column`、`CameoGrid`（`docs/interface-layout.md`）。
 
 | 类型 | 来源 | 层级 |
 | --- | --- | --- |
-| `Panel` | RFC 10 示例 | v1? |
 | `Text` | RFC 10；`veraui.ini` | v1 |
 | `Button` | `veraui.ini` | v1 |
-| `Row`、`Column` | `veraui.ini` | v1 |
+| `Row`、`Column` | `veraui.ini`；RFC 10 示例（`Column.hold`） | v1 |
 | `CameoGrid` | `veraui.ini` | v1? |
 | `List` | RFC 10 示例（`setItems`） | v1? |
 | `Image` | RFC 10（`image`） | v1? |
@@ -1445,7 +1446,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 - **G-T6** 为 2.3 中每个新的投递型事件加上触发钩子，位置在那里写明的 owner 中；只对绑定的类型触发（G-T10）。
 - **G-T7** 事件参数从触发点一路带进模块的 `EventRecord`（第 2 节）；目前 `dispatch_object_tag_event` 只带执行者和来源。
 - **G-T8** 原版事件 2（`SpiedBy`）和 3（`ThievedBy`）没有触发点（原本就存在，不是模块造成的）。
-- **G-T9** 批量队列：每个模块一帧一个数组，存放排队的模块动作和事件的固定大小 `EventRecord`，在触发器触发或事件引发时按触发顺序写入，在 `onFrame` 之前每帧每个模块一次调用交出；触发器已被禁用或删除的排队动作会被丢弃，游戏结束后所有排队动作都会被丢弃（RFC 5、15）。
+- **G-T9** 批量队列：每个模块一帧一个数组，存放固定大小的 `EventRecord`，每个排队的模块动作一条，带着触发其触发器的那个事件的载荷，在含模块动作的触发器触发时按触发顺序写入，在 `onFrame` 之前每帧每个模块一次调用交出；触发器已被禁用或删除的排队动作会被丢弃，游戏结束后所有排队动作都会被丢弃（RFC 5、15）。
 - **G-T10** 对象类型、武器类型、弹头类型和抛射体类型各带一个模块标志位，有模块绑定该类型时置位；每个事件触发点先检查它，未绑定的类型不再运行其他代码（RFC 15）。
 
 ### 动作
@@ -1468,7 +1469,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 
 - **G-E1** 把 `src/sim/attach_effect.rs` 和 `src/rules/attach_effect.rs` 从 `cfg(feature = "phobos")` 迁到运行时开关（RFC 8）。
 - **G-E2** Simulation 层的“给对象添加效果类型”和“移除效果”事务；`remove_attach_effect_type` 是私有的。
-- **G-E3** 没有 Phobos 键的新效果种类：变形、替换武器、运动、传送、免疫、停止索敌、伤害修正、无法被选中、无视指令、不可被选为目标、所属方断电。
+- **G-E3** 没有 Phobos 键的新效果种类：变形、替换武器、运动、传送、免疫、停止索敌、目标优先级倍率、伤害修正、无法被选中、无视指令、不可被选为目标、所属方断电。
 - **G-E4** 新的效果属性：间隔、最大触发次数、“拒绝新的”叠加方式、互斥组、效果携带的标记。
 - **G-M1** 标记：按句柄索引的旁路表（RFC 15），存档并计入哈希，对象移除时清空。
 
@@ -1493,7 +1494,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 
 - **G-R1** 一个模块规则层，在 mod 或地图层之后压入 `RulesLayerStack`，并计入大厅校验的哈希。
 - **G-R2** 对局中的规则覆盖层：存档、计入哈希，让以 `rules.serial()` 为键的缓存失效（`movement_tick.rs`、`house_defeat.rs`、`scatter.rs`、`movement_commands.rs`），并为每个键写明对已有对象的规则。
-- **G-R3** 每种 ID 的名字到 ID 查找（见 [ID](#id)），建在现有注册表（`RuleSet` 的类型下标、声音绑定、AI 定义）之上，未知名字返回 `NotFound`；另加供 `Mark.id` 使用的标记名注册表（RFC 15）。
+- **G-R3** 每种 ID 的名字到 ID 查找（见 [ID](#id)），建在现有注册表（`RuleSet` 的类型下标、声音绑定、AI 定义）之上，未知名字返回 `NotFound`；另加供 `Mark.id` 使用的标记名注册表和供 `Notify.id` 使用的通知名注册表（RFC 10、15）。
 
 ### 客户端
 
