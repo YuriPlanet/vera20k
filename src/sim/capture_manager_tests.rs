@@ -312,6 +312,34 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
     assert_eq!(rows.len(), 7);
 }
 
+/// `ApplyOwnerChange` places the ring at the target's `Location`
+/// (`Ext/WarheadType/Detonate.cpp:504`): a 2x2 building anchors at its
+/// top-left cell, not at GetCoords' foundation centre.
+#[test]
+fn a_building_ring_anchors_at_its_location() {
+    let rules = rules();
+    let mut sim = sim(9);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
+    sim.attach_control_ring(plant, "MINDANIM", &rules);
+    let ring = sim
+        .substrate
+        .entities
+        .get(plant)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .expect("ring");
+    let coord = sim.anim_absolute_coord(ring).expect("coord");
+    let entity = sim.substrate.entities.get(plant).unwrap();
+    let location =
+        crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
+    assert_eq!((coord.x, coord.y), (location.x, location.y));
+    assert_eq!(
+        coord.z,
+        location.z + 3 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
+    );
+}
+
 /// A network game's clients each test their own PlayerPtr in the ring tail
 /// (Unit746A9C..746B19): the owner's client shows a disguised unit's ring and
 /// every other client hides it, whichever client this is.
@@ -3317,13 +3345,7 @@ fn ares_perma_mc_replace_respects_the_free_silent_flag() {
         let mut sim = sim(11);
         let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
         let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
-        assert!(sim.capture_unit(
-            yuri,
-            gi,
-            &rules,
-            None,
-            FrameEffects::default()
-        ));
+        assert!(sim.capture_unit(yuri, gi, &rules, None, FrameEffects::default()));
         sim.sound_events.clear_for_test();
         let americans = sim.interner.get("Americans").unwrap();
         assert!(sim.ares_apply_perma_mc(
@@ -3379,13 +3401,7 @@ fn ares_perma_mc_replace_silent_follows_the_warhead_then_the_global() {
         let mut sim = sim(13);
         let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
         let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
-        assert!(sim.capture_unit(
-            yuri,
-            gi,
-            &rules,
-            None,
-            FrameEffects::default()
-        ));
+        assert!(sim.capture_unit(yuri, gi, &rules, None, FrameEffects::default()));
         sim.sound_events.clear_for_test();
         let americans = sim.interner.get("Americans").unwrap();
         assert!(sim.apply_ares_perma_mc_detonation(

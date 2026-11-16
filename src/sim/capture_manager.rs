@@ -1145,14 +1145,7 @@ impl Simulation {
             // patches this FreeUnit call: the replaced victim's MindClearedSound
             // follows the warhead's `RemoveMindControl.Silent=` (else
             // `[AudioVisual] MindControl.Permanent.ReplaceSilent=`).
-            self.free_unit_with_sound(
-                controller,
-                id,
-                rules,
-                registry,
-                frame_effects,
-                !free_silent,
-            );
+            self.free_unit_with_sound(controller, id, rules, registry, frame_effects, !free_silent);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
@@ -1443,13 +1436,28 @@ impl Simulation {
         } else {
             object.mind_control_ring_offset
         };
-        let Some(centre) = self.anim_owner_coords(target_id) else {
-            return;
-        };
-        let coord = AnimWorldCoord {
-            x: centre.x,
-            y: centre.y,
-            z: centre.z.wrapping_add(offset),
+        // `ApplyOwnerChange` anchors the anim at `pTarget->Location`
+        // (`Ext/WarheadType/Detonate.cpp:504`), so a building uses its
+        // top-left cell rather than GetCoords' foundation centre.
+        let coord = if building {
+            let location = crate::sim::movement::ground_pose::object_location(
+                target,
+                self.resolved_terrain.as_ref(),
+            );
+            AnimWorldCoord {
+                x: location.x,
+                y: location.y,
+                z: location.z.wrapping_add(offset),
+            }
+        } else {
+            let Some(centre) = self.anim_owner_coords(target_id) else {
+                return;
+            };
+            AnimWorldCoord {
+                x: centre.x,
+                y: centre.y,
+                z: centre.z.wrapping_add(offset),
+            }
         };
         let type_id = self.interner.intern(anim_name);
         let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();

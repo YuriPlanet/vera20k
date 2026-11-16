@@ -41,8 +41,7 @@ stock `BuildingClass::ChangeOwner` (`0x004483C6..0x0044848F`), already owned els
 `sim::capture_manager::attach_control_ring` and the house transfer is
 `Simulation::change_owner_with_rules`.
 
-RESIDUAL — building ring anchor: trigger = a `SetAsMindControl` capture of a
-building with `ChangeOwner.MindControlAnim`; impact = VERA anchors the ring at
-the foundation centre (`GetCoords`) instead of native `Location`, off by
-`(foundation - 1) * 128` leptons per axis; frequency = building captures
-only; risk = visual offset, no simulation effect.
+The ring anchors at the target's `Location` (`pTarget->Location`,
+`Ext/WarheadType/Detonate.cpp:504`), so a building uses its top-left cell
+rather than the foundation centre; `a_building_ring_anchors_at_its_location`
+covers the offset through `attach_control_ring`. No residual.
