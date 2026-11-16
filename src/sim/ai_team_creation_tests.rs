@@ -479,6 +479,33 @@ fn team_delays_count_rows_select_the_ai_difficulty_column() {
 }
 
 #[test]
+fn fixed_team_delay_overrides_the_dynamic_count_row() {
+    let (mut sim, rules, owner) = dynamic_delay_world(
+        "TeamDelays.DynamicType=StartingPoint\nTeamDelays.Count2=10,20,30\n",
+        &[(10, 10), (20, 20)],
+        HouseDifficulty::Hard,
+        0,
+    );
+    let stock = sim.houses[&owner].difficulty_value(&rules.general.team_delays);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .team_creation_mut()
+        .set_team_delay_action(10, 40, stock);
+    update_team_creation(
+        &mut sim,
+        &rules,
+        owner,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        restarted_team_delay(&sim, owner),
+        40,
+        "Ext/House/Hooks.cpp:606-613 answers the fixed TeamDelay before Count2"
+    );
+}
+
+#[test]
 fn player_count_reads_the_count_row_for_the_houses_difficulty() {
     let (mut sim, rules, owner) = dynamic_delay_world(
         "TeamDelays.DynamicType=PlayerCount\nTeamDelays.Count3=40,50,60\n",
