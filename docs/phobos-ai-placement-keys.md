@@ -263,12 +263,17 @@ that its footprint stays the aim point.
   it. Trigger: a mod using `SetTeamDelay`, or a non-retail neutral house.
   Frequency: per AI team reset in such a mod. Risk: pacing differs there; retail
   authors neither key.
-- `BuildingWaypoints`' display half (`0x4AE95E`): VERA's planning mode does not
-  run a building's planning click, so no building receives a non-attack plan.
-  Trigger: a building selected in planning mode with the key on. Effect: native
-  skips the click (`0x4AE982`) except for `Attack`; VERA never issues one.
-  Frequency: player action. Risk: a `BuildingWaypoints` mod expects a building to
-  accept a move-plan icon, which VERA still refuses at the click.
+- `BuildingWaypoints` waypoint-node boundary: selection admission (the
+  `0x7E4610` vtable answer) and the display drop (`0x4AE95E`,
+  `Ext/Building/Hooks.cpp:885-898`) are ported. Planning mode admits a selected
+  building's ground click and `building_click_orders` sends no `CellClickedAction`
+  (no rally, sell or undeploy). VERA creates a planning node from an admitted
+  order record, so a building that emits no order still gets no move-plan icon.
+  Trigger: building selected in planning mode with the key on. Effect: native
+  also skips `CellClickedAction`, but its plan-node insertion lies outside the
+  hooked body. Frequency: player action. Risk: a `BuildingWaypoints` mod sees
+  the click accepted with no icon; the icon needs a separate empty-node
+  encoding path.
 - Retail rules author none of these switches or `Count` rows, so the constructed
   defaults reproduce stock; `AIAutoDeployMCV`, `AISetBaseCenter` and
   `MissileSpawnAttackCell` are on by default and are the three whose Phobos
