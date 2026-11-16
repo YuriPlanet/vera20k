@@ -136,6 +136,7 @@ icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is
 with or endorsed by Electronic Arts.
 
 This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 
