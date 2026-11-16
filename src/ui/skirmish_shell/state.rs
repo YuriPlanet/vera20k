@@ -68,7 +68,7 @@ pub use saved_seed_browser::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
-pub use team_starts::{apply_team_starts, starts_by_team};
+pub use team_starts::starts_by_team;
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
     handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,
@@ -90,8 +90,6 @@ pub enum OwnerDrawButton {
     /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
     SaveSetup,
     LoadSetup,
-    /// VERA's Team Starts ([`apply_team_starts`]).
-    TeamStarts,
     /// VERA's Game Options under the options ([`super::game_options`]).
     GameOptions,
     Back0x5c0,
@@ -105,7 +103,6 @@ pub enum SkirmishShellAction {
     ChooseMap,
     SaveSetup,
     LoadSetup,
-    TeamStarts,
     /// The app opens the box on the rules the profile keeps.
     GameOptions,
     SelectColor(ColorComboId),

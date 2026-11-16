@@ -17,7 +17,7 @@ impl App {
         crate::app::frontend::shell_layout::skirmish_layout(state)
     }
 
-    /// VERA's Team Starts, in skirmish and in the game room: the start cells
+    /// VERA's Team Starts in the game room: the start cells
     /// of shell map `map` by start index. A map gives its start waypoints;
     /// the random map gives the starts of the last Generate
     /// (`0x0058B820`'s header), none before one.
@@ -47,11 +47,11 @@ impl App {
     }
 
     /// VERA's Team Starts: how far a ground unit drives between shell map
-    /// `map`'s `starts`, by start index, or `None` where the page cannot read
+    /// `map`'s `starts`, by start index, or `None` where the room cannot read
     /// the map's terrain (the random map, or no resident assets or Rules) and
-    /// Team Starts measures straight lines. Pressing the button reads the map
-    /// file and its theater, which makes that theater's archives the active
-    /// ones until a Generate or a match load picks its own.
+    /// Team Starts measures straight lines. Each call reads the map file and
+    /// its theater, which makes that theater's archives the active ones until
+    /// a Generate or a match load picks its own.
     pub(crate) fn map_drive_distances(
         state: &mut AppState,
         map: usize,
@@ -441,18 +441,6 @@ impl App {
                 {
                     setup.apply(&mut state.frontend.skirmish_shell_state, maps);
                 }
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::TeamStarts => {
-                let map = state.frontend.skirmish_shell_state.selected_map_idx;
-                let starts = Self::map_start_cells(state, map);
-                let drive = Self::map_drive_distances(state, map, &starts);
-                let maps = state.frontend.scenario_catalog.shell_maps();
-                crate::ui::skirmish_shell::apply_team_starts(
-                    &mut state.frontend.skirmish_shell_state,
-                    maps,
-                    &starts,
-                    drive.as_deref(),
-                );
             }
             crate::ui::skirmish_shell::SkirmishShellAction::GameOptions => {
                 Self::open_skirmish_game_options(state);

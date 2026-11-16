@@ -427,16 +427,8 @@ fn build_skirmish_shell_instances(
                     OwnerDrawButton::LoadSetup,
                     !load_setup_enabled,
                 ),
-                (
-                    layout.team_starts_button,
-                    OwnerDrawButton::TeamStarts,
-                    false,
-                ),
                 (layout.back_button, OwnerDrawButton::Back0x5c0, false),
-            ]
-            .into_iter()
-            .filter(|(rect, _, _)| rect.w > 0)
-            {
+            ] {
                 push_right_panel_button_shp(
                     &mut instances,
                     atlas,

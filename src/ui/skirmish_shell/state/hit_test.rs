@@ -168,9 +168,6 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::LoadSetup) => {
             Some("VERA:LoadSetupHelp")
         }
-        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::TeamStarts) => {
-            Some("VERA:TeamStartsHelp")
-        }
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::GameOptions) => {
             Some(crate::ui::skirmish_shell::game_options::GAME_OPTIONS_HELP)
         }
@@ -390,7 +387,6 @@ pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAct
         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
         OwnerDrawButton::SaveSetup => SkirmishShellAction::SaveSetup,
         OwnerDrawButton::LoadSetup => SkirmishShellAction::LoadSetup,
-        OwnerDrawButton::TeamStarts => SkirmishShellAction::TeamStarts,
         OwnerDrawButton::GameOptions => SkirmishShellAction::GameOptions,
         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
     }
@@ -412,9 +408,6 @@ pub fn hit_test_owner_draw_button(
     }
     if layout.load_setup_button.contains(x, y) {
         return Some(OwnerDrawButton::LoadSetup);
-    }
-    if layout.team_starts_button.contains(x, y) {
-        return Some(OwnerDrawButton::TeamStarts);
     }
     if layout.game_options_button.contains(x, y) {
         return Some(OwnerDrawButton::GameOptions);
@@ -462,7 +455,6 @@ pub fn apply_action(
         // The app owns the saved setups.
         SkirmishShellAction::SaveSetup => SkirmishShellAction::SaveSetup,
         SkirmishShellAction::LoadSetup => SkirmishShellAction::LoadSetup,
-        SkirmishShellAction::TeamStarts => SkirmishShellAction::TeamStarts,
         SkirmishShellAction::GameOptions => SkirmishShellAction::GameOptions,
         SkirmishShellAction::SelectMap(idx) => {
             accept_selected_map(state, maps, idx);
