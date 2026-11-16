@@ -20,6 +20,7 @@ import android.text.InputType
 import android.view.RoundedCorner
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import com.google.androidgamesdk.GameActivity
 import java.io.File
 import java.io.IOException
@@ -50,6 +51,11 @@ class VeraActivity : GameActivity() {
      * Mark the focused edit as a password box (or not), so the keyboard's
      * dictionary and suggestions never learn it. Called from Rust through
      * [org.vera20k]'s `ime_secret` hook as the login page's focus moves.
+     *
+     * A keyboard that is already up keeps the editor info it attached with, so
+     * the input method has to be restarted to read the new one; without that the
+     * password field would keep the previous field's mode and the other way
+     * round.
      */
     fun setImeKind(secret: Boolean) {
         val inputType = if (secret) {
@@ -57,11 +63,11 @@ class VeraActivity : GameActivity() {
         } else {
             InputType.TYPE_CLASS_TEXT
         }
-        setImeEditorInfoFields(
-            inputType,
-            EditorInfo.IME_ACTION_DONE,
-            EditorInfo.IME_FLAG_NO_FULLSCREEN,
-        )
+        val imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            if (secret) EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING else 0
+        setImeEditorInfoFields(inputType, EditorInfo.IME_ACTION_DONE, imeOptions)
+        val view = mSurfaceView ?: return
+        getSystemService(InputMethodManager::class.java)?.restartInput(view)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
