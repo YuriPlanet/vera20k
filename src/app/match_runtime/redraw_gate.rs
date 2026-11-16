@@ -17,6 +17,9 @@
 //! draws the cursor (`input::hardware_cursor`), so a move only changes what
 //! the pointer hovers, which gamemd also shows once per game frame. While a
 //! draw waits the loop keeps probing, so the match service holds its cadence.
+//! A probing loop also wakes when the match's next frame comes due
+//! ([`RedrawGate::probe_wake`]): each frame then ticks and draws on time, not
+//! up to a service interval late.
 //!
 //! The battlefield stands only while nothing on it moves by itself. Effects
 //! that step inside the tactical composite or read its clock (electric
@@ -613,11 +616,19 @@ impl RedrawGate {
 
     /// When a probing loop should wake: for its next service, or sooner when
     /// a limit passes. A service wake already past starts the next one.
-    pub(crate) fn probe_wake(&mut self, now: Instant) -> Instant {
-        let service = match self.next_probe {
+    /// `frame_due` is when the match's next frame comes due, if its timer
+    /// says (`LocalFramePacer::until_next_frame`): the service moves up to
+    /// it, so the frame ticks and draws on time instead of up to a
+    /// [`SERVICE_WAKE`] late. One already due moves nothing: the pass that
+    /// just ran did not admit it, and waking for it again would spin.
+    pub(crate) fn probe_wake(&mut self, now: Instant, frame_due: Option<Instant>) -> Instant {
+        let mut service = match self.next_probe {
             Some(at) if at > now => at,
             _ => *self.next_probe.insert(now + SERVICE_WAKE),
         };
+        if let Some(due) = frame_due.filter(|due| *due > now && *due < service) {
+            service = *self.next_probe.insert(due);
+        }
         let Some(last) = self.last_draw else {
             return service;
         };
@@ -787,6 +798,29 @@ mod tests {
     /// Pointer motion over a standing picture waits for its limit, and probes
     /// keep the service's pace however fast the events come. Other input
     /// draws at once, and a cursor in the frame makes motion input.
+    /// A probing loop wakes for the match's next frame when it comes due
+    /// before the service wake, so its tick and picture are on time. On the
+    /// service wake alone a 16 ms frame came out every 11, 11 and 22 ms.
+    /// A frame already due moves nothing: waking for it again would spin.
+    #[test]
+    fn a_probe_wake_moves_up_to_the_next_frames_due_time() {
+        let t = Instant::now();
+        let mut gate = RedrawGate::default();
+        gate.record_presented(Some(battlefield(120, 480.0, 7, true)), t, LIMITS);
+        let now = t + Duration::from_millis(20);
+        let due = now + Duration::from_millis(3);
+        assert_eq!(gate.probe_wake(now, Some(due)), due);
+        assert!(!gate.probe_due(due - Duration::from_millis(1)));
+        assert!(gate.probe_due(due));
+        // Already due, or due after the service wake: that wake stands.
+        let later = due + Duration::from_millis(1);
+        assert_eq!(gate.probe_wake(later, Some(due)), later + SERVICE_WAKE);
+        assert_eq!(
+            gate.probe_wake(later, Some(later + SERVICE_WAKE * 2)),
+            later + SERVICE_WAKE
+        );
+    }
+
     #[test]
     fn pointer_motion_waits_for_its_limit_unless_the_frame_holds_the_cursor() {
         let t = Instant::now();
@@ -801,13 +835,13 @@ mod tests {
             gate.probe_verdict(Some(shown), early),
             ProbeVerdict::PointerWaits
         );
-        let wake = gate.probe_wake(early);
+        let wake = gate.probe_wake(early, None);
         assert_eq!(wake, early + SERVICE_WAKE);
         assert!(!gate.probe_due(early + Duration::from_millis(1)));
         assert!(gate.probe_due(wake));
         // The last wake before the limit lands on it.
         assert_eq!(
-            gate.probe_wake(pointer_limit - Duration::from_millis(4)),
+            gate.probe_wake(pointer_limit - Duration::from_millis(4), None),
             pointer_limit
         );
         assert_eq!(gate.next_pass(pointer_limit), NextPass::Draw);

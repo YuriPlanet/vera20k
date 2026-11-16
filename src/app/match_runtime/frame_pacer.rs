@@ -15,7 +15,10 @@ pub(crate) const FRAME_BUCKET: std::time::Duration =
 /// Wake interval of a match service pass that draws nothing (a hidden
 /// window, or a visible one whose picture still stands or whose next draw
 /// waits for its limit): half a pacer bucket, so an admitted frame is never
-/// late by more than half a bucket.
+/// late by more than half a bucket. A visible window's loop wakes sooner for
+/// a frame the local timer has due ([`LocalFramePacer::until_next_frame`]):
+/// on this interval alone a one-bucket frame came out every 11, 11 and
+/// 22 ms, the interval plus a pass, instead of every 16.
 pub(crate) const SERVICE_WAKE: std::time::Duration =
     std::time::Duration::from_millis(FRAME_BUCKET_MS / 2);
 /// A refresh gap the pacer forgives, so a pass at 60 Hz still finds a
@@ -999,6 +1002,22 @@ impl LocalFramePacer {
         self.last_frame_start_ms = Some(now_ms as u32);
     }
 
+    /// How long from `now_ms` until [`Self::should_admit`] admits the next
+    /// frame, zero once it is due, so the frame loop can wake for it instead
+    /// of finding it late on its next [`SERVICE_WAKE`]. `None` when no timer
+    /// paces the match (GameSpeed 0 never waits) or no frame has run yet.
+    pub(crate) fn until_next_frame(
+        &self,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<(u16, u32)>,
+    ) -> Option<Duration> {
+        let (timer, start) = pacing_timer(game_speed, network_fps).zip(self.last_frame_start_ms)?;
+        // Signed: the millisecond word wraps, and a due frame reads negative.
+        let left = timer.due_ms(start).wrapping_sub(now_ms as u32) as i32;
+        Some(Duration::from_millis(left.max(0) as u64))
+    }
+
     #[cfg(test)]
     fn next_deadline_ms(&self, game_speed: u8) -> Option<u64> {
         let timer = pacing_timer(game_speed, None)?;
@@ -1734,6 +1753,27 @@ mod tests {
             assert!(pacer.should_admit(deadline, speed, None, false));
             assert_eq!(pacer.next_deadline_ms(speed), Some(deadline));
         }
+    }
+
+    /// The frame loop wakes for the next frame instead of finding it late on
+    /// a service wake: the time left runs out in the bucket where
+    /// `should_admit` first admits the frame.
+    #[test]
+    fn the_time_to_the_next_frame_ends_where_it_is_admitted() {
+        let mut pacer = LocalFramePacer::new();
+        // No frame has run yet: nothing to wait for.
+        assert_eq!(pacer.until_next_frame(40, 2, None), None);
+        pacer.record_admitted_frame(32);
+        // GameSpeed 2 is two 16 ms buckets: due at 64.
+        let left = |now_ms| pacer.until_next_frame(now_ms, 2, None);
+        assert_eq!(left(40), Some(Duration::from_millis(24)));
+        assert!(!pacer.should_admit(63, 2, None, false));
+        assert_eq!(left(63), Some(Duration::from_millis(1)));
+        assert!(pacer.should_admit(64, 2, None, false));
+        assert_eq!(left(64), Some(Duration::ZERO));
+        assert_eq!(left(90), Some(Duration::ZERO));
+        // GameSpeed 0 never waits.
+        assert_eq!(pacer.until_next_frame(40, 0, None), None);
     }
 
     #[test]
