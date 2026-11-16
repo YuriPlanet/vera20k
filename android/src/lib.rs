@@ -503,3 +503,43 @@ fn claim_event_loop() -> bool {
     static CLAIMED: OnceLock<()> = OnceLock::new();
     CLAIMED.set(()).is_ok()
 }
+
+use std::ffi::{c_char, c_int, c_void};
+
+unsafe extern "C" {
+    fn __real_pthread_create(
+        thread: *mut *mut c_void,
+        attr: *const c_void,
+        start_routine: extern "C" fn(*mut c_void) -> *mut c_void,
+        arg: *mut c_void,
+    ) -> c_int;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn __wrap_pthread_create(
+    thread: *mut *mut c_void,
+    attr: *const c_void,
+    start_routine: extern "C" fn(*mut c_void) -> *mut c_void,
+    arg: *mut c_void,
+) -> c_int {
+    use std::mem::MaybeUninit;
+    let mut attr_copy: MaybeUninit<libc::pthread_attr_t> = MaybeUninit::uninit();
+    let mut attr_ptr = attr;
+
+    if !attr.is_null() {
+        std::ptr::copy_nonoverlapping(
+            attr as *const libc::pthread_attr_t,
+            attr_copy.as_mut_ptr(),
+            1,
+        );
+        attr_ptr = attr_copy.as_ptr() as *const c_void;
+    } else {
+        libc::pthread_attr_init(attr_copy.as_mut_ptr());
+        attr_ptr = attr_copy.as_ptr() as *const c_void;
+    }
+
+    libc::pthread_attr_setstacksize(attr_copy.as_mut_ptr(), 8 * 1024 * 1024);
+
+    __real_pthread_create(thread, attr_ptr, start_routine, arg)
+}
+
