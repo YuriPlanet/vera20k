@@ -29,6 +29,12 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
 - `RadialIndicatorVisibility`：`app/presentation/radial_indicators.rs` 按
   `0x456776` 的 owner/observer/allied/enemy 分支过滤他人建筑的指示环。
 
+2026-11-16 稍后：`ColorAddUse8BitRGB` 已接线——`ColorAddTable::phobos_word(index,
+use_8bit)` 按 `GetColorFromColorAdd` 的两条臂打包（原始 5/6 位或
+`Drawing::RGB_To_Int` 的 8 位缩放），空袭激光目标色（VERA 唯一直连
+`GetColorFromColorAdd` 的消费者）已按该开关取词；幕布/狂暴/力场三色仍走原生
+绘制转换，残渣见 §3。
+
 2026-11-16 稍后：`SortCameoByName` 已接线——`CameoKey` 两种变体携带类型内部名
 （INI 段名）与开关投影，`inserts_before` 在 UI 名比较前按 `strcmp` 比较内部名
 （`Misc/Hooks.UI.cpp:249-287`）；右侧栏、左超武栏和存档恢复共用同一比较。
@@ -92,7 +98,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `RadialIndicatorVisibility` | `Ext/Rules/Body.cpp:172` | AffectedHouse, Allies（`:207,736`） | `Misc/Hooks.UI.cpp` |
 | `ChronoSparkleDisplayDelay` | `Ext/Rules/Body.cpp:118` | int, 24（`:37,577`） | `Ext/Techno/Hooks.Misc.cpp`、`Ext/Building/Hooks.cpp`、`Ext/Aircraft/Hooks.cpp` |
 | `ChronoSparkleBuildingDisplayPositions` | `Ext/Rules/Body.cpp:119` | enum, OccupantSlots（`:38,578`） | `Ext/Building/Hooks.cpp` |
-| `ColorAddUse8BitRGB` | `Ext/Rules/Body.cpp:260` | bool, no（`:178,703`） | `Utilities/GeneralUtils.cpp`（`GetColorFromColorAdd`；VERA 已有 `ColorAddTable::phobos_word`，其注释已记该键为残渣） |
+| `ColorAddUse8BitRGB` | `Ext/Rules/Body.cpp:260` | bool, no（`:178,703`） | `Utilities/GeneralUtils.cpp`（`GetColorFromColorAdd`；VERA 已按开关接线空袭激光色，幕布/狂暴/力场仍缺 `GetTintColor` 钩子族） |
 | `UseRetintFix` | `Ext/Rules/Body.cpp:409` | bool, **yes**（`:311,823`） | `Ext/TAction/Hooks.cpp`（retint 后重新激活 LightSource） |
 | `VoxelLightSource` | `Ext/Rules/Body.cpp:352` | `Nullable<Vector3D<float>>`，未设（`:271,780`） | `ReplaceVoxelLightSources`（`Body.cpp:1189-1207`）——**阻塞**，见 §3 |
 
@@ -113,7 +119,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `EnablePowerSurplus` / `PowerSurplus.ScaleToDrainAmount` | 未定位 VERA 电力盈余显示消费者；需先从 `Ext/House/Body.cpp` 的 `PowerSurplus` 链找等价 owner。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `ChronoSparkleDisplayDelay` / `ChronoSparkleBuildingDisplayPositions` | 需先定位 VERA 的 ChronoSparkle 生成/显示 owner；Phobos hook 同时作用于 Unit/Infantry/Building/Aircraft。 |
-| `ColorAddUse8BitRGB` | 缺 `Drawing::RGB_To_Int` 的等价实现；`ColorAddTable::phobos_word` 已有，但全仓无 tint 消费者。 |
+| `ColorAddUse8BitRGB` | `GetColorFromColorAdd` 本身已按开关（空袭色接线）；剩余三色走 `TechnoExt::GetTintColor` 的类词替换钩子（`Ext/Techno/Hooks.Tint.cpp:71-135`），需整族移植并用 Phobos 词替换原生 3 臂词。 |
 | `UseRetintFix` | 需先有 retint 后 LightSource 重新激活的路径（`Ext/TAction/Hooks.cpp`）。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 | `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut` | 需先对照 `Ext/Unit/Hooks.Jumpjet.cpp` 找到 VERA jumpjet 爬升预测/切出 owner。 |
@@ -167,8 +173,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
   生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
   `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
-- **`ColorAddUse8BitRGB`**：需要 `Drawing::RGB_To_Int`（YRpp 头文件，本地未
-  vendored）；VERA 的 `ColorAddTable::phobos_word` 已就位，只差该分支。
+- **`ColorAddUse8BitRGB` 的其余三色**：`TintColorIronCurtain/ForceShield/Berserk`
+  经 `TechnoExt::GetTintColor` 绘制钩子替换类词（`Ext/Techno/Hooks.Tint.cpp:71-135`），
+  该钩子族尚未移植；VERA 目前仍用原生绘制的 3 臂转换。触发：开启该开关且幕布/狂暴/
+  力场着色；频率：每次此类绘制；风险：色调与非 8 位开关下的含义不一致（空袭色已正确）。
 - **sim-scale deviations（有意保留，AGENTS.md）**：VERA 自有渲染器与 native
   管线不同（体素光栅/着色、图集）；`sim/` 不依赖 `render/`。实机对比时以
   “玩法可辨差异”为准，不以像素级 native 一致为准。

@@ -680,3 +680,39 @@ fn airstrike_tint_uses_the_strike_owner_types_laser_target_color() {
         "an owner type without the key takes the global"
     );
 }
+
+/// Phobos `[AudioVisual] ColorAddUse8BitRGB` (`Phobos.INI.cpp` read,
+/// `GeneralUtils::GetColorFromColorAdd:286`): the entry is 8-bit RGB and packs
+/// through `Drawing::RGB_To_Int`, so `255,64,8` is `0xFA01` instead of the raw
+/// `0xF808`.
+#[cfg(feature = "phobos")]
+#[test]
+fn airstrike_tint_reads_the_entry_as_8bit_rgb_with_the_switch() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[ColorAdd]\nEighty=255,64,8\n\
+         [AudioVisual]\nLaserTargetColor=0\nColorAddUse8BitRGB=yes\n\
+         [InfantryTypes]\n0=BORIS\n[BORIS]\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    let boris_type = sim.interner_mut_for_test().intern("BORIS");
+    let power_type = sim.interner_mut_for_test().intern("GAPOWR");
+    let mut owner = GameEntity::test_default(1, "BORIS", "Americans", 10, 10);
+    owner.set_type_ref_for_test(boris_type);
+    let mut target = GameEntity::test_default_of_category(
+        2,
+        "GAPOWR",
+        "Russians",
+        12,
+        10,
+        EntityCategory::Structure,
+    );
+    target.set_type_ref_for_test(power_type);
+    target.airstrike.set_test_link(Some(1));
+    sim.entities_mut_for_test().insert(owner);
+    sim.entities_mut_for_test().insert(target);
+    assert_eq!(
+        shp_colour_word(sim.entities().get(2).unwrap(), &sim, &rules, || false),
+        0xF800 | 16 << 5 | 1
+    );
+}

@@ -876,9 +876,10 @@ pub(crate) fn shp_colour_word(
         // owner type's `TintColorAirstrike`, Phobos's own conversion of its
         // resolved `LaserTargetColor`.
         #[cfg(feature = "phobos")]
-        let word = rules
-            .color_add
-            .phobos_word(sim.airstrike_laser_target_color(entity.stable_id(), rules));
+        let word = rules.color_add.phobos_word(
+            sim.airstrike_laser_target_color(entity.stable_id(), rules),
+            rules.phobos_globals.color_add_use_8bit_rgb,
+        );
         #[cfg(not(feature = "phobos"))]
         let word = rules
             .color_add
