@@ -101,7 +101,7 @@ const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
     ("options-0xd5-settings-interface", Category::Interface),
     ("options-0xd5-settings-audio", Category::Audio),
     ("options-0xd5-settings-controls", Category::Controls),
-    ("options-0xd5-settings-developer", Category::Developer),
+    ("options-0xd5-settings-general", Category::General),
 ];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
@@ -119,12 +119,12 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
     (
         "options-0xd5-hover-difficulty",
         Category::Gameplay,
-        (224, 157),
+        (224, 97),
     ),
     (
         "options-0xd5-hover-tooltips",
         Category::Interface,
-        (160, 245),
+        (160, 206),
     ),
     ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
@@ -4265,6 +4265,25 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+        // Each point rests on the control its name gives.
+        use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
+        use crate::ui::main_menu_dialogs::options::{LauncherCheckboxId, LauncherTrackbarId};
+        let [difficulty, tooltips, music] = OPTIONS_0XD5_HOVER_CHECKPOINTS
+            .map(|(_, category, (x, y))| (LauncherOptionsLayout::new(800, 600, category), x, y));
+        let slider = |(layout, x, y): &(LauncherOptionsLayout, i32, i32), id| {
+            layout
+                .trackbar_rect(id)
+                .is_some_and(|rect| rect.contains(*x, *y))
+        };
+        assert!(slider(&difficulty, LauncherTrackbarId::Difficulty));
+        assert!(slider(&music, LauncherTrackbarId::Score));
+        let (layout, x, y) = &tooltips;
+        assert!(
+            layout
+                .checkboxes
+                .iter()
+                .any(|(id, rect)| { *id == LauncherCheckboxId::Tooltips && rect.contains(*x, *y) })
+        );
         for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
             assert_eq!(

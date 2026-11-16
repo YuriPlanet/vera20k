@@ -340,7 +340,8 @@ impl App {
 
         let current = state.match_state.match_presentation.in_game_menu;
         if current == InGameMenuState::Menu
-            && crate::app::input::pause_menu::close_options_list(state)
+            && (crate::app::input::pause_menu::close_options_list(state)
+                || crate::app::input::pause_menu::back_from_options(state))
         {
             return;
         }
