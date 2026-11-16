@@ -324,11 +324,11 @@ pub(crate) enum ShellExitThen {
     /// `0x113` Options (`0x61F`): the lobby slides out and `0x2BC` opens.
     WolOptionsOpen,
     /// `0x2BC` closed with OK (the staged values and the chat translation
-    /// language) or Cancel (`None`).
+    /// settings) or Cancel (`None`).
     WolOptionsClose(
         Option<(
             crate::ui::wol_options::WolPreferences,
-            Option<crate::ui::chat_translation::ChatLanguage>,
+            crate::ui::chat_translation::ChatTranslation,
         )>,
     ),
     /// `0x2BC` Sound Options (`0x63A`): it slides out and `0xD6` runs.

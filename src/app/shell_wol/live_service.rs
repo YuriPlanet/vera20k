@@ -1829,7 +1829,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
             request_match(service, matchbot, &request)
         }
         WolServiceRequest::Translate { text, line } => {
-            if let Some(target) = state.persistence.options_profile.chat_translation {
+            if let Some(target) = state.persistence.options_profile.chat_translation.language {
                 service.translations.request(
                     &service.requests,
                     &text,

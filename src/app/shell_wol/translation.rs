@@ -18,10 +18,11 @@ pub(crate) enum TranslatedLine {
 }
 
 /// A line another player wrote reached the screen. If the chosen language
-/// needs it translated, ask the online service.
+/// needs it translated, and it was not said in a match while Translate in
+/// Matches is off, ask the online service.
 pub(crate) fn received(state: &mut AppState, text: &[u16], line: TranslatedLine) {
-    let language = state.persistence.options_profile.chat_translation;
-    if language.is_some_and(|language| language.needs(text))
+    let chat = state.persistence.options_profile.chat_translation;
+    if chat.sends(text, matches!(line, TranslatedLine::Match { .. }))
         && state
             .frontend
             .wol
@@ -44,7 +45,7 @@ pub(crate) fn received(state: &mut AppState, text: &[u16], line: TranslatedLine)
 /// arrives after translation was turned off or that the translator says was
 /// already in the chosen language.
 pub(super) fn show(state: &mut AppState, line: TranslatedLine, reply: &ChatReply) {
-    let language = state.persistence.options_profile.chat_translation;
+    let language = state.persistence.options_profile.chat_translation.language;
     if !language.is_some_and(|language| language.shows(reply)) {
         return;
     }

@@ -1,6 +1,6 @@
 //! The left-side children of WOL Options `0x2BC` (nine auto-checkboxes on
-//! `OwnerDraw_CheckBox 0x006163A0`, and VERA's chat translation list on the
-//! online lobby's page) and of the shell's Sound Options `0xD6` (three
+//! `OwnerDraw_CheckBox 0x006163A0`, and VERA's chat translation list and
+//! Translate in Matches box on the online lobby's page) and of the shell's Sound Options `0xD6` (three
 //! captions and trackbars, as B8 paints them). The WOL page compositor draws
 //! them over its own backdrop and chrome.
 
@@ -16,7 +16,8 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::sound::{SHELL_SOUND_LABEL_KEYS, ShellSoundLayout, SoundSlider, SoundState};
 use crate::ui::wol_options::{
-    CHECKBOXES, TRANSLATE_CAPTION_KEY, TRANSLATE_OFF_KEY, WolOptionsLayout, WolOptionsState,
+    CHECKBOXES, TRANSLATE_CAPTION_KEY, TRANSLATE_MATCHES_KEY, TRANSLATE_OFF_KEY, WolOptionsLayout,
+    WolOptionsState,
 };
 
 /// Sprites (skirmish atlas) and texts of one page's children, and of an open
@@ -98,30 +99,36 @@ pub(crate) fn paint_wol_options_children(
     };
     let scale = layout.page.scale;
     let chrome = atlas.control_chrome();
-    for (index, (checkbox, rect)) in CHECKBOXES.iter().zip(layout.checkboxes).enumerate() {
-        let Some(rect) = rect else {
-            continue;
-        };
+    let checkbox = |paint: &mut WolOptionsPaint, rect: RectPx, checked: bool, key: &str| {
         paint_control(
             &mut paint.controls,
             &chrome,
-            ControlPaint::Checkbox {
-                rect,
-                checked: options.checked[index],
-            },
+            ControlPaint::Checkbox { rect, checked },
             scale,
         );
         paint.texts.push(text(
             state,
-            &label(state, checkbox.csf_key),
+            &label(state, key),
             crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
             ShellAlign::V_CENTER,
             scale,
         ));
+    };
+    for (index, (spec, rect)) in CHECKBOXES.iter().zip(layout.checkboxes).enumerate() {
+        if let Some(rect) = rect {
+            checkbox(&mut paint, rect, options.checked[index], spec.csf_key);
+        }
     }
-    let Some((caption, list)) = layout.translate else {
+    let Some(translate) = layout.translate else {
         return paint;
     };
+    checkbox(
+        &mut paint,
+        translate.in_matches,
+        options.translate.in_matches,
+        TRANSLATE_MATCHES_KEY,
+    );
+    let (caption, list) = (translate.caption, translate.list);
     paint.texts.push(text(
         state,
         &label(state, TRANSLATE_CAPTION_KEY),

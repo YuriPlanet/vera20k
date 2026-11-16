@@ -10,7 +10,7 @@
 use super::{WolPage, apply_wol_preferences};
 use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::{App, AppState};
-use crate::ui::chat_translation::ChatLanguage;
+use crate::ui::chat_translation::ChatTranslation;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::combobox::ComboPress;
 use crate::ui::shell::sound::{
@@ -130,10 +130,10 @@ pub(crate) fn commit_open(state: &mut AppState) {
 /// lobby (it slides in on its first paint), frees the art and focuses the
 /// chat edit (`0x0078BF1F`). OK commits the staged values and writes them
 /// with ObserverMode (`0x0077DFD0`); both results then apply (`0x0077E110`).
-/// A changed translation language is saved too.
+/// Changed translation settings are saved too.
 pub(crate) fn commit_close(
     state: &mut AppState,
-    staged: Option<(WolPreferences, Option<ChatLanguage>)>,
+    staged: Option<(WolPreferences, ChatTranslation)>,
 ) {
     state.frontend.wol_options_art = None;
     state.frontend.wol_sound_options_art = None;
@@ -161,7 +161,7 @@ pub(crate) fn commit_close(
                 log::warn!("Could not save the WOL options: {error}");
             }
             if translate_changed && let Err(error) = profile.commit_chat_translation(dir) {
-                log::warn!("Could not save the chat translation language: {error}");
+                log::warn!("Could not save the chat translation settings: {error}");
             }
         }
         state
@@ -317,16 +317,19 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 page.ui.buttons.press(Some(id));
                 Press::Button
             }
-            Some(TRANSLATE) if let Some((_, list)) = layout.translate => {
+            Some(TRANSLATE) if let Some(translate) = layout.translate => {
                 let selected = Some(page.ui.translate_row());
-                Press::List(
-                    page.ui
-                        .translate_list
-                        .press_face(TRANSLATE, list, scale, selected, x, y),
-                )
+                Press::List(page.ui.translate_list.press_face(
+                    TRANSLATE,
+                    translate.list,
+                    scale,
+                    selected,
+                    x,
+                    y,
+                ))
             }
             // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-            // toggles on the press.
+            // toggles on the press; Translate in Matches draws the same way.
             Some(id)
                 if layout.checkbox_rect(id).is_some_and(|rect| {
                     crate::ui::skirmish_shell::checkbox_icon_rect(rect, scale).contains(x, y)

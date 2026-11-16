@@ -16,7 +16,7 @@ use crate::app::shell_wol::{
     WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList, WolServiceEvent,
     WolServiceRequest, service_event,
 };
-use crate::ui::chat_translation::ChatLanguage;
+use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
@@ -4614,7 +4614,8 @@ impl WolCapture {
         let live = state.frontend.wol_preferences;
         let page = Self::options_page(state)?;
         ensure!(
-            page.ui.checked == WolOptionsState::open(&live, None).checked && page.sound.is_none(),
+            page.ui.checked == WolOptionsState::open(&live, Default::default()).checked
+                && page.sound.is_none(),
             "0x2BC init does not show the live values"
         );
         ensure!(!Self::lobby(state)?.shown, "0x113 must hide under 0x2BC");
@@ -4715,7 +4716,7 @@ impl WolCapture {
     }
 
     /// The modern `0x2BC` settled: real clicks choose Simplified Chinese in
-    /// the translation list, then OK.
+    /// the translation list, clear Translate in Matches, then OK.
     fn translation_picked(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::wol_options::OK;
         self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
@@ -4726,11 +4727,17 @@ impl WolCapture {
             .translate_popup(&layout)
             .context("the translation list did not open")?;
         welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
+        let row = layout
+            .checkbox_rect(crate::ui::wol_options::TRANSLATE_MATCHES)
+            .context("Translate in Matches")?;
+        welcome_click(
+            state,
+            crate::ui::skirmish_shell::checkbox_icon_rect(row, layout.page.scale),
+        );
         let ui = &Self::options_page(state)?.ui;
         ensure!(
-            ui.translate == Some(ChatLanguage::SimplifiedChinese)
-                && ui.translate_list.control.is_none(),
-            "the clicks did not pick the language: {:?}",
+            ui.translate == translated_lobby_only() && ui.translate_list.control.is_none(),
+            "the clicks did not pick the settings: {:?}",
             ui.translate
         );
         options_button(state, OK)?;
@@ -4738,24 +4745,25 @@ impl WolCapture {
             state.frontend.shell_exit.is_some(),
             "0x2BC did not slide out"
         );
-        self.event(frame, "Simplified Chinese, OK");
+        self.event(frame, "Simplified Chinese, not in matches, OK");
         self.phase = WolPhase::TranslationReturn;
         Ok(())
     }
 
-    /// OK kept and wrote the language; Options opens again to show it.
+    /// OK kept and wrote the settings; Options opens again to show them.
     fn translation_saved(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let chat = state.persistence.options_profile.chat_translation;
         ensure!(
-            chat == Some(ChatLanguage::SimplifiedChinese),
-            "OK did not keep the language: {chat:?}"
+            chat == translated_lobby_only(),
+            "OK did not keep the settings: {chat:?}"
         );
         let saved = read_settings(state)?.context("VERA.INI")?;
+        let saved = String::from_utf8_lossy(&saved);
         ensure!(
-            String::from_utf8_lossy(&saved).contains("TranslateChat=zh-Hans"),
+            saved.contains("TranslateChat=zh-Hans") && saved.contains("TranslateMatches=no"),
             "OK did not write VERA.INI"
         );
-        self.event(frame, "the lobby again: the language is saved");
+        self.event(frame, "the lobby again: the settings are saved");
         let layout = crate::app::shell_wol::lobby::layout(state);
         lobby_button(state, &layout, lobby_ui::OPTIONS)?;
         self.phase = WolPhase::TranslationReopened;
@@ -4765,10 +4773,10 @@ impl WolCapture {
     fn translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let layout = crate::app::shell_wol::options::layout(state);
         ensure!(
-            Self::options_page(state)?.ui.translate == Some(ChatLanguage::SimplifiedChinese),
-            "the reopened page does not show the saved language"
+            Self::options_page(state)?.ui.translate == translated_lobby_only(),
+            "the reopened page does not show the saved settings"
         );
-        self.event(frame, "reopened with the saved language");
+        self.event(frame, "reopened with the saved settings");
         // The capture's isolated profile goes back as it was.
         let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;
         restore_settings(state, bytes)?;
@@ -4781,7 +4789,7 @@ impl WolCapture {
                 .context("the translation list did not open")?;
             set_window_pointer_to_rect_center(state, row);
         } else {
-            let (_, list) = layout.translate.context("the translation list")?;
+            let list = layout.translate.context("the translation list")?.list;
             set_window_pointer_to_rect_center(state, list);
         }
         App::handle_wol_mouse_move(state);
@@ -5685,8 +5693,16 @@ fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
 
 /// The translation list's face where a press opens it: the arrow at its right.
 fn translate_list_arrow(layout: &crate::ui::wol_options::WolOptionsLayout) -> Result<RectPx> {
-    let (_, face) = layout.translate.context("the translation list")?;
+    let face = layout.translate.context("the translation list")?.list;
     Ok(RectPx::new(face.x + face.w - 12, face.y, 4, face.h))
+}
+
+/// What the translation movie's clicks choose.
+fn translated_lobby_only() -> ChatTranslation {
+    ChatTranslation {
+        language: Some(ChatLanguage::SimplifiedChinese),
+        in_matches: false,
+    }
 }
 
 fn lobby_button(state: &mut AppState, layout: &lobby_ui::WolLobbyLayout, id: u16) -> Result<()> {

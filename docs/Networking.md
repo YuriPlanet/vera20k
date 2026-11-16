@@ -87,15 +87,16 @@ hashes, and the search goes on after the stage timeout; the host only times out.
 adds nothing to what game, lobby and relay exchange.
 
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
-languages, saved as `[VERA] TranslateChat=`. With a language chosen, other players'
-chat in the lobby, game rooms, private messages and matches is sent to the lobby's
-translation service when it needs it: for a Latin-script language a line with any letter
-outside it, for any other language a line with none of its letters. A reader whose
-script another listed language shares, English readers excepted, also sends the lines
-in that script, since they may be another language. The original stays; its translation
-follows as a line from the same sender marked `»`, without the service's bracketed note
-naming the source language, unless it only repeats the original or the service says it
-was already in the chosen language.
+languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
+by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other
+players' chat in the lobby, game rooms, private messages and, with the box ticked,
+matches is sent to the lobby's translation service when it needs it: for a Latin-script
+language a line with any letter outside it, for any other language a line with none of
+its letters. A reader whose script another listed language shares, English readers
+excepted, also sends the lines in that script, since they may be another language. The
+original stays; its translation follows as a line from the same sender marked `»`,
+without the service's bracketed note naming the source language, unless it only repeats
+the original or the service says it was already in the chosen language.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same

@@ -286,11 +286,12 @@ pub(crate) struct RetailOptionsProfile {
     /// value. `Off` keeps the retail image. Client presentation only: the
     /// final frame pass reads it live, and the simulation never sees it.
     pub(crate) color_vision: crate::ui::main_menu_dialogs::options::ColorVisionMode,
-    /// `[VERA] TranslateChat=`: the language other players' online chat is
-    /// translated into; `None`, the default, is off. Only the online lobby's
-    /// Options page changes it, and writes it alone
+    /// `[VERA] TranslateChat=` and `TranslateMatches=`: the language other
+    /// players' online chat is translated into (off by default) and whether
+    /// a match's chat is too (on by default). Only the online lobby's Options
+    /// page changes them, and writes them alone
     /// ([`Self::commit_chat_translation`]).
-    pub(crate) chat_translation: Option<crate::ui::chat_translation::ChatLanguage>,
+    pub(crate) chat_translation: crate::ui::chat_translation::ChatTranslation,
     /// `[VERA] Language=`: the tag of the interface language the player chose
     /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
     /// Only the Language list changes it; Options' accept writes it out.
@@ -692,8 +693,11 @@ impl RetailOptionsProfile {
                 );
             // `off`, or a tag this build does not offer, is off.
             if let Some(value) = vera.read_name("TranslateChat", 16) {
-                self.chat_translation = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+                self.chat_translation.language =
+                    crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
+            self.chat_translation.in_matches =
+                vera.read_bool("TranslateMatches", self.chat_translation.in_matches);
             // Empty, as a profile that never picked one writes it, follows
             // the system again.
             if let Some(value) = vera.read_name("Language", 16) {
@@ -943,8 +947,8 @@ impl RetailOptionsProfile {
         profile_file::update(ra2_dir, |input| self.transform_wol_preferences(input))
     }
 
-    /// The online lobby Options page's writer for `[VERA] TranslateChat=`
-    /// alone.
+    /// The online lobby Options page's writer for `[VERA] TranslateChat=` and
+    /// `TranslateMatches=` alone.
     pub(crate) fn commit_chat_translation(&self, ra2_dir: &Path) -> io::Result<()> {
         profile_file::update(ra2_dir, |input| self.transform_chat_translation(input))
     }
@@ -986,18 +990,26 @@ impl RetailOptionsProfile {
     }
 
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
-        let language = self
-            .chat_translation
+        let chat = self.chat_translation;
+        let language = chat
+            .language
             .map_or("off", crate::ui::chat_translation::ChatLanguage::tag);
-        let output = set_ini_values(input, VERA_SECTION, &[("TranslateChat", language)]);
-        // Earlier builds' Chat Translation page wrote these; nothing reads them.
+        let output = set_ini_values(
+            input,
+            VERA_SECTION,
+            &[
+                ("TranslateChat", language),
+                ("TranslateMatches", format_bool(chat.in_matches)),
+            ],
+        );
+        // Earlier builds' Chat Translation page wrote these; nothing reads
+        // them. It wrote TranslateMatches too, with the same meaning.
         crate::util::ini_writer::remove_ini_keys(
             &output,
             VERA_SECTION,
             &[
                 "TranslateLobby",
                 "TranslateRooms",
-                "TranslateMatches",
                 "TranslatePrivate",
                 "TranslateShowSource",
                 "TranslateSameAlphabet",
@@ -1726,19 +1738,20 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
-    fn chat_translation_writes_its_language_and_drops_the_retired_keys() {
-        use crate::ui::chat_translation::ChatLanguage;
+    fn chat_translation_writes_its_settings_and_drops_the_retired_keys() {
+        use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
         let startup = RetailStartupOptions::default();
-        let mut profile = RetailOptionsProfile::default();
-        profile.chat_translation = Some(ChatLanguage::SimplifiedChinese);
-        let output = profile.transform_chat_translation(
-            b"[VERA]\r\nZoom=150\r\nTranslateMatches=no\r\nTranslateKnown=en,ko\r\n",
-        );
+        let old = b"[VERA]\r\nZoom=150\r\nTranslateMatches=no\r\nTranslateKnown=en,ko\r\n";
+        // An earlier build's TranslateMatches=no still reads as off.
+        let mut profile = load_snapshot(&startup, old).retained_profile;
+        assert!(!profile.chat_translation.in_matches);
+        profile.chat_translation.language = Some(ChatLanguage::SimplifiedChinese);
+        let output = profile.transform_chat_translation(old);
         let text = String::from_utf8(output.clone()).unwrap();
         assert!(
             text.contains("Zoom=150")
                 && text.contains("TranslateChat=zh-Hans")
-                && !text.contains("TranslateMatches")
+                && text.contains("TranslateMatches=no")
                 && !text.contains("TranslateKnown"),
             "{text}"
         );
@@ -1747,7 +1760,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
 
         let off = RetailOptionsProfile::default().transform_chat_translation(&output);
         let reread = load_snapshot(&startup, &off).retained_profile;
-        assert_eq!(reread.chat_translation, None);
+        assert_eq!(reread.chat_translation, ChatTranslation::default());
     }
 
     #[test]
@@ -1758,7 +1771,8 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(
             load_snapshot(&startup, &accepted)
                 .retained_profile
-                .chat_translation,
+                .chat_translation
+                .language,
             Some(crate::ui::chat_translation::ChatLanguage::Japanese)
         );
     }

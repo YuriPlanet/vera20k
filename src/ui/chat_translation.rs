@@ -1,9 +1,10 @@
 //! VERA's opt-in chat translation; gamemd has none. The VERA Online lobby's
 //! Options page ([`crate::ui::wol_options`]) picks the language other players'
-//! chat is translated into, saved as `[VERA] TranslateChat=`. Lines that need
-//! it go to the lobby's `POST /v1/translate` (`docs/lobby-protocol.md`) and the
-//! reply, without its note naming the source language, is shown under the
-//! original, which always stays visible.
+//! chat is translated into and whether a match's chat is translated too
+//! ([`ChatTranslation`]). Lines that need it go to the lobby's
+//! `POST /v1/translate` (`docs/lobby-protocol.md`) and the reply, without its
+//! note naming the source language, is shown under the original, which always
+//! stays visible.
 
 /// A language received chat can be translated into. The lobby's translator
 /// must offer each tag: an unsupported target gets no reply.
@@ -42,6 +43,34 @@ const LANGUAGES: [(ChatLanguage, &str, &str); 14] = [
     (ChatLanguage::Turkish, "tr", "Türkçe"),
     (ChatLanguage::Swedish, "sv", "Svenska"),
 ];
+
+/// The online lobby Options page's chat translation settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChatTranslation {
+    /// `[VERA] TranslateChat=`; `None` is off.
+    pub(crate) language: Option<ChatLanguage>,
+    /// `[VERA] TranslateMatches=`: a match's chat is translated too. Off
+    /// leaves battle chat alone; the lobby, rooms and private messages still
+    /// translate.
+    pub(crate) in_matches: bool,
+}
+
+impl Default for ChatTranslation {
+    fn default() -> Self {
+        Self {
+            language: None,
+            in_matches: true,
+        }
+    }
+}
+
+impl ChatTranslation {
+    /// Whether a received line goes to the translator; `in_match` says it
+    /// was said in a match.
+    pub(crate) fn sends(self, text: &[u16], in_match: bool) -> bool {
+        (self.in_matches || !in_match) && self.language.is_some_and(|language| language.needs(text))
+    }
+}
 
 /// Set between a line's prefix and its translation.
 pub(crate) const MARKER: &str = "» ";
@@ -222,6 +251,20 @@ mod tests {
         assert!(Russian.needs(&w("rush his ore miners")));
         assert!(!Russian.needs(&w("раш на руду, GI рядом")));
         assert!(!Thai.needs(&w("บุกฐานเลย gg")));
+    }
+
+    #[test]
+    fn match_chat_is_sent_only_while_translate_in_matches_is_on() {
+        let line = w("rush his ore miners");
+        let mut chat = ChatTranslation {
+            language: Some(ChatLanguage::German),
+            ..ChatTranslation::default()
+        };
+        assert!(chat.sends(&line, true));
+        chat.in_matches = false;
+        assert!(!chat.sends(&line, true));
+        assert!(chat.sends(&line, false));
+        assert!(!ChatTranslation::default().sends(&line, false));
     }
 
     #[test]
