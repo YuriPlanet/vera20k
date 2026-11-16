@@ -142,6 +142,39 @@ fn startup_window_projection(
     )
 }
 
+/// Gives the window's class a black background brush, or takes it away again.
+///
+/// Windows paints a window with its class brush when it shows or resizes it.
+/// winit registers its class with none and shows a window before it sizes and
+/// places it, so until the first swapchain present, seconds into startup, the
+/// window would show black and white patches of whatever its surface held.
+/// Startup sets the brush before it shows the window and takes it away where
+/// it presents its first frame. The window keeps its black until a frame
+/// replaces it; a brush left on would blank it between frames on every resize.
+#[cfg(windows)]
+fn black_window_background(window: &Window, black: bool) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Gdi::{BLACK_BRUSH, GetStockObject};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW};
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = handle.hwnd.get() as *mut std::ffi::c_void;
+    // SAFETY: `hwnd` is winit's live window, and a stock brush is never freed.
+    unsafe {
+        let brush = if black {
+            GetStockObject(BLACK_BRUSH) as isize
+        } else {
+            0
+        };
+        SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, brush);
+    }
+}
+
 /// What the startup error card says about the player's own files.
 #[derive(Debug, Default)]
 pub(crate) struct StartupFiles {
@@ -442,12 +475,15 @@ impl App {
         } else {
             super::WINDOW_TITLE
         };
+        // On Windows the window opens hidden and is shown, painted black, once
+        // winit has sized and placed it (`black_window_background`).
+        let show_when_placed = cfg!(windows) && window_visible;
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
             .with_title(title)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
-            .with_visible(window_visible)
+            .with_visible(window_visible && !show_when_placed)
             .with_active(window_visible);
         // A player window shrinks no further than gamemd's smallest mode,
         // 640x480, the view every zoom step keeps.
@@ -506,6 +542,11 @@ impl App {
         // the cursor, before the startup splash; from the first frame after it,
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
         window.set_cursor_visible(false);
+        #[cfg(windows)]
+        if show_when_placed {
+            black_window_background(&window, true);
+            window.set_visible(true);
+        }
         #[cfg(target_os = "macos")]
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
@@ -729,6 +770,8 @@ impl App {
                 Err(err) => log::warn!("Initial startup present deferred: {err:#}"),
             }
         }
+        #[cfg(windows)]
+        black_window_background(&window, false);
         if external_launch {
             log::info!("External launch: process-start splash skipped");
         }
