@@ -168,6 +168,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
                 SimFixed::from_num(128),
             ),
             is_garrison: false,
+            at_firing_frame: true,
         };
         world_fire::emit_admitted_fire(
             &mut world,

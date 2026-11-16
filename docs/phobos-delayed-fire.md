@@ -118,6 +118,21 @@ force-destroyed with `destroy_anim` on reset when attached. `tick_unit_firing_co
 holds the firing frame while paused. The `Burst.NoDelay` compatibility gate is
 unchanged.
 
+Wind-up anim placement now covers the remaining native inputs:
+`DelayedFire.AnimOffset` is an FLH **override** (`FireSource::flh_override`), not
+an added base, so `0x6FDDC0` → `GetFLHAbsoluteCoords` sees the anim offset where
+the weapon FLH would be and takes the same Y-mirror / burst-parity treatment
+(`Ext/Techno/Body.cpp:727-733`, `Body.Internal.cpp:80-89`);
+`DelayedFire.AnimOnTurret` selects the turret or hull basis through
+`FireSource::on_turret` (`Body.cpp:680`, `Body.Internal.cpp:54`). The
+`PauseFiringSequence` freeze is set only at the firing-frame boundary and only
+for Infantry and turretless non-Voxel SHP Units (`Body.cpp:711-716`,
+`Hooks.Firing.cpp:89,103`, `Ext/Infantry/Hooks.Firing.cpp:118`); a turreted or
+Voxel Unit keeps its stock Stage/counter cadence while the shot is delayed.
+`GameEntity::attached_anim_expired` clears `CurrentDelayedFireAnim` when that
+exact anim expires or detaches (`TechnoClass_DetachAnim @ 0x710415`,
+`Body.cpp:1256-1267`), without destroying the non-owned pointer again.
+
 ## Residuals (not implemented / compromises)
 
 Every entry lists trigger conditions, impact, frequency and risk. There was **no
@@ -125,37 +140,10 @@ retail `ini/`, `config.toml` or `RA2_DIR`** on this machine, so retail-INI tests
 skipped: **no retail-data or visual/GPU verification was performed**. Only
 synthetic-INI, headless production-path tests were run.
 
-- **`AnimOffset` FLH replacement is additive, not a replacement.**
-  Trigger: `DelayedFire.AnimOffset` on a Unit (Infantry/Structure: VERA's
-  `fire_coordinate` forces its `Flh` base to zero, so the offset is ignored
-  there). Impact: the anim is placed at `weaponFLH + AnimOffset` instead of
-  `AnimOffset`, i.e. a wrong muzzle position (visual only). Frequency: whenever
-  the key is authored with a non-zero offset. Risk: visual-only; no gameplay
-  state, RNG or timer is affected.
-- **`AnimOnTurret` basis switch not modeled.**
-  Trigger: `DelayedFire.AnimOnTurret=no` on a turreted firer. Impact: VERA's
-  `fire_coordinate` uses the turret/aim facing for the FLH rotation; the body
-  basis is not selected. Frequency: only that key on turreted units. Risk:
-  visual-only.
 - **`CenterAnimOnFirer` uses `GetCoords`, not `GetCenterCoords`.**
   Trigger: `DelayedFire.CenterAnimOnFirer=yes`. Impact: the anim sits at the
   object coordinate without the native centre-height offset. Frequency: only
   that key. Risk: visual-only.
-- **`PauseFiringSequence` pause condition is broader.**
-  Trigger: `PauseFiringSequence=yes` on a turreted or Voxel Unit. Native
-  restricts the class pause hooks to Infantry and turretless non-Voxel SHP
-  Units and lets those classes own the timer; VERA starts the same timer from
-  the Fire_At gate for every Unit/Infantry and sets the freeze flag whenever
-  the delay starts, so a turreted/Voxel unit's Stage and firing counter are
-  also frozen during the delay. Impact: frame cadence may differ from native
-  for those units; the shot is still delayed correctly. Frequency: only that
-  key on turreted/Voxel units. Risk: low (frame timing only).
-- **`TechnoClass_DetachAnim @ 0x710415` natural-expiry pointer clear.**
-  Trigger: the wind-up anim expires on its own before the timer completes.
-  Impact: VERA keeps the tracked id but `destroy_anim` safely no-ops on a
-  missing anim, so there is no dangling dereference; the pointer is cleared on
-  the next reset. Frequency: when the anim is shorter than the delay. Risk:
-  low (no use-after-free, no state divergence).
 - **`ExtraRange.Prefiring` integration** (`0x6F7248` `Hooks.WeaponRange.cpp:84`,
   uses `timer.InProgress()` to extend weapon range during the delay) is not
   implemented. Trigger: that key on a delayed-fire weapon. Impact: no extra
@@ -180,6 +168,15 @@ synthetic-INI, headless production-path tests were run.
 4. A shot refused before `Fire_At` (still rearming) starts no timer and
    spawns no wind-up anim; the first admitted shot starts the delay at its own
    frame.
+5. `AnimOffset` with the weapon FLH at zero places the anim at the override's
+   matrix translation, and `AnimOnTurret=no` uses the hull basis on a turreted
+   unit (body facing, no `TurretOffset`).
+6. A turreted or Voxel Unit with `PauseFiringSequence=yes` still delays its
+   shot, spawns the anim and advances `UnitClass+6C0` (no freeze), while the
+   accepted Infantry path freezes at the firing-frame boundary.
+7. Destroying the wind-up anim on its own clears the firer's tracked id; the
+   subsequent reset returns no id and discharges normally without a second
+   destroy.
 
 `burst_no_delay_tests.rs:206` keeps the `Burst.NoDelay` compatibility gate
 regression (adapted for the now-real delay).
