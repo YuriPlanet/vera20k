@@ -83,6 +83,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{PlacementEvidence, Simulation};
+use crate::util::direction::DIRECTION_DELTAS;
 
 /// The computer's production state on its House.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1012,6 +1013,16 @@ pub(crate) fn exit_building(
         return BuildingExit::Failed;
     }
     let site = building_site(sim, rules, owner, ty, node, registry);
+    // `0x004451F8` with `AICleanWallNode`: a `Wall=` product needs one of the
+    // eight neighbours of its top-left cell to hold a `ProtectWithWall=`
+    // building, else `CanNotBuild` (`Ext/BuildingType/Hooks.Placing.cpp:94-115`).
+    if rules.phobos_globals.ai_clean_wall_node
+        && ty.wall
+        && !wall_touches_protected_building(sim, rules, site)
+    {
+        forget_failed_site(&mut sim.houses, rules, owner, node, site);
+        return BuildingExit::Failed;
+    }
     match flush_for_placement(sim, rules, registry, ty, site, owner, effects) {
         Flush::Scattered => {
             // `0x00445237..0x004452C3`.
@@ -1290,6 +1301,26 @@ pub(crate) fn suggest_new_object<'r>(
         FactoryType::InfantryType => unit_choice(UnitChoiceKind::Infantry),
         FactoryType::AircraftType => unit_choice(UnitChoiceKind::Aircraft),
     }
+}
+
+/// `0x004451F8` with `AICleanWallNode`: any of the eight `CellClass`
+/// neighbours of the wall's top-left cell holds a building whose type is
+/// `ProtectWithWall=`.
+fn wall_touches_protected_building(sim: &Simulation, rules: &RuleSet, site: (i16, i16)) -> bool {
+    DIRECTION_DELTAS.iter().any(|&(dx, dy)| {
+        let (Ok(rx), Ok(ry)) = (
+            u16::try_from(i32::from(site.0) + dx),
+            u16::try_from(i32::from(site.1) + dy),
+        ) else {
+            return false;
+        };
+        sim.substrate
+            .occupancy
+            .first_building_on_layer(rx, ry, MovementLayer::Ground)
+            .and_then(|id| sim.substrate.entities.get(id))
+            .and_then(|building| sim.object_type(building.type_ref(), rules))
+            .is_some_and(|ty| ty.protect_with_wall)
+    })
 }
 
 /// `BaseClass::Find_Node @ 0x0042EB50` for BuildingType index `wanted`, or

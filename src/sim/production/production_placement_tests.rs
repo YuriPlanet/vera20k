@@ -2362,6 +2362,111 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
     );
 }
 
+/// AI wall fill with `AINodeWallsOnly`: the first cell of each direction must
+/// be a base node of the wall type until the call has placed a wall.
+fn ai_wall_fill_scene(
+    key: bool,
+    node_cells: &[(u16, u16)],
+) -> (
+    Simulation,
+    RuleSet,
+    OverlayTypeRegistry,
+    crate::sim::intern::InternedId,
+) {
+    let (mut rules, registry) = gsi_04_07_wall_placement_contract();
+    rules.phobos_globals.ai_node_walls_only = key;
+    let mut sim = placement_sim();
+    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    let owner = sim.interner.get("Americans").expect("owner");
+    let house = sim.houses.get_mut(&owner).expect("house");
+    house.set_is_human_for_test(false);
+    house.set_player_control_for_test(false);
+    let wall_type_index = rules.object("GAWALL").expect("wall").base_plan_type_index;
+    assert!(wall_type_index >= 0, "fixture must index GAWALL");
+    if !node_cells.is_empty() {
+        let nodes = node_cells
+            .iter()
+            .map(|&(rx, ry)| crate::sim::base_plan::BasePlanNode {
+                type_or_control: wall_type_index,
+                packed_cell: crate::sim::base_plan::pack_base_plan_cell(
+                    i32::from(rx),
+                    i32::from(ry),
+                ),
+                filled: false,
+                retry_count: 0,
+            })
+            .collect();
+        sim.houses
+            .get_mut(&owner)
+            .expect("house")
+            .base_plan_mut()
+            .set_nodes_for_test(nodes);
+    }
+    let overlay_id = registry.id_for_name("GAWALL").expect("wall overlay");
+    for (rx, ry) in [(18, 13), (23, 18), (18, 23), (13, 18)] {
+        sim.overlay_grid
+            .as_mut()
+            .expect("overlay grid")
+            .place_owned_wall(rx, ry, overlay_id, 0x20, owner);
+    }
+    (sim, rules, registry, owner)
+}
+
+#[test]
+fn ai_node_walls_only_gates_each_first_cell_until_one_wall_lands() {
+    let all_fillers = [
+        (18, 17),
+        (18, 16),
+        (18, 15),
+        (18, 14),
+        (19, 18),
+        (20, 18),
+        (21, 18),
+        (22, 18),
+        (18, 19),
+        (18, 20),
+        (18, 21),
+        (18, 22),
+        (17, 18),
+        (16, 18),
+        (15, 18),
+        (14, 18),
+    ];
+    for (key, nodes, expected) in [
+        (false, &[][..], all_fillers.len()),
+        (
+            true,
+            &[(18, 17), (19, 18), (18, 19), (17, 18)][..],
+            all_fillers.len(),
+        ),
+        (true, &[][..], 0),
+    ] {
+        let (mut sim, rules, registry, owner) = ai_wall_fill_scene(key, nodes);
+        let wall = rules.object("GAWALL").expect("wall rules");
+        crate::sim::production::autofill_walls(
+            &mut sim,
+            &rules,
+            &registry,
+            wall,
+            (18, 18),
+            owner,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let overlay_id = registry.id_for_name("GAWALL").expect("wall overlay");
+        let grid = sim.overlay_grid.as_ref().expect("overlay grid");
+        assert_eq!(
+            all_fillers
+                .iter()
+                .filter(|&&(rx, ry)| grid.cell(rx, ry).overlay_id == Some(overlay_id))
+                .count(),
+            expected,
+            "key {key}, nodes {nodes:?}"
+        );
+    }
+}
+
 #[test]
 fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once() {
     let (rules, registry) = gsi_04_07_wall_placement_contract();

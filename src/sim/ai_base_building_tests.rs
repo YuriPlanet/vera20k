@@ -669,6 +669,157 @@ fn a_placed_conyard_node_is_not_open_only_with_the_key() {
     }
 }
 
+const WALL_NODE_RULES: &str = "[General]\nAIAlternateProductionCreditCutoff=2000\n\
+    MaximumBuildingPlacementFailures=2\n[AI]\nAICleanWallNode=yes\n\
+    [InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n\
+    [BuildingTypes]\n0=YARD\n1=WALL\n2=GUARD\n\
+    [YARD]\nStrength=1000\nConstructionYard=yes\nOwner=Americans,Alliance,Russians,Soviet\n\
+    [WALL]\nStrength=300\nWall=yes\nFoundation=1x1\nOwner=Americans,Alliance,Russians,Soviet\n\
+    [GUARD]\nStrength=1000\nProtectWithWall=yes\nFoundation=1x1\nOwner=Americans,Alliance,Russians,Soviet\n\
+    [Clear]\nBuildable=yes\n";
+
+/// A computer yard at (12, 12) with one `WALL` node at (16, 16); optionally
+/// a `GUARD` building at (17, 16), the east neighbour that protects the
+/// node. The finished `WALL` waits in limbo.
+fn wall_clean_scene(
+    key: bool,
+    protected: bool,
+) -> (
+    Simulation,
+    RuleSet,
+    OverlayTypeRegistry,
+    InternedId,
+    u64,
+    u64,
+) {
+    let rules_text = WALL_NODE_RULES.replace(
+        "AICleanWallNode=yes",
+        if key {
+            "AICleanWallNode=yes"
+        } else {
+            "AICleanWallNode=no"
+        },
+    );
+    let art_ini = IniFile::from_str(
+        "[YARD]\nFoundation=2x2\n[WALL]\nFoundation=1x1\nToOverlay=WALL\n\
+         [GUARD]\nFoundation=1x1\n",
+    );
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&rules_text), &art_ini)
+            .unwrap();
+    rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art_ini));
+    let registry = OverlayTypeRegistry::from_ini(
+        &IniFile::from_str("[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\n"),
+        None,
+    );
+    assert!(
+        rules.object("WALL").unwrap().to_overlay.is_some(),
+        "WALL must name its ToOverlay"
+    );
+    assert!(
+        registry.id_for_name("WALL").is_some(),
+        "registry must hold WALL"
+    );
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    let owner = sim.interner.intern("AIHouse");
+    let country = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(country), false, 10_000, 10));
+    let yard = sim
+        .spawn_object("YARD", "AIHouse", 12, 12, 0, &rules)
+        .unwrap();
+    if protected {
+        let guard = sim
+            .spawn_object("GUARD", "AIHouse", 17, 16, 0, &rules)
+            .unwrap();
+        assert!(
+            sim.substrate
+                .occupancy
+                .first_building_on_layer(17, 16, MovementLayer::Ground)
+                == Some(guard),
+            "GUARD must occupy its neighbour cell"
+        );
+    }
+    let wall_type = rules.building_type_index("WALL").unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_plan_mut()
+        .set_nodes_for_test(vec![BasePlanNode {
+            type_or_control: wall_type,
+            packed_cell: pack_base_plan_cell(16, 16),
+            filled: false,
+            retry_count: 3,
+        }]);
+    sim.substrate
+        .base_reservations
+        .reserve(sim.resolved_terrain.as_ref(), 16, 16, 0);
+    let product = sim
+        .construct_object_limbo_at_height(
+            "WALL",
+            "AIHouse",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    assert!(
+        can_place_building_at(
+            &sim,
+            &rules,
+            Some(&registry),
+            rules.object("WALL").unwrap(),
+            (16, 16),
+            Some(owner),
+            None,
+            None,
+        ),
+        "fixture must admit the wall node cell"
+    );
+    (sim, rules, registry, owner, yard, product)
+}
+
+#[test]
+fn ai_clean_wall_node_refuses_a_wall_without_a_protected_neighbour() {
+    let (mut sim, rules, registry, owner, yard, product) = wall_clean_scene(true, false);
+    let exit = exit_building(
+        &mut sim,
+        &rules,
+        yard,
+        product,
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(exit, BuildingExit::Failed);
+    assert!(
+        sim.substrate
+            .entities
+            .get(product)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+    assert_eq!(node_state(&sim, owner), []);
+}
+
+#[test]
+fn ai_clean_wall_node_requires_a_protected_neighbour() {
+    for (protected, expected) in [(false, false), (true, true)] {
+        let (sim, rules, _, _, _, _) = wall_clean_scene(true, protected);
+        assert_eq!(
+            wall_touches_protected_building(&sim, &rules, (16, 16)),
+            expected,
+            "protected {protected}"
+        );
+    }
+}
+
 #[test]
 fn a_computer_yard_places_its_building_on_the_node_cell() {
     let (mut sim, rules, owner, yard, product) = exit_fixture();
