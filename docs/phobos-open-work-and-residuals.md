@@ -42,6 +42,11 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut`：
+  `sim/movement/jumpjet_flight.rs` 的参考高度改为
+  `JumpjetLocomotionPredictHeight` 五格预测（前沿、二分之一侧格、`Skip` 置位），
+  并按 `0x54D4C0` 跳过“离目的地过低即停”的切出；`CruiseHost` 读取
+  `[General]` 两键并提供建筑/85/桥面的占位高度与 Cell Level。
 - `ChronoSparkleDisplayDelay` / `ChronoSparkleBuildingDisplayPositions`：
   `sim/temporal.rs` 的 Foot 与 Building 闪烁改读延迟；建筑按
   `Building`/`Occupants`/`OccupantSlots` 位选择自身、在场乘员或端口，
@@ -123,7 +128,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 7 项（8 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 6 项（7 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
@@ -132,7 +137,6 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `ColorAddUse8BitRGB` | `GetColorFromColorAdd` 已按开关（空袭激光色接线）；幕布/狂暴/力场三色走 `TechnoExt::GetTintColor` 的类词替换钩子（`Ext/Techno/Hooks.Tint.cpp:71-135`），需整族移植并用 Phobos 词替换原生 3 臂词。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
-| `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut` | 需先对照 `Ext/Unit/Hooks.Jumpjet.cpp` 找到 VERA jumpjet 爬升预测/切出 owner。 |
 | `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
 
 ## 2. 明确排除（不移植，扫描器已列 disabled）
@@ -171,6 +175,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
   生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
   `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
+- **Jumpjet 预测的三角/开方**：Phobos `JumpjetLocomotionPredictHeight` 用
+  `Math::cos/sin`（MSVC CRT，binary64）与 `Foot::DistanceFrom`；VERA 用 Rust
+  `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上
+  理论上可能与 CRT 相差 1 lepton。触发：长距离斜向预测正落在格边界；频率：
+  极低；风险：预测高度差 1，影响一帧爬升。
 - **`ColorAddUse8BitRGB` 的其余三色**：`GetColorFromColorAdd` 已按开关打包（空袭色
   接线）；`TintColorIronCurtain/ForceShield/Berserk` 由 `TechnoExt::GetTintColor`
   绘制钩子替换类词（`Ext/Techno/Hooks.Tint.cpp:71-135`），该钩子族未移植，VERA

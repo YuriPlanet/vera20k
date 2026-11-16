@@ -290,6 +290,95 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 .unwrap_or(self.rules.phobos_globals.jumpjet_climb_ignore_building)
         }
     }
+    /// Phobos `[General] JumpjetClimbPredictHeight=`.
+    fn jumpjet_climb_predict_height(&self) -> bool {
+        #[cfg(feature = "phobos")]
+        {
+            self.rules.phobos_globals.jumpjet_climb_predict_height
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            false
+        }
+    }
+    /// Phobos `[General] JumpjetClimbWithoutCutOut=`.
+    fn jumpjet_climb_without_cut_out(&self) -> bool {
+        #[cfg(feature = "phobos")]
+        {
+            self.rules.phobos_globals.jumpjet_climb_without_cut_out
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            false
+        }
+    }
+    /// `GetJumpjetHeightWithOccupyTechno`: the first building's
+    /// `Dimension2.Z`, else 85 leptons for a present techno, plus the bridge
+    /// deck in the non-building arm (`Ext/Unit/Hooks.Jumpjet.cpp:234-252`).
+    fn cell_occupy_height(&self, (cx, cy): (i16, i16)) -> i32 {
+        if cx < 0 || cy < 0 {
+            return 0;
+        }
+        let (rx, ry) = (cx as u16, cy as u16);
+        let building_height = self
+            .sim
+            .substrate
+            .occupancy
+            .first_building_on_layer(rx, ry, MovementLayer::Ground)
+            .map(|id| {
+                self.sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|building| {
+                        self.sim
+                            .interner
+                            .object_type(building.type_ref(), self.rules)
+                            .map(|object| self.rules.building_dimensions(object)[2])
+                    })
+                    .unwrap_or(0)
+            });
+        if let Some(height) = building_height {
+            return height;
+        }
+        let mut height = if self
+            .sim
+            .substrate
+            .occupancy
+            .get(rx, ry)
+            .is_some_and(|cell| cell.iter_layer(MovementLayer::Ground).next().is_some())
+        {
+            jumpjet_flight::CELL_OBJECT_LIFT
+        } else {
+            0
+        };
+        let has_bridge = self.terrain().is_some_and(|terrain| {
+            terrain.native_cell_flags(terrain.native_cell_identity((cx, cy))) & 0x100 != 0
+        });
+        if has_bridge {
+            height = height.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        }
+        height
+    }
+    /// `CellClass::Level` of `cell`.
+    fn cell_level_at(&self, cell: (i16, i16)) -> i32 {
+        self.terrain()
+            .map_or(0, |terrain| match terrain.native_cell_identity(cell) {
+                NativeCellIdentity::Real(index) => i32::from(terrain.cells()[index].level),
+                NativeCellIdentity::Dummy => {
+                    i32::from(terrain.shared_cell_dummy().snapshot().level)
+                }
+            })
+    }
+    /// `MapClass::TryGetCellAt` answers null outside the map.
+    fn cell_exists(&self, (cx, cy): (i16, i16)) -> bool {
+        self.terrain().is_some_and(|terrain| {
+            cx >= 0
+                && cy >= 0
+                && (cx as u32) < u32::from(terrain.width())
+                && (cy as u32) < u32::from(terrain.height())
+        })
+    }
     fn piggyback_arrival(&mut self, runtime: &mut JumpjetRuntime) {
         let Some(holder) = self.owner().lift.source() else {
             return;
