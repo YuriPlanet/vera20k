@@ -1680,12 +1680,17 @@ impl Simulation {
             world_z,
             COMBAT_EXPLOSION_Z_ADJUST,
             None,
+            true,
         )
     }
 
     /// [`Self::spawn_combat_explosion_anim`] with the Phobos warhead
     /// `AnimZAdjust` substituted for the stock combat row's -15 and the
-    /// tail's invoker House installed after construction.
+    /// tail's invoker House installed after construction. Unless the caller
+    /// `keeps` the anim, a picture-only type runs as a presentation anim
+    /// ([`Self::effect_anim_constructor`]); [`Self::spawn_combat_explosion_anim`]
+    /// returns an anim its callers may keep (the nuke and Ares' PreImpactAnim
+    /// await theirs), so it always makes an ordinary one.
     pub(crate) fn spawn_combat_explosion_anim_with_z_adjust(
         &mut self,
         rules: &RuleSet,
@@ -1698,6 +1703,7 @@ impl Simulation {
         world_z: i32,
         z_adjust: i32,
         owner_house: Option<InternedId>,
+        keeps: bool,
     ) -> Option<AnimId> {
         let descriptor = AnimClassSpawnDescriptor {
             delay: 0,
@@ -1711,7 +1717,11 @@ impl Simulation {
             z: world_z,
             ..AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z)
         };
-        let constructor = self.effect_anim_constructor(rules, type_name);
+        let constructor = if keeps {
+            AnimConstructorInput::Runtime
+        } else {
+            self.effect_anim_constructor(rules, type_name)
+        };
         match self.spawn_anim_at_world_with_constructor(
             rules,
             descriptor,
@@ -2129,6 +2139,9 @@ impl Simulation {
                 Some(self.interner.intern(sound))
             }
         });
+        if presentation {
+            self.intern_presentation_chain(rules, config);
+        }
         let stable_id = if local {
             self.substrate.anims.allocate_local_id()
         } else {
@@ -3381,6 +3394,39 @@ impl Simulation {
             &self.substrate.entities,
             self.resolved_terrain.as_ref(),
         ))
+    }
+
+    /// Intern now every name a presentation anim of type `config` may intern
+    /// on a later visit: the types it can become or make (`Next=`,
+    /// `TrailerAnim=`, `ExpireAnim=`, `BounceAnim=`) and their StopSounds.
+    /// A game loaded or rejoined while the anim lives lacks the anim, so the
+    /// interner must not wait for its visits to learn them.
+    fn intern_presentation_chain(&mut self, rules: &RuleSet, config: &AnimTypeRuntimeConfig) {
+        let children = |config: &AnimTypeRuntimeConfig| {
+            [
+                config.next.clone(),
+                config.trailer_anim.clone(),
+                config.expire_anim.clone(),
+                config.bounce_anim.clone(),
+            ]
+            .into_iter()
+            .flatten()
+        };
+        let mut pending: Vec<String> = children(config).collect();
+        let mut seen: Vec<String> = Vec::new();
+        while let Some(name) = pending.pop() {
+            if seen.contains(&name) {
+                continue;
+            }
+            self.interner.intern(&name);
+            if let Some(child) = rules.art().anim_runtime_config(&name) {
+                if let Some(sound) = child.stop_sound.as_deref() {
+                    self.interner.intern(sound);
+                }
+                pending.extend(children(child));
+            }
+            seen.push(name);
+        }
     }
 
     /// Whether presentation anim `id` rides an owner its UnInit has ended.
@@ -4830,7 +4876,9 @@ pub(crate) enum AnimConstructorInput {
     /// whose only reader caps the fall rate (`ObjectFall`); trigger: a Techno
     /// that starts falling within a few frames of firing; effect: it falls at
     /// the ordinary rate; frequency: rare (a bridge collapsing under a firing
-    /// unit). It ends with its owner, where gamemd detaches it in place.
+    /// unit). It ends with its owner's UnInit, where gamemd detaches it in
+    /// place; an owner that enters Limbo (a transport, a garrison) keeps it
+    /// drawing until its own end, a few frames.
     Presentation,
 }
 
@@ -6446,9 +6494,32 @@ mod tests {
         assert_eq!(starts(&sim), 1, "Start runs once per delay");
     }
 
+    /// The impact packet keeps nothing, so a picture-only impact is a
+    /// presentation anim; `spawn_combat_explosion_anim`'s callers may keep
+    /// theirs (the nuke awaits its NUKEBALL), so it makes an ordinary one.
+    #[test]
+    fn only_an_unkept_picture_only_impact_is_a_presentation_anim() {
+        let rules = runtime_rules("[PUFF]\nEnd=8\n", &[("PUFF", 8)]);
+        let mut sim = Simulation::new();
+        let type_id = sim.interner.intern("PUFF");
+        let point = crate::sim::projectile::ProjectileCoord::new(1000, 1000, 0);
+        let packet = crate::sim::combat::detonation_anim::placed_effect(type_id, point);
+        crate::sim::world::damage_consequences::admit_explosion_effect(&mut sim, &rules, packet);
+        assert_eq!(sim.anims().count(), 0, "not in the Anim array");
+        assert_eq!(sim.presentation_anims().count(), 1);
+
+        let zero = crate::util::fixed_math::SIM_ZERO;
+        let kept = sim
+            .spawn_combat_explosion_anim(&rules, type_id, 3, 3, zero, zero, 0, 0)
+            .unwrap();
+        assert!(!sim.anim(kept).unwrap().is_presentation());
+        assert_eq!(sim.anims().count(), 1);
+    }
+
     #[test]
     fn signed_impact_packet_keeps_exact_xy_through_explosion_admission() {
-        let rules = runtime_rules("[TWLT036]\nEnd=8\n", &[("TWLT036", 8)]);
+        // Sticky= keeps it an ordinary anim (`ArtRegistry::anim_presentation_only`).
+        let rules = runtime_rules("[TWLT036]\nEnd=8\nSticky=yes\n", &[("TWLT036", 8)]);
         for (x, y) in [(-257, -511), (-1, 1811), (-128_128, 5248), (2694, 5253)] {
             let mut sim = Simulation::new();
             let type_id = sim.interner.intern("TWLT036");
@@ -6489,6 +6560,7 @@ mod tests {
                 0,
                 7,
                 Some(house),
+                true,
             )
             .unwrap();
         let anim = sim.anim(id).unwrap();
@@ -7769,8 +7841,9 @@ mod tests {
     #[test]
     fn trailer_without_preintern_is_visited_and_guarded_in_same_live_walk() {
         let rules = runtime_rules(
+            // Sticky= keeps CHILD an ordinary anim (`ArtRegistry::anim_presentation_only`).
             "[PARENT]\nRate=0\nEnd=2\nTrailerAnim=CHILD\nTrailerSeperation=1\n\n\
-             [CHILD]\nRate=900\nEnd=2\nLoopCount=1\n",
+             [CHILD]\nRate=900\nEnd=2\nLoopCount=1\nSticky=yes\n",
             &[("PARENT", 2), ("CHILD", 2)],
         );
         let mut sim = Simulation::new();
