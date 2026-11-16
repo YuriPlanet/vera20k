@@ -242,8 +242,8 @@ enum NetworkPhase {
         /// observer. Native diagnostics keep the one reserved row above.
         several_observers: bool,
         /// The host of a VERA room keeps one spectator row open after its
-        /// spectators while no AI plays: a game with observers has no AI
-        /// (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
+        /// spectators, AI playing or not: unlike gamemd's room, where a game
+        /// with observers has no AI (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
         open_spectators: bool,
         /// The most people a VERA room holds, players and spectators, its
         /// host's Create Game choice.
@@ -2413,7 +2413,7 @@ impl MatchSession {
     /// A VERA room's rows after a change on its host: an Open Observer row
     /// among the players opens for a player, and past them only the first
     /// free row after the last spectator stays open, while the host keeps
-    /// spectators and no AI plays.
+    /// spectators, AI playing or not.
     fn keep_spectator_row(&mut self) -> anyhow::Result<()> {
         let Some(NetworkSession {
             phase:
@@ -2430,17 +2430,19 @@ impl MatchSession {
         if !self.host {
             return Ok(());
         }
-        let open = self.network_spectators_welcome() && launch.opponents.is_empty();
-        let seated = |row: u8| {
+        let open = self.network_spectators_welcome();
+        // A person or, in a room sharing bases, an AI past the map's seats.
+        let held = |row: u8| {
             launch
                 .humans
                 .iter()
                 .any(|human| human.raw_slot_index == Some(row))
+                || self.network_display_ai(row).is_some()
         };
         let players = self.network_player_row_limit();
         let rows = NETWORK_PLAYER_SLOT_COUNT as u8;
         let after = (players..rows)
-            .filter(|row| seated(*row))
+            .filter(|row| held(*row))
             .last()
             .map_or(players, |row| row + 1);
         let spare = (open && after < rows).then_some(after);
@@ -4151,12 +4153,12 @@ mod tests {
         assert!(session.network_queue().is_empty());
     }
 
-    /// No AI plays while anyone watches (`0x5EC9F0`'s
-    /// TXT_NO_AI_WITH_OBSERVER): an AI closes the spectator row, and a
-    /// guest asking to watch keeps its seat. A room without spectators
-    /// closes it too; it follows a spectator who joins and leaves.
+    /// AI play while people watch, unlike in gamemd's room (`0x5EC9F0`'s
+    /// TXT_NO_AI_WITH_OBSERVER): an AI keeps the spectator row open, and a
+    /// guest asking to watch takes it. A room without spectators closes it;
+    /// it follows a spectator who joins and leaves.
     #[test]
-    fn a_vera_room_closes_its_spectator_row_for_ai_and_the_host() {
+    fn a_vera_room_keeps_its_spectator_row_for_ai_and_closes_it_for_the_host() {
         use super::NetworkRowKind;
         let mut session = vera_room();
         session
@@ -4165,10 +4167,15 @@ mod tests {
                 NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy),
             )
             .unwrap();
-        assert!(observer_rows(&session).is_empty());
+        assert_eq!(observer_rows(&session), [4]);
         let slot = session.network_setup().unwrap().humans[1].slot.clone();
         session
-            .accept_network_peer_choices(1, slot, true, None)
+            .accept_network_peer_choices(1, slot.clone(), true, None)
+            .unwrap();
+        assert_eq!(guest(&session), (true, Some(4)));
+        assert_eq!(session.network_setup().unwrap().opponents.len(), 1);
+        session
+            .accept_network_peer_choices(1, slot, false, None)
             .unwrap();
         assert_eq!(guest(&session), (false, Some(1)));
         session
@@ -4372,7 +4379,8 @@ mod tests {
     /// With Teams set a VERA room shares bases, so no team is ever full: a
     /// spectator asking to play once the map's four seats are taken sits
     /// past them, and a smaller map keeps everyone seated and takes an AI
-    /// past its seats too. Teams Off makes the people past the seats watch
+    /// past its seats too, with a spectator seat after it. Teams Off makes
+    /// the people past the seats watch
     /// from there, the AI leave and a start two players held go Random.
     #[test]
     fn a_vera_room_with_teams_seats_more_than_its_map() {
@@ -4410,6 +4418,8 @@ mod tests {
                 super::NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy),
             )
             .unwrap();
+        // People may still watch, from the row after the AI's.
+        assert_eq!(observer_rows(&session), [seat + 1]);
         let start = crate::skirmish_launch::LaunchStartPosition::Position(0);
         session
             .set_network_seat_picks(&[

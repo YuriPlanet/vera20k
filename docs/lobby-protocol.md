@@ -196,7 +196,12 @@ the service increments `revision` and clears guest readiness on a material chang
 Starting requires at least one non-observer human and at least two playing
 participants, counting the actual `launch.opponents` AI rows. A host can select
 an AI opponent and start alone; `ai_player_count` without an AI row is insufficient.
-Games with observers cannot include AI players. `start.users` contains exactly
+AI players may play while observers watch. The map's `player_capacity` must cover
+every playing human and AI row, or with Teams set (`launch.options.teams`), where a
+team's players share its bases, one start for each team that has players or AI and
+one for each playing participant on no team. A lobby from before this refuses options
+past the map's capacity with `invalid_options`, and a start with both observers and
+AI with 409 `not_ready`. `start.users` contains exactly
 the canonical human names, including observers, and never includes AI rows.
 
 Event kinds and payloads:

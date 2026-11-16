@@ -2966,6 +2966,15 @@ impl WolCapture {
                         .control_rect(crate::ui::multiplayer_setup::TEAM_STARTS)
                         .context("Team Starts")?;
                     setup_click(state, rect);
+                    // People may still watch with an AI playing: the
+                    // Spectators box stays, with its open seat.
+                    let watched = setup_view(state)?;
+                    ensure!(
+                        watched.headers.iter().flatten().any(|header| {
+                            header.group == crate::ui::multiplayer_setup::SetupGroup::Spectators
+                        }) && state.match_state.session.network_free_row(true).is_some(),
+                        "the AI closed the room to spectators"
+                    );
                     let launch = state
                         .match_state
                         .session

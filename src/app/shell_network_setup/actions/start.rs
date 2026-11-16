@@ -47,8 +47,13 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         message(state, "TXT_ONLY_ONE", &[]);
         return Ok(());
     }
-    // C2 0x790698: WOL forbids AI players in a game with observers.
-    if wol && humans < launch.humans.len() as i32 && launch.ai_player_count != 0 {
+    // C2 0x790698: WOL forbids AI players in a game with observers. VERA's
+    // own room lets them play while people watch.
+    if wol
+        && !state.match_state.session.network_several_observers()
+        && humans < launch.humans.len() as i32
+        && launch.ai_player_count != 0
+    {
         message(state, "TXT_NO_AI_OBSERVATION", &[]);
         return Ok(());
     }

@@ -291,14 +291,13 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .multiplayer_shell_runtime
             .cooperative_setup_view()
     });
-    // No AI plays in a VERA room while anyone watches (`0x5EC9F0`'s
-    // TXT_NO_AI_WITH_OBSERVER).
-    let watched = several && launch.humans.iter().any(|human| human.is_observer());
     let seats = 0..visible_limit.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT) as u8;
     let removed = |row: &u8| session.network_vacancy(*row) == Some(NetworkVacancy::Closed);
     // The host keeps at least two seats.
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
-    let ai_allowed = !watched && mode.class.policy().lists_in_skirmish;
+    // AI play in a VERA room while people watch too, unlike in gamemd's
+    // (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
+    let ai_allowed = mode.class.policy().lists_in_skirmish;
     let teams = session.network_teams();
     // With Teams Off a room with teams is free-for-all and nobody is on a
     // team, so, as in a clan room, it has no Team lists.

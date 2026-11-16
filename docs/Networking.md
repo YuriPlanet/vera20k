@@ -302,7 +302,18 @@ each AI there starts in its own House beside them, its units on the cells nearby
 Turning Teams Off, or picking a map or mode with fewer seats, makes the people past the
 seats watch rather than leave the room, and the AI there leave. Nothing new travels: the
 host's options carry each player's row and start as before, and a room of mixed versions
-cannot start. A rollback seats no more players than the map has starts.
+cannot start. Online the lobby checks the map's starts against the bases the room needs
+([lobby protocol](lobby-protocol.md)). A lobby from before that refuses the host's options
+once more people play than the map has seats; the host's game then turns Teams Off, says
+so and sends its options again, and the people past the seats watch. A rollback seats no
+more players than the map has starts.
+
+AI play in a VERA room while people watch, unlike in gamemd's room (`0x5EC9F0`'s
+TXT_NO_AI_WITH_OBSERVER, and WOL's TXT_NO_AI_OBSERVATION at Start Game): the host keeps
+the spectator seat open with AI in the room, and a guest may watch beside them. Nothing new
+travels. A lobby from before this refuses to start such a game, and the host's game says
+the match could not start. An older host keeps gamemd's rule, and a rollback keeps it
+again.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
