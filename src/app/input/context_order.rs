@@ -277,14 +277,29 @@ pub(crate) fn attack_action(
     forced: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> AttackAction {
+    let actor = sim.entities().get(actor_id);
+    let human = actor.is_some_and(|actor| sim.house_is_human_player(actor.owner()));
+    // TechnoClass::What_Action 0x7002E9 (`Ext/TerrainType/Hooks.Passable.cpp:25-44`):
+    // a current player's controllable Techno answers Move over a passable
+    // Terrain unless force-firing. The hook sits inside the base function, so
+    // it preempts every class tail below.
+    #[cfg(feature = "phobos")]
+    if !forced
+        && human
+        && let Some(actor) = actor
+        && !actor.deactivated.is_offline()
+        && let TargetKind::Entity(target_id) = *target
+        && sim.terrain_object_is_passable(target_id)
+    {
+        return AttackAction::Move;
+    }
     let mut action = base_action(sim, rules, actor_id, target, forced, overlay_registry);
-    let Some(actor) = sim.entities().get(actor_id) else {
+    let Some(actor) = actor else {
         return action;
     };
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return action;
     };
-    let human = sim.house_is_human_player(actor.owner());
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,
         kind,
@@ -8562,6 +8577,100 @@ mod tests {
                 "non-Engineers retain their next action route"
             );
         }
+    }
+
+    /// Phobos `TechnoClass_WhatAction_PassableTerrain` (`0x7002E9`,
+    /// `Ext/TerrainType/Hooks.Passable.cpp:25-44`): a current player's
+    /// controllable Techno answers Move over a passable Terrain object unless
+    /// force-firing; the class tails never run for that answer.
+    #[test]
+    fn a_passable_terrain_answers_move_for_the_player_unless_forced() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::terrain_object::TerrainObjectState;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nTerrain.IsPassable=yes\n\
+             [TerrainTypes]\n0=TREE\n1=ROCK\n\
+             [VehicleTypes]\n0=MTNK\n\
+             [TREE]\nStrength=100\nTemperateOccupationBits=7\n\
+             [ROCK]\nStrength=100\nTemperateOccupationBits=7\nIsPassable=no\n\
+             [MTNK]\nStrength=300\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        for (name, human) in [("Americans", true), ("Russians", false)] {
+            let id = sim.intern(name);
+            sim.houses_mut_for_test()
+                .register(crate::sim::house_state::HouseState::new(
+                    id, 0, None, human, 0, 10,
+                ));
+        }
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        let house = sim.interner().get("Americans");
+        sim.session_mut_for_test().set_current_house_for_test(house);
+        *sim.playfield_bounds_mut_for_test() = Some(crate::map::playfield::PlayfieldBounds {
+            base: 0,
+            off_fc: -100,
+            off_100: -100,
+            off_104: 200,
+            off_108: 200,
+        });
+
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 4, 5, 0, &rules)
+            .unwrap();
+        let enemy = sim
+            .spawn_object("MTNK", "Russians", 4, 8, 0, &rules)
+            .unwrap();
+
+        let put_terrain = |sim: &mut Simulation, id: u64, name: &str, cell: (u16, u16)| {
+            let ty = rules
+                .terrain_object_type_case_insensitive(name)
+                .expect("terrain type")
+                .clone();
+            let type_ref = sim.intern(name);
+            let state = TerrainObjectState::new(id, type_ref, cell, &ty, false, None);
+            sim.terrain_objects_mut_for_test()
+                .objects_mut_for_test()
+                .insert(id, state);
+        };
+        put_terrain(&mut sim, 900, "TREE", (6, 5));
+        put_terrain(&mut sim, 901, "ROCK", (6, 8));
+        assert!(
+            sim.terrain_object_is_passable(900),
+            "the global projects onto the live object"
+        );
+        assert!(!sim.terrain_object_is_passable(901));
+
+        let action = |sim: &Simulation, actor, terrain, forced| {
+            attack_action(
+                sim,
+                &rules,
+                actor,
+                &TargetKind::Entity(terrain),
+                forced,
+                None,
+            )
+        };
+
+        assert_eq!(action(&sim, tank, 900, false), AttackAction::Move);
+        // Force-fire keeps the stock answer (`isForceFire` skips the hook).
+        assert_ne!(action(&sim, tank, 900, true), AttackAction::Move);
+        // Another house's actor is not the current player.
+        assert_ne!(action(&sim, enemy, 900, false), AttackAction::Move);
+        // A non-passable Terrain keeps the stock answer.
+        assert_ne!(action(&sim, tank, 901, false), AttackAction::Move);
+        // An offline (uncontrollable) player's actor keeps it too.
+        sim.entities_mut_for_test()
+            .get_mut(tank)
+            .unwrap()
+            .deactivated
+            .set_for_test(true);
+        assert_ne!(action(&sim, tank, 900, false), AttackAction::Move);
     }
 }
 
