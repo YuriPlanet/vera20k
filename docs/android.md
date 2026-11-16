@@ -252,6 +252,17 @@ input method through `util::android_ime`: winit 0.30's Android backend delivers 
 seeds it from the focused edit and turns its changes back into that screen's own
 key path.
 
+The bridge holds the input method's composing range back from those commits and
+draws it in the IME colour, so a pinyin run only reaches the game once it is
+committed. The password boxes report themselves
+(`TYPE_TEXT_VARIATION_PASSWORD`), so the keyboard's dictionary never learns them,
+and the name boxes drop units at or above `0x100` (`0x4D1(1)`), which keeps a
+Chinese name out of the single-byte roster row.
+
+The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
+links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
+`android-activity` stays the crates.io 0.6.0 release.
+
 Residuals:
 
 - The touch entry is Android-only. The browser build already takes text from the

@@ -835,11 +835,16 @@ mod tests {
     fn only_the_password_field_tells_the_input_method_to_hide_its_text() {
         let mut form = WolAccountForm::sign_in("commander", None);
         form.focus(0);
-        assert!(!form.focused_is_password(), "the username keeps its suggestions");
+        assert!(
+            !form.focused_is_password(),
+            "the username keeps its suggestions"
+        );
         form.focus(1);
-        assert!(form.focused_is_password(), "the password must not be learnt");
+        assert!(
+            form.focused_is_password(),
+            "the password must not be learnt"
+        );
     }
-
 
     fn type_into(form: &mut WolAccountForm, values: &[&str]) {
         for (index, value) in values.iter().enumerate() {

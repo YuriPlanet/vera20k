@@ -185,7 +185,8 @@ pub(crate) fn sync(state: &mut AppState) {
     }
     if let Some((_, rect)) = found
         && ime.area != Some(rect)
-    {        ime.area = Some(rect);
+    {
+        ime.area = Some(rect);
         platform.window.set_ime_cursor_area(
             PhysicalPosition::new(rect.x, rect.y),
             PhysicalSize::new(rect.w.max(1) as u32, rect.h.max(1) as u32),
@@ -249,8 +250,8 @@ mod android {
         // A password box tells the input method to stop learning and suggesting
         // it (`ES_PASSWORD`, `0x00614FDC`); the flag follows the focus, so the
         // username next door keeps its suggestions.
-        let secret = focused == ImeTarget::WolLoginField
-            && crate::app::shell_wol::login::ime_secret(state);
+        let secret =
+            focused == ImeTarget::WolLoginField && crate::app::shell_wol::login::ime_secret(state);
         if state.platform.ime.android_secret != Some(secret) {
             state.platform.ime.android_secret = Some(secret);
             crate::util::android_ime::set_secret(secret);
@@ -306,7 +307,10 @@ mod android {
         let (committed, preedit) =
             crate::util::android_ime::split_composition(&units, current.compose, current.cursor);
         let committed = String::from_utf16_lossy(&committed);
-        state.platform.ime.composition = preedit.as_ref().map(|(text, _)| text.clone()).unwrap_or_default();
+        state.platform.ime.composition = preedit
+            .as_ref()
+            .map(|(text, _)| text.clone())
+            .unwrap_or_default();
         state.platform.ime.cursor = preedit.as_ref().map_or(0, |(_, caret)| *caret);
         if committed == state.platform.ime.android_text {
             return;

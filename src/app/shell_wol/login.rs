@@ -257,9 +257,7 @@ pub(super) fn update_geometry(state: &mut AppState) {
 /// Android: the focused edit as an IME target, once a tap has armed the
 /// keyboard (`app::input::ime`). The VERA Online page's sign-in form and the
 /// legacy nickname/password page share the one target.
-pub(crate) fn ime_rect(
-    state: &AppState,
-) -> Option<crate::ui::shell::geom::RectPx> {
+pub(crate) fn ime_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     if shell_transition::blocks_shell_input(state) {
         return None;
     }
