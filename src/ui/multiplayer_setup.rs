@@ -55,12 +55,16 @@ const TEAM_JOIN: u16 = 0x7140;
 const TEAM_ADD_AI: u16 = 0x7180;
 
 /// VERA's room ([`SetupDialog::modern`]): the roster's and the chat's
-/// columns side by side, in 800x600 pixels, from the window's left edge to
-/// the shell's right panel ([`ShellScale::anchored_right`]), with this
-/// margin around them and this gap between them. The chat takes this share
+/// columns side by side, in 800x600 pixels, from past the background's frame
+/// at the window's left edge to the shell's right panel
+/// ([`ShellScale::anchored_right`]), with this gap between them and after
+/// the frame, and this margin before the panel. The chat takes this share
 /// of their width, within these limits.
 const ROOM_MARGIN: i32 = 10;
 const ROOM_GAP: i32 = 8;
+/// The room background's frame down its left edge, in its 800-wide art: the
+/// room keeps it at its own width where it spreads the background.
+pub(crate) const ROOM_FRAME_W: i32 = 9;
 const ROOM_RIGHT_PANEL_W: i32 = 168;
 const CHAT_SHARE: (i32, i32) = (2, 5);
 const CHAT_W: (i32, i32) = (230, 460);
@@ -94,7 +98,7 @@ const ROSTER_ADD_AI: (i32, i32) = (220, 70);
 const ROSTER_JOIN_W: i32 = 70;
 /// A list opened from a narrow cell is at least this wide.
 const ROSTER_LIST_MIN_W: i32 = 110;
-/// VERA's team bar over the chat: its parts from its box's top-left corner,
+/// VERA's team bar under the roster: its parts from its box's top-left corner,
 /// the Teams count's label and trackbar and, online, Balance and Balance
 /// automatically, their art at 60% of its size
 /// ([`MultiplayerSetupLayout::control_scale`]). Balance automatically goes
@@ -170,12 +174,13 @@ pub(crate) struct RosterPlace {
 }
 
 /// The entries VERA's roster shows from entry `top` down its one column,
-/// until one no longer fits above its bottom. When `top` is a player under
+/// until one no longer fits above `bottom` (800x600 pixels: over the team
+/// bar in a room with one, [`MultiplayerSetupLayout::roster_bottom`]). When `top` is a player under
 /// a header above it, that header stays pinned first, so the group keeps
 /// its caption and Join. A header under another group leaves
 /// [`ROSTER_GROUP_GAP`] between their boxes, and none stands at the foot
 /// without its first row.
-pub(crate) fn roster_page(items: &[RosterItem], top: usize) -> Vec<RosterPlace> {
+pub(crate) fn roster_page(items: &[RosterItem], top: usize, bottom: i32) -> Vec<RosterPlace> {
     let pinned = items
         .get(top)
         .filter(|item| **item == RosterItem::Row)
@@ -201,7 +206,7 @@ pub(crate) fn roster_page(items: &[RosterItem], top: usize) -> Vec<RosterPlace> 
         } else {
             0
         };
-        if y + item.height() + first_row > ROSTER_BOTTOM {
+        if y + item.height() + first_row > bottom {
             break;
         }
         places.push(RosterPlace {
@@ -223,7 +228,7 @@ pub(crate) struct RosterScroll {
     pub(crate) stops: Vec<usize>,
     pub(crate) max_top: usize,
 }
-pub(crate) fn roster_scroll(items: &[RosterItem]) -> RosterScroll {
+pub(crate) fn roster_scroll(items: &[RosterItem], bottom: i32) -> RosterScroll {
     let stops: Vec<usize> = (0..items.len())
         .filter(|&index| {
             items[index] == RosterItem::Row || items.get(index + 1) != Some(&RosterItem::Row)
@@ -232,7 +237,7 @@ pub(crate) fn roster_scroll(items: &[RosterItem]) -> RosterScroll {
     let max_top = stops
         .iter()
         .position(|&top| {
-            roster_page(items, top)
+            roster_page(items, top, bottom)
                 .last()
                 .is_some_and(|place| place.item + 1 == items.len())
         })
@@ -1190,7 +1195,9 @@ pub(crate) struct MultiplayerSetupLayout {
     roster_columns: RosterColumns,
     /// In VERA's room, the chat's column at 800x600: its left edge and
     /// width.
-    chat_column: (i32, i32),
+    /// Where VERA's roster's entries end, in 800x600 pixels: over the team
+    /// bar in a room with one.
+    pub(crate) roster_bottom: i32,
     pub(crate) flags: [RectPx; MODERN_SETUP_ROWS],
     pub(crate) acceptance: [RectPx; MODERN_SETUP_ROWS],
     /// C2/C9 ping statics and emote button; `None` on BC/BD.
@@ -1358,7 +1365,7 @@ impl MultiplayerSetupLayout {
             roster_page_label: rect(208, 230, 269, 18),
             roster_area: RectPx::new(0, 0, 0, 0),
             roster_columns: RosterColumns::new(RectPx::new(0, 0, ROSTER_W + ROSTER_SPARE_W, 0)),
-            chat_column: (0, 0),
+            roster_bottom: ROSTER_BOTTOM,
             flags: std::array::from_fn(|row| rect(240, 36 + row as i32 * 26, 49, 21)),
             acceptance: std::array::from_fn(|row| {
                 if dialog.wol() {
@@ -1431,7 +1438,7 @@ impl MultiplayerSetupLayout {
         layout
     }
     /// VERA's room: the roster's column and the chat's side by side across
-    /// the window, the team bar over the chat, and the options in Game
+    /// the window, the team bar under the roster, and the options in Game
     /// Options and the Teams box, both centred over the columns.
     fn move_options_into_popup(&mut self, online: bool) {
         let scale = self.page.scale;
@@ -1439,7 +1446,7 @@ impl MultiplayerSetupLayout {
         // The window in the shell's 800x600 pixels: on a wider one, the
         // shell stands at its right edge and the spare width is at the left.
         let window = scale.base_rect(scale.window());
-        let left = window.x + ROOM_MARGIN;
+        let left = window.x + ROOM_FRAME_W + ROOM_GAP;
         let right = window.x + window.w - ROOM_RIGHT_PANEL_W - ROOM_MARGIN;
         let width = right - left;
         let chat_w = (width * CHAT_SHARE.0 / CHAT_SHARE.1).clamp(CHAT_W.0, CHAT_W.1);
@@ -1490,18 +1497,25 @@ impl MultiplayerSetupLayout {
             dialog: popup(0, 0, options.w, options.h),
             ok: popup(276, 292, 124, 24),
         });
-        // The roster's column: the labels over its cells, and the area it
-        // scrolls in.
+        // The roster's column: the labels over its cells, the area it
+        // scrolls in and, at its foot, the team bar as wide as the groups'
+        // boxes, two lines high where online's Balance automatically does
+        // not fit beside the rest.
         self.roster = true;
-        let my = ROSTER_BOX_MARGIN.1;
+        let (mx, my) = ROSTER_BOX_MARGIN;
+        let columns = RosterColumns::new(RectPx::new(left, 0, roster_w, 0));
+        let bar_w = columns.w + 2 * mx;
+        let one_line = !online || bar_w >= TEAM_BAR_ONE_LINE;
+        let bar_h = if one_line { TEAM_BAR_H } else { 2 * TEAM_BAR_H };
+        let bar = RectPx::new(columns.x - mx, ROSTER_BOTTOM + my - bar_h, bar_w, bar_h);
+        self.roster_bottom = bar.y - ROSTER_GROUP_GAP - my;
         let area = RectPx::new(
             left,
             ROSTER_TOP - my,
             roster_w,
-            ROSTER_BOTTOM - ROSTER_TOP + 2 * my,
+            self.roster_bottom - ROSTER_TOP + 2 * my,
         );
         self.roster_area = scale.scale_rect(area);
-        let columns = RosterColumns::new(area);
         self.roster_columns = columns;
         self.labels = [
             "GUI:Players",
@@ -1514,17 +1528,6 @@ impl MultiplayerSetupLayout {
         .zip(columns.cells)
         .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, 14)))
         .collect();
-        // The chat's column: the team bar at its top, as high as the
-        // roster's area, then the log and the edit line, and online the
-        // emote button at the edit line's right end.
-        let bar = RectPx::new(chat_x, area.y, chat_w, TEAM_BAR_H);
-        let one_line = !online || bar.w >= TEAM_BAR_ONE_LINE;
-        let bar = RectPx::new(
-            bar.x,
-            bar.y,
-            bar.w,
-            if one_line { TEAM_BAR_H } else { 2 * TEAM_BAR_H },
-        );
         let at = |part: RectPx| scale.scale_rect(part.translate(bar.x, bar.y));
         self.team_bar = Some(scale.scale_rect(bar));
         self.teams_label = at(TEAM_BAR_LABEL);
@@ -1545,6 +1548,9 @@ impl MultiplayerSetupLayout {
                 )
             }));
         }
+        // The chat's column: the log from as high as the roster's area,
+        // then the edit line, and online the emote button at its right end.
+        self.chat_log = base(chat_x + 1, area.y, chat_w, CHAT_LOG_BOTTOM - area.y);
         let chat = scale.base_rect(self.chat);
         let emote_w = if online { 34 } else { 5 };
         self.chat = base(chat_x + 2, chat.y, chat_w - emote_w, chat.h);
@@ -1553,30 +1559,22 @@ impl MultiplayerSetupLayout {
                 RectPx::new(chat_x + chat_w - 26, emote.y, emote.w, emote.h)
             });
         }
-        self.chat_column = (chat_x, chat_w);
-        self.chat_log_under(Some(bar));
         // The status line along the bottom from the window's left edge.
         self.page.status_help = scale.derive_rect(self.page.status_help, |line| {
             RectPx::new(window.x + line.x, line.y, line.w - window.x, line.h)
         });
     }
-    /// VERA's room: the chat's log from under the team bar, or from the
-    /// column's top in a room without one.
-    fn chat_log_under(&mut self, bar: Option<RectPx>) {
-        let (x, w) = self.chat_column;
-        let top = bar.map_or(ROSTER_TOP - ROSTER_BOX_MARGIN.1, |bar| bar.y + bar.h + 2);
-        self.chat_log =
-            self.page
-                .scale
-                .scale_rect(RectPx::new(x + 1, top, w, CHAT_LOG_BOTTOM - top));
-    }
-    /// VERA's room without teams: no team bar, the chat's log from the
-    /// column's top.
+    /// VERA's room without teams: no team bar, the roster down to the
+    /// column's foot.
     pub(crate) fn without_team_bar(&mut self) {
         if self.team_bar.take().is_some() {
             self.balance = None;
             self.auto_balance = None;
-            self.chat_log_under(None);
+            self.roster_bottom = ROSTER_BOTTOM;
+            let my = ROSTER_BOX_MARGIN.1;
+            self.roster_area = self.page.scale.derive_rect(self.roster_area, |area| {
+                RectPx::new(area.x, area.y, area.w, ROSTER_BOTTOM - ROSTER_TOP + 2 * my)
+            });
         }
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
@@ -1961,11 +1959,11 @@ mod tests {
         }
     }
 
-    /// VERA's roster stacks its teams in one column. A full room of two
-    /// teams scrolls: its scrollbar stands right of the groups' boxes and
-    /// above the chat, a team scrolled into keeps its header pinned on top,
-    /// and the last place shows the last entry. No header is left at the
-    /// foot without its first row.
+    /// VERA's roster stacks its teams in one column, over the team bar. A
+    /// full room of three teams scrolls: its scrollbar stands right of the
+    /// groups' boxes and left of the chat, a team scrolled into keeps its
+    /// header pinned on top, and the last place shows the last entry. No
+    /// header is left at the foot without its first row.
     #[test]
     fn vera_roster_stacks_teams_and_scrolls() {
         use RosterItem::{Header, Row};
@@ -1977,10 +1975,16 @@ mod tests {
             .chain(team(2, 15))
             .chain([Header(SetupGroup::Spectators)])
             .collect();
-        let scroll = roster_scroll(&full);
+        let mut layout =
+            MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
+        let bottom = layout.roster_bottom;
+        let team_bar = layout.team_bar.unwrap();
+        let area = layout.roster_area;
+        assert!(area.y + area.h < team_bar.y && team_bar.x == area.x);
+        let scroll = roster_scroll(&full, bottom);
         // Each player's row and the empty spectators' header.
         assert_eq!(scroll.stops.len(), 46);
-        let top = roster_page(&full, scroll.stops[0]);
+        let top = roster_page(&full, scroll.stops[0], bottom);
         assert_eq!(
             top[..2],
             [
@@ -1997,17 +2001,15 @@ mod tests {
             ]
         );
         assert!(top.last().unwrap().item < full.len() - 1);
-        let last = roster_page(&full, scroll.stops[scroll.max_top]);
+        let last = roster_page(&full, scroll.stops[scroll.max_top], bottom);
         assert_eq!(last.last().unwrap().item, full.len() - 1);
-        let before = roster_page(&full, scroll.stops[scroll.max_top - 1]);
+        let before = roster_page(&full, scroll.stops[scroll.max_top - 1], bottom);
         assert!(before.last().unwrap().item < full.len() - 1);
         // Scrolled into Team B, its header stays on top.
-        let into_b = roster_page(&full, 20);
+        let into_b = roster_page(&full, 20, bottom);
         assert_eq!((into_b[0].item, into_b[0].header), (16, true));
         assert_eq!(into_b[1].item, 20);
 
-        let mut layout =
-            MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
         layout.arrange_roster(&into_b);
         let mut view = vera_room_view();
         view.roster_scroll = (scroll.stops.len(), scroll.max_top);
@@ -2094,13 +2096,13 @@ mod tests {
         // Fifteen teams of two: from every place, the column ends above
         // its bottom with no header left without its first row.
         let many: Vec<_> = (0..15).flat_map(|index| team(index, 2)).collect();
-        let scroll = roster_scroll(&many);
+        let scroll = roster_scroll(&many, bottom);
         assert_eq!(scroll.stops.len(), 30);
         for top in scroll.stops {
-            let places = roster_page(&many, top);
+            let places = roster_page(&many, top, bottom);
             let foot = places.last().unwrap();
             assert!(!foot.header);
-            assert!(foot.y + ROSTER_ROW_H <= ROSTER_BOTTOM);
+            assert!(foot.y + ROSTER_ROW_H <= bottom);
         }
     }
 
@@ -2120,7 +2122,12 @@ mod tests {
         let panel_x = 1920 - 168 * 1440 / 800;
         assert!(back.x >= panel_x, "{back:?}");
         let (roster, chat_log) = (layout.roster_area, layout.chat_log);
-        assert!(roster.x < 40 && roster.x + roster.w < chat_log.x);
+        // The roster starts a gap past the background's frame, which keeps
+        // its own width (1.8 times the art's), and the chat's log runs as
+        // high as the roster.
+        let frame = (ROOM_FRAME_W as f32 * 1.8).ceil() as i32;
+        assert!(roster.x > frame + 8 && roster.x < 40, "{roster:?}");
+        assert!(roster.x + roster.w < chat_log.x && chat_log.y == roster.y);
         assert!(chat_log.x + chat_log.w < panel_x);
         let popup = layout.game_options.unwrap().dialog;
         assert!(
@@ -2235,9 +2242,8 @@ mod tests {
             let (x, y) = center(popup_layout.control_rect(id).unwrap());
             assert_eq!(popup_layout.control_at(&view, x, y), Some(id));
         }
-        // The team bar over the chat, beside the roster, holds the Teams
-        // count and, online, Balance and Balance automatically; a LAN room
-        // has no Balance.
+        // The team bar under the roster holds the Teams count and, online,
+        // Balance and Balance automatically; a LAN room has no Balance.
         view.open_box = None;
         view.trackbars.push(SetupTrackbar {
             id: TEAM_COUNT,
@@ -2249,7 +2255,12 @@ mod tests {
         let bar = popup_layout.team_bar.unwrap();
         let roster = popup_layout.roster_area;
         let chat_log = popup_layout.chat_log;
-        assert!(roster.x + roster.w <= bar.x && bar.y + bar.h <= chat_log.y && chat_log.x > bar.x);
+        assert!(
+            bar.x == roster.x
+                && roster.y + roster.h < bar.y
+                && bar.x + bar.w < chat_log.x
+                && chat_log.y < bar.y
+        );
         for id in [TEAM_COUNT, BALANCE, AUTO_BALANCE] {
             let rect = popup_layout.control_rect(id).unwrap();
             assert!(

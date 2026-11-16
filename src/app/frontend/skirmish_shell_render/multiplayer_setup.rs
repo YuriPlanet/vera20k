@@ -433,7 +433,7 @@ pub(crate) fn render_multiplayer_setup(
                 );
             }
         }
-        // VERA's team bar over the chat, in its own box: the Teams count
+        // VERA's team bar under the roster, in its own box: the Teams count
         // (drawn with the room's trackbars) and, online, Balance and Balance
         // automatically.
         if let Some(bar) = layout.team_bar.filter(|_| view.team_bar()) {
@@ -1168,16 +1168,30 @@ fn push_room_spread(
         return;
     }
     let panel_x = chrome.right_panel.top.x;
-    if let Some(mut background) = background {
-        background.uv_size[0] *= (panel_x - dialog.x) as f32 / dialog.w as f32;
-        push_entry_sized(
-            art,
-            background,
-            0.0,
-            dialog.y as f32,
-            [panel_x as f32, dialog.h as f32],
-            SHELL_PARENT_BACKGROUND_DEPTH - 0.000002,
-        );
+    if let Some(background) = background {
+        // The frame down the art's left edge keeps its own width, and the
+        // art from there to the panel stretches over the rest.
+        let art_w = background.pixel_size[0].max(1.0);
+        let frame_w = ROOM_FRAME_W as f32 * chrome.scale.factor();
+        let mut frame = background;
+        frame.uv_size[0] *= ROOM_FRAME_W as f32 / art_w;
+        let mut rest = background;
+        rest.uv_origin[0] += frame.uv_size[0];
+        rest.uv_size[0] = background.uv_size[0] * (panel_x - dialog.x) as f32 / dialog.w as f32
+            - frame.uv_size[0];
+        for (entry, x, w) in [
+            (frame, 0.0, frame_w),
+            (rest, frame_w, panel_x as f32 - frame_w),
+        ] {
+            push_entry_sized(
+                art,
+                entry,
+                x,
+                dialog.y as f32,
+                [w, dialog.h as f32],
+                SHELL_PARENT_BACKGROUND_DEPTH - 0.000002,
+            );
+        }
     }
     if let Some(strip) = lower_strip_entry(atlas, chrome) {
         let rect = lower_strip_rect(chrome, strip);

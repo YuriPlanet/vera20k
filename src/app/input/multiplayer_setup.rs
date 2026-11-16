@@ -12,15 +12,30 @@ use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
+/// The room's page in the window, before VERA's roster is placed in it.
+fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     let (w, h) = shell_layout::shell_screen_size(state);
-    let dialog = crate::app::shell_network_setup::dialog(state);
-    let mut layout = MultiplayerSetupLayout::new(
-        dialog,
+    MultiplayerSetupLayout::new(
+        crate::app::shell_network_setup::dialog(state),
         w as i32,
         h as i32,
         shell_layout::fills_window(state),
-    );
+    )
+}
+
+/// Where VERA's roster's entries end in this window, in 800x600 pixels:
+/// over the team bar in a room with one.
+pub(crate) fn roster_bottom(state: &AppState, team_bar: bool) -> i32 {
+    let mut layout = page_layout(state);
+    if !team_bar {
+        layout.without_team_bar();
+    }
+    layout.roster_bottom
+}
+
+pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
+    let dialog = crate::app::shell_network_setup::dialog(state);
+    let mut layout = page_layout(state);
     if dialog.modern {
         if let Some(listing) = crate::app::shell_network_setup::view::room_listing(state) {
             layout.arrange_roster(&listing.places);
