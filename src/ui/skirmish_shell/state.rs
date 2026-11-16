@@ -90,7 +90,7 @@ pub enum OwnerDrawButton {
     /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
     SaveSetup,
     LoadSetup,
-    /// VERA's Game Options under the options ([`super::game_options`]).
+    /// VERA's Game Options ([`super::game_options`]).
     GameOptions,
     Back0x5c0,
 }

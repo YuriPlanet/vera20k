@@ -256,6 +256,11 @@ pub struct SkirmishShellLayout {
     /// Map; gamemd's `0x102` has no such buttons.
     pub save_setup_button: RectPx,
     pub load_setup_button: RectPx,
+    /// VERA's Game Options ([`super::game_options`]), on the tile under Load
+    /// Setup where the panel has one above Back. At 640x480 Back takes that
+    /// tile, and the button sits on the page under Build Off Ally ConYards
+    /// ([`Self::game_options_in_panel`]).
+    pub game_options_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -273,9 +278,6 @@ pub struct SkirmishShellLayout {
     pub trackbars: SkirmishTrackbarRects,
     pub trackbar_labels: SkirmishTrackbarLabelRects,
     pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
-    /// VERA's Game Options, under Build Off Ally ConYards
-    /// ([`super::game_options`]); gamemd's `0x102` has no such button.
-    pub game_options_button: RectPx,
     pub status_help: RectPx,
 }
 
@@ -287,6 +289,12 @@ impl SkirmishShellLayout {
         let (x, y) = dialog_origin(self.screen.w, self.screen.h);
         self.scale
             .dialog_origin_or((self.screen.x + x, self.screen.y + y))
+    }
+
+    /// Whether Game Options sits on its panel tile under Load Setup, rather
+    /// than on the page, as it does at 640x480 where Back takes that tile.
+    pub fn game_options_in_panel(&self) -> bool {
+        self.game_options_button.x == self.load_setup_button.x
     }
 
     /// The live height of the shell space: the authored 600 rows letterboxed
@@ -525,6 +533,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
     layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
     layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
+    layout.game_options_button = layout.game_options_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -561,7 +570,6 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     for rect in &mut layout.checkboxes {
         *rect = translate_checkbox(*rect, dx, dy);
     }
-    layout.game_options_button = layout.game_options_button.translate(dx, dy);
     layout.status_help = layout.status_help.translate(dx, dy);
     layout
 }
@@ -766,6 +774,18 @@ pub fn compute_layout_for_rows(
         team_combos: row_column(0, 364, 25, 73),
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
+    let back_button = back_rect(screen_w, panel);
+    // VERA's Game Options takes the tile under Load Setup where the panel
+    // has one above Back. At 640x480 Back takes it, so the button goes on the
+    // page instead, in the row under Build Off Ally ConYards, the size of
+    // Sound Options' Play and Stop (`0xD6`, MNBTTN type 3) as the Options
+    // pages' own buttons are.
+    let game_options_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
+    let game_options_button = if game_options_tile.y + game_options_tile.h <= back_button.y {
+        game_options_tile
+    } else {
+        dlu_rect(201, 244, 83, 15)
+    };
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -779,7 +799,8 @@ pub fn compute_layout_for_rows(
         // Every panel keeps them above Back: it has six tiles at 640x480.
         save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
         load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
-        back_button: back_rect(screen_w, panel),
+        game_options_button,
+        back_button,
         map_preview: right_static(
             AnchorRule::RightAnchor,
             RectPx::new(429, 23, 96, 69),
@@ -831,11 +852,6 @@ pub fn compute_layout_for_rows(
                 rect: checkbox_dlu_rect(201, 227, 166, 11),
             },
         ],
-        // Not retail: the right column has no tile left for it at 640x480,
-        // so it takes the row under Build Off Ally ConYards, the size of
-        // Sound Options' Play and Stop (`0xD6`, MNBTTN type 3), as the
-        // Options pages' own buttons do.
-        game_options_button: dlu_rect(201, 244, 83, 15),
         status_help: status_help_rect(screen_w, screen_h),
     }
     .with_rows(player_rows)
@@ -862,9 +878,12 @@ impl SkirmishShellLayout {
             &mut self.trackbar_labels.game_speed,
             &mut self.trackbar_labels.credits,
             &mut self.trackbar_labels.unit_count,
-            &mut self.game_options_button,
         ] {
             *rect = rect.translate(0, dy);
+        }
+        // On the page, Game Options moves down with the options above it.
+        if !self.game_options_in_panel() {
+            self.game_options_button = self.game_options_button.translate(0, dy);
         }
         self.shown_rows = shown;
         self.opponent_scrollbar = opponent_scrollbar_rect(&self.rows, shown);
@@ -1474,6 +1493,7 @@ impl ScaledRects for SkirmishShellLayout {
             choose_map_button: self.choose_map_button.scaled_rects(scale),
             save_setup_button: self.save_setup_button.scaled_rects(scale),
             load_setup_button: self.load_setup_button.scaled_rects(scale),
+            game_options_button: self.game_options_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1486,7 +1506,6 @@ impl ScaledRects for SkirmishShellLayout {
             trackbars: self.trackbars.scaled_rects(scale),
             trackbar_labels: self.trackbar_labels.scaled_rects(scale),
             checkboxes: self.checkboxes.scaled_rects(scale),
-            game_options_button: self.game_options_button.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
         }
     }
@@ -1801,23 +1820,30 @@ mod tests {
         assert!(options_bottom < thirty.status_help.y);
     }
 
-    /// VERA's Game Options sits under Build Off Ally ConYards, left of the
-    /// button column and above the status line: on the retail 640x480 page,
-    /// whose column has no tile left, and on a page grown to thirteen rows.
+    /// VERA's Game Options takes the panel's tile under Load Setup, above
+    /// Back, on a page grown to thirteen rows too. At 640x480 Back takes that
+    /// tile, so the button sits on the page under Build Off Ally ConYards,
+    /// left of the panel and above the status line.
     #[test]
-    fn game_options_sits_under_the_options_above_the_status_line() {
-        use super::compute_layout_for_rows;
-        for layout in [
-            compute_layout(640, 480),
-            compute_layout_for_rows(800, 600, 30),
-        ] {
-            let button = layout.game_options_button;
-            let build_off_ally = layout.checkboxes[4].rect;
-            assert_eq!(button.x, build_off_ally.x);
-            assert!(button.y >= build_off_ally.y + build_off_ally.h);
-            assert!(button.y + button.h < layout.status_help.y);
-            assert!(button.x + button.w < layout.back_button.x);
-        }
+    fn game_options_takes_the_tile_under_load_setup_where_the_panel_has_one() {
+        use super::{SDBTNBKGD_H, compute_layout_for_rows};
+        let roomy = compute_layout_for_rows(800, 600, 30);
+        assert!(roomy.game_options_in_panel());
+        assert_eq!(
+            roomy.game_options_button,
+            roomy.load_setup_button.translate(0, SDBTNBKGD_H)
+        );
+        let bottom = roomy.game_options_button.y + roomy.game_options_button.h;
+        assert!(bottom <= roomy.back_button.y);
+
+        let small = compute_layout(640, 480);
+        assert!(!small.game_options_in_panel());
+        let button = small.game_options_button;
+        let build_off_ally = small.checkboxes[4].rect;
+        assert_eq!(button.x, build_off_ally.x);
+        assert!(button.y >= build_off_ally.y + build_off_ally.h);
+        assert!(button.y + button.h < small.status_help.y);
+        assert!(button.x + button.w < small.back_button.x);
     }
 
     #[test]
