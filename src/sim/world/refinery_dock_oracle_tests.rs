@@ -176,7 +176,12 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
                     .to_vec();
                 scene.sim.substrate.entities.get_mut(id).unwrap().slave =
                     crate::sim::slave_manager::SlaveLink::for_test(Some(scene.refinery), cargo);
-                scene.sim.slave_deposit(id, scene.refinery, &scene.rules);
+                scene.sim.slave_deposit(
+                    id,
+                    scene.refinery,
+                    &scene.rules,
+                    crate::sim::world::FrameEffects::default(),
+                );
                 assert!(
                     scene
                         .sim

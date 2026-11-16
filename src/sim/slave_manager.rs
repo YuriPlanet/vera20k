@@ -719,7 +719,7 @@ impl Simulation {
         });
         if cell == drop && nav_com.is_none() {
             // 0x006AFBCC: pay, go inside and reload.
-            self.slave_deposit(slave, master, rules);
+            self.slave_deposit(slave, master, rules, frame_effects);
             self.limbo_slave(slave, rules, registry, frame_effects);
             let reload = self.slave_manager(master).map_or(0, |m| m.reload_rate);
             node.state = SlaveState::Reloading;
@@ -1639,7 +1639,18 @@ impl Simulation {
     /// whole and is paid to the master's house, the base amount and then the
     /// purifier bonus ([`crate::sim::miner::pay_refinery_owner`]); any payment
     /// ends with the master's `vt+0x468` (a building's refinery smoke).
-    pub(crate) fn slave_deposit(&mut self, slave: u64, master: u64, rules: &RuleSet) {
+    pub(crate) fn slave_deposit(
+        &mut self,
+        slave: u64,
+        master: u64,
+        rules: &RuleSet,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        #[cfg(feature = "phobos")]
+        let money_before =
+            self.substrate.entities.get(master).map(|entity| {
+                crate::sim::credit_income::available_money(&self.houses, entity.owner())
+            });
         let Some(mut cargo) = self
             .substrate
             .entities
@@ -1661,6 +1672,49 @@ impl Simulation {
                 .is_some_and(|owner| owner.category() == EntityCategory::Structure)
         {
             crate::sim::world::building_anim::emit_refinery_smoke(self, rules, master);
+        }
+        // Phobos `InfantryClass_SlaveGiveMoney_CheckBalanceAfter`
+        // (`Ext/Building/Hooks.Refinery.cpp:40-61`): a non-Building slave
+        // miner whose type `DeploysInto=` a DisplayIncome building prints its
+        // balance delta immediately at the miner's `Location`; a Building
+        // master accumulates for the periodic label instead.
+        #[cfg(feature = "phobos")]
+        if paid
+            && let Some(money_before) = money_before
+            && let Some(master_entity) = self.substrate.entities.get(master)
+            && master_entity.category() != EntityCategory::Structure
+            && let Some(object) = self.object_type(master_entity.type_ref(), rules)
+            && let Some(deploys_into) = object.deploys_into.as_deref()
+            && let Some(building) = rules.object(deploys_into)
+            && building
+                .phobos_display_income
+                .enabled
+                .unwrap_or(rules.phobos_globals.display_income)
+        {
+            let owner = master_entity.owner();
+            let money = crate::sim::credit_income::available_money(&self.houses, owner)
+                .wrapping_sub(money_before);
+            if money != 0 {
+                let location = crate::sim::movement::ground_pose::object_location(
+                    master_entity,
+                    self.resolved_terrain.as_ref(),
+                );
+                frame_effects.emit_bounty_text(
+                    self,
+                    rules,
+                    crate::sim::flying_text::BountyText {
+                        entity_id: Some(master),
+                        amount: money,
+                        coord: crate::sim::projectile::ProjectileCoord::new(
+                            location.x, location.y, location.z,
+                        ),
+                        z_offset: 0,
+                        display_to: Some(rules.phobos_globals.display_income_houses),
+                        display_owner: None,
+                        pixel_offset: [0, 0],
+                    },
+                );
+            }
         }
     }
 

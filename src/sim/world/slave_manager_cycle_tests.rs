@@ -1153,3 +1153,63 @@ fn a_neutral_slave_joins_the_neutral_country_house() {
         );
     }
 }
+
+/// Phobos `InfantryClass_SlaveGiveMoney_CheckBalanceAfter`
+/// (`Ext/Building/Hooks.Refinery.cpp:40-61`): a non-Building Slave Miner unit
+/// whose `DeploysInto=` building has `DisplayIncome=yes` prints the deposit's
+/// balance delta immediately at its `Location`.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_unit_slave_miner_prints_the_deposit_delta() {
+    use super::slave_manager_oracle_tests::row_scene_edited;
+    use crate::rules::tiberium_type::TiberiumTypeId;
+    use crate::sim::flying_text::BountyText;
+    use crate::sim::miner::{CargoBale, ResourceType};
+    use crate::sim::world::FrameEffects;
+
+    let input = serde_json::json!({
+        "name": "ts_deposit",
+        "owner": "unit",
+        "manager_state": 0,
+        "nodes": [{"state": 0, "cell": [15, 15], "limbo": true}],
+        "ore": [],
+    });
+    let mut s = row_scene_edited(&input, |text, _| {
+        *text = text.replace(
+            "[YAREFN]\nStrength=2000",
+            "[YAREFN]\nDisplayIncome=yes\nStrength=2000",
+        );
+    });
+    let slave = *s.slaves.values().next().expect("a slave");
+    s.scene
+        .sim
+        .substrate
+        .entities
+        .get_mut(slave)
+        .unwrap()
+        .slave
+        .add_bales(
+            CargoBale {
+                tiberium_type: TiberiumTypeId(0),
+                resource_type: ResourceType::Ore,
+                value: 25,
+            },
+            2,
+        );
+    let texts = std::cell::RefCell::new(Vec::new());
+    let observe = |_: &crate::sim::world::Simulation,
+                   _: &crate::rules::ruleset::RuleSet,
+                   text: BountyText| {
+        texts.borrow_mut().push(text);
+    };
+    s.scene.sim.slave_deposit(
+        slave,
+        s.master,
+        &s.scene.rules,
+        FrameEffects::empty().with_bounty_text(&observe),
+    );
+    let texts = texts.into_inner();
+    assert_eq!(texts.len(), 1, "the immediate label");
+    assert_eq!(texts[0].entity_id, Some(s.master));
+    assert!(texts[0].amount > 0, "the deposit credited the owner");
+}

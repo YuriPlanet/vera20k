@@ -207,10 +207,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 - **DisplayIncome 的卖出标签**：`FootClass::Sell`（`Hooks.Selling.cpp:7-27`）在
   全局 `DisplayIncome` 开启时立即打印卖出金额；VERA 目前没有玩家单位卖出路径，
   该臂未接。触发：卖出单位；频率：仅单位卖出；风险：少一条浮动金额。
-- **DisplayIncome 的 TS 奴隶矿车臂**：`Hooks.Refinery.cpp:40-61` 对
-  `BuildingClass` 奴隶矿车累积、对其 `DeploysInto` 类型立即打印；VERA 的奴隶
-  收入统一经 `pay_refinery_owner` 累到矿厂。触发：TS 风格奴隶矿车；频率：仅
-  该类单位；风险：标签锚点位置不同（零售无此单位）。
+- **DisplayIncome 的 TS 奴隶矿车臂**：无残渣；非建筑 master 的存款差额在
+  `slave_deposit` 中按 `DeploysInto` 建筑类型的 `DisplayIncome=` 开关立即打印
+  （全局 Houses 过滤，锚点 master `Location`）；建筑 master 仍累到矿厂周期标签
+  （`a_unit_slave_miner_prints_the_deposit_delta`）。
 - **ExtendedPlayerRepair 的多人数值同步**：无残渣；`PlayerAutoRepairRecord`
   （VERA opcode `0x33`）把开关写进同步 `CommandRecord`，解码后按房执行
   `set_player_auto_repair`，单机/联机/回放同一路径。
