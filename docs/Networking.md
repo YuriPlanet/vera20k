@@ -271,8 +271,8 @@ minutes: their joins get the VERA-only denial reason 9, shown as the join ban.
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
 `teams` beside VERA's room options in the extended options. With it set, the host
-keeps every seated player on one of the room's teams and refuses a guest's pick of a
-full team, so guests only show what the host sends. A LAN guest from before Teams
+keeps every seated player on one of the room's teams, so guests only show what the host
+sends. A LAN guest from before Teams
 ignores the field and is refused at the build check. Online, an older guest cannot
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
@@ -289,6 +289,18 @@ A to D allies. Nothing new travels: guests send their picks as before, and a rel
 team headers have Join too, takes a seat the same way. An older host still seats a
 newcomer on no team; a newer guest lists that player under a No team header without
 Join. A rollback seats newcomers as before.
+
+With Teams set the map does not limit who plays, only the room's Max players does, so no
+team is ever full: a team's people share its bases where the map runs out of starts
+(`MatchSession::network_shares_bases`). People past the map's seats sit in the room's
+spare rows; an AI takes only one of the map's own seats, as each AI needs its own start.
+At Start Game, Team Starts gives each AI and each team with people a start and the spare
+starts to the teams with the most people for each; a team's people on one start share
+its House, as players who pick the same start do. The map then needs a start for each AI
+and each team with people. Turning Teams Off, or picking a map or mode with fewer seats,
+makes those past the seats watch rather than leave the room. Nothing new travels: the
+host's options carry each player's row and start as before, and a room of mixed versions
+cannot start. A rollback seats no more players than the map has starts.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who

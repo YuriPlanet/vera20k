@@ -87,6 +87,14 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .session
         .network_setup_capacity()
         .unwrap_or(0);
+    // A room sharing bases seats a team's people on one start where the
+    // map runs out (`teams::team_starts`), so its map needs one for each
+    // team with people. An AI always needs its own.
+    let bases = if state.match_state.session.network_shares_bases() {
+        super::super::teams::people_bases(&launch)
+    } else {
+        humans
+    };
     if wol {
         // C2 0x79071E..0x7908D5: allies, readiness, then capacity. VERA's
         // explicit AI rows share the map with human players, even though
@@ -98,7 +106,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !all_ready(state) {
             return Ok(());
         }
-        if capacity < humans + launch.opponents.len() as i32 {
+        if capacity < bases + launch.opponents.len() as i32 {
             message(
                 state,
                 "TXT_SCENARIO_TOO_SMALL",
@@ -135,7 +143,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
             }
         }
     } else {
-        let capacity_ok = capacity >= humans + launch.ai_player_count;
+        let capacity_ok = capacity >= bases + launch.ai_player_count;
         if !capacity_ok {
             message(
                 state,

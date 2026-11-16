@@ -2037,7 +2037,8 @@ impl MatchSession {
     /// [`crate::skirmish_launch::ROOM_TEAMS`]. With a count every seated
     /// player then has one of its teams. Off makes the room one box,
     /// free-for-all: every player and AI gets the mode's default team, and
-    /// may pick an ally letter from gamemd's A to D again.
+    /// may pick an ally letter from gamemd's A to D again. Its bases are no
+    /// longer shared, so those seated past the map's seats watch.
     pub(crate) fn set_network_teams(&mut self, teams: Option<u8>) -> anyhow::Result<()> {
         anyhow::ensure!(self.host, "only the host sets the room's teams");
         let launch = self.editable_network_setup()?;
@@ -2052,6 +2053,7 @@ impl MatchSession {
             }
             launch.rebuild_house_roster();
         }
+        self.watch_past_seats()?;
         self.keep_players_on_teams().map(|_| ())
     }
 
@@ -2072,15 +2074,39 @@ impl MatchSession {
                 .is_some_and(|launch| launch.options.auto_balance)
     }
 
-    /// How many players each team of a VERA room with Teams set seats: the
-    /// room's seats (the player rows its host has not removed) over its
-    /// teams, rounded up.
-    pub(crate) fn network_team_seats(&self) -> Option<usize> {
-        let teams = usize::from(self.network_teams()?);
-        let seats = (0..self.network_player_row_limit())
-            .filter(|row| self.network_vacancy(*row) != Some(NetworkVacancy::Closed))
-            .count();
-        Some(seats.div_ceil(teams))
+    /// Whether a VERA room seats more people than its map has starts: with
+    /// Teams set, in a mode whose players may share a start (every mode with
+    /// teams), a team's people share its bases where the map runs out of
+    /// starts (`teams::team_starts`), so the room's Max players, not its
+    /// map, bounds who plays and no team is ever full. Its rows past the
+    /// map's seats then seat people too; an AI keeps to the map's own
+    /// ([`Self::network_open_seat`]).
+    pub(crate) fn network_shares_bases(&self) -> bool {
+        self.network_teams().is_some()
+            && self
+                .network_setup()
+                .is_some_and(|launch| launch.mode.class.policy().shared_start_positions)
+    }
+
+    /// A VERA room that no longer shares bases ([`Self::network_shares_bases`])
+    /// keeps its people: anyone seated past the map's seats watches from
+    /// that row, in a mode that has spectators.
+    fn watch_past_seats(&mut self) -> anyhow::Result<()> {
+        if self.network_shares_bases()
+            || !self.network_several_observers()
+            || self.network_observer_row().is_none()
+        {
+            return Ok(());
+        }
+        let seats = self.network_player_row_limit();
+        let launch = self.editable_network_setup()?;
+        for human in &mut launch.humans {
+            if human.raw_slot_index.is_some_and(|row| row >= seats) {
+                human.set_observer(true);
+            }
+        }
+        launch.rebuild_house_roster();
+        Ok(())
     }
 
     /// The players on `team`: its seated people and AI.
@@ -2095,17 +2121,11 @@ impl MatchSession {
         people.count() + launch.opponents.iter().filter(|ai| ai.team == team).count()
     }
 
-    /// Whether `team` of a VERA room with Teams set has no seat left.
-    pub(crate) fn network_team_full(&self, team: u8) -> bool {
-        self.network_team_seats()
-            .is_some_and(|seats| self.network_team_players(team) >= seats)
-    }
-
     /// A guest's own seat and team pick in a VERA room with Teams set. A
     /// person plays only on a team: one asking to play on none watches
-    /// instead, while a spectator row is open. No team, a team past the
-    /// room's count or a full team it is not on leaves it where it is, and a
-    /// spectator taking a seat then joins the team with the fewest players.
+    /// instead, while a spectator row is open. No team or a team past the
+    /// room's count leaves it where it is, and a spectator taking a seat
+    /// then joins the team with the fewest players.
     /// With Teams Off the room is free-for-all and takes gamemd's picks.
     /// The host's moves (`service::move_player`) skip this. Returns whether it
     /// changed the pick, so the host republishes the room and the guest's own
@@ -2134,14 +2154,7 @@ impl MatchSession {
         }
         let seated = !human.is_observer();
         let picked = choices.team;
-        let admitted = match picked {
-            LaunchTeam::Team(team) => {
-                team < teams
-                    && (seated && human.slot.team == picked || !self.network_team_full(team))
-            }
-            LaunchTeam::None => false,
-        };
-        if !admitted {
+        if !matches!(picked, LaunchTeam::Team(team) if team < teams) {
             choices.team = if seated {
                 human.slot.team
             } else {
@@ -2304,7 +2317,8 @@ impl MatchSession {
                 self.network_vacancy(*row) == Some(NetworkVacancy::Open)
                     || self.network_display_ai(*row).is_some()
             })
-            .count();
+            .count()
+            + self.network_spare_seats().count();
         Some(limit.min((launch.humans.len() + seats) as i32))
     }
 
@@ -2511,7 +2525,9 @@ impl MatchSession {
             .local_player()
             .raw_slot_index;
         // A VERA room's players end at its player row limit, which the host's
-        // own observer row extends at every capacity.
+        // own observer row extends at every capacity. Its people past them
+        // watch there, unless it shares bases and keeps them seated.
+        candidate.watch_past_seats()?;
         let (old_rows, new_rows) = if several {
             (
                 i32::from(self.network_player_row_limit()),
@@ -2526,10 +2542,18 @@ impl MatchSession {
         if new_rows < old_rows {
             for row in new_rows..NETWORK_PLAYER_SLOT_COUNT as i32 {
                 let row = row as u8;
-                // VERA's rooms keep every observer row.
-                let retained_observer = (several || Some(row) == observer_row)
-                    && candidate.network_row_for_observer(row);
-                if Some(row) != local_row && !retained_observer {
+                // VERA's rooms keep every observer row, and one sharing
+                // bases its players too.
+                let retained = (several || Some(row) == observer_row)
+                    && candidate.network_row_for_observer(row)
+                    || candidate.network_shares_bases()
+                        && candidate
+                            .network_setup()
+                            .unwrap()
+                            .humans
+                            .iter()
+                            .any(|human| human.raw_slot_index == Some(row));
+                if Some(row) != local_row && !retained {
                     // Native's hidden eight-row suffix stays Open. Extended
                     // rows have no native slot and must remain closed until a
                     // later map explicitly makes them usable again, as must
@@ -2884,27 +2908,26 @@ impl MatchSession {
     }
 
     /// `0x005E9510`: no Open player row, including the host-observer row0
-    /// exception. Apply the same admitted row range as the actual allocator.
+    /// exception. Apply the same admitted row range as the actual allocator,
+    /// a room sharing bases' spare rows too.
     pub(crate) fn network_no_open_player_row(&self) -> bool {
-        if self.network_setup().is_none() {
-            return false;
-        }
-        !(0..self.network_player_row_limit())
-            .any(|row| self.network_vacancy(row) == Some(NetworkVacancy::Open))
+        self.network_setup().is_some() && self.network_free_row(false).is_none()
     }
 
     /// `0x005E9240`'s row for a new node: the first Open row for a player,
     /// the first open observer row for an observer, over all eight rows
     /// (all thirty in VERA's rooms, whose spectator rows follow the players).
+    /// A room sharing bases then seats a player in a spare row past the
+    /// map's seats ([`Self::network_spare_seats`]).
     pub(crate) fn network_free_row(&self, observer: bool) -> Option<u8> {
-        let wanted = if observer {
-            NetworkVacancy::OpenObserver
-        } else {
-            NetworkVacancy::Open
-        };
-        let rows = if observer && self.network_several_observers() {
+        if !observer {
+            return self
+                .network_open_seat()
+                .or_else(|| self.network_spare_seats().next());
+        }
+        let rows = if self.network_several_observers() {
             NETWORK_PLAYER_SLOT_COUNT as u8
-        } else if observer {
+        } else {
             self.network_setup_capacity()
                 .unwrap_or(0)
                 .max(8)
@@ -2913,10 +2936,33 @@ impl MatchSession {
                         .map_or(0, |row| i32::from(row) + 1),
                 )
                 .min(NETWORK_PLAYER_SLOT_COUNT as i32) as u8
-        } else {
-            self.network_player_row_limit()
         };
-        (0..rows).find(|row| self.network_vacancy(*row) == Some(wanted))
+        (0..rows).find(|row| self.network_vacancy(*row) == Some(NetworkVacancy::OpenObserver))
+    }
+
+    /// The first Open row among the map's seats, the one the host's Add AI
+    /// fills: an AI never shares a base.
+    pub(crate) fn network_open_seat(&self) -> Option<u8> {
+        (0..self.network_player_row_limit())
+            .find(|row| self.network_vacancy(*row) == Some(NetworkVacancy::Open))
+    }
+
+    /// The rows past the map's seats that seat a player in a room sharing
+    /// bases ([`Self::network_shares_bases`]), those no one holds or is
+    /// joining; none in any other room.
+    fn network_spare_seats(&self) -> impl Iterator<Item = u8> + '_ {
+        let rows = NETWORK_PLAYER_SLOT_COUNT as u8;
+        let first = if self.network_shares_bases() {
+            self.network_player_row_limit()
+        } else {
+            rows
+        };
+        (first..rows).filter(|row| {
+            !matches!(
+                self.network_vacancy(*row),
+                None | Some(NetworkVacancy::Waiting)
+            )
+        })
     }
 
     /// A joining node's row and role: [`Self::network_free_row`] for what it
@@ -2944,11 +2990,14 @@ impl MatchSession {
 
     /// `0x005E95E0`: the nodes, less an observer on the observer row (every
     /// observer in VERA's rooms), are more than
-    /// [`Self::network_slot_test_rows`].
+    /// [`Self::network_slot_test_rows`]. A room sharing bases seats more.
     pub(crate) fn network_over_capacity(&self) -> bool {
         let Some(launch) = self.network_setup() else {
             return false;
         };
+        if self.network_shares_bases() {
+            return false;
+        }
         let limit = self.network_slot_test_rows();
         let observer_row = self.network_observer_row();
         let several = self.network_several_observers();
@@ -4242,26 +4291,40 @@ mod tests {
         assert_eq!(teams(&session), [Team(0), Team(0), Team(1)]);
     }
 
-    /// Four seats over two teams seat two a team. A guest cannot pick a
-    /// full team and keeps its own; the host still moves anyone.
+    /// With Teams set a VERA room shares bases, so no team is ever full: a
+    /// spectator asking to play once the map's four seats are taken sits
+    /// past them, and a smaller map keeps everyone seated. Teams Off makes
+    /// those past the seats watch from there.
     #[test]
-    fn a_vera_room_guest_cannot_pick_a_full_team() {
+    fn a_vera_room_with_teams_seats_more_than_its_map() {
         use crate::skirmish_launch::LaunchTeam::Team;
+        let seated = |session: &MatchSession| -> Vec<bool> {
+            let humans = &session.network_setup().unwrap().humans;
+            humans.iter().map(|human| !human.is_observer()).collect()
+        };
         let mut session = vera_room();
         session.set_network_teams(Some(2)).unwrap();
-        newcomer(&mut session);
-        assert_eq!(teams(&session), [Team(0), Team(1), Team(0)]);
-        assert_eq!(session.network_team_seats(), Some(2));
-        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
-        assert!(!session.admit_network_team(1, &mut pick, &mut false));
-        pick.team = Team(0);
-        assert!(session.admit_network_team(1, &mut pick, &mut false));
-        assert_eq!(pick.team, Team(1));
+        for (name, row) in [("Third", 2), ("Fourth", 3), ("Fifth", 4)] {
+            let mut human = session.network_setup().unwrap().humans[1].clone();
+            human.name = name.into();
+            human.raw_slot_index = Some(row);
+            human.set_observer(row == 4);
+            session.add_network_participant(human).unwrap();
+        }
+        let mut pick = session.network_setup().unwrap().humans[4].slot.clone();
         pick.team = Team(0);
         session
-            .accept_network_peer_choices(1, pick, false, None)
+            .accept_network_peer_choices(4, pick, false, None)
             .unwrap();
-        assert_eq!(teams(&session), [Team(0), Team(0), Team(0)]);
+        assert_eq!(seated(&session), [true; 5]);
+        assert_eq!(teams(&session)[4], Team(0));
+        let mode = session.network_setup().unwrap().mode.clone();
+        session
+            .select_network_map(mode, "TWO.MAP".into(), 2)
+            .unwrap();
+        assert_eq!(seated(&session), [true; 5]);
+        session.set_network_teams(None).unwrap();
+        assert_eq!(seated(&session), [true, true, false, false, false]);
     }
 
     /// A VERA room has up to 15 teams, A to O, and a guest's online pick

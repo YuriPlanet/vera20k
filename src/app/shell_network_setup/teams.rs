@@ -107,7 +107,9 @@ pub(super) fn balance(state: &mut AppState) {
 /// the room's map. With `keep_picks`, as the host's Start Game does, a
 /// player keeps the start they picked and only those on Random get one, in
 /// place of gamemd's farthest free start (`0x005D6890`); the Team Starts
-/// button gives everyone one. Returns whether it gave any out.
+/// button gives everyone one. Where the room seats more players than the
+/// map has starts, a team's people share its bases ([`shared_bases`]) and
+/// everyone gets one. Returns whether it gave any out.
 pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Result<bool> {
     if state.match_state.session.network_teams().is_none() {
         return Ok(false);
@@ -151,8 +153,34 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
             LaunchTeam::None => -2,
         })
         .collect();
+    let kinds: Vec<(bool, i32)> = seats
+        .iter()
+        .zip(&teams)
+        .map(|(&(row, ..), &team)| {
+            let ai = launch.opponents.iter().any(|ai| ai.raw_slot_index == row);
+            (ai, team)
+        })
+        .collect();
+    let session = &state.match_state.session;
+    let bases = starts
+        .len()
+        .min(session.network_setup_capacity().unwrap_or(0).max(0) as usize);
+    let shared = (session.network_shares_bases() && seats.len() > bases)
+        .then(|| shared_bases(&kinds, bases))
+        .flatten();
     let drive = App::map_drive_distances(state, map, &starts);
-    let given = crate::ui::skirmish_shell::starts_by_team(&starts, drive.as_deref(), &teams, &kept);
+    let given = if let Some((base_of, base_teams)) = shared {
+        let free = vec![None; base_teams.len()];
+        let given = crate::ui::skirmish_shell::starts_by_team(
+            &starts,
+            drive.as_deref(),
+            &base_teams,
+            &free,
+        );
+        base_of.into_iter().map(|base| given[base]).collect()
+    } else {
+        crate::ui::skirmish_shell::starts_by_team(&starts, drive.as_deref(), &teams, &kept)
+    };
     let picks: Vec<(u8, SeatPick)> = seats
         .iter()
         .zip(given)
@@ -164,6 +192,88 @@ pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Res
         .collect();
     state.match_state.session.set_network_seat_picks(&picks)?;
     Ok(true)
+}
+
+/// A room sharing bases (`MatchSession::network_shares_bases`) that seats
+/// more players than its map's `starts`: each AI and each person on no team
+/// (-2) needs a base of its own, a team's people at least one, and every
+/// start left over goes to the team with the most people for each base,
+/// the first on a tie. A team's people are dealt over its bases in row
+/// order, and those on one start share its House
+/// ([`crate::skirmish_launch::SkirmishLaunchSession::house_leader`]).
+/// Takes each seat's AI flag and team; returns each seat's base and each
+/// base's team, or `None` when the map has too few starts even for that.
+fn shared_bases(seats: &[(bool, i32)], starts: usize) -> Option<(Vec<usize>, Vec<i32>)> {
+    // Each team with people and how many, in the order they first sit.
+    let mut teams: Vec<(i32, usize)> = Vec::new();
+    let mut alone = 0;
+    for &(ai, team) in seats {
+        match teams.iter_mut().find(|(on, _)| *on == team) {
+            _ if ai || team < 0 => alone += 1,
+            Some((_, people)) => *people += 1,
+            None => teams.push((team, 1)),
+        }
+    }
+    let mut spare = starts.checked_sub(alone + teams.len())?;
+    let mut bases = vec![1; teams.len()];
+    while spare > 0 {
+        // a/b people for each base is more than c/d when a*d > c*b.
+        let crowded = (0..teams.len())
+            .filter(|&team| bases[team] < teams[team].1)
+            .max_by(|&a, &b| {
+                (teams[a].1 * bases[b])
+                    .cmp(&(teams[b].1 * bases[a]))
+                    .then(b.cmp(&a))
+            });
+        let Some(team) = crowded else {
+            break;
+        };
+        bases[team] += 1;
+        spare -= 1;
+    }
+    let mut base_teams = Vec::new();
+    let mut first = Vec::with_capacity(teams.len());
+    for (&(team, _), &count) in teams.iter().zip(&bases) {
+        first.push(base_teams.len());
+        base_teams.extend(std::iter::repeat_n(team, count));
+    }
+    let mut dealt = vec![0; teams.len()];
+    let base_of = seats
+        .iter()
+        .map(
+            |&(ai, team)| match teams.iter().position(|(on, _)| *on == team) {
+                Some(index) if !ai => {
+                    dealt[index] += 1;
+                    first[index] + (dealt[index] - 1) % bases[index]
+                }
+                _ => {
+                    base_teams.push(team);
+                    base_teams.len() - 1
+                }
+            },
+        )
+        .collect();
+    Some((base_of, base_teams))
+}
+
+/// The fewest starts a room sharing bases seats its people on, as
+/// [`shared_bases`] gives them: one for each team with people, one for
+/// each person on no team.
+pub(super) fn people_bases(launch: &SkirmishLaunchSession) -> i32 {
+    let mut teams = Vec::new();
+    let mut alone = 0;
+    let seated = launch
+        .humans
+        .iter()
+        .filter(|human| human.raw_slot_index.is_some() && !human.is_observer());
+    for human in seated {
+        match human.slot.team {
+            LaunchTeam::Team(team) if !teams.contains(&team) => teams.push(team),
+            LaunchTeam::Team(_) => {}
+            LaunchTeam::None => alone += 1,
+        }
+    }
+    (teams.len() + alone) as i32
 }
 
 /// The rows that play, in row order, with their teams and starts: the
@@ -411,6 +521,28 @@ mod tests {
                 rules.color_schemes[entry].name.clone()
             })
             .collect()
+    }
+
+    /// Four people on Team A, two on B and an AI on a four-start map: the AI
+    /// keeps a base of its own, each team gets one, and the spare start goes
+    /// to A, with more people for each base. Three teams on two starts get
+    /// none.
+    #[test]
+    fn shared_bases_give_the_spare_start_to_the_crowded_team() {
+        // Rows: A, B, A, the AI on B, A, B, A.
+        let seats = [
+            (false, 0),
+            (false, 1),
+            (false, 0),
+            (true, 1),
+            (false, 0),
+            (false, 1),
+            (false, 0),
+        ];
+        let (base_of, base_teams) = shared_bases(&seats, 4).unwrap();
+        assert_eq!(base_teams, [0, 0, 1, 1]);
+        assert_eq!(base_of, [0, 2, 1, 3, 0, 2, 1]);
+        assert_eq!(shared_bases(&[(false, 0), (false, 1), (false, 2)], 2), None);
     }
 
     /// Two teams of four get YR's eight, warm against cool, as a Random

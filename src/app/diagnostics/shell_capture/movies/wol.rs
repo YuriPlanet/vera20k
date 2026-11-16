@@ -2595,7 +2595,6 @@ impl WolCapture {
                     let session = &state.match_state.session;
                     ensure!(
                         session.network_teams() == Some(2)
-                            && session.network_team_seats() == Some(1)
                             && (0..2).all(|team| session.network_team_players(team) == 1),
                         "Teams did not seat the two players on two teams"
                     );

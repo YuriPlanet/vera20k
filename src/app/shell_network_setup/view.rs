@@ -312,7 +312,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         .is_some();
     let queue = !seated && !seat_free && session.network_queue_open();
     let ai_seat = (host && ai_allowed)
-        .then(|| session.network_free_row(false))
+        .then(|| session.network_open_seat())
         .flatten();
     let dialog = super::dialog(state);
     // VERA's roster holds the rows its page fits; a native page always has
@@ -339,13 +339,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                             !host
                         }
                 };
-                // A full team's Join is greyed; the host still moves anyone.
                 // With no seat free, a spectator's Join queues it, once.
-                let join = |open: bool| {
+                let join = || {
                     if queue {
                         (crate::i18n::tr("VERA:JoinQueue"), !queued)
                     } else {
-                        (crate::i18n::tr("VERA:Join"), open && (seated || seat_free))
+                        (crate::i18n::tr("VERA:Join"), seated || seat_free)
                     }
                 };
                 let (caption, button) = match group {
@@ -354,15 +353,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                             "VERA:TeamGroup",
                             &[("letter", &team_letter(state, team))],
                         ),
-                        joins(LaunchTeam::Team(team))
-                            .then(|| join(!session.network_team_full(team))),
+                        joins(LaunchTeam::Team(team)).then(join),
                     ),
                     // The one box of a room with Teams Off has no caption;
                     // a spectator's Join seats it there.
-                    SetupGroup::Players => (
-                        String::new(),
-                        (placed && !seated && !host).then(|| join(true)),
-                    ),
+                    SetupGroup::Players => (String::new(), (placed && !seated && !host).then(join)),
                     // Only an older host seats players on no team.
                     SetupGroup::NoTeam => (fill("VERA:NoTeamGroup"), None),
                     SetupGroup::ClosedSeats => (fill("VERA:ClosedSeatsGroup"), None),
@@ -386,13 +381,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         && !closed,
                     join: button.map(|(label, _)| label),
                 });
-                // The host's Add AI fills the first free seat in this box,
-                // while its team has one.
-                let room = match group {
-                    SetupGroup::Team(team) => !session.network_team_full(team),
-                    SetupGroup::Players => true,
-                    _ => false,
-                };
+                // The host's Add AI fills the first free seat of the map's
+                // own in a team's box or the one box.
+                let room = matches!(group, SetupGroup::Team(_) | SetupGroup::Players);
                 if let (true, Some(seat)) = (room, ai_seat) {
                     let item = |value: i32, text: String| SetupChoice {
                         value,
@@ -720,15 +711,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 choice
             })
             .collect::<Vec<_>>();
-        // With Teams set, the room's teams only; a guest's own list leaves
-        // out the full ones it is not on. A room with teams has no "no
-        // team": a player on none watches.
+        // With Teams set, the room's teams only. A room with teams has no
+        // "no team": a player on none watches.
         let team_items = match teams {
             Some(count) => (0..count)
-                .filter(|team| {
-                    host || choices.team == LaunchTeam::Team(*team)
-                        || !session.network_team_full(*team)
-                })
                 .map(|team| SkirmishComboItem::Team(i32::from(team)))
                 .collect(),
             None => skirmish_shell::team_choices(mode.must_ally || grouped),
