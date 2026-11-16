@@ -411,7 +411,7 @@ pub fn trackbar_frame_slot(plaque: bool, width: i32, height: i32) -> Option<usiz
 
 /// The [`TRACKBAR_FRAMES`] slot of a `width` x `height` trackbar window
 /// drawn at `scale`. Below the shell's own size (VERA's team bar draws its
-/// controls at 60%) the window's size rounds back from its authored one by
+/// controls at 78%) the window's size rounds back from its authored one by
 /// a pixel or two, so it takes the frame of the nearest window within two
 /// pixels each way.
 pub fn drawn_trackbar_frame_slot(

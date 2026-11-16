@@ -236,11 +236,17 @@ pub(crate) fn render_multiplayer_setup(
     let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3], depth: f32| {
         sized(value, rect, align, rgb, depth, 1.0)
     };
-    // VERA's roster is smaller text than the shell's own.
+    // VERA's roster is smaller text than the shell's own, and its room's
+    // text is green.
     let roster_size = if layout.roster {
         ROSTER_TEXT_SCALE
     } else {
         1.0
+    };
+    let label_rgb = if layout.roster {
+        ROOM_TEXT_RGB
+    } else {
+        SHELL_LABEL_TEXT_RGB
     };
     if !leaving && ui.notice.is_none() {
         for (key, rect) in layout
@@ -258,7 +264,7 @@ pub(crate) fn render_multiplayer_setup(
                 &localized_label(state, key, key),
                 *rect,
                 align,
-                SHELL_LABEL_TEXT_RGB,
+                label_rgb,
                 SHELL_CONTROL_TEXT_DEPTH,
                 roster_size,
             ));
@@ -322,10 +328,6 @@ pub(crate) fn render_multiplayer_setup(
             let Some(header) = header else {
                 continue;
             };
-            // A team's caption shows in its own colour.
-            let caption_rgb = header.swatch.map_or(SHELL_LABEL_TEXT_RGB, |swatch| {
-                house_color_tint(state.rules(), swatch)
-            });
             texts.push(sized(
                 &header.caption,
                 if layout.roster {
@@ -334,7 +336,7 @@ pub(crate) fn render_multiplayer_setup(
                     crate::ui::skirmish_shell::combo_text_rect(layout.combos[row][0], scale)
                 },
                 ShellAlign::V_CENTER,
-                caption_rgb,
+                label_rgb,
                 SHELL_CONTROL_TEXT_DEPTH,
                 roster_size,
             ));
@@ -358,7 +360,7 @@ pub(crate) fn render_multiplayer_setup(
                     } else if pressed || ui.buttons.hovered == Some(id) {
                         [1.0, 1.0, 1.0]
                     } else {
-                        SHELL_LABEL_TEXT_RGB
+                        ROOM_TEXT_RGB
                     },
                     SHELL_CONTROL_TEXT_DEPTH,
                     roster_size,
@@ -409,11 +411,7 @@ pub(crate) fn render_multiplayer_setup(
                     &mut controls,
                     atlas,
                     rect,
-                    if lit {
-                        SHELL_LABEL_TEXT_RGB
-                    } else {
-                        ROSTER_BOX_RGB
-                    },
+                    if lit { ROOM_TEXT_RGB } else { ROSTER_BOX_RGB },
                     SHELL_CONTROL_DEPTH,
                 );
             }
@@ -444,13 +442,13 @@ pub(crate) fn render_multiplayer_setup(
                 ROSTER_BOX_RGB,
                 SHELL_CONTROL_DEPTH,
             );
-            // Its art at 60% size, its words at the roster's.
+            // Its art at 78% size, its words at the roster's.
             let small = layout.control_scale(BALANCE);
             texts.push(sized(
                 &crate::i18n::tr("VERA:Teams"),
                 layout.teams_label,
                 ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
+                ROOM_TEXT_RGB,
                 SHELL_CONTROL_TEXT_DEPTH,
                 ROSTER_TEXT_SCALE,
             ));
@@ -496,7 +494,7 @@ pub(crate) fn render_multiplayer_setup(
                     &crate::i18n::tr("VERA:BalanceAutomatically"),
                     crate::ui::skirmish_shell::checkbox_text_rect(rect, small),
                     ShellAlign::V_CENTER,
-                    SHELL_LABEL_TEXT_RGB,
+                    ROOM_TEXT_RGB,
                     SHELL_CONTROL_TEXT_DEPTH,
                     ROSTER_TEXT_SCALE,
                 ));
@@ -694,13 +692,11 @@ pub(crate) fn render_multiplayer_setup(
                 .composition(crate::app::input::ime::ImeTarget::SetupChat),
             layout.chat,
             ui.caret_visible(now),
+            label_rgb,
             SHELL_CONTROL_TEXT_DEPTH,
             scale,
         );
-        let chat = ui
-            .chat
-            .list
-            .geometry(layout.chat_log, ui.chat.lines.len(), scale);
+        let chat = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
         list_controls(&mut controls, atlas, chat, &ui.chat.list, false, scale);
         for (visible, line) in ui
             .chat
@@ -711,7 +707,7 @@ pub(crate) fn render_multiplayer_setup(
             .enumerate()
         {
             let rgb = if line.color == u32::MAX {
-                SHELL_LABEL_TEXT_RGB
+                label_rgb
             } else {
                 [
                     line.color as u8,
@@ -720,7 +716,7 @@ pub(crate) fn render_multiplayer_setup(
                 ]
                 .map(|byte| f32::from(byte) / 255.0)
             };
-            texts.push(text(
+            texts.push(sized(
                 &String::from_utf16_lossy(&line.text),
                 scale.derive_rect(chat.row(visible), |rect| {
                     RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
@@ -728,6 +724,7 @@ pub(crate) fn render_multiplayer_setup(
                 ShellAlign::V_CENTER,
                 rgb,
                 SHELL_CONTROL_TEXT_DEPTH,
+                layout.chat_text_scale(),
             ));
         }
         // C9's 0x71F "Preview unavailable" after the host's Z3 (0x5E3D10),
@@ -902,7 +899,7 @@ pub(crate) fn render_multiplayer_setup(
                             RectPx::new(rect.x + 3, rect.y, rect.w - 6, rect.h)
                         }),
                         ShellAlign::V_CENTER,
-                        SHELL_LABEL_TEXT_RGB,
+                        label_rgb,
                         SHELL_DROPDOWN_TEXT_DEPTH,
                         roster_size,
                     ));
@@ -1238,6 +1235,9 @@ fn player_badge(
 /// join the group.
 const ROSTER_BOX_RGB: [f32; 3] = [96.0 / 255.0, 96.0 / 255.0, 96.0 / 255.0];
 
+/// VERA's room's own text: green, where the shell's is yellow.
+const ROOM_TEXT_RGB: [f32; 3] = [0.0, 1.0, 0.0];
+
 /// The local player's row in VERA's roster: a dark red band behind it.
 const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
 
@@ -1263,14 +1263,15 @@ fn push_roster_cell(
     };
     let scale = layout.page.scale;
     let lit = pointed && view.enabled(combo.id) && roster_cell_opens(combo);
-    let rgb = if lit {
-        [1.0, 1.0, 1.0]
-    } else {
-        SHELL_LABEL_TEXT_RGB
-    };
+    let rgb = if lit { [1.0, 1.0, 1.0] } else { ROOM_TEXT_RGB };
     if let Some(swatch) = item.swatch {
         let chip = scale.derive_rect(rect, |rect| {
-            RectPx::new(rect.x + (rect.w - 9) / 2, rect.y + (rect.h - 9) / 2, 9, 9)
+            RectPx::new(
+                rect.x + (rect.w - 12) / 2,
+                rect.y + (rect.h - 12) / 2,
+                12,
+                12,
+            )
         });
         push_solid_rect(
             controls,
@@ -1430,11 +1431,15 @@ fn push_trackbar(
         return;
     };
     let scale = layout.control_scale(bar.id);
-    // The team bar's count keeps its value at the roster's text size.
-    let text_factor = if scale == layout.page.scale {
-        scale.factor()
+    // The team bar's count keeps its value at the roster's text size and
+    // in the room's colour.
+    let (text_factor, rgb) = if scale == layout.page.scale {
+        (scale.factor(), SHELL_LABEL_TEXT_RGB)
     } else {
-        layout.page.scale.factor() * ROSTER_TEXT_SCALE
+        (
+            layout.page.scale.factor() * ROSTER_TEXT_SCALE,
+            ROOM_TEXT_RGB,
+        )
     };
     paint_control(
         controls,
@@ -1472,7 +1477,7 @@ fn push_trackbar(
             &value,
             rect_to_text_rect(crate::ui::shell::trackbar::value_text_rect(rect, scale)),
             if view.enabled(bar.id) {
-                SHELL_LABEL_TEXT_RGB
+                rgb
             } else {
                 SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
             },

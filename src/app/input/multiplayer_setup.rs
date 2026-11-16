@@ -59,9 +59,12 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
-    ui.chat
-        .list
-        .reconcile_geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+    ui.chat.list.reconcile_geometry_for_text(
+        layout.chat_log,
+        ui.chat.lines.len(),
+        layout.page.scale,
+        layout.chat_text_scale(),
+    );
     ui.chat.edit.scroll_to_caret(
         (layout.page.scale.base_rect(layout.chat).w - 3).max(0) as u32,
         |text| state.renderer.bit_font.text_width(text),
@@ -333,10 +336,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         if let Some(popup) = ui.popup_geometry(&view, &layout) {
             ui.popup.pointer_moved(popup, x, y);
         }
-        let geometry =
-            ui.chat
-                .list
-                .geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+        let geometry = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
         ui.chat
             .list
             .scroll
@@ -473,10 +473,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             } else if control == CHAT {
                 ui.focus_chat();
             } else if control == CHAT_LOG {
-                let geometry =
-                    ui.chat
-                        .list
-                        .geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+                let geometry = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
                 if let Some(part) = geometry.scroll_part_at(x, y) {
                     ui.chat.list.scroll.press(
                         part,
@@ -560,10 +557,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
         }
         deadline = ui.popup.scroll.repeat_at();
     }
-    let geometry = ui
-        .chat
-        .list
-        .geometry(layout.chat_log, ui.chat.lines.len(), layout.page.scale);
+    let geometry = layout.chat_list(&ui.chat.list, ui.chat.lines.len());
     if ui
         .chat
         .list

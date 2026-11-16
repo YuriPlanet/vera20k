@@ -6,7 +6,7 @@
 
 use crate::util::time::Instant;
 
-use crate::ui::lan_shell::LanChatState;
+use crate::ui::lan_shell::{LanChatState, LanListState};
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::combobox::{ComboPopup, ComboPopupInteraction};
 use crate::ui::shell::descriptor::{DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
@@ -60,55 +60,61 @@ const TEAM_ADD_AI: u16 = 0x7180;
 /// ([`ShellScale::anchored_right`]), with this gap between them and after
 /// the frame, and this margin before the panel. The chat takes this share
 /// of their width, within these limits.
-const ROOM_MARGIN: i32 = 10;
+const ROOM_MARGIN: i32 = 20;
 const ROOM_GAP: i32 = 8;
 /// The room background's frame down its left edge, in its 800-wide art: the
 /// room keeps it at its own width where it spreads the background.
 pub(crate) const ROOM_FRAME_W: i32 = 9;
 const ROOM_RIGHT_PANEL_W: i32 = 168;
-const CHAT_SHARE: (i32, i32) = (2, 5);
-const CHAT_W: (i32, i32) = (230, 460);
+const CHAT_SHARE: (i32, i32) = (3, 10);
+const CHAT_W: (i32, i32) = (190, 380);
+/// The chat's text, as a share of the shell's own size.
+const CHAT_TEXT_SCALE: f32 = 0.75;
 /// VERA's roster: the top of its first entry and the bottom of its last,
-/// and the heights of a player's row and of a header.
-const ROSTER_TOP: i32 = 30;
+/// the heights of a player's row and of a header, and its column labels'
+/// top and height.
+const ROSTER_TOP: i32 = 32;
 const ROSTER_BOTTOM: i32 = 551;
-const ROSTER_ROW_H: i32 = 15;
-const ROSTER_HEADER_H: i32 = 18;
-const ROSTER_LABEL_Y: i32 = 10;
+const ROSTER_ROW_H: i32 = 20;
+const ROSTER_HEADER_H: i32 = 23;
+const ROSTER_LABEL_Y: i32 = 8;
+const ROSTER_LABEL_H: i32 = 18;
 /// The space between one group's box and the next one's.
-const ROSTER_GROUP_GAP: i32 = 8;
+const ROSTER_GROUP_GAP: i32 = 10;
 /// A group's box reaches this far past its entries' left and right edges,
 /// and above and below them.
-const ROSTER_BOX_MARGIN: (i32, i32) = (4, 2);
+const ROSTER_BOX_MARGIN: (i32, i32) = (5, 3);
 /// The roster's entries start this far into its column, which is this much
 /// wider than they are: the groups' boxes and, at its right end, a scrollbar
 /// when they do not all fit.
-const ROSTER_INSET: i32 = 4;
+const ROSTER_INSET: i32 = 5;
 const ROSTER_SPARE_W: i32 = 34;
 /// The roster's entries at their full width, from their left edge: a row's
 /// Player, Side, Colour, Start and Team cells, as left edge and width, after
 /// its ping at the left; a header's caption, the host's Add AI and, at the
 /// row's right end, its Join: text like the rows', no button art. A
 /// narrower column narrows them all ([`RosterColumns`]).
-const ROSTER_W: i32 = 578;
-const ROSTER_CELLS: [(i32, i32); 5] = [(14, 200), (220, 120), (346, 44), (396, 44), (446, 44)];
-const ROSTER_PING_W: i32 = 12;
-const ROSTER_CAPTION_W: i32 = 200;
-const ROSTER_ADD_AI: (i32, i32) = (220, 70);
-const ROSTER_JOIN_W: i32 = 70;
+const ROSTER_W: i32 = 751;
+const ROSTER_CELLS: [(i32, i32); 5] = [(18, 260), (286, 156), (450, 57), (515, 57), (580, 57)];
+const ROSTER_PING_W: i32 = 16;
+const ROSTER_CAPTION_W: i32 = 260;
+const ROSTER_ADD_AI: (i32, i32) = (286, 91);
+const ROSTER_JOIN_W: i32 = 91;
 /// A list opened from a narrow cell is at least this wide.
-const ROSTER_LIST_MIN_W: i32 = 110;
+const ROSTER_LIST_MIN_W: i32 = 143;
 /// VERA's team bar under the roster: its parts from its box's top-left corner,
 /// the Teams count's label and trackbar and, online, Balance and Balance
-/// automatically, their art at 60% of its size
-/// ([`MultiplayerSetupLayout::control_scale`]). Balance automatically goes
-/// under the rest in a box narrower than [`TEAM_BAR_ONE_LINE`].
-const TEAM_BAR_H: i32 = 19;
-const TEAM_BAR_LABEL: RectPx = RectPx::new(6, 2, 50, 14);
-const TEAM_BAR_COUNT: RectPx = RectPx::new(58, 3, 77, 13);
-const TEAM_BAR_BALANCE: RectPx = RectPx::new(146, 2, 74, 14);
-const TEAM_BAR_AUTO_BALANCE: RectPx = RectPx::new(232, 4, 180, 11);
-const TEAM_BAR_ONE_LINE: i32 = 418;
+/// automatically, their art at 78% of its size
+/// ([`MultiplayerSetupLayout::control_scale`]). The trackbar is the room's
+/// own 129x21 window at that size, so its frame art fits. Balance
+/// automatically goes under the rest in a box narrower than
+/// [`TEAM_BAR_ONE_LINE`].
+const TEAM_BAR_H: i32 = 25;
+const TEAM_BAR_LABEL: RectPx = RectPx::new(8, 3, 65, 18);
+const TEAM_BAR_COUNT: RectPx = RectPx::new(75, 4, 100, 17);
+const TEAM_BAR_BALANCE: RectPx = RectPx::new(190, 3, 97, 19);
+const TEAM_BAR_AUTO_BALANCE: RectPx = RectPx::new(302, 5, 234, 14);
+const TEAM_BAR_ONE_LINE: i32 = 543;
 /// The chat's log ends here, its edit line under it.
 const CHAT_LOG_BOTTOM: i32 = 529;
 
@@ -141,7 +147,7 @@ impl RosterColumns {
     }
 }
 /// The roster's text, as a share of the shell's own size.
-pub(crate) const ROSTER_TEXT_SCALE: f32 = 0.75;
+pub(crate) const ROSTER_TEXT_SCALE: f32 = 0.975;
 
 /// Whether a press on an enabled cell of VERA's roster opens its list: it
 /// has something else to choose.
@@ -723,8 +729,6 @@ pub(crate) struct SetupHeader {
     /// The button's caption; `None` shows no button.
     pub(crate) join: Option<String>,
     pub(crate) join_enabled: bool,
-    /// A team's own colour for its caption, as a colour choice's swatch.
-    pub(crate) swatch: Option<usize>,
 }
 
 /// A box VERA's room opens over itself; it takes the room's input.
@@ -1526,13 +1530,15 @@ impl MultiplayerSetupLayout {
         ]
         .into_iter()
         .zip(columns.cells)
-        .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, 14)))
+        .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, ROSTER_LABEL_H)))
         .collect();
         let at = |part: RectPx| scale.scale_rect(part.translate(bar.x, bar.y));
         self.team_bar = Some(scale.scale_rect(bar));
         self.teams_label = at(TEAM_BAR_LABEL);
+        let small = self.control_scale(TEAM_COUNT);
         if let Some((_, count)) = self.trackbars.iter_mut().find(|(id, _)| *id == TEAM_COUNT) {
-            *count = at(TEAM_BAR_COUNT);
+            let corner = small.base_rect(at(TEAM_BAR_COUNT));
+            *count = small.scale_rect(RectPx::new(corner.x, corner.y, 129, 21));
         }
         if online {
             self.balance = Some(at(TEAM_BAR_BALANCE));
@@ -1787,15 +1793,29 @@ impl MultiplayerSetupLayout {
         })
     }
     /// The scale `id`'s art draws and takes the pointer at: the team bar's
-    /// controls at 60% of the shell's.
+    /// controls at 78% of the shell's.
     pub(crate) fn control_scale(&self, id: u16) -> ShellScale {
         let scale = self.page.scale;
         if self.team_bar.is_some() && matches!(id, TEAM_COUNT | BALANCE | AUTO_BALANCE) {
             let window = scale.window();
-            ShellScale::from_screen(window.w * 3 / 5, window.h * 3 / 5)
+            ShellScale::from_screen(window.w * 78 / 100, window.h * 78 / 100)
         } else {
             scale
         }
+    }
+    /// The chat's text, as a share of the shell's own size: smaller in
+    /// VERA's room.
+    pub(crate) fn chat_text_scale(&self) -> f32 {
+        if self.roster { CHAT_TEXT_SCALE } else { 1.0 }
+    }
+    /// The chat log's list, its rows at the chat's text size.
+    pub(crate) fn chat_list(&self, list: &LanListState, count: usize) -> ShellListGeometry {
+        list.geometry_for_text(
+            self.chat_log,
+            count,
+            self.page.scale,
+            self.chat_text_scale(),
+        )
     }
     /// VERA's roster's scroll geometry: its scrollbar shows when its
     /// entries do not all fit.
@@ -2046,7 +2066,6 @@ mod tests {
         view.headers[0] = Some(SetupHeader {
             group: SetupGroup::Team(1),
             caption: String::new(),
-            swatch: None,
             join: Some(String::new()),
             join_enabled: true,
         });
@@ -2273,8 +2292,8 @@ mod tests {
             let (x, y) = center(rect);
             assert_eq!(popup_layout.control_at(&view, x, y), Some(id));
         }
-        // Its art draws at 60% of the shell's size.
-        assert_eq!(popup_layout.control_scale(TEAM_COUNT).factor(), 0.6);
+        // Its art draws at 78% of the shell's size.
+        assert_eq!(popup_layout.control_scale(TEAM_COUNT).factor(), 0.78);
         assert_eq!(popup_layout.control_scale(SPEED).factor(), 1.0);
         let lan =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Lan, true), 800, 600, false);

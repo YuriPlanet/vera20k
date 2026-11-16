@@ -326,22 +326,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let mut combos = Vec::with_capacity(5 * rows);
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
-    // Each team's caption in the colour Team Colors gives the team.
-    let team_count = teams.unwrap_or_else(|| {
-        listing
-            .listed
-            .iter()
-            .filter_map(|listed| match listed {
-                Listed::Header(SetupGroup::Team(team), _) => Some(team.saturating_add(1)),
-                _ => None,
-            })
-            .max()
-            .unwrap_or(0)
-    });
-    let team_swatches = state
-        .rules()
-        .map(|rules| super::teams::team_swatches(rules, team_count))
-        .unwrap_or_default();
     for visible_row in 0..rows {
         let row = match shown(visible_row) {
             None => break,
@@ -402,12 +386,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 headers[visible_row] = Some(SetupHeader {
                     group,
                     caption,
-                    swatch: match group {
-                        SetupGroup::Team(team) => {
-                            team_swatches.get(usize::from(team)).copied().flatten()
-                        }
-                        _ => None,
-                    },
                     join_enabled: button.as_ref().is_some_and(|(_, enabled)| *enabled)
                         && !starting
                         && !closed,
