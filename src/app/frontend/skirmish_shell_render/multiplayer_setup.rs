@@ -480,7 +480,7 @@ pub(crate) fn render_multiplayer_setup(
                         &crate::i18n::tr(caption),
                         rect,
                         ShellAlign::V_CENTER,
-                        ROOM_TEXT_RGB,
+                        SHELL_LABEL_TEXT_RGB,
                         SHELL_CONTROL_TEXT_DEPTH,
                         ROSTER_TEXT_SCALE,
                     ));
