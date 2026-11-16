@@ -199,7 +199,11 @@ impl App {
             .match_state
             .live_network
             .as_ref()
-            .is_some_and(|live| live.restoring_match());
+            .is_some_and(|live| live.restoring_match())
+            || crate::app::match_runtime::watching::catching_up(
+                state,
+                crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,
+            );
         let profile = &state.persistence.options_profile;
         let (sound, voice) = (
             f64::from(profile.sound_volume),

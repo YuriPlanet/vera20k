@@ -34,6 +34,9 @@ pub(super) enum Request {
         seed_digest: String,
         digest: String,
         offset: usize,
+        /// A watcher's download names the match it watches
+        /// (docs/lobby-protocol.md "Watching").
+        match_id: Option<String>,
     },
     UploadMapChunk {
         transfer: u64,
@@ -1071,11 +1074,13 @@ macro_rules! serial_driver {
                 seed_digest,
                 digest,
                 offset,
+                match_id,
             }) => {
                 let result = if crate::map::source::valid_source_sha256(&digest) {
+                    let watched = match_id.map_or_else(String::new, |id| format!("&match_id={id}"));
                     platform_await!(client.request(
                         &format!(
-                            "/v1/maps/{seed_digest}?offset={offset}&resource={}",
+                            "/v1/maps/{seed_digest}?offset={offset}&resource={}{watched}",
                             if resource == crate::map::source::TransferResource::Preview {
                                 "preview"
                             } else {

@@ -766,7 +766,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .reset(state.platform.frame_pacer.total_render_deferrals());
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
-    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
+    // A watcher sees the whole map. Only the picture changes: every House
+    // keeps its own fog in the shared world.
+    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility
+        || crate::app::match_runtime::watching::active(state);
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
     // resolves through `From_Name` (`0x004758F0`); -1 -> `Stop(fade=1)` of the

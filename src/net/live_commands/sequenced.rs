@@ -573,8 +573,10 @@ impl SequencedSession {
         }
     }
 
+    /// A watcher joins a match under way too, but sends nothing: it has no
+    /// batch counter to restore.
     pub(super) fn begin_restore(&mut self) {
-        self.restoring = true;
+        self.restoring = self.watch.is_none();
     }
 
     pub(super) fn restoring(&self) -> bool {

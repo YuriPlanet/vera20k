@@ -37,7 +37,7 @@ pub fn browser_proxy_url() -> &'static str {
 use vera20k_relay_protocol::{ABSENT_MS, ClientSession, RelayError, ServerEvent};
 pub use vera20k_relay_protocol::{
     CertificatePacing, MAX_PEERS as RELAY_MAX_PEERS, OrderingCertificate, Ticket as RelayTicket,
-    peer_endpoint as relay_peer_endpoint,
+    WatchTicket as RelayWatchTicket, peer_endpoint as relay_peer_endpoint,
 };
 
 #[cfg(any(test, feature = "test-support"))]

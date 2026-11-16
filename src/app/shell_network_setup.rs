@@ -669,6 +669,43 @@ pub(crate) fn install_external_setup(
     Ok(())
 }
 
+/// A watcher's setup (docs/lobby-protocol.md "Watching"): the options every
+/// player's game accepted, as a guest accepts them, standing in the seat of
+/// the player `options.launch.local_player_index` names. It has no dialog,
+/// changes none of this player's own preferences, and its map arrives as a
+/// guest's does ([`accept_network_map_source`]).
+pub(crate) fn install_watch_setup(
+    state: &mut AppState,
+    options: HostOptions,
+    room: crate::app::match_runtime::session::NetworkRoom,
+) -> anyhow::Result<()> {
+    let HostOptions {
+        launch,
+        map_metadata,
+        vacancies,
+        observer_row,
+        ..
+    } = options;
+    let file = launch
+        .selected_map_file
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("the match has no map"))?;
+    crate::map::source::validate_network_map_name(file)?;
+    let session = &mut state.match_state.session;
+    session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
+    session.accept_network_setup(launch.clone(), false, observer_row, true)?;
+    session.set_network_room(room);
+    let capacity = map_metadata.player_capacity;
+    session.accept_network_host_setup(launch, vacancies, capacity, observer_row, false)?;
+    session.accept_network_map_metadata(map_metadata, None, true)?;
+    let mut protocol = NetworkSetupProtocol::new(dialog(state), false);
+    protocol.external = true;
+    protocol.ping_deadline = None;
+    protocol.requests.clear();
+    state.frontend.network_setup_protocol = Some(protocol);
+    Ok(())
+}
+
 /// The setup dialog the admitted session shows: GameMode4 is WOL C2/C9.
 /// A white (0xFFFFFFFF) CSF line in the setup chat log: Start refusals and
 /// WOL chat notices.

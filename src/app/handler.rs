@@ -753,17 +753,34 @@ impl ApplicationHandler for App {
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
         // Playback has presentation-only input. Exit is local and never
-        // schedules EventClass EXIT or changes the recorded simulation.
-        if state.match_state.match_diagnostics.is_replay_playback() {
+        // schedules EventClass EXIT or changes the recorded simulation. A
+        // watcher's is presentation-only too: it gives no orders, Tab follows
+        // the next player and Escape leaves the match.
+        let replay = state.match_state.match_diagnostics.is_replay_playback();
+        let watching = !replay
+            && state.frontend.screen == GameScreen::InGame
+            && crate::app::match_runtime::watching::active(state);
+        if replay || watching {
             match &event {
-                WindowEvent::CloseRequested => {
+                WindowEvent::CloseRequested if replay => {
                     event_loop.exit();
                     return;
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if code == KeyCode::Escape && event.state.is_pressed() {
-                            event_loop.exit();
+                        let pressed = event.state.is_pressed();
+                        if code == KeyCode::Escape && pressed {
+                            if replay {
+                                event_loop.exit();
+                            } else if let Some(live) = state.match_state.live_network.as_mut() {
+                                // The next frame's network wait leaves the
+                                // match (`exit_awaits_unreachable_relay`).
+                                live.keep_running_for_exit();
+                            }
+                        } else if code == KeyCode::Tab && watching {
+                            if pressed && !event.repeat {
+                                crate::app::match_runtime::watching::follow_next(state);
+                            }
                         } else if matches!(
                             code,
                             KeyCode::ArrowLeft
@@ -771,7 +788,7 @@ impl ApplicationHandler for App {
                                 | KeyCode::ArrowUp
                                 | KeyCode::ArrowDown
                         ) {
-                            if event.state.is_pressed() {
+                            if pressed {
                                 state.match_state.input.keys_held.insert(code);
                             } else {
                                 state.match_state.input.keys_held.remove(&code);
@@ -794,7 +811,9 @@ impl ApplicationHandler for App {
                     crate::app::input::camera::apply_zoom(state, lines);
                     return;
                 }
-                WindowEvent::Resized(_)
+                // A watcher's window closes as a player's does.
+                WindowEvent::CloseRequested
+                | WindowEvent::Resized(_)
                 | WindowEvent::ScaleFactorChanged { .. }
                 | WindowEvent::Focused(_)
                 | WindowEvent::Occluded(_)

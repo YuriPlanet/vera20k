@@ -342,6 +342,52 @@ its rules check. A guest of an older version is refused at the build check. The 
 still accepts the field, so a rollback needs no lobby change; a rolled-back game reads
 `VERARULES.INI` again.
 
+### Watching
+
+A player in VERA's online lobby can watch a match being played (VERA's; gamemd has
+no such thing). The game list shows running matches after the rooms, tagged Watch,
+with how many watch each out of the 10 it takes; Join on one asks the lobby to `watch`
+it ([lobby protocol](lobby-protocol.md#watching)). The lobby lists only matches of the
+watcher's own version between two or more players, on a relay that lets watchers in,
+and never one from a room with a password, a clan room, a generated map or a co-op
+mission: a watcher's game cannot yet rebuild their starts. A host chooses in Create
+Game who may watch the room's games: everyone 2 minutes behind (the default), nobody,
+or everyone live. Quick Match and ranked games are always watched 2 minutes behind.
+
+The lobby's grant carries the match's start, its options and a watch ticket. The
+watcher's game downloads the map as a guest does, checks that its version and rules
+digest are the players', and joins the relay as a watcher (`live_service::begin_watch`,
+`poll_watch`): a read-only session that pulls the match's stream from its first frame,
+held back by the delay, and sends nothing into it, not even a checksum
+(relay README, "Watchers"). It loads the world as a returning player does, with no
+progress reports and nobody waiting for it, and then plays the stream's frames. Until
+it reaches the match's delayed present it runs them as fast as a returning player
+catches up, says Catching up, and keeps its sounds off. It checks its world against the
+checksums all players reported alike and stops with the usual message when they differ.
+
+A watcher stands in one player's seat: that player's sidebar, credits and sounds, with
+the whole map shown. Only the picture changes: every House keeps its own fog in the
+shared world. Tab follows the next player still in the match, in House order
+(`match_runtime::watching`): online the current House only chooses this game's view and
+result, so following rebuilds just the objects' owner and discovery bytes from the
+history every player's game keeps (`Simulation::follow_house`). A watcher gives no
+orders: its input is the camera, zoom, Tab
+and Escape, and it has no chat. Escape leaves at once; the returned transport's relay
+Leave ends the watcher's session. A match that ends with a result ends for the watcher
+as for the player it follows, with the score page, then the online lobby. One that every
+player leaves without a result returns it to the lobby with a line saying the match
+ended. The lobby renews a watcher's relay pass as it does a player's (`renew_watch`).
+
+Older versions and rollbacks: a game from before watching never asks for the list, its
+rooms send no `watching`, and their matches are never watchable. A watcher sees only
+matches of its own version, and its game refuses a start whose version or rules digest
+differs (Could not start watching this match). A lobby rolled back to before watching
+answers the list with 404, which the game takes as no matches, and refuses options that
+carry `watching`: the host's game then stops sending it, says so, and the room plays
+unwatched. A relay rolled back to before watchers refuses watch tickets: a new watch
+ends in the lobby with the relay connection message, and a watcher already on it loses
+its connection and returns to the lobby with the usual message.
+
 ## Native behavior and deliberate bounds
 
 The following native scheduling/reliability details apply to LAN and legacy routing;

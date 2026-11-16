@@ -220,7 +220,7 @@ Event kinds and payloads:
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?}` |
 | `relay_renewed` | `{match_id,relay:<RelayGrant>}` |
-| `watch_started` | `{match_id,revision,version,rules_digest,staging_digest,seed,users:[{name,flags,source_index}],options:<HostOptions>,pings:[integer],delay_seconds,playing_since,ranked?,relay:<WatchGrant>}` |
+| `watch_started` | `{match_id,revision,version,rules_digest,staging_digest,seed,tournament,quick_coop,users:[{name,flags,source_index}],options:<HostOptions>,pings:[integer],delay_seconds,playing_since,ranked?,relay:<WatchGrant>}` |
 | `watch_renewed` | `{match_id,relay:<WatchGrant>}` |
 | `map_available` | `{digest,byte_length,resource?}` |
 | `start_rejected` | `{message}` |
@@ -584,7 +584,10 @@ players' games never learn it is there (relay README, "Watchers").
 `{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
 the matches the caller may watch. These are matches in play between two or more humans,
 with watching on, in a room without a password, on a relay that lets watchers in and on
-the caller's version (as `kind=41` lists rooms), that the caller plays no part in. `name`
+the caller's version (as `kind=41` lists rooms), that the caller plays no part in. Clan
+rooms, generated maps and co-op missions are never listed: a watcher's game cannot yet
+rebuild a start that splits players by squad, comes from the host's map seed or from a
+campaign. `name`
 is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
 began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans;
 `watchers` counts who watches now, of at most `max_watchers` (10); and `delay_seconds` is
@@ -595,14 +598,14 @@ answers 404 `not_found`, and the game lists no running matches.
 
 `watch` replies `watch_started`: what every player's game got at the start (`revision`,
 `version`, `rules_digest`, `seed`, `users` without `player_id`, and that revision's
-`options`), the room's `staging_digest` (empty for an authored map), the `pings` of
-`timing_confirmed`, the delay, `playing_since`, `ranked:true` for a ranked game, and a
-WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
+`options`), the room's `staging_digest` (empty for an authored map) and `tournament`
+value, `quick_coop:true` for a Quick Co-op room (a paired room with tournament 0), the
+`pings` of `timing_confirmed`, the delay, `playing_since`, `ranked:true` for a ranked
+game, and a WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
 409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
 its 10 watchers. Watching the same match again, as after the game restarted, keeps the
 watcher's place and identity. While the match plays, its watchers download its map as a
-room member does, naming it: `GET /v1/maps/<source_sha256>?offset=<n>&match_id=<id>`,
-with `resource=preview` for a generated map's preview.
+room member does, naming it: `GET /v1/maps/<source_sha256>?offset=<n>&match_id=<id>`.
 
 WatchGrant is `{address,ticket,packet_key,payload_key,ordering_certificate}`. The relay is
 the nearest of the match's relays that serves the watcher, one relay even in a federated

@@ -329,6 +329,41 @@ pub(super) struct Start {
     pub relay: RelayGrant,
 }
 
+/// `watch_started` (docs/lobby-protocol.md "Watching"): the start every
+/// player's game got, with the timing it agreed, and this watcher's grant.
+#[derive(Deserialize)]
+pub(super) struct WatchStarted {
+    pub match_id: String,
+    pub version: String,
+    pub rules_digest: String,
+    pub seed: u32,
+    /// The room's tournament value (`[0xB779C4]`), and whether it is a
+    /// Quick Co-op room: the start terms every player's game took.
+    pub tournament: i32,
+    pub quick_coop: bool,
+    pub users: Vec<WatchedUser>,
+    pub options: Options,
+    pub pings: Vec<i32>,
+    pub relay: WatchGrant,
+}
+
+#[derive(Deserialize)]
+pub(super) struct WatchedUser {
+    pub name: String,
+    pub flags: u32,
+    pub source_index: u8,
+}
+
+// Deliberately no Debug: a watch grant is a credential.
+#[derive(Deserialize)]
+pub(super) struct WatchGrant {
+    pub address: std::net::SocketAddrV4,
+    pub ticket: String,
+    pub packet_key: String,
+    pub payload_key: String,
+    pub ordering_certificate: String,
+}
+
 /// The `ladder` event for the names a `ladder` command asked for, or the
 /// rated players' tables the lobby sends unasked after a rated game, or none
 /// when a season starts or ends: the running season's records, which a name

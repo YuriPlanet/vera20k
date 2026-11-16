@@ -2283,13 +2283,10 @@ fn begin_watch(state: &mut AppState, match_id: String) {
     request(state, WolServiceRequest::Watch { match_id });
 }
 
-/// VERA: the lobby granted the watch that [`Step::Watching`] waits for: the
-/// wait closes as a joined game's does, and the watch starts from the
-/// grant. False when no watch was waiting.
-#[expect(
-    dead_code,
-    reason = "the watch start calls it on `watch_started`, which lands separately"
-)]
+/// VERA: the relay admitted the watch that [`Step::Watching`] waits for:
+/// the wait closes as a joined game's does, and the match loads. A watch
+/// keeps no room, so the lobby comes back after it as after any match.
+/// False when no watch was waiting.
 pub(crate) fn watch_admitted(state: &mut AppState) -> bool {
     let Some(lobby) = lobby_mut(state) else {
         return false;
@@ -2299,7 +2296,23 @@ pub(crate) fn watch_admitted(state: &mut AppState) -> bool {
     }
     lobby.step = Step::Ready;
     close_wait(state);
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.back_to_room = false;
+    }
     true
+}
+
+/// VERA: a granted watch could not start (its map, version or relay): the
+/// wait closes, when it is still up, and a box says why.
+pub(crate) fn watch_failed(state: &mut AppState, key: &str) {
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    if matches!(lobby.step, Step::Watching { .. }) {
+        lobby.step = Step::Ready;
+        close_wait(state);
+    }
+    show_box(state, key, false, BoxThen::WatchFailed);
 }
 
 /// VERA: the lobby refused the watch, or it went unanswered: the wait

@@ -156,6 +156,16 @@ impl TechnoDiscoveryHistory {
         self.discovered_by_other_house
     }
 
+    /// VERA watching: this process's own bytes rebuilt for a newly followed
+    /// human from the history every peer keeps. `view` is that human's bit
+    /// in `network_human_discovery`; the House left behind becomes another
+    /// receiver.
+    fn follow_view(&mut self, owned: bool, view: u32) {
+        self.owned_by_current_house = owned;
+        self.discovered_by_current_house = self.network_human_discovery & view != 0;
+        self.discovered_by_other_house |= self.network_human_discovery & !view != 0;
+    }
+
     fn clear_current_discovery(&mut self) {
         self.discovered_by_current_house = false;
         // A shared lifecycle clear executes in every represented native view.
@@ -1967,6 +1977,30 @@ impl Simulation {
                 .checked_shl(ordinal as u32)
                 .expect("admitted network human count fits the30-player discovery mask"),
         )
+    }
+
+    /// VERA watching: a watcher's world follows another human. Online, the
+    /// current House selects only this process's view and result, since every
+    /// peer holds a different one (see `shared_owned_by_current_house`), so
+    /// following rebuilds just the objects' owner and discovery bytes, from
+    /// the history every peer keeps. Refused offline, for a House that is no
+    /// human player's, and once this process's result is on its way.
+    pub fn follow_house(&mut self, owner: InternedId) -> bool {
+        let Some(view) = self.network_discovery_view_bit(owner) else {
+            return false;
+        };
+        if self.session.current_house() == Some(owner)
+            || self.session.outcome_request().is_some()
+            || self.frame_continuation.is_some()
+        {
+            return false;
+        }
+        self.session.install_current_house(Some(owner));
+        for entity in self.substrate.entities.values_mut() {
+            let owned = entity.owner() == owner;
+            entity.discovery.follow_view(owned, view);
+        }
+        true
     }
 
     /// `+0x41A` as a decision every peer shares reads it: VisualCharacter's
@@ -7582,6 +7616,10 @@ impl crate::sim::world::ObjectSubstrate {
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "foot_archive_expiry_tests.rs"]
 mod foot_archive_expiry_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "follow_house_tests.rs"]
+mod follow_house_tests;
 
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
