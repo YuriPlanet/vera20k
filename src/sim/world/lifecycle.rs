@@ -1979,21 +1979,41 @@ impl Simulation {
         )
     }
 
+    /// VERA watching (docs/Networking.md "Watching"): this world plays a
+    /// match its game watches. It stands in the followed player's seat for
+    /// that player's view, sidebar and sounds, but sends nothing, so every
+    /// command record is another game's. The app installs it with the world,
+    /// before its first frame.
+    pub fn install_watcher(&mut self) {
+        self.session.install_watcher();
+    }
+
     /// VERA watching: a watcher's world follows another human. Online, the
     /// current House selects only this process's view and result, since every
-    /// peer holds a different one (see `shared_owned_by_current_house`), so
-    /// following rebuilds just the objects' owner and discovery bytes, from
-    /// the history every peer keeps. Refused offline, for a House that is no
-    /// human player's, and once this process's result is on its way.
+    /// peer holds a different one (see `shared_owned_by_current_house`), and
+    /// PlayerControl only its EVA and score lines (unhashed online), so
+    /// following moves those and rebuilds just the objects' owner and
+    /// discovery bytes, from the history every peer keeps. Refused offline,
+    /// to a player, for a House that is no human player's, once this
+    /// process's result is on its way, and in a frame stopped by a failure.
+    /// A frame waiting on the stream has run its logic, and a watcher's
+    /// command tail reads no current House, so it follows then as between
+    /// frames.
     pub fn follow_house(&mut self, owner: InternedId) -> bool {
         let Some(view) = self.network_discovery_view_bit(owner) else {
             return false;
         };
-        if self.session.current_house() == Some(owner)
+        if !self.session.watcher()
+            || self.session.current_house() == Some(owner)
             || self.session.outcome_request().is_some()
-            || self.frame_continuation.is_some()
+            || (self.frame_continuation.is_some() && !self.pending_network_wait())
         {
             return false;
+        }
+        for (house, controlled) in [(self.session.current_house(), false), (Some(owner), true)] {
+            if let Some(house) = house.and_then(|house| self.houses.get_mut(&house)) {
+                house.assign_player_control(controlled);
+            }
         }
         self.session.install_current_house(Some(owner));
         for entity in self.substrate.entities.values_mut() {
@@ -7618,8 +7638,8 @@ impl crate::sim::world::ObjectSubstrate {
 mod foot_archive_expiry_tests;
 
 #[cfg(all(test, tests_sim_world_c_o))]
-#[path = "follow_house_tests.rs"]
-mod follow_house_tests;
+#[path = "watcher_tests.rs"]
+mod watcher_tests;
 
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ares_prerequisite_lifecycle_tests.rs"]

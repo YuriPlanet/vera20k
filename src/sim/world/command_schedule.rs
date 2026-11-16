@@ -1255,16 +1255,19 @@ impl Simulation {
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
+        // A watcher sends nothing, so no sender is its current player.
         let local_source = self.session.local_shared_house_source();
+        let watcher = self.session.watcher();
         let mut houses: Vec<_> = self
             .session
             .network_sources(self.houses.order().len())
             .filter_map(|(source, house)| {
                 let owner = *self.houses.order().get(house)?;
-                let current_player = match local_source {
-                    Some(local) => local == source,
-                    None => self.session.current_house() == Some(owner),
-                };
+                let current_player = !watcher
+                    && match local_source {
+                        Some(local) => local == source,
+                        None => self.session.current_house() == Some(owner),
+                    };
                 Some(
                     CommandDispatchHouse::new(owner, source, true)
                         .with_current_player(current_player),

@@ -2289,6 +2289,11 @@ fn begin_watch(state: &mut AppState, match_id: String) {
     request(state, WolServiceRequest::Watch { match_id });
 }
 
+/// VERA: whether the lobby page waits for a watch's grant.
+pub(crate) fn awaits_watch(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Watching { .. }))
+}
+
 /// VERA: the relay admitted the watch that [`Step::Watching`] waits for:
 /// the wait closes as a joined game's does, and the match loads. A watch
 /// keeps no room, so the lobby comes back after it as after any match.

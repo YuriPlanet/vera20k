@@ -41,17 +41,19 @@ pub(super) fn set_auto_balance(state: &mut AppState, on: bool) -> anyhow::Result
 
 /// A lobby that cannot take the host's options refuses them while they carry
 /// a field it does not know: the room goes on without the newest one it
-/// carries, Watching before Superweapon Limit before the rest of the room's
-/// rules before the join queue before Balance automatically before Teams,
-/// and publishes again. Returns the line telling the host so, or `None` when
-/// none was set.
+/// carries, Watching (while the lobby has not said whether it lists matches
+/// to watch) before Superweapon Limit before the rest of the room's rules
+/// before the join queue before Balance automatically before Teams, and
+/// publishes again. Returns the line telling the host so, or `None` when none
+/// was set.
 pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
     // A lobby from before watching: nobody watches the room's games.
+    let lobby_watches = crate::app::shell_wol::lobby_watches(state);
     if state
         .frontend
         .network_setup_protocol
         .as_mut()
-        .is_some_and(NetworkSetupProtocol::stop_watching)
+        .is_some_and(|room| room.stop_watching(lobby_watches))
     {
         return Some("VERA:WatchingNotTaken");
     }

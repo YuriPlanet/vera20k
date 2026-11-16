@@ -42,10 +42,10 @@ const PACE_BACKLOG_MS: u32 = 2_000;
 // Ticks kept for one pace report's tick-cost percentile.
 const MAX_TICK_COSTS: usize = 256;
 // VERA watching (relay README "Watchers"): the relay never pushes to a
-// watcher, so it pulls this often, and starts a whole match behind, so it
-// buffers and reads further ahead than a player.
+// watcher, so it pulls this often. It starts a whole match behind and keeps
+// every frame it reads, so it has read a match to its end before the relay
+// forgets it (300 s after its end), however long its world takes to play it.
 const WATCH_PULL_INTERVAL_MS: u32 = 100;
-const WATCH_BUFFERED_FRAMES: usize = 512;
 const WATCH_REORDER_WINDOW: u64 = 2048;
 // The relay's agreed samples kept until this world reaches their frames.
 const WATCH_SAMPLES: usize = 16;
@@ -600,7 +600,7 @@ impl SequencedSession {
 
     fn buffered_frames(&self) -> usize {
         if self.watch.is_some() {
-            WATCH_BUFFERED_FRAMES
+            usize::MAX
         } else {
             BUFFERED_FRAMES
         }
@@ -963,14 +963,13 @@ impl SequencedSession {
 
     fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
         if self.watch.is_some() {
-            // Ready until the start, then a Pull from the cursor while the
-            // frame buffer has room: the relay pushes nothing to a watcher.
+            // Ready until the start, then a Pull from the cursor: the relay
+            // pushes nothing to a watcher.
             let sent = if !self.started {
                 service_due(self.last_control, now, CONFIGURE_INTERVAL_MS)
                     && transport.configure_watch(self.agreement).is_ok()
             } else {
-                self.frames.len() < WATCH_BUFFERED_FRAMES
-                    && service_due(self.last_control, now, WATCH_PULL_INTERVAL_MS as i32)
+                service_due(self.last_control, now, WATCH_PULL_INTERVAL_MS as i32)
                     && transport.pull_ordering(self.next_sequence).is_ok()
             };
             if sent {
@@ -2592,6 +2591,26 @@ mod watch_tests {
         assert!(!session.watch_over());
         session.frames.clear();
         assert!(session.watch_over());
+    }
+
+    /// A watcher keeps every frame it reads however far its world is behind,
+    /// so it has read a match before the relay forgets it.
+    #[test]
+    fn a_watcher_keeps_every_frame_it_reads() {
+        let mut houses = [None; 30];
+        houses[..2].copy_from_slice(&[Some(0), Some(1)]);
+        let mut session = watcher(houses);
+        for frame in 1..=600 {
+            let end = OrderEntry::FrameEnd {
+                sequence: u64::from(frame),
+                frame,
+            };
+            session
+                .receive(OrderEvent::Entry(end), Instant::now())
+                .unwrap();
+        }
+        session.assemble().unwrap();
+        assert_eq!(session.frames.len(), 600);
     }
 
     /// A watcher's world is checked against each checksum every player

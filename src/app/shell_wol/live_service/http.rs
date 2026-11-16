@@ -263,9 +263,9 @@ pub(super) enum Response {
         message: Option<String>,
     },
     Channels(ChannelList),
-    /// The matches the player can watch; none from a lobby from before
+    /// The matches the player can watch, or `None` from a lobby from before
     /// watching, which answers 404.
-    Matches(Vec<Match>),
+    Matches(Option<Vec<Match>>),
     Event(Envelope),
     CommandCompleted {
         id: u64,
@@ -1255,11 +1255,11 @@ macro_rules! serial_driver {
                         .map_err(|_| RequestFailure::Status(0))
                 }) {
                     Ok(list) => {
-                        let _ = output.send(Response::Matches(list.matches));
+                        let _ = output.send(Response::Matches(Some(list.matches)));
                     }
                     // A lobby from before watching lists no match.
                     Err(RequestFailure::Status(404)) => {
-                        let _ = output.send(Response::Matches(Vec::new()));
+                        let _ = output.send(Response::Matches(None));
                     }
                     // The game list asked at the same time says when the
                     // lobby could not be refreshed.

@@ -604,7 +604,10 @@ value, `quick_coop:true` for a Quick Co-op room (a paired room with tournament 0
 game, and a WatchGrant. It fails with 409 `unknown_match` when the caller may not watch that match,
 409 `match_active` while the caller plays one, and 409 `watchers_full` when the match has
 its 10 watchers. Watching the same match again, as after the game restarted, keeps the
-watcher's place and identity. While the match plays, its watchers download its map as a
+watcher's place. An account is always the same watcher of a match on a relay, its
+identity there an HMAC of the match and the player under the relay's ticket key, so a
+newer watch ticket replaces the relay session it had rather than taking another place.
+While the match plays, its watchers download its map as a
 room member does, naming it: `GET /v1/maps/<source_sha256>?offset=<n>&match_id=<id>`.
 
 WatchGrant is `{address,ticket,packet_key,payload_key,ordering_certificate}`. The relay is

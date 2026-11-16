@@ -525,8 +525,13 @@ impl NetworkSetupProtocol {
 
     /// The room's Watching as its options carry it (docs/lobby-protocol.md
     /// "Watching"): `delayed` or `live`, and nothing while it is off, which
-    /// the lobby reads as off and a lobby from before watching never sees.
-    pub(crate) fn published_watching(&self) -> Option<&'static str> {
+    /// the lobby reads as off. `lobby_watches` is what the online lobby's
+    /// list of matches to watch answered: a lobby from before watching
+    /// (`Some(false)`) is never sent it.
+    pub(crate) fn published_watching(&self, lobby_watches: Option<bool>) -> Option<&'static str> {
+        if lobby_watches == Some(false) {
+            return None;
+        }
         match self.watching {
             RoomWatching::Delayed => Some("delayed"),
             RoomWatching::Live => Some("live"),
@@ -534,12 +539,15 @@ impl NetworkSetupProtocol {
         }
     }
 
-    /// A lobby from before watching refused the room's options: the room
-    /// stops sending its Watching, so nobody watches its games, and
-    /// publishes its options again. Returns whether it was still sending it;
-    /// once stopped it stays stopped, so the next refusal moves on.
-    fn stop_watching(&mut self) -> bool {
-        if self.published_watching().is_none() {
+    /// The lobby refused the room's options and may be from before watching,
+    /// as `lobby_watches` has no answer from its list of matches to watch
+    /// yet: the room stops sending its Watching, so nobody watches its games,
+    /// and publishes its options again. A lobby that lists matches refused
+    /// something else, and one that lists none is never sent Watching.
+    /// Returns whether it stopped; once stopped it stays stopped, so the next
+    /// refusal moves on.
+    pub(crate) fn stop_watching(&mut self, lobby_watches: Option<bool>) -> bool {
+        if lobby_watches.is_some() || self.published_watching(None).is_none() {
             return false;
         }
         self.watching = RoomWatching::Off;
@@ -1411,19 +1419,42 @@ mod tests {
             false,
         );
         room.take_service_requests();
-        assert_eq!(room.published_watching(), None);
+        assert_eq!(room.published_watching(None), None);
         room.watching = RoomWatching::Live;
-        assert_eq!(room.published_watching(), Some("live"));
+        assert_eq!(room.published_watching(None), Some("live"));
         room.watching = RoomWatching::Delayed;
-        assert_eq!(room.published_watching(), Some("delayed"));
-        assert!(room.stop_watching());
+        assert_eq!(room.published_watching(None), Some("delayed"));
+        assert!(room.stop_watching(None));
         assert_eq!(
             room.take_service_requests(),
             [NetworkSetupRequest::PublishOptions]
         );
-        assert_eq!(room.published_watching(), None);
-        assert!(!room.stop_watching());
+        assert_eq!(room.published_watching(None), None);
+        assert!(!room.stop_watching(None));
         assert!(room.take_service_requests().is_empty());
+    }
+
+    /// The lobby's list of matches to watch settles it: a lobby without one
+    /// is never sent the room's Watching, and one with it refused something
+    /// else, so the room keeps its Watching.
+    #[test]
+    fn the_lobbys_list_of_matches_decides_watching() {
+        let mut room = NetworkSetupProtocol::new(
+            SetupDialog {
+                host: true,
+                flavor: SetupFlavor::Wol,
+                modern: true,
+            },
+            false,
+        );
+        room.take_service_requests();
+        room.watching = RoomWatching::Live;
+        assert_eq!(room.published_watching(Some(false)), None);
+        assert_eq!(room.published_watching(Some(true)), Some("live"));
+        assert!(!room.stop_watching(Some(true)));
+        assert!(!room.stop_watching(Some(false)));
+        assert!(room.take_service_requests().is_empty());
+        assert_eq!(room.published_watching(Some(true)), Some("live"));
     }
 
     /// A guest is told the moves its host made, not the answers to its own

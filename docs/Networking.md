@@ -361,16 +361,22 @@ digest are the players', and joins the relay as a watcher (`live_service::begin_
 held back by the delay, and sends nothing into it, not even a checksum
 (relay README, "Watchers"). It loads the world as a returning player does, with no
 progress reports and nobody waiting for it, and then plays the stream's frames. Until
-it reaches the match's delayed present it runs them as fast as a returning player
-catches up, says Catching up, and keeps its sounds off. It checks its world against the
-checksums all players reported alike and stops with the usual message when they differ.
+it reaches the match's delayed present it runs them at speed, in passes of up to 50 ms
+a picture where a returning player's stop at 8 frames or 8 ms, says Catching up, and
+keeps its sounds off. It keeps every frame it has read rather than a returning player's
+64, so a long match is read to its end before the relay forgets it, 300 seconds after
+the end. It checks its world against the checksums all players reported
+alike and stops with the usual message when they differ.
 
 A watcher stands in one player's seat: that player's sidebar, credits and sounds, with
 the whole map shown. Only the picture changes: every House keeps its own fog in the
-shared world. Tab follows the next player still in the match, in House order
-(`match_runtime::watching`): online the current House only chooses this game's view and
-result, so following rebuilds just the objects' owner and discovery bytes from the
-history every player's game keeps (`Simulation::follow_house`). A watcher gives no
+shared world. It sends nothing in that seat either (`Simulation::install_watcher`): the
+followed player's records are another game's to it, so their Options opens nothing and
+their leaving ends the watch no more than it ends the other players' match. Tab follows
+the next player still in the match, in House order, also while a frame waits on the
+stream (`match_runtime::watching`): online the current House only chooses this game's
+view and result, so following rebuilds just the objects' owner and discovery bytes from
+the history every player's game keeps (`Simulation::follow_house`). A watcher gives no
 orders: its input is the camera, zoom, Tab
 and Escape, and it has no chat. Escape leaves at once; the returned transport's relay
 Leave ends the watcher's session. A match that ends with a result ends for the watcher
@@ -381,10 +387,15 @@ ended. The lobby renews a watcher's relay pass as it does a player's (`renew_wat
 Older versions and rollbacks: a game from before watching never asks for the list, its
 rooms send no `watching`, and their matches are never watchable. A watcher sees only
 matches of its own version, and its game refuses a start whose version or rules digest
-differs (Could not start watching this match). A lobby rolled back to before watching
-answers the list with 404, which the game takes as no matches, and refuses options that
-carry `watching`: the host's game then stops sending it, says so, and the room plays
-unwatched. A relay rolled back to before watchers refuses watch tickets: a new watch
+differs (Could not start watching this match). A lobby from before watching, or rolled
+back to it, answers the list with 404, which the game takes as no matches and as a lobby
+that takes no `watching`: a room's options then leave it out. Before the list's first
+answer a room sends it, and an old lobby refuses those options: the host's game stops
+sending it, says so, and the room plays unwatched. A lobby that lists matches refused
+something else, so the room keeps its Watching and the game asks for the list again; a
+404 then, after a rollback, stops the room's Watching the same way. A grant that comes
+after the player gave up waiting for it is handed back (`unwatch`). A relay rolled back
+to before watchers refuses watch tickets: a new watch
 ends in the lobby with the relay connection message, and a watcher already on it loses
 its connection and returns to the lobby with the usual message.
 

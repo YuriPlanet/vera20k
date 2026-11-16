@@ -250,20 +250,6 @@ impl LiveRoundFlow {
         if run.frames_after < FRAMES_AFTER_CATCH_UP {
             return Ok(());
         }
-        // `Simulation::follow_house` refuses a frame that waits on the
-        // stream, so a player's Tab then does nothing either.
-        if state
-            .match_state
-            .sim_runtime
-            .runtime()
-            .is_some_and(|runtime| runtime.simulation.pending_network_wait())
-        {
-            ensure!(
-                run.frames_after < 2 * FRAMES_AFTER_CATCH_UP,
-                "for {FRAMES_AFTER_CATCH_UP} frames every presented frame waited on the stream, so Tab could not follow"
-            );
-            return Ok(());
-        }
         let before = followed_house(state)?;
         press(state, KeyCode::Tab)?;
         let after = followed_house(state)?;

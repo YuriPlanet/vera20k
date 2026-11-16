@@ -1331,6 +1331,16 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     Some(Instant::now() + POLL_INTERVAL)
 }
 
+/// A lobby that listed matches to watch refused the room's options: it may
+/// have gone back to before watching since, so it is asked for its list
+/// again, and a list it no longer has stops the room's Watching.
+fn recheck_lobby_watches(state: &AppState, service: &LiveService, failure: http::CommandFailure) {
+    if failure == http::CommandFailure::InvalidOptions && super::lobby_watches(state) == Some(true)
+    {
+        let _ = service.requests.send(http::Request::Matches);
+    }
+}
+
 fn notice(state: &mut AppState, text: &str) {
     crate::app::shell_lan::append_chat(
         state,
@@ -2002,7 +2012,7 @@ fn options(state: &AppState) -> Result<wire::Options> {
             .frontend
             .network_setup_protocol
             .as_ref()
-            .and_then(|protocol| protocol.published_watching())
+            .and_then(|protocol| protocol.published_watching(super::lobby_watches(state)))
             .map(str::to_owned),
     })
 }
@@ -2425,10 +2435,37 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 channels: list.channels.into_iter().map(Into::into).collect(),
             },
         ),
-        http::Response::Matches(matches) => service_event(
-            state,
-            WolServiceEvent::Matches(matches.into_iter().map(Into::into).collect()),
-        ),
+        http::Response::Matches(matches) => {
+            let watches = matches.is_some();
+            let before = state
+                .frontend
+                .wol
+                .as_mut()
+                .and_then(|visit| visit.lobby_watches.replace(watches));
+            // A lobby that lists no matches is from before watching, or went
+            // back to it: a room whose options carried its Watching goes on
+            // without it.
+            if !watches
+                && before != Some(false)
+                && state
+                    .frontend
+                    .network_setup_protocol
+                    .as_mut()
+                    .is_some_and(|room| room.stop_watching(None))
+            {
+                notice(state, &tr("VERA:WatchingNotTaken"));
+            }
+            service_event(
+                state,
+                WolServiceEvent::Matches(
+                    matches
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                ),
+            )
+        }
         http::Response::Event(event) => {
             if apply_event(state, service, &event.kind, event.payload).is_err() {
                 log::warn!(
@@ -2475,6 +2512,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     .is_some_and(|start| start.publication_request == Some(id)) =>
             {
                 service.start_preparation = None;
+                recheck_lobby_watches(state, service, failure);
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
@@ -2484,6 +2522,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 let text = crate::app::shell_network_setup::lobby_refused_option(state)
                     .unwrap_or("VERA:OnlineRequestRefused");
                 notice(state, &tr(text));
+                recheck_lobby_watches(state, service, failure);
             }
             // The room no longer balances itself, or the lobby refused it:
             // the next change of who plays asks again.
@@ -2871,6 +2910,13 @@ fn apply_event(
         }
         "watch_started" => {
             let started: wire::WatchStarted = decode(payload)?;
+            // A grant the lobby page gave up waiting for: the player may
+            // have gone on to a room since, so the lobby frees the place.
+            if !super::lobby::awaits_watch(state) {
+                log::info!("Unwatching a match granted too late");
+                service.command("unwatch", json!({"match_id":started.match_id}));
+                return Ok(());
+            }
             if let Err(error) = begin_watch(state, service, started) {
                 log::warn!("Could not watch the match: {error:#}");
                 fail_watch(state, service, "VERA:WatchCouldNotStart");

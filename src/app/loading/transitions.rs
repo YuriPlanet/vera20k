@@ -580,6 +580,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
+    let watcher = crate::app::match_runtime::watching::active(state);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
         // generic fallback with no incoming world. Cancellation precedes both
@@ -613,6 +614,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .sim_runtime
         .install(incoming.map(|(mut simulation, rules)| {
             simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
+            // A watcher's world sends nothing, also in its followed player's seat.
+            if watcher {
+                simulation.install_watcher();
+            }
             simulation.publish_scenario_started();
             simulation.batch_path_searches();
             simulation.batch_target_scans();
