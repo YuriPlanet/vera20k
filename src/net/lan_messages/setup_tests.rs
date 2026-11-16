@@ -132,6 +132,7 @@ fn fields(value: &serde_json::Value) -> LanGameOptions {
         map_digest: string("map_digest"),
         humans,
         ai,
+        all_ai_rows: false,
     }
 }
 

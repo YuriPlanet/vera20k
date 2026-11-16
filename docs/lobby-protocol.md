@@ -100,9 +100,9 @@ from the creator: 256 when a game has a password, which clients show as a lock a
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
 it fails with `room_full`. Games from 0.2.6 advertise the most people their room
-takes, players and spectators: before VERA's spectator change the host's Max players,
-and with spectators off no more than its seats. Since then Max players counts only who
-plays, and a room keeping spectators advertises its thirty rows less its AI. Their host gives a newcomer a free seat, then the last AI's
+takes, players and spectators: the host's Max players, which current games' hosts also
+change in the room as Room size and advertise again, at most the room's thirty rows less
+its AI, and with spectators off no more than its seats. Their host gives a newcomer a free seat, then the last AI's
 seat, then a spectator's place, and their lobby lists each room as `users` over
 `max_users`. A host `kick` with `keep_out:true` keeps that player out of
 the room for five minutes, by account and by name without case: their `join` fails

@@ -39,6 +39,9 @@ pub(crate) const TEAM_STARTS: u16 = 0x7F0E;
 pub(crate) const TEAM_COLORS: u16 = 0x7F11;
 /// VERA-only, online: the team bar's Balance.
 pub(crate) const BALANCE: u16 = 0x7F0F;
+/// VERA-only, the host's, in the team bar: Room size, the most people the
+/// room holds, spectators too.
+pub(crate) const ROOM_SIZE: u16 = 0x7F10;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x40 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7000;
@@ -68,11 +71,11 @@ const CHAT_W: (i32, i32) = (190, 380);
 /// VERA's roster: the top of its first entry and the bottom of its last,
 /// the heights of a player's row and of a header, and its column labels'
 /// top and height.
-const ROSTER_TOP: i32 = 32;
+const ROSTER_TOP: i32 = 40;
 const ROSTER_BOTTOM: i32 = 551;
 const ROSTER_ROW_H: i32 = 20;
 const ROSTER_HEADER_H: i32 = 23;
-const ROSTER_LABEL_Y: i32 = 8;
+const ROSTER_LABEL_Y: i32 = 14;
 const ROSTER_LABEL_H: i32 = 18;
 /// The space between one group's box and the next one's.
 const ROSTER_GROUP_GAP: i32 = 14;
@@ -99,16 +102,19 @@ const ROSTER_JOIN_W: i32 = 91;
 const ROSTER_LIST_MIN_W: i32 = 143;
 /// VERA's team bar under the roster: groups of controls from left to right,
 /// each starting a new line of the bar where it does not fit beside the one
-/// before. They are the Teams count's label and trackbar, the host's Team
-/// Starts and Team Colors and, online, Balance, each part from its group's
-/// top-left corner, their art at 78% of the
-/// shell's size ([`MultiplayerSetupLayout::control_scale`]). The trackbar
-/// is the room's own 129x21 window at that size, so its frame art fits.
+/// before. In a room with teams they are the Teams count's label and
+/// trackbar, the host's Room size, Team Starts and Team Colors and, online,
+/// Balance; in one without, only the host's Room size. Each part is from
+/// its group's top-left corner, their art at 78% of the shell's size
+/// ([`MultiplayerSetupLayout::control_scale`]). A trackbar is the room's
+/// own 129x21 window at that size, so its frame art fits.
 const TEAM_BAR_H: i32 = 25;
 const TEAM_BAR_INSET: i32 = 8;
 const TEAM_BAR_GAP: i32 = 12;
 const TEAM_BAR_LABEL: RectPx = RectPx::new(0, 3, 65, 18);
 const TEAM_BAR_COUNT: RectPx = RectPx::new(67, 4, 101, 17);
+const TEAM_BAR_ROOM_LABEL: RectPx = RectPx::new(0, 3, 90, 18);
+const TEAM_BAR_ROOM: RectPx = RectPx::new(92, 4, 101, 17);
 const TEAM_BAR_STARTS: RectPx = RectPx::new(0, 3, 97, 19);
 const TEAM_BAR_COLORS: RectPx = RectPx::new(105, 3, 97, 19);
 const TEAM_BAR_BALANCE: RectPx = RectPx::new(0, 3, 97, 19);
@@ -806,11 +812,12 @@ pub(crate) struct SetupView {
     pub(crate) cooperative_description: Option<String>,
 }
 impl SetupView {
-    /// Whether VERA's team bar shows: in a room with teams.
+    /// Whether VERA's team bar shows: in a room with teams, and for the
+    /// host's Room size.
     pub(crate) fn team_bar(&self) -> bool {
         self.trackbars
             .iter()
-            .any(|bar| bar.id == TEAM_COUNT && bar.visible)
+            .any(|bar| matches!(bar.id, TEAM_COUNT | ROOM_SIZE) && bar.visible)
     }
     pub(crate) fn page(&self) -> &'static MenuPageSpec {
         self.dialog.page()
@@ -1281,13 +1288,14 @@ pub(crate) struct MultiplayerSetupLayout {
     /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
     pub(crate) superweapon_limit_label: RectPx,
     /// VERA's team bar under the roster, with the Teams count's label, the
-    /// host's Team Starts and Team Colors and, online, Balance.
+    /// host's Room size's, Team Starts and Team Colors and, online, Balance.
     pub(crate) team_bar: Option<RectPx>,
     pub(crate) teams_label: RectPx,
+    pub(crate) room_size_label: RectPx,
     pub(crate) team_starts: Option<RectPx>,
     pub(crate) team_colors: Option<RectPx>,
     pub(crate) balance: Option<RectPx>,
-    pub(crate) trackbars: [(u16, RectPx); 6],
+    pub(crate) trackbars: [(u16, RectPx); 7],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
@@ -1457,6 +1465,7 @@ impl MultiplayerSetupLayout {
             superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             team_bar: None,
             teams_label: RectPx::new(0, 0, 0, 0),
+            room_size_label: RectPx::new(0, 0, 0, 0),
             team_starts: None,
             team_colors: None,
             balance: None,
@@ -1470,6 +1479,7 @@ impl MultiplayerSetupLayout {
                 ),
                 (TEAM_COUNT, RectPx::new(0, 0, 0, 0)),
                 (SUPERWEAPON_LIMIT, RectPx::new(0, 0, 0, 0)),
+                (ROOM_SIZE, RectPx::new(0, 0, 0, 0)),
             ],
             labels,
             option_labels,
@@ -1560,17 +1570,77 @@ impl MultiplayerSetupLayout {
             ok: popup(276, 292, 124, 24),
         });
         // The roster's column: the labels over its cells, the area it
-        // scrolls in and, at its foot, the team bar as wide as the groups'
-        // boxes, as many lines high as its groups take.
+        // scrolls in and, at its foot, the team bar.
         self.roster = true;
-        let (mx, my) = ROSTER_BOX_MARGIN;
+        let my = ROSTER_BOX_MARGIN.1;
         let columns = RosterColumns::new(RectPx::new(left, 0, roster_w, 0));
+        let area = RectPx::new(
+            left,
+            ROSTER_TOP - my,
+            roster_w,
+            ROSTER_BOTTOM - ROSTER_TOP + 2 * my,
+        );
+        self.roster_area = scale.scale_rect(area);
+        self.roster_columns = columns;
+        self.labels = [
+            "GUI:Players",
+            "GUI:Side",
+            "GUI:Color",
+            "GUI:StartPosition",
+            "GUI:Team",
+        ]
+        .into_iter()
+        .zip(columns.cells)
+        .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, ROSTER_LABEL_H)))
+        .collect();
+        self.arrange_team_bar(true, online, host, host);
+        // The chat's column: the log from as high as the roster's area,
+        // then the edit line, and online the emote button at its right end.
+        self.chat_log = base(chat_x + 1, area.y, chat_w, CHAT_LOG_BOTTOM - area.y);
+        let chat = scale.base_rect(self.chat);
+        let emote_w = if online { 34 } else { 5 };
+        self.chat = base(chat_x + 2, chat.y, chat_w - emote_w, chat.h);
+        if let Some(emote) = &mut self.emote {
+            *emote = scale.derive_rect(*emote, |emote| {
+                RectPx::new(chat_x + chat_w - 26, emote.y, emote.w, emote.h)
+            });
+        }
+        // The status line along the bottom from the window's left edge.
+        self.page.status_help = scale.derive_rect(self.page.status_help, |line| {
+            RectPx::new(window.x + line.x, line.y, line.w - window.x, line.h)
+        });
+    }
+    /// VERA's team bar at the roster's foot, as wide as the groups' boxes
+    /// and as many lines high as its groups take; the roster's area ends
+    /// over it. Without teams only the host's Room size is left, and with
+    /// nothing in it the roster reaches the column's foot.
+    fn arrange_team_bar(&mut self, teams: bool, online: bool, host: bool, room_size: bool) {
+        let scale = self.page.scale;
+        let (mx, my) = ROSTER_BOX_MARGIN;
+        let columns = self.roster_columns;
         let bar_w = columns.w + 2 * mx;
-        let groups: [Option<&[RectPx]>; 3] = [
-            Some(&[TEAM_BAR_LABEL, TEAM_BAR_COUNT]),
-            host.then_some(&[TEAM_BAR_STARTS, TEAM_BAR_COLORS]),
-            online.then_some(&[TEAM_BAR_BALANCE]),
+        let groups: [Option<&[RectPx]>; 4] = [
+            teams.then_some(&[TEAM_BAR_LABEL, TEAM_BAR_COUNT]),
+            room_size.then_some(&[TEAM_BAR_ROOM_LABEL, TEAM_BAR_ROOM]),
+            (teams && host).then_some(&[TEAM_BAR_STARTS, TEAM_BAR_COLORS]),
+            (teams && online).then_some(&[TEAM_BAR_BALANCE]),
         ];
+        let zero = RectPx::new(0, 0, 0, 0);
+        self.team_bar = None;
+        (self.teams_label, self.room_size_label) = (zero, zero);
+        (self.team_starts, self.team_colors, self.balance) = (None, None, None);
+        for (id, bar) in &mut self.trackbars {
+            if matches!(*id, TEAM_COUNT | ROOM_SIZE) {
+                *bar = zero;
+            }
+        }
+        self.roster_bottom = ROSTER_BOTTOM;
+        if groups.iter().all(Option::is_none) {
+            self.roster_area = scale.derive_rect(self.roster_area, |area| {
+                RectPx::new(area.x, area.y, area.w, ROSTER_BOTTOM - ROSTER_TOP + 2 * my)
+            });
+            return;
+        }
         let inner = bar_w - 2 * TEAM_BAR_INSET;
         let (mut x, mut line) = (0, 0);
         let groups = groups.map(|group| {
@@ -1599,33 +1669,25 @@ impl MultiplayerSetupLayout {
         let bar_h = (line + 1) * TEAM_BAR_H;
         let bar = RectPx::new(columns.x - mx, ROSTER_BOTTOM + my - bar_h, bar_w, bar_h);
         self.roster_bottom = bar.y - ROSTER_GROUP_GAP - my;
-        let area = RectPx::new(
-            left,
-            ROSTER_TOP - my,
-            roster_w,
-            self.roster_bottom - ROSTER_TOP + 2 * my,
-        );
-        self.roster_area = scale.scale_rect(area);
-        self.roster_columns = columns;
-        self.labels = [
-            "GUI:Players",
-            "GUI:Side",
-            "GUI:Color",
-            "GUI:StartPosition",
-            "GUI:Team",
-        ]
-        .into_iter()
-        .zip(columns.cells)
-        .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, ROSTER_LABEL_H)))
-        .collect();
+        let bottom = self.roster_bottom;
+        self.roster_area = scale.derive_rect(self.roster_area, |area| {
+            RectPx::new(area.x, area.y, area.w, bottom - ROSTER_TOP + 2 * my)
+        });
         let at = |part: RectPx| scale.scale_rect(part.translate(bar.x, bar.y));
         self.team_bar = Some(scale.scale_rect(bar));
-        let [count, starts, balance] = groups;
-        if let Some(&[label, count]) = count.as_deref() {
-            self.teams_label = at(label);
-            let small = self.control_scale(TEAM_COUNT);
-            if let Some((_, bar)) = self.trackbars.iter_mut().find(|(id, _)| *id == TEAM_COUNT) {
-                let corner = small.base_rect(at(count));
+        let small = self.control_scale(TEAM_COUNT);
+        let [count, room, starts, balance] = groups;
+        for (group, id) in [(count, TEAM_COUNT), (room, ROOM_SIZE)] {
+            let Some(&[label, trackbar]) = group.as_deref() else {
+                continue;
+            };
+            if id == TEAM_COUNT {
+                self.teams_label = at(label);
+            } else {
+                self.room_size_label = at(label);
+            }
+            if let Some((_, bar)) = self.trackbars.iter_mut().find(|(bar, _)| *bar == id) {
+                let corner = small.base_rect(at(trackbar));
                 *bar = small.scale_rect(RectPx::new(corner.x, corner.y, 129, 21));
             }
         }
@@ -1636,34 +1698,12 @@ impl MultiplayerSetupLayout {
         if let Some(&[balance]) = balance.as_deref() {
             self.balance = Some(at(balance));
         }
-        // The chat's column: the log from as high as the roster's area,
-        // then the edit line, and online the emote button at its right end.
-        self.chat_log = base(chat_x + 1, area.y, chat_w, CHAT_LOG_BOTTOM - area.y);
-        let chat = scale.base_rect(self.chat);
-        let emote_w = if online { 34 } else { 5 };
-        self.chat = base(chat_x + 2, chat.y, chat_w - emote_w, chat.h);
-        if let Some(emote) = &mut self.emote {
-            *emote = scale.derive_rect(*emote, |emote| {
-                RectPx::new(chat_x + chat_w - 26, emote.y, emote.w, emote.h)
-            });
-        }
-        // The status line along the bottom from the window's left edge.
-        self.page.status_help = scale.derive_rect(self.page.status_help, |line| {
-            RectPx::new(window.x + line.x, line.y, line.w - window.x, line.h)
-        });
     }
-    /// VERA's room without teams: no team bar, the roster down to the
-    /// column's foot.
-    pub(crate) fn without_team_bar(&mut self) {
-        if self.team_bar.take().is_some() {
-            self.team_starts = None;
-            self.team_colors = None;
-            self.balance = None;
-            self.roster_bottom = ROSTER_BOTTOM;
-            let my = ROSTER_BOX_MARGIN.1;
-            self.roster_area = self.page.scale.derive_rect(self.roster_area, |area| {
-                RectPx::new(area.x, area.y, area.w, ROSTER_BOTTOM - ROSTER_TOP + 2 * my)
-            });
+    /// VERA's team bar for the room: with or without teams, and with or
+    /// without the host's Room size ([`Self::arrange_team_bar`]).
+    pub(crate) fn fit_team_bar(&mut self, dialog: SetupDialog, teams: bool, room_size: bool) {
+        if self.roster {
+            self.arrange_team_bar(teams, dialog.wol(), dialog.host, room_size);
         }
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
@@ -1879,7 +1919,11 @@ impl MultiplayerSetupLayout {
     /// controls at 78% of the shell's.
     pub(crate) fn control_scale(&self, id: u16) -> ShellScale {
         let scale = self.page.scale;
-        if self.team_bar.is_some() && matches!(id, TEAM_COUNT | TEAM_STARTS | TEAM_COLORS | BALANCE)
+        if self.team_bar.is_some()
+            && matches!(
+                id,
+                TEAM_COUNT | ROOM_SIZE | TEAM_STARTS | TEAM_COLORS | BALANCE
+            )
         {
             let window = scale.window();
             ShellScale::from_screen(window.w * 78 / 100, window.h * 78 / 100)
@@ -2381,16 +2425,21 @@ mod tests {
         let (x, y) = center(popup_layout.chat);
         assert_eq!(popup_layout.control_at(&view, x, y), None);
         // The team bar under the roster holds the Teams count, the host's
-        // Team Starts and Team Colors and, online, Balance; a LAN room has
-        // no Balance, a guest no Team Starts.
+        // Room size, Team Starts and Team Colors and, online, Balance; a LAN
+        // room has no Balance, a guest no Team Starts.
         view.open_box = None;
-        view.trackbars.push(SetupTrackbar {
-            id: TEAM_COUNT,
-            value: 2,
-            range: TrackbarRange::new(1, 15, 1),
-            enabled: true,
-            visible: true,
-        });
+        for (id, range) in [
+            (TEAM_COUNT, TrackbarRange::new(1, 15, 1)),
+            (ROOM_SIZE, TrackbarRange::new(2, 30, 1)),
+        ] {
+            view.trackbars.push(SetupTrackbar {
+                id,
+                value: 2,
+                range,
+                enabled: true,
+                visible: true,
+            });
+        }
         let bar = popup_layout.team_bar.unwrap();
         let roster = popup_layout.roster_area;
         let chat_log = popup_layout.chat_log;
@@ -2400,7 +2449,7 @@ mod tests {
                 && bar.x + bar.w < chat_log.x
                 && chat_log.y < bar.y
         );
-        for id in [TEAM_COUNT, TEAM_STARTS, TEAM_COLORS, BALANCE] {
+        for id in [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE] {
             let rect = popup_layout.control_rect(id).unwrap();
             assert!(
                 rect.x >= bar.x
@@ -2418,9 +2467,21 @@ mod tests {
         let lan =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Lan, true), 800, 600, false);
         assert_eq!(lan.control_rect(BALANCE), None);
-        let guest =
+        let mut guest =
             MultiplayerSetupLayout::new(dialog(false, SetupFlavor::Wol, true), 800, 600, false);
         assert_eq!(guest.control_rect(TEAM_STARTS), None);
+        // Without teams the host's bar keeps only Room size, on one line;
+        // a guest's roster then reaches the column's foot.
+        let mut no_teams = popup_layout.clone();
+        no_teams.fit_team_bar(dialog(true, SetupFlavor::Wol, true), false, true);
+        let room = no_teams.control_rect(ROOM_SIZE).unwrap();
+        assert!(room.w > 0 && no_teams.team_bar.unwrap().y < room.y);
+        assert_eq!(no_teams.control_rect(TEAM_COUNT).unwrap().w, 0);
+        assert_eq!(no_teams.control_rect(TEAM_STARTS), None);
+        assert!(no_teams.team_bar.unwrap().h < popup_layout.team_bar.unwrap().h);
+        guest.fit_team_bar(dialog(false, SetupFlavor::Wol, true), false, false);
+        assert_eq!(guest.team_bar, None);
+        assert_eq!(guest.roster_bottom, ROSTER_BOTTOM);
         view.open_box = None;
         // VERA's missing-map offer takes every press until it is answered.
         view.map_offer_open = true;

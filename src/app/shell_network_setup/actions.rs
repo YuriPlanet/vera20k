@@ -247,6 +247,20 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             return Ok(());
         }
         return super::teams::set_teams(state, teams).and_then(|()| host_option_edited(state));
+    } else if control == ROOM_SIZE {
+        // The room's Max players, which the online lobby lists; the next
+        // Create Game starts from it.
+        let people = u8::try_from(value).unwrap_or(u8::MAX);
+        let session = &mut state.match_state.session;
+        if session.network_people_limit() == Some(people) {
+            return Ok(());
+        }
+        session.set_network_people_limit(people)?;
+        state.frontend.room_limits.players = session.network_people_limit().unwrap_or(people);
+        if super::dialog(state).wol() {
+            queue(state, NetworkSetupRequest::Advertise);
+        }
+        return Ok(());
     } else {
         let mut options = state
             .match_state

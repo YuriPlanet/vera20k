@@ -166,6 +166,14 @@ impl RoomListing {
     }
 }
 
+/// Whether the host of a VERA room has the team bar's Room size: its Max
+/// players, people who play and watch together. Quick Match's matchbot game
+/// has none.
+pub(crate) fn room_size_shown(state: &AppState) -> bool {
+    let session = &state.match_state.session;
+    session.host() && session.network_people_limit().is_some() && !super::quick_match(state)
+}
+
 pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
@@ -241,8 +249,13 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
                 _ => RosterItem::Row,
             })
             .collect();
-        // A room with teams keeps its team bar under the roster.
-        let bottom = crate::app::input::multiplayer_setup::roster_bottom(state, grouped);
+        // A room with teams, or with the host's Room size, keeps its team
+        // bar under the roster.
+        let bottom = crate::app::input::multiplayer_setup::roster_bottom(
+            state,
+            grouped,
+            room_size_shown(state),
+        );
         let scroll = roster_scroll(&items, bottom);
         listing.first_row = ui.map_or(0, |ui| ui.roster_top(scroll.max_top));
         let top = scroll.stops.get(listing.first_row).copied().unwrap_or(0);
@@ -826,6 +839,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             range: TrackbarRange::new(1, i32::from(*crate::skirmish_launch::ROOM_TEAMS.end()), 1),
             enabled: host && grouped,
             visible: dialog.modern && grouped,
+        },
+        // The host's Room size beside it: its Max players, spectators too.
+        SetupTrackbar {
+            id: ROOM_SIZE,
+            value: session
+                .network_people_limit()
+                .map_or(crate::ui::room_limits::PLAYERS.max, i32::from),
+            range: crate::ui::room_limits::PLAYERS,
+            enabled: host,
+            visible: dialog.modern && room_size_shown(state),
         },
         // The Superweapon Limit, in VERA's Game Options: 1 is Off.
         SetupTrackbar {

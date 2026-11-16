@@ -1438,12 +1438,12 @@ mod tests {
             .expect("FF has its sliders");
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
-                DIFFICULTY, MultiplayerSetupLayout, SUPERWEAPON_LIMIT, SetupDialog, SetupFlavor,
-                TEAM_COUNT,
+                DIFFICULTY, MultiplayerSetupLayout, ROOM_SIZE, SUPERWEAPON_LIMIT, SetupDialog,
+                SetupFlavor, TEAM_COUNT,
             };
             // gamemd's setup dialogs and VERA's room, in a centred shell and
             // one filling the window; only the room paints its Teams count
-            // and Superweapon Limit.
+            // and Superweapon Limit, and only its host Room size.
             let mut drawn = Vec::new();
             for (dialog, fills) in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
@@ -1465,8 +1465,10 @@ mod tests {
                     layout
                         .trackbars
                         .into_iter()
-                        .filter(|(id, _)| {
-                            dialog.modern || (*id != TEAM_COUNT && *id != SUPERWEAPON_LIMIT)
+                        .filter(|(id, _)| match *id {
+                            TEAM_COUNT | SUPERWEAPON_LIMIT => dialog.modern,
+                            ROOM_SIZE => dialog.modern && dialog.host,
+                            _ => true,
                         })
                         .map(|(id, rect)| {
                             let scale = layout.control_scale(id);

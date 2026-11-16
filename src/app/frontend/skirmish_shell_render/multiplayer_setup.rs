@@ -459,8 +459,8 @@ pub(crate) fn render_multiplayer_setup(
             }
         }
         // VERA's team bar under the roster, in its own box: the Teams count
-        // (drawn with the room's trackbars) and, online, Balance and Balance
-        // automatically.
+        // and the host's Room size (drawn with the room's trackbars), Team
+        // Starts, Team Colors and, online, Balance.
         if let Some(bar) = layout.team_bar.filter(|_| view.team_bar()) {
             push_rect_outline(
                 &mut controls,
@@ -471,14 +471,21 @@ pub(crate) fn render_multiplayer_setup(
             );
             // Its art at 78% size, its words at the roster's.
             let small = layout.control_scale(BALANCE);
-            texts.push(sized(
-                &crate::i18n::tr("VERA:Teams"),
-                layout.teams_label,
-                ShellAlign::V_CENTER,
-                ROOM_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-                ROSTER_TEXT_SCALE,
-            ));
+            for (id, rect, caption) in [
+                (TEAM_COUNT, layout.teams_label, "VERA:Teams"),
+                (ROOM_SIZE, layout.room_size_label, "VERA:RoomSize"),
+            ] {
+                if view.trackbars.iter().any(|bar| bar.id == id && bar.visible) {
+                    texts.push(sized(
+                        &crate::i18n::tr(caption),
+                        rect,
+                        ShellAlign::V_CENTER,
+                        ROOM_TEXT_RGB,
+                        SHELL_CONTROL_TEXT_DEPTH,
+                        ROSTER_TEXT_SCALE,
+                    ));
+                }
+            }
             for (id, rect, caption) in [
                 (TEAM_STARTS, layout.team_starts, "VERA:TeamStarts"),
                 (TEAM_COLORS, layout.team_colors, "VERA:TeamColors"),

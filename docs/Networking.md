@@ -297,8 +297,9 @@ Join. A rollback seats newcomers as before.
 With Teams set the map does not limit who plays, only the room's Max players does, so no
 team is ever full: a team's people share its bases where the map runs out of starts
 (`MatchSession::network_shares_bases`). People and AI past the map's seats sit in the
-room's spare rows; on LAN an AI only takes one of the first eight rows on a map of up to
-eight players, the rows gamemd's options text carries. At Start Game, Team Starts gives
+room's spare rows. A VERA room's LAN options carry all thirty AI rows on any map, where
+gamemd's text carries eight for a map of up to eight players; a guest of another build is
+refused at the build check. At Start Game, Team Starts gives
 each team a start and the spare starts to the teams with the most players for each; a
 team's people on one start share its House, as players who pick the same start do, and
 each AI there starts in its own House beside them, its units on the cells nearby
@@ -319,13 +320,14 @@ travels. A lobby from before this refuses to start such a game, and the host's g
 the match could not start. An older host keeps gamemd's rule, and a rollback keeps it
 again.
 
-A VERA room's Max players counts only who plays. While its host keeps spectators,
-anyone else comes in watching until the room's thirty rows are taken, players, AI and
-spectators together; the host's game advertises that many to the lobby, less its AI. The
-host may watch too, with the Spectators' Watch or by dragging its own row there, and
-plays again with a team's Join, as a guest would; someone else must play for the match to
-start. Nothing new travels. An older host counts spectators in Max players and always
-plays, and a rollback does again.
+A VERA room's Max players counts everyone in it, players and spectators, at most its
+thirty rows less its AI. Its host sets it at Create Game and changes it in the room with
+the team bar's Room size, which the host's game advertises again to the lobby; a lower
+size sends no one away, it only keeps newcomers out. The host may watch too, with the
+Spectators' Watch or by dragging its own row there, and plays again with a team's Join,
+as a guest would; someone else must play for the match to start. Nothing new travels. An
+older host keeps its Create Game Max players and always plays, and a rollback does
+again.
 
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who

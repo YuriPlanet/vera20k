@@ -24,12 +24,15 @@ fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
 }
 
 /// Where VERA's roster's entries end in this window, in 800x600 pixels:
-/// over the team bar in a room with one.
-pub(crate) fn roster_bottom(state: &AppState, team_bar: bool) -> i32 {
+/// over the team bar, which holds the Teams count in a room with teams and
+/// the host's Room size.
+pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i32 {
     let mut layout = page_layout(state);
-    if !team_bar {
-        layout.without_team_bar();
-    }
+    layout.fit_team_bar(
+        crate::app::shell_network_setup::dialog(state),
+        teams,
+        room_size,
+    );
     layout.roster_bottom
 }
 
@@ -39,9 +42,11 @@ pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
     if dialog.modern {
         if let Some(listing) = crate::app::shell_network_setup::view::room_listing(state) {
             layout.arrange_roster(&listing.places);
-            if !listing.grouped {
-                layout.without_team_bar();
-            }
+            layout.fit_team_bar(
+                dialog,
+                listing.grouped,
+                crate::app::shell_network_setup::view::room_size_shown(state),
+            );
         }
     } else if state
         .match_state
