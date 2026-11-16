@@ -256,6 +256,20 @@ impl HouseAiProduction {
         }
     }
 
+    /// Phobos `HouseExt::OnDetach`, which its `AnnounceInvalidPointer` hook
+    /// (`0x7258D0`) runs on every house for a removed building: each slot
+    /// that names the building is cleared. Answers whether one did.
+    pub(crate) fn forget_parallel_factory(&mut self, building: u64) -> bool {
+        let mut named = false;
+        for entry in &mut self.parallel_factories {
+            if *entry == Some(building) {
+                *entry = None;
+                named = true;
+            }
+        }
+        named
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) const fn mode(&self) -> i32 {
         self.mode

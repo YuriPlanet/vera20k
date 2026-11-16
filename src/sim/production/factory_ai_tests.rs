@@ -609,6 +609,36 @@ fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
     );
 }
 
+/// Phobos `HouseExt::OnDetach` (hook `0x7258D0`): a war factory too poor to
+/// start still claims the vehicle slot, and its removal hands the slot on, so
+/// the house's next war factory builds under the category forbid.
+#[test]
+fn a_removed_factory_releases_its_phobos_slot() {
+    use crate::sim::ai_base_building::AiFactorySlot;
+    let (mut f, weap_1, weap_2) =
+        ai_limit_fixture("\n[GlobalControls]\nForbidParallelAIQueues.Vehicle=yes", "");
+    let set_credits = |f: &mut Fixture, credits| {
+        let house = f.sim.houses.get_mut(&f.owner).unwrap();
+        house.economy_mut().set_credits_for_test(credits);
+    };
+    set_credits(&mut f, 0);
+    ai_limit_visit(&mut f, weap_1);
+    assert_eq!(
+        f.sim.houses[&f.owner]
+            .ai_production()
+            .parallel_factory(AiFactorySlot::Vehicle),
+        Some(weap_1),
+        "the slot is claimed before the money gate"
+    );
+    f.sim.uninit_with_rules(weap_1, &f.rules);
+    set_credits(&mut f, 1_000);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(
+        ai_limit_holds(&f, weap_2),
+        "the removed factory released the slot"
+    );
+}
+
 /// Without a Phobos key Phobos does not play, so an AI factory start claims
 /// none of Phobos' per-house factory slots and a retail game keeps no Phobos
 /// state. `AllowParallelAIQueues=`, which Ares reads too, does not turn it on.

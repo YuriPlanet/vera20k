@@ -27,11 +27,15 @@ building of the same category does not start its own build while that
 category's `ForbidParallelAIQueues.<Category>` is set, or while the house's
 current choice for that category (`Producing*TypeIndex`) has
 `ForbidParallelAIQueues=yes`. A successful exit or an abandonment of a
-forbidden category/type releases the slot.
+forbidden category/type releases the slot, and so does the removal of the
+building that holds it (sold, destroyed or undeployed, idle or not).
 
 Source: `RulesExt` reads in `src/Ext/Rules/Body.cpp`, the TechnoType read in
-`src/Ext/TechnoType/Body.cpp`, and `src/Ext/Building/Hooks.Production.cpp`
-(0x4401BB, 0x4502F4, 0x4CA07A, 0x444119, 0x444131, 0x443CCA, 0x44531F).
+`src/Ext/TechnoType/Body.cpp`, `src/Ext/Building/Hooks.Production.cpp`
+(0x4401BB, 0x4502F4, 0x4CA07A, 0x444119, 0x444131, 0x443CCA, 0x44531F), and
+`HouseExt::OnDetach` in `src/Ext/House/Body.cpp`, which the
+`AnnounceInvalidPointer` hook (0x7258D0, `src/Phobos.Ext.cpp`) reaches for a
+removed building.
 
 ## Where VERA20K owns it
 
@@ -47,6 +51,8 @@ Source: `RulesExt` reads in `src/Ext/Rules/Body.cpp`, the TechnoType read in
 - `sim/production/production_queue.rs` — the unit/infantry/aircraft exit
   prelude release, before FreeRadio and placement retries.
 - `sim/production/factory_lifecycle.rs` — the abandonment release.
+- `sim/world/lifecycle.rs` — the removal release, in the pointer-expiry
+  broadcast.
 
 ## Residuals
 

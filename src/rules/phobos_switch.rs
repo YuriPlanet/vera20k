@@ -15,6 +15,11 @@
 //! turns neither switch on. Retail data holds none of these keys, so a retail
 //! game plays as gamemd.
 //!
+//! Only the projection's reads count. The processing passes' reads reach
+//! Ares through `AresInputs`, which keeps no Phobos or stock reads, so a
+//! Phobos reader in a pass, or a Phobos key a pass reader also reads, needs
+//! those reads passed here first.
+//!
 //! The answer comes from the recorded reads that also decide Ares
 //! (`ares_switch::record`), and the RuleSet stores it, so a save, a replay
 //! and every peer reach it again from the same rules, mode and map. Until the

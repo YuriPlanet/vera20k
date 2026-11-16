@@ -6186,9 +6186,19 @@ impl Simulation {
             // held product; no entity listener consumes that factory pointer.
             let mut named = self.production.factories_mut().pointer_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
-            // (`0x004F5FFB`), forgets House+54E0 whatever the control.
+            // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
+            // `AnnounceInvalidPointer` hook at this dispatcher's entry
+            // (`0x7258D0`, resuming there) sends a removed building to every
+            // house's `HouseExt::OnDetach`, which clears the AI factory slots
+            // naming it; no other listener reads them.
+            let phobos_detach = context.rules.phobos() && control == PointerExpiryControl::Uninit;
             for house in self.houses.values_mut() {
                 named |= house.forget_lost_building(expired_id);
+                if phobos_detach {
+                    named |= house
+                        .ai_production_mut()
+                        .forget_parallel_factory(expired_id);
+                }
             }
             debug_assert!(
                 techno || !named,
