@@ -7,7 +7,7 @@ commit. Where they differ, the English text applies.
 
 | | |
 | --- | --- |
-| RFC version | 0.0.1 |
+| RFC version | 0.0.2 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | API covered | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -28,7 +28,7 @@ that compiles to WebAssembly, with their own tools; the engine only runs the
 compiled `.wasm`. Official SDKs exist for TypeScript and Rust. The API uses the
 terms Red Alert 2
 modders already know: triggers, events, actions, tags, missions, local and
-global variables, and frames.
+global variables, and frames, and adds conditions, attached effects and marks.
 
 The API is versioned from its first release. A published API version keeps
 working in every later VERA20k release.
@@ -79,10 +79,13 @@ follow this table.
 | Term | Meaning |
 | --- | --- |
 | **Extension module** | A compiled `.wasm` file. Not called a *script*: in RA2, scripts are AI team scripts (`[ScriptTypes]`). |
-| **Trigger** | As in maps: an event plus one or more actions, owned by a house, with difficulty flags. |
+| **Trigger** | As in maps: an event plus one or more actions, owned by a house, with difficulty flags. VERA adds optional conditions. |
 | **Event** | A trigger's condition. Original event numbers keep their meaning. |
 | **Action** | What a trigger does. Original actions keep their numbers. A new action runs a module function. |
+| **Condition** | A filter the engine checks natively before a trigger's actions run. |
 | **Tag** | What attaches triggers to an object or a cell (CellTag). An object holds one tag. |
+| **Mark** | A text marker an object carries, tested by conditions. Not a tag: an object may carry any number of marks. |
+| **Attached effect** | A per-object state with a duration, such as a multiplier or an immunity (the Phobos AttachEffect term). |
 | **Mission** | An object's order: Move, Attack, Guard, Area Guard, Hunt, Sleep and the rest. |
 | **Local / Global** | Local and global variables, as in maps. |
 | **Frame** | One logic frame of the simulation, the unit of `ROF`, `Rate` and timers. |
@@ -154,7 +157,7 @@ the author's tools. The same module in the two official SDKs:
 import { action, onFrame, Mission, Techno, Ctx } from "@vera20k/sdk";
 
 export const giPanic = action((ctx: Ctx, techno: Techno) => {
-  if (techno.healthRatio < 0.3) {
+  if (techno.healthPercent < 30) {
     techno.setMission(Mission.Hunt);
   }
 });
@@ -172,7 +175,7 @@ use vera20k_sdk::prelude::*;
 
 #[vera::action(export = "giPanic")]
 fn gi_panic(ctx: &mut Ctx, techno: Techno) {
-    if techno.health_ratio() < 0.3 {
+    if techno.health_percent() < 30 {
         techno.set_mission(Mission::Hunt);
     }
 }
@@ -339,6 +342,7 @@ and the engine treats every module the same way.
 - **Size.** Languages that bundle a large runtime or garbage collector into
   every module produce bigger files, which may exceed the map embedding limit.
   That is a trade-off of the author's toolchain, not of the engine.
+
 ### 6. API layers
 
 | Layer | Content | First API version |
@@ -358,6 +362,128 @@ refactors.
 
 L4 calls the module once per frame per behavior type with all objects of that
 type, never once per object.
+
+**Granularity.** One API function is one game operation with exactly one
+owner in the engine: fire a weapon, add an attached effect, set a mission,
+change health, create an object. Larger behaviors, such as an air strike or a
+mind-control chain, are built by authors from these.
+
+Coordinates are parameters of any operation: targets, spawn points, teleport
+destinations. A module can, for example, launch a nuke at any cell. What is
+not exposed is a step that bypasses an owner, such as writing an existing
+object's position field or an internal field. An object's position carries
+cell occupancy, collision, sight, its map layer and its transport links, and
+only the engine's paths keep them consistent, so an object changes place only
+by teleport, a motion effect or a move mission. Projectiles are the exception
+of section 9, level 4: they occupy no cells, and the engine clamps their
+position and still runs collision.
+
+### 6a. Triggers: events, conditions and actions
+
+A trigger has one event, any number of conditions and one or more actions.
+
+- **Events** come in two kinds. *Delivered events* happen at a moment (damage
+  taken, weapon fired, killed) and are queued for the module phase. *Polled
+  events* describe a state (health below a value, money above a value); the
+  engine checks them natively at the interval the trigger sets, and the trigger
+  fires while the state holds.
+- **Conditions** filter a trigger before any module code runs. The engine
+  checks them natively and calls the module only when all of them hold. A
+  condition can be negated. Logic beyond that (OR across conditions,
+  comparisons between two objects, counting) belongs in module code.
+- **Actions** are original trigger actions, the atomic actions of section 6b,
+  or module functions.
+- Every event names the object it is attached to and, where there is one, the
+  other object involved (attacker, target, transport, producer). Conditions can
+  test either.
+
+```ts
+Trigger.create({
+  event: Event.TakeDamage,
+  conditions: [Cond.healthBelowPercent(30), Cond.not(Cond.hasMark("Panicked"))],
+  actions: [Action.wasm("giPanic")],
+  difficulty: Difficulty.All,
+});
+```
+
+Candidate delivered events for version 1:
+
+| Event | Payload |
+| --- | --- |
+| TakeDamage | source (nullable), damage |
+| HitByWarhead | warhead, final damage |
+| AttackedBy | attacker, weapon index (nullable), projectile (nullable) |
+| FatalDamage | attacker (nullable), damage |
+| Killed | killer (nullable) |
+| Fire | target (nullable), weapon index, projectile (nullable) |
+| SpawnFire | spawned unit, target (nullable), weapon index, projectile (nullable) |
+| HitTarget | target, damage, projectile |
+| Aimed | target |
+| ProjectileIncoming | projectile, launcher (nullable) |
+| Birth | producer (nullable), effect (nullable), build time (nullable) |
+| Enter / Exit | transport or building, passengers, occupied size, garrison or transport |
+| EnteredBy / ExitedBy | passenger, passengers, occupied size, garrison or transport |
+| Crushed | crusher |
+| HouseTransfer | new house, whether by mind control; raised before the transfer |
+| EffectStart / EffectExpire / EffectStacks | effect, stack count |
+| Timer | frame of the previous firing |
+
+Candidate polled events: health, ammo, passengers, transport space, ore
+storage, current mission, moving or stopped, land type, house money, house
+power, effect stacks, distance to the other object.
+
+Candidate conditions: relation (self, ally, enemy, neutral), category
+(infantry, vehicle, building, aircraft, projectile), layer (air, ground,
+water), type ID, armor, civilian house, health value or percent, land type,
+house power state, house money, has an effect (and its stacks), has a mark,
+source of an effect, distance within a weapon's range.
+
+Payload values are integers or handles; damage is an integer, as in the
+original, and the simulation API has no floating-point values. History, such as
+the total damage one attacker has dealt, is kept by the module in its own
+memory.
+
+**Not in the engine:** recorders, operators and expression keys in INI. A
+module keeps such state in its memory and computes it in a few lines of code,
+and that state is saved and hashed with the module. INI stays data, not a
+programming language.
+
+### 6b. Atomic actions and attached effects
+
+Candidate instant actions for version 1: fire a weapon (by index or name, at a
+cell, an object or the current target), launch a superweapon, spawn an
+animation, remove, kill, change health (add or set), create an object, set a
+mission, teleport to a cell (as the Chronosphere does; when the cell is
+blocked, a stated rule picks a nearby cell or the action fails), clear the
+target, clear a
+disguise, search an area (a query that returns objects), play a sound, add
+experience, add money, change the tech tree, transfer the owner, clear mind
+control, change ammo, add or remove passengers, add or remove an attached
+effect, add or remove a mark.
+
+Attached effects are per-object states with a duration, owned by
+`sim/attach_effect.rs` (section 8). Candidates: tint, attached animation,
+prevent death, transform into another type, replace a weapon, motion (thrown,
+pushed), teleport, multipliers for damage taken, firepower, speed and rate of
+fire, range, cloak, immunity to a warhead or attack type, cannot fire, no
+target search, damage modifier, cannot be selected, ignores player orders, not
+a legal target, house power off.
+
+- Each effect type declares how it stacks: stack up to a limit, replace the
+  older one, or refuse the newer one. Effects that cannot run together
+  (transform, teleport, motion) form an exclusive group, and the owner keeps
+  one at a time.
+- Effect properties follow Phobos AttachEffect where it has a key: duration,
+  delay, interval, cooldown before reapplying, maximum firings, source,
+  inherited on transform or creation, ignores the Iron Curtain. New properties
+  use the same reader.
+- Motion is added to the object's movement by the engine, never written as
+  coordinates.
+- Text, values or buttons shown over an object are client display properties
+  (section 10), not effects.
+
+An object carries any number of marks. Actions and effects add and remove
+them; conditions test them.
 
 ### 7. Triggers and tags at run time
 
@@ -395,7 +521,7 @@ with Ares or Phobos.
 | --- | --- | --- |
 | `onRules` | any key; new types | through the native INI readers, clamps and post-read passes; included in the lobby hash |
 | During a match, per type | keys on a published allowlist | `rules.set("E1", "Speed", "6")`: the value is parsed like INI text, takes effect from the next frame, invalidates the dependent caches, and is saved as a rules overlay |
-| During a match, per object | multipliers, veterancy, owner, type change, health | through the existing per-object owners |
+| During a match, per object | multipliers, veterancy, owner, type change, health | through the existing per-object owners, including attached effects (section 6b) |
 
 - Per-object multipliers reuse the owner that already exists in
   `sim/attach_effect.rs`. Part of that code is still behind
@@ -426,12 +552,52 @@ projectile has 16 bytes of module data that is saved and hashed.
 
 ### 10. Client module
 
-- A declarative interface tree that works with the `veraui.ini` layout. The
-  module describes widgets, layout and bindings; the engine draws them. No
-  graphics API is exposed.
+**Interface tree.** The engine holds the interface tree, lays it out and draws
+it. A module changes it with a small set of operations: create and remove
+nodes, set properties (text, image, position, visibility), find nodes by name,
+and receive clicks, hover and hotkeys. Changes are batched per render frame;
+the tree is not rebuilt every frame. No graphics API is exposed.
+
+Authors write an interface in two parts:
+
+- **Static layout in INI**, with the syntax of `veraui.ini`. The engine reads it
+  when the match starts; nothing is precompiled. An interface without dynamic
+  parts needs no module.
+- **Dynamic parts in module code**: find nodes by name and change them, or
+  create new ones.
+
+```ini
+[ObjectivesPanel]
+Type=Panel
+Anchor=TopRight
+Size=240,120
+Children=ObjTitle,ObjList
+
+[ObjTitle]
+Type=Text
+Text=TXT_OBJECTIVES     ; CSF key, follows the game language
+```
+
+```ts
+export const onStart = start((ui: Ui) => {
+  ui.find("ObjList").setItems(["TXT_OBJ_RADAR", "TXT_OBJ_CONVOY"]);
+  ui.create(Panel.anchor(Anchor.BottomLeft).child(Text.csf("TXT_WAVE")));
+});
+```
+
+A React- or JSX-style library can live inside an SDK: it computes differences
+inside the module and sends the same operations, and the engine does not know
+it exists. Such a library is TypeScript only, because AssemblyScript has no
+closures, and is not part of the official API.
+
+**Other client features:**
+
 - Display properties per object: image, palette, tint, extra animations,
-  visibility. Properties that change gameplay, such as cloaking, belong to the
-  simulation module.
+  visibility, and text, values or buttons shown over it. Properties that change
+  gameplay, such as cloaking, belong to the simulation module.
+- Selection and button clicks are client events. To change the game, the module
+  sends a message (section 1) and the simulation module handles it in
+  `onMessage`, so online play and replays stay in step.
 - Sounds and messages.
 - Every query is filtered by what the local player can see.
 - Player-installed interface modules come in a later phase. A mod or a room
@@ -504,8 +670,8 @@ Planned order after acceptance:
 
 | Phase | Content |
 | --- | --- |
-| P1 | `rules.wasm`: `onRules`, `onScenarioStart`, `onFrame`, L1, L2, type tag bindings, the trigger action, map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
-| P2 | `ui.wasm`: interface tree, display properties, visibility filter, messages |
+| P1 | `rules.wasm`: `onRules`, `onScenarioStart`, `onFrame`, L1, L2 with conditions, attached effects, marks, type tag bindings, the trigger action, map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
+| P2 | `ui.wasm`: interface tree with INI layout, display properties, visibility filter, messages |
 | P3 | real mission rebuilt with modules, outside modder trial, freeze of version 1 |
 | Later | overrides one by one, L4 behaviors, peer calls, player interface modules |
 
@@ -534,6 +700,11 @@ Planned order after acceptance:
   not in code.
 - **Phobos.** `Trajectory=` types for projectiles; AttachEffect for per-object
   modifiers.
+- **Community trigger, effect and condition design** (a spreadsheet shared
+  during this RFC's discussion). Taken: the trigger as event, conditions and
+  actions; delivered and polled events; the event list with typed payloads; the
+  lists of instant actions, lasting effects and conditions. Not taken:
+  recorders and operators in INI, which module code replaces.
 
 ## Unresolved questions
 
@@ -560,7 +731,19 @@ Planned order after acceptance:
 10. **Save size.** Module memory in snapshots: compression and the memory cap.
 11. **First overrides.** Which two or three overrides ship in version 1.
 12. **Allowlist.** Which keys can change per type during a match in version 1.
+13. **Version 1 catalog.** Which events, conditions, actions and attached
+    effects from sections 6a and 6b ship in version 1.
+14. **Effect stacking.** The stacking rule and exclusive group of each attached
+    effect.
+15. **Interface layout.** Where a mod and a map keep layout sections, and the
+    widget set of version 1.
 
 ## Changelog
 
+- **0.0.2** (2026-11-16): triggers gain conditions and polled events
+  (section 6a); atomic actions, attached effects and marks (section 6b); API
+  granularity rule; interface tree with INI layout (section 10); recorders and
+  operators stay out of the engine; coordinates are parameters, while an
+  object's position changes only by teleport, motion or a move mission;
+  simulation API values are integers in the examples too.
 - **0.0.1** (2026-11-16): first draft.
