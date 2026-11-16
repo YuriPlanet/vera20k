@@ -1548,6 +1548,85 @@ fn penetrates_transport_moves_damaged_passengers_to_the_transport() {
     }
 }
 
+/// `Detonate.cpp:887-913`: the first iterated passenger's `NowDead` removes
+/// the gunner, then the cargo head after the loop takes the slot back through
+/// `ReceiveGunner`, so the transport leaves mode 0.
+#[test]
+fn penetrates_transport_hands_the_gunner_slot_to_the_cargo_head() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [VehicleTypes]\n0=FIRER\n1=GUNV\n\
+         [InfantryTypes]\n0=GI1\n1=GI2\n\
+         [Warheads]\n0=WH\n\
+         [WH]\nCellSpread=0\nPenetratesTransport.Level=15\n\
+         PenetratesTransport.DamageAll=yes\nPenetratesTransport.DamageMultiplier=6.0\n\
+         [FIRER]\nStrength=500\nArmor=none\nSpeed=6\n\
+         [GUNV]\nStrength=500\nArmor=none\nSpeed=6\nPassengers=2\nGunner=yes\nWeaponCount=20\n\
+         PenetratesTransport.Level=1\n\
+         [GI1]\nStrength=100\nArmor=none\nSpeed=4\nIFVMode=3\n\
+         [GI2]\nStrength=300\nArmor=none\nSpeed=4\nIFVMode=7\n",
+    ))
+    .expect("gunner rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5A_AA_21);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let firer = sim
+        .spawn_object("FIRER", "Americans", 20, 20, 0, &rules)
+        .expect("firer");
+    let apc = sim
+        .spawn_object("GUNV", "Russians", 22, 20, 0, &rules)
+        .expect("transport");
+    let gi1 = sim
+        .spawn_object("GI1", "Russians", 22, 21, 0, &rules)
+        .expect("passenger");
+    let gi2 = sim
+        .spawn_object("GI2", "Russians", 22, 19, 0, &rules)
+        .expect("passenger");
+    {
+        let transport = sim.substrate.entities.get_mut(apc).expect("transport");
+        transport
+            .passenger_role
+            .cargo_mut()
+            .expect("transport cargo")
+            .set_passengers_for_test(vec![gi1, gi2]);
+        transport
+            .passenger_role
+            .cargo_mut()
+            .expect("transport cargo")
+            .set_passenger_sizes_for_test(vec![1.0, 1.0]);
+        transport.set_gunner_selection_for_test(3, -1);
+    }
+    assert_eq!(
+        sim.entities().get(apc).unwrap().current_weapon_number(),
+        3,
+        "the head passenger's IFVMode is the gunner slot before the shot"
+    );
+    shoot(&mut sim, &rules, "WH", firer, apc, 20);
+    assert!(
+        sim.entities().get(gi1).unwrap().death.is_dying(),
+        "the head passenger dies"
+    );
+    assert!(
+        !sim.entities().get(gi2).unwrap().death.is_dying(),
+        "the second passenger survives the adjusted damage"
+    );
+    let head = sim
+        .entities()
+        .get(apc)
+        .and_then(|transport| transport.passenger_role.cargo())
+        .and_then(|cargo| cargo.passengers().first().copied());
+    let head_mode = head
+        .and_then(|id| sim.entities().get(id))
+        .and_then(|passenger| sim.interner.object_type(passenger.type_ref(), &rules))
+        .map_or(0, |object| object.ifv_mode);
+    assert_eq!(head, Some(gi2), "the surviving passenger is the cargo head");
+    assert_eq!(
+        sim.entities().get(apc).unwrap().current_weapon_number(),
+        head_mode,
+        "the tail re-seats the cargo head instead of leaving mode 0"
+    );
+}
+
 /// Phobos `ChangeOwner` (`Ext/WarheadType/Detonate.cpp:207-211,488-522`):
 /// the firing House takes the target.
 #[cfg(feature = "phobos")]
