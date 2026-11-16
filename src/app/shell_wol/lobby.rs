@@ -471,6 +471,12 @@ pub(super) fn lobbies(state: &AppState) -> &[WolChannel] {
     lobby(state).map_or(&[], |lobby| &lobby.lobbies)
 }
 
+/// VERA: the running matches the modern list offers to watch; a watch
+/// row's `record` indexes them.
+pub(crate) fn watch_matches(state: &AppState) -> &[service::WolMatch] {
+    lobby(state).map_or(&[], |lobby| &lobby.matches)
+}
+
 /// This user is in a channel (`[0xB77DD0]`): a leave will see its OnPart.
 pub(crate) fn in_channel(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.current.is_some())
@@ -4872,6 +4878,7 @@ mod tests {
             map: "Little Big Lake".into(),
             watchers,
             max_watchers: 10,
+            names: Vec::new(),
         };
         let matches = [watch("m1", "Ann's game", 9), watch("m2", "", 10)];
         let rows = watch_rows(&matches, "Watch");

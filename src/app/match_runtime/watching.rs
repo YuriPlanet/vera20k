@@ -8,6 +8,7 @@ use crate::app::match_runtime::sim_host::SimWrite;
 use crate::net::live_commands::NetworkRecoveryStatus;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
+use winit::keyboard::KeyCode;
 
 /// Whether this game watches its match instead of playing in it.
 pub(crate) fn active(state: &AppState) -> bool {
@@ -40,9 +41,32 @@ pub(crate) fn catching_up(state: &AppState, now_ms: u32) -> bool {
     )
 }
 
+/// A watcher's own keys, from the window (`App::window_event`) or a
+/// diagnostic's key adapter: Escape leaves the match, Tab follows the next
+/// player. False for any other key.
+pub(crate) fn key(state: &mut AppState, code: KeyCode, pressed: bool, repeat: bool) -> bool {
+    match code {
+        KeyCode::Escape => {
+            if pressed && let Some(live) = state.match_state.live_network.as_mut() {
+                // The next frame's network wait leaves the match
+                // (`exit_awaits_unreachable_relay`).
+                live.keep_running_for_exit();
+            }
+            true
+        }
+        KeyCode::Tab => {
+            if pressed && !repeat {
+                follow_next(state);
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Tab: follow the next player still in the match, in House order, with
 /// their sidebar and sounds; after the last comes the first again.
-pub(crate) fn follow_next(state: &mut AppState) {
+fn follow_next(state: &mut AppState) {
     let Some(next) = state
         .match_state
         .sim_runtime

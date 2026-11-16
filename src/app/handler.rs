@@ -769,18 +769,19 @@ impl ApplicationHandler for App {
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let PhysicalKey::Code(code) = event.physical_key {
                         let pressed = event.state.is_pressed();
-                        if code == KeyCode::Escape && pressed {
-                            if replay {
+                        if replay && code == KeyCode::Escape {
+                            if pressed {
                                 event_loop.exit();
-                            } else if let Some(live) = state.match_state.live_network.as_mut() {
-                                // The next frame's network wait leaves the
-                                // match (`exit_awaits_unreachable_relay`).
-                                live.keep_running_for_exit();
                             }
-                        } else if code == KeyCode::Tab && watching {
-                            if pressed && !event.repeat {
-                                crate::app::match_runtime::watching::follow_next(state);
-                            }
+                        } else if watching
+                            && crate::app::match_runtime::watching::key(
+                                state,
+                                code,
+                                pressed,
+                                event.repeat,
+                            )
+                        {
+                            // Escape and Tab are the watcher's own.
                         } else if matches!(
                             code,
                             KeyCode::ArrowLeft

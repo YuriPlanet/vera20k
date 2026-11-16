@@ -452,6 +452,12 @@ impl LiveCommandSession {
         self.transport.relay_expires()
     }
 
+    /// A watcher's delay behind the players, from its watch ticket (relay
+    /// README "Watchers"); `None` for a player.
+    pub fn relay_watch_delay(&self) -> Option<u32> {
+        self.transport.relay_watch_delay()
+    }
+
     pub fn renew_relay(
         &mut self,
         address: SocketAddrV4,

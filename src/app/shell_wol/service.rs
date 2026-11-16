@@ -256,7 +256,8 @@ pub(crate) struct WolHighScoreRecord {
 }
 
 /// VERA online: one running match the player can watch
-/// (docs/lobby-protocol.md "Watching"), with what the game list shows.
+/// (docs/lobby-protocol.md "Watching"), with what the game list shows and
+/// who plays it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct WolMatch {
     /// What `watch` names.
@@ -266,6 +267,8 @@ pub(crate) struct WolMatch {
     pub(crate) map: String,
     pub(crate) watchers: u32,
     pub(crate) max_watchers: u32,
+    /// The playing humans.
+    pub(crate) names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

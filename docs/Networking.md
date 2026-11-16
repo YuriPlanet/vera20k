@@ -502,3 +502,23 @@ both flag every human House to win, both press BC6's Continue, and the kept room
 back on the next stage with no `TXT_SAVE_CAMP_AVAILABLE` line in either setup's chat;
 the host starts it and it must run 90 frames. The manifest's
 `lan.cooperative` records the BC6 result, the room's next map and its startup.
+
+The `online-live-watch` target checks [watching](#watching) from a third account. It
+takes `--online-account <watcher>` and `--online-host <host name>`, both required, and
+refuses every other online option: the host's match sets the rest. From the settled
+online lobby it waits, with only the lobby's own 30-second list poll, until the watch
+list shows a running match whose players include the host, then selects that row and
+presses Join. The grant, the map and the relay's stream must bring it into the match.
+It records whether the game was catching up and the frame where it reached the delayed
+present, then requires 300 more frames without a stop: a desync's "Scenarios do not
+match." or a lost relay's message fails it. It presses Tab once, which must follow
+another player, then Escape, which must return it to the online lobby, and leaves for
+the Main Menu. Run it beside `online-live-host` and `online-live-guest` for two other
+accounts. Their `--online-frames` must keep their first match going well past the
+watcher's start: the list poll takes up to 30 seconds, the watcher sees the match two
+minutes behind and needs 300 frames after catching up, and it catches up only when it
+joins more than two minutes into the match. The host's room must let everyone watch,
+as the Create Game Watching choice's default does; Quick Match games
+(`--online-quick-match` on both) can always be watched. The manifest's `lan.watch`
+records the match, the grant's delay, whether catch-up was seen and the frame it ended,
+the frames played after it, the Houses followed before and after Tab, and the exit route.
