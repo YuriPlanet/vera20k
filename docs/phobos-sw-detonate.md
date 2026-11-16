@@ -47,9 +47,10 @@ projected by the retained registry), consumed by
 `Detonate.Weapon`/`.Warhead` names are FindOrAllocate: the same pass
 constructs them before type bodies (`allocate_sw_detonate_references`).
 
-RESIDUAL: VERA owns `SW.RangeMinimum`/`.RangeMaximum` only under Ares, so for
-stock superweapon kinds the launch-site range gate is open; mods that set the
-range keys on a stock kind get an unrestricted firer search.
+`SW.RangeMinimum`/`.RangeMaximum` are now read into the Phobos superweapon
+metadata too (defaults -1.0/-1.0), and the detonation firer gate uses them in
+both builds (`phobos_range_keys_limit_the_detonation_firer`,
+`phobos_sw_range_defaults_to_minus_one_and_reads`). No residual.
 RESIDUAL: the at-firer coordinate uses the object's `Location` rather than
 `GetCenterCoords`'s centre-height point; cell-based area damage is unaffected.
 RESIDUAL: a phobos-only build does not read `SuperWeapons=`, so a building that

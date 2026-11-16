@@ -2472,6 +2472,18 @@ pub(crate) struct PhobosSuperWeaponAvailability {
     /// the House's `ShotCount` reaches it.
     #[serde(default = "default_phobos_sw_shots")]
     shots: i32,
+    /// `SW.RangeMinimum=` / `SW.RangeMaximum=` (`Valueable<double>`,
+    /// `Ext/SWType/Body.cpp:136-137`, both `-1.0` at `Body.h:145-146`): the
+    /// launch-site range in cells; negative means unrestricted.
+    #[serde(default = "default_phobos_sw_range")]
+    range_minimum: crate::util::native_x87::NativeF64Bits,
+    #[serde(default = "default_phobos_sw_range")]
+    range_maximum: crate::util::native_x87::NativeF64Bits,
+}
+
+#[cfg(feature = "phobos")]
+fn default_phobos_sw_range() -> crate::util::native_x87::NativeF64Bits {
+    crate::util::native_x87::NativeF64Bits::from_bits((-1.0_f64).to_bits())
 }
 
 #[cfg(feature = "phobos")]
@@ -2487,6 +2499,8 @@ impl Default for PhobosSuperWeaponAvailability {
             aux_technos: Vec::new(),
             neg_technos: Vec::new(),
             shots: -1,
+            range_minimum: default_phobos_sw_range(),
+            range_maximum: default_phobos_sw_range(),
         }
     }
 }
@@ -2503,6 +2517,31 @@ impl PhobosSuperWeaponAvailability {
 
     pub(crate) fn set_shots(&mut self, shots: i32) {
         self.shots = shots;
+    }
+
+    pub(crate) fn range(&self) -> (f64, f64) {
+        (
+            f64::from_bits(self.range_minimum.bits()),
+            f64::from_bits(self.range_maximum.bits()),
+        )
+    }
+
+    pub(crate) fn range_bits(
+        &self,
+    ) -> (
+        crate::util::native_x87::NativeF64Bits,
+        crate::util::native_x87::NativeF64Bits,
+    ) {
+        (self.range_minimum, self.range_maximum)
+    }
+
+    pub(crate) fn set_range(
+        &mut self,
+        minimum: crate::util::native_x87::NativeF64Bits,
+        maximum: crate::util::native_x87::NativeF64Bits,
+    ) {
+        self.range_minimum = minimum;
+        self.range_maximum = maximum;
     }
 
     pub(crate) fn set_tech_level(&mut self, level: i32) {
@@ -2549,6 +2588,28 @@ mod tests {
         .unwrap();
         assert_eq!(rules.phobos_super_weapon_metadata("A").unwrap().shots(), -1);
         assert_eq!(rules.phobos_super_weapon_metadata("B").unwrap().shots(), 2);
+    }
+
+    /// Phobos `SW.RangeMinimum=`/`SW.RangeMaximum=` (`Valueable<double>`,
+    /// constructor `-1.0`): the projected metadata keeps the sentinel and
+    /// reads authored cell values.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_sw_range_defaults_to_minus_one_and_reads() {
+        use crate::rules::ini_parser::IniFile;
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[SuperWeaponTypes]\n0=A\n1=B\n[A]\nType=IronCurtain\n\
+             [B]\nType=IronCurtain\nSW.RangeMinimum=2.5\nSW.RangeMaximum=9.25\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            rules.phobos_super_weapon_metadata("A").unwrap().range(),
+            (-1.0, -1.0)
+        );
+        assert_eq!(
+            rules.phobos_super_weapon_metadata("B").unwrap().range(),
+            (2.5, 9.25)
+        );
     }
 
     #[cfg(feature = "ares")]

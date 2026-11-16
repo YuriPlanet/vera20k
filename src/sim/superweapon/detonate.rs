@@ -16,8 +16,8 @@
 //! The firer is the first owned building in House+68 order that provides the
 //! superweapon, is alive, in play and operational. Native
 //! `IsLaunchSiteEligible` also applies `SW.RangeMinimum`/`.RangeMaximum`
-//! against the target cell; VERA owns those keys only under Ares, so the range
-//! gate applies to Ares-handler kinds and is open otherwise (residual).
+//! against the target cell; VERA reads those keys into the Ares metadata and
+//! the Phobos superweapon metadata, so both builds gate the firer.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/, sim/combat, sim/world.
@@ -224,14 +224,20 @@ fn detonation_firer(
 
 /// `GetLaunchSiteRange` for the types VERA owns range keys for; the negative
 /// sentinel answers "no range restriction".
-fn launch_site_range(rules: &RuleSet, sw: &SuperWeaponType) -> Option<(f64, f64)> {
+pub(super) fn launch_site_range(rules: &RuleSet, sw: &SuperWeaponType) -> Option<(f64, f64)> {
     #[cfg(feature = "ares")]
     {
         rules
             .super_weapon_target_policy(&sw.id)
             .map(|policy| policy.range())
     }
-    #[cfg(not(feature = "ares"))]
+    #[cfg(all(feature = "phobos", not(feature = "ares")))]
+    {
+        rules
+            .phobos_super_weapon_metadata(&sw.id)
+            .map(|metadata| metadata.range())
+    }
+    #[cfg(not(any(feature = "ares", feature = "phobos")))]
     {
         let _ = (rules, sw);
         None

@@ -140,3 +140,18 @@ fn detonate_at_firer_without_a_building_uses_the_empty_coordinate() {
     assert_eq!(health(&sim, origin), 60, "Empty falls on cell (0,0)");
     assert_eq!(health(&sim, target), 100, "the target cell was not hit");
 }
+
+/// Phobos-only `GetLaunchSiteRange`: the projected `SW.RangeMinimum`/
+/// `.RangeMaximum` reach the detonation firer gate without the Ares metadata.
+#[cfg(all(feature = "phobos", not(feature = "ares")))]
+#[test]
+fn phobos_range_keys_limit_the_detonation_firer() {
+    let rules = rules_with(
+        "[RootSpecial]\nDetonate.Warhead=WH\nSW.RangeMinimum=2.5\nSW.RangeMaximum=9.25\n",
+    );
+    let sw = rules.super_weapon(ROOT).unwrap();
+    assert_eq!(
+        super::detonate::launch_site_range(&rules, sw),
+        Some((2.5, 9.25))
+    );
+}

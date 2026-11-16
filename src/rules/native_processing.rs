@@ -8254,6 +8254,11 @@ impl RulesPassProcessor {
                         availability.set_neg_technos(neg);
                     }
                     availability.set_shots(raw.read_ares_int("SW.Shots", availability.shots()));
+                    let (range_minimum, range_maximum) = availability.range_bits();
+                    availability.set_range(
+                        raw.read_ares_double_bits("SW.RangeMinimum", range_minimum),
+                        raw.read_ares_double_bits("SW.RangeMaximum", range_maximum),
+                    );
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
                     // Phobos `SWTypeExt::LoadFromINIFile` then reads
