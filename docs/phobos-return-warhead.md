@@ -52,11 +52,11 @@ the full arm as a `ProjectileDetonationReason::ReturnWarhead` packet and the
 direct arm as an `EntityDamageEvent::direct_receiver` through
 `commit_entities`.
 
-RESIDUAL: `ReturnWarhead=` resolves through the generic
-`Valueable<WarheadTypeClass*>` `Find` at read time, so an unknown name stays
-null and the warhead never returns. VERA keeps the string and resolves at
-apply time; the gate now requires a resolvable warhead, so a misspelled name
-neither returns nor draws the return pass.
+`ReturnWarhead=` resolves through `Valueable<WarheadTypeClass*>` `Find` at
+read time, so an unknown name stays null and the warhead never returns; VERA's
+apply gate requires a resolvable warhead, so a misspelled name likewise
+neither returns nor draws the return pass. The reader only changes at which
+point the name is resolved; no observable residual.
 
 RESIDUAL: the full arm needs the original firer entity; when it is already
 gone from the substrate the return does nothing, where native still holds

@@ -51,8 +51,9 @@ constructs them before type bodies (`allocate_sw_detonate_references`).
 metadata too (defaults -1.0/-1.0), and the detonation firer gate uses them in
 both builds (`phobos_range_keys_limit_the_detonation_firer`,
 `phobos_sw_range_defaults_to_minus_one_and_reads`). No residual.
-RESIDUAL: the at-firer coordinate uses the object's `Location` rather than
-`GetCenterCoords`'s centre-height point; cell-based area damage is unaffected.
+The at-firer coordinate is `GetCenterCoords` (`object_get_coords`: a
+building's foundation centre at its Location Z), as Phobos uses
+(`FireSuperWeapon.cpp:282`); no residual.
 `SuperWeapons=` is read for Ares and Phobos builds alike (Phobos reads it in
 `Ext/BuildingType/Body.cpp:341`), and `type_super_weapons` names the
 detonation firer from it (`a_superweapons_list_names_the_detonation_firer` in
