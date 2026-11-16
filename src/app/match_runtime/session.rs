@@ -321,6 +321,8 @@ struct NetworkSession {
     /// The WOL game channel's kind (`0x0077D940`/`0x0077D970`), fixed for
     /// the setup it hosts.
     room: NetworkRoom,
+    /// Quick Match uses matchbot options even when its channel is a tournament.
+    quick_match: bool,
     /// The WOL start's tournament value and clan lists, taken at
     /// OnGameStart/Start Game Now for the accepted start.
     wol_start: WolStartTerms,
@@ -563,6 +565,7 @@ impl MatchSession {
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
             room: NetworkRoom::default(),
+            quick_match: false,
             wol_start: WolStartTerms::default(),
             loading_requests: Vec::new(),
             endpoints: Default::default(),
@@ -1837,11 +1840,11 @@ impl MatchSession {
         )
     }
 
-    /// The WOL game channel's kind; set when its setup opens, before the
-    /// first map selection.
-    pub(crate) fn set_network_room(&mut self, room: NetworkRoom) {
+    /// The WOL channel and setup kind, set before the first map selection.
+    pub(crate) fn set_network_room(&mut self, room: NetworkRoom, quick_match: bool) {
         if let Some(network) = self.network.as_mut() {
             network.room = room;
+            network.quick_match = quick_match;
         }
     }
 
@@ -2021,6 +2024,7 @@ impl MatchSession {
             network.return_context.session_mode(),
             network.room,
             launch.mode.class,
+            network.quick_match,
         ))
     }
 
@@ -2492,10 +2496,7 @@ impl MatchSession {
             };
             let session_mode = return_context.session_mode();
             let room = *room;
-            if !effective_network_room_policy(session_mode, room, mode.class)
-                .mode_policy
-                .observers_allowed
-            {
+            if !mode.class.policy().observers_allowed {
                 *observer_row = None;
             } //5C1A10
             let new_capacity = row_capacity(session_mode, room, &mode, capacity);
@@ -3110,6 +3111,7 @@ impl MatchSession {
             network.return_context.session_mode(),
             network.room,
             launch.mode.class,
+            network.quick_match,
         );
         if effective_policy.short_game_locked {
             let short_game = effective_policy.resolve_short_game(launch.options.short_game);
@@ -3439,12 +3441,15 @@ fn row_limit(session_mode: SessionMode, room: NetworkRoom) -> i32 {
 
 /// Effective room capability, bounds, and ShortGame lock combining the mode
 /// row with WOL tournament/clan room rules (`0x78F85E..0x78F907`).
+/// Quick Match uses the matchbot setup rather than the room dialog lock.
 fn effective_network_room_policy(
     session_mode: SessionMode,
     room: NetworkRoom,
     mode_class: crate::skirmish_modes::MpModeClass,
+    quick_match: bool,
 ) -> crate::skirmish_modes::EffectiveRoomPolicy {
-    let overrides = if session_mode == SessionMode::Wol && room.tournament_or_clan() {
+    let overrides = if session_mode == SessionMode::Wol && room.tournament_or_clan() && !quick_match
+    {
         crate::skirmish_modes::RoomPolicyOverrides {
             short_game: Some(true),
             lock_short_game: Some(true),
@@ -3465,7 +3470,7 @@ fn row_capacity(
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
     capacity: i32,
 ) -> i32 {
-    let policy = effective_network_room_policy(session_mode, room, mode.class);
+    let policy = crate::skirmish_modes::EffectiveRoomPolicy::from_mode(mode.class);
     let extended = capacity > 8 && !(session_mode == SessionMode::Wol && room.tournament_or_clan());
     let base_limit = if extended {
         NETWORK_PLAYER_SLOT_COUNT
@@ -3503,11 +3508,7 @@ fn host_extra_row(
     capacity: i32,
 ) -> bool {
     let wol_room = session_mode == SessionMode::Wol && room.tournament_or_clan();
-    if effective_network_room_policy(session_mode, room, mode.class)
-        .mode_policy
-        .lists_in_skirmish
-        && !wol_room
-    {
+    if mode.class.policy().lists_in_skirmish && !wol_room {
         return true;
     }
     let limit = row_limit(session_mode, room);
@@ -4577,7 +4578,7 @@ mod tests {
             ),
         ] {
             let mut session = wol_host();
-            session.set_network_room(room);
+            session.set_network_room(room, false);
             session
                 .select_network_map(launch.mode.clone(), file.clone(), capacity)
                 .unwrap();
@@ -5426,23 +5427,65 @@ mod tests {
     }
 
     #[test]
+    fn quick_match_tournament_preserves_admitted_short_game_and_bases() {
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(launch.clone(), true, None, false)
+            .unwrap();
+        session.set_network_room(
+            NetworkRoom {
+                tournament: true,
+                clan: false,
+            },
+            true,
+        );
+        launch.options.short_game = false;
+        launch.options.bases = false;
+        session
+            .accept_network_host_setup(launch, [super::NetworkVacancy::Open; 8], 2, None, true)
+            .unwrap();
+        assert!(!session.network_setup().unwrap().options.short_game);
+        assert!(!session.network_setup().unwrap().options.bases);
+        let policy = session.network_effective_policy().unwrap();
+        assert!(!policy.short_game_locked);
+        assert!(!policy.resolve_short_game(false));
+        session.set_network_start_seed(0x4242).unwrap();
+        session.prepare_network_timing(2, || 0).unwrap();
+        let startup = session.freeze_network_start(0x4242).unwrap();
+        let crate::app::match_bootstrap::LoadingStartup::Network(prepared) = startup else {
+            panic!("network variant");
+        };
+        assert!(!prepared.launch_session().options.short_game);
+        assert!(!prepared.launch_session().options.bases);
+    }
+
+    #[test]
     fn network_effective_policy_locks_short_game_in_wol_tournament_and_clan_rooms() {
         let mut session = vera_room();
         let default_policy = session.network_effective_policy().unwrap();
         assert!(!default_policy.short_game_locked);
 
-        session.set_network_room(NetworkRoom {
-            tournament: true,
-            clan: false,
-        });
+        session.set_network_room(
+            NetworkRoom {
+                tournament: true,
+                clan: false,
+            },
+            false,
+        );
         let tournament_policy = session.network_effective_policy().unwrap();
         assert!(tournament_policy.short_game_locked);
         assert!(tournament_policy.resolve_short_game(false));
 
-        session.set_network_room(NetworkRoom {
-            tournament: false,
-            clan: true,
-        });
+        session.set_network_room(
+            NetworkRoom {
+                tournament: false,
+                clan: true,
+            },
+            false,
+        );
         let clan_policy = session.network_effective_policy().unwrap();
         assert!(clan_policy.short_game_locked);
         assert!(clan_policy.resolve_short_game(false));
@@ -5467,10 +5510,13 @@ mod tests {
         lan_session
             .accept_network_setup(lan, true, Some(7), true)
             .unwrap();
-        lan_session.set_network_room(NetworkRoom {
-            tournament: true,
-            clan: true,
-        });
+        lan_session.set_network_room(
+            NetworkRoom {
+                tournament: true,
+                clan: true,
+            },
+            false,
+        );
         assert!(
             !lan_session
                 .network_effective_policy()

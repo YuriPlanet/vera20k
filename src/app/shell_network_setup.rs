@@ -902,7 +902,7 @@ fn install_setup(
     let quick_match = dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state);
     if dialog.wol() {
         let room = crate::app::shell_wol::lobby::room(state);
-        state.match_state.session.set_network_room(room);
+        state.match_state.session.set_network_room(room, quick_match);
         // C2's lockout in a tournament or clan room, after the profile
         // restore (0x79132A..0x7913D1): Short Game and Bases on; the AI
         // count is already 0 on WOL.
