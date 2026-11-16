@@ -1,0 +1,566 @@
+# RFC 0001: Wasm extension modules
+
+**English** · [简体中文](0001-wasm-extension-modules.zh-CN.md)
+
+The two language versions carry the same RFC version and change in the same
+commit. Where they differ, the English text applies.
+
+| | |
+| --- | --- |
+| RFC version | 0.0.1 |
+| Status | Draft |
+| Created | 2026-11-16 |
+| API covered | `vera:sim@1`, `vera:client@1` (proposed) |
+
+**Development gate.** No engine code for this feature lands until this RFC
+reaches an accepted version. Until then, work is limited to discussing and
+revising this document, and to throwaway experiments that answer the
+[open questions](#unresolved-questions). Those experiments stay outside `src/`
+and are not merged.
+
+## Summary
+
+Let mods and maps ship compiled WebAssembly modules (`rules.wasm`, `ui.wasm`)
+that VERA20k runs in a sandbox. A module can change rules after they load,
+react to triggers, issue actions and missions, override chosen game
+decisions, and build its own interface. Authors write modules in any language
+that compiles to WebAssembly, with their own tools; the engine only runs the
+compiled `.wasm`. Official SDKs exist for TypeScript and Rust. The API uses the
+terms Red Alert 2
+modders already know: triggers, events, actions, tags, missions, local and
+global variables, and frames.
+
+The API is versioned from its first release. A published API version keeps
+working in every later VERA20k release.
+
+## Motivation
+
+INI files and map triggers cannot express much of what modders ask for:
+custom projectile paths, wave logic, new superweapon behavior, a mission
+objectives panel. Ares and Phobos added many keys for this, and each new idea
+still needs engine work. A scripting layer lets modders build these
+themselves, while the engine stays the single owner of game state.
+
+An API cannot be taken back once mods depend on it, so it has to be designed
+in public, grown in small versioned steps and covered by tests that keep
+every published version running.
+
+## Goals
+
+1. Modders can change gameplay and interface without engine changes.
+2. Every player runs identical modules with identical results: no desync on
+   any supported platform, including the browser build.
+3. Outside modules never stop the game. A module that fails is disabled and the
+   player is told why.
+4. A module cannot read files, use the network, read the clock or see what the
+   player is not allowed to see.
+5. With no module present, the game plays exactly as it does today.
+6. Battles of 20,000 units do not get slower because of modules that only a few
+   types use.
+7. An RA2 modder can start from a template and see a change in game within
+   minutes.
+
+## Non-goals
+
+- Native plugins (`.dll`, `.so`), or loading anything outside the sandbox.
+- Source code in the engine. The engine never parses, compiles or interprets
+  a source language, and ships no language runtime (see
+  [Alternatives](#alternatives-considered)).
+- Exposing engine internals: memory layouts, native addresses, internal object
+  indices, the renderer's graphics API.
+- Adding new object types during a match.
+- Replacing the original trigger system. Modules extend it.
+
+## Terminology
+
+The API uses Red Alert 2 terms wherever one exists. Names in code and INI
+follow this table.
+
+| Term | Meaning |
+| --- | --- |
+| **Extension module** | A compiled `.wasm` file. Not called a *script*: in RA2, scripts are AI team scripts (`[ScriptTypes]`). |
+| **Trigger** | As in maps: an event plus one or more actions, owned by a house, with difficulty flags. |
+| **Event** | A trigger's condition. Original event numbers keep their meaning. |
+| **Action** | What a trigger does. Original actions keep their numbers. A new action runs a module function. |
+| **Tag** | What attaches triggers to an object or a cell (CellTag). An object holds one tag. |
+| **Mission** | An object's order: Move, Attack, Guard, Area Guard, Hunt, Sleep and the rest. |
+| **Local / Global** | Local and global variables, as in maps. |
+| **Frame** | One logic frame of the simulation, the unit of `ROF`, `Rate` and timers. |
+| **Render frame** | One drawn frame on one machine. Not synchronized. |
+| **Override** | A named decision point where a module may change the engine's result. |
+| **House, Techno, Building, Vehicle, Infantry, Aircraft, Projectile, Weapon, Warhead** | As in the INI files. |
+| **Cell, lepton** | Map coordinates. One cell is 256 leptons. |
+| **Operation budget** | How much work a module may do per call, measured in deterministic operation units. |
+
+## What a modder sees
+
+### Files
+
+```
+Mods/MyMod/
+  mod.ini        ; Needs=, WasmApi=1, policy keys
+  rulesmd.ini    ; binds tags to types
+  rules.wasm     ; simulation module
+  ui.wasm        ; interface module
+```
+
+A map carries its modules as text, the way it already carries `IsoMapPack5`:
+compressed, base64-encoded and split into numbered lines.
+
+```ini
+[VeraWasm]
+Api=1
+RulesSize=48213          ; decoded size, checked on load
+UISize=9120
+
+[VeraWasmRulesPack]
+1=eJzt3XlcVOX+B...
+2=...
+
+[VeraWasmUIPack]
+1=...
+```
+
+The `asset` tool gains commands to embed a module into a map, extract it, and
+run the same load checks the game runs.
+
+### Binding triggers to a type
+
+```ini
+; rulesmd.ini in the mod
+[E1]
+Wasm.Tags=GIPanicTag     ; every new E1 starts with this tag
+
+[GIPanicTag]
+Trigger=GIPanic
+
+[GIPanic]
+Event=Damaged
+Action=Wasm:giPanic      ; calls the function giPanic exported by rules.wasm
+Repeat=yes
+```
+
+The key names and the exact section format are not final (see
+[Unresolved questions](#unresolved-questions)). Map triggers edited in
+FinalAlert2 can also call module functions through the new action.
+
+### Module code
+
+The engine sees only the compiled module. The source and the compiler stay in
+the author's tools. The same module in the two official SDKs:
+
+```ts
+// TypeScript (AssemblyScript-compatible)
+import { action, onFrame, Mission, Techno, Ctx } from "@vera20k/sdk";
+
+export const giPanic = action((ctx: Ctx, techno: Techno) => {
+  if (techno.healthRatio < 0.3) {
+    techno.setMission(Mission.Hunt);
+  }
+});
+
+export const checkWaves = onFrame({ every: 15 }, (ctx: Ctx) => {
+  if (ctx.local(3).get()) {
+    // ...
+  }
+});
+```
+
+```rust
+// Rust SDK
+use vera20k_sdk::prelude::*;
+
+#[vera::action(export = "giPanic")]
+fn gi_panic(ctx: &mut Ctx, techno: Techno) {
+    if techno.health_ratio() < 0.3 {
+        techno.set_mission(Mission::Hunt);
+    }
+}
+
+#[vera::on_frame(every = 15)]
+fn check_waves(ctx: &mut Ctx) {
+    if ctx.local(3).get() {
+        // ...
+    }
+}
+```
+
+Each SDK builds `rules.wasm` or `ui.wasm` with one command. Package names are
+placeholders. See section 5a for languages and SDKs.
+
+## Design
+
+### 1. Two worlds
+
+| | Simulation (`rules.wasm`) | Client (`ui.wasm`) |
+| --- | --- | --- |
+| Runs on | every machine, in lockstep | the local machine only |
+| Deterministic | yes | no |
+| May change | game state, through engine owners | interface, display, sound |
+| Reaches the game by | actions and missions | sending a message into the command stream |
+| Engine side | `sim/` | `ui/`, `render/`, `audio/` |
+
+The split follows the existing rule that `sim/` never depends on `render/`,
+`ui/`, `audio/` or `net/`. Data flows from simulation to client through
+visibility-filtered queries and local notifications. Data flows from client to
+simulation only through `sendMessage`, which enters the command stream like a
+player order, so replays and online play see it.
+
+### 2. Sources: mods and maps
+
+Mods and maps use the same API and the same SDK. They differ in what the
+engine grants them.
+
+| | Mod | Map |
+| --- | --- | --- |
+| Order | first | after the mod, as INI layers |
+| `onRules` | after the mod's INI layer | after the map's INI layer, sees the mod's result |
+| Operation budget | declared by the mod, capped by the engine | smaller default, the mod may raise it |
+| Size | file size | embedded size limit |
+| Interface | may replace or rearrange the match screen | overlays only, unless the mod allows more |
+
+The mod controls what a map's modules may do:
+
+```ini
+[Mod]
+WasmApi=1
+MapWasm=yes          ; no: a map with modules cannot start under this mod
+MapUI=overlay        ; overlay, full or no
+```
+
+With no mod selected, map modules are allowed and map interfaces are overlays.
+
+Conflict rules:
+
+- **Tag bindings on types** come only from the mod's rules layer. Map modules
+  create triggers and tags in code (section 7), so a map's INI cannot erase a
+  mod's binding by layering.
+- **Triggers** from both sources fire. The mod's module runs first.
+- **Overrides** chain: the mod's module computes a result, the map's module
+  receives it and may change it, and the engine uses the final value.
+- **Actions and missions** go through the same owners in execution order.
+- **Peer calls** (later phase): a mod may publish functions that a map calls
+  with `callPeer("mod", name, bytes)`. Only functions the mod exports for
+  this purpose can be called.
+
+### 3. Loading and validation
+
+On load the engine:
+
+1. decodes embedded modules and checks their declared size;
+2. parses the module and accepts imports only from `vera:*` interfaces whose
+   versions this release supports;
+3. rejects threads, relaxed SIMD and 64-bit memory, and canonicalizes NaN
+   results of floating-point operations;
+4. adds operation metering and sets the memory limit;
+5. checks that the exports the INI and the lifecycle need exist and have the
+   right signatures.
+
+A failure before the match is shown in the lobby with its reason, and the match
+cannot start with that module. A failure during a match (trap, budget exceeded,
+invalid argument) disables that module at the same frame on every machine, and
+the game tells the players which module stopped and why. The match continues.
+
+`docs/modding.md` currently says a mod is only data and VERA20k never runs a
+program from one. That text changes to say modules run only in a sandbox with
+no access to files, the network or the clock. The Mods menu and the map list
+mark mods and maps that contain modules.
+
+### 4. Determinism
+
+All machines run the same module bytes, so results depend only on how the
+engine executes them.
+
+- No threads, no relaxed SIMD, canonical NaNs.
+- No clock, no host random source, no WASI. Random numbers come from the
+  simulation's random streams; each API call that draws documents which stream
+  and how many draws.
+- The operation budget is counted by instrumentation added at load, not by an
+  engine's built-in fuel. Every engine, native or browser, then counts the same
+  operations and stops at the same point.
+- Positions, speeds and other game values cross the boundary as integers
+  (leptons, fixed-point raw values). A module may use floating point
+  internally.
+- Module memory, mutable globals and tables are part of the simulation state:
+  saved in snapshots and included in the state hash.
+
+### 5. Execution model
+
+Simulation module exports:
+
+| Export | When |
+| --- | --- |
+| `onRules` | once, after the INI layers load; may change and add types |
+| `onScenarioStart` | once, at the start of the scenario |
+| `onFrame` | once per frame per subscribed module, or every N frames |
+| actions | when a trigger runs them |
+| overrides | synchronously, when the engine reaches that decision |
+| `onMessage(player, bytes)` | when a client message reaches the simulation |
+
+Client module exports: `onStart`, `onRender(dt, alpha)` once per render
+frame, and interface callbacks such as clicks and hotkeys.
+
+Module calls run in one fixed phase of the simulation frame, in module load
+order. Triggers raised during the frame whose actions call module functions are
+queued and delivered in that phase, before `onFrame`. Overrides are the
+exception: they run when the engine needs the answer. Object references are
+generational handles, so a handle to an object that died before delivery reads
+as gone and never as a reused slot.
+
+Each module has an operation budget per frame. Subscriptions are opt-in: a
+module that exports no `onFrame` and binds no triggers costs nothing per
+frame.
+
+### 5a. Languages and SDKs
+
+The contract between engine and module is the Wasm interface alone. Any
+language whose compiler produces a module that passes the load checks works,
+and the engine treats every module the same way.
+
+- **Official SDKs: TypeScript and Rust.** Both are generated from the one
+  interface definition (section 12), carry the same functions under each
+  language's naming style, and are versioned with the API. Each comes with
+  templates, a build command, a watch mode and examples.
+- **TypeScript SDK.** Compiles TypeScript to Wasm ahead of time, so the module
+  is small enough to embed in maps. The compiler it uses is an open question.
+  Its API stays inside the common subset of TypeScript and AssemblyScript: no
+  `any`, no union types other than `T | null`, no callbacks that capture outer
+  variables, no `try`/`catch`, and parameters that are classes rather than
+  object shapes. The same source then type-checks with `tsc` and compiles with
+  AssemblyScript, and the examples in this RFC are valid in both.
+- **Rust SDK.** For authors who want full control and speed, and the SDK the
+  engine's own compatibility fixtures are written in.
+- **Other languages** (C, C++, Zig, Go, ...) use the published interface
+  definition; their bindings are community work.
+- **Imports.** A module may import only `vera:*` interfaces. The engine does
+  not provide WASI and the project publishes no WASI shim. A language whose
+  runtime needs WASI (for clocks, random numbers or files) works only if its
+  own toolchain removes those imports.
+- **Size.** Languages that bundle a large runtime or garbage collector into
+  every module produce bigger files, which may exceed the map embedding limit.
+  That is a trade-off of the author's toolchain, not of the engine.
+### 6. API layers
+
+| Layer | Content | First API version |
+| --- | --- | --- |
+| L1 Actions and missions | every original trigger action, missions, production, house and object commands | yes |
+| L2 Triggers | original events plus new ones (weapon fired, projectile detonated, ...) delivered to actions | yes |
+| L3 Overrides | named decisions: target choice, damage, production permission, ... | two or three, chosen from modder requests |
+| L4 Per-frame behaviors | batched per-frame control of objects of a bound type | no, later |
+
+Queries are read-only and iterate in a deterministic order. Every L1 action
+calls the existing Rust port of that action (for example in
+`sim/trigger_runtime`); modules never get a second implementation.
+
+Overrides are named after game concepts, such as `Override.Damage` or
+`Override.TargetChoice`, never after native functions, so they survive engine
+refactors.
+
+L4 calls the module once per frame per behavior type with all objects of that
+type, never once per object.
+
+### 7. Triggers and tags at run time
+
+Modules create triggers and tags with the same model as maps:
+
+```ts
+const t = Trigger.create({
+  house: ctx.house("Americans"),
+  event: Event.Destroyed,
+  actions: [Action.wasm("onConvoyLost")],
+  difficulty: Difficulty.All,
+});
+const tag = Tag.create([t], TagRepeat.Repeating);
+techno.setTag(tag);     // replaces the object's tag, as in the original
+cell.setTag(tag);       // CellTag
+t.disable();
+```
+
+- Created triggers and tags live in the existing trigger runtime's lists, next
+  to the map's. There is no separate store.
+- They get deterministic IDs that cannot collide with the map's, and they are
+  saved and hashed with the trigger runtime.
+- An object holds one tag (`ObjectClass` `AttachedTag`, `+0x34`). A tag may
+  link several triggers. Attaching several tags to one object would be a VERA
+  extension and needs its own RFC.
+- Removing an object or a tag clears the links through the trigger runtime's
+  existing cleanup.
+
+New event and action numbers are allocated in a range that does not collide
+with Ares or Phobos.
+
+### 8. Changing rules
+
+| When | What | How |
+| --- | --- | --- |
+| `onRules` | any key; new types | through the native INI readers, clamps and post-read passes; included in the lobby hash |
+| During a match, per type | keys on a published allowlist | `rules.set("E1", "Speed", "6")`: the value is parsed like INI text, takes effect from the next frame, invalidates the dependent caches, and is saved as a rules overlay |
+| During a match, per object | multipliers, veterancy, owner, type change, health | through the existing per-object owners |
+
+- Per-object multipliers reuse the owner that already exists in
+  `sim/attach_effect.rs`. Part of that code is still behind
+  `cfg(feature = "phobos")`; it moves to a run-time switch before modules can
+  use it, as the project contract requires.
+- Each allowlisted key documents what a change does to objects already on the
+  map (for example, how current health follows a new `Strength`).
+- New types cannot be added during a match.
+
+### 9. Example: projectile paths
+
+All four levels run in `rules.wasm`, because they decide what is hit.
+`ui.wasm` may add purely visual effects such as trails and lights.
+
+| Level | Mechanism | Cost |
+| --- | --- | --- |
+| 1 | `onRules` sets existing keys (`Arcing`, `ROT`, `Vertical`, Phobos `Trajectory` when Phobos is on) | none during play |
+| 2 | triggers on weapon fired and projectile detonated: extra projectiles, splits, chains | per event, only for bound types |
+| 3 | `onLaunch` returns a path (Bezier, parabola, spiral, waypoints); the engine moves the projectile along it in fixed point | one call per projectile |
+| 4 | `onTrajectoryFrame(type, bullets)` changes speed or position, or asks to detonate, for all projectiles of the type at once | one call per type per frame |
+
+The engine adds a module arm to `ProjectileTrajectory` beside the three native
+flight arms (`BulletClass::AI` `0x004666E0`). Collision stays in
+`world::projectile_collision`, detonation admission in `sim/projectile`, and
+damage and warheads in `combat`. The engine clamps module output: speed and
+position limits, and leaving the map detonates or removes the projectile. Each
+projectile has 16 bytes of module data that is saved and hashed.
+
+### 10. Client module
+
+- A declarative interface tree that works with the `veraui.ini` layout. The
+  module describes widgets, layout and bindings; the engine draws them. No
+  graphics API is exposed.
+- Display properties per object: image, palette, tint, extra animations,
+  visibility. Properties that change gameplay, such as cloaking, belong to the
+  simulation module.
+- Sounds and messages.
+- Every query is filtered by what the local player can see.
+- Player-installed interface modules come in a later phase. A mod or a room
+  may forbid them.
+
+### 11. Online play
+
+- Embedded modules travel with the map. Mod modules are part of the existing
+  mod file check.
+- The lobby compares module hashes and required API versions. A player whose
+  game does not support a required version is refused with a message that
+  names the version needed.
+- The change updates [Networking](../Networking.md) and states what a released
+  game, a mixed room and a rollback do with modules.
+
+### 12. Versioning and the ABI
+
+- One interface definition (WIT syntax) is the source of the API, the SDK
+  bindings, the reference documentation and the compatibility checks.
+- Interfaces are versioned packages: `vera:sim@1`, `vera:client@1`.
+  Unstable interfaces live under `vera:unstable/*`, require an explicit opt-in
+  and may change without notice.
+- Every published version keeps working. Older versions are thin adapters over
+  the current implementation, never a second implementation.
+- For every published version, CI runs a set of committed `.wasm` fixtures.
+  Breaking one fails the build.
+- Functions may be deprecated, with a warning to the module author, but a
+  published version is never removed.
+- Whether the binary interface is a core-module ABI (integer handles, pointer
+  and length pairs) or the Component Model is an open question.
+
+### 13. Tooling
+
+| Need | Provided |
+| --- | --- |
+| Start | templates for `rules.wasm` and `ui.wasm` in TypeScript and Rust; an example mod in both |
+| Size | SDK release settings for small modules; documented size guidance per language; map embedding limit |
+| Maps | `asset` commands to embed, extract and validate modules |
+| Iteration | the SDK's watch mode rebuilds on save; in development mode the game watches the `.wasm` file and reloads it (module state resets) |
+| Errors | the failing export and the error in game; the SDKs pass messages and source locations to the engine |
+| Cost | an overlay with each module's operations and trigger deliveries per frame |
+| Docs | reference generated from the interface definition; task-based guides |
+
+### 14. Project contract
+
+- The feature is in every build and turns on only when a mod or map provides a
+  module. It is never behind a build feature.
+- Every module call reaches state through its existing owner. The API adds no
+  competing state.
+- The feature is documented under `docs/` for modders.
+- Module failures are reported in game, never only in the log.
+
+## Process
+
+1. **Draft.** This document is discussed in public. Changes bump the RFC
+   version and are listed in the [changelog](#changelog).
+2. **Open questions answered.** Experiments outside `src/` answer the
+   unresolved questions below. Results are summarized here.
+3. **Accepted.** The maintainer marks a version as accepted. Development starts
+   only then.
+4. **Preview.** The API ships as `0.x`. Breaking changes are allowed and listed
+   in a changelog. At least one real mission or mode is rebuilt with it, and
+   outside modders try it.
+5. **Stable.** `vera:sim@1` and `vera:client@1` freeze, limited to what the
+   preview used. The compatibility fixtures go into CI.
+6. **Growth.** Each new interface or override is a small follow-up RFC and a
+   new minor version.
+
+Planned order after acceptance:
+
+| Phase | Content |
+| --- | --- |
+| P1 | `rules.wasm`: `onRules`, `onScenarioStart`, `onFrame`, L1, L2, type tag bindings, the trigger action, map embedding, `asset` commands, TypeScript and Rust SDKs and templates |
+| P2 | `ui.wasm`: interface tree, display properties, visibility filter, messages |
+| P3 | real mission rebuilt with modules, outside modder trial, freeze of version 1 |
+| Later | overrides one by one, L4 behaviors, peer calls, player interface modules |
+
+## Alternatives considered
+
+- **Lua run by the engine** (as Recoil does). Easy for modders, but float and
+  table-order determinism must be patched into the interpreter, and the API
+  grows as one unversioned namespace.
+- **A language runtime in the engine** (Lua or JavaScript shipped with
+  VERA20k for modules to import). Modules would be smaller, but the engine
+  would own a language runtime forever and have to pin one build per API
+  version. Rejected: languages stay in the authors' tools.
+- **Native plugins.** Not portable to the browser build, not sandboxed.
+- **Only more INI keys.** Keeps working for simple cases and stays the first
+  choice where it is enough, but cannot express general logic.
+
+## Prior art
+
+- **Recoil (Spring).** Synced and unsynced code are separate; unsynced code
+  reaches the simulation only through network messages; per-object values
+  carry visibility levels; costly callbacks fire only for objects a script
+  watches. Lessons taken: no raw graphics API, versioned packages instead of one
+  global namespace, opt-in callbacks.
+- **Red Alert 3 (SAGE).** Data files bind object events to script functions,
+  with inheritance, and handlers receive the object. Taken: binding in data,
+  not in code.
+- **Phobos.** `Trajectory=` types for projectiles; AttachEffect for per-object
+  modifiers.
+
+## Unresolved questions
+
+1. **Browser build.** Can the browser build run modules with results identical
+   to the native build, and with which engine? Wasmtime may not run inside a
+   browser.
+2. **ABI.** Core-module ABI or Component Model?
+3. **TypeScript compiler.** Which compiler the TypeScript SDK uses: a
+   compiler for a TypeScript subset to Wasm (such as AssemblyScript), or a
+   JavaScript engine compiled into each module. The engine is the same either
+   way; the choice decides module size, speed and how much ordinary TypeScript
+   works.
+4. **Metering.** Which instrumentation, and what does it cost at 20,000 units?
+5. **INI format.** Named sections as shown, the original comma-separated
+   trigger encoding so FinalAlert2 can edit bindings, or both? What prefix do
+   the keys use?
+6. **Event and action numbers.** Which range is free of Ares and Phobos?
+7. **FinalAlert2.** Does it keep unknown sections such as `[VeraWasmRulesPack]`
+   when it saves a map?
+8. **Limits.** Embedded size, memory and default operation budgets for mods and
+   maps.
+9. **Frame phase.** Where in the simulation frame the module phase sits, and
+   where the module projectile arm sits relative to collision and detonation.
+10. **Save size.** Module memory in snapshots: compression and the memory cap.
+11. **First overrides.** Which two or three overrides ship in version 1.
+12. **Allowlist.** Which keys can change per type during a match in version 1.
+
+## Changelog
+
+- **0.0.1** (2026-11-16): first draft.
