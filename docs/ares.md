@@ -5,11 +5,12 @@ Ares DLL and is not general mod support.
 
 Ares switches on from a game's data, in every build: a game whose rules or map hold an Ares
 key plays with Ares, and any other game plays as the original (`src/rules/ares_switch.rs`).
-No option or client setting turns it on.
+The player's [Ares setting](#the-ares-setting) can turn it on or off for every game instead.
 
 The official downloads do not hold all of Ares yet. Its code is moving out of the `ares`
 build feature area by area. With **No mod** selected, `ares.mix` in the installation is
-ignored, so an Ares installation can play the original game without moving files.
+ignored (unless the [Ares setting](#the-ares-setting) is On), so an Ares installation can
+play the original game without moving files.
 A selected mod can use its own `ares.mix` or the installation's copy. Every build
 mounts it for that mod and reads the game the Ares way: its INIs load with Ares' syntax (`+=`
 keys, `[Child]:[Base]` sections, a later key winning) and `[#include]`, its Rules are read
@@ -28,6 +29,26 @@ all the Ares support VERA20K has, build with the feature:
 ```sh
 cargo run --release --bin vera20k --features ares
 ```
+
+## The Ares setting
+
+**Options → Game Options → Ares** (`[VERA] Ares=` in VERA.INI) chooses how a start
+treats Ares. Like the mod, it is read at start and holds until the next one:
+
+| Setting | What it does |
+| --- | --- |
+| **Auto** (default) | As above: the game's data decides. A selected mod that ships `ares.mix` makes an Ares game; Ares keys in its rules, mode or map turn Ares on. |
+| **On** | Every game is an Ares game, as if its mod shipped `ares.mix`: its INIs load with Ares' syntax and `[#include]`, its Rules are read the Ares way, and Ares plays, the original game too. The installation's `ares.mix` mounts even with **No mod**, so a map alone can use all of this. |
+| **Off** | No game is an Ares game: `ares.mix` stays unmounted, even a mod's own, and no Ares key turns Ares on. |
+
+With On, the original game plays unlike gamemd wherever Ares itself does, such as the
+[gameplay bugfixes](ares-bugfixes.md). A download still misses what is behind the
+feature, whatever the setting, and a build with the `ares` feature reads every game the
+Ares way even when it is Off. A `-SPAWN` launch file's `[Settings] Ares=Auto|On|Off`
+replaces the setting for that launch, and `vera20k --probe --ares <setting>` reports
+the digest such a launch is checked against. Players whose settings differ cannot start
+a network match together ([Networking](Networking.md#room-rules)); a save keeps the
+answer it was started with.
 
 Ares builds identify themselves in the window title and startup log. Saves retain the build
 capability and cannot load in another capability combination, even with identical retail INIs.

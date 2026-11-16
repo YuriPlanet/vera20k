@@ -40,6 +40,10 @@ pub(crate) struct SpawnRequest {
     /// *(VERA)* Optional `[Settings] Expected*` values a launcher read from
     /// `vera20k --probe`; the launch is rejected at start when they differ.
     pub(crate) expected: SpawnExpectations,
+    /// *(VERA)* Optional `[Settings] Ares=Auto|On|Off`: the Ares setting this
+    /// launch plays instead of VERA.INI's (`util::ares_launch::AresSetting`).
+    /// An unknown value reads as Auto.
+    pub(crate) ares_setting: Option<crate::util::ares_launch::AresSetting>,
     /// The launch file, read again once the mode roster is loaded
     /// ([`SpawnRequest::admit_loaded_modes`]).
     text: String,
@@ -468,11 +472,21 @@ impl SpawnRequest {
                 },
             )?))
         };
+        let ares_setting = settings.is_present("Ares").then(|| {
+            let text = settings.read_string("Ares", "", 32);
+            crate::util::ares_launch::AresSetting::parse(&text).unwrap_or_else(|| {
+                log::warn!(
+                    "[Settings] Ares={text:?} is not Auto, On or Off; this launch plays Auto"
+                );
+                Default::default()
+            })
+        });
         Ok(Self {
             game,
             game_speed,
             seed,
             expected,
+            ares_setting,
             text: text.to_owned(),
         })
     }

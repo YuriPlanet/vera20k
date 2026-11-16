@@ -9,7 +9,10 @@
 //! reads in that section, or when the selected mod mounts its own or the
 //! installation's `ares.mix` (Ares mounts it from `Load_Bootstrap_AresMIX`, hook
 //! `0x0053029E`). Retail data holds neither, so a retail game plays as
-//! gamemd. Every build lets the switch turn on, the release build too. Until
+//! gamemd. The player's Ares setting (`util::ares_launch::AresSetting`) can
+//! replace that answer for a whole launch: On makes every game an Ares game,
+//! as a mounted `ares.mix` does, and Off keeps every key from turning Ares on
+//! ([`launch_keys_off`]). Every build lets the switch turn on, the release build too. Until
 //! the last Ares code leaves the `ares` build feature, a build without that
 //! feature plays such a game with the Ares code already on this switch only:
 //! what the feature still holds (listed below) is missing there.
@@ -42,8 +45,9 @@
 //! (its `+` keys, `[Child]:[Base]` sections, later-wins keys and
 //! `[#include]`); a game that ships `ares.mix` has its INIs loaded and its
 //! Rules processed and projected the Ares way ([`ares_way`]), any other game
-//! the stock way. With no mod selected, an installed `ares.mix` is ignored;
-//! a selected mod can mount its own or the installation's copy
+//! the stock way. With no mod selected, an installed `ares.mix` is ignored
+//! unless the player's Ares setting is On; a selected mod can mount its own
+//! or the installation's copy, and the setting Off mounts none
 //! (`AssetManager::ships_ares`). The few Ares readers whose state only Ares
 //! code uses run in both, so their keys still turn Ares on in
 //! a stock-way game; the rest run only the Ares way. The mode belongs to the
@@ -289,16 +293,32 @@ pub(crate) struct AresInputs {
     /// `(section, key)` pairs only an Ares reader of the passes found.
     keys: BTreeSet<(String, String)>,
     ships_ares: bool,
+    /// VERA: the player's Ares setting was Off (`util::ares_launch`), so no
+    /// key turns Ares on. Saved with the Rules, so a save plays as it was
+    /// started.
+    keys_off: bool,
+}
+
+/// Whether the launch's Ares setting is Off (`util::ares_launch`): then no
+/// Ares key turns Ares on. A test has no launch; its fixtures read as Auto.
+pub(crate) fn launch_keys_off() -> bool {
+    !cfg!(any(test, feature = "test-support"))
+        && crate::util::ares_launch::setting() == crate::util::ares_launch::AresSetting::Off
 }
 
 impl AresInputs {
-    pub(crate) fn from_passes(reads: &KeyReads, ships_ares: bool) -> Self {
+    pub(crate) fn from_passes(reads: &KeyReads, ships_ares: bool, keys_off: bool) -> Self {
         Self {
-            keys: reads
-                .ares_only()
-                .map(|(section, key)| (section.to_owned(), key.to_owned()))
-                .collect(),
+            keys: if keys_off {
+                BTreeSet::new()
+            } else {
+                reads
+                    .ares_only()
+                    .map(|(section, key)| (section.to_owned(), key.to_owned()))
+                    .collect()
+            },
             ships_ares,
+            keys_off: keys_off && !ships_ares,
         }
     }
 
@@ -308,8 +328,11 @@ impl AresInputs {
     /// modder can see why.
     pub(crate) fn decide(&self, projection: &KeyReads) -> bool {
         if self.ships_ares {
-            log::info!("Ares plays in this game: ares.mix is installed");
+            log::info!("Ares plays in this game: ares.mix is installed or the Ares setting is On");
             return true;
+        }
+        if self.keys_off {
+            return false;
         }
         let key = self
             .keys

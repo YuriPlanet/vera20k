@@ -59,6 +59,7 @@ pub(crate) fn launcher_values_from_profile(
         compact_super_timers: profile.compact_super_timers,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
+        ares: profile.ares,
         color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
@@ -110,6 +111,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_sidebar(&mut self, size: SidebarSize);
     /// The `[VERA] HealthBars=` list's pick; presentation only.
     fn store_health_bars(&mut self, mode: HealthBarMode);
+    /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
     /// the final frame pass on the very next frame.
     fn store_color_vision(&mut self, mode: ColorVisionMode);
@@ -179,6 +182,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
+        LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),

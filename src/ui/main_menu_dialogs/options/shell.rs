@@ -8,28 +8,28 @@
 //! one column at the places retail's first band uses.
 
 use super::{
-    AUTO_REPAIR_HELP, AUTO_REPAIR_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL,
-    COLOR_VISION_HELP, COLOR_VISION_LABEL, COMPACT_SUPER_TIMERS_HELP, COMPACT_SUPER_TIMERS_LABEL,
-    CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL,
-    CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP,
-    CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
-    DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
-    FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL, HAS_CHECK_FOR_UPDATES, HAS_MODS,
-    HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
-    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
-    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP,
-    LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
-    OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL,
-    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP,
-    SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, SUPERWEAPON_LIMIT_HELP,
-    SUPERWEAPON_LIMIT_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
-    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    ARES_HELP, ARES_LABEL, AUTO_REPAIR_HELP, AUTO_REPAIR_LABEL, CHECK_FOR_UPDATES_HELP,
+    CHECK_FOR_UPDATES_LABEL, COLOR_VISION_HELP, COLOR_VISION_LABEL, COMPACT_SUPER_TIMERS_HELP,
+    COMPACT_SUPER_TIMERS_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
+    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode,
+    DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
+    DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
+    HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
+    HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
+    HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
+    IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP, LANGUAGE_HELP, LANGUAGE_LABEL,
+    LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId,
+    LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL,
+    NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
+    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
+    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
+    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, SUPERWEAPON_LIMIT_HELP, SUPERWEAPON_LIMIT_LABEL,
+    Setting, SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
+    VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -897,6 +897,10 @@ impl OptionsDialogState {
         self.values.health_bars
     }
 
+    pub(crate) fn shell_selected_ares(&self) -> crate::util::ares_launch::AresSetting {
+        self.values.ares
+    }
+
     /// The Colour Vision face's text: the retained choice.
     pub(crate) fn shell_selected_color_vision(&self) -> ColorVisionMode {
         self.values.color_vision
@@ -996,6 +1000,13 @@ impl OptionsDialogState {
                 let selected = choices
                     .iter()
                     .position(|mode| *mode == self.values.color_vision);
+                (choices.len(), selected)
+            }
+            LauncherComboId::Ares => {
+                let choices = super::ares_choices();
+                let selected = choices
+                    .iter()
+                    .position(|setting| *setting == self.values.ares);
                 (choices.len(), selected)
             }
             LauncherComboId::Language => {
@@ -1200,6 +1211,7 @@ impl OptionsDialogState {
                     LauncherComboId::Display => DISPLAY_HELP,
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                     LauncherComboId::ColorVision => COLOR_VISION_HELP,
+                    LauncherComboId::Ares => ARES_HELP,
                     LauncherComboId::Language => LANGUAGE_HELP,
                 })
             })
@@ -1239,6 +1251,12 @@ impl OptionsDialogState {
                 LauncherComboId::HealthBars => {
                     match row.and_then(|row| HealthBarMode::choices().get(row).copied()) {
                         Some(mode) => self.select_health_bars(mode),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::Ares => {
+                    match row.and_then(|row| super::ares_choices().get(row).copied()) {
+                        Some(setting) => self.select_ares(setting),
                         None => self.open_combo = None,
                     }
                 }
@@ -1351,6 +1369,7 @@ fn list_caption(id: LauncherComboId) -> String {
         LauncherComboId::Display => DISPLAY_LABEL,
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
         LauncherComboId::ColorVision => COLOR_VISION_LABEL,
+        LauncherComboId::Ares => ARES_LABEL,
         LauncherComboId::Language => LANGUAGE_LABEL,
     })
 }

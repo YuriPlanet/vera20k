@@ -92,7 +92,8 @@ The game then reads the mod's files as if you had copied them on top of the game
 Nothing is copied, and the game folder isn't touched. A mod made to be copied into the
 game folder works the same from its own folder.
 
-With **No mod** selected, an `ares.mix` already in the game folder is ignored.
+With **No mod** selected, an `ares.mix` already in the game folder is ignored, unless
+the [Ares setting](ares.md#the-ares-setting) is On; set to Off, no `ares.mix` is used.
 A selected mod can use that copy or provide its own, which takes precedence.
 The optional `langrule.ini` rules override is also skipped with **No mod**,
 whether loose or inside an archive. Selected mods keep that layer, from the

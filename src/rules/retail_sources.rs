@@ -213,8 +213,11 @@ pub struct RetailRulesSources {
     langrule_selection_failure: Option<String>,
     pub artmd: SelectedIni,
     personal_rules: PersonalRules,
-    /// Startup mounted `ares.mix` (`AssetManager::ships_ares`).
+    /// The game is an Ares game (`AssetManager::ships_ares`): it mounted
+    /// `ares.mix`, or the player's Ares setting is On.
     ships_ares: bool,
+    /// The player's Ares setting is Off: no Ares key turns Ares on.
+    ares_keys_off: bool,
 }
 
 impl RetailRulesSources {
@@ -241,6 +244,7 @@ impl RetailRulesSources {
             artmd,
             personal_rules: PersonalRules::default(),
             ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
+            ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
         })
     }
 
@@ -276,6 +280,7 @@ impl RetailRulesSources {
             ],
             self.personal_rules,
             self.ships_ares,
+            self.ares_keys_off,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)
