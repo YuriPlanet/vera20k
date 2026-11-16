@@ -52,6 +52,11 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   `BuildingClass_AI` 后按 `frame % delay == 0` 在建筑 `GetRenderCoords` 发出
   `FlyingStrings` 金钱标签（`Ext/Building/Body.cpp:12-36`）。类型级
   `DisplayIncome`/`.Delay` 现已读取（0 强制为 1）。
+- `ExtendedPlayerRepair`：`HouseState` 增加 `PlayerAutoRepair`；侧边栏修理
+  按钮在开关打开且当前房为人类控制时改发 `TogglePlayerAutoRepair`
+  （`Ext/Event/Body.cpp:116-128`、`Ext/House/Hooks.cpp:776-801`），
+  `update_repair_and_power` 的玩家分支按该房标志为全部建筑启动/停止修理
+  （`Ext/House/Hooks.cpp:803-825`）。
 - `JumpjetClimbPredictHeight` / `JumpjetClimbWithoutCutOut`：
   `sim/movement/jumpjet_flight.rs` 的参考高度改为
   `JumpjetLocomotionPredictHeight` 五格预测（前沿、二分之一侧格、`Skip` 置位），
@@ -72,7 +77,7 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   起点黑点（`Misc/PhobosToolTip.cpp`、`Misc/Hooks.UI.cpp:29-37`）。细节与残渣：
   `docs/phobos-tooltips-ui.md`。
 
-仍未实现的 10 键及阻塞原因见 §1.7。
+仍未实现的 4 键及阻塞原因见 §1.7。
 
 ### 1.1 ToolTips / uimd.ini（7）——已完成（2026-11-16）
 
@@ -138,11 +143,10 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 4 项（5 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 3 项（4 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
-| `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 | `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
@@ -190,6 +194,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `BuildingClass` 奴隶矿车累积、对其 `DeploysInto` 类型立即打印；VERA 的奴隶
   收入统一经 `pay_refinery_owner` 累到矿厂。触发：TS 风格奴隶矿车；频率：仅
   该类单位；风险：标签锚点位置不同（零售无此单位）。
+- **ExtendedPlayerRepair 的多人数值同步**：Phobos 用自有 `EventClass` 房间事件
+  翻转 `PlayerAutoRepair`；VERA 目前把它作为本地 `Command` 队列项，单机/战役
+  正确，联机时对端看不到该房标志变化。触发：联机中玩家点修理按钮；频率：每次
+  切换；风险：双方建筑自动修理状态不一致。下一步：给它一个 VERA 同步
+  opcode 并让回放/校验包含该房标志（标志本身已持久化）。
 - **Jumpjet 预测的三角/开方**：Phobos `JumpjetLocomotionPredictHeight` 用
   `Math::cos/sin`（MSVC CRT，binary64）与 `Foot::DistanceFrom`；VERA 用 Rust
   `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上

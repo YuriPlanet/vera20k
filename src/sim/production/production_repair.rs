@@ -413,6 +413,39 @@ pub(crate) fn update_repair_and_power(
         return;
     };
     let owner = entity.owner();
+    // Phobos `BuildingClass_UpdateRepairSell_PlayerAutoRepair`
+    // (`Ext/House/Hooks.cpp:803-825`): for a human-owned building while
+    // `[General] ExtendedPlayerRepair=` is on, the house's PlayerAutoRepair
+    // flag alone admits the auto-repair start (0x450659); with it off every
+    // still-repairing building stops (0x450813).
+    #[cfg(feature = "phobos")]
+    let extended_repair_house = rules.phobos_globals.extended_player_repair
+        && sim
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+    #[cfg(feature = "phobos")]
+    if extended_repair_house {
+        let repairing = sim
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.player_auto_repair());
+        // The hook replaces only the auto-repair admission; the visit still
+        // runs on a building that `Can_Repair` admits and is not busy
+        // (`Ext/House/Hooks.cpp:812-824`).
+        let eligible = !entity.constructing_or_selling() && can_repair_building(sim, rules, id);
+        if repairing {
+            if eligible {
+                auto_repair_start(sim, rules, id);
+            }
+        } else if let Some(entity) = sim.substrate.entities.get_mut(id)
+            && entity.repairing.on
+        {
+            entity.repairing.on = false;
+        }
+        repair_step(sim, rules, id);
+        return;
+    }
     let admitted = sim
         .houses
         .get(&owner)

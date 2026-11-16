@@ -1472,6 +1472,12 @@ pub enum Command {
     SellBuilding { entity_id: u64 },
     /// Toggle repair mode on a building (spend credits to heal over time).
     ToggleRepair { entity_id: u64 },
+    /// Phobos `ExtendedPlayerRepair`: the sidebar repair button toggles the
+    /// issuing house's house-wide auto repair instead of entering the cursor
+    /// repair mode (`Ext/Event/Body.cpp:116-128`, `Ext/House/Hooks.cpp:776-824`).
+    /// The building visit then starts or stops each building of that human
+    /// house.
+    TogglePlayerAutoRepair { enabled: bool },
     /// VERA-only opcode 0x31, retained so older recordings still decode.
     /// No player input sends it. Its handler resolves the bunker's occupant
     /// and issues the tank's Unload mission (`0x0073D66D`) through Event9's
@@ -1677,6 +1683,7 @@ impl Command {
             | Self::CancelProductionByType { .. }
             | Self::SellBuilding { .. }
             | Self::ToggleRepair { .. }
+            | Self::TogglePlayerAutoRepair { .. }
             | Self::EjectBunker { .. }
             | Self::UnloadPassengers { .. }
             | Self::CaptureBuilding { .. }

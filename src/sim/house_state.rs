@@ -997,6 +997,14 @@ pub struct HouseState {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     combat_alert_timer: CdTimer,
+    /// Phobos HouseExt `PlayerAutoRepair` (`Ext/House/Body.h`): with
+    /// `[General] ExtendedPlayerRepair=`, the sidebar repair button toggles
+    /// this instead of entering the cursor repair mode, and every building of
+    /// the house auto-repairs while it is set (`Ext/Event/Body.cpp:116-128`,
+    /// `Ext/House/Hooks.cpp:776-824`). Persisted and hashed.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    player_auto_repair: bool,
     /// House+57E4..+15FF3: native retained 130x130 padded spatial threat map.
     /// Constructor4F61EF/4F6312 clears it. Save504093 and Load5031C9 retain
     /// it through the raw House stream; rebuilding from current objects loses
@@ -1237,6 +1245,21 @@ impl HouseState {
     /// `0x00450759`: the latch timer for a House no human controls.
     pub(crate) fn arm_repair_latch(&mut self, now: i32, duration: i32) {
         self.repair_latch_timer.start(now, duration);
+    }
+
+    /// Phobos `HouseExt::PlayerAutoRepair`, toggled by the sidebar repair
+    /// button while `ExtendedPlayerRepair` is on.
+    #[cfg(feature = "phobos")]
+    pub fn player_auto_repair(&self) -> bool {
+        self.player_auto_repair
+    }
+
+    /// Switch the player's house-wide auto repair; the building visit stops
+    /// each still-repairing building when it turns off
+    /// (`Ext/House/Hooks.cpp:819-824`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_player_auto_repair(&mut self, on: bool) {
+        self.player_auto_repair = on;
     }
 
     /// `HouseClass::Update @ 0x004F8FBE..0x004F9032`: the Strategy timer
@@ -3150,6 +3173,8 @@ impl HouseState {
             repair_latch_timer: CdTimer::started(0, 0),
             #[cfg(feature = "phobos")]
             combat_alert_timer: CdTimer::default(),
+            #[cfg(feature = "phobos")]
+            player_auto_repair: false,
             #[cfg(feature = "phobos")]
             suspended_emp_pulse_sws: Default::default(),
             spatial_threat: Default::default(),
