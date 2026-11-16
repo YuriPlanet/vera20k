@@ -2475,10 +2475,13 @@ impl MatchSession {
             };
             let session_mode = return_context.session_mode();
             let room = *room;
-            let changed = launch.mode != mode;
-            if changed && !mode.class.policy().observers_allowed {
+            // Cooperative's +0x20 (`0x005C1A10`) clears the observer
+            // reservation whenever the mode becomes current: LAN and WOL setup
+            // (`0x005ED6FE`, `0x00791293`) call it without comparing with the
+            // previous mode, so a restored setup's first map pick clears it too.
+            if !mode.class.policy().observers_allowed {
                 *observer_row = None;
-            } //5C1A10
+            }
             let new_capacity = row_capacity(session_mode, room, &mode, capacity);
             let host_extra = i32::from(
                 *observer_row == launch.local_player().raw_slot_index
@@ -5374,6 +5377,26 @@ mod tests {
             .select_network_map(coop, "COOP.MAP".into(), 2)
             .unwrap();
         assert!(!session.network_team_room());
+        assert_eq!(session.network_observer_row(), None);
+    }
+
+    /// Cooperative's +0x20 (`0x005C1A10`) clears the observer reservation
+    /// whenever the mode becomes current, so a host whose restored setup is
+    /// already Cooperative keeps no observer row from its first map pick.
+    #[test]
+    fn a_restored_cooperative_setup_keeps_no_observer_row() {
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, true, Some(7), true)
+            .unwrap();
+        session
+            .select_network_map(mode, "COOP.MAP".into(), 2)
+            .unwrap();
         assert_eq!(session.network_observer_row(), None);
     }
 }
