@@ -65,8 +65,7 @@
 //! ([`reading_mode`]).
 //!
 //! Still decided by the build feature, not this switch, until each moves to
-//! it (AGENTS.md): every remaining `cfg(feature = "ares")` site (the
-//! client's messages, input and drawing, the skirmish
+//! it (AGENTS.md): every remaining `cfg(feature = "ares")` site (the skirmish
 //! shell and the random map generator) and the spawn file's Country and Side
 //! limits. A
 //! game turned on by its keys alone, without `ares.mix`, still loads its INIs

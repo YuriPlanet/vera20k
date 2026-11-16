@@ -1754,7 +1754,6 @@ enum FrameResume {
 /// House+56F9, the House colour an Ares `Beam.IsHouseColor` birth keeps
 /// (TechnoClass_FireRadBeam1, Ares.dll 10056010), through the shared
 /// colour-map lookup the other House+56F9 readers use.
-#[cfg(feature = "ares")]
 fn house_rgb(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     colors: &crate::map::houses::HouseColorMap,
@@ -2142,9 +2141,8 @@ fn advance_one_simulation_frame(
                 .as_mut()
                 .and_then(|radar| radar.set_has_radar(available))
         };
-        #[cfg(feature = "ares")]
+        // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
         let flying_credits = &state.match_state.match_presentation.flying_credits;
-        #[cfg(feature = "ares")]
         let queue_bounty = |sim: &crate::sim::world::Simulation,
                             rules: &crate::rules::ruleset::RuleSet,
                             text: crate::sim::bounty::BountyText| {
@@ -2181,7 +2179,6 @@ fn advance_one_simulation_frame(
             .with_network_commands(&boundary)
             .with_production_strip(&production_visits, &clear_production_request)
             .with_before_logic(&before_logic);
-        #[cfg(feature = "ares")]
         let effects = effects.with_bounty_text(&queue_bounty);
         // Recorded completion owns outcome timing during playback;
         // a local audio wait cannot add a frame or change its hash.
@@ -2356,7 +2353,7 @@ fn run_deferred_tick(
     let record_clear = |type_id| {
         deferred.record(super::deferred_effects::DeferredEffect::ProductionRequestCleared(type_id));
     };
-    #[cfg(feature = "ares")]
+    // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
     let record_bounty = |_: &crate::sim::world::Simulation,
                          _: &crate::rules::ruleset::RuleSet,
                          text: crate::sim::bounty::BountyText| {
@@ -2369,7 +2366,6 @@ fn run_deferred_tick(
         .with_local_planning(deferred)
         .with_production_strip(production_visits, &record_clear)
         .with_outcome_wait(deferred);
-    #[cfg(feature = "ares")]
     let effects = effects.with_bounty_text(&record_bounty);
     let effects = if deferred.hands_off_queue() {
         effects.with_network_commands(deferred)
@@ -2638,7 +2634,7 @@ fn finish_simulation_frame(
                     local_owner_name.as_deref(),
                 ));
             }
-            #[cfg(feature = "ares")]
+            // The sim fills these labels only when Ares plays, so this runs in every game.
             hud_messages.extend(super::sound_dispatch::ares_tech_capture_messages(
                 &frame_sound_events,
                 sim,
@@ -2902,7 +2898,7 @@ fn finish_simulation_frame(
                     presentation
                         .radiation_beams
                         .create(birth, |owner, kind| match kind {
-                            #[cfg(feature = "ares")]
+                            // Only a birth fired while Ares plays asks for House.
                             crate::sim::combat::radiation_beam::BeamHouseColor::House => {
                                 house_rgb(runtime, colors, owner)
                             }

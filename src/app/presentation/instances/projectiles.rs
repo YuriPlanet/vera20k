@@ -76,6 +76,7 @@ pub(crate) fn projectile_visitor<'a>(
     let sim = &rt.simulation;
     let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
+    let ares = rules.ares_form();
     let admission = TacticalAdmission::of_state(state);
     let axis = super::helpers::depth_axis(state);
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
@@ -148,6 +149,7 @@ pub(crate) fn projectile_visitor<'a>(
         if let Some(object) = projectile_draw_instance_for_frame(
             projectile,
             sim.session().binary_frame(),
+            ares,
             kind,
             type_id,
             scheme,
@@ -209,6 +211,8 @@ pub(crate) fn projectile_draw_instance(
     projectile_draw_instance_for_frame(
         projectile,
         0,
+        // The stock frame getter, which the tests' native draws use.
+        false,
         kind,
         type_id,
         scheme,
@@ -233,9 +237,12 @@ fn projectile_in_view(projectile: &Projectile, admission: TacticalAdmission) -> 
     projection_admitted([x, y], admission)
 }
 
+/// `ares`: the Rules were read the Ares way (`RuleSet::ares_form`), which
+/// picks Ares' SHP frame getter.
 pub(crate) fn projectile_draw_instance_for_frame(
     projectile: &Projectile,
     logic_frame: u32,
+    ares: bool,
     kind: &ProjectileType,
     type_id: &str,
     scheme: HouseColorIndex,
@@ -324,7 +331,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
         };
         return Some(PlannedObjectInstance::object(parent, vec![piece]));
     }
-    let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame);
+    let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame, ares);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
     let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y)?;
     let geometry = geometry(

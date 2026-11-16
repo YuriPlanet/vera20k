@@ -152,7 +152,6 @@ struct Answers {
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
     native_cloak_offset_words: i32,
-    #[cfg(feature = "ares")]
     driver_killed: bool,
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
@@ -183,7 +182,6 @@ impl Answers {
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
             native_cloak_offset_words: entity.native_cloak_offset_words(),
-            #[cfg(feature = "ares")]
             driver_killed: entity.driver_killed(),
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
@@ -329,7 +327,6 @@ pub(crate) struct Place {
     /// `Simulation::airstrike_tint_active`.
     pub(crate) airstrike_tint_active: bool,
     /// `Simulation::ares_is_operated`.
-    #[cfg(feature = "ares")]
     pub(crate) ares_operated: bool,
     /// `Simulation::airstrike_laser_target_color`.
     #[cfg(feature = "phobos")]
@@ -494,8 +491,9 @@ impl Place {
             // Only a Structure's is ever active.
             airstrike_tint_active: entity.category() == EntityCategory::Structure
                 && sim.airstrike_tint_active(entity.stable_id()),
-            #[cfg(feature = "ares")]
-            ares_operated: sim.ares_is_operated(entity.stable_id(), at.rules()),
+            // Read only by the DeactivateDim lighting, which runs when Ares plays.
+            ares_operated: at.rules().ares()
+                && sim.ares_is_operated(entity.stable_id(), at.rules()),
             #[cfg(feature = "phobos")]
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
@@ -790,7 +788,6 @@ impl ObjectRecord {
         self.answers.native_cloak_offset_words
     }
 
-    #[cfg(feature = "ares")]
     pub(crate) fn driver_killed(&self) -> bool {
         self.answers.driver_killed
     }

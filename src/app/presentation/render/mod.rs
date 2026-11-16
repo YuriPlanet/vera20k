@@ -421,8 +421,8 @@ pub(crate) fn render_game(
         crate::app::radar_movie::end_radar_sound_loop(state);
     }
     // Ares DisplayCredits ages its labels in the same composite, unless the
-    // chrono screen's 4F4480 interception suppresses it.
-    #[cfg(feature = "ares")]
+    // chrono screen's 4F4480 interception suppresses it. Empty unless the
+    // sim emitted Ares bounty text, so this runs in every game.
     if !chrono_holds {
         let credits = state
             .match_state
@@ -683,7 +683,7 @@ pub(crate) fn render_game(
         || !ui.tactical_line_calls.is_empty()
         || !ui.target_line.is_empty()
         || !radials.draws.is_empty();
-    #[cfg(feature = "ares")]
+    // Empty unless the sim emitted Ares bounty text, so this runs in every game.
     let animated = animated || !presentation.flying_credits.get_mut().is_empty();
     presentation.tactical_composite.record_contents(animated);
     let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
@@ -1006,8 +1006,10 @@ fn upload_to_gpu(
     let (beacon_label_fill, beacon_label_outline, beacon_label_text) =
         crate::app::presentation::beacon_labels::instances(state);
 
-    #[cfg(feature = "ares")]
-    let bounty_text = {
+    // Ares DisplayCredits' labels draw when Ares plays, the answer under
+    // which the sim pays a bounty (`sim::combat::record_kill`).
+    let ares = state.rules().is_some_and(|rules| rules.ares());
+    let bounty_text = if ares {
         let presentation = &state.match_state.match_presentation;
         if presentation.chrono_screen.overrides_tactical_draw() {
             Vec::new()
@@ -1023,6 +1025,8 @@ fn upload_to_gpu(
                 [left, top, width, height],
             )
         }
+    } else {
+        Vec::new()
     };
 
     // The sidebar's streams scroll with the UI camera, and its text with it
@@ -1077,8 +1081,9 @@ fn upload_to_gpu(
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
     pool.upload("build_text_text", &build_text_text);
-    #[cfg(feature = "ares")]
-    pool.upload("bounty_text", &bounty_text);
+    if ares {
+        pool.upload("bounty_text", &bounty_text);
+    }
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {

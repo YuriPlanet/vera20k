@@ -80,6 +80,7 @@ fn draw(value: &Value) -> WaveDraw {
             other => panic!("unknown native clip branch {other}"),
         },
         blend: crate::render::wave_geometry::WaveBlend::Native,
+        ares: false,
     }
 }
 
@@ -218,6 +219,7 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
             direction: integer(&input["direction"]).try_into().unwrap(),
             clip_path: WaveClipPath::Fast,
             blend: crate::render::wave_geometry::WaveBlend::Native,
+            ares: false,
         };
         let pixel = wave
             .pixel_operation(

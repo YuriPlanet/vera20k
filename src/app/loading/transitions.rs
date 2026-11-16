@@ -153,8 +153,7 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.combat_lights.clear();
     state.renderer.performance_overlay.clear_simulation_rate();
     state.match_state.match_presentation.lasers.clear_on_load();
-    // Still on the feature: moves with the flying credits (`presentation::flying_credits`).
-    #[cfg(feature = "ares")]
+    // Empty unless a bounty or ProduceCashDisplay queued labels, which only Ares does.
     state
         .match_state
         .match_presentation
@@ -408,15 +407,15 @@ pub(crate) fn install_world_presentation(
         );
     }
     // Ares `IvanBomb.Image` SHPs, retained once per match like the
-    // WeaponTypeExt's SHPStruct pointers.
-    // Still on the feature: moves with the selection overlay's Ares art.
-    #[cfg(feature = "ares")]
+    // WeaponTypeExt's SHPStruct pointers, when the Rules were read the Ares
+    // way: the bomb clock draws them then (`techno_extras_for_parent`).
     if let Some(assets) = state.process_assets.manager()
         && let Some(rules) = state
             .match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.resources.rules)
+        && rules.ares_form()
         && let Some(overlay) = state
             .match_state
             .match_presentation

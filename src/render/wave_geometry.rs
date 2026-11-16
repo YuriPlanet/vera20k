@@ -52,13 +52,15 @@ pub(crate) struct WaveDraw {
     pub direction: u8,
     pub clip_path: WaveClipPath,
     pub blend: WaveBlend,
+    /// Ares plays: its WaveClass_Draw_Green/Draw_Magnetron (Ares.dll
+    /// 100570B0) clamp the distance table index.
+    pub ares: bool,
 }
 
 /// Ares 3.0 `WaveColorData` (GetWaveColorData 10055270, computed once per
 /// DrawIt by WaveClass_Draw_Colors 10057080 at hook 0x75FA29): the R, G, B
 /// Intensity scales and added Color of the wave's weapon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(feature = "ares"), allow(dead_code))]
 pub(crate) struct WaveColor {
     pub intensity: [i32; 3],
     pub color: [i32; 3],
@@ -88,10 +90,9 @@ impl WaveColor {
     }
 }
 
-/// How the per-pixel functions colour a displaced word. Default builds
-/// construct only [`WaveBlend::Native`].
+/// How the per-pixel functions colour a displaced word. A game without
+/// Ares constructs only [`WaveBlend::Native`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(feature = "ares"), allow(dead_code))]
 pub(crate) enum WaveBlend {
     /// The stock Sonic75EEB2/MagBeam760247 blends.
     Native,
@@ -495,8 +496,11 @@ impl WaveDraw {
             .wrapping_add(x.wrapping_sub(self.source_point[0]).wrapping_abs());
         // Ares WaveClass_Draw_Green/Draw_Magnetron (Ares.dll 100570B0, hooks
         // 0x75EE2E/0x7601C7) clamp the table index above 89999.
-        #[cfg(feature = "ares")]
-        let distance_index = distance_index.min(89_999);
+        let distance_index = if self.ares {
+            distance_index.min(89_999)
+        } else {
+            distance_index
+        };
         let distance = usize::try_from(distance_index)
             .ok()
             .and_then(|i| tables.distance.get(i))
