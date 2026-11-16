@@ -133,7 +133,7 @@ impl App {
 
     /// Apply committed input-method text to Choose Map through the modal's
     /// search owner, matching the ordinary key path.
-    pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
+    pub(crate) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
         if Self::choose_map_search_ime_rect(state).is_none() {
             return false;
         }
@@ -157,6 +157,44 @@ impl App {
         true
     }
 
+    /// Android: the chooser's search text and caret, for seeding the input
+    /// method; the caret sits at the end of the query.
+    pub(crate) fn choose_map_search_ime_text(state: &AppState) -> Option<(String, usize)> {
+        let modal = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_ref()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
+        Some((modal.search.clone(), modal.search.chars().count()))
+    }
+
+    /// Android: one Backspace in the chooser's search line, through the same
+    /// owner the desktop key takes.
+    pub(crate) fn choose_map_search_backspace(state: &mut AppState) -> bool {
+        let layout = Self::skirmish_choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let Some(modal) = frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .as_mut()
+            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
+        else {
+            return false;
+        };
+        let mut text = modal.search.clone();
+        if text.pop().is_none() {
+            return false;
+        }
+        modal.set_search(
+            text,
+            &frontend.skirmish_modes,
+            frontend.scenario_catalog.records(),
+            &layout,
+        );
+        state.platform.window.request_redraw();
+        true
+    }
     fn validation_modal_dialog_id() -> crate::ui::shell::descriptor::DialogId {
         crate::ui::shell::descriptor::DialogId(0x00CE)
     }
@@ -950,6 +988,11 @@ impl App {
             return true;
         }
         let (x, y) = state.match_state.input.cursor_px();
+        // A tap on the search line asks for the soft keyboard again; the
+        // player may have collapsed it while the chooser stayed open.
+        if layout.map_search.contains(x, y) {
+            crate::util::android_ime::request_show();
+        }
         let frontend = &mut state.frontend;
         let modal = frontend
             .skirmish_shell_state
@@ -1627,6 +1670,52 @@ impl App {
         true
     }
 
+    /// Android: the player-name box while it takes keys, for the input method.
+    pub(crate) fn ime_player_name_rect(
+        state: &AppState,
+    ) -> Option<crate::ui::shell::geom::RectPx> {
+        if !state.frontend.skirmish_shell_state.player_name_edit.focused {
+            return None;
+        }
+        // A modal on top owns the keys; the box is only hit-testable while the
+        // setup page itself is showing.
+        if !matches!(
+            state.frontend.skirmish_shell_state.top_dialog(),
+            Some(SkirmishShellDialog::Skirmish)
+        ) {
+            return None;
+        }
+        let layout = Self::skirmish_shell_layout(state);
+        Some(layout.scale.base_rect(layout.player_name))
+    }
+
+    /// Android: the player name and its caret, for seeding the input method.
+    pub(crate) fn ime_player_name_text(state: &AppState) -> Option<(String, usize)> {
+        let edit = &state.frontend.skirmish_shell_state.player_name_edit;
+        edit.focused.then(|| (edit.text.clone(), edit.caret))
+    }
+
+    /// Android: one key or piece of committed text into the player-name edit,
+    /// through the same path the desktop keys take.
+    pub(crate) fn ime_key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
+        match code {
+            Some(code) => {
+                Self::handle_skirmish_shell_key_input(state, code, text);
+            }
+            None => {
+                if let Some(text) = text
+                    && crate::ui::skirmish_shell::insert_player_name_text(
+                        &mut state.frontend.skirmish_shell_state,
+                        text,
+                    )
+                {
+                    Self::sync_player_name_edit_scroll(state);
+                    state.platform.window.request_redraw();
+                }
+            }
+        }
+    }
+
     fn close_validation_modal_from_controller(state: &mut AppState) {
         crate::ui::skirmish_shell::dismiss_validation_modal(
             &mut state.frontend.skirmish_shell_state,
@@ -1741,6 +1830,9 @@ impl App {
             crate::ui::skirmish_shell::focus_player_name_edit(
                 &mut state.frontend.skirmish_shell_state,
             );
+            // A tap asks for the soft keyboard on Android, whether this is the
+            // first focus or the player collapsed the keyboard themselves.
+            crate::util::android_ime::request_show();
             Self::sync_player_name_edit_scroll(state);
             state.platform.window.request_redraw();
             return;
