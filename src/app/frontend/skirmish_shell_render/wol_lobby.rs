@@ -369,7 +369,8 @@ pub(crate) fn paint_wol_lobby_children(
         }
         // A -1 ping is the text "???"; any other is an integer cell. The
         // modern list centres it under its Ping header instead of starting
-        // it at the retail column, left of the header's caption.
+        // it at the retail column, left of the header's caption. A match to
+        // watch has no ping.
         let ping = if row.ping == -1 {
             "???".to_owned()
         } else {
@@ -382,7 +383,9 @@ pub(crate) fn paint_wol_lobby_children(
             ),
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
-        paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+        if !row.watch {
+            paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+        }
         if modern {
             if row.keyed
                 && let Some(art) = art

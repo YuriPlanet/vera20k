@@ -52,7 +52,7 @@ pub(crate) use live_service::{
 };
 pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
-    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted,
+    NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolMatch,
     WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
     service_event,
 };

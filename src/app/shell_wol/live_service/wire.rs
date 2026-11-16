@@ -254,6 +254,36 @@ pub(super) struct ChannelList {
     pub channels: Vec<Channel>,
 }
 
+/// `GET /v1/matches` (docs/lobby-protocol.md "Watching"). The game list
+/// shows only these fields of each match.
+#[derive(Deserialize)]
+pub(super) struct MatchList {
+    pub matches: Vec<Match>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct Match {
+    pub match_id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub map: Option<String>,
+    pub watchers: u32,
+    pub max_watchers: u32,
+}
+
+impl From<Match> for crate::app::shell_wol::WolMatch {
+    fn from(value: Match) -> Self {
+        Self {
+            match_id: value.match_id,
+            name: value.name.unwrap_or_default(),
+            map: value.map.unwrap_or_default(),
+            watchers: value.watchers,
+            max_watchers: value.max_watchers,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub(super) struct Joined {
     pub channel: Channel,

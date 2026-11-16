@@ -362,6 +362,10 @@ pub(crate) struct WolGameRow {
     /// Cooperative mode's name for a co-op room. The app sets it; the
     /// native list has no such column.
     pub(crate) tag: Option<String>,
+    /// VERA: a running match the player can watch, listed after the rooms
+    /// by the modern list; `record` is then its index in the lobby's match
+    /// list, and it has no ping.
+    pub(crate) watch: bool,
 }
 
 /// `0x00781130`: whether the filter pass skips this record.
@@ -449,6 +453,7 @@ pub(crate) fn game_rows(
                     limit_icon: channel.limit_icon(),
                     ping: channel.ping,
                     tag: None,
+                    watch: false,
                 });
             }
         }

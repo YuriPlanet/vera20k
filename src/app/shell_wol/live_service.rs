@@ -1172,6 +1172,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     request,
                     WolServiceRequest::JoinChannel { .. }
                         | WolServiceRequest::CreateChannel { .. }
+                        | WolServiceRequest::Watch { .. }
                         | WolServiceRequest::Connect { .. }
                 )
             {
@@ -1655,6 +1656,14 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::ListChannels { kind, .. } => {
             let _ = service.requests.send(http::Request::Channels(kind));
         }
+        WolServiceRequest::ListMatches => {
+            let _ = service.requests.send(http::Request::Matches);
+        }
+        WolServiceRequest::Watch { match_id } => {
+            if super::lobby::bind_online_request(state, service.next_request) {
+                service.command("watch", json!({"match_id":match_id}));
+            }
+        }
         WolServiceRequest::JoinChannel { channel, key } => {
             if super::lobby::bind_online_request(state, service.next_request) {
                 service.command("join", json!({"channel":channel.name,"key":key}));
@@ -1731,6 +1740,7 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
                         request,
                         WolServiceRequest::JoinChannel { .. }
                             | WolServiceRequest::CreateChannel { .. }
+                            | WolServiceRequest::Watch { .. }
                     )
                 });
             }
@@ -2343,6 +2353,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 channels: list.channels.into_iter().map(Into::into).collect(),
             },
         ),
+        http::Response::Matches(matches) => service_event(
+            state,
+            WolServiceEvent::Matches(matches.into_iter().map(Into::into).collect()),
+        ),
         http::Response::Event(event) => {
             if apply_event(state, service, &event.kind, event.payload).is_err() {
                 log::warn!(
@@ -2374,6 +2388,11 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     }
                     super::lobby::online_request_failed(state, id, failure.wol_code());
                 }
+            }
+            // A watch joins no room, so nothing needs leaving; a place it
+            // took anyway frees itself once its grant runs out.
+            "watch" => {
+                super::lobby::online_request_failed(state, id, failure.wol_code());
             }
             "leave" => service.leave_failed(id, Instant::now()),
             "logout" => service.logout_failed(id, Instant::now()),
