@@ -345,7 +345,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         && if seated {
                             local.slot.team != team
                         } else {
-                            !host
+                            true
                         }
                 };
                 // With no seat free, a spectator's Join queues it, once.
@@ -366,7 +366,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     ),
                     // The one box of a room with Teams Off has no caption;
                     // a spectator's Join seats it there.
-                    SetupGroup::Players => (String::new(), (placed && !seated && !host).then(join)),
+                    SetupGroup::Players => (String::new(), (placed && !seated).then(join)),
                     // Only an older host seats players on no team.
                     SetupGroup::NoTeam => (fill("VERA:NoTeamGroup"), None),
                     SetupGroup::ClosedSeats => (fill("VERA:ClosedSeatsGroup"), None),
@@ -375,8 +375,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         if queued {
                             Some((crate::i18n::tr("VERA:LeaveQueue"), true))
                         } else {
-                            (seated && !host && watch_free)
-                                .then(|| (crate::i18n::tr("VERA:Watch"), true))
+                            (seated && watch_free).then(|| (crate::i18n::tr("VERA:Watch"), true))
                         },
                     ),
                 };
@@ -853,8 +852,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .find(|human| human.raw_slot_index == Some(row))?;
         ping_icon(protocol.ping(&human.name)?)
     });
-    // The host drags people and AI between the boxes of a room with teams;
-    // it never sends itself to watch.
+    // The host drags people, itself too, and AI between the boxes of a room
+    // with teams; only people go to watch.
     let mut box_of = None;
     let drag_rows = listing
         .listed
@@ -875,9 +874,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .iter()
                 .position(|human| human.raw_slot_index == Some(row));
             let may_watch = match person {
-                Some(index) if index == launch.local_player_index => {
-                    (group != SetupGroup::Spectators).then_some(false)?
-                }
                 Some(_) => true,
                 None => session.network_display_ai(row).map(|_| false)?,
             };

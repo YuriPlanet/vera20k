@@ -315,6 +315,14 @@ travels. A lobby from before this refuses to start such a game, and the host's g
 the match could not start. An older host keeps gamemd's rule, and a rollback keeps it
 again.
 
+A VERA room's Max players counts only who plays. While its host keeps spectators,
+anyone else comes in watching until the room's thirty rows are taken, players, AI and
+spectators together; the host's game advertises that many to the lobby, less its AI. The
+host may watch too, with the Spectators' Watch or by dragging its own row there, and
+plays again with a team's Join, as a guest would; someone else must play for the match to
+start. Nothing new travels. An older host counts spectators in Max players and always
+plays, and a rollback does again.
+
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
 plays or the Teams count changed. Current games neither offer it nor send it. In a room

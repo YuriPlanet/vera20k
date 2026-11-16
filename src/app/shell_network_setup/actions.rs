@@ -461,6 +461,13 @@ fn commit_row(
             .update_local_preferences(launch.local_player(), launch.mode.id);
     }
     if state.match_state.session.host() {
+        // The host's own Watch, or Join from the spectators.
+        if launch.local_player().is_observer() != observer {
+            let index = launch.local_player_index;
+            let change = super::service::place_player(state, index, slot, observer)?;
+            super::service::publish_choices(state, change);
+            return Ok(());
+        }
         queue(state, NetworkSetupRequest::PublishOptions);
         return Ok(());
     }

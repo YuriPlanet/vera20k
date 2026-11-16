@@ -1004,7 +1004,7 @@ pub(super) fn move_player(
 
 /// VERA's host sets a player's whole row: a guest's as the guest's own
 /// choices would (`accept_peer_choices`), checked as those are, its own as
-/// its own.
+/// its own, watching or playing again as a guest would.
 pub(super) fn place_player(
     state: &mut AppState,
     index: usize,
@@ -1029,10 +1029,12 @@ pub(super) fn place_player(
             .session
             .accept_lan_peer_choices(index, choices, observer);
     }
-    anyhow::ensure!(
-        observer == human.is_observer(),
-        "the host does not move itself between playing and watching"
-    );
+    if observer != human.is_observer() {
+        return state
+            .match_state
+            .session
+            .move_network_host(choices, observer);
+    }
     let row = human
         .raw_slot_index
         .ok_or_else(|| anyhow::anyhow!("moves name seated rows"))?;
