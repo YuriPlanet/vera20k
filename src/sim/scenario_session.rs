@@ -1849,6 +1849,9 @@ impl ScenarioSession {
         // observer_houses, like current_house, selects process-local presentation
         // and accepted outcome, and skips the observer's terminal score draw
         // (every peer holds the same node data, and the RNG state is hashed).
+        // VERA's network_ai_alone also asks it of every House for the shared
+        // MPlayer_Defeated and Computer_Paranoid decisions; every peer holds
+        // the same list, built from the room's roster.
         // It is saved and reference-validated, not shared CRC input.
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);

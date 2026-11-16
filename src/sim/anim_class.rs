@@ -986,6 +986,16 @@ pub struct AnimStore {
     local_deletes: Vec<AnimId>,
 }
 
+/// How a world makes the effect anims (muzzle flashes, impacts, trailers)
+/// that change nothing but their own picture: in native order, as a new world
+/// does, or as presentation anims ([`AnimConstructorInput::Presentation`])
+/// once [`Simulation::present_effect_anims`] has asked. The choice decides
+/// the unique ids later objects take, so a save carries it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct EffectAnims {
+    presentation: bool,
+}
+
 /// The first local anim id ([`AnimStore`]'s `local`). Shared ids count up
 /// from 1 ([`crate::sim::world::ObjectSubstrate::allocate_stable_id`]) and
 /// never reach it, and it sits below the sound-handle owner tags
@@ -1772,8 +1782,24 @@ impl Simulation {
         }
     }
 
+    /// Run the effect anims that change nothing but their picture as
+    /// presentation anims from now on ([`AnimConstructorInput::Presentation`]).
+    /// Simulations start without, in native order, so a comparison with
+    /// gamemd's unique ids, Logic order and anim rows holds; real matches,
+    /// replays of them and sim-bench turn it on.
+    pub fn present_effect_anims(&mut self) {
+        self.effect_anims.presentation = true;
+    }
+
+    /// Whether picture-only effect anims run as presentation anims
+    /// ([`Self::present_effect_anims`]).
+    pub(crate) fn effect_anims_presented(&self) -> bool {
+        self.effect_anims.presentation
+    }
+
     /// The constructor a muzzle flash, an impact or a trailer of type
-    /// `type_id` takes: a presentation anim when the type changes nothing but
+    /// `type_id` takes: a presentation anim when the match runs them
+    /// ([`Self::present_effect_anims`]) and the type changes nothing but
     /// its picture ([`crate::rules::art_data::ArtRegistry::anim_presentation_only`]),
     /// else an ordinary one. Only producers that keep no hold on the anim ask.
     pub(crate) fn effect_anim_constructor(
@@ -1781,9 +1807,10 @@ impl Simulation {
         rules: &RuleSet,
         type_id: InternedId,
     ) -> AnimConstructorInput {
-        if rules
-            .art()
-            .anim_presentation_only(self.interner.resolve(type_id))
+        if self.effect_anims_presented()
+            && rules
+                .art()
+                .anim_presentation_only(self.interner.resolve(type_id))
         {
             AnimConstructorInput::Presentation
         } else {
@@ -4867,7 +4894,8 @@ pub(crate) enum AnimConstructorInput {
     /// it; the presentation draws it at the end of its layer
     /// ([`Simulation::presentation_anims`]).
     ///
-    /// VERA-only sim-scale deviation: gamemd keeps every muzzle flash and
+    /// VERA-only sim-scale deviation, on in real matches
+    /// ([`Simulation::present_effect_anims`]): gamemd keeps every muzzle flash and
     /// impact anim in Display (Ground's sorted vector) and Logic and gives each
     /// a unique id. Leaving them out changes the unique ids and the Ground order
     /// later objects take, and the state hash and sync checksum with them; a
@@ -6500,9 +6528,18 @@ mod tests {
     #[test]
     fn only_an_unkept_picture_only_impact_is_a_presentation_anim() {
         let rules = runtime_rules("[PUFF]\nEnd=8\n", &[("PUFF", 8)]);
-        let mut sim = Simulation::new();
-        let type_id = sim.interner.intern("PUFF");
         let point = crate::sim::projectile::ProjectileCoord::new(1000, 1000, 0);
+        // A new world makes it in native order: in the Anim array.
+        let mut native = Simulation::new();
+        let type_id = native.interner.intern("PUFF");
+        let packet = crate::sim::combat::detonation_anim::placed_effect(type_id, point);
+        crate::sim::world::damage_consequences::admit_explosion_effect(&mut native, &rules, packet);
+        assert_eq!(native.anims().count(), 1, "in the Anim array, as gamemd's");
+        assert_eq!(native.presentation_anims().count(), 0);
+
+        let mut sim = Simulation::new();
+        sim.present_effect_anims();
+        let type_id = sim.interner.intern("PUFF");
         let packet = crate::sim::combat::detonation_anim::placed_effect(type_id, point);
         crate::sim::world::damage_consequences::admit_explosion_effect(&mut sim, &rules, packet);
         assert_eq!(sim.anims().count(), 0, "not in the Anim array");

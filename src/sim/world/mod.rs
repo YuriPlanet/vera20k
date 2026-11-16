@@ -1671,6 +1671,10 @@ pub struct Simulation {
     /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
     /// native order. A save carries only the setting.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
+    /// Whether an effect anim that changes nothing but its picture runs as a
+    /// presentation anim (`anim_class::EffectAnims`); a new world makes every
+    /// anim in native order. A save carries the setting.
+    pub(crate) effect_anims: crate::sim::anim_class::EffectAnims,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
     /// LoadContent67E8CD rebuilds hierarchy after bound Cell/object restoration.
@@ -4694,6 +4698,7 @@ impl Simulation {
             path_batch: None,
             idle_sleep: Default::default(),
             scan_batch: None,
+            effect_anims: Default::default(),
             interner: crate::sim::intern::StringInterner::new(),
             type_tech_levels: TypeTechLevels::default(),
             rule_handles: None,

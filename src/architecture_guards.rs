@@ -457,7 +457,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
-                ("sim/world/house_defeat.rs", 2),
+                // The third is `network_ai_alone`: it asks of every House,
+                // and each peer holds the same observer list from the room.
+                ("sim/world/house_defeat.rs", 3),
             ],
         ),
         (
