@@ -5801,8 +5801,12 @@ impl Simulation {
     /// has temporarily lent that grid through UninitContext. The remaining arms
     /// read the object's liveness, health and mission from the same world.
     pub(crate) fn notify_pointer_expired(&mut self, expired_id: u64, context: UninitContext<'_>) {
+        // A VoxelAnim (WhatAmI 0x29, `0x0074AB20`) takes the generic arm at
+        // `0x00725925` too, which reaches every particle system, so an
+        // AttachedSystem's owner hears of the anim's death.
         if !self.substrate.spotlights.contains_key(expired_id)
             && !self.substrate.entities.contains(expired_id)
+            && !self.substrate.voxel_anims.contains_key(expired_id)
             && !self.substrate.particle_systems.contains_key(expired_id)
             && self
                 .substrate
