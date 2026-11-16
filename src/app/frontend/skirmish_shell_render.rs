@@ -438,7 +438,7 @@ fn build_skirmish_shell_instances(
                     RIGHT_PANEL_BUTTON_DEPTH,
                 );
             }
-            // VERA's Game Options on its tile under Load Setup; where the
+            // VERA's Game Options on its tile under Start Game; where the
             // panel has none (640x480) the page draws it with its controls.
             if layout.game_options_in_panel() {
                 push_right_panel_button_shp(

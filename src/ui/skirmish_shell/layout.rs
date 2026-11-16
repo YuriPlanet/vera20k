@@ -251,15 +251,18 @@ pub struct SkirmishShellLayout {
     pub right_panel: RightPanelRects,
     pub right_panel_text: SkirmishRightPanelTextRects,
     pub start_button: RectPx,
+    /// gamemd's Choose Map (`0x5AA`), one tile down where VERA's Game Options
+    /// takes its tile.
     pub choose_map_button: RectPx,
     /// VERA's Save Setup and Load Setup, on the two empty tiles under Choose
     /// Map; gamemd's `0x102` has no such buttons.
     pub save_setup_button: RectPx,
     pub load_setup_button: RectPx,
-    /// VERA's Game Options ([`super::game_options`]), on the tile under Load
-    /// Setup where the panel has one above Back. At 640x480 Back takes that
-    /// tile, and the button sits on the page under Build Off Ally ConYards
-    /// ([`Self::game_options_in_panel`]).
+    /// VERA's Game Options ([`super::game_options`]), on gamemd's Choose Map
+    /// tile under Start Game where the panel has a tile to spare above Back
+    /// for the buttons it moves down. At 640x480 it has none: the panel keeps
+    /// gamemd's order, and the button sits on the page under Build Off Ally
+    /// ConYards ([`Self::game_options_in_panel`]).
     pub game_options_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
@@ -291,8 +294,9 @@ impl SkirmishShellLayout {
             .dialog_origin_or((self.screen.x + x, self.screen.y + y))
     }
 
-    /// Whether Game Options sits on its panel tile under Load Setup, rather
-    /// than on the page, as it does at 640x480 where Back takes that tile.
+    /// Whether Game Options sits in the panel, under Start Game, rather than
+    /// on the page, as it does at 640x480 where the panel has no tile to
+    /// spare.
     pub fn game_options_in_panel(&self) -> bool {
         self.game_options_button.x == self.load_setup_button.x
     }
@@ -739,7 +743,7 @@ pub fn compute_layout_for_rows(
     let start_base = dlu_rect(425, 149, 108, 23);
     let choose_base = dlu_rect(425, 176, 108, 23);
     let panel = right_panel_rects(screen_w, screen_h);
-    let choose_map_button =
+    let choose_map_tile =
         snap_button_biased_truncate(screen_w, screen_h, choose_base, panel, SDBTNANM_W);
     // The executed relayout places them at (635, 3, 163, 17), (650, 167, 136,
     // 17) and (650, 189, 136, 34) at 800x600.
@@ -775,16 +779,19 @@ pub fn compute_layout_for_rows(
     };
     let opponent_scrollbar = opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT);
     let back_button = back_rect(screen_w, panel);
-    // VERA's Game Options takes the tile under Load Setup where the panel
-    // has one above Back. At 640x480 Back takes it, so the button goes on the
-    // page instead, in the row under Build Off Ally ConYards, the size of
+    // Not retail. VERA's Game Options takes gamemd's Choose Map tile, under
+    // Start Game, where the panel has a tile to spare above Back: Choose Map,
+    // Save Setup and Load Setup each move one tile down. At 640x480 Back
+    // takes that tile, so the panel keeps gamemd's order and the button goes
+    // on the page, in the row under Build Off Ally ConYards, the size of
     // Sound Options' Play and Stop (`0xD6`, MNBTTN type 3) as the Options
     // pages' own buttons are.
-    let game_options_tile = choose_map_button.translate(0, 3 * SDBTNBKGD_H);
-    let game_options_button = if game_options_tile.y + game_options_tile.h <= back_button.y {
-        game_options_tile
+    let last_moved = choose_map_tile.translate(0, 3 * SDBTNBKGD_H);
+    let panel_has_room = last_moved.y + last_moved.h <= back_button.y;
+    let (game_options_button, choose_map_button) = if panel_has_room {
+        (choose_map_tile, choose_map_tile.translate(0, SDBTNBKGD_H))
     } else {
-        dlu_rect(201, 244, 83, 15)
+        (dlu_rect(201, 244, 83, 15), choose_map_tile)
     };
 
     SkirmishShellLayout {
@@ -1717,7 +1724,10 @@ mod tests {
     fn key_rects_match_800x600() {
         let layout = compute_layout(800, 600);
         assert_eq!(layout.start_button, RectPx::new(644, 241, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(644, 283, 156, 42));
+        // VERA's Game Options takes gamemd's Choose Map tile; Choose Map
+        // moves one down.
+        assert_eq!(layout.game_options_button, RectPx::new(644, 283, 156, 42));
+        assert_eq!(layout.choose_map_button, RectPx::new(644, 325, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(644, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(644, 535, 156, 42));
     }
@@ -1728,7 +1738,8 @@ mod tests {
 
         assert_eq!(layout.screen, RectPx::new(112, 84, 800, 600));
         assert_eq!(layout.start_button, RectPx::new(756, 325, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(756, 367, 156, 42));
+        assert_eq!(layout.game_options_button, RectPx::new(756, 367, 156, 42));
+        assert_eq!(layout.choose_map_button, RectPx::new(756, 409, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(756, 121, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(756, 619, 156, 42));
         assert_eq!(layout.column_labels.players, RectPx::new(171, 118, 146, 16));
@@ -1820,20 +1831,27 @@ mod tests {
         assert!(options_bottom < thirty.status_help.y);
     }
 
-    /// VERA's Game Options takes the panel's tile under Load Setup, above
-    /// Back, on a page grown to thirteen rows too. At 640x480 Back takes that
-    /// tile, so the button sits on the page under Build Off Ally ConYards,
-    /// left of the panel and above the status line.
+    /// Where the panel has a tile to spare above Back, VERA's Game Options
+    /// sits second, under Start Game, and Choose Map, Save Setup and Load
+    /// Setup follow it a tile apart, on a page grown to thirteen rows too. At
+    /// 640x480 the panel has none, so the button sits on the page under Build
+    /// Off Ally ConYards, left of the panel and above the status line.
     #[test]
-    fn game_options_takes_the_tile_under_load_setup_where_the_panel_has_one() {
+    fn game_options_sits_second_in_the_panel_where_it_has_room() {
         use super::{SDBTNBKGD_H, compute_layout_for_rows};
         let roomy = compute_layout_for_rows(800, 600, 30);
         assert!(roomy.game_options_in_panel());
-        assert_eq!(
+        let column = [
+            roomy.start_button,
             roomy.game_options_button,
-            roomy.load_setup_button.translate(0, SDBTNBKGD_H)
-        );
-        let bottom = roomy.game_options_button.y + roomy.game_options_button.h;
+            roomy.choose_map_button,
+            roomy.save_setup_button,
+            roomy.load_setup_button,
+        ];
+        for pair in column.windows(2) {
+            assert_eq!(pair[1], pair[0].translate(0, SDBTNBKGD_H));
+        }
+        let bottom = roomy.load_setup_button.y + roomy.load_setup_button.h;
         assert!(bottom <= roomy.back_button.y);
 
         let small = compute_layout(640, 480);

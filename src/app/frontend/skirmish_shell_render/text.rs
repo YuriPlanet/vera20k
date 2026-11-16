@@ -849,7 +849,10 @@ fn push_right_panel_text_draws(
     shell: &SkirmishShellState,
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
-    let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
+    // VERA captions the map button "Choose Map", as its room does
+    // (`SetupDialog::button_label`): retail's "Customize Battle" reads as the
+    // settings Game Options keeps.
+    let choose = tr("VERA:ChooseMap");
     let save = tr("VERA:SaveSetup");
     let load = tr("VERA:LoadSetup");
     let back = localized_label(state, "GUI:Back", "Back");
@@ -898,7 +901,7 @@ fn push_right_panel_text_draws(
             layout.scale,
         );
     }
-    // VERA's Game Options on its tile under Load Setup.
+    // VERA's Game Options on its tile under Start Game.
     if layout.game_options_in_panel() {
         push_button_label_draw(
             shell_draws,
