@@ -3539,6 +3539,7 @@ impl Simulation {
 
     pub(crate) fn conceal_anim(&mut self, stable_id: u64) -> bool {
         self.substrate.display.remove(stable_id);
+        self.substrate.anims.conceal_presentation(stable_id);
         self.substrate.mark_anim_display(stable_id, false);
         self.unregister_logic_object(stable_id)
     }

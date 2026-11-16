@@ -457,6 +457,13 @@ impl Simulation {
             }
             FrameStep::LocalAnims => {
                 for id in self.substrate.anims.local_ids() {
+                    // No expiry reaches a presentation anim, which nothing
+                    // lists: it ends with its owner's UnInit instead
+                    // (`AnimConstructorInput::Presentation`).
+                    if self.presentation_anim_orphaned(id) {
+                        self.destroy_anim(id, rules);
+                        continue;
+                    }
                     frame.bridge_state_changed |= self
                         .visit_anim(id, rules, overlay_registry, effects)
                         .map_err(|error| {

@@ -1693,3 +1693,34 @@ fn ares_art_palettes_keep_the_named_file() {
     );
     assert_eq!(art.resolve_declared_cameo_palette("E1", "E1"), None);
 }
+
+#[test]
+fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[GUNFIRE]\nRate=900\n[EXPLOSML]\nScorch=yes\nCrater=yes\n\
+         [PUFF]\nRate=1\n[PUFF2]\nRate=1\n[SMOKE]\nRate=1\n[SPARK]\nRandomRate=2,4\n",
+    ));
+    // The rules processor publishes the references (`AnimTypeReferences`).
+    let mut refer = |name: &str, next: &str, trailer: &str| {
+        let config = art.anim_runtime_configs.get_mut(name).unwrap();
+        config.next = (!next.is_empty()).then(|| next.to_owned());
+        config.trailer_anim = (!trailer.is_empty()).then(|| trailer.to_owned());
+    };
+    refer("PUFF", "PUFF2", "");
+    refer("PUFF2", "PUFF", "");
+    refer("SMOKE", "", "EXPLOSML");
+    assert!(art.anim_presentation_only("gunfire"), "a plain flash");
+    assert!(art.anim_presentation_only("PUFF"), "a plain cycle of Next=");
+    assert!(
+        !art.anim_presentation_only("EXPLOSML"),
+        "Scorch/Crater mark the map"
+    );
+    assert!(
+        !art.anim_presentation_only("SMOKE"),
+        "its trailer marks the map"
+    );
+    assert!(
+        !art.anim_presentation_only("SPARK"),
+        "RandomRate draws the Scenario stream"
+    );
+}

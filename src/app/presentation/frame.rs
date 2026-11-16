@@ -1314,15 +1314,15 @@ impl PresentationFrame {
         })
     }
 
-    /// `display`'s order for this frame's draws. `display` is the Display
-    /// registry of the world the frame was captured from.
+    /// `sim`'s draw order for this frame's draws. `sim` is the world the
+    /// frame was captured from.
     pub(crate) fn display_order(
         &self,
-        display: &crate::sim::world::display_layers::DisplayLayers,
+        sim: &Simulation,
     ) -> &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder {
         self.display_order.get_or_init(|| {
-            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_display(
-                display,
+            crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder::from_world(
+                sim,
             )
         })
     }

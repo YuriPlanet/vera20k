@@ -231,12 +231,11 @@ pub(super) fn build_world_instances(
     let own_order;
     let display_order = match state.match_state.sim_runtime.presentation() {
         Some(rt) => {
-            let display = rt.view().display_layers();
+            let world = rt.view().simulation();
             match state.match_state.sim_runtime.frame() {
-                Some(frame) => frame.display_order(display),
+                Some(frame) => frame.display_order(world),
                 None => {
-                    own_order =
-                        super::draw_plan_lowering::NativeDisplayOrder::from_display(display);
+                    own_order = super::draw_plan_lowering::NativeDisplayOrder::from_world(world);
                     &own_order
                 }
             }
