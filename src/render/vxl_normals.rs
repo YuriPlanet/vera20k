@@ -224,6 +224,48 @@ const YR_WORLD_LIGHT: Vec3 = Vec3::new(
     f32::from_bits(0x3eff_ffed),
 );
 
+/// `Matrix3D::VoxelDefaultMatrix`, the 3x4 the startup
+/// `VXL_LightDirection_Setup @ 0x00754C00` build leaves (`0x0052BDF5` calls it
+/// with the retail float at `0x007E1E68`). Native-executed bits:
+/// `tools/voxel_oracle/lighting.json` `voxel_default_matrix_bits`.
+const VOXEL_DEFAULT_MATRIX: [[f32; 3]; 3] = [
+    [
+        f32::from_bits(0x3f35_04f3),
+        0.0,
+        f32::from_bits(0x3f35_04f3),
+    ],
+    [0.0, 1.0, 0.0],
+    [
+        f32::from_bits(0xbf35_04f3),
+        0.0,
+        f32::from_bits(0x3f35_04f3),
+    ],
+];
+
+/// Phobos `ReplaceVoxelLightSources` (`Ext/Rules/Body.cpp:1189-1207`):
+/// `Matrix3D::VoxelDefaultMatrix * Vector3D(source).Normalized()`. A zero
+/// source keeps the startup light (VERA-internal guard; native's
+/// `Normalized` would divide by zero).
+fn voxel_world_light(source: [f32; 3]) -> Vec3 {
+    let squared = source[0] * source[0] + source[1] * source[1] + source[2] * source[2];
+    if !(squared > 0.0) {
+        return YR_WORLD_LIGHT;
+    }
+    let length = squared.sqrt();
+    let unit = [source[0] / length, source[1] / length, source[2] / length];
+    Vec3::new(
+        VOXEL_DEFAULT_MATRIX[0][0] * unit[0]
+            + VOXEL_DEFAULT_MATRIX[0][1] * unit[1]
+            + VOXEL_DEFAULT_MATRIX[0][2] * unit[2],
+        VOXEL_DEFAULT_MATRIX[1][0] * unit[0]
+            + VOXEL_DEFAULT_MATRIX[1][1] * unit[1]
+            + VOXEL_DEFAULT_MATRIX[1][2] * unit[2],
+        VOXEL_DEFAULT_MATRIX[2][0] * unit[0]
+            + VOXEL_DEFAULT_MATRIX[2][1] * unit[1]
+            + VOXEL_DEFAULT_MATRIX[2][2] * unit[2],
+    )
+}
+
 fn fp(value: f32) -> X87Value {
     Fpu::load_f32(NativeF32Bits::from_bits(value.to_bits()))
         .expect("voxel lighting uses finite normal floats")
@@ -378,9 +420,14 @@ impl VoxelLight {
             let Some(rules) = rules else {
                 return Self::default();
             };
+            let world = rules
+                .phobos_globals
+                .voxel_light_source
+                .map(|values| voxel_world_light(values.map(|value| f32::from_bits(value.bits()))))
+                .unwrap_or(YR_WORLD_LIGHT);
             Self {
+                world,
                 fixed: rules.phobos_globals.use_fixed_voxel_lighting,
-                ..Self::default()
             }
         }
         #[cfg(not(feature = "phobos"))]
@@ -436,6 +483,107 @@ mod tests {
         assert_ne!(pages[244], 0, "the final native entry must be processed");
         assert_eq!(&pages[245..253], &[0; 8]);
         assert_eq!(&pages[253..=255], &[AMBIENT_PAGE; 3]);
+    }
+
+    /// `Matrix3D::VoxelDefaultMatrix` and the stock source land on the
+    /// captured `Game::VoxelLightSource` (`tools/voxel_oracle/lighting.json`,
+    /// both native-executed): the matrix maps the retail source to the startup
+    /// light.
+    #[test]
+    fn voxel_default_matrix_maps_the_retail_source_to_the_world_light() {
+        let oracle = crate::test_fixture::json("tools/voxel_oracle/lighting.json");
+        let bits = |key: &str| {
+            oracle[key]
+                .as_array()
+                .expect("oracle array")
+                .iter()
+                .map(|value| value.as_u64().expect("bits") as u32)
+                .collect::<Vec<_>>()
+        };
+        let matrix = bits("voxel_default_matrix_bits");
+        assert_eq!(
+            matrix,
+            [
+                0x3f35_04f3,
+                0,
+                0x3f35_04f3,
+                0,
+                0,
+                0x3f80_0000,
+                0,
+                0,
+                0xbf35_04f3,
+                0,
+                0x3f35_04f3,
+                0
+            ],
+            "native VoxelDefaultMatrix bits"
+        );
+        let source = bits("voxel_default_source_bits")
+            .into_iter()
+            .map(f32::from_bits)
+            .collect::<Vec<_>>();
+        let world = voxel_world_light([source[0], source[1], source[2]]);
+        let expected = bits("light_bits")
+            .into_iter()
+            .map(f32::from_bits)
+            .collect::<Vec<_>>();
+        for (axis, (actual, expected)) in world.to_array().into_iter().zip(expected).enumerate() {
+            assert!(
+                (actual - expected).abs() < 1e-5,
+                "axis {axis}: {actual} vs the native {expected}"
+            );
+        }
+        // A scaled source normalizes to the same direction.
+        let scaled = voxel_world_light([source[0] * 3.0, source[1] * 3.0, source[2] * 3.0]);
+        assert!((scaled.x - world.x).abs() < 1e-6);
+        assert!((scaled.y - world.y).abs() < 1e-6);
+        assert!((scaled.z - world.z).abs() < 1e-6);
+        // A zero source keeps the startup light.
+        assert_eq!(voxel_world_light([0.0, 0.0, 0.0]), YR_WORLD_LIGHT);
+    }
+
+    /// `[AudioVisual] VoxelLightSource=` reaches the draw settings through the
+    /// rules reader; the retail-direction value reproduces the native light,
+    /// and an absent key keeps the startup one.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn voxel_light_source_key_is_normalized_and_mapped() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let oracle = crate::test_fixture::json("tools/voxel_oracle/lighting.json");
+        let expected = oracle["light_bits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| f32::from_bits(value.as_u64().unwrap() as u32))
+            .collect::<Vec<_>>();
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[AudioVisual]
+VoxelLightSource=-0.70710678,-0.70710678,0
+",
+        ))
+        .unwrap();
+        let light = VoxelLight::for_rules(Some(&rules));
+        for (axis, (actual, expected)) in light
+            .world
+            .to_array()
+            .into_iter()
+            .zip(&expected)
+            .enumerate()
+        {
+            assert!(
+                (actual - expected).abs() < 1e-5,
+                "axis {axis}: {actual} vs the native {expected}"
+            );
+        }
+        assert!(!light.fixed);
+        let bare = RuleSet::from_ini(&IniFile::from_str(
+            "[AudioVisual]
+",
+        ))
+        .unwrap();
+        assert_eq!(VoxelLight::for_rules(Some(&bare)).world, YR_WORLD_LIGHT);
     }
 
     #[test]

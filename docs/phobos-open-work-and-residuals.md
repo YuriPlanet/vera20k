@@ -42,6 +42,12 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `VoxelLightSource`：`tools/voxel_oracle/lighting.py` 通过 Unicorn 执行
+  `0x754C00` 捕获 `Matrix3D::VoxelDefaultMatrix`（
+  `voxel_default_matrix_bits`，并验证它把零售源映射到原始
+  `Game::VoxelLightSource`）；`VoxelLight::for_rules` 对
+  `[AudioVisual] VoxelLightSource=` 归一化后乘该矩阵（
+  `Ext/Rules/Body.cpp:1189-1207`），未设键保持启动光照。
 - `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier`：
   `app/presentation/lighting.rs::phobos_air_unit_light` 在体素单位/飞机与 SHP
   飞机的绘制处重建 blit 强度：`int(level * (height/104 - bridge*4) * mult) +
@@ -138,7 +144,7 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `ChronoSparkleBuildingDisplayPositions` | `Ext/Rules/Body.cpp:119` | enum, OccupantSlots（`:38,578`） | `Ext/Building/Hooks.cpp` |
 | `ColorAddUse8BitRGB` | `Ext/Rules/Body.cpp:260` | bool, no（`:178,703`） | `Utilities/GeneralUtils.cpp`（`GetColorFromColorAdd`；VERA 已有 `ColorAddTable::phobos_word`，其注释已记该键为残渣） |
 | `UseRetintFix` | `Ext/Rules/Body.cpp:409` | bool, **yes**（`:311,823`） | `Ext/TAction/Hooks.cpp`（retint 后重新激活 LightSource） |
-| `VoxelLightSource` | `Ext/Rules/Body.cpp:352` | `Nullable<Vector3D<float>>`，未设（`:271,780`） | `ReplaceVoxelLightSources`（`Body.cpp:1189-1207`）——**阻塞**，见 §3 |
+| `VoxelLightSource` | `Ext/Rules/Body.cpp:352` | `Nullable<Vector3D<float>>`，未设（`:271,780`） | `ReplaceVoxelLightSources`（`Body.cpp:1189-1207`）——**已完成**（矩阵来自 voxel_oracle） |
 
 ### 1.6 跳跃（2）与战头（1）
 
@@ -148,12 +154,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 2 项（2 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 1 项（1 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
-| `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 
 ## 2. 明确排除（不移植，扫描器已列 disabled）
 
@@ -181,16 +186,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
    无行为差异）。retail 段值=旧字面量，零售行为不变。
 5. **体素光照**（`413e3d0c6`）：`UseFixedVoxelLighting` 只影响**图集烘焙**；改
    rules 后需重建图集（对应 native `DestroyVoxelCaches`）。`VoxelLightSource`
-   见下。
+   同样在烘焙时应用（`Matrix3D::VoxelDefaultMatrix` 已由 voxel_oracle 捕获）。
 6. **MindControl.Permanent.ReplaceSilent**（`6a261e2cb`）：无残渣；只作用于
    Ares 的 ApplyPermaMC 调用点，Dominator 原生路径不变。
 
 ### 全局已知残渣（早前链条，仍需实机抽查）
-- **`VoxelLightSource`（阻塞）**：apply 需要
-  `Game::VoxelLightSource = Matrix3D::VoxelDefaultMatrix * normalized(src)`。
-  缺 `Matrix3D::VoxelDefaultMatrix`（`0x754C00` 用 `0x5AE860`+`0x5AF080` 在栈上
-  生成）。下一步：扩 `tools/voxel_oracle/lighting.py` dump 该矩阵并断言
-  `M*v == YR_WORLD_LIGHT`，再填 `VoxelLight.world`。
 - **飞机等级光照与风暴/支配者同时存在的顺序**：Phobos 的飞机钩子先查 Dominator
   再查风暴，VERA 两种绘制共用 cell-lighting 顺序（风暴优先）；两者同时运行时
   飞机取 Ion 等级而非 Dominator。触发：雷电风暴与支配者重叠；频率：极低；
@@ -253,7 +253,8 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 5. **体素光照**（`rulesmd.ini`）
    - `[AudioVisual] UseFixedVoxelLighting=yes`：体素车辆/飞机的明暗高光应明显
      变化（viewer 项被移除），关闭后恢复。
-   - `VoxelLightSource=` **预期无效果**（未移植，见 §3）。
+   - `VoxelLightSource=x,y,z`：体素车辆/飞机的高光方向随归一化方向变化；未写键
+     保持启动光照。
 6. **ReplaceSilent**（`rulesmd.ini`，需要 Ares 语义的 `MindControl.Permanent=yes` 战头）
    - 先让一个单位被控制（Yuri 心灵控制/控制塔），再用带 `MindControl.Permanent=yes`
      的战头打它（替换旧控制）：默认会听到 `MindClearedSound`；
