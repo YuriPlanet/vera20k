@@ -77,9 +77,10 @@ the current Health, at most 1.0 that fraction of `Strength`, above 1.0
 absolute, each truncated into the packet. VERA: globals in
 `rules/combat_damage.rs`, type keys on `ObjectType`, the three-tier packet in
 `parachute_descent.rs::phobos_falling_damage` with `landing_in_water`. The
-`raise_falling_down` residual note (`game_entity.rs`) stands. TEST DEBT: the
-landing receiver commit needs a map fixture; the tier tests were removed
-pending it.
+`raise_falling_down` residual note (`game_entity.rs`) stands. The three tiers
+and the EMP refusal are covered by
+`parachute_descent::falling_damage_tests` through the production
+`phobos_falling_damage` with a water-cell map fixture.
 
 ## Wake.Grapple / Wake.Sinking (and the native Wake=)
 

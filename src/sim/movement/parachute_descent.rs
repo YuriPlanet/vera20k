@@ -1028,3 +1028,111 @@ mod parabomb_rate_tests {
         assert_eq!(parachuted_bullet_rate(0, i32::MIN, i32::MIN), i32::MIN);
     }
 }
+
+#[cfg(all(test, feature = "phobos"))]
+mod falling_damage_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::combat::Health;
+    use crate::sim::world::Simulation;
+
+    fn scene(type_keys: &str, global: &str, water: bool) -> (Simulation, RuleSet, u64) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[VehicleTypes]
+0=FALLER
+             [FALLER]
+Strength=1000
+Armor=none
+Speed=4
+{type_keys}             [CombatDamage]
+{global}"
+        ));
+        let rules = RuleSet::from_ini(&ini).expect("falling rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 3);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim
+            .spawn_object("FALLER", "Americans", 10, 10, 0, &rules)
+            .expect("faller");
+        sim.entities_mut_for_test().get_mut(id).unwrap().health = Health::new(400);
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+            let mut cell = crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
+            if water && (x, y) == (10, 10) {
+                cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+            }
+            cell
+        }));
+        (sim, rules, id)
+    }
+
+    /// `Ext/Techno/Hooks.cpp:1014-1090`: a negative ratio takes that fraction
+    /// of the current health, a ratio up to 1.0 that fraction of Strength and
+    /// a value above 1.0 is absolute; the type key falls back to the global.
+    #[test]
+    fn the_three_falling_damage_tiers_match_the_hook() {
+        let (sim, rules, id) = scene(
+            "FallingDownDamage=0.5
+",
+            "",
+            false,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            500,
+            "positive ratio uses Strength"
+        );
+        let (sim, rules, id) = scene(
+            "FallingDownDamage=-0.5
+",
+            "",
+            false,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            200,
+            "negative takes that fraction of the current health"
+        );
+        let (sim, rules, id) = scene(
+            "",
+            "FallingDownDamage=0.25
+",
+            false,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            250,
+            "the global fallback"
+        );
+        let (sim, rules, id) = scene(
+            "FallingDownDamage.Water=2
+",
+            "FallingDownDamage=0.25
+",
+            true,
+        );
+        assert_eq!(
+            sim.phobos_falling_damage(id, 400, &rules),
+            2,
+            "water selects the type Water value, absolute above 1.0"
+        );
+    }
+
+    /// `FallingDownDamage.AllowEMP=no`: an EMP-locked unit keeps the vanilla
+    /// full-current-Health packet.
+    #[test]
+    fn emp_allow_emp_no_keeps_the_full_health_packet() {
+        let (mut sim, rules, id) = scene(
+            "FallingDownDamage.AllowEMP=no
+FallingDownDamage=0.5
+",
+            "",
+            false,
+        );
+        sim.entities_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .set_emp_remaining_for_test(30);
+        assert_eq!(sim.phobos_falling_damage(id, 400, &rules), 400);
+    }
+}

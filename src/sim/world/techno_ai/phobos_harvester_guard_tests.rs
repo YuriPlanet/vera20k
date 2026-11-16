@@ -92,13 +92,9 @@ fn a_human_harvester_with_the_key_keeps_area_guard() {
 }
 
 /// `RequireTarget`: with no threat in range the gate refuses and the stock
-/// Harvest switch runs.
-///
-/// RESIDUAL (test only): this checkout's synthetic fixture cannot make the
-/// shared Area Guard scanner form a candidate (the retail scanner
-/// configuration is unavailable here), so the positive "threat keeps Area
-/// Guard" arm is not exercised; the scan call itself is the same owner the
-/// Area Guard body uses.
+/// Harvest switch runs. The synthetic fixture cannot form a scanner
+/// candidate; the retail-rules test below covers the positive "threat keeps
+/// Area Guard" arm.
 #[test]
 fn require_target_without_a_threat_falls_back_to_harvest() {
     assert_eq!(

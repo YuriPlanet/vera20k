@@ -37,14 +37,13 @@ shared threat scanner (`techno_ai::target_scan::scan`) with
 the object's `Location`, standing in for `TargetAndEstimateDamage`'s area
 query.
 
-RESIDUAL: Phobos also hooks the scan entry `0x70982C` to apply a
-per-TechnoType targeting delay; that hook is not part of this chain, so a
-`RequireTarget` scan still uses the global `[General]` Guard Area delay.
+The scan entry `0x70982C`'s per-TechnoType targeting delay is part of the
+shared scanner (`target_scan::retaliate_and_scan` → `targeting_delay` with
+`TargetingMission::AreaGuard`), so the `RequireTarget` scan stamps the same
+timer the Area Guard body does. No residual.
 
-RESIDUAL (test coverage): this checkout has no retail INIs, so
-`retail_ini_fixture` returns `None` and the retail-gated positive-arm test
-(the key keeps Area Guard with a threat) is skipped here. The synthetic
-fixture cannot form a scanner candidate, so the positive arm runs only on a
-machine with the retail data. The key/owner/reachability gate, the no-threat
-refusal and the scan attempt itself (the targeting-timer stamp) are covered
-through the production dispatcher.
+Test coverage: the synthetic key/owner/reachability gate, the no-threat
+refusal and the scan attempt are covered by
+`phobos_harvester_guard_tests`; the retail-rules positive arm
+(`require_target_keeps_area_guard_with_a_threat_on_retail_rules`) runs and
+passes in this checkout.
