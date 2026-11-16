@@ -370,6 +370,13 @@ impl RelayServer {
         if status_due {
             plan.first.push(ordering.status(now_ms));
         }
+        // The tails `ordering_reply` adds to the STATUS as it sends it.
+        let status_tail = crate::link::FEEDBACK_LEN
+            + if status_due && ordering.silent_sources(room.federation.as_ref(), now_ms) != 0 {
+                std::mem::size_of::<u32>()
+            } else {
+                0
+            };
         let mut datagrams = limit - usize::from(status_due);
         if !push.restoring {
             // Item 2: retransmissions, oldest range first (§7.3).
@@ -436,7 +443,7 @@ impl RelayServer {
                 envelope::OVERHEAD
                     + payload.len()
                     + if payload[0] == STATUS_EVENT {
-                        crate::link::FEEDBACK_LEN
+                        status_tail
                     } else {
                         0
                     }

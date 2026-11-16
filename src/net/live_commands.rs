@@ -16,8 +16,8 @@ mod sequenced;
 mod startup;
 mod timing;
 pub use sequenced::{
-    CommandDeliveryTrace, DeliveryCounters, MatchPauseChange, MatchSpeedChange,
-    MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    CommandDeliveryTrace, DeliveryCounters, MatchConnectionChange, MatchPauseChange,
+    MatchSpeedChange, MultiplayerPauseStatus, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
 /// The relay's turn length, which online playout follows.
@@ -285,6 +285,19 @@ impl LiveCommandSession {
         self.sequenced
             .as_mut()
             .map_or_else(Vec::new, |session| session.take_pause_changes())
+    }
+
+    /// VERA: other players the relay stopped or started hearing since the
+    /// last call. One whose connection this game already removed is left
+    /// out: the relay may never have heard them leave.
+    pub fn take_connection_changes(&mut self) -> Vec<MatchConnectionChange> {
+        let mut changes = self
+            .sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_connection_changes());
+        let peers = self.exchange.peers();
+        changes.retain(|change| peers.iter().any(|peer| peer.house_id() == change.house));
+        changes
     }
 
     /// VERA: true once, when this game reaches a pause that found it catching

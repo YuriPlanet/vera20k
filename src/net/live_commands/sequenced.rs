@@ -133,6 +133,17 @@ pub struct MatchPauseChange {
     pub paused: bool,
 }
 
+/// VERA: another player the relay has not heard from for 10 seconds, or
+/// hears again while they are still in the match (relay README "Silence").
+/// The app names them in a line. gamemd holds the match for a silent player
+/// and names them in its Wait_For_Players dialog (called from ProcessNetwork
+/// `0x0064800E`); the relay plays on without them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchConnectionChange {
+    pub house: i8,
+    pub responding: bool,
+}
+
 /// This PC's progress against the relay's clock, reported about once a
 /// second. Lagging means frames waited here for `PACE_BACKLOG_MS`; behind
 /// also means two report windows in a row with frames waiting ran fewer
@@ -464,6 +475,10 @@ pub(super) struct SequencedSession {
     lost: Vec<i8>,
     speed_changes: Vec<MatchSpeedChange>,
     pause_changes: Vec<MatchPauseChange>,
+    // Other players the relay last said it has not heard from lately, and
+    // the changes the app has yet to post.
+    silent: u32,
+    connection_changes: Vec<MatchConnectionChange>,
 }
 
 impl SequencedSession {
@@ -585,6 +600,8 @@ impl SequencedSession {
             lost: Vec::new(),
             speed_changes: Vec::new(),
             pause_changes: Vec::new(),
+            silent: 0,
+            connection_changes: Vec::new(),
         }
     }
 
@@ -670,6 +687,11 @@ impl SequencedSession {
     /// Other players' shared pauses and resumes the world has reached.
     pub(super) fn take_pause_changes(&mut self) -> Vec<MatchPauseChange> {
         std::mem::take(&mut self.pause_changes)
+    }
+
+    /// Other players the relay stopped or started hearing since the last call.
+    pub(super) fn take_connection_changes(&mut self) -> Vec<MatchConnectionChange> {
+        std::mem::take(&mut self.connection_changes)
     }
 
     pub(super) fn set_presentation_hidden(&mut self, hidden: bool) {
@@ -1110,6 +1132,7 @@ impl SequencedSession {
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
                 self.pause_active_sources &= status.active_sources;
+                self.note_silent(status.silent_sources);
                 if let Some(watch) = &mut self.watch
                     && let Some(sample) = status.watch_sample
                     && watch.samples.back().is_none_or(|last| last.0 < sample.0)
@@ -1561,6 +1584,30 @@ impl SequencedSession {
         }
     }
 
+    /// VERA: a player's STATUS names the sources its relay has not heard from
+    /// lately. One newly named is not responding; one no longer named is
+    /// back. A source any report so far showed gone is never named, even by
+    /// a late STATUS, and neither is this game's own player.
+    pub(super) fn note_silent(&mut self, silent: u32) {
+        let active = self.pause_active_sources;
+        let silent = silent & active & !(1 << self.local_source);
+        for (source, house) in self.houses.iter().enumerate() {
+            let bit = 1 << source;
+            let responding = if silent & !self.silent & bit != 0 {
+                false
+            } else if self.silent & !silent & active & bit != 0 {
+                true
+            } else {
+                continue;
+            };
+            if let Some(house) = *house {
+                self.connection_changes
+                    .push(MatchConnectionChange { house, responding });
+            }
+        }
+        self.silent = silent;
+    }
+
     /// A watcher's world against the checksums every player reported alike,
     /// once it has its own sample of their frames (relay README "Watchers").
     fn check_watch_samples(&mut self, frame: u32) -> Result<(), SequencedError> {
@@ -1983,6 +2030,7 @@ mod restore_tests {
             started: true,
             feedback: Default::default(),
             watch_sample: None,
+            silent_sources: 0,
         })
     }
 
@@ -2170,6 +2218,7 @@ mod stall_tests {
             started: true,
             feedback: Default::default(),
             watch_sample: None,
+            silent_sources: 0,
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2327,6 +2376,7 @@ mod departure_tests {
             started: false,
             feedback: Default::default(),
             watch_sample: None,
+            silent_sources: 0,
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2653,6 +2703,45 @@ mod pace_tests {
         assert_eq!(session.frames.len(), 1);
         assert!(session.frames[0].pauses.is_empty());
     }
+
+    /// VERA: a player the relay stops hearing is named once, and once more
+    /// when it hears them again; one who left while silent is not back, nor
+    /// named again by a late STATUS, and this game's own player is never
+    /// named.
+    #[test]
+    fn another_player_the_relay_stops_hearing_is_named_until_heard_again() {
+        use vera20k_relay_protocol::OrderStatus;
+        let mut houses = [None; 30];
+        houses[..3].copy_from_slice(&[Some(0), Some(4), Some(7)]);
+        let mut session = SequencedSession::with_roster(houses, 0, [0; 32], 30);
+        let status = |session: &mut SequencedSession, silent_sources: u32, active_sources: u32| {
+            let status = OrderStatus {
+                head_frame: 0,
+                oldest_seq: 1,
+                next_seq: 1,
+                active_sources,
+                tick_hz: 30,
+                start_delay_ms: 0,
+                started: true,
+                feedback: Default::default(),
+                watch_sample: None,
+                silent_sources,
+            };
+            session
+                .receive(OrderEvent::Status(status), Instant::now())
+                .unwrap();
+            session.take_connection_changes()
+        };
+        let named = |house, responding| MatchConnectionChange { house, responding };
+        assert_eq!(status(&mut session, 0b011, 0b111), [named(4, false)]);
+        assert!(status(&mut session, 0b011, 0b111).is_empty());
+        assert_eq!(
+            status(&mut session, 0b100, 0b111),
+            [named(4, true), named(7, false)]
+        );
+        assert!(status(&mut session, 0, 0b011).is_empty());
+        assert!(status(&mut session, 0b100, 0b111).is_empty());
+    }
 }
 
 #[cfg(all(test, tests_net))]
@@ -2760,6 +2849,7 @@ mod watch_tests {
                 started: true,
                 feedback: Default::default(),
                 watch_sample: Some(sample),
+                silent_sources: 0,
             })
         };
         session.receive(status((240, 7)), Instant::now()).unwrap();

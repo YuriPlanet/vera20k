@@ -184,7 +184,8 @@ end. ACK, `[2][accepted through varint][frame varint]`, and Status,
 u32][tick Hz u16][start delay ms varint][started]`, both end in the relay's
 window for the hop and the delay since its newest datagram, `[up_high
 varint][up_bits u64][echo delay ms varint]`: the client
-measures its RTT and uplink loss from them. Each side judges its own sends
+measures its RTT and uplink loss from them. A player's Status then names the
+silent players, if any (Silence, below). Each side judges its own sends
 three behind the newest feedback, once per feedback: a missing send counts as
 lost only if it went srtt + 4 rttvar before the feedback arrived (the relay
 uses the reader's reported srtt and rttvar, 100 / 50 ms before a report), and
@@ -312,7 +313,8 @@ coordinator as they arrive, as link kind 3, `[count]` then per report
 `[source][LE sample frame u32][LE checksum u32]`; only the coordinator compares
 them, and its desync travels as a contribution of source 255 (batch ID
 `u64::MAX - 1`, the record's 14 bytes after its frame) for the frame after its
-seal, which every relay emits after that frame's end. Link packets go to the roster
+seal, which every relay emits after that frame's end. Every relay also tells
+every other when it last heard its players (link kind 4, Silence below). Link packets go to the roster
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. Deploy every relay of a federation at
 once: a relay rejects link entries newer than its own code, and one rejected
@@ -415,6 +417,27 @@ for diagnosis and remove them by hand. The
 in-memory `RelayServer::new` constructor remains useful for short protocol
 fixtures; deployed ordering uses `RelayServer::with_journal`.
 
+## Silence
+
+The relay plays on without a silent player where gamemd would hold the match in
+its wait dialog, so it tells the others who is silent and the game names them.
+Once the match has started, an active source the relay has heard nothing from
+for 10 seconds (`SILENT_NOTICE_MS`; any authenticated packet counts, as for
+`ABSENT_MS`) is silent until it is heard again. While any source is silent, a
+player's Status ends, after the hop feedback, in `[silent sources u32]`; while
+none is, it ends at the feedback, so a match whose players all keep in touch
+sends no extra byte. Clients from v0.2.4 ignore it, as any appended field. A
+field added after it later must come with `[silent sources u32]` always
+written, or a reader cannot tell the two apart.
+
+A relay hears only the players it homes. In a federated match every relay tells
+every other when it last heard each of its active players, every 500 ms, as link
+kind 4: `[count]` then per source `[source][LE age ms u32]`. A relay names
+another relay's players only once that relay has sent such a report. An older
+relay rejects the kind as malformed, which touches nothing else, and never sends
+it, so its players are never named. Once a relay stops reporting, its link
+down, its players count as silent from the time of its last report.
+
 ## Watchers
 
 A watcher follows a started match from its first record, some time behind its
@@ -449,8 +472,8 @@ hop.
 The delay holds in every reply. Once a second the room notes its stream's end
 (frame, next record, active sources), keeping 242 such marks; a watcher reads
 the newest mark at least its delay old, and before the first one nothing. A
-watcher's STATUS is a player's STATUS of that delayed end with the hop feedback,
-then, when there is one, `[frame varint][checksum u32]`: the newest frame at or
+watcher's STATUS is a player's STATUS of that delayed end with the hop feedback
+and no silent players, then, when there is one, `[frame varint][checksum u32]`: the newest frame at or
 before that end, one in every 240 (16 checksum intervals), whose checksum every
 active player reported alike. The relay keeps the last 128 such samples. A
 watcher compares its own world's checksum at that frame and stops if they differ.

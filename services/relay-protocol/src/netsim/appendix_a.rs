@@ -92,6 +92,7 @@ fn status(record: &WireRecord) -> (u32, u64, u64, u32, u16, u32, bool, Feedback)
             start_delay_ms,
             started,
             feedback,
+            ..
         } => (
             *head_frame,
             *oldest_seq,
