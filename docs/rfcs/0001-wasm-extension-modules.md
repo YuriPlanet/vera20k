@@ -7,7 +7,7 @@ commit. Where they differ, the English text applies.
 
 | | |
 | --- | --- |
-| RFC version | 0.0.3 |
+| RFC version | 0.0.4 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | API covered | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -29,6 +29,10 @@ compiled `.wasm`. Official SDKs exist for TypeScript and Rust. The API uses the
 terms Red Alert 2
 modders already know: triggers, events, actions, tags, missions, local and
 global variables, and frames, and adds conditions, attached effects and marks.
+
+Every function, event, condition, effect and override, with its owner in the
+engine and its sources, is listed in the
+[API catalog appendix](0001-wasm-extension-modules-api.md).
 
 The API is versioned from its first release. A published API version keeps
 working in every later VERA20k release.
@@ -832,6 +836,8 @@ Planned order after acceptance:
 
 ## Changelog
 
+- **0.0.4** (2026-11-16): API catalog appendix with its own list of engine gaps
+  and proposed RFC changes.
 - **0.0.3** (2026-11-16): ordering rules for mixed triggers, events raised in
   the module phase and read-only overrides; what a disabled module leaves
   behind; a random stream for modules; case-insensitive names; type bindings
