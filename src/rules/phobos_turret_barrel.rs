@@ -20,9 +20,11 @@
 //!
 //! Declarations `Ext/UnitType/Body.h:76-82`, constructor defaults `Body.h:135-141`.
 //!
-//! The keys live in the art INI, not the type's rule section. VERA's
-//! `ObjectType` has no art input yet, so this owner reads them from the section
-//! it is handed; see the page's residual.
+//! The keys live in the art INI, not the type's rule section.
+//! `ArtEntry` reads the block from its own section; `RuleSet::project_art_data`
+//! copies it onto the Vehicle type through the native `ImageFile` section
+//! selection (`obj.image` else `obj.id`), so a rule-section key never reaches
+//! this parser.
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependency on sim/, render/, ui/, etc.

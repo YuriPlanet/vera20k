@@ -53,6 +53,14 @@ animation and report position follow the selected turret. Non-Units, a zero
 Native indexes `ExtraTurretOffsets` unchecked; an index past the authored list
 would read adjacent heap words, so VERA keeps the stock pivot there.
 
+`UnitTypeExt::LoadFromINI` (`Ext/UnitType/Body.cpp:100-134`) reads the whole
+block from the type's **ART** section, selected by its native `ImageFile`
+(`obj.image` else `obj.id`). `art_data::ArtEntry` parses the block once;
+`RuleSet::project_art_data` copies it onto `ObjectCategory::Vehicle` before the
+building-only merge. `ObjectType::from_ini_section` leaves the constructor
+default, so a rule-section key is never read and an `Image=` override selects
+the redirected ART section.
+
 The other two native consumers are presentation-only and stay residual:
 
 - **Draw matrix** — `UnitClass_DrawVoxelBody`'s matrix hook
@@ -109,22 +117,21 @@ this residual so the future recoil owner does not use the wrong divisor.
   for those indices instead. Trigger: a type authoring `BurstPerTurret=`
   larger than `ExtraTurretCount=`; effect: the muzzle/pivot differs from
   retail only for such modded types.
-- **The keys are read from the wrong section.** Native reads them from the
-  **art** INI section (`INI_Art`, `pThis->ImageFile`) like every other
-  `UnitTypeExt` art key; VERA's `ObjectType::from_ini_section` reads the rule
-  section, because `ArtEntry` (`src/rules/art_data.rs`) does not carry them
-  yet. The correct owner is `RuleSet::project_art_data`
-  (`src/rules/ruleset.rs:11705`), which already resolves `art_key =
-  obj.image` else `obj.id` and merges `QueueingCell`/`DockingOffset`; that
-  merge is building-only today. Trigger: a type that puts
-  `ExtraTurretCount=` in art.ini, or one whose `Image=` renames its art
-  section — neither reads here.
 
 ## Tests
 
 - `src/rules/phobos_turret_barrel_tests.rs` — the constructor defaults, both
   count clamps, the indexed loops in index order, the `CoordStruct` triples,
   the gated `BurstPerTurret=`, and the `BarrelOverTurret=` reset.
+- `src/rules/phobos_turret_barrel_tests.rs`
+  `projection_reads_the_multi_turret_block_from_art` — the production ART →
+  `RuleSet` projection reads every key.
+- `src/rules/phobos_turret_barrel_tests.rs`
+  `rules_section_keys_do_not_supply_the_multi_turret_block` — rule-section keys
+  stay at the constructor defaults.
+- `src/rules/phobos_turret_barrel_tests.rs`
+  `the_image_override_selects_the_art_section` — `Image=` selects the ART
+  section name.
 - `src/sim/combat/fire_coord.rs` `burst_per_turret_cycles_the_extra_turret_pivot`
   — the stock/extras/stock pivot cycle and all three offset components.
 - `src/sim/combat/fire_coord.rs`

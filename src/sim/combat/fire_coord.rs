@@ -2257,19 +2257,19 @@ mod tests {
         extra_turret_count: i32,
         burst_per_turret: i32,
     ) -> (Simulation, RuleSet, FireSource) {
-        let art_ini = IniFile::from_str("[MTNK]\nTurretOffset=50\n");
+        let art_ini = IniFile::from_str(&format!(
+            "[MTNK]\nTurretOffset=50\n\
+             ExtraTurretCount={extra_turret_count}\n\
+             ExtraTurretOffset0=100,10,5\n\
+             ExtraTurretOffset1=-100,0,7\n\
+             BurstPerTurret={burst_per_turret}\n"
+        ));
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-            &IniFile::from_str(&format!(
-                "[VehicleTypes]\n0=MTNK\n[MTNK]\nTurret=yes\n\
-                 ExtraTurretCount={extra_turret_count}\n\
-                 ExtraTurretOffset0=100,10,5\n\
-                 ExtraTurretOffset1=-100,0,7\n\
-                 BurstPerTurret={burst_per_turret}\n"
-            )),
+            &IniFile::from_str("[VehicleTypes]\n0=MTNK\n[MTNK]\nTurret=yes\n"),
             &art_ini,
         )
         .unwrap();
-        rules.replace_art_registry_for_test(ArtRegistry::from_ini(&art_ini));
+        rules.install_art_data(ArtRegistry::from_ini(&art_ini));
         let world = Simulation::new();
         let mut snap = source(EntityCategory::Unit);
         snap.exact_z_leptons = Some(0);
