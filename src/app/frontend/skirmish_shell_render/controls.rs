@@ -163,7 +163,8 @@ pub(super) fn push_new_edit_instances(
 /// A NewEdit's frame, caret and text, as NewEdit__DrawTextAndCaret
 /// `0x00623880` paints them in BB, BC/BD, C2/C9 and `0x10F`: the text sits
 /// inside the frame from the first visible unit, and an open IME composition
-/// is spliced in at the caret in the composition colour (`app::input::ime`).
+/// is spliced in at the caret in the composition colour (`app::input::ime`),
+/// the rest in `rgb`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_new_edit(
     controls: &mut Vec<SpriteInstance>,
@@ -174,6 +175,7 @@ pub(super) fn push_new_edit(
     composition: Option<(&[u16], usize)>,
     rect: RectPx,
     caret_visible: bool,
+    rgb: [f32; 3],
     text_depth: f32,
     scale: ShellScale,
 ) {
@@ -216,9 +218,9 @@ pub(super) fn push_new_edit(
     let composition_rgb = crate::app::input::ime::COMPOSITION_RGB.map(|c| f32::from(c) / 255.0);
     let mut x = 0;
     for (units, rgb) in [
-        (first..start, SHELL_LABEL_TEXT_RGB),
+        (first..start, rgb),
         (start..end, composition_rgb),
-        (end..view.units.len(), SHELL_LABEL_TEXT_RGB),
+        (end..view.units.len(), rgb),
     ] {
         if units.is_empty() {
             continue;
@@ -651,7 +653,11 @@ pub(super) fn paint_control(
                 }
             }
             let base = scale.base_rect(rect);
-            if let Some(frame) = chrome.trackbar_frame(plaque, base.w, base.h) {
+            if let Some(frame) = crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                plaque, base.w, base.h, scale,
+            )
+            .and_then(|slot| chrome.trackbar_frames[slot])
+            {
                 push_entry(
                     out,
                     frame,
@@ -1381,12 +1387,20 @@ mod tests {
         assert!(chrome.trackbar_frame(false, 180, 21).is_none());
     }
 
-    /// Every trackbar window the shell pages paint has a frame.
+    /// Every trackbar window the shell pages paint has a frame, in a window
+    /// large enough that the room's team bar draws above the shell's size
+    /// too.
     #[test]
     fn every_shell_trackbar_window_has_a_frame() {
         use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
         use crate::ui::skirmish_shell::{compute_layout, compute_random_map_setup_layout};
-        for (width, height) in [(640u32, 480u32), (800, 600), (1024, 768)] {
+        for (width, height) in [
+            (640u32, 480u32),
+            (800, 600),
+            (1024, 768),
+            (1600, 900),
+            (3440, 1440),
+        ] {
             let skirmish = compute_layout(width, height).trackbars;
             let players = compute_random_map_setup_layout(width, height).control_rects[5];
             let mut windows = vec![
@@ -1424,12 +1438,14 @@ mod tests {
             .expect("FF has its sliders");
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
-                DIFFICULTY, MultiplayerSetupLayout, SUPERWEAPON_LIMIT, SetupDialog, SetupFlavor,
-                TEAM_COUNT,
+                DIFFICULTY, MultiplayerSetupLayout, ROOM_SIZE, SUPERWEAPON_LIMIT, SetupDialog,
+                SetupFlavor, TEAM_COUNT,
             };
-            // gamemd's setup dialogs and VERA's room; only the room paints
-            // its Teams count and Superweapon Limit.
-            for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
+            // gamemd's setup dialogs and VERA's room, in a centred shell and
+            // one filling the window; only the room paints its Teams count
+            // and Superweapon Limit, and only its host Room size.
+            let mut drawn = Vec::new();
+            for (dialog, fills) in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
                     [(false, false), (true, false), (false, true), (true, true)].map(
@@ -1440,22 +1456,38 @@ mod tests {
                         },
                     )
                 })
+                .flat_map(|dialog| [(dialog, false), (dialog, true)])
             {
                 let layout =
-                    MultiplayerSetupLayout::new(dialog, width as i32, height as i32, false);
-                windows.extend(
+                    MultiplayerSetupLayout::new(dialog, width as i32, height as i32, fills);
+                // The room's team bar draws its Teams count at 78% size.
+                drawn.extend(
                     layout
                         .trackbars
                         .into_iter()
-                        .filter(|(id, _)| {
-                            dialog.modern || (*id != TEAM_COUNT && *id != SUPERWEAPON_LIMIT)
+                        .filter(|(id, _)| match *id {
+                            TEAM_COUNT | SUPERWEAPON_LIMIT => dialog.modern,
+                            ROOM_SIZE => dialog.modern && dialog.host,
+                            _ => true,
                         })
-                        .map(|(id, rect)| (id != DIFFICULTY, layout.page.scale.base_rect(rect))),
+                        .map(|(id, rect)| {
+                            let scale = layout.control_scale(id);
+                            (id != DIFFICULTY, scale.base_rect(rect), scale)
+                        }),
                 );
             }
             for (plaque, rect) in windows {
                 assert!(
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),
+                    "{rect:?} at {width}x{height}"
+                );
+            }
+            for (plaque, rect, scale) in drawn {
+                assert!(
+                    crate::render::skirmish_shell_chrome::drawn_trackbar_frame_slot(
+                        plaque, rect.w, rect.h, scale
+                    )
+                    .is_some(),
                     "{rect:?} at {width}x{height}"
                 );
             }

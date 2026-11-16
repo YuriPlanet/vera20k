@@ -428,8 +428,9 @@ pub struct SkirmishLaunchOptions {
     #[serde(default, skip_serializing_if = "RoomBans::is_empty")]
     pub bans: RoomBans,
     /// VERA's room Teams setting: how many teams the room seats its players
-    /// on ([`ROOM_TEAMS`]), or `None` for Off. Only the room reads it; the
-    /// match does not. Left out while Off, as the bans are.
+    /// on ([`ROOM_TEAMS`]), or `None` for Off. The match reads it only to
+    /// start players who share bases together ([`SkirmishLaunchSession::shares_bases`]).
+    /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
     /// VERA's room Balance automatically: with Teams set online, the
@@ -1038,8 +1039,17 @@ impl SkirmishLaunchSession {
     /// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
     /// only a nonobserver human in raw row 0 seeds the comparison. An observer
     /// there bypasses this native gate; do not invent all-pairs. VERA shared
-    /// control: a player sharing a House plays its leader's team.
+    /// control: a player sharing a House plays its leader's team. VERA's
+    /// room where only AI play: they are allied when all are on one team.
     pub fn all_allied(&self) -> bool {
+        let playing =
+            |human: &SkirmishHumanSlot| human.raw_slot_index.is_some() && !human.is_observer();
+        if !self.humans.iter().any(playing) {
+            let team = self.opponents.first().map(|ai| ai.team);
+            return matches!(team, Some(LaunchTeam::Team(_)))
+                && self.opponents.iter().all(|ai| Some(ai.team) == team)
+                && !self.mode.class.policy().permits_all_allied;
+        }
         let house_team = |index: usize| self.humans[self.house_leader(index)].slot.team;
         let Some(LaunchTeam::Team(team)) = self
             .humans
@@ -1104,6 +1114,15 @@ impl SkirmishLaunchSession {
             && human.raw_slot_index.is_some()
             && !human.is_observer()
             && matches!(human.slot.start_position, LaunchStartPosition::Position(_))
+    }
+
+    /// VERA: whether players share bases, as a network room with Teams set
+    /// seats more players than its map has starts and Team Starts puts a
+    /// team's players on its starts together. Its people on one start share
+    /// a House ([`Self::house_leader`]); each AI keeps its own House and
+    /// starts beside them (`scenario_bootstrap`'s Battle start assignment).
+    pub fn shares_bases(&self) -> bool {
+        self.options.teams.is_some() && self.mode.class.policy().shared_start_positions
     }
 
     /// Gather688415..42F combines source-human nonobservers with Session's

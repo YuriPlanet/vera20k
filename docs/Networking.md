@@ -279,28 +279,80 @@ minutes: their joins get the VERA-only denial reason 9, shown as the join ban.
 A VERA room's Teams count, which only its host sets, travels with the host's options:
 online as `launch.options.teams` ([lobby protocol](lobby-protocol.md)), on LAN as
 `teams` beside VERA's room options in the extended options. With it set, the host
-keeps every seated player on one of the room's teams and refuses a guest's pick of a
-full team, so guests only show what the host sends. A LAN guest from before Teams
+keeps every seated player on one of the room's teams, so guests only show what the host
+sends. A LAN guest from before Teams
 ignores the field and is refused at the build check. Online, an older guest cannot
 read the host's options while Teams is set and says the update was invalid, in a room
 that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
 again without it. A room has 2 to 15 teams, named A to O.
 
-Online, the host's Balance automatically travels the same way, as
-`launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every
-game in the room closes its seated players' Team lists and team headers' Join (a
-spectator's Join still asks to play, and the balance places it), and the host's game asks
-the lobby to balance 5 seconds after who plays or the Teams count last changed, holding
-its Start Game until the answer comes. An older guest cannot read those options either,
-as with Teams. A lobby from before Balance automatically refuses the field; the host's
-game turns it off, says so and sends its options again, and a rollback past Teams then
-turns Teams Off too. The lobby decides each player's team, as for `/balance`; the host's
-game applies it.
+In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
+comes in watching while a spectator seat is open and takes a seat with a team header's
+Join; a guest who picks no team watches instead, and with no spectator seat open the
+host seats a newcomer on the team with the fewest players. With Teams Off the room is
+one box without a caption, free-for-all, and seats newcomers as gamemd does: turning
+Teams Off takes every player and AI off their team, the Team lists close and the host
+keeps a guest's team pick off a team. Nothing new travels: guests send their picks as before, and a released guest, whose
+team headers have Join too, takes a seat the same way. An older host still seats a
+newcomer on no team; a newer guest lists that player under a No team header without
+Join. A rollback seats newcomers as before.
+
+With Teams set the map does not limit who plays, only the room's Max players does, so no
+team is ever full: a team's people share its bases where the map runs out of starts
+(`MatchSession::network_shares_bases`). People and AI past the map's seats sit in the
+room's spare rows. A VERA room's LAN options carry all thirty AI rows on any map, where
+gamemd's text carries eight for a map of up to eight players; a guest of another build is
+refused at the build check. At Start Game, Team Starts gives
+each team a start and the spare starts to the teams with the most players for each; a
+team's people on one start share its House, as players who pick the same start do, and
+each AI there starts in its own House beside them, its units on the cells nearby
+(`SkirmishLaunchSession::shares_bases`). The map then needs a start for each team.
+Turning Teams Off, or picking a map or mode with fewer seats, makes the people past the
+seats watch rather than leave the room, and the AI there leave. Nothing new travels: the
+host's options carry each player's row and start as before, and a room of mixed versions
+cannot start. Online the lobby checks the map's starts against the bases the room needs
+([lobby protocol](lobby-protocol.md)). A lobby from before that refuses the host's options
+once more people play than the map has seats; the host's game then turns Teams Off, says
+so and sends its options again, and the people past the seats watch. A rollback seats no
+more players than the map has starts.
+
+AI play in a VERA room while people watch, unlike in gamemd's room (`0x5EC9F0`'s
+TXT_NO_AI_WITH_OBSERVER, and WOL's TXT_NO_AI_OBSERVATION at Start Game): the host keeps
+the spectator seat open with AI in the room, and a guest may watch beside them. Nothing new
+travels. A lobby from before this refuses to start such a game, and the host's game says
+the match could not start. An older host keeps gamemd's rule, and a rollback keeps it
+again.
+
+A VERA room's Max players counts everyone in it, players and spectators, at most its
+thirty rows less its AI. Its host sets it at Create Game and changes it in the room with
+the team bar's Room size, which the host's game advertises again to the lobby; a lower
+size sends no one away, it only keeps newcomers out. The host may watch too, with the
+Spectators' Watch or by dragging its own row there, and plays again with a team's Join,
+as a guest would; someone else, or two or more AI, must play for the match to start.
+Nothing new travels. An older host keeps its Create Game Max players and always plays,
+and a rollback does again.
+
+Everyone in a VERA room may watch while two or more AI play, a match gamemd's room never
+starts. It runs until one AI, or one team of them, is left: no spectator's defeat
+decides it, and the AI left do not band together when one falls (`[AI] Paranoid`). Its
+spectators look on from one start, which the first AI then takes, so the map needs a
+start for each AI. The lobby places its relay by the people watching and does not list
+it to watch, as a watcher's game follows a player. Nothing new travels. A lobby from
+before this refuses to start it, and the host's game says the match could not start; an
+older game keeps its rule that someone plays, and a rollback does again.
+
+Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
+`launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
+plays or the Teams count changed. Current games neither offer it nor send it. In a room
+whose older host has it on, a current guest still closes its seated players' Team lists
+and team headers' Join (a spectator's Join still asks to play, and that host's balance
+places it), as that host's own game does. A released guest in a current host's room
+sees the setting off; the host's Balance button still evens the teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
-is free, with a team header's Join Queue or as a newcomer who prefers to play, joins the
-end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
+is free, with a team header's Join Queue or, in a room without teams, as a newcomer who
+prefers to play, joins the end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
 game owns the queue as it owns seating: when a seat frees (a player leaves or starts
 watching, or the host adds a slot or removes an AI), it seats the first spectator in the
 queue as its own Seat would and publishes its options. The queue's order travels online
@@ -310,7 +362,7 @@ waiting player's own game says its place and when a seat came free. As with Team
 older guest is refused at LAN's build check and online cannot read the options while
 anyone waits. A lobby from before the queue refuses the field; the host's game stops
 queueing in that room, says so and sends its options again, and its spectators keep
-watching. A rollback past Balance automatically and Teams then turns those off too.
+watching. A rollback past Teams then turns Teams Off too.
 
 A room's Create Random Map is Skirmish's whole generator: up to 30 players, the sizes
 past Very Large, the added landform and theaters, Advanced, Fair Starts, Extras, Presets
@@ -328,6 +380,15 @@ cannot start, since its players' versions differ. A lobby from before these maps
 options carrying one with 400 `invalid_options`; the host's game says so and keeps its
 other options until the host picks a smaller map. A rollback of the game
 returns rooms to the eight-player dialog; one of the lobby refuses these maps again.
+
+The host of a VERA room can also set a seated guest's side, colour, start and team from
+the guest's row. The host's game checks the change as it checks the guest's own pick and
+sends it in its options, as `/balance`'s moves travel, so nothing new goes over the wire:
+a released guest shows it as it shows any row the host sends, and an older host just
+doesn't offer it. A guest's own pick sent at the same moment carries its whole row and
+wins on the host. Online, a game sends its room commands to the lobby one at a time; a
+newer options, map-status or ready command replaces an older one of the same kind that
+is still waiting, and goes out after whatever was queued before it.
 
 ### Room rules
 

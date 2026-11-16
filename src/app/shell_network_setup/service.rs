@@ -200,6 +200,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::ParticipantJoined(human) if dialog.wol() => {
             let name = human.name.clone();
             state.match_state.session.add_network_participant(human)?;
+            tell_joined(state, dialog, &name);
             // Join sink 0x7A6625: every acceptance clears, Accept enables.
             super::wol::clear_guest_acceptance(state)?;
             // Sink vt+0x28 plays [AudioVisual] PlayerJoined (0x750920) for a
@@ -260,7 +261,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 super::cooperative::admit_join_country(state, &mut human.slot);
                 super::bans::admit_slot(state, &mut human.slot);
             }
+            let name = human.name.clone();
             state.match_state.session.add_network_participant(human)?;
+            tell_joined(state, dialog, &name);
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
             // This adapter is the admitted setup (membership>=2); repeated
             // discovery packets never manufacture another participant/cue.
@@ -284,10 +287,23 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             }
         }
         NetworkSetupEvent::ParticipantLeft { index } => {
+            let name = state
+                .match_state
+                .session
+                .network_setup()
+                .and_then(|launch| launch.humans.get(index))
+                .map(|human| human.name.clone());
             state
                 .match_state
                 .session
                 .remove_network_participant(index)?;
+            // Online the part sink tells it, as it knows a kick
+            // (super::wol::user_left).
+            if !dialog.wol()
+                && let Some(name) = name
+            {
+                tell_room(state, dialog, "VERA:PlayerLeftRoom", &name);
+            }
             if dialog.wol() {
                 // The part sink 0x785740 played PlayerLeft and clears the
                 // acceptances itself (super::wol::user_left).
@@ -320,13 +336,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::PlayerChoices {
             index,
             mut choices,
-            observer,
+            mut observer,
         } => {
-            // A guest's own team pick keeps to the room's Teams.
-            let refused = state
-                .match_state
-                .session
-                .admit_network_team(index, &mut choices);
+            // A guest's own seat and team pick keep to the room's teams.
+            let refused =
+                state
+                    .match_state
+                    .session
+                    .admit_network_team(index, &mut choices, &mut observer);
             let mut change = accept_peer_choices(state, index, choices, observer)?;
             change.options |= refused;
             publish_choices(state, change);
@@ -982,6 +999,27 @@ pub(super) fn move_player(
         .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
     let mut choices = human.slot.clone();
     choices.team = team;
+    place_player(state, index, choices, observer)
+}
+
+/// VERA's host sets a player's whole row: a guest's as the guest's own
+/// choices would (`accept_peer_choices`), checked as those are, its own as
+/// its own, watching or playing again as a guest would.
+pub(super) fn place_player(
+    state: &mut AppState,
+    index: usize,
+    choices: SkirmishLocalSlot,
+    observer: bool,
+) -> anyhow::Result<PeerChoicesChange> {
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .ok_or_else(|| anyhow::anyhow!("no network setup"))?;
+    let human = launch
+        .humans
+        .get(index)
+        .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
     if index != launch.local_player_index {
         if super::dialog(state).wol() {
             return accept_peer_choices(state, index, choices, observer);
@@ -991,10 +1029,12 @@ pub(super) fn move_player(
             .session
             .accept_lan_peer_choices(index, choices, observer);
     }
-    anyhow::ensure!(
-        observer == human.is_observer(),
-        "the host does not move itself between playing and watching"
-    );
+    if observer != human.is_observer() {
+        return state
+            .match_state
+            .session
+            .move_network_host(choices, observer);
+    }
     let row = human
         .raw_slot_index
         .ok_or_else(|| anyhow::anyhow!("moves name seated rows"))?;
@@ -1102,6 +1142,36 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
             color: u32::MAX,
         },
     );
+}
+
+/// VERA's room tells everyone in it who came in (`VERA:PlayerJoinedRoom`)
+/// and who left (`VERA:PlayerLeftRoom`); gamemd's rooms only play
+/// [AudioVisual] PlayerJoined and PlayerLeft.
+pub(super) fn tell_room(state: &mut AppState, dialog: SetupDialog, key: &str, name: &str) {
+    if !dialog.modern {
+        return;
+    }
+    let text = crate::i18n::tr_fill(key, &[("name", &name)]);
+    crate::app::shell_lan::append_chat(
+        state,
+        LanChatLine {
+            text: text.encode_utf16().collect(),
+            color: u32::MAX,
+        },
+    );
+}
+
+/// VERA's room tells a join once it has settled (`quiet_joins_until`).
+fn tell_joined(state: &mut AppState, dialog: SetupDialog, name: &str) {
+    let quiet = state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .and_then(|protocol| protocol.quiet_joins_until)
+        .is_some_and(|until| Instant::now() < until);
+    if !quiet {
+        tell_room(state, dialog, "VERA:PlayerJoinedRoom", name);
+    }
 }
 
 /// Verify through the existing map owner before the transport queues Type13.
@@ -1700,20 +1770,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     seat_queue(state);
     point_out_briefing(state);
     let pings = super::wol::poll(state);
-    let balance = super::teams::poll_balance(state);
     let go = poll_go(state);
     let offer = poll_preview_offer(state);
     // A direct spawn's LAN service renews setup leases and waits for its
     // peers before GO; keep the frame loop servicing it.
     let direct = (super::external(state) && !super::dialog(state).wol())
         .then(|| Instant::now() + std::time::Duration::from_millis(16));
-    pings
-        .into_iter()
-        .chain(balance)
-        .chain(go)
-        .chain(offer)
-        .chain(direct)
-        .min()
+    pings.into_iter().chain(go).chain(offer).chain(direct).min()
 }
 
 /// VERA's game room (`SetupDialog::modern`) presses Accept for a guest
@@ -1744,7 +1807,7 @@ fn auto_accept(state: &mut AppState) {
 /// VERA's join queue in the host's game: each free seat goes to the queue's
 /// first spectator, as the host's Seat in its Player list does
 /// ([`move_player`]): on the team with the fewest players while Teams is
-/// set, where Balance automatically may move them next. A seat frees when a
+/// set. A seat frees when a
 /// player leaves or starts watching, or the host adds a seat or takes an AI
 /// out.
 fn seat_queue(state: &mut AppState) {

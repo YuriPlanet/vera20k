@@ -184,12 +184,32 @@ impl Request {
             _ => false,
         }
     }
+
+    /// The room's settings and the answers to them, each whole: a newer one
+    /// makes a copy still waiting stale.
+    fn supersedes(&self, waiting: &Self) -> bool {
+        match (self, waiting) {
+            (
+                Self::Command { operation, .. },
+                Self::Command {
+                    operation: waiting_operation,
+                    ..
+                },
+            ) => {
+                matches!(*operation, "options" | "map_status" | "ready")
+                    && operation == waiting_operation
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Queues what arrived during the last request behind `queued`, without a
 /// periodic request that `current` or a queued one repeats. A failing command
 /// takes about 24 s, so copies would otherwise pile up ahead of Ready, Start
-/// and chat for as long as the lobby is unreachable.
+/// and chat for as long as the lobby is unreachable. The room's settings and
+/// the answers to them go out newest only: a host dragging a slider would
+/// otherwise queue a send, and every player two answers, for each step.
 fn queue_arrivals(
     input: &Receiver<Request>,
     current: Option<&Request>,
@@ -201,6 +221,7 @@ fn queue_arrivals(
             .chain(queued.iter())
             .any(|waiting| waiting.repeats(&request))
         {
+            queued.retain(|waiting| !request.supersedes(waiting));
             queued.push_back(request);
         }
     }
@@ -1707,6 +1728,38 @@ mod tests {
             })
             .collect();
         assert_eq!(ids, [Some(2), Some(4), Some(6), Some(7), Some(8)]);
+    }
+
+    #[test]
+    fn newer_room_settings_replace_waiting_ones() {
+        let (requests, input) = std::sync::mpsc::channel();
+        let command = |id, operation, revision| Request::Command {
+            id,
+            operation,
+            payload: json!({"revision":revision}),
+        };
+        for request in [
+            command(2, "options", 2),
+            command(3, "map_status", 1),
+            command(4, "ready", 1),
+            command(5, "chat", 0),
+            command(6, "options", 3),
+            command(7, "map_status", 2),
+            command(8, "ready", 2),
+        ] {
+            requests.send(request).unwrap();
+        }
+        let mut queued = VecDeque::new();
+        // The one being sent stays.
+        queue_arrivals(&input, Some(&command(1, "options", 1)), &mut queued);
+        let ids: Vec<_> = queued
+            .iter()
+            .map(|request| match request {
+                Request::Command { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, [Some(5), Some(6), Some(7), Some(8)]);
     }
 
     #[test]

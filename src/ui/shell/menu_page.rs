@@ -175,11 +175,11 @@ impl MenuPageLayout {
     /// scale, centred. Identity at the base size, so the responsive page equals
     /// the retail page there. The 640-wide asset switch belongs to the unscaled
     /// layout; a scaled page always uses the large loop.
-    fn scaled_to_window(mut self, screen_w: u32, screen_h: u32) -> Self {
-        let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
+    fn scaled_to(mut self, scale: ShellScale) -> Self {
+        let screen = scale.window();
         self.scale = scale;
-        self.screen = RectPx::new(0, 0, screen_w as i32, screen_h as i32);
-        self.movie_base = movie_base_for_responsive_width(screen_w);
+        self.screen = screen;
+        self.movie_base = movie_base_for_responsive_width(screen.w as u32);
         self.movie = scale.scale_rect(self.movie);
         self.title = scale.scale_rect(self.title);
         self.warning_monitor = scale.scale_rect(self.warning_monitor);
@@ -200,6 +200,15 @@ pub fn compute_responsive_layout(
     screen_w: u32,
     screen_h: u32,
 ) -> MenuPageLayout {
-    compute_layout(spec, SHELL_BASE_W as u32, SHELL_BASE_H as u32)
-        .scaled_to_window(screen_w, screen_h)
+    compute_layout_on(
+        spec,
+        ShellScale::from_screen(screen_w as i32, screen_h as i32),
+    )
+}
+
+/// The verified 800x600 page on `scale`'s mapping into its window: VERA's
+/// game room's shell at the window's right edge
+/// ([`ShellScale::anchored_right`]).
+pub fn compute_layout_on(spec: &MenuPageSpec, scale: ShellScale) -> MenuPageLayout {
+    compute_layout(spec, SHELL_BASE_W as u32, SHELL_BASE_H as u32).scaled_to(scale)
 }

@@ -105,6 +105,7 @@ pub(super) fn push_edit(
         None,
         rect,
         caret_visible,
+        SHELL_LABEL_TEXT_RGB,
         text_depth,
         scale,
     );
@@ -237,6 +238,7 @@ pub(crate) fn paint_wol_lobby_children(
             .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
         layout.chat,
         ui.popup.is_none() && ui.caret_visible(now),
+        SHELL_LABEL_TEXT_RGB,
         SHELL_CONTROL_TEXT_DEPTH,
         scale,
     );

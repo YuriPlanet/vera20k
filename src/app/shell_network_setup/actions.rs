@@ -84,6 +84,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
         SetupAction::Trackbar { control, value } => trackbar(state, control, value),
         SetupAction::Select { control, value } => select(state, control, value),
         SetupAction::Join { control } => join(state, control),
+        SetupAction::DropRow { row, group } => drop_row(state, row, group),
         SetupAction::Chat(text) if dialog.wol() => {
             super::wol::chat(state, text);
             Ok(())
@@ -98,7 +99,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 && !view.locked
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
-                ui.page_rows(view.row_count, view.dialog.rows_per_page(), forward);
+                ui.page_rows(&view.pages, forward);
             }
             Ok(())
         }
@@ -172,10 +173,6 @@ pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {
 fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
     let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "disabled checkbox");
-    if control == AUTO_BALANCE {
-        return super::teams::set_auto_balance(state, !current.auto_balance)
-            .and_then(|()| host_option_edited(state));
-    }
     let mut options = state
         .match_state
         .session
@@ -250,6 +247,20 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             return Ok(());
         }
         return super::teams::set_teams(state, teams).and_then(|()| host_option_edited(state));
+    } else if control == ROOM_SIZE {
+        // The room's Max players, which the online lobby lists; the next
+        // Create Game starts from it.
+        let people = u8::try_from(value).unwrap_or(u8::MAX);
+        let session = &mut state.match_state.session;
+        if session.network_people_limit() == Some(people) {
+            return Ok(());
+        }
+        session.set_network_people_limit(people)?;
+        state.frontend.room_limits.players = session.network_people_limit().unwrap_or(people);
+        if super::dialog(state).wol() {
+            queue(state, NetworkSetupRequest::Advertise);
+        }
+        return Ok(());
     } else {
         let mut options = state
             .match_state
@@ -258,6 +269,7 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
             .expect("view has setup")
             .options
             .clone();
+        let before = options.clone();
         match control {
             SPEED => {
                 options.game_speed =
@@ -284,6 +296,10 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
                 options.host_rules.superweapon_limit = limit;
             }
             _ => anyhow::bail!("unknown setup slider"),
+        }
+        // A drag sends only when its value moves.
+        if options == before {
+            return Ok(());
         }
         state.match_state.session.set_network_options(options)?;
     }
@@ -312,27 +328,31 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         SetupColumn::decode(control).ok_or_else(|| anyhow::anyhow!("unknown setup combo"))?;
     let row = usize::from(combo.row);
     // VERA's host moves a guest as the guest's own choices would: into a
-    // seat or to the spectators from its Player list, to another team from
-    // its Team list.
-    let guest = state.match_state.session.host().then(|| {
-        let launch = state.match_state.session.network_setup()?;
-        launch
-            .humans
-            .iter()
-            .enumerate()
-            .find(|(index, human)| {
-                *index != launch.local_player_index && human.raw_slot_index == Some(combo.row)
-            })
-            .map(|(index, human)| (index, human.slot.team))
-    });
-    if let Some((index, team)) = guest.flatten() {
-        let moved = match (column, value) {
-            (SetupColumn::Player, MOVE_TO_SPECTATORS) => Some((team, true)),
-            (SetupColumn::Player, GIVE_SEAT) => Some((team, false)),
-            (SetupColumn::Team, value) => Some((LaunchTeam::from_shell_value(value), false)),
+    // seat or to the spectators from its Player list; its side, colour,
+    // start and team from the rest of its row, below.
+    let guest = state
+        .match_state
+        .session
+        .host()
+        .then(|| {
+            let launch = state.match_state.session.network_setup()?;
+            launch
+                .humans
+                .iter()
+                .enumerate()
+                .find(|(index, human)| {
+                    *index != launch.local_player_index && human.raw_slot_index == Some(combo.row)
+                })
+                .map(|(index, human)| (index, human.slot.team))
+        })
+        .flatten();
+    if let Some((index, team)) = guest {
+        let observer = match value {
+            MOVE_TO_SPECTATORS => Some(true),
+            GIVE_SEAT => Some(false),
             _ => None,
         };
-        if let Some((team, observer)) = moved {
+        if let Some(observer) = observer.filter(|_| column == SetupColumn::Player) {
             let change = super::service::move_player(state, index, team, observer)?;
             super::service::publish_choices(state, change);
             return Ok(());
@@ -407,9 +427,12 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         SetupColumn::Team => slot.team = LaunchTeam::from_shell_value(value),
         SetupColumn::Player => unreachable!(),
     }
-    // A VERA room's guest watches with Observer and plays with a side.
+    // A VERA room's guest watches with Observer and plays with a side; the
+    // host edits only a seated guest's row.
     let observer = if column == SetupColumn::Country {
         value == -3
+    } else if guest.is_some() {
+        false
     } else {
         state
             .match_state
@@ -419,6 +442,11 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             .local_player()
             .is_observer()
     };
+    if let Some((index, _)) = guest {
+        let change = super::service::place_player(state, index, slot, observer)?;
+        super::service::publish_choices(state, change);
+        return Ok(());
+    }
     commit_row(state, row as u8, slot, observer)
 }
 
@@ -447,6 +475,13 @@ fn commit_row(
             .update_local_preferences(launch.local_player(), launch.mode.id);
     }
     if state.match_state.session.host() {
+        // The host's own Watch, or Join from the spectators.
+        if launch.local_player().is_observer() != observer {
+            let index = launch.local_player_index;
+            let change = super::service::place_player(state, index, slot, observer)?;
+            super::service::publish_choices(state, change);
+            return Ok(());
+        }
         queue(state, NetworkSetupRequest::PublishOptions);
         return Ok(());
     }
@@ -509,27 +544,79 @@ fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             slot.team = LaunchTeam::Team(team);
             false
         }
-        SetupGroup::NoTeam => {
-            slot.team = LaunchTeam::None;
+        SetupGroup::Players => {
+            slot.team = state.match_state.session.network_default_team();
             false
         }
+        SetupGroup::NoTeam => anyhow::bail!("no team has no Join"),
+        SetupGroup::ClosedSeats => anyhow::bail!("closed seats have no Join"),
         SetupGroup::Spectators => true,
-        SetupGroup::OpenSeats => anyhow::bail!("open seats have no Join"),
     };
     commit_row(state, row, slot, observer)
 }
 
-/// The host's Add AI on a team header: an AI of the picked difficulty in
-/// the first free seat, the list's row, on the header's team. It publishes
-/// as the Player list's AI does.
+/// The host drops a dragged roster row on another box: a person moves
+/// there as the host's Team list or Seat and Move to spectators would move
+/// them (`service::move_player`), an AI as its Team list would.
+fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<()> {
+    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
+    let page_row = current
+        .headers
+        .iter()
+        .position(|header| header.as_ref().is_some_and(|header| header.group == group));
+    anyhow::ensure!(
+        page_row.is_some_and(|header| current.drop_group(row, header) == Some(group)),
+        "the row does not drop there"
+    );
+    let session = &state.match_state.session;
+    let team = match group {
+        SetupGroup::Team(team) => LaunchTeam::Team(team),
+        SetupGroup::Players => session.network_default_team(),
+        _ => LaunchTeam::None,
+    };
+    let observer = group == SetupGroup::Spectators;
+    let launch = session.network_setup().expect("view has setup");
+    if let Some(index) = launch
+        .humans
+        .iter()
+        .position(|human| human.raw_slot_index == Some(row))
+    {
+        let team = if observer {
+            launch.humans[index].slot.team
+        } else {
+            team
+        };
+        let change = super::service::move_player(state, index, team, observer)?;
+        super::service::publish_choices(state, change);
+        return Ok(());
+    }
+    let mut slot = session
+        .network_row_choices(row)
+        .ok_or_else(|| anyhow::anyhow!("the AI's row has no choices"))?;
+    slot.team = team;
+    state
+        .match_state
+        .session
+        .set_network_row_choices(row, slot)?;
+    queue(state, NetworkSetupRequest::PublishOptions);
+    Ok(())
+}
+
+/// The host's Add AI on a box header: an AI of the picked difficulty in
+/// the list's row, the room's AI seat
+/// (`MatchSession::network_ai_seat`), on the
+/// header's team (with Teams Off, the mode's default). It publishes as the
+/// Player list's AI does.
 fn add_ai(
     state: &mut AppState,
     group: Option<SetupGroup>,
     row: u8,
     value: i32,
 ) -> anyhow::Result<()> {
-    let Some(SetupGroup::Team(team)) = group else {
-        anyhow::bail!("Add AI belongs to a team header");
+    let team = match group {
+        Some(SetupGroup::Team(team)) => LaunchTeam::Team(team),
+        Some(SetupGroup::Players) => state.match_state.session.network_default_team(),
+        _ => anyhow::bail!("Add AI belongs to a box header"),
     };
     let difficulty = match value {
         0 => return Ok(()),
@@ -539,7 +626,7 @@ fn add_ai(
         _ => anyhow::bail!("unknown AI difficulty"),
     };
     anyhow::ensure!(
-        state.match_state.session.network_vacancy(row) == Some(NetworkVacancy::Open),
+        state.match_state.session.network_ai_seat() == Some(row),
         "Add AI's seat is no longer free"
     );
     state
@@ -551,7 +638,7 @@ fn add_ai(
         .session
         .network_row_choices(row)
         .ok_or_else(|| anyhow::anyhow!("the AI's row has no choices"))?;
-    slot.team = LaunchTeam::Team(team);
+    slot.team = team;
     state
         .match_state
         .session

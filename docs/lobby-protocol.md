@@ -100,8 +100,9 @@ from the creator: 256 when a game has a password, which clients show as a lock a
 ask for before joining, otherwise 0. `max_users` (1–30) from `create` and the host's
 `advertise` is the room's join limit, never below its current members; a join past
 it fails with `room_full`. Games from 0.2.6 advertise the most people their room
-takes, players and spectators: the host's Max players, and with spectators off no
-more than its seats. Their host gives a newcomer a free seat, then the last AI's
+takes, players and spectators: the host's Max players, which current games' hosts also
+change in the room as Room size and advertise again, at most the room's thirty rows less
+its AI, and with spectators off no more than its seats. Their host gives a newcomer a free seat, then the last AI's
 seat, then a spectator's place, and their lobby lists each room as `users` over
 `max_users`. A host `kick` with `keep_out:true` keeps that player out of
 the room for five minutes, by account and by name without case: their `join` fails
@@ -167,16 +168,14 @@ room and sends its options again without it. Options that name a player no longe
 the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A game
 from before Teams cannot read a host's options while Teams is set and shows its
 invalid-update line, in a room that cannot start anyway, since its players' versions
-differ. `launch.options.auto_balance`, the host's Balance automatically, is `true` or
-left out while it is off; the game sends it only with a Teams count. A lobby from before
-it refuses it in the same way, and the host's game then turns Balance automatically off
-first, then Teams if the lobby still refuses. `launch.options.queue`, a VERA room's join
+differ. `launch.options.auto_balance`, the Balance automatically setting of hosts on
+0.3.3 and 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
+and current games never send it. `launch.options.queue`, a VERA room's join
 queue, lists by name the room's spectators (humans with the `Observer` role) who wait
 for a seat, first first, each once and at most 30; the game leaves it out while nobody
 waits, and the host's game seats the first when a seat frees. A lobby from before it
 refuses it in the same way; the host's game then stops queueing in that room, says so
-and sends its options again, before it turns off Balance automatically and then Teams
-if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
+and sends its options again, before it turns Teams Off if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
 `{terrain_deformation?:true, superweapon_limit?:2..20, personal_rules?:<base64>}`: the host's
 Terrain Deformation and its Superweapon Limit. `personal_rules`, the host's `VERARULES.INI`
 in standard base64 of at most 8,192 bytes (10,924 characters), came from games before the
@@ -185,11 +184,11 @@ the object while all are; every player's match plays them in place of the player
 lobby from before the Superweapon Limit refuses options that carry `superweapon_limit`; the host's
 game then turns it off, says so and sends its options again, keeping the other rules. A
 lobby from before the room's rules refuses them in the same way; the host's game then
-drops the room's rules, says so and sends its options again, before it stops queueing, then turns off Balance automatically and then
-Teams if the lobby still refuses. `watching`, the room's Watching, is `off`, `delayed` or
-`live` ([Watching](#watching)). A lobby from before it refuses it in the same way; the
-host's game then turns Watching off, says so and sends its options again, before any of
-the others. `map_metadata` is
+drops the room's rules, says so and sends its options again, before it stops queueing and
+then turns Teams Off if the lobby still refuses. `watching`, the room's Watching, is `off`,
+`delayed` or `live` ([Watching](#watching)). A lobby from before it refuses it in the same
+way; the host's game then turns Watching off, says so and sends its options again, before
+any of the others. `map_metadata` is
 `{display_name,player_capacity,official,byte_length,digest,source_sha256,effective_digest}`. The legacy
 INI `digest` remains distinct from lowercase SHA-256 over the physical map bytes;
 online `map_digest` agreements compare `source_sha256`. `effective_digest` and
@@ -199,11 +198,17 @@ of `open`, `closed`, `observer` or `waiting`. A receiver resolves its own
 `launch.local_player_index` from the authenticated player; it never uses the host's.
 `slot` uses `SkirmishLocalSlot` serde. Options are authored only by the room owner;
 the service increments `revision` and clears guest readiness on a material change.
-Starting requires at least one non-observer human and at least two playing
-participants, counting the actual `launch.opponents` AI rows. A host can select
-an AI opponent and start alone; `ai_player_count` without an AI row is insufficient.
-Games with observers cannot include AI players. `start.users` contains exactly
-the canonical human names, including observers, and never includes AI rows.
+Starting requires at least two playing participants, counting the actual
+`launch.opponents` AI rows. A host can select an AI opponent and start alone;
+`ai_player_count` without an AI row is insufficient. AI players may play while observers
+watch, and with two or more AI everyone in the room may watch. The map's
+`player_capacity` must cover every playing human and AI row, or with Teams set
+(`launch.options.teams`), where a team's players share its bases, one start for each
+team that has players or AI and one for each playing participant on no team. A lobby
+from before this refuses options past the map's capacity with `invalid_options`, and a
+start with both observers and AI with 409 `not_ready`; one from before AI-only games
+refuses a start where every human watches with 409 `not_ready`. `start.users` contains
+exactly the canonical human names, including observers, and never includes AI rows.
 
 Event kinds and payloads:
 
@@ -586,11 +591,11 @@ players' games never learn it is there (relay README, "Watchers").
 `GET /v1/matches` returns
 `{matches:[{match_id,name,map,mode,players,observers,computers,since,names:[name],watchers,max_watchers,delay_seconds}]}`:
 the matches the caller may watch. These are matches in play between two or more humans,
-with watching on, in a room without a password, on a relay that lets watchers in and on
-the caller's version (as `kind=41` lists rooms), that the caller plays no part in. Clan
-rooms, generated maps and co-op missions are never listed: a watcher's game cannot yet
-rebuild a start that splits players by squad, comes from the host's map seed or from a
-campaign. `name`
+at least one of them playing (a watcher's game follows a player), with watching on, in a
+room without a password, on a relay that lets watchers in and on the caller's version
+(as `kind=41` lists rooms), that the caller plays no part in. Clan rooms, generated maps
+and co-op missions are never listed: a watcher's game cannot yet rebuild a start that
+splits players by squad, comes from the host's map seed or from a campaign. `name`
 is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
 began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans;
 `watchers` counts who watches now, of at most `max_watchers` (10); and `delay_seconds` is
@@ -837,11 +842,10 @@ choice would, and publishes the options. A game that ignores the event leaves th
 to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
 teams, AI players, fewer than two players, or teams already as even as they can be.
 Anyone else typing `/balance` hears that only the host can. The host's Balance button
-sends `/balance` in the room's chat. With Balance automatically on, the host's game sends
-the `balance` command 5 seconds after who plays or the Teams count last changed, and
-refuses its own Start Game until the answer comes; the lobby balances as for `/balance`
-but says nothing when nothing moves, and refuses the command from anyone but the host
-with 403 `forbidden`.
+sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+the `balance` command 5 seconds after who plays or the Teams count last changed; the
+lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
+command from anyone but the host with 403 `forbidden`. Current games never send it.
 The host can also move a player by hand: to another team, into a free seat or to the
 spectators. The host's game publishes the options as it does after `/balance`, with no new
 field, and the moved player's game tells them in chat.

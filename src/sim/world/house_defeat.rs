@@ -617,6 +617,17 @@ impl Simulation {
         )
     }
 
+    /// VERA: a network match in which every human watches, as VERA's room
+    /// starts while two or more AI play: no House is a human's but an
+    /// observer's. gamemd's rooms never start one.
+    pub(crate) fn network_ai_alone(&self) -> bool {
+        self.session.game_mode().is_network()
+            && !self.houses.order().iter().any(|owner| {
+                !self.session.is_observer_house(*owner)
+                    && self.houses.get(owner).is_some_and(|house| house.is_human())
+            })
+    }
+
     /// MPlayer_Defeated4FC3DE..6B7's decision: `None` while hostile
     /// survivors and a human remain, else each outcome viewpoint and whether
     /// it wins.
@@ -649,7 +660,9 @@ impl Simulation {
                             .is_allied(&self.interner, *right, *left))
             })
         });
-        if !all_allied && alive.len() != 1 && living_humans != 0 {
+        // VERA: in a match only AI play, no human's defeat ends it; it ends
+        // when one side is left.
+        if !all_allied && alive.len() != 1 && (living_humans != 0 || self.network_ai_alone()) {
             return None;
         }
         // 0x004FC5DD/5EC: both class virtuals return true only for Cooperative

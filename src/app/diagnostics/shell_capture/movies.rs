@@ -398,8 +398,16 @@ impl MoviesCapture {
     }
 
     fn restore_neutral_pointer(state: &mut AppState) {
-        state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
-        state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
+        let config = &state.renderer.gpu.config;
+        // A scaled window (VERA's room's capture) rests it at its centre.
+        let (x, y) = match (config.width, config.height) {
+            (EXPECTED_WIDTH, EXPECTED_HEIGHT) | (640, 480) => {
+                (EXPECTED_CURSOR_X, EXPECTED_CURSOR_Y)
+            }
+            (width, height) => (width / 2, height / 2),
+        };
+        state.match_state.input.cursor_x = x as f32;
+        state.match_state.input.cursor_y = y as f32;
     }
 
     pub(super) fn after_present(
@@ -586,7 +594,10 @@ impl MoviesCapture {
         }
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
-                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                // Only VERA's room's capture runs in a scaled window
+                // (`parse_launch_args`).
+                let snapshot = MainMenuCaptureSnapshot::from_state(state).scaled_as_reference();
+                if steady_main_menu_capture_ready(snapshot)? {
                     let exit_phase = match self.target {
                         MoviesTarget::ExitConfirm => Some(Phase::Exit),
                         MoviesTarget::SlideOut {
