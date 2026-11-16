@@ -1087,9 +1087,11 @@ impl SuperWeaponType {
             weapon_type: None,
             aux_building: None,
             building_requirements: None,
-            #[cfg(feature = "ares")]
+            // Both Ares and Phobos' `SWTypeExt` read this key
+            // (`Ext/SWType/Body.cpp:121`); a phobos-only build keeps it.
+            #[cfg(any(feature = "ares", feature = "phobos"))]
             money_amount: section.read_ares_int("Money.Amount", 0),
-            #[cfg(not(feature = "ares"))]
+            #[cfg(not(any(feature = "ares", feature = "phobos")))]
             money_amount: 0,
             insufficient_funds_eva: None,
             impatient_eva: None,
@@ -2599,7 +2601,8 @@ mod tests {
         use crate::rules::ini_parser::IniFile;
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[SuperWeaponTypes]\n0=A\n1=B\n[A]\nType=IronCurtain\n\
-             [B]\nType=IronCurtain\nSW.RangeMinimum=2.5\nSW.RangeMaximum=9.25\n",
+             [B]\nType=IronCurtain\nSW.RangeMinimum=2.5\nSW.RangeMaximum=9.25\n\
+             Money.Amount=500\n",
         ))
         .unwrap();
         assert_eq!(
@@ -2610,6 +2613,7 @@ mod tests {
             rules.phobos_super_weapon_metadata("B").unwrap().range(),
             (2.5, 9.25)
         );
+        assert_eq!(rules.super_weapon("B").unwrap().money_amount, 500);
     }
 
     #[cfg(feature = "ares")]

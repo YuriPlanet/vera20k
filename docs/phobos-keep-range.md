@@ -59,12 +59,10 @@ RESIDUAL: the negative branch compares against the firer's assigned target
 coincide for the fire/close-enough checks this ports; a query about another
 target uses that target's distance.
 
-RESIDUAL: a negative `KeepRange` replaces the maximum-range getter, so the
-native path never adds the AttachEffect `WeaponRange.*` modifiers to it; VERA
-overrides the local weapon before the shared reach fold, which still adds
-those AttachEffect modifiers on top. Trigger: a negative `KeepRange` plus an
-active `WeaponRange.Multiplier/ExtraRange` effect; effect: the maximum range
-is scaled where native keeps the plain value.
+A negative `KeepRange` replaces the maximum-range getter, so the native path
+never adds the AttachEffect `WeaponRange.*` modifiers to it; VERA's
+`in_range_at_slot` likewise uses the plain `keep` value instead of
+`weapon_range_with_modifiers` when `keep_max` is set. No residual.
 
 RESIDUAL: `mapless_in_range` (the headless/pre-map policy path) does not apply
 the override; production always has a resolved map.

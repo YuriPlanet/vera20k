@@ -69,9 +69,9 @@ the shared `fire::launch_chained_super`/`launch` owner has no such flag
 (documented in `launch_super_preserving_charge`), so the launch effects are
 the same for both audiences.
 
-RESIDUAL: `Money.Amount` is an Ares-owned key; without the Ares capability
-VERA reads 0, so the affordability gate and the display label treat every
-launch as free, matching the unread key.
+`Money.Amount` is read whenever Ares or Phobos is compiled
+(`Ext/SWType/Body.cpp:121`), so the affordability gate and the display label
+work in both builds; no residual.
 
 RESIDUAL: the launch cell is `Coord2Cell` of the impact; VERA floors the
 lepton coordinate with the shared `lepton_to_cell` and clamps it to the `u16`
