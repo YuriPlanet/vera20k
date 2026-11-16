@@ -7,7 +7,7 @@ commit. Where they differ, the English text applies.
 
 | | |
 | --- | --- |
-| RFC version | 0.0.4 |
+| RFC version | 0.0.5 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | API covered | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -88,7 +88,7 @@ follow this table.
 | **Action** | What a trigger does. Original actions keep their numbers. A new action runs a module function. |
 | **Condition** | A filter the engine checks natively before a trigger's actions run. |
 | **Tag** | What attaches triggers to an object or a cell (CellTag). An object holds one tag. |
-| **Mark** | A text marker an object carries, tested by conditions. Not a tag: an object may carry any number of marks. |
+| **Mark** | A text marker an object or a house carries, tested by conditions, with an optional integer value and a visibility level. Not a tag: an object may carry any number of marks. |
 | **Attached effect** | A per-object state with a duration, such as a multiplier or an immunity (the Phobos AttachEffect term). |
 | **Mission** | An object's order: Move, Attack, Guard, Area Guard, Hunt, Sleep and the rest. |
 | **Local / Global** | Local and global variables, as in maps. |
@@ -244,7 +244,10 @@ Conflict rules:
   mod's binding by layering.
 - **Triggers** from both sources fire. The mod's module runs first.
 - **Overrides** chain: the mod's module computes a result, the map's module
-  receives it and may change it, and the engine uses the final value.
+  receives it and may change it, and the engine uses the final value. Each link
+  receives both the native value and the previous link's result. A later link
+  may lift an earlier link's veto. A value override returns an explicit
+  "handled" flag rather than a special value.
 - **Actions and missions** go through the same owners in execution order.
 - **Peer calls** (later phase): a mod may publish functions that a map calls
   with `callPeer("mod", name, bytes)`. Only functions the mod exports for
@@ -275,6 +278,11 @@ and what the module left behind is handled this way:
 - its projectiles on a module path fly on straight toward their target;
 - attached effects and marks it added stay, because the engine owns them.
 
+Errors that are part of normal play return a status and the module carries on:
+a handle whose object is gone, an unknown name, an action an engine rule
+refuses (for example a cell that cannot be built on). Errors that show a broken
+module disable it: an invalid argument, a trap, an exceeded budget.
+
 `docs/modding.md` currently says a mod is only data and VERA20k never runs a
 program from one. That text changes to say modules run only in a sandbox with
 no access to files, the network or the clock. The Mods menu and the map list
@@ -297,8 +305,9 @@ engine executes them.
   engine's built-in fuel. Every engine, native or browser, then counts the same
   operations and stops at the same point.
 - Positions, speeds and other game values cross the boundary as integers
-  (leptons, fixed-point raw values). A module may use floating point
-  internally.
+  (leptons, fixed-point raw values). Fractions and multipliers use the
+  simulation's fixed-point format, `I16F16` raw values (`SimFixed`). A module
+  may use floating point internally.
 - Module memory, mutable globals and tables are part of the simulation state:
   saved in snapshots and included in the state hash.
 
@@ -334,6 +343,15 @@ Ordering rules:
   module phase, so triggers cannot loop within one frame.
 - Overrides only read state and return a result. They cannot run actions,
   because the engine is in the middle of a calculation when it calls them.
+- A delivered event reports what already happened and cannot cancel a native
+  result such as a death. Changing that needs an override or an attached
+  effect (for example, prevent death).
+- Frequent events (damage, fire, projectile created or detonated, crush, move
+  failed) and every override are raised only for bound types. There is no
+  subscription to all objects.
+- After a save is loaded, module memory is restored with the snapshot.
+  `onScenarioStart` does not run again and there is no separate load call.
+  Handles stored in module memory refer to the same objects after loading.
 
 Each module has an operation budget per frame. Subscriptions are opt-in: a
 module that exports no `onFrame` and binds no triggers costs nothing per
@@ -385,6 +403,12 @@ Overrides are named after game concepts, such as `Override.Damage` or
 `Override.TargetChoice`, never after native functions, so they survive engine
 refactors. `Override.Fire` lets a module take over a weapon's shot, so the
 native projectile is not created (section 9).
+
+For decisions made very often, data comes before callbacks: target priority is
+a multiplier carried as an attached effect, plus a `TargetChanged` event, and
+per-call overrides are kept for rarer decisions. `Override.CommandAllowed` and
+`Override.Death` are further candidates. Missions that a module defines and
+runs are left to a later RFC.
 
 L4 calls the module once per frame per behavior type with all objects of that
 type, never once per object.
@@ -451,6 +475,7 @@ Candidate delivered events for version 1:
 | EnteredBy / ExitedBy | passenger, passengers, occupied size, garrison or transport |
 | Crushed | crusher |
 | HouseTransfer | new house, whether by mind control; raised before the transfer |
+| HouseTransferred | previous house, whether by mind control; raised after the transfer |
 | EffectStart / EffectExpire / EffectStacks | effect, stack count |
 | Timer | frame of the previous firing |
 | SuperWeaponLaunched | superweapon type, house, target cell; lets a module implement a superweapon's effect |
@@ -458,6 +483,10 @@ Candidate delivered events for version 1:
 Candidate polled events: health, ammo, passengers, transport space, ore
 storage, current mission, moving or stopped, land type, house money, house
 power, effect stacks, distance to the other object.
+
+Further candidate events from the research: Built, Idle, MoveFailed, Arrived,
+Promoted, Cloaked, Spotted, Lost, AmmoChanged, MissionChanged, HouseDefeated,
+PlayerLeft, StorageFull, MotionEnded.
 
 Candidate conditions: relation (self, ally, enemy, neutral), category
 (infantry, vehicle, building, aircraft, projectile), layer (air, ground,
@@ -479,7 +508,8 @@ programming language.
 
 Candidate instant actions for version 1: fire a weapon (by index or name, at a
 cell, an object or the current target), launch a superweapon, spawn an
-animation, remove, kill, change health (add or set), create an object, set a
+animation, remove, kill, deal damage through the warhead and armor rules (with a source for kill credit
+and experience), set health directly (no credit), create an object, set a
 mission, teleport to a cell (as the Chronosphere does; when the cell is
 blocked, a stated rule picks a nearby cell or the action fails), clear the
 target, clear a
@@ -488,6 +518,8 @@ experience, add money, change the tech tree, transfer the owner, clear mind
 control, change ammo, add or remove passengers, add or remove an attached
 effect, add or remove a mark, create a projectile (type, start, target object
 or coordinate, source for kill credit and experience, initial module data),
+detonate a warhead at a coordinate with a damage and a source, detonate a
+projectile now, remove a projectile without detonating it,
 end the game for a house (win or lose) and set scores, write a line to the
 in-game log.
 
@@ -512,12 +544,16 @@ a legal target, house power off.
 - Text, values or buttons shown over an object are client display properties
   (section 10), not effects.
 
-An object carries any number of marks. Actions and effects add and remove
-them; conditions test them.
+An object carries any number of marks, and so does a house. Actions and
+effects add and remove them; conditions test them. A mark may carry one
+integer value and a visibility level: its own house, allies, players who can
+see the object, or everyone. Client queries return only the marks their
+player may see. Marks do not nest.
 
 ### 6c. Queries
 
-Queries are read-only and iterate in a deterministic order. In client modules
+Queries are read-only. Results come in object creation order, a rule that does
+not depend on how the engine stores objects. In client modules
 they are filtered by what the local player can see.
 
 - **Objects:** in a cell, in a radius or a rectangle, by type, house or
@@ -529,6 +565,9 @@ they are filtered by what the local player can see.
   movement zone, whether a house can see it; waypoints and cell tags.
 - **Rules:** any key of any type, as a parsed value.
 - **Scenario:** frame number, difficulty, game mode, number of players.
+- **Probes:** whether a weapon could fire at a target now, whether a target is
+  in range, whether a type can be placed at a cell for a house, and the closest
+  cell where it can be. They reuse the engine's own rules.
 
 ### 6d. AI
 
@@ -627,22 +666,30 @@ the tree is not rebuilt every frame. No graphics API is exposed.
 
 Authors write an interface in two parts:
 
-- **Static layout in INI**, with the syntax of `veraui.ini`. The engine reads it
+- **Static layout in INI**, with the syntax and keys of `veraui.ini` (`Type`,
+  `Hold`, `X`, `Y`, `Width`, `Height`, `Parts`, `Label`). This RFC adds the
+  `List` part type and `Label` for `Text` parts. The engine reads it
   when the match starts; nothing is precompiled. An interface without dynamic
   parts needs no module.
 - **Dynamic parts in module code**: find nodes by name and change them, or
   create new ones.
 
 ```ini
-[ObjectivesPanel]
-Type=Panel
-Anchor=TopRight
-Size=240,120
-Children=ObjTitle,ObjList
+[Mission.Field]
+Parts=Messages,Timers,Banner,Powers,Clock,Objectives
 
-[ObjTitle]
+[Mission.Objectives]
+Type=Column
+Hold=TopRight
+Width=240
+Parts=ObjTitle,ObjList
+
+[Mission.ObjTitle]
 Type=Text
-Text=TXT_OBJECTIVES     ; CSF key, follows the game language
+Label=TXT_OBJECTIVES    ; new for Text: a string-table line, follows the game language
+
+[Mission.ObjList]
+Type=List               ; new part type
 ```
 
 ```ts
@@ -675,9 +722,13 @@ closures, and is not part of the official API.
 - Images, animations and models are referenced by name, never by file format,
   so later asset formats (a separate RFC) need no API change.
 - Sounds and messages; `log()` writes to the in-game console.
+- The simulation module sends named notifications to one player's client with
+  `notify(player, name, bytes)`; the client module receives them in
+  `onNotify(name, bytes)`.
 - Every query is filtered by what the local player can see. A spectator's
   client modules see what the spectator sees, the whole map when the room
-  allows it.
+  allows it. An enemy object the player cannot see now is absent from results;
+  the engine keeps no last-seen copies.
 - Player-installed interface modules come in a later phase. A mod or a room
   may forbid them.
 
@@ -716,6 +767,8 @@ closures, and is not part of the official API.
   Breaking one fails the build.
 - Functions may be deprecated, with a warning to the module author, but a
   published version is never removed.
+- A published function never changes its units or meaning. A change is a new
+  function or a new version.
 - Whether the binary interface is a core-module ABI (integer handles, pointer
   and length pairs) or the Component Model is an open question.
 
@@ -777,6 +830,10 @@ Planned order after acceptance:
   would own a language runtime forever and have to pin one build per API
   version. Rejected: languages stay in the authors' tools.
 - **Native plugins.** Not portable to the browser build, not sandboxed.
+- **Simulation queries as a given house.** Not adopted for now. Simulation
+  queries see everything; client queries are filtered.
+- **Messages between client modules.** Not adopted. All traffic between
+  players goes through the simulation, so online play keeps one channel.
 - **Only more INI keys.** Keeps working for simple cases and stays the first
   choice where it is enough, but cannot express general logic.
 
@@ -836,6 +893,15 @@ Planned order after acceptance:
 
 ## Changelog
 
+- **0.0.5** (2026-11-16): decisions on the appendix's proposals. Adopted:
+  override chaining with lifted vetoes, saves and `onScenarioStart`, mark values,
+  visibility and house marks, query order, warhead detonation, projectile
+  removal, damage versus health, HouseTransferred, more candidate events,
+  bound-type-only frequent events, data before callbacks, events that cannot
+  cancel, probe queries, `veraui.ini` layout keys, no last-seen copies for
+  client queries, error model, named notifications, fixed-point format, no
+  change of units or meaning. Not adopted: query as house, client-to-client
+  messages.
 - **0.0.4** (2026-11-16): API catalog appendix with its own list of engine gaps
   and proposed RFC changes.
 - **0.0.3** (2026-11-16): ordering rules for mixed triggers, events raised in

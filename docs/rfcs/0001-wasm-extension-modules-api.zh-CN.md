@@ -2,9 +2,9 @@
 
 [English](0001-wasm-extension-modules-api.md) · **简体中文**
 
-本附录是 [RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的一部分，使用同一个版本号（0.0.4）。两个文件在同一次提交中修改。本清单与 RFC 正文不一致时，以 RFC 正文为准。本附录的中英文两个版本一起修改；两者不一致时，以英文版为准。
+本附录是 [RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的一部分，使用同一个版本号（0.0.5）。两个文件在同一次提交中修改。本清单与 RFC 正文不一致时，以 RFC 正文为准。本附录的中英文两个版本一起修改；两者不一致时，以英文版为准。
 
-本清单列出 API 将提供的每个函数、事件、约束条件、效果和覆盖点，每一项由哪段引擎代码负责，以及每个想法的来源。它不决定版本 1 包含哪些内容：那是 RFC 的待定问题 13。RFC 尚未涵盖的条目标为 **待定的 RFC 修改**，并列在[提议的 RFC 修改](#提议的-rfc-修改)中。
+本清单列出 API 将提供的每个函数、事件、约束条件、效果和覆盖点，每一项由哪段引擎代码负责，以及每个想法的来源。它不决定版本 1 包含哪些内容：那是 RFC 的待定问题 13。来自调研的条目注明了所依赖的提议编号，以及 RFC 0.0.5 是否采纳，见[提议的 RFC 修改](#提议的-rfc-修改)。
 
 所有文件路径都相对于仓库根目录。行号有意省略，因为它们会变。代码事实来自 `main` 的 `16f18f4b7`。
 
@@ -127,7 +127,7 @@ enum Status {
 }
 ```
 
-哪些参数算非法（因而会停用模块）按函数逐一列出：越界的下标（全局变量 0..49，局部变量 0..99）、负数的数量、不在列表中的枚举值。没有匹配的名字返回 `NotFound`，因为名字来自 mod 可能修改的数据。两类错误如何划分是**待定的 RFC 修改**（提议 P18）。
+哪些参数算非法（因而会停用模块）按函数逐一列出：越界的下标（全局变量 0..49，局部变量 0..99）、负数的数量、不在列表中的枚举值。没有匹配的名字返回 `NotFound`，因为名字来自 mod 可能修改的数据。两类错误如何划分是**已在 RFC 0.0.5 采纳**（提议 P18）。
 
 对返回句柄或数值的函数，`ctx.lastStatus(): Status` 给出上一次调用的状态。
 
@@ -193,7 +193,7 @@ class Random {
 | `onMessage` | `onMessage(ctx: Ctx, sender: House, data: Uint8Array): void` | 客户端消息到达模拟时，在模块阶段 | v1（P2） | `src/sim/command.rs::Command`：**尚无模块变体** | RFC 5、10；Rc：`RecvLuaMsg(msg, playerID)` |
 | `onLaunch` | `onLaunch(ctx: LaunchCtx, p: Projectile): Path \| null` | 绑定了模块路径的类型，每个抛射体一次 | later | `ProjectileTrajectory` 的模块分支：**尚无 owner** | RFC 9 层级 3 |
 | `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: string, bullets: BulletBatch): void` | 每帧每种抛射体类型一次 | later（L4） | **尚无 owner** | RFC 6 L4、9 层级 4 |
-| `onLoad` | — | 不定义：模块内存随快照恢复，`onScenarioStart` 不会再次运行 | **待定的 RFC 修改**（P2） | — | Rc：`Load`，笔记 6.10 |
+| `onLoad` | — | 不定义：模块内存随快照恢复，`onScenarioStart` 不会再次运行 | **已在 RFC 0.0.5 采纳**（P2） | — | Rc：`Load`，笔记 6.10 |
 
 `ctx` 是模拟 API 唯一的入口：
 
@@ -231,8 +231,8 @@ class Variable { get(): bool; set(value: bool): Status; }
 | `onHover` | `onHover(ui: Ui, node: Node, inside: bool): void` | 光标进入或离开节点 | v1（P2） | **尚无 owner** | RFC 10 |
 | `onHotkey` | `onHotkey(ui: Ui, name: string): void` | 模块注册的热键被按下 | v1（P2） | **尚无 owner** | RFC 10 |
 | `onSelect` | `onSelect(ui: Ui, selection: TechnoList): void` | 本地选择发生变化 | v1（P2） | `src/app/input/` 中的选择 owner（未核实） | RFC 10；T38 `OnSelect` |
-| `onNotify` | `onNotify(ui: Ui, name: string, data: Uint8Array): void` | 发给本地玩家的模拟通知到达 | v1（P2） | **尚无 owner** | RFC 1、11（“本地通知”）；导出名为**待定的 RFC 修改**（P19） |
-| `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | 盟友或观战者的客户端发来消息 | later | **尚无 owner** | **待定的 RFC 修改**（P5）；Rc：`SendLuaUIMsg` |
+| `onNotify` | `onNotify(ui: Ui, name: string, data: Uint8Array): void` | 发给本地玩家的模拟通知到达 | v1（P2） | **尚无 owner** | RFC 1、11（“本地通知”）；导出名为**已在 RFC 0.0.5 采纳**（P19） |
+| `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | 盟友或观战者的客户端发来消息 | later | **尚无 owner** | **RFC 0.0.5 未采纳**（P5）；Rc：`SendLuaUIMsg` |
 
 客户端允许使用浮点：客户端世界本来就不是确定性的（RFC 1）。
 
@@ -700,7 +700,7 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 | `map.spawnAnim(anim: string, at: Coord): Status` | 创建动画 | native | `src/sim/anim_class.rs`（按坐标的入口；G-A1） | v1? | RFC 6b；F6 |
 | `techno.remove(): Status` | 移除对象：不死亡、不产生幸存者、不计击杀 | none | `src/sim/world/lifecycle.rs::Simulation::uninit_with_context` | v1? | RFC 6b；F7 `Remove`；Rc：`DestroyUnit(reclaimed)` |
 | `techno.kill(mode: KillMode, source: Techno \| null): Status` | 走伤害流程击杀，伤害等于当前生命并带 `ignore_defenses`（有死亡动画和幸存者，击杀记给 `source`） | native | `src/sim/world/mod.rs::commit_direct_damage_receiver`（`EntityDamageEvent::direct_receiver`） | v1? | RFC 6b；F8 `Suicide` |
-| `techno.damage(amount: i32, warhead: string, source: Techno \| null): Status` | 经过弹头和护甲造成伤害，计击杀和经验 | native | `commit_direct_damage_receiver`；计算在 `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b“修改生命（增减）”；F9；Rc：`AddUnitDamage`；**待定的 RFC 修改**（P9：增减走弹头流程） |
+| `techno.damage(amount: i32, warhead: string, source: Techno \| null): Status` | 经过弹头和护甲造成伤害，计击杀和经验 | native | `commit_direct_damage_receiver`；计算在 `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b“修改生命（增减）”；F9；Rc：`AddUnitDamage`；**已在 RFC 0.0.5 采纳**（P9：增减走弹头流程） |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | 设定或回复生命，不计击杀 | none | `combat/object_health.rs::Health::set`、`heal`（没有 Simulation 层的 owner） | v1? | RFC 6b；F9 `ModifyHealth` |
 | `map.createObject(type: string, at: Cell, owner: House, c: CreateParams): Techno \| null` | 创建一个完整的对象；格子被占时拒绝 | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`、`place_building_with_cleared_foundation`、`place_foot_with_cleared_cell`（文档注明“用于测试、工具、调试”） | v1? | RFC 6b；F10 `CreateUnit`（继承触发器和效果：`CreateParams.inherit`） |
 | `techno.setMission(m: Mission, target: Target \| null): Status` | 像玩家指令一样排入一个任务 | none | `src/sim/mission/retask.rs::queue_order_mission`、`queue_megamission` | v1 | RFC 6b、示例；F16 `Mission`；F13 `CommandMoveTo`（= 带格子的 `Move`） |
@@ -720,9 +720,9 @@ Ares 动作（仅在启用 Ares 时可用，否则为 `Unsupported`；owner 为 
 | `techno.addMark(...)` / `removeMark(...)` | 见第 6 节 | — | 第 6 节 | v1 | RFC 6b |
 | `map.createProjectile(p: ProjectileParams): Projectile \| null` | 创建抛射体：类型、起点、目标对象或坐标、用于击杀和经验归属的来源、16 字节的初始模块数据 | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b、9；Rc：`SpawnProjectile` |
 | `map.detonateWeapon(weapon: string, at: Coord, source: Techno \| null): Status` | 不生成抛射体，直接在某个坐标引爆武器 | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint`（只支持路径点；G-A1） | v1? | 带坐标的 A42（RFC 6：坐标作为参数） |
-| `map.detonateWarhead(warhead: string, damage: i32, at: Coord, source: Techno \| null): Status` | 按给定伤害和来源造成弹头的范围伤害 | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **待定的 RFC 修改**（P7）；Rc：`SpawnExplosion` |
-| `projectile.detonate(): Status` | 让抛射体立即引爆 | native | `src/sim/projectile` 的引爆准入（没有公开入口） | later | **待定的 RFC 修改**（P8）；Rc：`SetProjectileCollision` |
-| `projectile.remove(): Status` | 移除抛射体，不引爆 | none | **尚无 owner** | later | **待定的 RFC 修改**（P8）；Rc：`DeleteProjectile` |
+| `map.detonateWarhead(warhead: string, damage: i32, at: Coord, source: Techno \| null): Status` | 按给定伤害和来源造成弹头的范围伤害 | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **已在 RFC 0.0.5 采纳**（P7）；Rc：`SpawnExplosion` |
+| `projectile.detonate(): Status` | 让抛射体立即引爆 | native | `src/sim/projectile` 的引爆准入（没有公开入口） | later | **已在 RFC 0.0.5 采纳**（P8）；Rc：`SetProjectileCollision` |
+| `projectile.remove(): Status` | 移除抛射体，不引爆 | none | **尚无 owner** | later | **已在 RFC 0.0.5 采纳**（P8）；Rc：`DeleteProjectile` |
 | `scenario.endFor(house: House, outcome: Outcome): Status` | 让某个所属方结束游戏，胜利或失败 | none | `house_defeat.rs::request_player_outcome` | v1? | RFC 6b |
 | `house.setScore(points: i32)` / `addScore` | 设置分数 | none | `Economy::add_score`（没有设定函数） | v1? | RFC 6b |
 | `ctx.log(text: string)` | 向游戏内日志写一行 | none | **尚无 owner** | v1 | RFC 6b、10 |
@@ -871,14 +871,14 @@ marks(): StringList;    // order: name order, case-insensitive
 | `hasMark` | 判断时不区分大小写 | v1 | RFC 6b；C10、C11 |
 | `marks` | 列表 | v1 | RFC 6c（对象读取中的“标记”） |
 | 效果携带的标记 | 效果类型列出若干标记，效果生效期间对象携带它们（新属性，例如 `Marks=`；名称未核实） | v1? | F54“持有带它的行为就获得这个标签” |
-| 标记的值和可见性 | **待定的 RFC 修改**（P3） | later | Rc: 带访问级别的 rules params |
-| 所属方标记 | **待定的 RFC 修改**（P3） | later | Rc: `SetTeamRulesParam` |
+| 标记的值和可见性 | **已在 RFC 0.0.5 采纳**（P3） | later | Rc: 带访问级别的 rules params |
+| 所属方标记 | **已在 RFC 0.0.5 采纳**（P3） | later | Rc: `SetTeamRulesParam` |
 
 客户端模块只能读取自己看得到的对象的标记。能看到全部标记还是只有“公开”标记，取决于 P3。
 
 ## 7. 查询
 
-查询是只读的，遍历顺序确定（RFC 6c）。RFC 没有规定具体顺序；本清单采用“对象创建顺序”，**待定的 RFC 修改**（P6）。在客户端模块中，每个查询都按本地玩家的视野过滤（RFC 10）。
+查询是只读的，遍历顺序确定（RFC 6c）。RFC 没有规定具体顺序；本清单采用“对象创建顺序”，**已在 RFC 0.0.5 采纳**（P6）。在客户端模块中，每个查询都按本地玩家的视野过滤（RFC 10）。
 
 ```ts
 class Filter {
@@ -915,7 +915,7 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | |
 | `techno.layer()`、`landType()` | 枚举 | 实体所在层；地图 | v1 | RFC 6a 约束条件 |
 | `projectile.type()`、`coord()`、`source()`、`target()`、`data()` | 值 | `src/sim/projectile` | v1? | RFC 9 |
-| `objects.canFireAt(t: Techno, w: i32, at: Target)`、`inRange(...)` | `bool` | **尚无 owner**（结构化的合法性探测） | later | **待定的 RFC 修改**（P15）；Rc: `GetUnitWeaponTestTarget` |
+| `objects.canFireAt(t: Techno, w: i32, at: Target)`、`inRange(...)` | `bool` | **尚无 owner**（结构化的合法性探测） | later | **已在 RFC 0.0.5 采纳**（P15）；Rc: `GetUnitWeaponTestTarget` |
 
 ### 7.2 所属方
 
@@ -945,7 +945,7 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
 | `map.waypoint(n: i32)` | `Cell \| null` | 地图路径点 | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag \| null` | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
-| `map.canPlace(type: string, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **待定的 RFC 修改**（P15）；Rc: `TestBuildOrder` |
+| `map.canPlace(type: string, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **已在 RFC 0.0.5 采纳**（P15）；Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: string, near: Cell, h: House)` | `Cell \| null` | **尚无 owner**（`src/sim/ai_base_site.rs` 有一个 AI 用的版本） | later | P15；Rc: `ClosestBuildPos` |
 
 ### 7.4 规则
@@ -980,7 +980,7 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a client of h
 ```
 
-用所属方 `h` 的视野过滤来运行同样的查询。这样模块 AI 可以公平对战，任务逻辑也可以问“所属方 H 是否知道 X”。模拟模块的默认查询仍然掌握全部信息。层级为 `later`，**待定的 RFC 修改**（P4）。owner：客户端视野过滤（G-C3）。Rc: `CallAsTeam`。
+用所属方 `h` 的视野过滤来运行同样的查询。这样模块 AI 可以公平对战，任务逻辑也可以问“所属方 H 是否知道 X”。模拟模块的默认查询仍然掌握全部信息。层级为 `later`，**RFC 0.0.5 未采纳**（P4）。owner：客户端视野过滤（G-C3）。Rc: `CallAsTeam`。
 
 ### 7.7 客户端结果
 
@@ -996,9 +996,9 @@ ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a
 
 覆盖点读取状态并返回结果，不能执行动作（RFC 5）。它们以游戏概念命名。多个模块之间按**链式**处理：mod 的模块先算出结果，地图的模块拿到这个结果后可以再改，引擎使用最终值（RFC 2）。已停用模块的覆盖点会被跳过。版本 1 提供哪两三个，是待定问题 11。
 
-每个覆盖点具体如何组合（链中下一环拿到什么、否决能否被撤销）是**待定的 RFC 修改**（P1）。在此之前，下面每个覆盖点都按 RFC 2 的说法链式处理，下一环拿到上一环的结果和原生值。
+组合规则（RFC 第 2 节，采纳自 P1）：链上每一环都拿到原生值和上一环的结果，后一环可以推翻前一环的否决，数值类覆盖点返回明确的“已处理”标志。
 
-覆盖点绑定到类型，从不全局生效：由武器、弹头或 TechnoType 在 INI 中指定覆盖点，引擎只对这些类型调用模块（**待定的 RFC 修改**，P12；绑定键的名字是待定问题 5）。
+覆盖点绑定到类型，从不全局生效：由武器、弹头或 TechnoType 在 INI 中指定覆盖点，引擎只对这些类型调用模块（**已在 RFC 0.0.5 采纳**，P12；绑定键的名字是待定问题 5）。
 
 | 覆盖点 | 签名 | 频率 | 批处理 | 决策 owner | 层级 | 来源 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1008,8 +1008,8 @@ ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a
 | `Override.Fire` | `(ctx: Ctx, shot: ShotQuery): bool`，返回 `true` 表示接管这次射击，原生抛射体不再生成 | 绑定武器每次射击 | 无 | FireAt 步骤 `src/sim/combat/world_fire.rs`；飞行器为 `fire_at.rs` | later（v1 候选） | RFC 6 L3、9 |
 | `onLaunch` | `(ctx: LaunchCtx, p: Projectile): Path \| null` | 绑定类型的每个抛射体一次 | 无 | `ProjectileTrajectory` 的模块分支（RFC 9）：**尚无 owner** | later | RFC 9 第 3 层 |
 | `onTrajectoryFrame` | `(ctx: Ctx, type: string, bullets: BulletBatch): void` | 每个绑定的抛射体类型每帧一次 | 按类型**批处理**（L4） | 同上 | later | RFC 6 L4、9 第 4 层 |
-| `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, current: bool): bool` | 绑定类型每收到一条玩家或 AI 指令 | 无 | 指令准入 `src/sim/command.rs`（具体函数未核实） | later | **待定的 RFC 修改**（P13）；Rc: `AllowCommand` |
-| `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery): DeathResult`（死亡武器、幸存者、残骸） | 绑定类型每次死亡 | 无 | 死亡流程 `combat/record_kill.rs` 和幸存者规则（未核实） | later | **待定的 RFC 修改**（P13）；LUS `Killed -> wreckLevel` |
+| `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, current: bool): bool` | 绑定类型每收到一条玩家或 AI 指令 | 无 | 指令准入 `src/sim/command.rs`（具体函数未核实） | later | **已在 RFC 0.0.5 采纳**（P13）；Rc: `AllowCommand` |
+| `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery): DeathResult`（死亡武器、幸存者、残骸） | 绑定类型每次死亡 | 无 | 死亡流程 `combat/record_kill.rs` 和幸存者规则（未核实） | later | **已在 RFC 0.0.5 采纳**（P13）；LUS `Killed -> wreckLevel` |
 
 RFC 示例中的覆盖点（选择目标、伤害、是否允许生产、接管武器的一次射击）都已列出。目标优先级方面“优先用数据加事件”的做法（把优先级倍率做成持续效果，再加一个 `TargetChanged` 事件）见提议 P13。
 
@@ -1285,7 +1285,7 @@ class Node {
 | `Value` | `Credits`、`Power`、`Drain`、`Name`、`Time`、`Kills`、`Losses` |
 | `Tab`、`Columns`、`Rows` | 图标网格 |
 
-RFC 示例写的是 `Anchor=TopRight`、`Size=240,120`、`Children=` 和 `Type=Panel`，这些 `veraui.ini` 都没有；它有的是 `Hold=`、`Width=`/`Height=` 和 `Parts=`。统一两者是提议 P16。mod 和地图把布局节放在哪里是待定问题 15。
+RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部件的 `Label` 键（P16）。mod 和地图把布局节放在哪里是待定问题 15。
 
 ### 11.3 单个对象的显示属性
 
@@ -1309,7 +1309,7 @@ RFC 示例写的是 `Anchor=TopRight`、`Size=240,120`、`Children=` 和 `Type=P
 | `client.select(list: TechnoList, append: bool)` | `Command::Select`（`src/sim/command.rs`） | v1 | RFC 10 |
 | `client.order(o: OrderSpec)` | `Command` 的各个变体：`Move`、`MoveToObject`、`Stop`、`Attack`、`AttackMove`、`Guard`、`DeployMcv`、`UndeployBuilding`、`SetRally`、`QueueProduction`、`SuspendProduction`、`CancelProductionByType`、`PlaceReadyBuilding`、`SellBuilding`、`ToggleRepair`、`EjectBunker`、`UnloadPassengers`、`CaptureBuilding`、`PlantC4`、`LaunchSuperWeapon`、`ToggleInfantryDeploy`、`ForceAttackCell`、`SellWallAtCell` | v1 | RFC 10（像任何玩家输入一样校验） |
 | `client.sendMessage(data: Uint8Array): Status` | 命令流：**尚无模块专用的变体**（G-C2） | v1 | RFC 1、10、11；Rc：`SendLuaRulesMsg` |
-| `client.broadcast(to: Audience, data: Uint8Array)` | **尚无 owner** | later | **待定的 RFC 修改**（P5）；Rc：`SendLuaUIMsg` |
+| `client.broadcast(to: Audience, data: Uint8Array)` | **尚无 owner** | later | **RFC 0.0.5 未采纳**（P5）；Rc：`SendLuaUIMsg` |
 | 指令改写钩子（类似 `CommandNotify`） | **尚无 owner** | later | Rc：`CommandNotify`、`DefaultCommand` |
 
 每条消息的发送者由引擎填写，引擎还限制消息大小和频率（RFC 11）。
@@ -1410,28 +1410,28 @@ RFC 示例写的是 `Anchor=TopRight`、`Size=240,120`、`Children=` 和 `Type=P
 
 ## 提议的 RFC 修改
 
-这些是调研发现、而 RFC 还没写到的内容。本清单不预先采用它们；依赖它们的条目标为“待定的 RFC 修改”并注明编号。
+这些是调研发现、而 RFC 0.0.4 还没写到的内容。RFC 0.0.5 逐条作了决定：除 P4 和 P5 外全部采纳。依赖它们的条目注明了提议编号。
 
-- **P1 每个覆盖点的组合规则。** RFC 第 2 节说覆盖按链式处理。应逐个覆盖点写明：链中下一环拿到的是原生值、上一环的值，还是两者都有；布尔否决能否被后面的环节撤销（Recoil 对布尔值取“与”，遇到第一个否决就停止）；并给每个返回数值的覆盖点一个明确的“已完全处理”结果，而不是用魔数表示。
-- **P2 `onScenarioStart` 与存档。** 写明读档后不运行 `onScenarioStart`（模块内存会被恢复），也没有 `onLoad`。增加测试：保存在模块内存里的句柄，读档后仍指向相同的对象。
-- **P3 标记的值和可见度。** 让标记可以带一个可选的整数和一个可见度等级（私有、盟友、视野内、公开），这样客户端模块可以显示状态，又不泄露隐藏的状态。增加所属方级别的标记。现在就确定值的类型，并写明“不允许嵌套”。
-- **P4 以所属方身份查询。** 在模拟 API 中增加 `ctx.asHouse(h)`：同样的查询，按所属方 `h` 能看到的范围过滤。模拟查询默认仍然掌握全部信息。
-- **P5 盟友之间的客户端通道。** 决定客户端模块能否不经过模拟、向盟友或观战者发送限频消息，还是所有这类通信都走 `sendMessage`。
-- **P6 查询顺序。** 写明具体的确定性顺序（例如对象创建顺序），使它在引擎重构和为模拟规模调整顺序后依然成立。
-- **P7 在某格引爆弹头。** 在 6b 清单中加入“在某坐标引爆弹头，带伤害和来源”（离子风暴、自定义超级武器和连锁反应都靠它实现）。
-- **P8 移除抛射体。** 增加“移除抛射体而不引爆”和“立即引爆抛射体”两个独立动作。
-- **P9 伤害与生命。** 把“修改生命（增减或设定）”拆成两项：“经由弹头和护甲流程造成伤害，带用于击杀归属的来源”和“设定生命，不计归属”。
-- **P10 两阶段的所属转移。** RFC 6a 在转移之前触发 HouseTransfer。增加一个转移之后的事件，或者写明处理函数看到的是哪个状态。
-- **P11 更多候选事件。** 把 2.5 中的候选（Built、Idle、MoveFailed、Arrived、Promoted、Cloaked、Spotted、Lost、AmmoChanged、MissionChanged、HouseDefeated、PlayerLeft、StorageFull、MotionEnded）加入待定问题 13 的候选清单。
-- **P12 只允许按类型绑定的订阅。** 写明高频事件（伤害、开火、抛射体创建或引爆、碾压、移动失败）和所有覆盖点只对绑定的类型触发，从不通过全局的“所有对象”订阅触发。
-- **P13 热点决策先用数据，再用回调。** 目标优先级优先用优先级倍率（一种持续效果）加一个 `TargetChanged` 事件，逐次调用的覆盖点留给不常发生的决策。把 `Override.CommandAllowed` 和 `Override.Death` 列为候选。把自定义排队任务（由模块定义、模块每帧执行的任务）记为以后的 RFC。
-- **P14 无法取消的事件。** 写明投递型事件改变不了哪些原生结果（例如取消一次死亡），因为事件是在模块阶段才到达的；这类需求需要覆盖点或效果（阻止死亡）。
-- **P15 探测查询。** 增加“这把武器现在能否向那个目标开火”、“是否在射程内”、“所属方 H 能否把类型 T 放在格子 C”和“最近的可放置格子”，让模块复用原生的合法性判断。
-- **P16 布局语法。** RFC 的 INI 示例用的是 `Anchor=`、`Size=`、`Children=` 和 `Type=Panel`；`veraui.ini` 用的是 `Hold=`、`Width=`/`Height=` 和 `Parts=`，也没有 `Panel`。要么使用现有的键，要么写明新增哪些键。
-- **P17 客户端查询的迷雾规则。** 写明客户端查询对迷雾下的敌方对象返回什么（不存在，还是最后一次看到的状态），以及客户端模块能否看到盟友所属方的标记、数值和生产。
-- **P18 错误模型。** 写明哪些失败返回状态（句柄已失效、名字未知、被引擎规则拒绝），哪些会停用模块（参数非法、trap、超出额度）。
-- **P19 通知 API。** 给模拟到客户端的通知函数命名，并给通知一个声明的名字，而不是靠“开头的魔数字节”区分。
-- **P20 边界上的定点数。** 写明倍率和分数的定点格式（`I16F16` 原始值，与 `SimFixed` 相同），因为 Phobos 把倍率当作小数读取。
-- **P21 永不改变单位或含义。** 在第 12 节加入：已发布的函数永不改变单位或含义；要改变就新增函数或版本。
+- **P1 每个覆盖点的组合规则。** *已在 0.0.5 采纳。* RFC 第 2 节说覆盖按链式处理。应逐个覆盖点写明：链中下一环拿到的是原生值、上一环的值，还是两者都有；布尔否决能否被后面的环节撤销（Recoil 对布尔值取“与”，遇到第一个否决就停止）；并给每个返回数值的覆盖点一个明确的“已完全处理”结果，而不是用魔数表示。
+- **P2 `onScenarioStart` 与存档。** *已在 0.0.5 采纳。* 写明读档后不运行 `onScenarioStart`（模块内存会被恢复），也没有 `onLoad`。增加测试：保存在模块内存里的句柄，读档后仍指向相同的对象。
+- **P3 标记的值和可见度。** *已在 0.0.5 采纳。* 让标记可以带一个可选的整数和一个可见度等级（私有、盟友、视野内、公开），这样客户端模块可以显示状态，又不泄露隐藏的状态。增加所属方级别的标记。现在就确定值的类型，并写明“不允许嵌套”。
+- **P4 以所属方身份查询。** *未采纳。* 在模拟 API 中增加 `ctx.asHouse(h)`：同样的查询，按所属方 `h` 能看到的范围过滤。模拟查询默认仍然掌握全部信息。
+- **P5 盟友之间的客户端通道。** *未采纳。* 决定客户端模块能否不经过模拟、向盟友或观战者发送限频消息，还是所有这类通信都走 `sendMessage`。
+- **P6 查询顺序。** *已在 0.0.5 采纳。* 写明具体的确定性顺序（例如对象创建顺序），使它在引擎重构和为模拟规模调整顺序后依然成立。
+- **P7 在某格引爆弹头。** *已在 0.0.5 采纳。* 在 6b 清单中加入“在某坐标引爆弹头，带伤害和来源”（离子风暴、自定义超级武器和连锁反应都靠它实现）。
+- **P8 移除抛射体。** *已在 0.0.5 采纳。* 增加“移除抛射体而不引爆”和“立即引爆抛射体”两个独立动作。
+- **P9 伤害与生命。** *已在 0.0.5 采纳。* 把“修改生命（增减或设定）”拆成两项：“经由弹头和护甲流程造成伤害，带用于击杀归属的来源”和“设定生命，不计归属”。
+- **P10 两阶段的所属转移。** *已在 0.0.5 采纳。* RFC 6a 在转移之前触发 HouseTransfer。增加一个转移之后的事件，或者写明处理函数看到的是哪个状态。
+- **P11 更多候选事件。** *已在 0.0.5 采纳。* 把 2.5 中的候选（Built、Idle、MoveFailed、Arrived、Promoted、Cloaked、Spotted、Lost、AmmoChanged、MissionChanged、HouseDefeated、PlayerLeft、StorageFull、MotionEnded）加入待定问题 13 的候选清单。
+- **P12 只允许按类型绑定的订阅。** *已在 0.0.5 采纳。* 写明高频事件（伤害、开火、抛射体创建或引爆、碾压、移动失败）和所有覆盖点只对绑定的类型触发，从不通过全局的“所有对象”订阅触发。
+- **P13 热点决策先用数据，再用回调。** *已在 0.0.5 采纳。* 目标优先级优先用优先级倍率（一种持续效果）加一个 `TargetChanged` 事件，逐次调用的覆盖点留给不常发生的决策。把 `Override.CommandAllowed` 和 `Override.Death` 列为候选。把自定义排队任务（由模块定义、模块每帧执行的任务）记为以后的 RFC。
+- **P14 无法取消的事件。** *已在 0.0.5 采纳。* 写明投递型事件改变不了哪些原生结果（例如取消一次死亡），因为事件是在模块阶段才到达的；这类需求需要覆盖点或效果（阻止死亡）。
+- **P15 探测查询。** *已在 0.0.5 采纳。* 增加“这把武器现在能否向那个目标开火”、“是否在射程内”、“所属方 H 能否把类型 T 放在格子 C”和“最近的可放置格子”，让模块复用原生的合法性判断。
+- **P16 布局语法。** *已在 0.0.5 采纳。* RFC 的 INI 示例用的是 `Anchor=`、`Size=`、`Children=` 和 `Type=Panel`；`veraui.ini` 用的是 `Hold=`、`Width=`/`Height=` 和 `Parts=`，也没有 `Panel`。要么使用现有的键，要么写明新增哪些键。
+- **P17 客户端查询的迷雾规则。** *已在 0.0.5 采纳。* 写明客户端查询对迷雾下的敌方对象返回什么（不存在，还是最后一次看到的状态），以及客户端模块能否看到盟友所属方的标记、数值和生产。
+- **P18 错误模型。** *已在 0.0.5 采纳。* 写明哪些失败返回状态（句柄已失效、名字未知、被引擎规则拒绝），哪些会停用模块（参数非法、trap、超出额度）。
+- **P19 通知 API。** *已在 0.0.5 采纳。* 给模拟到客户端的通知函数命名，并给通知一个声明的名字，而不是靠“开头的魔数字节”区分。
+- **P20 边界上的定点数。** *已在 0.0.5 采纳。* 写明倍率和分数的定点格式（`I16F16` 原始值，与 `SimFixed` 相同），因为 Phobos 把倍率当作小数读取。
+- **P21 永不改变单位或含义。** *已在 0.0.5 采纳。* 在第 12 节加入：已发布的函数永不改变单位或含义；要改变就新增函数或版本。
 
 合计：21 项提议。

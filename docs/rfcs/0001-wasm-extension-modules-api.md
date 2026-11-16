@@ -3,7 +3,7 @@
 **English** · [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
 This appendix is part of [RFC 0001](0001-wasm-extension-modules.md) and carries
-its version (0.0.4). The two files change in the same commit. Where this
+its version (0.0.5). The two files change in the same commit. Where this
 catalog and the RFC text differ, the RFC text applies. The two language
 versions of this appendix change together; where they differ, the English text
 applies.
@@ -11,8 +11,9 @@ applies.
 The catalog lists every function, event, condition, effect and override the
 API would offer, the engine code that owns each one, and where each idea comes
 from. It does not decide what ships in version 1: that is open question 13 of
-the RFC. Entries the RFC does not cover yet are marked **pending RFC change**
-and are listed in [Proposed RFC changes](#proposed-rfc-changes).
+the RFC. Entries that came from the research are marked with the proposal they
+depend on and whether RFC 0.0.5 adopted it; see
+[Proposed RFC changes](#proposed-rfc-changes).
 
 All file paths are relative to the repository root. Line numbers are left out
 on purpose: they drift. Code facts come from `main` at `16f18f4b7`.
@@ -153,7 +154,7 @@ What counts as an invalid argument (and so disables the module) is listed per
 function: out-of-range indexes (global 0..49, local 0..99), negative counts,
 an enum value outside its list. A name that matches nothing returns
 `NotFound`, because names come from data that a mod may change. The split
-between the two kinds is **pending RFC change** (proposal P18).
+between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
 
 `ctx.lastStatus(): Status` repeats the status of the last call for functions
 that return a handle or a value.
@@ -225,7 +226,7 @@ A module exports only what it uses. An export that is absent costs nothing
 | `onMessage` | `onMessage(ctx: Ctx, sender: House, data: Uint8Array): void` | when a client message reaches the simulation, in the module phase | v1 (P2) | `src/sim/command.rs::Command`: **no module variant yet** | RFC 5, 10; Rc: `RecvLuaMsg(msg, playerID)` |
 | `onLaunch` | `onLaunch(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a type bound to the module path | later | `ProjectileTrajectory` module arm: **no owner yet** | RFC 9 level 3 |
 | `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: string, bullets: BulletBatch): void` | once per projectile type per frame | later (L4) | **no owner yet** | RFC 6 L4, 9 level 4 |
-| `onLoad` | — | not defined: module memory is restored with the snapshot, and `onScenarioStart` does not run again | **pending RFC change** (P2) | — | Rc: `Load`, notes 6.10 |
+| `onLoad` | — | not defined: module memory is restored with the snapshot, and `onScenarioStart` does not run again | **adopted in RFC 0.0.5** (P2) | — | Rc: `Load`, notes 6.10 |
 
 `ctx` is the one entry point to the simulation API:
 
@@ -264,8 +265,8 @@ Sources: A28, A29, A56, A57, S12, S38, S39, S40.
 | `onHover` | `onHover(ui: Ui, node: Node, inside: bool): void` | the cursor entered or left a node | v1 (P2) | **no owner yet** | RFC 10 |
 | `onHotkey` | `onHotkey(ui: Ui, name: string): void` | a hotkey the module registered was pressed | v1 (P2) | **no owner yet** | RFC 10 |
 | `onSelect` | `onSelect(ui: Ui, selection: TechnoList): void` | the local selection changed | v1 (P2) | selection owner in `src/app/input/` (unverified) | RFC 10; T38 `OnSelect` |
-| `onNotify` | `onNotify(ui: Ui, name: string, data: Uint8Array): void` | a simulation notification for the local player arrived | v1 (P2) | **no owner yet** | RFC 1, 11 ("local notifications"); export name **pending RFC change** (P19) |
-| `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | an ally's or spectator's client sent a message | later | **no owner yet** | **pending RFC change** (P5); Rc: `SendLuaUIMsg` |
+| `onNotify` | `onNotify(ui: Ui, name: string, data: Uint8Array): void` | a simulation notification for the local player arrived | v1 (P2) | **no owner yet** | RFC 1, 11 ("local notifications"); export name **adopted in RFC 0.0.5** (P19) |
+| `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | an ally's or spectator's client sent a message | later | **no owner yet** | **not adopted in RFC 0.0.5** (P5); Rc: `SendLuaUIMsg` |
 
 Client floating point is allowed: the client world is not deterministic
 (RFC 1).
@@ -768,7 +769,7 @@ One function is one operation with one owner (RFC 6 granularity).
 | `map.spawnAnim(anim: string, at: Coord): Status` | Create an animation | native | `src/sim/anim_class.rs` (coordinate entry; G-A1) | v1? | RFC 6b; F6 |
 | `techno.remove(): Status` | Remove with no death, no survivors, no credit | none | `src/sim/world/lifecycle.rs::Simulation::uninit_with_context` | v1? | RFC 6b; F7 `Remove`; Rc: `DestroyUnit(reclaimed)` |
 | `techno.kill(mode: KillMode, source: Techno \| null): Status` | Kill through the damage path with damage = health and `ignore_defenses` (death animation, survivors, kill credit to `source`) | native | `src/sim/world/mod.rs::commit_direct_damage_receiver` (`EntityDamageEvent::direct_receiver`) | v1? | RFC 6b; F8 `Suicide` |
-| `techno.damage(amount: i32, warhead: string, source: Techno \| null): Status` | Deal damage through warhead and armor, with credit and experience | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **pending RFC change** (P9: add goes through the warhead path) |
+| `techno.damage(amount: i32, warhead: string, source: Techno \| null): Status` | Deal damage through warhead and armor, with credit and experience | native | `commit_direct_damage_receiver`; math `combat/damage/receive.rs::receive_damage` | v1? | RFC 6b "change health (add)"; F9; Rc: `AddUnitDamage`; **adopted in RFC 0.0.5** (P9: add goes through the warhead path) |
 | `techno.setHealth(points: i32): Status` / `heal(points: i32)` | Set or heal health, no credit | none | `combat/object_health.rs::Health::set`, `heal` (no Simulation-level owner) | v1? | RFC 6b; F9 `ModifyHealth` |
 | `map.createObject(type: string, at: Cell, owner: House, c: CreateParams): Techno \| null` | Create a finished object; blocked cell refuses | native | `src/sim/world/world_spawn.rs::spawn_object_at_height`, `place_building_with_cleared_foundation`, `place_foot_with_cleared_cell` (doc says "tests, tools, debug") | v1? | RFC 6b; F10 `CreateUnit` (inheriting triggers/effects: `CreateParams.inherit`) |
 | `techno.setMission(m: Mission, target: Target \| null): Status` | Queue a mission as a player order would | none | `src/sim/mission/retask.rs::queue_order_mission`, `queue_megamission` | v1 | RFC 6b, example; F16 `Mission`; F13 `CommandMoveTo` (= `Move` with a cell) |
@@ -788,9 +789,9 @@ One function is one operation with one owner (RFC 6 granularity).
 | `techno.addMark(...)` / `removeMark(...)` | section 6 | — | section 6 | v1 | RFC 6b |
 | `map.createProjectile(p: ProjectileParams): Projectile \| null` | Create a projectile: type, start, target object or coordinate, source for kill credit and experience, 16 bytes of initial module data | native | `src/sim/world/mod.rs::Simulation::admit_projectile` | v1? | RFC 6b, 9; Rc: `SpawnProjectile` |
 | `map.detonateWeapon(weapon: string, at: Coord, source: Techno \| null): Status` | Detonate a weapon at a coordinate with no bullet | native | `src/sim/world/trigger_explosion.rs::trigger_explosion_at_waypoint` (waypoint only; G-A1) | v1? | A42 with a coordinate (RFC 6: coordinates are parameters) |
-| `map.detonateWarhead(warhead: string, damage: i32, at: Coord, source: Techno \| null): Status` | Area damage of a warhead with a given damage and source | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **pending RFC change** (P7); Rc: `SpawnExplosion` |
-| `projectile.detonate(): Status` | Detonate a projectile now | native | `src/sim/projectile` detonation admission (no public entry) | later | **pending RFC change** (P8); Rc: `SetProjectileCollision` |
-| `projectile.remove(): Status` | Remove a projectile without detonation | none | **no owner yet** | later | **pending RFC change** (P8); Rc: `DeleteProjectile` |
+| `map.detonateWarhead(warhead: string, damage: i32, at: Coord, source: Techno \| null): Status` | Area damage of a warhead with a given damage and source | native | `src/sim/combat/world_receiver.rs::apply_area_damage` | v1? | **adopted in RFC 0.0.5** (P7); Rc: `SpawnExplosion` |
+| `projectile.detonate(): Status` | Detonate a projectile now | native | `src/sim/projectile` detonation admission (no public entry) | later | **adopted in RFC 0.0.5** (P8); Rc: `SetProjectileCollision` |
+| `projectile.remove(): Status` | Remove a projectile without detonation | none | **no owner yet** | later | **adopted in RFC 0.0.5** (P8); Rc: `DeleteProjectile` |
 | `scenario.endFor(house: House, outcome: Outcome): Status` | End the game for one house, won or lost | none | `house_defeat.rs::request_player_outcome` | v1? | RFC 6b |
 | `house.setScore(points: i32)` / `addScore` | Set scores | none | `Economy::add_score` (no setter) | v1? | RFC 6b |
 | `ctx.log(text: string)` | Write a line to the in-game log | none | **no owner yet** | v1 | RFC 6b, 10 |
@@ -950,8 +951,8 @@ marks(): StringList;    // order: name order, case-insensitive
 | `hasMark` | case-insensitive test | v1 | RFC 6b; C10, C11 |
 | `marks` | list | v1 | RFC 6c ("marks" in object reads) |
 | Effect-carried marks | an effect type lists marks the object carries while the effect is active (new property, e.g. `Marks=`; name unverified) | v1? | F54 "持有带它的行为就获得这个标签" |
-| Mark value and visibility | **pending RFC change** (P3) | later | Rc: rules params with access levels |
-| House marks | **pending RFC change** (P3) | later | Rc: `SetTeamRulesParam` |
+| Mark value and visibility | **adopted in RFC 0.0.5** (P3) | later | Rc: rules params with access levels |
+| House marks | **adopted in RFC 0.0.5** (P3) | later | Rc: `SetTeamRulesParam` |
 
 Client modules read marks only of objects they can see. Whether they see all
 marks or only "public" ones depends on P3.
@@ -960,7 +961,7 @@ marks or only "public" ones depends on P3.
 
 Queries are read-only and iterate in a deterministic order (RFC 6c). The order
 is not specified by the RFC; this catalog uses "object creation order"
-**pending RFC change** (P6). In client modules every query is filtered by what
+**adopted in RFC 0.0.5** (P6). In client modules every query is filtered by what
 the local player can see (RFC 10).
 
 ```ts
@@ -998,7 +999,7 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | |
 | `techno.layer()`, `landType()` | enums | entity layer; map | v1 | RFC 6a conditions |
 | `projectile.type()`, `coord()`, `source()`, `target()`, `data()` | values | `src/sim/projectile` | v1? | RFC 9 |
-| `objects.canFireAt(t: Techno, w: i32, at: Target)`, `inRange(...)` | `bool` | **no owner yet** (structured legality probe) | later | **pending RFC change** (P15); Rc: `GetUnitWeaponTestTarget` |
+| `objects.canFireAt(t: Techno, w: i32, at: Target)`, `inRange(...)` | `bool` | **no owner yet** (structured legality probe) | later | **adopted in RFC 0.0.5** (P15); Rc: `GetUnitWeaponTestTarget` |
 
 ### 7.2 Houses
 
@@ -1028,7 +1029,7 @@ class TechnoList { length: i32; at(i: i32): Techno; }
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
 | `map.waypoint(n: i32)` | `Cell \| null` | map waypoints | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag \| null` | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
-| `map.canPlace(type: string, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **pending RFC change** (P15); Rc: `TestBuildOrder` |
+| `map.canPlace(type: string, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: string, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | later | P15; Rc: `ClosestBuildPos` |
 
 ### 7.4 Rules
@@ -1067,7 +1068,7 @@ ctx.asHouse(h: House): View;   // View has objects, map, houses, filtered like a
 
 Runs the same queries with the visibility filter of house `h`, so module AI
 can play fair and mission logic can ask "does house H know about X". Default
-simulation queries stay full knowledge. Tier `later`, **pending RFC change**
+simulation queries stay full knowledge. Tier `later`, **not adopted in RFC 0.0.5**
 (P4). Owner: the client visibility filter (G-C3). Rc: `CallAsTeam`.
 
 ### 7.7 Client results
@@ -1094,14 +1095,13 @@ module computes a result, the map's module receives it and may change it, and
 the engine uses the final value (RFC 2). A disabled module's override is
 skipped. Which two or three ship in version 1 is open question 11.
 
-Per-override combination details (what the next link receives, whether a veto
-can be lifted) are **pending RFC change** (P1). Until then every override
-below chains as RFC 2 says, and the next link receives the previous link's
-result plus the native value.
+Combination (RFC 2, adopted from P1): each link receives the native value and
+the previous link's result, a later link may lift an earlier link's veto, and a
+value override returns an explicit "handled" flag.
 
 Overrides bind to types, never globally: a weapon, warhead or TechnoType names
 the override in INI, and the engine calls the module only for those types
-(**pending RFC change**, P12; the binding key name is open question 5).
+(**adopted in RFC 0.0.5**, P12; the binding key name is open question 5).
 
 | Override | Signature | Frequency | Batching | Decision owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1111,8 +1111,8 @@ the override in INI, and the engine calls the module only for those types
 | `Override.Fire` | `(ctx: Ctx, shot: ShotQuery): bool` — `true` takes over the shot; the native projectile is not created | per shot of a bound weapon | none | FireAt steps `src/sim/combat/world_fire.rs`; aircraft `fire_at.rs` | later (v1 candidate) | RFC 6 L3, 9 |
 | `onLaunch` | `(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a bound type | none | module arm of `ProjectileTrajectory` (RFC 9): **no owner yet** | later | RFC 9 level 3 |
 | `onTrajectoryFrame` | `(ctx: Ctx, type: string, bullets: BulletBatch): void` | once per bound projectile type per frame | **batched** per type (L4) | same | later | RFC 6 L4, 9 level 4 |
-| `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, current: bool): bool` | per player or AI order for a bound type | none | command admission `src/sim/command.rs` (function unverified) | later | **pending RFC change** (P13); Rc: `AllowCommand` |
-| `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery): DeathResult` (death weapon, survivors, wreck) | per death of a bound type | none | death chain `combat/record_kill.rs` and survivor rules (unverified) | later | **pending RFC change** (P13); LUS `Killed -> wreckLevel` |
+| `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, current: bool): bool` | per player or AI order for a bound type | none | command admission `src/sim/command.rs` (function unverified) | later | **adopted in RFC 0.0.5** (P13); Rc: `AllowCommand` |
+| `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery): DeathResult` (death weapon, survivors, wreck) | per death of a bound type | none | death chain `combat/record_kill.rs` and survivor rules (unverified) | later | **adopted in RFC 0.0.5** (P13); LUS `Killed -> wreckLevel` |
 
 The overrides of the RFC's examples (target choice, damage, production
 permission, taking over a weapon's shot) are covered. "Prefer data plus an
@@ -1425,9 +1425,8 @@ Static layout uses the syntax of `veraui.ini` (RFC 10). Keys that exist today
 | `Value` | `Credits`, `Power`, `Drain`, `Name`, `Time`, `Kills`, `Losses` |
 | `Tab`, `Columns`, `Rows` | cameo grids |
 
-The RFC example writes `Anchor=TopRight`, `Size=240,120`, `Children=` and
-`Type=Panel`, which `veraui.ini` does not have; it has `Hold=`, `Width=`/`Height=`
-and `Parts=`. Aligning the two is proposal P16. Where a mod and a map keep
+RFC 0.0.5 uses these keys in its example and adds the `List` part type and
+`Label` for `Text` parts (P16). Where a mod and a map keep
 layout sections is open question 15.
 
 ### 11.3 Display properties per object
@@ -1453,7 +1452,7 @@ properties belong to the simulation module (RFC 10).
 | `client.select(list: TechnoList, append: bool)` | `Command::Select` (`src/sim/command.rs`) | v1 | RFC 10 |
 | `client.order(o: OrderSpec)` | `Command` variants: `Move`, `MoveToObject`, `Stop`, `Attack`, `AttackMove`, `Guard`, `DeployMcv`, `UndeployBuilding`, `SetRally`, `QueueProduction`, `SuspendProduction`, `CancelProductionByType`, `PlaceReadyBuilding`, `SellBuilding`, `ToggleRepair`, `EjectBunker`, `UnloadPassengers`, `CaptureBuilding`, `PlantC4`, `LaunchSuperWeapon`, `ToggleInfantryDeploy`, `ForceAttackCell`, `SellWallAtCell` | v1 | RFC 10 (validated like any player input) |
 | `client.sendMessage(data: Uint8Array): Status` | command stream: **no module variant yet** (G-C2) | v1 | RFC 1, 10, 11; Rc: `SendLuaRulesMsg` |
-| `client.broadcast(to: Audience, data: Uint8Array)` | **no owner yet** | later | **pending RFC change** (P5); Rc: `SendLuaUIMsg` |
+| `client.broadcast(to: Audience, data: Uint8Array)` | **no owner yet** | later | **not adopted in RFC 0.0.5** (P5); Rc: `SendLuaUIMsg` |
 | order rewrite hook (`CommandNotify`-style) | **no owner yet** | later | Rc: `CommandNotify`, `DefaultCommand` |
 
 The engine fills in the sender of every message and limits size and rate
@@ -1606,78 +1605,78 @@ pre-existing gap of the original trigger system.
 
 ## Proposed RFC changes
 
-Things the research shows and the RFC does not yet say. The catalog does not
-apply them; entries that depend on them say "pending RFC change" with the
-number.
+Things the research showed that RFC 0.0.4 did not say. RFC 0.0.5 decided each
+one: all are adopted except P4 and P5. Entries that depend on them carry the
+proposal number.
 
-- **P1 Combination rule per override.** RFC 2 says overrides chain. Say per
+- **P1 Combination rule per override.** *Adopted in 0.0.5.* RFC 2 says overrides chain. Say per
   override whether the next link receives the native value, the previous
   link's value, or both; whether a boolean veto can be lifted by a later link
   (Recoil ANDs booleans and stops at the first veto); and give each value
   override an explicit "fully handled" result instead of a magic value.
-- **P2 `onScenarioStart` and saves.** Say that `onScenarioStart` does not run
+- **P2 `onScenarioStart` and saves.** *Adopted in 0.0.5.* Say that `onScenarioStart` does not run
   after loading a save (module memory is restored), and that there is no
   `onLoad`. Add a test that handles stored in module memory resolve to the same
   objects after load.
-- **P3 Mark values and visibility.** Let a mark carry an optional integer and a
+- **P3 Mark values and visibility.** *Adopted in 0.0.5.* Let a mark carry an optional integer and a
   visibility level (private, allied, in sight, public), so client modules can
   show states without leaking hidden ones. Add house-level marks. Decide value
   types now and say "no nesting".
-- **P4 Query as house.** Add `ctx.asHouse(h)` to the simulation API: the same
+- **P4 Query as house.** *Not adopted.* Add `ctx.asHouse(h)` to the simulation API: the same
   queries filtered as house `h` sees them. Default simulation queries stay full
   knowledge.
-- **P5 Client channel between allies.** Decide whether client modules may send
+- **P5 Client channel between allies.** *Not adopted.* Decide whether client modules may send
   rate-limited messages to allies or spectators without the simulation, or
   whether all such traffic goes through `sendMessage`.
-- **P6 Query order.** Name the deterministic order (for example object
+- **P6 Query order.** *Adopted in 0.0.5.* Name the deterministic order (for example object
   creation order) so it survives engine refactors and sim-scale reordering.
-- **P7 Detonate a warhead at a cell.** Add "detonate warhead at a coordinate
+- **P7 Detonate a warhead at a cell.** *Adopted in 0.0.5.* Add "detonate warhead at a coordinate
   with a damage and a source" to the 6b list (how ion storms, custom
   superweapons and chain reactions are built).
-- **P8 Projectile removal.** Add "remove a projectile without detonation" and
+- **P8 Projectile removal.** *Adopted in 0.0.5.* Add "remove a projectile without detonation" and
   "detonate a projectile now" as two separate actions.
-- **P9 Damage versus health.** Split "change health (add or set)" into "deal
+- **P9 Damage versus health.** *Adopted in 0.0.5.* Split "change health (add or set)" into "deal
   damage through the warhead and armor path, with a source for credit" and
   "set health, no credit".
-- **P10 Two-phase house transfer.** RFC 6a raises HouseTransfer before the
+- **P10 Two-phase house transfer.** *Adopted in 0.0.5.* RFC 6a raises HouseTransfer before the
   transfer. Add an after-phase event or state which state the handler sees.
-- **P11 More candidate events.** Add the candidates of 2.5 (Built, Idle,
+- **P11 More candidate events.** *Adopted in 0.0.5.* Add the candidates of 2.5 (Built, Idle,
   MoveFailed, Arrived, Promoted, Cloaked, Spotted, Lost, AmmoChanged,
   MissionChanged, HouseDefeated, PlayerLeft, StorageFull, MotionEnded) to the
   candidate list for open question 13.
-- **P12 Type-bound subscriptions only.** Say that high-frequency events
+- **P12 Type-bound subscriptions only.** *Adopted in 0.0.5.* Say that high-frequency events
   (damage, fire, projectile created or detonated, crush, move failed) and every
   override are raised only for bound types, never through a global "all
   objects" subscription.
-- **P13 Data before callbacks for hot decisions.** For target priority prefer
+- **P13 Data before callbacks for hot decisions.** *Adopted in 0.0.5.* For target priority prefer
   a priority multiplier (an attached effect) plus a `TargetChanged` event, and
   keep per-call overrides for rare decisions. Add `Override.CommandAllowed` and
   `Override.Death` as candidates. Note custom queued missions (a module-defined
   mission the module executes each frame) as a future RFC.
-- **P14 Events that cannot be cancelled.** State which native results a
+- **P14 Events that cannot be cancelled.** *Adopted in 0.0.5.* State which native results a
   delivered event cannot change (for example cancelling a death), because
   events arrive in the module phase; those need an override or an effect
   (prevent death).
-- **P15 Probe queries.** Add "could this weapon fire at that target now",
+- **P15 Probe queries.** *Adopted in 0.0.5.* Add "could this weapon fire at that target now",
   "in range", "can type T be placed at cell C for house H" and "closest
   placeable cell", so modules reuse native legality.
-- **P16 Layout syntax.** The RFC's INI example uses `Anchor=`, `Size=`,
+- **P16 Layout syntax.** *Adopted in 0.0.5.* The RFC's INI example uses `Anchor=`, `Size=`,
   `Children=` and `Type=Panel`; `veraui.ini` uses `Hold=`, `Width=`/`Height=`
   and `Parts=` and has no `Panel`. Use the existing keys, or say which new ones
   are added.
-- **P17 Fog rule for client queries.** Say what a client query returns for an
+- **P17 Fog rule for client queries.** *Adopted in 0.0.5.* Say what a client query returns for an
   enemy object under fog (absent or last seen), and whether a client module
   sees allied houses' marks, values and production.
-- **P18 Error model.** Name which failures return a status (gone handle,
+- **P18 Error model.** *Adopted in 0.0.5.* Name which failures return a status (gone handle,
   unknown name, refused by an engine rule) and which disable the module
   (invalid argument, trap, budget).
-- **P19 Notification API.** Name the simulation-to-client notification
+- **P19 Notification API.** *Adopted in 0.0.5.* Name the simulation-to-client notification
   functions and give notifications a declared name rather than "magic first
   bytes".
-- **P20 Fixed point at the boundary.** State the fixed-point format of
+- **P20 Fixed point at the boundary.** *Adopted in 0.0.5.* State the fixed-point format of
   multipliers and fractions (`I16F16` raw, as `SimFixed`), since Phobos reads
   multipliers as decimals.
-- **P21 Never change units or meaning.** Add to section 12: a published
+- **P21 Never change units or meaning.** *Adopted in 0.0.5.* Add to section 12: a published
   function never changes its units or meaning; a change is a new function or
   version.
 
