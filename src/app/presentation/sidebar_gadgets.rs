@@ -81,7 +81,19 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
             .ready_building_tabs(sim, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
+    // Phobos `SidebarClass_Update_RepairButton` (`Ext/House/Hooks.cpp:794-801`)
+    // reads the current house's PlayerAutoRepair each update; the button lights
+    // from it without entering the cursor repair mode.
+    #[cfg(feature = "phobos")]
+    let player_auto_repair_on = rules.phobos_globals.extended_player_repair
+        && sim
+            .houses()
+            .get(&owner_iid)
+            .is_some_and(|house| house.player_auto_repair());
+    #[cfg(not(feature = "phobos"))]
+    let player_auto_repair_on = false;
     let presentation = &mut state.match_state.match_presentation;
+    presentation.sidebar_gadget_state.player_auto_repair_on = player_auto_repair_on;
     // StripClass::AI scrolls before its tab poll, once per Sidebar Action.
     if let Some(rows) = presentation
         .sidebar_projection

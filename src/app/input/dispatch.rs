@@ -1475,6 +1475,44 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
             press_super_weapon(state, &section, right, true);
         }
         SidebarAction::ToggleRepairMode | SidebarAction::ToggleSellMode => {
+            // Phobos `ExtendedPlayerRepair`: the repair button becomes the
+            // house-wide auto-repair latch instead of the cursor repair mode
+            // (`Ext/House/Hooks.cpp:776-801`)
+            #[cfg(feature = "phobos")]
+            {
+                let extended = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                    let sim = &runtime.simulation;
+                    let current = sim.session().current_house()?;
+                    let house = sim.houses().get(&current)?;
+                    Some((
+                        runtime
+                            .resources
+                            .rules
+                            .phobos_globals
+                            .extended_player_repair,
+                        house.is_controlled_by_human(sim.session().game_mode_nonzero()),
+                        house.player_auto_repair(),
+                    ))
+                });
+                if let Some((true, true, auto)) = extended
+                    && matches!(action, SidebarAction::ToggleRepairMode)
+                {
+                    if let Some(owner) = preferred_local_owner(state) {
+                        let enabled = !auto;
+                        schedule_command(
+                            state,
+                            &owner,
+                            Command::TogglePlayerAutoRepair { enabled },
+                        );
+                        state
+                            .match_state
+                            .match_presentation
+                            .sidebar_gadget_state
+                            .player_auto_repair_on = enabled;
+                    }
+                    return;
+                }
+            }
             use crate::ui::sidebar::gadget_flash::SelectionMode;
             let mode = if matches!(action, SidebarAction::ToggleRepairMode) {
                 SelectionMode::Repair

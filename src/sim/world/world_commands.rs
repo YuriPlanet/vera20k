@@ -2553,6 +2553,23 @@ impl Simulation {
                     production::RepairControl::Toggle,
                 )
             }
+            Command::TogglePlayerAutoRepair { enabled } => {
+                // Phobos EventExt `RaiseTogglePlayerAutoRepair`: the event's
+                // house flips its own flag; the next building visit stops each
+                // still-repairing building when it is off
+                // (`Ext/Event/Body.cpp:116-128`, `Ext/House/Hooks.cpp:813-824`).
+                if !rules.phobos_globals.extended_player_repair {
+                    return false;
+                }
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return false;
+                };
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                house.set_player_auto_repair(*enabled);
+                true
+            }
             Command::UnloadPassengers { transport_id } => {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
                     return false;

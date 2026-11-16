@@ -151,6 +151,11 @@ pub struct SidebarGadgetState {
     /// Mutually exclusive with `sell_mode_on`; pending placement refuses changes.
     pub repair_mode_on: bool,
 
+    /// Phobos `ExtendedPlayerRepair` lights the same Repair button from the
+    /// house's `PlayerAutoRepair` flag; unlike `repair_mode_on` this is not a
+    /// cursor mode (`Ext/House/Hooks.cpp:785-801`).
+    pub player_auto_repair_on: bool,
+
     /// Mirrors Display +0x11B1 (set by 4AC660). Toggled by clicking the Sell button.
     /// Mutually exclusive with `repair_mode_on`; pending placement refuses changes.
     pub sell_mode_on: bool,
@@ -296,7 +301,13 @@ impl SidebarGadgetState {
     /// slot +0x3C) is only called on the tabs (Init `0x006A546E`, Recalculate
     /// `0x006AAAE7`, `0x006A6858`) and the scroll pair (`0x006A6610`).
     pub fn repair_frame(&self) -> u8 {
-        shape_button_frame(false, true, false, self.repair_mode_on, false)
+        shape_button_frame(
+            false,
+            true,
+            false,
+            self.repair_mode_on || self.player_auto_repair_on,
+            false,
+        )
     }
 
     /// Frame index for the Sell button. Same logic as `repair_frame`.
@@ -324,6 +335,23 @@ impl SidebarGadgetState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Phobos `ExtendedPlayerRepair` lights the Repair button from the house
+    /// flag while leaving Display's cursor repair mode off.
+    #[test]
+    fn extended_player_repair_lights_the_button_without_the_cursor_mode() {
+        let mut state = SidebarGadgetState::new();
+        assert_eq!(
+            state.repair_frame(),
+            shape_button_frame(false, true, false, false, false)
+        );
+        state.player_auto_repair_on = true;
+        assert_eq!(
+            state.repair_frame(),
+            shape_button_frame(false, true, false, true, false)
+        );
+        assert!(!state.repair_mode_on);
+    }
 
     #[test]
     fn selection_modes_refuse_placement_and_require_owned_buildings_before_clearing_selection() {
