@@ -219,9 +219,11 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上
   理论上可能与 CRT 相差 1 lepton。触发：长距离斜向预测正落在格边界；频率：
   极低；风险：预测高度差 1，影响一帧爬升。
-- **ToolTips 扩展文本电力行**：`GetPower` 的建筑臂需要实时
-  `PowerPlantEnhancer` 结算、单位臂需要未移植的 `UnitPowerDrain`，扩展提示暂无
-  电力段。触发：开启扩展提示；频率：每次悬停电力建筑/单位；风险：少一段文本。
+- **ToolTips 扩展文本电力行**：建筑臂已实现（`Simulation::cameo_power_delta`：
+  `GetEnhancedPower` 无 plant 结算 + 原生 drain，电力非零时在成本行后追加
+  ` ⚡±N`）；单位臂仍缺 `UnitPowerDrain` 机制（`[General] UnitPowerDrain` 默认
+  no，零售无影响）。触发：`UnitPowerDrain=yes` 且悬停单位；频率：仅该类模组；
+  风险：单位提示少电力段，实际电力结算也不含单位。
 - **`SWShotsFormat` 余量**：`SW.Shots` 状态只在 Ares 包；仅 phobos 构建没有计数，
   射击行不显示。触发：自定义 `SW.Shots` 且开启扩展提示；风险：少一行提示。
 - **`MaxWidth` 的 5 px 绘制内边距**（钩子 `0x479029`）：无残渣；cameo 换行宽度

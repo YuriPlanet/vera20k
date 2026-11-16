@@ -24,5 +24,7 @@ Underground-layer entities, applies the same filters and commits each through
 the direct-receiver path. A hit with no surface receiver reports
 `ReceiverDispatched`, like the native `hitted` stack flag.
 
-RESIDUAL — `CellSpread.Cylinder` has no reader yet (the crit pass records the
-same gap), so the underground pass always uses 3D distance.
+`CellSpread.Cylinder` is read as `WarheadType::phobos_cell_spread_cylinder`
+(see `docs/phobos-extra-warheads.md`) and the underground pass picks the 2D
+distance when it is set, matching the hook's `getCellSpreadItemsExt` arm; no
+residual.

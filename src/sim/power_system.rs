@@ -646,21 +646,27 @@ fn health_scaled_output(power: i32, entity: &GameEntity, strength: i32) -> i32 {
 fn enhanced_power(
     target: &crate::rules::object_type::ObjectType,
     output: i32,
-    plant: &GameEntity,
+    owner: InternedId,
+    plant: Option<&GameEntity>,
     enhancers: &[(&GameEntity, &crate::rules::object_type::ObjectType)],
 ) -> (i32, i32) {
     let mut factor = 1.0f32;
     let mut amount = 0i32;
     let mut applied: std::collections::HashMap<InternedId, i32> = std::collections::HashMap::new();
     for (enhancer, enhancer_type) in enhancers {
-        if enhancer.owner() != plant.owner()
-            || !enhancer_type.power_plant_enhancer_enhances(&target.id)
-        {
+        if enhancer.owner() != owner || !enhancer_type.power_plant_enhancer_enhances(&target.id) {
             continue;
         }
         let range = enhancer_type.power_plant_enhancer_range();
-        if range > 0 && power_plant_enhancer_distance(enhancer, plant) > range {
-            continue;
+        // A positive range with no plant has nothing to measure from;
+        // `GetEnhancedPower` skips those enhancers (`!pPowerPlant`).
+        if range > 0 {
+            let Some(plant) = plant else {
+                continue;
+            };
+            if power_plant_enhancer_distance(enhancer, plant) > range {
+                continue;
+            }
         }
         let max = enhancer_type.power_plant_enhancer_max_count();
         if max > 0 {
@@ -681,6 +687,45 @@ fn enhanced_power(
         (output as f32 * factor).round() as i32
     };
     (power, amount)
+}
+
+/// Phobos `PhobosToolTip::GetPower`'s building arm (`Misc/PhobosToolTip.cpp:80-90`):
+/// `GetEnhancedPower(type, PowerBonus, CurrentPlayer)` plus the enhancer
+/// amounts minus the native drain. The tooltip has no plant, so a positive
+/// enhancer `Range` skips as `!pPowerPlant` does. The unit arm needs the
+/// `UnitPowerDrain` mechanism and stays out until that exists.
+#[cfg(feature = "phobos")]
+pub(crate) fn cameo_power_delta(
+    entities: &EntityStore,
+    building_order: &[u64],
+    rules: &RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+    owner: InternedId,
+    object: &crate::rules::object_type::ObjectType,
+) -> i32 {
+    if object.category != crate::rules::object_type::ObjectCategory::Building {
+        return 0;
+    }
+    let enhancers: Vec<(&GameEntity, &crate::rules::object_type::ObjectType)> = building_order
+        .iter()
+        .filter_map(|&id| {
+            let entity = entities.get(id)?;
+            if entity.owner() != owner
+                || entity.category() != EntityCategory::Structure
+                || !entity.is_power_plant_enhancer_active()
+            {
+                return None;
+            }
+            let enhancer_type = interner.object_type(entity.type_ref(), rules)?;
+            enhancer_type
+                .is_power_plant_enhancer()
+                .then_some((entity, enhancer_type))
+        })
+        .collect();
+    let (power, amount) = enhanced_power(object, object.power.max(0), owner, None, &enhancers);
+    power
+        .wrapping_add(amount)
+        .wrapping_sub(native_building_power_drain(object.power))
 }
 
 /// `pEnhancer->DistanceFrom(pPowerPlant)`: `ObjectClass::Distance_To @
@@ -836,16 +881,26 @@ fn recalculate_power_for_owner(
         let (power, extra_power) = if entity.emp_remaining() > 0 {
             (0, 0)
         } else {
-            let (mut power, mut extra) =
-                enhanced_power(obj, output_contribution, entity, &enhancers);
+            let (mut power, mut extra) = enhanced_power(
+                obj,
+                output_contribution,
+                entity.owner(),
+                Some(entity),
+                &enhancers,
+            );
             let upgrades = entity.building_upgrades();
             if upgrades.count() != 0 {
                 for type_ref in upgrades.types().iter().flatten() {
                     let Some(upgrade) = interner.object_type(*type_ref, rules) else {
                         continue;
                     };
-                    let (upgrade_power, upgrade_extra) =
-                        enhanced_power(upgrade, upgrade.power.max(0), entity, &enhancers);
+                    let (upgrade_power, upgrade_extra) = enhanced_power(
+                        upgrade,
+                        upgrade.power.max(0),
+                        entity.owner(),
+                        Some(entity),
+                        &enhancers,
+                    );
                     power = power.wrapping_add(upgrade_power);
                     extra = extra.wrapping_add(upgrade_extra);
                 }
@@ -1350,6 +1405,69 @@ mod tests {
             );
             assert_eq!(state.radar_available, row[3] == 1, "{row}");
         }
+    }
+
+    /// Phobos `PhobosToolTip::GetPower` building arm: `GetEnhancedPower` without
+    /// a plant keeps only enhancers whose `Range` is not positive, then the
+    /// native drain subtracts.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn cameo_power_delta_uses_unlimited_enhancers_and_the_native_drain() {
+        let rules = rules_from_ini(
+            "[BuildingTypes]\n0=POWR\n1=ENH\n2=CONS\n3=ENH2\n\
+         [POWR]\nPower=200\nStrength=100\n\
+         [CONS]\nPower=-100\nStrength=100\n\
+         [ENH]\nStrength=100\nPowerPlantEnhancer.PowerPlants=POWR\n\
+         PowerPlantEnhancer.Amount=50\nPowerPlantEnhancer.Factor=2\n\
+         [ENH2]\nStrength=100\nPowerPlantEnhancer.PowerPlants=POWR\n\
+         PowerPlantEnhancer.Range=5\nPowerPlantEnhancer.Amount=999\n",
+        );
+        let plant = make_building(1, "POWR", "A", 100);
+        let enhancer = make_building(2, "ENH", "A", 100);
+        let consumer = make_building(3, "CONS", "A", 100);
+        let ranged = make_building(4, "ENH2", "A", 100);
+        let owner = plant.owner();
+        let mut entities = EntityStore::default();
+        for entity in [plant, enhancer, consumer, ranged] {
+            entities.insert(entity);
+        }
+        let interner = test_interner();
+        assert_eq!(
+            cameo_power_delta(
+                &entities,
+                &[1, 2, 3, 4],
+                &rules,
+                &interner,
+                owner,
+                rules.object("POWR").unwrap()
+            ),
+            450,
+            "round(200 * 2) + 50, with the ranged enhancer skipped"
+        );
+        assert_eq!(
+            cameo_power_delta(
+                &entities,
+                &[1, 2, 3, 4],
+                &rules,
+                &interner,
+                owner,
+                rules.object("CONS").unwrap()
+            ),
+            -100,
+            "a consumer reports its native drain"
+        );
+        assert_eq!(
+            cameo_power_delta(
+                &entities,
+                &[1, 3, 4],
+                &rules,
+                &interner,
+                owner,
+                rules.object("POWR").unwrap()
+            ),
+            200,
+            "without the enhancer only the base output remains"
+        );
     }
 
     fn test_interner() -> intern::StringInterner {

@@ -645,27 +645,57 @@ fn tooltip_minutes_seconds(seconds: i32) -> String {
 
 /// Phobos `PhobosToolTip::HelpText_Techno` (`Misc/PhobosToolTip.cpp:130-153`):
 /// the UIName, then the absolute actual cost behind `CostLabel`, the build time
-/// behind `TimeLabel`, then the optional description line.
-/// RESIDUAL: the power readout (`GetPower`/`PowerLabel`, `:78-101`) is omitted;
-/// its building arm needs the live PowerPlantEnhancer pass and its unit arm the
-/// unported `UnitPowerDrain` mechanism.
+/// behind `TimeLabel`, then a nonzero power readout behind `PowerLabel` and the
+/// optional description line. The unit arm of `GetPower` still needs the
+/// `UnitPowerDrain` mechanism; only buildings report (`:78-101`).
 #[cfg(feature = "phobos")]
 fn extended_techno_tip(
     ui: &crate::rules::phobos_tooltips_ui::ToolTipsUi,
+    power_label: &str,
+    power: Option<i32>,
     name: &str,
     cost: i64,
     seconds: i32,
     description: Option<&str>,
 ) -> String {
     let sign = if cost < 0 { "+" } else { "" };
-    let tip = format!(
+    let mut tip = format!(
         "{name}\n{sign}{}{} {}{}",
         ui.cost_label,
         cost.abs(),
         ui.time_label,
         tooltip_minutes_seconds(seconds)
     );
+    if let Some(power) = power {
+        tip.push(' ');
+        tip.push_str(power_label);
+        if power > 0 {
+            tip.push('+');
+        }
+        tip.push_str(&power.to_string());
+    }
     append_ui_description(tip, description)
+}
+
+/// The building arm of Phobos' `GetPower` for the local owner
+/// ([`Simulation::cameo_power_delta`]). `None` when the value is zero, which
+/// prints no line, or while the simulation view is unavailable.
+#[cfg(feature = "phobos")]
+fn extended_techno_power(state: &AppState, type_id: &str) -> Option<i32> {
+    let view = state.sim_view()?;
+    let sim = view.simulation();
+    let (Some(rules), Some(owner)) = (
+        state.rules(),
+        state
+            .match_state
+            .local_player_owner()
+            .and_then(|name| sim.interner().get(name)),
+    ) else {
+        return None;
+    };
+    let object = rules.object(type_id)?;
+    let power = sim.cameo_power_delta(rules, owner, object);
+    (power != 0).then_some(power)
 }
 
 /// Phobos `PhobosToolTip::HelpText_Super` (`Misc/PhobosToolTip.cpp:155-215`):
@@ -969,6 +999,12 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
                                 );
                                 extended_techno_tip(
                                     &state.process_assets.phobos_tooltips_ui,
+                                    &state
+                                        .match_state
+                                        .match_presentation
+                                        .sidebar_indicators
+                                        .power_label,
+                                    extended_techno_power(state, &item.type_id),
                                     &item.display_name,
                                     i64::from(cost),
                                     extended_techno_seconds(state, &item.type_id),
@@ -2520,18 +2556,28 @@ ToolTip.Background.Opacity={opacity}
     fn extended_techno_tip_prints_cost_time_and_the_description() {
         let ui = crate::rules::phobos_tooltips_ui::ToolTipsUi::default();
         assert_eq!(
-            extended_techno_tip(&ui, "Grizzly Battle Tank", 700, 45, None),
+            extended_techno_tip(&ui, "\u{26A1}", None, "Grizzly Battle Tank", 700, 45, None),
             "Grizzly Battle Tank\n$700 \u{231A}00:45"
         );
         assert_eq!(
-            extended_techno_tip(&ui, "Cheap", -50, 3, Some("Fast")),
+            extended_techno_tip(&ui, "\u{26A1}", None, "Cheap", -50, 3, Some("Fast")),
             "Cheap\n+$50 \u{231A}00:03\nFast"
+        );
+        // A nonzero `GetPower` joins the cost line after a space; only a
+        // positive value takes the native `+` sign.
+        assert_eq!(
+            extended_techno_tip(&ui, "\u{26A1}", Some(150), "Plant", 800, 20, None),
+            "Plant\n$800 \u{231A}00:20 \u{26A1}+150"
+        );
+        assert_eq!(
+            extended_techno_tip(&ui, "\u{26A1}", Some(-40), "Drain", 300, 10, None),
+            "Drain\n$300 \u{231A}00:10 \u{26A1}-40"
         );
         let mut custom = ui.clone();
         custom.cost_label = "CR".to_owned();
         custom.time_label = "T".to_owned();
         assert_eq!(
-            extended_techno_tip(&custom, "Name", 0, 60, Some("")),
+            extended_techno_tip(&custom, "W", None, "Name", 0, 60, Some("")),
             "Name\nCR0 T01:00"
         );
     }

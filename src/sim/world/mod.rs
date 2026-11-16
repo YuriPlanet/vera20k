@@ -3936,6 +3936,28 @@ impl Simulation {
         self.power_states.as_map()
     }
 
+    /// Phobos cameo tooltip power readout (`Misc/PhobosToolTip.cpp:68-101`)
+    /// for `object` as `owner` would build it.
+    #[cfg(feature = "phobos")]
+    pub fn cameo_power_delta(
+        &self,
+        rules: &RuleSet,
+        owner: InternedId,
+        object: &crate::rules::object_type::ObjectType,
+    ) -> i32 {
+        let Some(house) = self.houses.get(&owner) else {
+            return 0;
+        };
+        power_system::cameo_power_delta(
+            &self.substrate.entities,
+            house.base_projection().buildings(),
+            rules,
+            &self.interner,
+            owner,
+            object,
+        )
+    }
+
     pub fn super_weapons(
         &self,
     ) -> &BTreeMap<InternedId, BTreeMap<InternedId, crate::sim::superweapon::SuperWeaponInstance>>
