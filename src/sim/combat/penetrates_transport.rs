@@ -84,7 +84,11 @@ pub(super) fn apply(
         [impact.x, impact.y, impact.z],
         [transport_coord.x, transport_coord.y, transport_coord.z],
     );
-    for passenger_id in picked {
+    // `Gunner=yes` on a Unit target is the whole native gate besides `isFirst`.
+    let gunner_transport =
+        target_type.gunner && target.category() == crate::map::entities::EntityCategory::Unit;
+    let mut gunner_removed = false;
+    for (index, passenger_id) in picked.into_iter().enumerate() {
         let Some(passenger) = world.substrate.entities.get(passenger_id) else {
             continue;
         };
@@ -133,6 +137,44 @@ pub(super) fn apply(
             overlay_registry,
         );
         effects.append(nested);
+        // `Detonate.cpp:887-903`: the first iterated passenger's `NowDead`
+        // result calls the transport's `RemoveGunner` when its type has
+        // `Gunner=yes`. The shared death path already ran the same arm for a
+        // rider whose Transporter is set; this call is the native one and is
+        // idempotent (mode 0).
+        if index == 0
+            && gunner_transport
+            && world
+                .substrate
+                .entities
+                .get(passenger_id)
+                .is_some_and(|passenger| passenger.death.is_dying())
+        {
+            world.remove_gunner(rules, target_id, Some(passenger_id));
+            gunner_removed = true;
+        }
+    }
+    // `Detonate.cpp:907-913`: `passenger = passengers.GetFirstPassenger()`
+    // after the loop; a surviving head takes the gunner slot back.
+    if gunner_removed {
+        let new_head = world
+            .substrate
+            .entities
+            .get(target_id)
+            .and_then(|target| target.passenger_role.cargo())
+            .and_then(|cargo| cargo.passengers().first().copied());
+        if let Some(pax_id) = new_head {
+            crate::sim::passenger::receive_gunner(
+                &world.interner,
+                &world.session,
+                &mut world.scenario_rng,
+                &mut world.substrate,
+                &world.houses,
+                rules,
+                target_id,
+                pax_id,
+            );
+        }
     }
     // A clean pass that leaves no passenger plays `CleanSound` at the
     // transport's Location (`Detonate.cpp:908-920`).
