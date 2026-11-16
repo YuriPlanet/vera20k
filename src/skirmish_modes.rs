@@ -60,69 +60,6 @@ pub struct ModePolicy {
     pub shared_allied_victory: bool,
 }
 
-/// Room-level overrides composed on top of a base [`ModePolicy`].
-/// `None` preserves the underlying mode policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct RoomPolicyOverrides {
-    pub short_game: Option<bool>,
-    pub lock_short_game: Option<bool>,
-}
-
-/// Resolved room capability and `ShortGame` policy composed from a mode's
-/// default [`ModePolicy`] and active [`RoomPolicyOverrides`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EffectiveRoomPolicy {
-    pub mode_policy: ModePolicy,
-    pub short_game_default: Option<bool>,
-    pub short_game_locked: bool,
-}
-
-impl EffectiveRoomPolicy {
-    /// Stock effective policy without room overrides or locks.
-    pub const fn from_mode(class: MpModeClass) -> Self {
-        Self {
-            mode_policy: class.policy(),
-            short_game_default: None,
-            short_game_locked: false,
-        }
-    }
-
-    /// Compose `base` mode defaults with active room `overrides`.
-    pub const fn resolve(base: ModePolicy, overrides: RoomPolicyOverrides) -> Self {
-        Self {
-            mode_policy: base,
-            short_game_default: overrides.short_game,
-            short_game_locked: match overrides.lock_short_game {
-                Some(locked) => locked,
-                None => false,
-            },
-        }
-    }
-
-    /// Convenience composition directly from an [`MpModeClass`].
-    pub const fn with_overrides(class: MpModeClass, overrides: RoomPolicyOverrides) -> Self {
-        Self::resolve(class.policy(), overrides)
-    }
-
-    /// Maximum setup seats permitted once mode policy and map capacity apply.
-    pub fn max_players_for_capacity(&self, map_capacity: usize) -> usize {
-        match self.mode_policy.setup_player_limit {
-            Some(limit) => map_capacity.min(limit.max(1)),
-            None => map_capacity,
-        }
-    }
-
-    /// Effective `ShortGame` value: locked overrides beat host edits; unlocked
-    /// rooms honor the host's toggle.
-    pub fn resolve_short_game(&self, host_short_game: bool) -> bool {
-        if self.short_game_locked {
-            self.short_game_default.unwrap_or(host_short_game)
-        } else {
-            host_short_game
-        }
-    }
-}
-
 impl MpModeClass {
     const SECTIONS: [(Self, &'static str); 6] = [
         (Self::Battle, "Battle"),
@@ -674,39 +611,5 @@ mod tests {
                 shared_allied_victory: true,
             }
         );
-    }
-
-    #[test]
-    fn effective_room_policy_composes_defaults_overrides_bounds_and_locks() {
-        let stock = EffectiveRoomPolicy::from_mode(MpModeClass::Battle);
-        assert_eq!(stock.mode_policy, MpModeClass::Battle.policy());
-        assert_eq!(stock.max_players_for_capacity(8), 8);
-        assert!(!stock.short_game_locked);
-        assert!(stock.resolve_short_game(true));
-        assert!(!stock.resolve_short_game(false));
-
-        let coop = EffectiveRoomPolicy::from_mode(MpModeClass::Cooperative);
-        assert_eq!(coop.max_players_for_capacity(8), 2);
-        assert_eq!(coop.max_players_for_capacity(1), 1);
-
-        let wol_locked = EffectiveRoomPolicy::with_overrides(
-            MpModeClass::Battle,
-            RoomPolicyOverrides {
-                short_game: Some(true),
-                lock_short_game: Some(true),
-            },
-        );
-        assert!(wol_locked.short_game_locked);
-        assert!(wol_locked.resolve_short_game(false));
-
-        let unlocked = EffectiveRoomPolicy::with_overrides(
-            MpModeClass::Battle,
-            RoomPolicyOverrides {
-                short_game: Some(true),
-                lock_short_game: Some(false),
-            },
-        );
-        assert!(!unlocked.short_game_locked);
-        assert!(!unlocked.resolve_short_game(false));
     }
 }

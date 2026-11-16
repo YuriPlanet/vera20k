@@ -303,7 +303,7 @@ pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> any
     let Some(launch) = session.network_setup() else {
         return Ok(());
     };
-    if !session.network_team_room() {
+    if !launch.mode.allies_allowed || session.network_room().clan {
         return Ok(());
     }
     // Without Teams, the Team list's A to D (`team_choices`).

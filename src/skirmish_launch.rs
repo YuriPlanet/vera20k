@@ -1079,7 +1079,7 @@ impl SkirmishLaunchSession {
     }
 
     /// VERA shared control: the human whose House human `index` plays in.
-    /// When [`ModePolicy::shared_start_positions`] allows it, players who pick
+    /// When [`crate::skirmish_modes::ModePolicy::shared_start_positions`] allows it, players who pick
     /// the same start share one House, led by the first of them in row order;
     /// everyone else leads their own. gamemd's setup refuses a taken start
     /// (`0x005E9720`), so it never sees a shared one.

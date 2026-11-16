@@ -902,15 +902,11 @@ fn install_setup(
     let quick_match = dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state);
     if dialog.wol() {
         let room = crate::app::shell_wol::lobby::room(state);
-        state.match_state.session.set_network_room(room, quick_match);
+        state.match_state.session.set_network_room(room);
         // C2's lockout in a tournament or clan room, after the profile
         // restore (0x79132A..0x7913D1): Short Game and Bases on; the AI
         // count is already 0 on WOL.
-        if host
-            && !quick_match
-            && let Some(policy) = state.match_state.session.network_effective_policy()
-            && policy.short_game_locked
-        {
+        if host && room.tournament_or_clan() && !quick_match {
             let mut options = state
                 .match_state
                 .session
@@ -918,11 +914,8 @@ fn install_setup(
                 .expect("admitted setup")
                 .options
                 .clone();
-            let short_game = policy.resolve_short_game(options.short_game);
-            options.short_game = short_game;
-            if short_game {
-                options.bases = true;
-            }
+            options.short_game = true;
+            options.bases = true;
             state.match_state.session.set_network_options(options)?;
         }
     }
