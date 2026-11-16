@@ -375,6 +375,31 @@ pub(crate) fn post_pause_changes(state: &mut AppState) {
     }
 }
 
+/// VERA: other players the relay stopped hearing for 10 seconds, or hears
+/// again, one line each. gamemd holds the match and names a silent player in
+/// its Wait_For_Players dialog (called from ProcessNetwork `0x0064800E`); the
+/// relay plays on without them, so the others read it.
+pub(crate) fn post_connection_changes(state: &mut AppState) {
+    let changes = state
+        .match_state
+        .live_network
+        .as_mut()
+        .map(|live| live.take_connection_changes())
+        .unwrap_or_default();
+    for change in changes {
+        let Some(name) = house_player_name(state, change.house) else {
+            continue;
+        };
+        let key = if change.responding {
+            "VERA:PlayerResponding"
+        } else {
+            "VERA:PlayerNotResponding"
+        };
+        let text = crate::i18n::tr_fill(key, &[("name", &name)]);
+        crate::app::input::messages::post_relay_notice(state, &text);
+    }
+}
+
 /// The name of the player whose House is `house`, when it has one.
 fn house_player_name(state: &AppState, house: i8) -> Option<String> {
     let runtime = state.match_state.sim_runtime.runtime()?;

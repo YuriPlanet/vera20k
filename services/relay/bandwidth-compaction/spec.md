@@ -322,7 +322,7 @@ MAC 长度是一个常量 `HOP_TAG_LEN`。想要更大的安全余量时改成 8
 [1][head_frame varint][oldest_seq varint][next_seq varint][active_sources u32][tick_hz u16][start_delay_ms varint][started u8][up_high varint][up_bits u64][echo_delay varint]
 ```
 
-50 B → 约 22 B。
+50 B → 约 22 B。开局后有活跃来源 10 秒没有任何消息时，玩家的 STATUS 在反馈之后再追加 `[silent_sources u32]`（见 relay README “Silence”）；没有这样的来源时不追加，所以正常对局一个字节也不多。观战者的 STATUS 不带此项。
 
 ### 7.4 其他
 

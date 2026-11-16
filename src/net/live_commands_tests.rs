@@ -5115,3 +5115,26 @@ fn sequenced_transport_sends_input_while_the_canonical_frontier_is_closed() {
     assert_eq!(worlds[0].session().tick(), held_tick);
     assert_eq!(worlds[0].network_command_queues().local_len(), 0);
 }
+
+/// VERA: a player whose connection this game removed, as when it ran their
+/// EXIT, is not named when the relay, which may never have heard them leave,
+/// stops hearing them.
+#[test]
+fn a_removed_player_the_relay_stops_hearing_is_not_named() {
+    let (_, _, _, boundaries, _, _) = sequenced_pair();
+    let mut live = boundaries[0].live.borrow_mut();
+    let silent = |live: &mut LiveCommandSession, sources| {
+        live.sequenced.as_mut().unwrap().note_silent(sources);
+        live.take_connection_changes()
+    };
+    let named = |responding| {
+        [MatchConnectionChange {
+            house: 1,
+            responding,
+        }]
+    };
+    assert_eq!(silent(&mut live, 0b10), named(false));
+    assert_eq!(silent(&mut live, 0), named(true));
+    assert!(live.remove_peer(1));
+    assert!(silent(&mut live, 0b10).is_empty());
+}

@@ -110,6 +110,9 @@ pub enum Detail {
         start_delay_ms: u32,
         started: bool,
         feedback: Feedback,
+        /// VERA: the sources the relay has not heard from lately, 0 when
+        /// the STATUS has none (relay README "Silence").
+        silent_sources: u32,
     },
     Ack {
         batch_id: u64,

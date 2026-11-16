@@ -204,7 +204,14 @@ The relay keeps a bounded RAM cache and the full match journal on disk. The
 journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
-clients continue. After ten minutes of silence the relay removes the player
+clients continue. Once the relay has heard nothing from a player of a started
+match for 10 seconds, the other players read "<name> is not responding.", and
+"<name> is back." when it hears them again; watchers read neither. The relay
+names silent players in each player's status (relay README "Silence"). A
+released game ignores the names. An older relay names nobody, so a game on it
+shows no such line; in a match spread over several relays, players homed on an
+older relay are never named.
+After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:
 its place is gone, and a game whose ticket lapsed gets no answer that says so.
