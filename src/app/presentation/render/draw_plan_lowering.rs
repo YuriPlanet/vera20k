@@ -142,8 +142,8 @@ pub(crate) enum ObjectExtrasRun {
         parent: DrawId,
         bomb_clock: Option<u32>,
         wrench: Option<u32>,
-        /// Ares POWEROFF marker (10049FE0), after the wrench.
-        #[cfg(feature = "ares")]
+        /// Ares POWEROFF marker (10049FE0), after the wrench; `None` unless
+        /// the Rules were read the Ares way (`techno_extras_for_parent`).
         power_off: Option<u32>,
         rank: Option<u32>,
         background: Option<u32>,
@@ -397,7 +397,6 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     lowered.extras_instances.push(instance);
                     index
                 });
-                #[cfg(feature = "ares")]
                 let power_off = strip.power_off.map(|instance| {
                     let index = lowered.extras_instances.len() as u32;
                     lowered.extras_instances.push(instance);
@@ -461,7 +460,6 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     parent: owner,
                     bomb_clock,
                     wrench,
-                    #[cfg(feature = "ares")]
                     power_off,
                     rank,
                     background,
@@ -484,19 +482,15 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 if let Some(ObjectExtrasRun::Status {
                     bomb_clock,
                     wrench,
-                    #[cfg(feature = "ares")]
                     power_off,
                     rank,
                     fills,
                     ..
                 }) = &strip
-                    && (bomb_clock.is_some() || wrench.is_some() || rank.is_some() || {
-                        #[cfg(feature = "ares")]
-                        let marker = power_off.is_some();
-                        #[cfg(not(feature = "ares"))]
-                        let marker = false;
-                        marker
-                    })
+                    && (bomb_clock.is_some()
+                        || wrench.is_some()
+                        || rank.is_some()
+                        || power_off.is_some())
                 {
                     split_prefix = Some(lowered.extras_runs.len());
                     lowered.extras_runs.push(ObjectExtrasRun::Status {
@@ -504,7 +498,6 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         parent: owner,
                         bomb_clock: *bomb_clock,
                         wrench: *wrench,
-                        #[cfg(feature = "ares")]
                         power_off: *power_off,
                         rank: *rank,
                         background: None,
@@ -563,7 +556,6 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             if let Some(ObjectExtrasRun::Status {
                 bomb_clock,
                 wrench,
-                #[cfg(feature = "ares")]
                 power_off,
                 rank,
                 background,
@@ -581,12 +573,8 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             {
                 let bomb_clock = bomb_clock.filter(|_| split_prefix.is_none());
                 let wrench = wrench.filter(|_| split_prefix.is_none());
-                #[cfg(feature = "ares")]
                 let power_off = power_off.filter(|_| split_prefix.is_none());
-                #[cfg(feature = "ares")]
                 let marker = power_off.is_some();
-                #[cfg(not(feature = "ares"))]
-                let marker = false;
                 let rank = rank.filter(|_| split_prefix.is_none());
                 if bomb_clock.is_some()
                     || wrench.is_some()
@@ -614,7 +602,6 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         parent: owner,
                         bomb_clock,
                         wrench,
-                        #[cfg(feature = "ares")]
                         power_off,
                         rank,
                         background,

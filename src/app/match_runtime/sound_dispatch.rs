@@ -138,7 +138,8 @@ pub(super) fn dispatch_sim_sound_events(
     output: &mut SoundEventQueue,
     mut hud_text: Option<&mut Vec<crate::app::input::messages::HudMessage>>,
 ) {
-    // The superweapons' Ares arms follow how the Rules were read.
+    // The superweapons' Ares arms and the slam sound follow how the Rules
+    // were read.
     let ares = rules.ares_form();
     // Convert sim sound events to app-layer sound events for playback.
     for sim_event in events {
@@ -631,18 +632,19 @@ pub(super) fn dispatch_sim_sound_events(
                 let sound_id = rules.general.building_slam.as_deref();
                 // Ares HouseClass_UnitFromFactory_BuildingSlam (10010290, hook
                 // 0x4FB2FD): the placed type's SlamSound, else BuildingSlam.
-                #[cfg(feature = "ares")]
-                let sound_id = sim
-                    .interner()
-                    .object_type_in_category(
-                        building_type,
-                        crate::rules::object_type::ObjectCategory::Building,
-                        rules,
-                    )
-                    .and_then(|object| object.slam_sound())
-                    .unwrap_or(sound_id);
-                #[cfg(not(feature = "ares"))]
-                let _ = building_type;
+                // SlamSound binds only for Rules read the Ares way.
+                let sound_id = if ares {
+                    sim.interner()
+                        .object_type_in_category(
+                            building_type,
+                            crate::rules::object_type::ObjectCategory::Building,
+                            rules,
+                        )
+                        .and_then(|object| object.slam_sound())
+                        .unwrap_or(sound_id)
+                } else {
+                    sound_id
+                };
                 let Some(sound_id) = sound_id.map(str::to_owned) else {
                     continue;
                 };
@@ -1194,7 +1196,7 @@ fn super_weapon_detection_admitted(
 /// `0x0044840B`): a captured tech building prints `Message.Lost` when the
 /// old owner is the player (`HouseClass::Player` outside a campaign), then
 /// `Message.Capture` when the new owner is; an empty label prints nothing.
-#[cfg(feature = "ares")]
+/// The sim fills these labels only when Ares plays (`RuleSet::ares`).
 pub(super) fn ares_tech_capture_messages(
     events: &[SimSoundEvent],
     sim: &crate::sim::world::Simulation,
@@ -2128,9 +2130,9 @@ mod tests {
     /// Ares HouseClass_UnitFromFactory_BuildingSlam (10010290, hook
     /// 0x4FB2FD): the placed type's `SlamSound` replaces BuildingSlam, and
     /// `none` silences it.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_slam_sound_replaces_the_building_slam() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::rules::ini_parser::IniFile;
         let ini = IniFile::from_str(
             "[BuildingTypes]\n0=LOUD\n1=QUIET\n[LOUD]\nSlamSound=Slam\n[QUIET]\nSlamSound=none\n",
@@ -3219,9 +3221,9 @@ mod tests {
     /// Ares `10013E40`: the local loser reads `Message.Lost` and the local
     /// captor `Message.Capture`; another client's capture and an ordinary
     /// building print nothing.
-    #[cfg(feature = "ares")]
     #[test]
     fn ares_tech_capture_labels_print_for_the_local_sides() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
         use crate::app::input::messages::HudMessage;
         let mut sim = Simulation::new();
         let local = sim.intern("Local");

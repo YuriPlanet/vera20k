@@ -67,7 +67,6 @@ pub struct SelectionOverlay {
     repair_wrench: Option<CenteredShapeStrip>,
     /// POWEROFF.SHP, which only Ares draws (TechnoClass_DrawExtras_PowerOff
     /// 10049FE0, hook 0x6F526C).
-    #[cfg(feature = "ares")]
     power_off: Option<CenteredShapeStrip>,
     /// Full PIPS: health, rank, raw garrison Pip values and self-heal.
     /// Native LoadPipAssets 5F76B0 binds AC147C; both use Convert 87F6C4.
@@ -82,7 +81,6 @@ pub struct SelectionOverlay {
     insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
     /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
     /// the BOMBCURS.SHP they replace; a name that did not load is absent.
-    #[cfg(feature = "ares")]
     ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
 }
 
@@ -490,7 +488,6 @@ impl SelectionOverlay {
         });
         // POWEROFF.SHP by name (0x0045E970, beside WRENCH.SHP); Ares draws
         // it through the same MOUSEPAL Convert.
-        #[cfg(feature = "ares")]
         let power_off = assets.and_then(|assets| {
             CenteredShapeStrip::from_assets_on_device(
                 device,
@@ -526,14 +523,12 @@ impl SelectionOverlay {
             bomb_clock,
             talk_bubble,
             repair_wrench,
-            #[cfg(feature = "ares")]
             power_off,
             pips,
             #[cfg(feature = "phobos")]
             digital_shapes: Vec::new(),
             #[cfg(feature = "phobos")]
             insignia_shapes: std::collections::HashMap::new(),
-            #[cfg(feature = "ares")]
             ares_bomb_images: std::collections::HashMap::new(),
         }
     }
@@ -542,7 +537,7 @@ impl SelectionOverlay {
     /// `read<SHPStruct*>` (Ares.dll 10040640) loads the file at Rules read
     /// and keeps the pointer; TechnoClass_DrawExtras_IvanBombImage
     /// (10056CC0, hook 0x6F523C) draws it through BOMBCURS's MOUSEPAL convert.
-    #[cfg(feature = "ares")]
+    /// The match loader calls it when the Rules were read the Ares way.
     pub(crate) fn load_ares_bomb_images(
         &mut self,
         device: &wgpu::Device,
@@ -576,9 +571,9 @@ impl SelectionOverlay {
     }
 
     /// The bomb image for a carrier whose `IvanBomb.Image` candidates are
-    /// `names`: the last that loaded, else BOMBCURS.SHP.
+    /// `names`: the last that loaded, else BOMBCURS.SHP. Runs in every game:
+    /// the caller passes no names unless the Rules were read the Ares way.
     pub(crate) fn bomb_image(&self, names: &[String]) -> Option<&CenteredShapeStrip> {
-        #[cfg(feature = "ares")]
         if let Some(strip) = names
             .iter()
             .rev()
@@ -586,7 +581,6 @@ impl SelectionOverlay {
         {
             return Some(strip);
         }
-        let _ = names;
         self.bomb_clock()
     }
 
@@ -695,7 +689,6 @@ impl SelectionOverlay {
     }
 
     /// The power-off marker art (POWEROFF.SHP), when the assets have it.
-    #[cfg(feature = "ares")]
     pub fn power_off(&self) -> Option<&CenteredShapeStrip> {
         self.power_off.as_ref()
     }

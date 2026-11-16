@@ -2301,7 +2301,6 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             parent,
                             bomb_clock: None,
                             wrench: None,
-                            #[cfg(feature = "ares")]
                             power_off: None,
                             rank: *rank,
                             background: *background,
