@@ -48,7 +48,7 @@
 | `i32`、`u32`、`bool` | 普通整数和标志 | 模拟 API 中没有浮点值（RFC 6a）。 |
 | `Fixed` | 定点数，以原始 `i32` 表示 | 引擎的 `SimFixed` 是 `I16F16`（`src/util/fixed_math.rs`）：`65536` 表示 `1.0`。用于倍率。 |
 | `Coord` | `x`、`y`、`z`，单位为 lepton | 1 格等于 256 lepton。 |
-| `Cell` | `x`、`y`，单位为格 | |
+| `Cell` | `x`、`y`，单位为格 | `Cell.waypoint(n)` 给出路径点所在的格子（第 7.3 节）。 |
 | `Frames` | 逻辑帧数 | 每游戏秒 15 个逻辑帧（`RA2_LOGIC_FRAMES_PER_SECOND`，`src/util/fixed_math.rs`）。 |
 | `string` | 名字 | 节名和键名、初始化时的查找、触发器名和导出名、CSF 标签、客户端文字。比较时不区分大小写（RFC 4）。对局中的调用改用 ID（见 [ID](#id)）。 |
 | `Techno`、`House`…… | 带代数的句柄 | `i64` 值；见[句柄](#句柄)。 |
@@ -136,7 +136,7 @@ if (e.other != NO_HANDLE) {
 | `OverlayTypeId` | 覆盖物 | `ctx.overlayTypeId(name)` |
 | `SoundId` | 模拟 API 中的声音 | `ctx.soundId(name)` |
 | `MarkId` | 标记 | `Mark.id(name)` |
-| `NotifyId` | 模拟到客户端的通知，在发送它的模拟模块的 `vera.notify` 自定义段中声明 | `Notify.id(name)`：名字统一大小写后的稳定哈希，在每台机器上、在两侧都相同；加载时对本局模拟模块声明的名字一起检查冲突；在模拟模块中，未声明的名字返回 `NO_ID` |
+| `NotifyId` | 模拟到客户端的通知，在发送它的模拟模块的 `vera.notify` 自定义段中声明 | `Notify.id(name)`：名字统一大小写后的稳定哈希，在每台机器上、在两侧都相同；加载时对本局模拟模块声明的名字一起检查冲突；未声明的名字返回 `NO_ID`（在模拟模块中指它没有声明的名字；在客户端模块中指本局没有任何模拟模块声明过的名字） |
 | `TeamTypeId`、`ScriptTypeId`、`AiTriggerId` | AI 小队类型、小队脚本、AI 触发器 | `ai.teamTypeId(name)`、`ai.scriptTypeId(name)`、`ai.aiTriggerId(name)` |
 
 ```ts
@@ -152,7 +152,7 @@ const PANICKED = Mark.id("Panicked");
 techno.addMark(PANICKED);
 ```
 
-查找时名字比较不区分大小写（RFC 4）。没有匹配的名字返回 `NO_ID`，并把 `ctx.lastStatus()` 设为 `NotFound`：按[错误模型](#错误)这是预期结果，因为名字来自 mod 可能修改的数据。传入 `NO_ID` 的调用同样返回 `NotFound`；任何查找都不会返回的 ID 属于非法参数。`Mark.id` 遇到没见过的名字会登记它，所以总能返回 ID。通知名由发送它们的模拟模块预先声明：SDK 构建时按模块项目配置中的列表，把模拟模块发送的名字写进 Wasm 自定义段 `vera.notify`。这个列表的格式属于 SDK 文档，不属于引擎 API。客户端模块不声明任何名字；已声明但没有任何客户端模块接收的名字不算错误。对每个已声明的名字，`Notify.id` 都能返回 ID：引擎在加载模块时，把本局加载的所有模拟模块（mod 的和地图的合在一起）声明的名字放在一起检查哈希冲突，名字发生冲突的模块会被拒绝，并给出提示（RFC 3 第 6 步；RFC 10）。在模拟模块中，对模块没有声明的名字，`Notify.id` 返回 `NO_ID` 并设置 `NotFound`；在客户端模块中，它对任何名字都返回其哈希。对局中不能新增类型（RFC 8），所以一个 ID 在整个场景内一直有效，存档和读档之后也不变。
+查找时名字比较不区分大小写（RFC 4）。没有匹配的名字返回 `NO_ID`，并把 `ctx.lastStatus()` 设为 `NotFound`：按[错误模型](#错误)这是预期结果，因为名字来自 mod 可能修改的数据。传入 `NO_ID` 的调用同样返回 `NotFound`；任何查找都不会返回的 ID 属于非法参数。`Mark.id` 遇到没见过的名字会登记它，所以总能返回 ID。通知名由发送它们的模拟模块预先声明：SDK 构建时按模块项目配置中的列表，把模拟模块发送的名字写进 Wasm 自定义段 `vera.notify`。这个列表的格式属于 SDK 文档，不属于引擎 API。客户端模块不声明任何名字；已声明但没有任何客户端模块接收的名字不算错误。对每个已声明的名字，`Notify.id` 都能返回 ID：引擎在加载模块时，把本局加载的所有模拟模块（mod 的和地图的合在一起）声明的名字放在一起检查哈希冲突，名字发生冲突的模块会被拒绝，并给出提示（RFC 3 第 6 步；RFC 10）。在模拟模块中，对模块没有声明的名字，`Notify.id` 返回 `NO_ID` 并设置 `NotFound`。在客户端模块中，只有本局某个模拟模块声明过的名字才返回 ID，因为引擎保存着已声明名字的表；其他名字返回 `NO_ID` 并设置 `NotFound`，所以客户端从不会靠哈希匹配到未声明的名字。对局中不能新增类型（RFC 8），所以一个 ID 在整个场景内一直有效，存档和读档之后也不变。
 
 名字只保留在初始化和不频繁的调用中：上面的查找、`ctx.house(name)`、`onRules` 的写入和 `rules.set`（第 10 节）、规则读取、`Trigger.create` 以及 `Action.wasm` 的导出名、`Trigger.find` 和 `Tag.find`、AI 定义（9.2）、指定国家、音乐、EVA 语音或 CSF 标签的不频繁场景动作，以及客户端 API 中启动时的 `find`、热键名、声音、CSF 标签和文字（第 11 节）。
 
@@ -203,7 +203,7 @@ class IdBuffer {             // the same for IDs
 
 SDK 没有异常。失败分两类：
 
-1. **预期结果**返回 `Status`（返回句柄的函数则返回 `NO_HANDLE`），由模块决定如何处理。句柄为 `NO_HANDLE` 或其对象已不存在时为 `Gone`，名字没有匹配时为 `NotFound`，owner 拒绝时为 `Refused`，包括触发器中原子动作的目标种类不适用于该动作的情况。
+1. **预期结果**返回 `Status`（返回句柄的函数则返回 `NO_HANDLE`），由模块决定如何处理。句柄为 `NO_HANDLE` 或其对象已不存在时为 `Gone`，名字没有匹配时为 `NotFound`，owner 拒绝时为 `Refused`，包括原子动作的目标在其触发器执行时才发现不适用的情况。
 2. **编程错误**（trap、超出运算额度、参数非法）会让模块在所有机器的同一帧被停用，如 RFC 3 所述。
 
 ```ts
@@ -216,7 +216,7 @@ enum Status {
 }
 ```
 
-哪些参数算非法（因而会停用模块）按函数逐一列出：越界的下标（全局变量 0..49，局部变量 0..99）、负数的数量、不在列表中的枚举值。`Trigger.create` 以同样的方式检查每个 `Action.atomic` 的参数（[4.1](#41-动作的用法)）。没有匹配的名字返回 `NotFound`，因为名字来自 mod 可能修改的数据。触发器中原子动作的目标种类不适用于该动作，同样属于数据错误，结果为 `Refused`（[4.1](#41-动作的用法)）。两类错误如何划分是**已在 RFC 0.0.5 采纳**（提议 P18）。
+哪些参数算非法（因而会停用模块）按函数逐一列出：越界的下标（全局变量 0..49，局部变量 0..99）、负数的数量、不在列表中的枚举值。`Trigger.create` 以同样的方式检查每个 `Action.atomic` 的参数，包括永远不适用于该动作的目标种类（[4.1](#41-动作的用法)）。没有匹配的名字返回 `NotFound`，因为名字来自 mod 可能修改的数据。原子动作的目标在其触发器执行时才发现不适用，同样属于数据错误，结果为 `Refused`（[4.1](#41-动作的用法)）。两类错误如何划分是**已在 RFC 0.0.5 采纳**（提议 P18）。
 
 对 `NO_HANDLE` 或对象已不存在的句柄发起的调用什么也不做。该调用返回 `Status` 时返回 `Gone`，并把 `ctx.lastStatus()`（客户端模块中为 `ui.lastStatus()`）设为 `Gone`。这适用于句柄上的每个方法，包括返回 `void` 的方法，例如 `Node` 的方法（第 11.1 节）。它从不停用模块（RFC 3）。
 
@@ -611,13 +611,14 @@ class Cond {
 
 在触发器内，原版动作（`Action.original`）和原子动作（`Action.atomic`）在触发器触发时执行，与原版中的原版动作一致，触发器含有模块动作时也是如此。只有 `Action.wasm` 动作排队，每个都带着触发该触发器的那个事件的载荷，在模块阶段按触发顺序、每个模块每帧一批执行（RFC 5；[事件投递](#事件投递)）：动作为 [原版 A、模块 B、原子 C] 的触发器，在触发时执行 A 和 C，B 在同一帧稍后执行。如果在模块阶段之前游戏已经结束，或者触发器已被禁用或删除，排队的模块动作会被丢弃。需要严格顺序的作者，把触发器的全部动作都写成模块代码，再通过下面的函数调用原版动作。由模块代码直接调用时，动作立即执行。
 
-在触发器中，原子动作写作 `Action.atomic(kind, target, params)`：`kind` 指定 [4.3](#43-原子动作rfc-6b与表格中的瞬时效果) 中的一个原子动作（`AtomicKind`），`params` 携带它的参数（`AtomicParams`），`target` 是一个明确的目标参数（`ActionTarget`）。原子动作只用于参数放得下的动作：一个目标、一个 ID、至多两个整数和一个格子（`Log` 另外带它要写的那行文字）。需要更多参数的动作（例如 `map.createProjectile`）写成模块动作。各个目标：`Subject`（默认）为记录中的主体；`Other` 为记录中的另一方对象；`TagHolder` 为标签中持有本次触发的触发器的对象，即 4.2 中标为“live”的行所作用的对象，触发器由 CellTag 持有时为那个格子；`Projectile` 为事件中的抛射体；`House` 为触发器的所属方，除非明确给出另一个所属方；`Cell` 为一个格子，可以直接给出，也可以用路径点给出。参数表达不了的部分由固定规则决定：
+在触发器中，原子动作写作 `Action.atomic(kind, target, params)`：`kind` 指定 [4.3](#43-原子动作rfc-6b与表格中的瞬时效果) 中的一个原子动作（`AtomicKind`），`params` 携带它的参数（`AtomicParams`），`target` 是一个明确的目标参数（`ActionTarget`）。原子动作只用于参数放得下的动作：一个目标、一个 ID、至多两个整数、一个格子和一个所属方。`Log` 是唯一被接受的例外：它另外带它要写的那行文字。需要更多参数的动作（例如 `map.createProjectile`）写成模块动作。各个目标：`Subject`（默认）为记录中的主体；`Other` 为记录中的另一方对象；`TagHolder` 为标签中持有本次触发的触发器的对象，即 4.2 中标为“live”的行所作用的对象，触发器由 CellTag 持有时为那个格子；`Projectile` 为事件中的抛射体；`House` 为 `params.house` 中的所属方，它为 `NO_HANDLE` 时为触发器的所属方；`Cell` 为 `params.cell` 中的格子。路径点以它的格子给出：`Cell.waypoint(n)` 在 `Trigger.create` 运行时解析为路径点所在的格子，因为路径点不会移动。不用目标的动作（`SetTechLevel`、`Log`）忽略 `target`。参数表达不了的部分由固定规则决定：
 
-- 动作需要的第二个对象（伤害、击杀或引爆的来源，武器射击的对象，乘客）是记录中的 `other`；事件没有另一方对象时，动作得到 `Gone` 并被跳过，状态写入日志；
-- 动作创建的对象属于触发器的所属方，除非目标是明确给出了所属方的 `House`；
+- 明确的所属方（`House` 目标、`SetOwner` 的新所属方、动作所创建对象的所属方）是 `params.house`；它为 `NO_HANDLE` 时，使用触发器的所属方；
+- 来源（伤害、击杀或引爆的来源：`Kill`、`Damage`、`DetonateWeapon`、`DetonateWarhead`）是记录中的 `other`，并且是可选的：事件没有另一方对象时，动作在没有来源的情况下执行，不计击杀归属；
+- 动作要施加作用的第二个对象（武器射击的对象、乘客）是记录中的 `other`；事件没有另一方对象时，动作得到 `Gone` 并被跳过，状态写入日志；
 - 坐标取给定格子的中心，或目标所在格子的中心。
 
-`Trigger.create` 检查每个 `Action.atomic` 的参数：非法的参数属于模块代码给出的非法参数，会停用模块（见[错误](#错误)；RFC 3）。写在 INI 中的原子动作在加载时检查，并在大厅中报告；它们的 INI 写法是 RFC 的待定问题 5。目标种类不适用于该动作（例如 `Kill` 的 `TagHolder` 是一个格子）属于数据错误，不是编程错误：动作得到 `Refused`，模块保持启用。由触发器执行的原子动作，其状态没有模块代码来接收：它失败时，错误状态（`Refused`、`Gone` 或 `NotFound`）写入游戏内日志，该动作被跳过，除此之外什么也不发生（见[错误](#错误)；RFC 3、6b）。立即执行的原版动作和原子动作可能引发新的事件，并在一帧之内连锁；含有模块触发器、VERA 新增的事件或原子动作的连锁，深度受每帧上限约束（见[事件投递](#事件投递)）。
+`Trigger.create` 检查每个 `Action.atomic` 的参数：非法的参数属于模块代码给出的非法参数，会停用模块（见[错误](#错误)；RFC 3）。这包括永远不适用于该动作的目标种类，即下表“目标”一列没有为该动作列出的种类（例如 `Kill` 的 `Cell`）。写在 INI 中的原子动作在加载时检查，并在大厅中报告；它们的 INI 写法是 RFC 的待定问题 5。触发器执行时才发现目标不适用于该动作（例如 `Kill` 的 `TagHolder` 是一个格子）属于数据错误，不是编程错误：动作得到 `Refused`，模块保持启用。由触发器执行的原子动作，其状态没有模块代码来接收：它失败时，错误状态（`Refused`、`Gone` 或 `NotFound`）写入游戏内日志，该动作被跳过，除此之外什么也不发生（见[错误](#错误)；RFC 3、6b）。立即执行的原版动作和原子动作可能引发新的事件，并在一帧之内连锁；含有模块触发器、VERA 新增的事件或原子动作的连锁，深度受每帧上限约束（见[事件投递](#事件投递)）。
 
 ```ts
 class ActionParams {
@@ -634,7 +635,7 @@ class Action {
   static wasm(exportName: string): Action;
   static atomic(kind: AtomicKind, target: ActionTarget, params: AtomicParams): Action;
 }
-enum ActionTarget { Subject, Other, TagHolder, Projectile, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House defaults to the trigger's house
+enum ActionTarget { Subject, Other, TagHolder, Projectile, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House is params.house, or the trigger's house when that is NO_HANDLE
 enum AtomicKind {            // the atomic actions of 4.3 whose parameters fit, named after their functions
   FireWeapon, LaunchSuperWeapon, SpawnAnim, Remove, Kill, Damage, SetHealth, Heal,
   CreateObject, SetMission, Teleport, ClearTarget, ClearDisguise, PlaySound,
@@ -648,12 +649,13 @@ class AtomicParams {         // the parameters of an atomic action other than it
   id: i32 = NO_ID;           // type ID: weapon, warhead, superweapon, animation, techno, sound, effect, mark
   value: i32 = 0;            // amount, damage, points, weapon index, mission, rank, ammo, enum value
   value2: i32 = 0;           // second value where the action needs one
-  cell: Cell | null = null;  // a cell, where the action takes one
+  cell: Cell | null = null;  // a cell, where the action takes one; a waypoint as Cell.waypoint(n)
+  house: House = NO_HANDLE;  // House target, SetOwner's new owner, owner of created objects; NO_HANDLE: the trigger's house
   text: string | null = null; // Log only: the line to write
 }
 ```
 
-`AtomicKind` 列出 4.3 中参数放得下的动作；区域搜索（一个查询）和 `map.createProjectile` 不在其中。下表列出每种动作的目标和用到的字段；它们如何对应到各个函数的参数，属于接口定义（RFC 12）。*对象*指 `Subject`、`Other`，或持有对象的 `TagHolder`；*格子*指 `Cell`，或对象目标所在的格子；`—` 表示不用目标或不用字段；`other` 是上面规则中的第二个对象。
+`AtomicKind` 列出 4.3 中参数放得下的动作；区域搜索（一个查询）和 `map.createProjectile` 不在其中。下表列出每种动作的目标和用到的字段；它们如何对应到各个函数的参数，属于接口定义（RFC 12）。*对象*指 `Subject`、`Other`，或持有对象的 `TagHolder`；*格子*指 `Cell`，或对象目标所在的格子；`—` 表示不用目标（并忽略目标）或不用字段；`other` 是上面规则中的第二个对象，“可选”表示动作没有它也能执行的来源。
 
 | `AtomicKind` | 目标 | 字段与第二个对象 |
 | --- | --- | --- |
@@ -661,10 +663,10 @@ class AtomicParams {         // the parameters of an atomic action other than it
 | `LaunchSuperWeapon` | `House` | `id` 超级武器类型，`cell` |
 | `SpawnAnim` | 格子 | `id` 动画 |
 | `Remove` | 对象 | — |
-| `Kill` | 对象 | `other` 为来源 |
-| `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 为来源 |
+| `Kill` | 对象 | `other` 为来源（可选） |
+| `Damage` | 对象 | `id` 弹头，`value` 伤害；`other` 为来源（可选） |
 | `SetHealth`、`Heal` | 对象 | `value` 生命点数 |
-| `CreateObject` | 格子，或 `House` | `id` 类型；目标为 `House` 时用 `cell` |
+| `CreateObject` | 格子 | `id` 类型；`house` 为所属方 |
 | `SetMission` | 对象 | `value` 任务，`cell` |
 | `Teleport` | 对象 | `cell`，`value` 目标格被占时的规则（`Blocked`） |
 | `ClearTarget`、`ClearDisguise`、`ClearMindControl` | 对象 | — |
@@ -674,20 +676,20 @@ class AtomicParams {         // the parameters of an atomic action other than it
 | `AddMoney` | `House` | `value` 金额 |
 | `SetTechLevel` | — | `id` 类型，`value` 科技等级 |
 | `AllowType` | `House` | `id` 类型，`value` 1 为允许、0 为不允许 |
-| `SetOwner` | 对象 | 新所属方尚未确定 |
+| `SetOwner` | 对象 | `house` 为新所属方 |
 | `SetAmmo`、`AddAmmo` | 对象 | `value` 弹药 |
 | `AddPassenger`、`RemovePassenger` | 对象（载具） | `other` 为乘客 |
 | `AddEffect`、`RemoveEffect` | 对象 | `id` 效果类型 |
 | `AddMark`、`RemoveMark` | 对象或 `House` | `id` 标记 |
-| `DetonateWeapon` | 格子 | `id` 武器；`other` 为来源 |
-| `DetonateWarhead` | 格子 | `id` 弹头，`value` 伤害；`other` 为来源 |
+| `DetonateWeapon` | 格子 | `id` 武器；`other` 为来源（可选） |
+| `DetonateWarhead` | 格子 | `id` 弹头，`value` 伤害；`other` 为来源（可选） |
 | `DetonateProjectile`、`RemoveProjectile` | `Projectile` | — |
 | `EndFor` | `House` | `value` 结果 |
 | `SetScore`、`AddScore` | `House` | `value` 分数 |
 | `Log` | — | `text` |
 | `Convert` | 对象 | `id` 类型 |
 
-`Action.original(n, …)` 运行 `TR::execute_live_trigger_action` 中现有的分支；启用 Ares 时先走 `TRA::ares_execute_action`。4.2 中的具名函数调用同样的 owner。原版用路径点的地方，API 用 `Cell`；`ctx.map.waypoint(n)` 返回路径点所在的格子。目前读取路径点编号的 owner 需要增加按格子的入口（缺口 G-A1）。标为“live”的行作用于标签中持有本次触发的触发器的对象；它们的直接形式改为接收对象参数。
+`Action.original(n, …)` 运行 `TR::execute_live_trigger_action` 中现有的分支；启用 Ares 时先走 `TRA::ares_execute_action`。4.2 中的具名函数调用同样的 owner。原版用路径点的地方，API 用 `Cell`；`Cell.waypoint(n)` 返回路径点所在的格子。目前读取路径点编号的 owner 需要增加按格子的入口（缺口 G-A1）。标为“live”的行作用于标签中持有本次触发的触发器的对象；它们的直接形式改为接收对象参数。
 
 除非另有说明，每一行都是 `v1`、`sim`。随机数：凡执行原生代码的行都是 `native (unverified)`，注明的除外。
 
@@ -1106,7 +1108,7 @@ class Filter {
 | `map.overlay(c: Cell)`、`ore(c: Cell)` | `OverlayTypeId`（没有时为 `NO_ID`）；数量 | 覆盖物和矿石状态 | v1 | RFC 6c |
 | `map.passable(c: Cell, zone: i32)` | `bool` | 移动区域检查（owner 未核实） | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
-| `map.waypoint(n: i32)` | `Cell \| null` | 地图路径点 | v1 | RFC 6c |
+| `Cell.waypoint(n: i32)` | `Cell \| null`（地图没有路径点 `n` 时为 `null`）；路径点不会移动，所以触发器一直使用创建时的格子 | 地图路径点 | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag`（没有时为 `NO_HANDLE`） | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
 | `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **已在 RFC 0.0.5 采纳**（P15）；Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **尚无 owner**（`src/sim/ai_base_site.rs` 有一个 AI 用的版本） | later | P15；Rc: `ClosestBuildPos` |
@@ -1512,7 +1514,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 
 ### 触发器、事件和约束条件
 
-- **G-T1** 模块和原子触发器动作（`Action.wasm`、`Action.atomic`）：在 `TR::execute_live_trigger_action` 中新增动作编号；`Action.wasm` 把模块调用排进队列，`Action.atomic` 解析目标并立即执行 4.3 中的函数，失败时写日志（G-H4）；`Action.atomic` 的参数在 `Trigger.create` 运行时检查，写在 INI 中的原子动作的参数在加载时检查（RFC 6a、6b）。
+- **G-T1** 模块和原子触发器动作（`Action.wasm`、`Action.atomic`）：在 `TR::execute_live_trigger_action` 中新增动作编号；`Action.wasm` 把模块调用排进队列，`Action.atomic` 解析目标并立即执行 4.3 中的函数，失败时写日志（G-H4）；`Action.atomic` 的参数（包括永远不适用的目标种类）在 `Trigger.create` 运行时检查，写在 INI 中的原子动作的参数在加载时检查（RFC 6a、6b）。
 - **G-T2** 模块在运行时创建触发器和标签（`Trigger.create`、`Tag.create`、`techno.setTag`、`cell.setTag`）：目前定义只来自 `RuntimeDefinitions::read_map`/`read_teams`；需要不会和地图编号冲突的 ID（RFC 7）。
 - **G-T3** 类型标签绑定（`Wasm.Tags`）放在 `AttachedTag` 槽位之外，作为按句柄索引的旁路表中的订阅记录（RFC 7、15）；以及武器、弹头和抛射体类型上用于武器事件的 `Wasm.Tags`（RFC 6a）。
 - **G-T4** TriggerType 上的约束条件列表，在触发前由引擎原生检查（RFC 6a）。
@@ -1569,7 +1571,7 @@ RFC 0.0.5 的示例改用这些键，并新增 `List` 部件类型和 `Text` 部
 
 - **G-R1** 一个模块规则层，在 mod 或地图层之后压入 `RulesLayerStack`，并计入大厅校验的哈希。
 - **G-R2** 对局中的规则覆盖层：存档、计入哈希，让以 `rules.serial()` 为键的缓存失效（`movement_tick.rs`、`house_defeat.rs`、`scatter.rs`、`movement_commands.rs`），并为每个键写明对已有对象的规则。
-- **G-R3** 每种 ID 的名字到 ID 查找（见 [ID](#id)），建在现有注册表（`RuleSet` 的类型下标、声音绑定、AI 定义）之上，未知名字返回 `NotFound`；另加供 `Mark.id` 使用的标记名注册表，以及供 `Notify.id` 使用的通知名稳定哈希（从每个模拟模块的 `vera.notify` 自定义段读取）和加载时对本局所有模拟模块（mod 的和地图的）一起进行的冲突检查（RFC 3、10、15）。
+- **G-R3** 每种 ID 的名字到 ID 查找（见 [ID](#id)），建在现有注册表（`RuleSet` 的类型下标、声音绑定、AI 定义）之上，未知名字返回 `NotFound`；另加供 `Mark.id` 使用的标记名注册表，以及供 `Notify.id` 使用的通知名稳定哈希（从每个模拟模块的 `vera.notify` 自定义段读取）和加载时对本局所有模拟模块（mod 的和地图的）一起进行的冲突检查，检查后的结果保存为已声明名字的表，客户端模块的 `Notify.id` 也读取它（RFC 3、10、15）。
 
 ### 客户端
 

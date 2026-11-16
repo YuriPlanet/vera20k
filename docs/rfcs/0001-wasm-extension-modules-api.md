@@ -63,7 +63,7 @@ spreadsheet also does ("negative means none").
 | `i32`, `u32`, `bool` | Plain integers and flags | The simulation API has no floating-point values (RFC 6a). |
 | `Fixed` | A fixed-point number as its raw `i32` | The engine's `SimFixed` is `I16F16` (`src/util/fixed_math.rs`): `65536` is `1.0`. Used for multipliers. |
 | `Coord` | `x`, `y`, `z` in leptons | One cell is 256 leptons. |
-| `Cell` | `x`, `y` in cells | |
+| `Cell` | `x`, `y` in cells | `Cell.waypoint(n)` gives a waypoint's cell (section 7.3). |
 | `Frames` | A count of logic frames | 15 logic frames per game second (`RA2_LOGIC_FRAMES_PER_SECOND`, `src/util/fixed_math.rs`). |
 | `string` | A name | Section names and keys, setup lookups, trigger and export names, CSF labels, client text. Compared without regard to case (RFC 4). Calls made during play take IDs instead (see [IDs](#ids)). |
 | `Techno`, `House`, ... | A generational handle | An `i64` value; see [Handles](#handles). |
@@ -170,7 +170,7 @@ Rust SDK each is a newtype. Like handles, IDs are values and allocate nothing.
 | `OverlayTypeId` | overlays | `ctx.overlayTypeId(name)` |
 | `SoundId` | sounds in the simulation API | `ctx.soundId(name)` |
 | `MarkId` | marks | `Mark.id(name)` |
-| `NotifyId` | simulation-to-client notifications, declared in the sending simulation module's `vera.notify` custom section | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; the names simulation modules declare are checked for collisions across the match at load; in a simulation module an undeclared name returns `NO_ID` |
+| `NotifyId` | simulation-to-client notifications, declared in the sending simulation module's `vera.notify` custom section | `Notify.id(name)`: a stable hash of the case-folded name, the same on every machine and on both sides; the names simulation modules declare are checked for collisions across the match at load; an undeclared name returns `NO_ID` (in a simulation module, a name it did not declare; in a client module, a name no simulation module of the match declared) |
 | `TeamTypeId`, `ScriptTypeId`, `AiTriggerId` | AI team types, team scripts, AI triggers | `ai.teamTypeId(name)`, `ai.scriptTypeId(name)`, `ai.aiTriggerId(name)` |
 
 ```ts
@@ -202,7 +202,10 @@ declared names of all simulation modules loaded in the match, the mod's and
 the map's together, for hash collisions, and refuses modules whose names
 collide, with a message (RFC 3, step 6; RFC 10). In a simulation module,
 `Notify.id` of a name the module did not declare returns `NO_ID` and sets
-`NotFound`; in a client module it returns the hash of any name.
+`NotFound`. In a client module it returns an ID only for a name that some
+simulation module of the match declared, because the engine keeps the table
+of declared names; any other name returns `NO_ID` and sets `NotFound`, so a
+client never matches an undeclared name by hash.
 Types cannot be added during a match (RFC 8), so an ID stays valid for the
 whole scenario and across a save and its load.
 
@@ -305,8 +308,9 @@ The SDK has no exceptions. Two kinds of failure exist:
 1. **Expected outcomes** return a `Status` (or `NO_HANDLE` for a function that
    returns a handle). The module decides what to do. A handle that is
    `NO_HANDLE` or whose object is gone gives `Gone`, a name that matches
-   nothing gives `NotFound`, and a refusal by an owner, including a target
-   kind that does not fit an atomic action in a trigger, gives `Refused`.
+   nothing gives `NotFound`, and a refusal by an owner, including an atomic
+   action's target that turns out not to fit when its trigger runs, gives
+   `Refused`.
 2. **Programming errors** (a trap, the operation budget exceeded, an invalid
    argument) disable the module at the same frame on every machine, as RFC 3
    says.
@@ -324,10 +328,11 @@ enum Status {
 What counts as an invalid argument (and so disables the module) is listed per
 function: out-of-range indexes (global 0..49, local 0..99), negative counts,
 an enum value outside its list. `Trigger.create` checks the arguments of each
-`Action.atomic` in the same way ([4.1](#41-using-actions)). A name that matches nothing returns
-`NotFound`, because names come from data that a mod may change. A target kind
-that does not fit an atomic action in a trigger is a data error as well and
-gives `Refused` ([4.1](#41-using-actions)). The split
+`Action.atomic` in the same way, including a target kind that can never fit
+the action ([4.1](#41-using-actions)). A name that matches nothing returns
+`NotFound`, because names come from data that a mod may change. A target that
+turns out not to fit an atomic action when its trigger runs is a data error as
+well and gives `Refused` ([4.1](#41-using-actions)). The split
 between the two kinds is **adopted in RFC 0.0.5** (proposal P18).
 
 A call on a handle that is `NO_HANDLE` or whose object is gone does nothing.
@@ -799,31 +804,40 @@ In a trigger, an atomic action is `Action.atomic(kind, target, params)`:
 `kind` names one atomic action of [4.3](#43-atomic-actions-rfc-6b-and-spreadsheet-instant-effects)
 (`AtomicKind`), `params` carries its parameters (`AtomicParams`), and `target`
 is an explicit target parameter (`ActionTarget`). An atomic action covers an
-action whose parameters fit: one target, one ID, up to two integers and one
-cell (`Log` also takes its line of text). An action that needs more, such as
-`map.createProjectile`, is written as a module action. The targets: `Subject`
-(the default) is the record's subject; `Other` the record's other object;
-`TagHolder` the objects whose tag holds the springing trigger, as the "live"
-rows of 4.2 act on, or the cell when the trigger is held by a CellTag;
-`Projectile` the event's projectile; `House` the trigger's house unless a
-house is given explicitly; `Cell` a cell, given directly or as a waypoint.
-Fixed rules cover what the parameters cannot say:
+action whose parameters fit: one target, one ID, up to two integers, one cell
+and one house. `Log` is the one accepted exception: it also carries its line
+of text. An action that needs more, such as `map.createProjectile`, is written
+as a module action. The targets: `Subject` (the default) is the record's
+subject; `Other` the record's other object; `TagHolder` the objects whose tag
+holds the springing trigger, as the "live" rows of 4.2 act on, or the cell
+when the trigger is held by a CellTag; `Projectile` the event's projectile;
+`House` the house in `params.house`, or the trigger's house when that is
+`NO_HANDLE`; `Cell` the cell in `params.cell`. A waypoint is given as its
+cell: `Cell.waypoint(n)` resolves to the waypoint's cell when `Trigger.create`
+runs, since waypoints do not move. A kind that uses no target (`SetTechLevel`,
+`Log`) ignores `target`. Fixed rules cover what the parameters cannot say:
 
-- a second object the action needs (the source of damage, a kill or a
-  detonation, the object a weapon fires at, a passenger) is the record's
-  `other`; when the event has none, the action gets `Gone` and is skipped,
-  and the status is logged;
-- objects the action creates belong to the trigger's house, unless the target
-  is `House` with an explicit house;
+- an explicit house (the `House` target, the new owner of `SetOwner`, the
+  owner of objects the action creates) is `params.house`; when it is
+  `NO_HANDLE`, the trigger's house is used;
+- a source (of damage, a kill or a detonation: `Kill`, `Damage`,
+  `DetonateWeapon`, `DetonateWarhead`) is the record's `other` and is
+  optional: when the event has none, the action runs with no source and gives
+  no kill credit;
+- a second object the action acts on (the object a weapon fires at, a
+  passenger) is the record's `other`; when the event has none, the action
+  gets `Gone` and is skipped, and the status is logged;
 - a coordinate is the center of the given cell, or of the target's cell.
 
 `Trigger.create` checks the arguments of each `Action.atomic`: an invalid one
 is an invalid argument from module code and disables the module (see
-[Errors](#errors); RFC 3). Atomic actions written in INI are checked at load
+[Errors](#errors); RFC 3). This includes a target kind that can never fit the
+action, that is, one the Target column below does not list for the kind (for
+example `Cell` for `Kill`). Atomic actions written in INI are checked at load
 and reported in the lobby; their INI form is open question 5 of the RFC. A
-target kind that does not fit the action (for example a `TagHolder` that is a
-cell, for `Kill`) is a data error, not a programming error: the action gets
-`Refused` and the module stays enabled. No module code receives the status of
+target that turns out not to fit when the trigger runs (for example a
+`TagHolder` that is a cell, for `Kill`) is a data error, not a programming
+error: the action gets `Refused` and the module stays enabled. No module code receives the status of
 an atomic action run by a trigger: when it fails, its error status
 (`Refused`, `Gone` or `NotFound`) is written to the in-game log and the action
 is skipped; nothing else happens (see [Errors](#errors); RFC 3, 6b). Original and atomic actions that run at once
@@ -846,7 +860,7 @@ class Action {
   static wasm(exportName: string): Action;
   static atomic(kind: AtomicKind, target: ActionTarget, params: AtomicParams): Action;
 }
-enum ActionTarget { Subject, Other, TagHolder, Projectile, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House defaults to the trigger's house
+enum ActionTarget { Subject, Other, TagHolder, Projectile, House, Cell }   // target of an atomic action in a trigger; Subject is the default; House is params.house, or the trigger's house when that is NO_HANDLE
 enum AtomicKind {            // the atomic actions of 4.3 whose parameters fit, named after their functions
   FireWeapon, LaunchSuperWeapon, SpawnAnim, Remove, Kill, Damage, SetHealth, Heal,
   CreateObject, SetMission, Teleport, ClearTarget, ClearDisguise, PlaySound,
@@ -860,7 +874,8 @@ class AtomicParams {         // the parameters of an atomic action other than it
   id: i32 = NO_ID;           // type ID: weapon, warhead, superweapon, animation, techno, sound, effect, mark
   value: i32 = 0;            // amount, damage, points, weapon index, mission, rank, ammo, enum value
   value2: i32 = 0;           // second value where the action needs one
-  cell: Cell | null = null;  // a cell, where the action takes one
+  cell: Cell | null = null;  // a cell, where the action takes one; a waypoint as Cell.waypoint(n)
+  house: House = NO_HANDLE;  // House target, SetOwner's new owner, owner of created objects; NO_HANDLE: the trigger's house
   text: string | null = null; // Log only: the line to write
 }
 ```
@@ -870,8 +885,9 @@ query) and `map.createProjectile` are not among them. The table lists the
 target and the fields each kind uses; how they map onto each function's
 parameters belongs to the interface definition (RFC 12). *Object* means
 `Subject`, `Other` or a `TagHolder` that holds objects; *cell* means `Cell` or
-the cell of an object target; `—` means the kind uses no target or no field;
-`other` is the second object of the rules above.
+the cell of an object target; `—` means the kind uses no target (and ignores
+it) or no field; `other` is the second object of the rules above, and
+"optional" marks a source the action can do without.
 
 | `AtomicKind` | Target | Fields and second object |
 | --- | --- | --- |
@@ -879,10 +895,10 @@ the cell of an object target; `—` means the kind uses no target or no field;
 | `LaunchSuperWeapon` | `House` | `id` superweapon type, `cell` |
 | `SpawnAnim` | cell | `id` animation |
 | `Remove` | object | — |
-| `Kill` | object | `other` as the source |
-| `Damage` | object | `id` warhead, `value` damage; `other` as the source |
+| `Kill` | object | `other` as the source (optional) |
+| `Damage` | object | `id` warhead, `value` damage; `other` as the source (optional) |
 | `SetHealth`, `Heal` | object | `value` points |
-| `CreateObject` | cell, or `House` | `id` type; `cell` with a `House` target |
+| `CreateObject` | cell | `id` type; `house` the owner |
 | `SetMission` | object | `value` mission, `cell` |
 | `Teleport` | object | `cell`, `value` blocked-cell rule (`Blocked`) |
 | `ClearTarget`, `ClearDisguise`, `ClearMindControl` | object | — |
@@ -892,13 +908,13 @@ the cell of an object target; `—` means the kind uses no target or no field;
 | `AddMoney` | `House` | `value` amount |
 | `SetTechLevel` | — | `id` type, `value` level |
 | `AllowType` | `House` | `id` type, `value` 1 allowed, 0 not |
-| `SetOwner` | object | the new owner is not defined yet |
+| `SetOwner` | object | `house` the new owner |
 | `SetAmmo`, `AddAmmo` | object | `value` ammo |
 | `AddPassenger`, `RemovePassenger` | object (the transport) | `other` as the passenger |
 | `AddEffect`, `RemoveEffect` | object | `id` effect type |
 | `AddMark`, `RemoveMark` | object or `House` | `id` mark |
-| `DetonateWeapon` | cell | `id` weapon; `other` as the source |
-| `DetonateWarhead` | cell | `id` warhead, `value` damage; `other` as the source |
+| `DetonateWeapon` | cell | `id` weapon; `other` as the source (optional) |
+| `DetonateWarhead` | cell | `id` warhead, `value` damage; `other` as the source (optional) |
 | `DetonateProjectile`, `RemoveProjectile` | `Projectile` | — |
 | `EndFor` | `House` | `value` outcome |
 | `SetScore`, `AddScore` | `House` | `value` points |
@@ -908,7 +924,7 @@ the cell of an object target; `—` means the kind uses no target or no field;
 `Action.original(n, …)` runs the existing arm of
 `TR::execute_live_trigger_action`; with Ares, `TRA::ares_execute_action`
 first. The named functions in 4.2 call the same owners. Where the original
-takes a waypoint, the API takes a `Cell`; `ctx.map.waypoint(n)` gives a
+takes a waypoint, the API takes a `Cell`; `Cell.waypoint(n)` gives a
 waypoint's cell. Owners that read a waypoint index today need a cell entry
 (gap G-A1). Rows marked "live" act on the objects whose tag holds the
 springing trigger; their direct form takes the object instead.
@@ -1352,7 +1368,7 @@ class Filter {
 | `map.overlay(c: Cell)`, `ore(c: Cell)` | `OverlayTypeId` (`NO_ID` when none); amount | overlay and tiberium state | v1 | RFC 6c |
 | `map.passable(c: Cell, zone: i32)` | `bool` | movement zone check (owner unverified) | v1 | RFC 6c |
 | `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
-| `map.waypoint(n: i32)` | `Cell \| null` | map waypoints | v1 | RFC 6c |
+| `Cell.waypoint(n: i32)` | `Cell \| null` (`null` when the map has no waypoint `n`); waypoints do not move, so a trigger keeps the cell it was created with | map waypoints | v1 | RFC 6c |
 | `map.cellTag(c: Cell)` | `Tag` (`NO_HANDLE` when none) | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
 | `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
 | `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | later | P15; Rc: `ClosestBuildPos` |
@@ -1845,8 +1861,9 @@ implementation.
   `Action.atomic`): new action numbers in `TR::execute_live_trigger_action`;
   `Action.wasm` queues a module call, and `Action.atomic` resolves its target
   and runs the 4.3 function at once, logging a failure (G-H4); the arguments
-  of `Action.atomic` are checked when `Trigger.create` runs, and those of
-  atomic actions written in INI at load (RFC 6a, 6b).
+  of `Action.atomic`, including target kinds that can never fit, are checked
+  when `Trigger.create` runs, and those of atomic actions written in INI at
+  load (RFC 6a, 6b).
 - **G-T2** Run-time trigger and tag creation from modules
   (`Trigger.create`, `Tag.create`, `techno.setTag`, `cell.setTag`): today
   definitions come only from `RuntimeDefinitions::read_map`/`read_teams`; IDs
@@ -1968,7 +1985,8 @@ implementation.
   names for `Mark.id`, and the stable hash of notification names for
   `Notify.id`, read from each simulation module's `vera.notify` custom
   section, with a collision check at load across all simulation modules of
-  the match, the mod's and the map's (RFC 3, 10, 15).
+  the match, the mod's and the map's, kept as the table of declared names
+  that client modules' `Notify.id` also reads (RFC 3, 10, 15).
 
 ### Client
 

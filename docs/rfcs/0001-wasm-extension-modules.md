@@ -287,8 +287,8 @@ and what the module left behind is handled this way:
 Errors that are part of normal play return a status and the module carries on:
 a handle that is `NO_HANDLE` or whose object is gone gives `Gone`, a name that
 matches nothing gives `NotFound`, and an action an engine rule refuses (for
-example a cell that cannot be built on) or a target kind that does not fit an
-atomic action in a trigger (section 6b) gives `Refused`. A call on a handle
+example a cell that cannot be built on) or an atomic action's target that
+turns out not to fit when its trigger runs (section 6b) gives `Refused`. A call on a handle
 that is `NO_HANDLE` or whose object is gone, including a method that returns
 nothing (such as an interface node's), does nothing and sets the last status
 (`ctx.lastStatus()`, or its client equivalent) to `Gone`; it never disables
@@ -296,8 +296,8 @@ the module. An atomic action run by a trigger has no module code to receive
 its status: its error status (`Refused`, `Gone` or `NotFound`) is written to
 the in-game log and the action is skipped; nothing else happens. Errors that
 show a broken module disable it: an invalid argument (including an invalid
-atomic action argument when `Trigger.create` runs, section 6b), a trap, an
-exceeded budget.
+atomic action argument, such as a target kind that can never fit the action,
+found when `Trigger.create` runs, section 6b), a trap, an exceeded budget.
 
 `docs/modding.md` currently says a mod is only data and VERA20k never runs a
 program from one. That text changes to say modules run only in a sandbox with
@@ -373,8 +373,9 @@ Ordering rules:
   frame when the chain includes a module trigger (see
   [Terminology](#terminology)), an event VERA adds or an atomic action; a
   trigger that would exceed the limit fires in the next frame instead, so no
-  such chain loops forever. The limit is open question 18. A chain made only of original events and original
-  actions runs exactly as in the original (Goal 5).
+  such chain loops forever. The limit is open question 18. A chain made only
+  of original events and original actions runs exactly as in the original
+  (Goal 5).
 - A queued module action is dropped when the game has ended, or when its
   trigger was disabled or removed before the module phase. Handles to objects
   that are gone read as gone.
@@ -587,32 +588,41 @@ in-game log.
 
 In a trigger, an atomic action is written `Action.atomic(kind, target,
 params)`, beside `Action.original` and `Action.wasm`. It covers an action
-whose parameters fit: one target, one ID, up to two integers and one cell
-(`Log` also takes its line of text). An action that needs more, such as
-creating a projectile, is written as a module action. The target is an
-explicit parameter: the subject (the default), the other object of the event,
-the tag holder (the objects whose tag holds the trigger, or the cell for a
-CellTag), the event's projectile, a house (the trigger's house unless one is
-given), or a cell or waypoint. Fixed rules cover the rest:
+whose parameters fit: one target, one ID, up to two integers, one cell and one
+house. `Log` is the one accepted exception: it also carries its line of text.
+An action that needs more, such as creating a projectile, is written as a
+module action. The target is an explicit parameter: the subject (the default),
+the other object of the event, the tag holder (the objects whose tag holds the
+trigger, or the cell for a CellTag), the event's projectile, a house, or a
+cell. A waypoint is given as its cell: `Cell.waypoint(n)` resolves to the
+waypoint's cell when `Trigger.create` runs, since waypoints do not move. A
+kind that uses no target (for example setting a tech level, or `Log`) ignores
+the target. Fixed rules cover the rest:
 
-- A second object the action needs (the source of damage, a kill or a
-  detonation, the object a weapon fires at, a passenger) is the event's other
-  object. When the event has none, the action gets `Gone` and is skipped, and
-  the status is logged.
-- Objects the action creates belong to the trigger's house, unless the target
-  is a house given explicitly.
+- An explicit house (the house target, the new owner of a transfer, the owner
+  of created objects) is the house given in the parameters; when none is
+  given, the trigger's house is used.
+- A source (of damage, a kill or a detonation) is the event's other object and
+  is optional: when the event has none, the action runs with no source and
+  gives no kill credit. An action that needs a second object to act on (the
+  object a weapon fires at, a passenger) uses the event's other object; when
+  the event has none, the action gets `Gone` and is skipped, and the status
+  is logged.
 - A coordinate is the center of the given cell, or of the target's cell.
-- The appendix lists the fields each kind uses; the exact mapping of each
-  kind to its parameters belongs to the interface definition (section 12).
+- The appendix lists the target kinds and fields each kind uses; the exact
+  mapping of each kind to its parameters belongs to the interface definition
+  (section 12).
 
-`Trigger.create` checks the arguments of each atomic action: an invalid one is
-an invalid argument from module code and disables the module (section 3).
-Atomic actions written in INI are checked at load and reported in the lobby;
-their INI form is open question 5. A target kind that does not fit the action
-is a data error, not a broken module: the action gets `Refused`, its status is
-written to the in-game log, it is skipped, and the module stays enabled
-(section 3). Atomic actions run at once and may raise further events, so they
-can chain within a frame up to the depth limit of section 5.
+`Trigger.create` checks the arguments of each atomic action: an invalid one,
+including a target kind that can never fit the action (for example a cell for
+a kill), is an invalid argument from module code and disables the module
+(section 3). Atomic actions written in INI are checked at load and reported in
+the lobby; their INI form is open question 5. A target that turns out not to
+fit when the trigger runs (for example a tag holder that is a cell, for a
+kill) is a data error, not a broken module: the action gets `Refused`, its
+status is written to the in-game log, it is skipped, and the module stays
+enabled (section 3). Atomic actions run at once and may raise further events,
+so they can chain within a frame up to the depth limit of section 5.
 
 Attached effects are per-object states with a duration, owned by
 `sim/attach_effect.rs` (section 8). Candidates: tint, attached animation,
@@ -827,8 +837,11 @@ closures, and is not part of the official API.
   The format of that list is SDK documentation, not engine API. Client modules
   declare nothing, and a declared name that no client module receives is not
   an error. In a simulation module, `Notify.id` for a name the module did not
-  declare returns `NO_ID` and sets `NotFound`; in a client module it returns
-  the hash of any name. When it loads the modules, the
+  declare returns `NO_ID` and sets `NotFound`. In a client module it returns
+  an ID only for a name that some simulation module of the match declared,
+  because the engine keeps the table of declared names; any other name gives
+  `NO_ID` and `NotFound`, so a client never matches an undeclared name by
+  hash. When it loads the modules, the
   engine checks the declared names of all simulation modules loaded in the
   match, the mod's and the map's together, for collisions, and refuses modules
   whose names collide, with a message naming them (section 3, step 6), so
@@ -1073,27 +1086,37 @@ Planned order after acceptance:
   trigger (one that has a module action, was created by a module or is bound
   through `Wasm.Tags`, a map trigger with a module action included), an event
   VERA adds or an atomic action is limited to a per-frame depth, beyond which a
-  trigger fires in the next frame (open question 18, engine gap G-T11), while a chain of only original events
-  and original actions runs exactly as in the original (Goal 5); events VERA
+  trigger fires in the next frame (open question 18, engine gap G-T11), while
+  a chain of only original events and original actions runs exactly as in the
+  original (Goal 5); events VERA
   adds are raised at safe points, moments that are not inside any calculation
   (after a calculation completes, or before one begins, as for
   `HouseTransfer`); each atomic action in a trigger takes an explicit target
-  (subject, other, tag holder, the event's projectile, house, cell or
-  waypoint): the house defaults to the trigger's house, the tag holder of a
-  CellTag is the cell, and a target kind that does not fit the action gives
-  `Refused` without disabling the module; an atomic action is written
-  `Action.atomic(kind, target, params)`, with `AtomicKind` and `AtomicParams`,
-  and covers only an action whose parameters fit one target, one ID, up to two
-  integers and one cell (and the text of `Log`), while anything more, such as
-  creating a projectile, is a module action; a second object an atomic action
-  needs (damage, kill or detonation source, the object fired at, a passenger)
-  is the event's other object, and without one the action gets `Gone` and is
-  skipped; objects an atomic action creates belong to the trigger's house
-  unless an explicit house is the target; a coordinate is the center of a
-  cell; the appendix lists the fields each `AtomicKind` uses, and the exact
-  mapping belongs to the interface definition (section 12); `Trigger.create`
-  checks the arguments of each `Action.atomic`, and an invalid one disables
-  the module, while atomic actions written in INI are checked at load and
+  (subject, other, tag holder, the event's projectile, house or cell): the tag
+  holder of a CellTag is the cell, a waypoint is given as its cell
+  (`Cell.waypoint(n)`, resolved when `Trigger.create` runs, since waypoints do
+  not move), and a kind that uses no target (such as `SetTechLevel` or `Log`)
+  ignores it; a target kind that can never fit the action (such as `Cell` for
+  `Kill`) is an invalid argument found by `Trigger.create`, while a target
+  that turns out not to fit when the trigger runs (such as a `TagHolder` that
+  is a cell) gives `Refused`, is logged and skipped, without disabling the
+  module; an atomic action is written `Action.atomic(kind, target, params)`,
+  with `AtomicKind` and `AtomicParams`, and covers only an action whose
+  parameters fit one target, one ID, up to two integers, one cell and one
+  house, with the text of `Log` as the one accepted exception, while anything
+  more, such as creating a projectile, is a module action; `AtomicParams` has
+  a `house` field: an explicit house (the `House` target, the new owner of
+  `SetOwner`, the owner of created objects) comes from `params.house`, and the
+  trigger's house is used when it is `NO_HANDLE`; a source (of damage, a kill
+  or a detonation) is the event's other object and is optional: for `Kill`,
+  `Damage` and the `Detonate` kinds an event without one runs the action with
+  no source and no kill credit, and only an action that needs a second object
+  to act on (the object fired at, a passenger) gets `Gone` without one and is
+  skipped; a coordinate is the center of a cell; the appendix lists the target
+  kinds and fields each `AtomicKind` uses, and the exact mapping belongs to
+  the interface definition (section 12); `Trigger.create` checks the
+  arguments of each `Action.atomic`, and an invalid one disables the module,
+  while atomic actions written in INI are checked at load and
   reported in the lobby (INI form: open question 5); an atomic action run by
   a trigger writes its error status (`Refused`, `Gone` or `NotFound`) to the
   in-game log and is skipped, and nothing else happens; `Detonated` added to
@@ -1104,10 +1127,13 @@ Planned order after acceptance:
   API; client modules declare none, and a declared name that no client module
   receives is not an error; the collision check at load runs over the declared
   names of all simulation modules of the match, the mod's and the map's
-  (section 3, step 6), and in a simulation module `Notify.id` of an undeclared
-  name returns `NO_ID` with `NotFound`; status values: `Gone` for a handle
-  that is `NO_HANDLE` or whose object is gone, `NotFound` for a name that
-  matches nothing, `Refused` for a target kind that does not fit an action; a
+  (section 3, step 6); `Notify.id` returns `NO_ID` with `NotFound` in a
+  simulation module for a name it did not declare, and in a client module for
+  a name that no simulation module of the match declared (the engine keeps
+  the declared table, so a client never matches an undeclared name by hash);
+  status values: `Gone` for a handle that is `NO_HANDLE` or whose object is
+  gone, `NotFound` for a name that matches nothing, `Refused` for an atomic
+  action's target that turns out not to fit when its trigger runs; a
   call on a handle that is `NO_HANDLE` or gone, including a method that
   returns nothing, does nothing and sets the last status to `Gone` without
   disabling the module; the new passenger-side events are named
