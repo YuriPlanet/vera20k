@@ -71,8 +71,8 @@ a sentinel.
 | `Coord` | `x`, `y`, `z` in leptons | One cell is 256 leptons. |
 | `Cell` | `x`, `y` in cells | `Cell.waypoint(n)` gives a cell that carries waypoint number `n` (section 7.3). |
 | `Frames` | A count of logic frames | 15 logic frames per game second (`RA2_LOGIC_FRAMES_PER_SECOND`, `src/util/fixed_math.rs`). |
-| `string` | A name | Section names and keys, setup lookups, trigger and export names, CSF labels, client text. Compared without regard to case (RFC 4). Calls made during play take IDs instead (see [IDs](#ids)). |
-| `Techno`, `House`, ... | A generational handle | An `i64` value; see [Handles](#handles). |
+| `string` | A name | Section names and keys, setup lookups, trigger and export names, CSF labels, client text. Crosses the boundary as UTF-8; compared without regard to case, by ASCII rules only (RFC 4). Calls made during play take IDs instead (see [IDs](#ids)). |
+| `Techno`, `House`, ... | A handle: the object's creation serial | An `i64` value; see [Handles](#handles). |
 | `TechnoTypeId`, `MarkId`, ... | The integer ID of a named thing | An `i32` value; see [IDs](#ids). |
 | `Uint8Array` | Bytes | Messages, module data. |
 
@@ -80,18 +80,23 @@ a sentinel.
 type Fixed = i32;      // I16F16 raw value
 type Frames = i32;
 
-class Cell  { x: i32; y: i32; waypoint: i32 = -1; }   // waypoint: a number to resolve, -1 none
+class Cell  { constructor(x: i32, y: i32); x: i32; y: i32; waypoint: i32 = -1; }   // waypoint: a number to resolve, -1 none
 class Coord { x: i32; y: i32; z: i32; }   // leptons
 class Rect  { x: i32; y: i32; width: i32; height: i32; }   // cells
 ```
 
 ### Handles
 
-Object references are generational handles (RFC 5). A handle whose object is
-gone reads as gone and never as a reused slot. The bit layout is not part of
-the API and depends on open question 2 (ABI), except that every handle value
-is below 2^53, so an SDK built on a JavaScript engine can hold it in a number
-(RFC 5a).
+A handle is the object's creation serial (RFC 5): a 64-bit number the engine
+assigns when the object or projectile is created and never reuses, which the
+engine maps to the object. The other handle kinds (houses, teams, triggers,
+tags, effects, superweapons and, in the client, nodes) get numbers the same
+way, assigned at creation and never reused. A handle whose object is gone
+reads as gone and never refers to another object, and a handle does not
+depend on where or how the engine stores the object, so module memory saved
+in a snapshot stays valid after loading, also in a later release. Every
+handle value stays below 2^53, so an SDK built on a JavaScript engine can
+hold it in a number (RFC 5a).
 
 Handles are values. In the TypeScript SDK each handle type is an alias of
 `i64`, one of the SDK's portable integer types that both `tsc` and
@@ -196,7 +201,7 @@ const PANICKED = Mark.id("Panicked");
 Techno.addMark(techno, PANICKED, 0, Visibility.Allies);
 ```
 
-A lookup compares names without regard to case (RFC 4). A name that matches
+A lookup compares names without regard to case, by ASCII rules only (RFC 4). A name that matches
 nothing returns `NO_ID` and sets `ctx.lastStatus()` to `NotFound`: an expected
 outcome under the [error model](#errors), because names come from data a mod
 may change. A call given `NO_ID` returns `NotFound` as well; an ID out of
@@ -205,6 +210,9 @@ registers a name it has not seen, so it always returns an ID; the registry of
 mark names is simulation state, saved and hashed (G-M1). In a client module
 `Mark.id` only looks up: a name the simulation has not registered returns
 `NO_ID` and sets `NotFound`, so a client can never change the registry.
+Mark names themselves are not hidden information: a client may learn that a
+name is registered, but never which objects or houses carry a mark it may
+not see (section 6), so an author keeps secrets out of mark names.
 Notification names are declared ahead of
 time by the simulation modules that send them: the SDK build writes the names
 a simulation module sends, from a list in the module's project configuration,
@@ -213,8 +221,9 @@ documentation, not engine API. Client modules declare nothing, and a declared
 name that no client module receives is not an error. `Notify.id` returns an
 ID for every declared name: when it loads the modules, the engine checks the
 declared names of all simulation modules loaded in the match, the mod's and
-the map's together, for hash collisions, and refuses modules whose names
-collide, with a message (RFC 3, step 6; RFC 10). In a simulation module,
+the map's together, for hash collisions: a collision within one module
+refuses that module, and one between the mod's and the map's names refuses
+the map's module, with a message naming both (RFC 3, step 6; RFC 10). In a simulation module,
 `Notify.id` of a name the module did not declare returns `NO_ID` and sets
 `NotFound`. In a client module it returns an ID only for a name that some
 simulation module of the match declared, because the engine keeps the table
@@ -243,20 +252,28 @@ triggers: there are no stand-alone event records, and every record is one
 queued module action. In the module phase the engine hands the module the
 whole array in one call (RFC 5, 15): `onEvents(ctx, batch)`,
 generated by the SDK, which runs the matching action function for each record.
-The records are ordered by the subject's creation serial, then by a sequence
-number per object; records without a subject object (house, logic and cell
-triggers) come first, in the order the trigger runtime springs them. This
-order never depends on the engine's loop order, and events raised inside
-parallel engine code are collected and queued after that code (RFC 5). Each
-module's queue holds at most a fixed number of records per frame; records
-beyond the cap are kept in order and delivered first in the next frame, and
-they are saved and hashed. The module's frame budget grows by a fixed
-allowance per delivered record (RFC 5; open question 8).
+The records are ordered by the subject's creation serial; within one object
+they follow the order in which the engine raised the events, which may
+change between engine versions. Records whose subject is `NO_HANDLE` (house
+and logic triggers, and cell triggers whose event has no subject) come
+first, in the order the trigger runtime springs them. The order across
+objects never depends on the engine's loop order (RFC 5). Each module's
+queue holds at most a fixed number of records per frame; records beyond the
+cap are kept in order and delivered first in the next frame, and they are
+saved and hashed. A module whose deferred backlog exceeds a fixed number of
+frames' worth of records is disabled, with a message: it cannot keep up. The
+module's frame budget grows by a fixed allowance per delivered record (RFC 5;
+open question 8).
 A queued action is dropped if the game has ended, or its trigger was disabled
 or removed, before the module phase. A record holds the module action, the
-event kind, the subject handle, the other handle, the house, a projectile and
-an effect handle, a type ID and a few integer payload fields (`EventRecord`,
-[section 2](#2-events)). Each event's payload in this catalog names the record
+event kind, the trigger that sprang, the tag holder, the subject handle, the
+other handle, the house, a projectile and an effect handle, a type ID and a
+few integer payload fields (`EventRecord`, [section 2](#2-events)). When the
+subject of a bound trigger is gone at the moment its event is raised (for
+example a weapon-bound `Detonated` whose shooter has died), the record keeps
+the subject's handle, which reads as gone; the trigger's house is then the
+house that owned the subject when it was last alive (for a projectile event,
+the house that fired it), and the instance is the gone subject's. Each event's payload in this catalog names the record
 fields it fills; fields an event does not list are `NO_HANDLE` or `-1`. The
 layout of each record belongs to the interface definition (RFC 12). The SDK
 reads records in place and allocates nothing per event.
@@ -264,21 +281,35 @@ reads records in place and allocates nothing per event.
 Every event VERA adds is raised at a safe point, a moment that is not inside
 any calculation: after a calculation has completed (for example `TakeDamage`
 after the damage has been committed) or before one begins (for example
-`HouseTransfer` before the transfer begins). The trigger's original and atomic
-actions run at once from that point (RFC 5). Because they run at once, they can
+`HouseTransfer` before the transfer begins). A batched or parallel engine
+section counts as one calculation: VERA events raised inside it are
+collected, and their triggers spring right after the section ends, in the
+same frame and before the next phase, ordered by the subject's creation
+serial. The trigger's original and atomic actions run at once from that
+point (RFC 5). Because they run at once, they can
 chain within a frame: damage raises `TakeDamage`, its trigger deals damage
 with an atomic action, which raises `TakeDamage` again. When a chain includes
 a module trigger (a trigger that has at least one `Action.wasm` action, was
 created by a module, or is bound through `Wasm.Tags`; a map trigger that
 carries a module action counts), an event VERA adds or an atomic action, the
-engine limits its depth per frame; a trigger that would exceed the
-limit fires in the next frame instead, so no such chain loops forever (gap
+engine limits its depth per frame and caps the total number of such
+chained trigger firings per frame; a trigger that would exceed either limit
+fires in the next frame instead, so no such chain loops forever (gap
 G-T11). It springs at the start of the next frame's module phase, before that
 phase's queued actions, with the payload it had; its module actions join that
-frame's batch, and pending deferred triggers are saved and hashed. The limit
-is open question 18 of the RFC. A chain made only of original events and
+frame's batch, and pending deferred triggers are saved and hashed. It is
+dropped if it was disabled or removed meanwhile; its conditions are checked
+again when it springs, its house is the subject's owner at that moment, and
+an action on a subject that is gone gets `Gone`. The limits are open
+question 18 of the RFC. A chain made only of original events and
 original actions is never deferred and runs exactly as in the original (RFC
 Goal 5).
+
+No module is re-entered (RFC 5): while a module's call is on the stack, the
+engine skips that module's overrides for the calculations reached from it
+(the previous link's value, or the native value, is used), and the events
+raised by the actions it issues spring their triggers as usual, whose module
+actions are queued. Calls into other modules are allowed.
 
 ### Query results
 
@@ -290,9 +321,15 @@ proportion to the size of the result. When more results exist than fit, the
 query sets `out.cursor`, and a second call with the same buffer continues
 after the last result written; `out.cursor` is `0` once the last page has
 been written. A paged query's result set is fixed when its first page is
-read: later pages within the same module call continue that set even if the
-world changes in between. A cursor is valid only within the module call that
-started the query.
+read and kept in one reusable scratch buffer per module: later pages within
+the same module call continue that set even if the world changes in between.
+A cursor is valid only within the module call that started the query. Three
+lists keep an order of their own (RFC 6c): an object's effects come in attach
+order, its marks in the order they were added, and `scenario.houses` in house
+array order. Every query is charged to the operation budget by the work it
+does: a fixed amount per call plus an amount per object scanned or written,
+or per cell checked, as the interface definition states for each call kind
+(RFC 4).
 
 ```ts
 class HandleBuffer {         // allocated once by the module and reused
@@ -310,13 +347,16 @@ class IdBuffer {             // the same for IDs
 
 ### Side tables
 
-State that only some objects use lives in side tables keyed by handle, not in
-every object: marks (section 6), type tag bindings and other subscriptions
-(`Wasm.Tags`, RFC 7), and the 16 bytes of module data per projectile (RFC 9).
-An object that uses none of them costs nothing. Each object, weapon, warhead
-and projectile type carries one flag that says whether a module binds it; an
-event site checks that flag and does nothing more when it is clear (RFC 15). Side tables are saved and hashed with
-the simulation state.
+State that only some objects use lives in side tables, not in every object:
+marks (section 6), subscriptions and the 16 bytes of module data per
+projectile (RFC 9) in tables keyed by handle, and type tag bindings
+(`Wasm.Tags`, `Trigger.bindType`, RFC 7) in tables keyed by type. An object
+that uses none of them costs nothing. Each object, weapon, warhead and
+projectile type carries one flag that says whether a module binds it, and
+each object one flag that is set when it gets a tag holding a module trigger
+or a trigger on an event VERA adds (`Techno.setTag`); an event site checks
+the type's flag or the object's and does nothing more when both are clear
+(RFC 15). Side tables are saved and hashed with the simulation state.
 
 ### Enumerations
 
@@ -334,6 +374,34 @@ the simulation state.
 | `Visibility` | 0 `Own`, 1 `Allies`, 2 `InSight`, 3 `Everyone` | Who sees a mark (section 6): its own house, allies, players who can see the object, everyone. RFC 6b. |
 | `SuperWeaponKind` | 0 `MultiMissile` … 11 `PsychicReveal`; Ares kinds | `SuperWeaponKind`, `src/rules/superweapon_type.rs`. |
 
+### Other types
+
+Smaller enums and classes the tables use. Values are in declaration order
+unless given; the interface definition (RFC 12) fixes them.
+
+```ts
+enum Source { Mod, Map }                      // the module's source in a match (RFC 2)
+enum PowerLevel { Full, Low }
+enum Rank { Rookie, Veteran, Elite }
+enum Outcome { Win, Lose }
+enum FlashSize { Small, Medium, Large }
+enum Destroy { All, Buildings, Land, Naval }
+enum TeamRatio { AiTriggers, Aircraft, Infantry, Units }
+enum Color { Red, Green, Blue }
+enum Audience { Allies, Spectators }          // later (P5)
+enum Event { }                                // 0..61 (2.1), 62..88 Ares (2.2), new events (2.3, 2.4; numbers: open question 6)
+class DisguiseInfo { type: TechnoTypeId; house: House; }
+class Path { kind: i32; points: Coord[]; }    // later (RFC 9 level 3): Bezier, parabola, spiral, waypoints
+class LaunchCtx extends Ctx { shooter: Techno; target: Target; }   // later
+class BulletState { p: Projectile; coord: Coord; speed: i32; detonate: bool; }   // later (L4)
+class BulletBatch { count: i32; at(i: i32): BulletState; }        // later (L4); a view into module memory
+class NodeSpec { name: string; type: string; hold: string; parts: NodeSpec[]; }   // the veraui.ini keys (11.2)
+class OrderSpec { kind: i32; units: HandleBuffer; count: i32; target: Target; }   // kind: a Command variant (11.4)
+// Scenario, Objects, MapQuery, RulesReader, Ai: the functions of sections 7.5, 7.1, 7.3, 7.4 and 9
+// View: Objects, MapQuery and the house reads of 7.2, filtered as for a client of one house (7.6)
+// Override query and result classes: section 8
+```
+
 ### Errors
 
 The SDK has no exceptions. Two kinds of failure exist:
@@ -341,9 +409,10 @@ The SDK has no exceptions. Two kinds of failure exist:
 1. **Expected outcomes** return a `Status` (or `NO_HANDLE` for a function that
    returns a handle). The module decides what to do. A handle that is
    `NO_HANDLE` or whose object is gone gives `Gone`, a name that matches
-   nothing gives `NotFound`, and a refusal by an owner, including an atomic
+   nothing gives `NotFound`, a refusal by an owner, including an atomic
    action's target that turns out not to fit when its trigger runs, gives
-   `Refused`.
+   `Refused`, and a feature that is off in this game, or a call made where it
+   is not available, gives `Unsupported`.
 2. **Programming errors** (a trap, the operation budget or call depth
    exceeded, an invalid argument) disable the module at the same frame on
    every machine, as RFC 3 says. A failure of the host itself (out of memory,
@@ -355,7 +424,7 @@ enum Status {
   Gone = 1,         // the handle is NO_HANDLE or its object no longer exists
   NotFound = 2,     // a name matched no type, section, trigger or node
   Refused = 3,      // the owner declined: cell blocked, cannot attach, not allowed
-  Unsupported = 4,  // the feature is off in this game (for example an Ares action without Ares)
+  Unsupported = 4,  // off in this game (an Ares action without Ares), or not available here (the init function, a sim query in a client)
 }
 ```
 
@@ -415,7 +484,7 @@ Every entry carries these columns or fields:
 
 | Field | Values |
 | --- | --- |
-| **Tier** | `v1` (P1 or P2 of the RFC's plan), `v1?` (a candidate under open question 13, or for overrides a v1 candidate under open question 11), `later` |
+| **Tier** | `v1` (stage 1 or 2 of the RFC's plan), `v1?` (a candidate under open question 13, or for overrides a v1 candidate under open question 11), `later` |
 | **World** | `sim` (`rules.wasm`), `client` (`ui.wasm`), `both` |
 | **Owner** | the Rust `file::function` that does the work, or **no owner yet**: then the [gap list](#gaps-in-the-engine) says what must be added |
 | **Sources** | where the entry comes from (abbreviations below) |
@@ -449,16 +518,17 @@ A module exports only what it uses. An export that is absent costs nothing
 
 | Export | Signature | When | Tier | Owner | Sources |
 | --- | --- | --- | --- | --- | --- |
+| init function | generated by the SDK from top-level code; a module has no `start` section | once, before the module's first other call (`onRules`, else `onScenarioStart`); never after a save is loaded; only name lookups work in it, other host calls return `Unsupported` (RFC 3) | v1 | **no owner yet** (module host, G-H1) | RFC 3, 5 |
 | `onRules` | `onRules(rules: RulesWriter): void` | once, at the module's place in the rules layers (mod: after `RULESMD.INI`, `LANGRULE.INI` and the mode layer; map: after the map layer); a failure stops the match from starting | v1 | `src/rules/native_processing.rs::RulesLayerStack::push`/`process`; module layer: **no owner yet** | RFC 2, 5, 8; Rc: defs post-processing stage |
 | `onScenarioStart` | `onScenarioStart(ctx: Ctx): void` | once, at the start of the scenario | v1 | **no owner yet** (module host) | RFC 5; Rc: `GameStart` |
 | `onFrame` | `onFrame(ctx: Ctx): void`, generated by the SDK; functions are registered with `onFrame(new Every(N), fn)` | once per frame in the module phase, after `onEvents`, when exported; it runs each registration in the frames where `frame % N == 0`, in registration order | v1 | **no owner yet** (module phase in `src/sim/world/master_frame.rs`) | RFC 5; T27 `HoldDuration=yes`; Rc: `GameFrame` |
 | actions | `(ctx: Ctx, e: EventRecord): void`, registered with `action(name, fn)`; the SDK build lists the names in the custom section `vera.actions`, which gives each an index | queued when a trigger with this action springs; runs in the module phase, from the frame's batch (`onEvents`) | v1 | TR `spring_live_trigger` → event record: **no owner yet** | RFC 5, 6a, 12 |
 | `onEvents` | `onEvents(ctx: Ctx, batch: EventBatch): void`, generated by the SDK; dispatches on `EventRecord.action` | once per frame per module with queued records, in the module phase, after `onMessage` and before `onFrame` | v1 | **no owner yet** (batched event writer, G-T9) | RFC 5, 15 |
 | overrides | see [section 8](#8-overrides) | at a fixed step of the frame when the engine reaches the decision, in creation-serial order | v1? (two or three ship in v1, open question 11) | per override | RFC 5, 6 L3 |
-| `onMessage` | `onMessage(ctx: Ctx, sender: House, data: Uint8Array): void` | when a client message has reached the simulation, in the module phase, before `onEvents`; spectators cannot send | v1 (P2) | `src/sim/command.rs::Command`: **no module variant yet** | RFC 5, 10; Rc: `RecvLuaMsg(msg, playerID)` |
+| `onMessage` | `onMessage(ctx: Ctx, sender: House, source: Source, data: Uint8Array): void`; `source` is the sending client module's (RFC 2) | when a client message has reached the simulation, in the module phase, before `onEvents`; every simulation module receives it; spectators cannot send | v1 (stage 2) | `src/sim/command.rs::Command`: **no module variant yet** | RFC 5, 10; Rc: `RecvLuaMsg(msg, playerID)` |
 | `onLaunch` | `onLaunch(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a type bound to the module path | later | `ProjectileTrajectory` module arm: **no owner yet** | RFC 9 level 3 |
 | `onTrajectoryFrame` | `onTrajectoryFrame(ctx: Ctx, type: ProjectileTypeId, bullets: BulletBatch): void` | once per projectile type per frame | later (L4) | **no owner yet** | RFC 6 L4, 9 level 4 |
-| `onLoad` | — | not defined: module memory is restored with the snapshot, and `onScenarioStart` does not run again | **adopted in RFC 0.0.5** (P2) | — | Rc: `Load`, notes 6.10 |
+| `onLoad` | — | not defined: module memory is restored with the snapshot, and neither the init function nor `onScenarioStart` runs again | — | — | **adopted in RFC 0.0.5** (proposal P2); Rc: `Load`, notes 6.10 |
 
 `ctx` is the one entry point to the simulation API:
 
@@ -491,19 +561,21 @@ Sources: A28, A29, A56, A57, S12, S38, S39, S40.
 
 | Export | Signature | When | Tier | Owner | Sources |
 | --- | --- | --- | --- | --- | --- |
-| `onStart` | `onStart(ui: Ui): void` | once, when the match screen is built, after the INI layout loads | v1 (P2) | **no owner yet** (client host in `src/ui/`) | RFC 5, 10 |
-| `onRender` | `onRender(ui: Ui, dt: f32, alpha: f32): void` | once per render frame, within the client time budget (RFC 3) | v1 (P2) | **no owner yet** | RFC 5; Rc: `Update(dt)` |
-| `onClick` | `onClick(ui: Ui, node: Node): void` | a node with a click handler was clicked | v1 (P2) | **no owner yet** | RFC 10; T39 `OnButtonClick` |
-| `onHover` | `onHover(ui: Ui, node: Node, inside: bool): void` | the cursor entered or left a node | v1 (P2) | **no owner yet** | RFC 10 |
-| `onHotkey` | `onHotkey(ui: Ui, name: string): void` | a hotkey the module registered was pressed | v1 (P2) | **no owner yet** | RFC 10 |
-| `onSelect` | `onSelect(ui: Ui): void`; the selection is read with `client.selection(out)` | the local selection changed | v1 (P2) | selection owner in `src/app/input/` (unverified) | RFC 10; T38 `OnSelect` |
-| `onNotify` | `onNotify(ui: Ui, id: NotifyId, data: Uint8Array): void` | a simulation notification for the local player, or for spectators on a spectator's machine, arrived | v1 (P2) | **no owner yet** | RFC 1, 11 ("local notifications"); export name **adopted in RFC 0.0.5** (P19) |
+| `onStart` | `onStart(ui: Ui): void` | once, when the match screen is built, after the INI layout loads and after the init function; for a rejoining player, once after catch-up (RFC 11) | v1 (stage 2) | **no owner yet** (client host in `src/ui/`) | RFC 5, 10 |
+| `onRender` | `onRender(ui: Ui, dt: f32, alpha: f32): void` | once per render frame, within the client operation budget (RFC 3) | v1 (stage 2) | **no owner yet** | RFC 5; Rc: `Update(dt)` |
+| `onClick` | `onClick(ui: Ui, node: Node): void` | a node made clickable with `Node.setClickable` was clicked | v1 (stage 2) | **no owner yet** | RFC 10; T39 `OnButtonClick` |
+| `onHover` | `onHover(ui: Ui, node: Node, inside: bool): void` | the cursor entered or left a node | v1 (stage 2) | **no owner yet** | RFC 10 |
+| `onHotkey` | `onHotkey(ui: Ui, name: string): void` | a hotkey the module registered was pressed | v1 (stage 2) | **no owner yet** | RFC 10 |
+| `onSelect` | `onSelect(ui: Ui): void`; the selection is read with `client.selection(out)` | the local selection changed | v1 (stage 2) | selection owner in `src/app/input/` (unverified) | RFC 10; T38 `OnSelect` |
+| `onNotify` | `onNotify(ui: Ui, source: Source, id: NotifyId, data: Uint8Array): void`; `source` is the sending simulation module's (RFC 2) | a simulation notification for the local player, or for spectators on a spectator's machine, arrived; every client module receives it; none arrive during rejoin catch-up | v1 (stage 2) | **no owner yet** | RFC 1, 11 ("local notifications"); export name **adopted in RFC 0.0.5** (P19) |
 | `onPeerMessage` | `onPeerMessage(ui: Ui, from: House, data: Uint8Array): void` | an ally's or spectator's client sent a message | later | **no owner yet** | **not adopted in RFC 0.0.5** (P5); Rc: `SendLuaUIMsg` |
 
 Client floating point is allowed: the client world is not deterministic
-(RFC 1). Every client call runs within a time budget per render frame,
-measured by the local clock: an overrun skips that frame's call, and a module
-that overruns persistently or traps is disabled on that machine only (RFC 3).
+(RFC 1). `dt` and `alpha` serve display only. Every client call runs within
+a budget per render frame, measured in operation units by the same metering
+as simulation modules, not by the clock, so it can be enforced on the
+browser's main thread: a call that exceeds it, or traps, is stopped, and the
+module is disabled on that machine only (RFC 3).
 
 ## 2. Events
 
@@ -539,7 +611,11 @@ class TriggerDef {
 class EventRecord {          // fixed size; read in place from the batch (RFC 15)
   action: i32;               // index of the queued module action in vera.actions; always set
   kind: i32;                 // Event value
-  subject: Techno;           // the object the trigger is attached to; may be NO_HANDLE
+  trigger: Trigger;          // the trigger that sprang; always set
+  holder: Techno;            // tag holder: the object whose tag holds the trigger, or the bound object; NO_HANDLE otherwise
+  holderCellX: i32;          // tag holder of a CellTag: its cell; -1 otherwise
+  holderCellY: i32;
+  subject: Techno;           // the object the trigger is attached to; may be NO_HANDLE, or read as gone
   other: Techno;             // attacker, target, transport, producer, ...; may be NO_HANDLE
   house: House;              // house involved (retained house for E1/E24/E25/E26/E59); may be NO_HANDLE
   projectile: Projectile;    // may be NO_HANDLE
@@ -556,9 +632,11 @@ class EventBatch {           // one per module per frame
 }
 ```
 
-`EventRecord` fields not listed for an event are `NO_HANDLE` or `-1`. Records
+`EventRecord` fields not listed for an event are `NO_HANDLE` or `-1`; the
+trigger and the tag holder are filled for every record, so a module action
+can tell which trigger, and which object or CellTag cell, fired it. Records
 come in the order of [Event delivery](#event-delivery) (subject creation
-serial, then a sequence per object); each is one queued module action with the payload of the
+serial, then raise order within one object); each is one queued module action with the payload of the
 event that sprang its trigger, and there are no stand-alone event records. The
 layout belongs to the interface definition (see
 [Event delivery](#event-delivery)). RFC 6a: every event names the object it is
@@ -716,31 +794,38 @@ which carries the projectile handle, `HitTarget` and `Detonated`, RFC 6a) can
 also be bound on a weapon, warhead or projectile type (`Wasm.Tags=` in its
 section): such a binding fires for every shooter that uses the type, whatever
 the shooter's own type, and the shooter is the subject. Each raise site checks
-one flag of the object's type, or of the weapon, warhead or projectile type,
-first (see [Side tables](#side-tables)); `Cond.isWeaponType` tests the weapon.
+the flag of the object's type, of the object itself (set when it gets a tag
+holding such a trigger, so `Techno.setTag` works on objects of unbound
+types), or of the weapon, warhead or projectile type, first (see
+[Side tables](#side-tables)); `Cond.isWeaponType` tests the weapon.
 Each event is raised at a safe point, a moment that is not inside any
 calculation: after the calculation that produced it has completed, or, for
-`HouseTransfer`, before the transfer begins (see
-[Event delivery](#event-delivery)); the "Raised at" column names the owner of
-that moment and says where the exact safe point is not known. After
+`HouseTransfer` and `FatalDamage`, before the next calculation begins (see
+[Event delivery](#event-delivery)). Where the raise site is a batched or
+parallel section, the event's triggers spring right after the section ends
+(RFC 5). The "Raised at" column names the owner of that moment and says where
+the exact safe point is not known. After
 `HouseTransfer` the engine re-checks that the transfer is still valid (the
 object still exists and its owner has not changed) before doing it, and
 skips the transfer, without `HouseTransferred`, when an action has changed
-that. `FatalDamage` is raised after the fatal damage is committed; the death
-chain that follows checks that the object still exists, and a delivered event
-cannot cancel the death (RFC 5).
+that. `FatalDamage` is raised after the fatal damage is committed and before
+the death chain; after the trigger's original and atomic actions, the engine
+re-checks that the object still exists and that the damage is still fatal
+(for example, an action healed it or added a prevent-death effect), and runs
+the death chain only if it is. The trigger's module actions run later, in the
+module phase, and cannot cancel the death (RFC 5).
 
 | Event | Payload (`EventRecord`) | Raised at (owner of the moment) | Tier | Sources |
 | --- | --- | --- | --- | --- |
-| `TakeDamage` | `other` source (may be `NO_HANDLE`), `value` damage after armor | `src/sim/combat/world_receiver.rs::commit_entities`, after the damage is committed; raise hook **no owner yet** | v1? | RFC 6a; T2 `OnTakeDamage` (history fields ③④ are module memory, RFC 6a); Rc: `UnitDamaged` |
+| `TakeDamage` | `other` source (may be `NO_HANDLE`), `value` damage after armor | `src/sim/combat/world_receiver.rs::commit_entities`, a batched section: the triggers spring after it ends; raise hook **no owner yet** | v1? | RFC 6a; T2 `OnTakeDamage` (history fields ③④ are module memory, RFC 6a); Rc: `UnitDamaged` |
 | `HitByWarhead` | `id` warhead (`WarheadTypeId`), `value` final damage, `other` source | `combat/damage/receive.rs::receive_damage`, after it completes (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T3 `OnHitBy` (immune hits do not count) |
 | `AttackedBy` | `other` attacker, `value` weapon index (-1 none), `projectile` (may be `NO_HANDLE`) | fire step in `src/sim/combat/world_fire.rs` (raised on the target), after the step completes (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T4 |
-| `FatalDamage` | `other` attacker (may be `NO_HANDLE`), `value` damage | `combat/world_receiver.rs`, after the fatal damage is committed and before the death chain (whether this is a safe point is unverified); hook **no owner yet** | v1? | RFC 6a; T22 `OnFatalDamage` |
+| `FatalDamage` | `other` attacker (may be `NO_HANDLE`), `value` damage | `combat/world_receiver.rs`, after the fatal damage is committed and before the death chain, after the batched section ends (exact point unverified); the death chain re-checks that the damage is still fatal; hook **no owner yet** | v1? | RFC 6a; T22 `OnFatalDamage` |
 | `Killed` | `other` killer (may be `NO_HANDLE`) | `src/sim/combat/record_kill.rs`, after the kill is recorded (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T9; Rc: `UnitDestroyed` |
 | `Fire` | `other` target (may be `NO_HANDLE`), `value` weapon index, `id` weapon (`WeaponTypeId`), `projectile` (may be `NO_HANDLE`) | `combat/world_fire.rs` FireAt steps; `src/sim/aircraft/fire_at.rs::fire_at`; after the shot is fired (exact point unverified); hook **no owner yet** | v1? | RFC 6a, 9 level 2; T10 `OnFire` |
 | `SpawnFire` | `other` spawned unit, `value` weapon index, `projectile`; target in the record's `cell` or via the spawn's target | `src/sim/spawn_manager.rs` (after the spawn's shot; exact point unverified); hook **no owner yet** | v1? | RFC 6a; T11 `OnSpawnFire` |
-| `HitTarget` | `other` target, `value` damage, `id` weapon (`WeaponTypeId`), `projectile` | `combat/world_receiver.rs` (raised on the firer), after the damage is committed; hook **no owner yet** | v1? | RFC 6a; T21 `OnHitTarget` |
-| `TargetChanged` | `other` new target (`NO_HANDLE` when the target is cleared) | target assignment and clearing (`src/sim/world/techno_ai/scan_batch.rs` and order paths; unverified), after the target is set or cleared; hook **no owner yet** | v1? | RFC 6a, 6 (P13); T6 `OnAimed` |
+| `HitTarget` | `other` target, `value` damage, `id` weapon (`WeaponTypeId`), `projectile` | `combat/world_receiver.rs` (raised on the firer), after the batched damage commit ends; hook **no owner yet** | v1? | RFC 6a; T21 `OnHitTarget` |
+| `TargetChanged` | `other` new target (`NO_HANDLE` when the target is cleared) | target assignment and clearing (`src/sim/world/techno_ai/scan_batch.rs` and order paths; unverified), after the target is set or cleared; from the parallel scan, after the scan ends; hook **no owner yet** | v1? | RFC 6a, 6 (P13); T6 `OnAimed` |
 | `ProjectileIncoming` | `projectile`, `other` launcher (may be `NO_HANDLE`) | projectile admission `src/sim/combat/projectile_delivery.rs::admit_fired_bullet`, after the projectile is admitted; hook **no owner yet** | v1? | RFC 6a; T7 `OnProjectileComing` |
 | `Detonated` | `projectile`, `cell`, `other` source (may be `NO_HANDLE`), `id` warhead (`WarheadTypeId`) | detonation admission in `src/sim/projectile`, after the detonation (exact point unverified); hook **no owner yet** | v1? | RFC 6 L2 ("projectile detonated"), 9 level 2; T36; Rc: `ProjectileDestroyed`, `Explosion` |
 | `Birth` | `other` producer (may be `NO_HANDLE`), `effect` (may be `NO_HANDLE`), `value` build time (-1 none) | `src/sim/world/world_spawn.rs`, production exit, reinforcements, after the object is placed (exact point unverified); hook **no owner yet** | v1? | RFC 6a; T8 `OnBirth`; Rc: `UnitCreated` |
@@ -766,7 +851,11 @@ The engine checks the state natively every `param.interval` frames and fires
 on the edge: at the check where the state has become true, and not again until
 it has been false at a check. An object is checked in the frames where
 `frame % interval == serial % interval`, with `serial` its creation serial, so
-the checks of different objects are spread over different frames.
+the checks of different objects are spread over different frames. The house
+polls (`HouseMoneyPoll`, `HousePowerPoll`) use the house's index in the house
+array in place of the serial. The delivered `Timer` event (2.3) is not
+staggered: it fires every period, counted from the frame its trigger was
+created.
 Comparison: `param.compare` against `param.value`. Owner of the
 poll: **no owner yet** (a module poll list beside the Logic tags in
 `TR::advance_triggers`). Each reads an existing owner.
@@ -865,7 +954,9 @@ class Cond {
 Actions run in two ways:
 
 - inside a trigger: `TriggerDef.actions` holds `Action.original(n, params)`,
-  `Action.wasm(name)` or `Action.atomic(kind, target, params)`;
+  `Action.wasm(name)` or `Action.atomic(kind, target, params)`; a name in
+  `Action.wasm`, or in `Action=Wasm:name` in INI, resolves to the module of
+  the same source, and the prefixes `mod.` and `map.` reach the other (RFC 2);
 - directly from module code, through the functions below.
 
 Inside a trigger, original actions (`Action.original`) and atomic actions
@@ -879,7 +970,9 @@ frame. A queued module action is dropped if the game has ended, or its trigger
 was disabled or removed, before the module phase. An author who needs a strict
 order writes all of the trigger's actions as module code and calls original
 actions through the functions below. Called directly from module code, an
-action runs at once.
+action runs at once; the events it raises spring their triggers as usual,
+and the calling module's own overrides are skipped for it (no re-entry,
+[Event delivery](#event-delivery)).
 
 In a trigger, an atomic action is `Action.atomic(kind, target, params)`:
 `kind` names one atomic action of [4.3](#43-atomic-actions-rfc-6b-and-spreadsheet-instant-effects)
@@ -915,9 +1008,13 @@ at load. A kind that uses no target (`SetTechLevel`,
 - a second object the action acts on (a passenger) is the record's `other`;
   when the event has none, the action gets `Gone` and is skipped, and the
   status is logged;
-- `FireWeapon` aims at, in order of precedence: `params.cell` if given, else
-  the record's `other`, else the shooter's current target; with none of them
-  it gets `Gone` and is skipped;
+- `FireWeapon` fires the weapon type `params.id` when it is not `NO_ID`, else
+  the weapon in slot `params.value` (default 0, the primary weapon); it aims
+  at, in order of precedence: `params.cell` if given, else the record's
+  `other`, else the shooter's current target; with none of them it gets
+  `Gone` and is skipped;
+- a kind that requires a cell (`LaunchSuperWeapon`) and is given none is an
+  invalid argument, found when `Trigger.create` runs;
 - the cell of an object target is the cell the object is in; a `Projectile`
   target counts as an object target, and its cell is the one under the
   projectile;
@@ -988,8 +1085,8 @@ above, and "optional" marks a source the action can do without.
 
 | `AtomicKind` | Target | Fields and second object |
 | --- | --- | --- |
-| `FireWeapon` | object (the shooter) | `id` weapon or `value` weapon slot; aims at `cell` if given, else `other`, else the shooter's current target |
-| `LaunchSuperWeapon` | `House` | `id` superweapon type, `cell` |
+| `FireWeapon` | object (the shooter) | `id` weapon when not `NO_ID`, else `value` weapon slot (default 0, the primary); aims at `cell` if given, else `other`, else the shooter's current target |
+| `LaunchSuperWeapon` | `House` | `id` superweapon type, `cell` (required: missing is an invalid argument) |
 | `SpawnAnim` | cell | `id` animation |
 | `Remove` | object | — |
 | `Kill` | object | `other` as the source (optional) |
@@ -1037,7 +1134,7 @@ every row that runs native code, except where noted.
 | 1 | `scenario.declareWinner(country: string)` | country | `src/sim/world/house_defeat.rs::request_player_outcome` | Acts on the player, not the trigger house. |
 | 2 | `scenario.declareLoser(country: string)` | country | same | |
 | 3 | `house.beginProduction()` | — | `HouseState::enable_scripted_production` | |
-| 4 | `ai.createTeam(teamType: TeamTypeId, house: House): Team` | TeamType | `TSV/reinforcements.rs::trigger_create_team` | Max gate applies. S0–S68 run the team. `house` may be `NO_HANDLE`; returns `NO_HANDLE` when no team is created. |
+| 4 | `ai.createTeam(teamType: TeamTypeId, house: House): Team` | TeamType | `TSV/reinforcements.rs::Simulation::create_team` (CreateTeam `0x6F09C0`) | Max gate applies. S0–S68 run the team. `house` may be `NO_HANDLE` (the TeamType's house); returns `NO_HANDLE` when no team is created. `Action.original(4)` keeps its wrapper `trigger_create_team`, which adds the object placement scope of the original action; a direct module call does not, as House AI does not. |
 | 5 | `ai.destroyTeams(teamType: TeamTypeId)` | TeamType | `TSV/membership.rs::destroy_teams_of_type` | |
 | 6 | `house.allToHunt()` | — | `house_strategy::all_to_hunt` | |
 | 7 | `ai.reinforce(teamType: TeamTypeId)` | TeamType (its own waypoint) | `TSV/reinforcements.rs::spawn_team_reinforcements` | |
@@ -1198,7 +1295,7 @@ kind of the same name and takes the target parameter of
 
 | Function | Semantics | Draws | Owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- |
-| `techno.fireWeapon(w: WeaponSel, at: Target): Status` | Fire the weapon in slot `w.index` or of type `w.weapon` at a cell, an object or the current target, through FireAt. Refused when the weapon cannot fire now | native | **no owner yet** (FireAt is reached only from the fire update in `src/sim/combat/world_fire.rs::visit_fire`) | v1? | RFC 6b; F4 `LaunchWeapon`; Rc: `UnitWeaponFire` |
+| `techno.fireWeapon(w: WeaponSel, at: Target): Status` | Fire the weapon of type `w.weapon` when it is not `NO_ID`, else the weapon in slot `w.index` (default 0, the primary), at a cell, an object or the current target, through FireAt. Refused when the weapon cannot fire now | native | **no owner yet** (FireAt is reached only from the fire update in `src/sim/combat/world_fire.rs::visit_fire`) | v1? | RFC 6b; F4 `LaunchWeapon`; Rc: `UnitWeaponFire` |
 | `house.launchSuperWeapon(type: SuperWeaponTypeId, cell: Cell): Status` | Fire a superweapon the house holds | native | `src/sim/superweapon/fire.rs::fire_super_weapon` | v1? | RFC 6b; F5 |
 | `map.spawnAnim(anim: AnimTypeId, at: Coord): Status` | Create an animation | native | `src/sim/anim_class.rs` (coordinate entry; G-A1) | v1? | RFC 6b; F6 |
 | `techno.remove(): Status` | Remove with no death, no survivors, no credit | none | `src/sim/world/lifecycle.rs::Simulation::uninit_with_context` | v1? | RFC 6b; F7 `Remove`; Rc: `DestroyUnit(reclaimed)` |
@@ -1232,7 +1329,7 @@ kind of the same name and takes the target parameter of
 | `techno.convert(type: TechnoTypeId): Status` | Change type (as Ares conversion) | native | `src/sim/game_entity/type_conversion.rs::convert_techno_type` | v1? | RFC 8 (per-object type change); S68 |
 
 ```ts
-class WeaponSel { index: i32 = -1; weapon: WeaponTypeId = NO_ID; }
+class WeaponSel { index: i32 = 0; weapon: WeaponTypeId = NO_ID; }   // weapon wins when set
 class Target { techno: Techno = NO_HANDLE; cell: Cell | null = null; current: bool = false; }
 enum KillMode { Normal }          // death animation, survivors, credit
 enum Blocked { Nearby, Fail }
@@ -1253,9 +1350,12 @@ class ProjectileParams {
 Owner: `src/sim/attach_effect.rs` (`AttachEffectList`, `AttachEffectInstance`),
 type reader `src/rules/attach_effect.rs` (`[AttachEffectTypes]`). Much of both
 is behind `cfg(feature = "phobos")` today; RFC 8 requires moving it to a run-time
-switch first (gap G-E1). The effects modules use are available whenever the
-module feature is on, independent of the Phobos switch, and the VERA-only
-effect kinds (G-E3) switch on the same way (RFC 8, 14). The only full attach
+switch first (gap G-E1). The owner is available whenever the module feature
+is on, and the VERA-only effect kinds (G-E3) switch on the same way (RFC 8,
+14). The Phobos AttachEffect INI keys (`AttachEffect.*` on types, weapons and
+warheads, `[AttachEffectTypes]`) are read only when the Phobos switch is on;
+effect types a module defines through `rules.defineEffectType` (10.1) do not
+need them. The only full attach
 transaction is the warhead path
 `Simulation::apply_warhead_attach_effects`; there is no
 "attach this effect type to this object" Simulation function (gap G-E2).
@@ -1287,8 +1387,10 @@ source(e: Effect): Techno;   // may be NO_HANDLE
 | `removeEffectGroup` | same | v1 | Ph: `AttachEffect.RemoveGroups` |
 | `effects`, `remaining`, `stacks` | `AttachEffectList::instances`, `AttachEffectInstance::remaining`, `active_count` | v1 | RFC 6c |
 
-Effect types are defined in INI (`[AttachEffectTypes]`, Phobos reader) or by
-`onRules` writing those sections. New properties use the same reader (RFC 6b).
+Effect types are defined in INI (`[AttachEffectTypes]`, Phobos reader, read
+only when the Phobos switch is on) or by a module in `onRules` with
+`rules.defineEffectType` (10.1), which the same reader parses whether or not
+Phobos is on. New properties use the same reader (RFC 6b).
 
 ### 5.2 Effect properties
 
@@ -1409,8 +1511,18 @@ Queries are read-only (RFC 6c). Results come in object creation order
 (**adopted in RFC 0.0.5**, P6), taken from the creation serial the engine
 keeps (RFC 15), and are written into a buffer the module provides: a query
 returns how many results it wrote, and large results are paged (see
-[Query results](#query-results)). In client modules every query is filtered by
-what the local player can see (RFC 10).
+[Query results](#query-results)). Results of `techno.effects`, `marks` and
+`scenario.houses` keep their own order (RFC 6c). The Client column says what a
+client module gets (RFC 10; rules in 7.7):
+
+- `all`: the same answer as in the simulation (public facts);
+- `own`: answered for the player's own house and its objects; for anything
+  else the call returns its empty value (`NO_HANDLE`, `NO_ID`, `-1`, `false`
+  or a count of 0) with `Refused`;
+- `seen`: own objects in full, and objects of other houses that the player
+  can see now, as 7.7 says; other objects are absent;
+- `sim`: simulation only; a client call returns its empty value with
+  `Unsupported`.
 
 ```ts
 class Filter {
@@ -1425,71 +1537,71 @@ class Filter {
 
 ### 7.1 Objects
 
-| Function | Returns | Read owner | Tier | Sources |
-| --- | --- | --- | --- | --- |
-| `objects.inCell(c: Cell, f: Filter, out: HandleBuffer)` | `i32` count | cell occupancy (owner unverified) | v1 | RFC 6c |
-| `objects.inRadius(at: Coord, leptons: i32, f: Filter, out: HandleBuffer)` | `i32` count | spatial index (owner unverified) | v1 | RFC 6c; F17; Rc: `GetUnitsInCylinder` |
-| `objects.inRect(r: Rect, f: Filter, out: HandleBuffer)` | `i32` count | same | v1 | RFC 6c; Rc: `GetUnitsInRectangle` |
-| `objects.all(f: Filter, out: HandleBuffer)` | `i32` count | entity store; `HouseTracking` for per-house types | v1 | RFC 6c |
-| `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno` (`NO_HANDLE` when none) | same | v1? | Rc: `GetUnitNearestEnemy` |
-| `objects.projectilesInRadius(at: Coord, leptons: i32, out: HandleBuffer)` | `i32` count | projectile store | v1? | RFC 6c (category projectile) |
-| `techno.type()` | `TechnoTypeId` | `ObjectType` id | v1 | RFC 6c |
-| `techno.owner()` | `House` | entity owner | v1 | RFC 6c |
-| `techno.health()`, `strength()`, `healthPercent()` | `i32` | `combat/object_health.rs::Health`; `Strength` | v1 | RFC 6c, example |
-| `techno.coord()`, `cell()` | `Coord`, `Cell` | entity position | v1 | RFC 6c |
-| `techno.mission()` | `Mission` | `src/sim/mission/state.rs` | v1 | RFC 6c |
-| `techno.target()` | `Target` | target state (owner unverified) | v1 | RFC 6c |
-| `techno.rank()`, `experience()` | `Rank`, `i32` | `combat/veterancy.rs` | v1 | RFC 6c |
-| `techno.ammo()` | `i32` | `src/sim/ammo.rs` | v1 | RFC 6c |
-| `techno.passengers(out: HandleBuffer)`, `transport()` | `i32` count, `Techno` (`NO_HANDLE` when none) | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c |
-| `techno.effects(out: HandleBuffer)`, `marks(out: IdBuffer)` | `i32` counts | sections 5, 6 | v1 | RFC 6c |
-| `techno.disguise()` | `DisguiseInfo \| null` (type ID, house) | `src/sim/cloak_disguise.rs::forced_disguise_type`, `disguise_house` | v1 | sim reads the true state |
-| `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | |
-| `techno.layer()`, `landType()` | enums | entity layer; map | v1 | RFC 6a conditions |
-| `projectile.type()`, `coord()`, `source()`, `target()`, `data()` | values; `type()` is a `ProjectileTypeId` | `src/sim/projectile` | v1? | RFC 9 |
-| `objects.canFireAt(t: Techno, w: i32, at: Target)`, `inRange(...)` | `bool` | **no owner yet** (structured legality probe) | v1? | **adopted in RFC 0.0.5** (P15); RFC 6c probes; Rc: `GetUnitWeaponTestTarget` |
+| Function | Returns | Read owner | Tier | Sources | Client |
+| --- | --- | --- | --- | --- | --- |
+| `objects.inCell(c: Cell, f: Filter, out: HandleBuffer)` | `i32` count | cell occupancy (owner unverified) | v1 | RFC 6c | seen |
+| `objects.inRadius(at: Coord, leptons: i32, f: Filter, out: HandleBuffer)` | `i32` count | spatial index (owner unverified) | v1 | RFC 6c; F17; Rc: `GetUnitsInCylinder` | seen |
+| `objects.inRect(r: Rect, f: Filter, out: HandleBuffer)` | `i32` count | same | v1 | RFC 6c; Rc: `GetUnitsInRectangle` | seen |
+| `objects.all(f: Filter, out: HandleBuffer)` | `i32` count | entity store; `HouseTracking` for per-house types | v1 | RFC 6c | seen |
+| `objects.nearest(at: Coord, leptons: i32, f: Filter)` | `Techno` (`NO_HANDLE` when none) | same | v1? | Rc: `GetUnitNearestEnemy` | seen |
+| `objects.projectilesInRadius(at: Coord, leptons: i32, out: HandleBuffer)` | `i32` count | projectile store | v1? | RFC 6c (category projectile) | seen |
+| `techno.type()` | `TechnoTypeId` | `ObjectType` id | v1 | RFC 6c | seen (the disguise, for a disguised enemy) |
+| `techno.owner()` | `House` | entity owner | v1 | RFC 6c | seen (the disguise's house, for a disguised enemy) |
+| `techno.health()`, `strength()`, `healthPercent()` | `i32` | `combat/object_health.rs::Health`; `Strength` | v1 | RFC 6c, example | seen |
+| `techno.coord()`, `cell()` | `Coord`, `Cell` | entity position | v1 | RFC 6c | seen |
+| `techno.mission()` | `Mission` | `src/sim/mission/state.rs` | v1 | RFC 6c | own |
+| `techno.target()` | `Target` | target state (owner unverified) | v1 | RFC 6c | own |
+| `techno.rank()`, `experience()` | `Rank`, `i32` | `combat/veterancy.rs` | v1 | RFC 6c | own |
+| `techno.ammo()` | `i32` | `src/sim/ammo.rs` | v1 | RFC 6c | own |
+| `techno.passengers(out: HandleBuffer)`, `transport()` | `i32` count, `Techno` (`NO_HANDLE` when none) | `src/sim/passenger.rs::PassengerCargo::passengers` | v1 | RFC 6c | own |
+| `techno.effects(out: HandleBuffer)`, `marks(out: IdBuffer)` | `i32` counts | sections 5, 6 | v1 | RFC 6c | `effects`: own; `marks`: by visibility (section 6) |
+| `techno.disguise()` | `DisguiseInfo \| null` (type ID, house) | `src/sim/cloak_disguise.rs::forced_disguise_type`, `disguise_house` | v1 | sim reads the true state | own |
+| `techno.isCloaked()` | `bool` | `cloak_disguise.rs::is_fully_cloaked` | v1? | | own |
+| `techno.layer()`, `landType()` | enums | entity layer; map | v1 | RFC 6a conditions | own |
+| `projectile.type()`, `coord()`, `source()`, `target()`, `data()` | values; `type()` is a `ProjectileTypeId` | `src/sim/projectile` | v1? | RFC 9 | `type`, `coord`: seen; others: own |
+| `objects.canFireAt(t: Techno, w: i32, at: Target)`, `inRange(...)` | `bool` | **no owner yet** (structured legality probe) | v1? | **adopted in RFC 0.0.5** (P15); RFC 6c probes; Rc: `GetUnitWeaponTestTarget` | own |
 
 ### 7.2 Houses
 
-| Function | Returns | Read owner | Tier | Sources |
-| --- | --- | --- | --- | --- |
-| `house.name()`, `country()`, `side()` | `string`, `string`, `i32` | `src/sim/house_state.rs::HouseState` (`name`, `country`, `side_index`) | v1 | RFC 6c |
-| `house.money()` | `i32` | `Economy::available_money` | v1 | RFC 6c |
-| `house.powerOutput()`, `powerDrain()`, `isLowPower()` | `i32`, `bool` | `src/sim/power_system.rs::PowerState::total_output`, `total_drain`, `is_low_power` | v1 | RFC 6c |
-| `house.buildings(f, out: HandleBuffer)` / `count(type: TechnoTypeId)` | `i32` count, `i32` | `src/sim/house_tracking.rs::HouseTracking` | v1 | RFC 6c |
-| `house.canBuild(type: TechnoTypeId)` | `bool` (prerequisites met) | `src/sim/production/can_build.rs::can_build`, `requirements_met`, `owns_prerequisites` | v1 | RFC 6c |
-| `house.techLevel()` | `i32` | `HouseState::tech_level` | v1 | RFC 6c |
-| `house.isAlly(other)`, `allies(out: HandleBuffer)`, `enemies(out: HandleBuffer)` | `bool`, `i32` counts | `src/sim/house_diplomacy.rs` | v1 | RFC 6c |
-| `house.isDefeated()`, `isHuman()` | `bool` | `HouseState.is_defeated`, `is_human` | v1 | RFC 6c |
-| `house.superWeapon(type: SuperWeaponTypeId)` | `SuperWeapon` (`NO_HANDLE` when the house does not hold it; reads: ready, charge) | `src/sim/superweapon/mod.rs::HouseSuperWeapons` | v1? | |
-| `house.stats()` | lost/destroyed counts | `MatchStatistics` | v1? | E15, E16 |
-| `scenario.houses(out: HandleBuffer)` | `i32` count, order: house array order | `src/sim/houses.rs::Houses` | v1 | RFC 6c |
+| Function | Returns | Read owner | Tier | Sources | Client |
+| --- | --- | --- | --- | --- | --- |
+| `house.name()`, `country()`, `side()` | `string`, `string`, `i32` | `src/sim/house_state.rs::HouseState` (`name`, `country`, `side_index`) | v1 | RFC 6c | all |
+| `house.money()` | `i32` | `Economy::available_money` | v1 | RFC 6c | own |
+| `house.powerOutput()`, `powerDrain()`, `isLowPower()` | `i32`, `bool` | `src/sim/power_system.rs::PowerState::total_output`, `total_drain`, `is_low_power` | v1 | RFC 6c | own |
+| `house.buildings(f, out: HandleBuffer)` / `count(type: TechnoTypeId)` | `i32` count, `i32` | `src/sim/house_tracking.rs::HouseTracking` | v1 | RFC 6c | own |
+| `house.canBuild(type: TechnoTypeId)` | `bool` (prerequisites met) | `src/sim/production/can_build.rs::can_build`, `requirements_met`, `owns_prerequisites` | v1 | RFC 6c | own |
+| `house.techLevel()` | `i32` | `HouseState::tech_level` | v1 | RFC 6c | own |
+| `house.isAlly(other)`, `allies(out: HandleBuffer)`, `enemies(out: HandleBuffer)` | `bool`, `i32` counts | `src/sim/house_diplomacy.rs` | v1 | RFC 6c | all |
+| `house.isDefeated()`, `isHuman()` | `bool` | `HouseState.is_defeated`, `is_human` | v1 | RFC 6c | all |
+| `house.superWeapon(type: SuperWeaponTypeId)` | `SuperWeapon` (`NO_HANDLE` when the house does not hold it; reads: ready, charge) | `src/sim/superweapon/mod.rs::HouseSuperWeapons` | v1? | | own |
+| `house.stats()` | lost/destroyed counts | `MatchStatistics` | v1? | E15, E16 | own |
+| `scenario.houses(out: HandleBuffer)` | `i32` count, order: house array order | `src/sim/houses.rs::Houses` | v1 | RFC 6c | all |
 
 ### 7.3 Map
 
-| Function | Returns | Read owner | Tier | Sources |
-| --- | --- | --- | --- | --- |
-| `map.size()` | `Rect` | map | v1 | RFC 6c |
-| `map.landType(c: Cell)` | `LandType` | terrain semantics (`src/rules/terrain_rules.rs`) | v1 | RFC 6c |
-| `map.height(c: Cell)` | `i32` | cell level | v1 | RFC 6c |
-| `map.overlay(c: Cell)`, `ore(c: Cell)` | `OverlayTypeId` (`NO_ID` when none); amount | overlay and tiberium state | v1 | RFC 6c |
-| `map.passable(c: Cell, zone: i32)` | `bool` | movement zone check (owner unverified) | v1 | RFC 6c |
-| `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c |
-| `Cell.waypoint(n: i32)` | `Cell` that carries waypoint number `n` (`x` and `y` set when the map has it); the call that takes the cell resolves it, and a missing waypoint gives `NotFound` (`Trigger.create`: `NO_HANDLE` with `NotFound`, 4.1); waypoints do not move, so a trigger keeps the cell it was created with | map waypoints | v1 | RFC 6b, 6c |
-| `map.cellTag(c: Cell)` | `Tag` (`NO_HANDLE` when none) | `TriggerRuntime.cell_tags` | v1 | RFC 6c |
-| `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` |
-| `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | v1? | P15; RFC 6c probes; Rc: `ClosestBuildPos` |
+| Function | Returns | Read owner | Tier | Sources | Client |
+| --- | --- | --- | --- | --- | --- |
+| `map.size()` | `Rect` | map | v1 | RFC 6c | all |
+| `map.landType(c: Cell)` | `LandType` | terrain semantics (`src/rules/terrain_rules.rs`) | v1 | RFC 6c | all |
+| `map.height(c: Cell)` | `i32` | cell level | v1 | RFC 6c | all |
+| `map.overlay(c: Cell)`, `ore(c: Cell)` | `OverlayTypeId` (`NO_ID` when none); amount | overlay and tiberium state | v1 | RFC 6c | seen (cells the player can see now) |
+| `map.passable(c: Cell, zone: i32)` | `bool` | movement zone check (owner unverified) | v1 | RFC 6c | seen (cells the player can see now) |
+| `map.isVisibleTo(c: Cell, h: House)` | `bool` | `src/sim/vision/mod.rs::is_cell_revealed(owner, rx, ry)` | v1 | RFC 6c | own (`h` must be the player's house) |
+| `Cell.waypoint(n: i32)` | `Cell` that carries waypoint number `n` (`x` and `y` set when the map has it); the call that takes the cell resolves it, and a missing waypoint gives `NotFound` (`Trigger.create`: `NO_HANDLE` with `NotFound`, 4.1); waypoints do not move, so a trigger keeps the cell it was created with | map waypoints | v1 | RFC 6b, 6c | all |
+| `map.cellTag(c: Cell)` | `Tag` (`NO_HANDLE` when none) | `TriggerRuntime.cell_tags` | v1 | RFC 6c | sim |
+| `map.canPlace(type: TechnoTypeId, c: Cell, h: House)` | `bool` | `src/sim/build_site.rs::can_place_building_at` | v1? | **adopted in RFC 0.0.5** (P15); Rc: `TestBuildOrder` | own (`h` must be the player's house) |
+| `map.closestPlaceable(type: TechnoTypeId, near: Cell, h: House)` | `Cell \| null` | **no owner yet** (`src/sim/ai_base_site.rs` has an AI form) | v1? | P15; RFC 6c probes; Rc: `ClosestBuildPos` | own (`h` must be the player's house) |
 
 ### 7.4 Rules
 
-| Function | Returns | Owner | Tier | Sources |
-| --- | --- | --- | --- | --- |
-| `rules.getString(section: string, key: string)` | `string \| null` | processed rules (`ProcessedRulesLayers::ini()` projection) | v1 | RFC 6c |
-| `rules.getInt(section, key, fallback: i32)` | `i32` | `src/rules/ini_value.rs` readers | v1 | RFC 6c |
-| `rules.getBool(section, key, fallback: bool)` | `bool` | same | v1 | RFC 6c |
-| `rules.getFixed(section, key, fallback: Fixed)` | `Fixed` | same, converted to I16F16 | v1 | RFC 6c |
-| `rules.getList(section, key)` | `StringList` | same | v1 | RFC 6c |
-| `rules.types(list: string)` | `StringList` (e.g. `"InfantryTypes"`) | `RuleSet` registries | v1 | RFC 6c |
+| Function | Returns | Owner | Tier | Sources | Client |
+| --- | --- | --- | --- | --- | --- |
+| `rules.getString(section: string, key: string)` | `string \| null` | processed rules (`ProcessedRulesLayers::ini()` projection) | v1 | RFC 6c | all |
+| `rules.getInt(section, key, fallback: i32)` | `i32` | `src/rules/ini_value.rs` readers | v1 | RFC 6c | all |
+| `rules.getBool(section, key, fallback: bool)` | `bool` | same | v1 | RFC 6c | all |
+| `rules.getFixed(section, key, fallback: Fixed)` | `Fixed` | same, converted to I16F16 | v1 | RFC 6c | all |
+| `rules.getList(section, key)` | `StringList` | same | v1 | RFC 6c | all |
+| `rules.types(list: string)` | `StringList` (e.g. `"InfantryTypes"`) | `RuleSet` registries | v1 | RFC 6c | all |
 
 A parsed value is the value the engine uses, including Ares and Phobos keys
 when those are on (RFC 8). A key the engine never reads still answers from
@@ -1497,15 +1609,15 @@ the merged text.
 
 ### 7.5 Scenario
 
-| Function | Returns | Owner | Tier | Sources |
-| --- | --- | --- | --- | --- |
-| `ctx.frame()` | `i32` | simulation frame | v1 | RFC 6c |
-| `scenario.difficulty()` | `Difficulty` | `TR::trigger_difficulty` / scenario | v1 | RFC 6c |
-| `scenario.gameMode()` | `string` | session (owner unverified) | v1 | RFC 6c |
-| `scenario.playerCount()` | `i32` | `Houses` | v1 | RFC 6c |
-| `scenario.timer.remaining()` | `Frames` | `scenario_countdown.rs` | v1 | E14 |
-| `ctx.global(i).get()`, `ctx.local(i).get()` | `bool` | `TR::global_variable_is_set`, `local_variable_is_set` | v1 | RFC example |
-| `Trigger.find(id)`, `Tag.find(id)` | handles | `TR` definitions | v1 | RFC 7 |
+| Function | Returns | Owner | Tier | Sources | Client |
+| --- | --- | --- | --- | --- | --- |
+| `ctx.frame()` | `i32` | simulation frame | v1 | RFC 6c | all |
+| `scenario.difficulty()` | `Difficulty` | `TR::trigger_difficulty` / scenario | v1 | RFC 6c | all |
+| `scenario.gameMode()` | `string` | session (owner unverified) | v1 | RFC 6c | all |
+| `scenario.playerCount()` | `i32` | `Houses` | v1 | RFC 6c | all |
+| `scenario.timer.remaining()` | `Frames` | `scenario_countdown.rs` | v1 | E14 | all |
+| `ctx.global(i).get()`, `ctx.local(i).get()` | `bool` | `TR::global_variable_is_set`, `local_variable_is_set` | v1 | RFC example | sim |
+| `Trigger.find(id)`, `Tag.find(id)` | handles | `TR` definitions | v1 | RFC 7 | sim |
 
 ### 7.6 Query as house
 
@@ -1521,18 +1633,31 @@ simulation queries stay full knowledge. Tier `later`, **not adopted in RFC 0.0.5
 
 ### 7.7 Client results
 
-In client modules (RFC 10):
+Client queries expose only what the player's own interface could show
+(RFC 10). Anything else a client module needs reaches it through
+notifications (11.5). Owner of the filter: **no owner yet** (G-C3).
 
-- objects under shroud are absent, and so is an enemy object under fog that
-  the player cannot see now: the engine keeps no last-seen copies (RFC 10,
-  P17);
-- an enemy disguised object reads as its disguise: `type()` returns the
-  disguised type and `owner()` the disguised house, using
+- The player's own house and objects: everything, as in the simulation.
+- Other houses, allies included: only public facts, namely name, country,
+  side, alliance and whether defeated or human; their money, power,
+  buildings, production, tech level, superweapons and statistics stay hidden.
+- Objects of other houses the player can see now: only type, position,
+  owner and health, and the marks whose visibility admits the player
+  (section 6). Their passengers, targets, missions, veterancy, ammunition,
+  effects and true disguise stay hidden.
+- Objects under shroud are absent, and so is an object of another house
+  under fog that the player cannot see now: the engine keeps no last-seen
+  copies (RFC 10, P17). A cloaked enemy is absent unless detected.
+- A disguised enemy reads as its disguise: `type()` returns the disguised
+  type and `owner()` the disguised house, using
   `src/sim/cloak_disguise.rs::is_disguised_to`, `disguise_house`,
-  `disguise_hides_house_from`. Owner of the filter: **no owner yet** (G-C3).
-  Rc: decoy defs returned to non-allies;
-- a cloaked enemy is absent unless detected;
-- spectators see what the spectator sees, the whole map when the room allows.
+  `disguise_hides_house_from`. Rc: decoy defs returned to non-allies.
+- Global and local variables, triggers and tags are simulation only. Visibility
+  queries (`map.isVisibleTo`) and probes answer only for the player's own
+  house. Mark names are public, mark carriers are not ([IDs](#ids)).
+- Spectators see what the spectator sees, the whole map when the room allows;
+  a spectator has no own house, so `own` rows answer only where the room
+  shows that house's facts to spectators.
 
 ## 8. Overrides
 
@@ -1546,35 +1671,97 @@ the previous link's value, or the native value (RFC 3). Every row is a v1
 candidate: two or three of them ship in version 1 (open question 11).
 
 Overrides run only inside the simulation's phases, never from local code
-(the sidebar, the cursor, the interface) and never from parallel code. Each
-override is called at a fixed step of the frame, its call site in the
-Frequency column: the engine gathers the step's queries, calls the module for
-them in order of the subject's creation serial, then a sequence number per
-object, and then applies the results (RFC 5). Local code reads the result the
-simulation last computed.
+(the sidebar, the cursor, the interface) and never from parallel or batched
+code. Each override is called at a fixed step of the frame, its call site in
+the Frequency column. Where that step is a batched or parallel section, the
+engine collects the section's queries, makes one call per module with all of
+them, then applies the results (RFC 5); elsewhere it calls the module per
+query. The signatures below are per query: for a batched call, the SDK's
+generated dispatcher runs the function once per query, as `onEvents` does
+for records. Calls across objects are ordered by the subject's creation
+serial; within one object they follow the order the engine raised them,
+which may change between engine versions (RFC 5). Local code reads the
+result the simulation last computed.
+
+A module's overrides are skipped while that module's own call is on the
+stack (no re-entry, RFC 5), and once its frame budget is used up: for the
+rest of that frame the previous link's value, or the native value, applies,
+and the module is disabled at the end of the frame. Override calls are
+charged to the same budget as its other calls (RFC 5).
 
 Combination (RFC 2, adopted from P1): each link receives the native value and
-the previous link's result, a later link may lift an earlier link's veto, and a
-value override returns an explicit "handled" flag.
+the previous link's result (for the first link, the native value again), a
+later link may lift an earlier link's veto, and a value override returns an
+explicit "handled" flag; a link that does not handle the query passes the
+previous link's result on.
 
-Overrides bind to types, never globally: a weapon, warhead or TechnoType names
-the override in INI, and the engine calls the module only for those types
-(**adopted in RFC 0.0.5**, P12; the binding key name is open question 5).
-Query and result classes (`DamageQuery`, `ShotQuery`, `ShotPlan`, `OrderQuery`,
-`DeathQuery`, `DeathResult`, `TargetBatch`) carry handles and IDs (warhead,
-weapon, type), never names; batches are written into module memory and read
-back from it (RFC 15).
+Overrides bind to types, never globally: a weapon, warhead or TechnoType
+binds the override with an INI key (**adopted in RFC 0.0.5**, P12; the key
+name is open question 5), and the engine calls the module only for those
+types. The key's value names a function of the module of the same source:
+the mod's INI binds the mod's module, the map's INI the map's module, and
+the prefixes `mod.` and `map.` reach the other (RFC 2). The engine reads the
+bindings per source, so a map's binding adds the map's link to the chain and
+never replaces the mod's. The query and result classes carry handles and IDs
+(warhead, weapon, type), never names; batches are written into module memory
+and read back from it (RFC 15).
+
+```ts
+class DamageQuery {          // Override.Damage
+  target: Techno;
+  source: Techno;            // may be NO_HANDLE
+  warhead: WarheadTypeId;
+  weapon: WeaponTypeId;      // NO_ID when the damage has no weapon
+  native: i32;               // the damage the native rules computed
+}
+class DamageResult { damage: i32 = 0; handled: bool = false; }   // not handled: the previous link's result stands
+class ShotQuery {            // Override.Fire
+  shooter: Techno;
+  weapon: WeaponTypeId;
+  slot: i32;                 // weapon slot, 0 the primary
+  target: Target;
+}
+class ShotPlan {             // projectiles to create; at most a fixed number
+  count: i32;
+  at(i: i32): ProjectileParams;
+  add(p: ProjectileParams): Status;
+  clear(): void;
+}
+class OrderQuery {           // Override.CommandAllowed
+  kind: i32;                 // the Command variant (11.4)
+  target: Target;
+}
+class DeathQuery {           // Override.Death
+  killer: Techno;            // may be NO_HANDLE
+  warhead: WarheadTypeId;    // NO_ID when none
+  native: DeathResult;       // what the native death chain would do
+}
+class DeathResult {
+  deathWeapon: WeaponTypeId = NO_ID;
+  survivors: bool = true;
+  wreck: bool = false;
+  handled: bool = false;
+}
+class TargetBatch {          // Override.TargetChoice; a view into module memory
+  count: i32;
+  searcher(i: i32): Techno;
+  candidates(i: i32, out: HandleBuffer): i32;   // the native candidates
+  native(i: i32): Techno;                       // the native choice; may be NO_HANDLE
+  previous(i: i32): Techno;                     // the previous link's choice
+  choose(i: i32, t: Techno): void;              // not called: the previous link's choice stands
+}
+```
 
 | Override | Signature | Frequency | Batching | Decision owner | Tier | Sources |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Override.Damage` | `(ctx: Ctx, d: DamageQuery, current: i32): DamageResult` (damage, `handled`) | per damage packet on a bound warhead or receiver type, at the damage step | none (one call per packet; low count expected for bound types) | `src/sim/combat/damage/receive.rs::receive_damage` | v1? | RFC 6 L3; Rc: `UnitPreDamaged`; LUS `HitByWeapon` |
-| `Override.TargetChoice` | `(ctx: Ctx, batch: TargetBatch): void` — writes one choice (or "keep native") per searcher | once per bound weapon type per frame, with every searcher of that type and its native candidates, after the parallel target scan | **batched**, never per candidate | target scan `src/sim/world/techno_ai/scan_batch.rs` | v1? | RFC 6 L3; Rc: `AllowWeaponTarget` (per-candidate hot spot, #3087) |
-| `Override.ProductionAllowed` | `(ctx: Ctx, house: House, type: TechnoTypeId, current: bool): bool` | once per frame for each house and bound type, at a fixed step of the simulation; the sidebar and the AI read the cached result and never call the module | none | `src/sim/production/can_build.rs::can_build` | v1? | RFC 6 L3; Rc: `AllowUnitCreation` |
-| `Override.Fire` | `(ctx: Ctx, shot: ShotQuery, plan: ShotPlan): bool` — `true` takes over the shot: the engine creates the projectiles the module wrote into `plan` (each with its type, module data and parameters) at once, at the moment the native shot would leave, and no native projectile; an empty plan fires nothing; `Fire` is still raised, with `projectile` `NO_HANDLE` | per shot of a bound weapon, at the fire step | none | FireAt steps `src/sim/combat/world_fire.rs`; aircraft `fire_at.rs` | v1? | RFC 6 L3, 9 |
+| `Override.Damage` | `(ctx: Ctx, d: DamageQuery, previous: DamageResult): DamageResult` | per damage packet on a bound warhead or receiver type, at the damage step | **batched** where the damage step is the batched commit (`world_receiver.rs::commit_entities`): one call per module per section, results applied after it; per packet elsewhere | `src/sim/combat/damage/receive.rs::receive_damage` | v1? | RFC 6 L3; Rc: `UnitPreDamaged`; LUS `HitByWeapon` |
+| `Override.TargetChoice` | `(ctx: Ctx, batch: TargetBatch): void` — writes one choice (or leaves the previous one) per searcher | once per bound weapon type per frame, with every searcher of that type and its native candidates, after the parallel target scan | **batched**, never per candidate | target scan `src/sim/world/techno_ai/scan_batch.rs` | v1? | RFC 6 L3; Rc: `AllowWeaponTarget` (per-candidate hot spot, #3087) |
+| `Override.ProductionAllowed` | `(ctx: Ctx, house: House, type: TechnoTypeId, native: bool, previous: bool): bool` | once per frame for each house and bound type, at a fixed step of the simulation; the sidebar and the AI read the cached result and never call the module | none (a serial step) | `src/sim/production/can_build.rs::can_build` | v1? | RFC 6 L3; Rc: `AllowUnitCreation` |
+| `Override.Fire` | `(ctx: Ctx, shot: ShotQuery, previous: ShotPlan \| null, plan: ShotPlan): bool` — `previous` is the earlier link's plan, or `null` when no earlier link took over (the native shot); `plan` starts as a copy of `previous`, or empty; `true` takes over the shot: the engine creates the projectiles in `plan` (each with its type, module data and parameters) at once, at the moment the native shot would leave, and no native projectile; an empty plan fires nothing; every other native effect of the shot still happens (rate-of-fire timer, ammunition use and reload, burst counter, report sound, muzzle animation, recoil, decloaking or revealing on fire), and the plan's projectiles raise `ProjectileIncoming` and `AttackedBy` as native ones do; `Fire` is still raised, with `projectile` `NO_HANDLE`; `false` keeps the previous link's plan, or the native shot | per shot of a bound weapon, at the fire step | **batched** where the fire step is a batched section (unverified), with the projectiles created when it ends; per shot elsewhere | FireAt steps `src/sim/combat/world_fire.rs`; aircraft `fire_at.rs` | v1? | RFC 6 L3, 9 |
 | `onLaunch` | `(ctx: LaunchCtx, p: Projectile): Path \| null` | once per projectile of a bound type | none | module arm of `ProjectileTrajectory` (RFC 9): **no owner yet** | later | RFC 9 level 3 |
 | `onTrajectoryFrame` | `(ctx: Ctx, type: ProjectileTypeId, bullets: BulletBatch): void` | once per bound projectile type per frame | **batched** per type (L4) | same | later | RFC 6 L4, 9 level 4 |
-| `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, current: bool): bool` | per player or AI order for a bound type, when the simulation executes the order; the cursor's local preview does not call it | none | command admission `src/sim/command.rs` (function unverified) | v1? | **adopted in RFC 0.0.5** (P13); Rc: `AllowCommand` |
-| `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery): DeathResult` (death weapon, survivors, wreck) | per death of a bound type, in the death chain | none | death chain `combat/record_kill.rs` and survivor rules (unverified) | v1? | **adopted in RFC 0.0.5** (P13); LUS `Killed -> wreckLevel` |
+| `Override.CommandAllowed` | `(ctx: Ctx, t: Techno, order: OrderQuery, native: bool, previous: bool): bool` | per player or AI order for a bound type, when the simulation executes the order; the cursor's local preview does not call it | none (orders execute serially) | command admission `src/sim/command.rs` (function unverified) | v1? | **adopted in RFC 0.0.5** (P13); Rc: `AllowCommand` |
+| `Override.Death` | `(ctx: Ctx, t: Techno, q: DeathQuery, previous: DeathResult): DeathResult` (death weapon, survivors, wreck, `handled`) | per death of a bound type, in the death chain | **batched** where the death chain runs in a batched section (unverified); per death elsewhere | death chain `combat/record_kill.rs` and survivor rules (unverified) | v1? | **adopted in RFC 0.0.5** (P13); LUS `Killed -> wreckLevel` |
 
 The overrides of the RFC's examples (target choice, damage, production
 permission, taking over a weapon's shot) are covered. "Prefer data plus an
@@ -1596,7 +1783,7 @@ All entries are `sim`.
 | `ai.defineScript(id: string, lines: ScriptLine[]): Status` | add or replace a team script (max 50 lines) | `TeamScriptVm::register_script` | v1 | RFC 6d |
 | `ai.defineTeamType(id: string, d: TeamTypeDef): Status` | add or replace a team type | `TeamScriptVm::register_team_type` | v1 | RFC 6d |
 | `ai.defineAiTrigger(id: string, d: AiTriggerDef): Status` | add or replace an AI trigger (rewrites its running weight to the start weight) | `TeamScriptVm::register_ai_trigger` | v1 | RFC 6d |
-| `ai.createTeam(teamType, house)` | start a team (Max gate) | `src/sim/team_script_vm/reinforcements.rs::Simulation::create_team` | v1 | RFC 6d; A4 |
+| `ai.createTeam(teamType, house)` | start a team (Max gate); the same function as action 4 (4.2) | `src/sim/team_script_vm/reinforcements.rs::Simulation::create_team` | v1 | RFC 6d; A4 |
 | `ai.createTeamUnlimited(teamType, house)` | start a team without the Max gate | `Simulation::construct_team_unlimited` | v1? | S18 path |
 | `team.disband()` | destroy the team, record the AI trigger outcome, release members | `TSV/membership.rs::destroy_team` | v1 | RFC 6d; A5 |
 | `team.addMember(t: Techno)` / `removeMember(t: Techno)` | join or leave (runs `team_can_add`) | `team_add_member`, `team_remove_member` | v1? | |
@@ -1749,12 +1936,14 @@ class RulesWriter extends RulesReader {
   set(section: string, key: string, value: string): Status;   // value is INI text
   remove(section: string, key: string): Status;
   addType(list: string, id: string): Status;                  // e.g. ("InfantryTypes", "E7")
+  defineEffectType(id: string, keys: string): EffectTypeId;   // keys: INI text of the type's section; works without Phobos
 }
 ```
 
 | Function | Owner | Tier | Sources |
 | --- | --- | --- | --- |
 | `set`, `remove`, `addType` | `src/rules/native_processing.rs::RulesLayerStack::push` then `process`; then `RuleSet::from_processed_rules`. Module layer: **no owner yet** (G-R1) | v1 | RFC 8 |
+| `defineEffectType` | `src/rules/attach_effect.rs` reader, run on the module layer whether or not Phobos is on: **no owner yet** (G-E2) | v1 | RFC 8 |
 | reads inside `onRules` | the rules as processed after the earlier layers | v1 | RFC 2 (map sees the mod's result) |
 
 ### 10.2 Changes during a match
@@ -1819,7 +2008,7 @@ during a match (RFC 8); none is classified in this catalog yet.
 
 ## 11. Client API
 
-All entries are `client` and P2 (`v1`) unless marked. The client never changes
+All entries are `client` and stage 2 (`v1`) unless marked. The client never changes
 game state directly: it issues standard player orders or sends a message
 (RFC 1, 10).
 
@@ -1849,7 +2038,7 @@ setSize(n: Node, w: i32, h: i32): void;
 setVisible(n: Node, v: bool): void;
 setItems(n: Node, items: string[]): void;     // List
 setFill(n: Node, v: i32): void;               // Bar: how full the bar is
-onClick(n: Node, enabled: bool): void;        // routes clicks to the module's onClick
+setClickable(n: Node, enabled: bool): void;   // routes clicks to the module's onClick
 ```
 
 | Operation | Tier | Sources |
@@ -1859,7 +2048,7 @@ onClick(n: Node, enabled: bool): void;        // routes clicks to the module's o
 | `setLabel`, `setArt`, `setPosition`, `setVisible` | v1 | RFC 10 |
 | `setItems` | v1 | RFC 10 example |
 | `setSize`, `setFill` | v1? | |
-| `onClick`, hover, hotkeys | v1 | RFC 10 |
+| `setClickable` (clicks reach `onClick`), hover, hotkeys | v1 | RFC 10 |
 | data binding (a property bound to a published value) | later | Rc: RmlUi data models |
 
 Widget types (open question 15). Client code uses the `veraui.ini` names
@@ -1926,7 +2115,7 @@ properties belong to the simulation module (RFC 10).
 | `client.selection(out: HandleBuffer)` | selection state in `src/app/input/` (unverified) | v1 | RFC 10 |
 | `client.select(list: HandleBuffer, count: i32, append: bool)` | `Command::Select` (`src/sim/command.rs`) | v1 | RFC 10 |
 | `client.order(o: OrderSpec)` | `Command` variants: `Move`, `MoveToObject`, `Stop`, `Attack`, `AttackMove`, `Guard`, `DeployMcv`, `UndeployBuilding`, `SetRally`, `QueueProduction`, `SuspendProduction`, `CancelProductionByType`, `PlaceReadyBuilding`, `SellBuilding`, `ToggleRepair`, `EjectBunker`, `UnloadPassengers`, `CaptureBuilding`, `PlantC4`, `LaunchSuperWeapon`, `ToggleInfantryDeploy`, `ForceAttackCell`, `SellWallAtCell` | v1 | RFC 10 (validated like any player input) |
-| `client.sendMessage(data: Uint8Array): Status` | command stream: **no module variant yet** (G-C2); `Refused` on a spectator's machine | v1 | RFC 1, 10, 11; Rc: `SendLuaRulesMsg` |
+| `client.sendMessage(data: Uint8Array): Status` | command stream: **no module variant yet** (G-C2); carries the module's source and reaches every simulation module's `onMessage`; `Refused` on a spectator's machine | v1 | RFC 1, 10, 11; Rc: `SendLuaRulesMsg` |
 | `client.broadcast(to: Audience, data: Uint8Array)` | **no owner yet** | later | **not adopted in RFC 0.0.5** (P5); Rc: `SendLuaUIMsg` |
 | order rewrite hook (`CommandNotify`-style) | **no owner yet** | later | Rc: `CommandNotify`, `DefaultCommand` |
 
@@ -1942,7 +2131,7 @@ The engine fills in the sender of every message and limits size and rate
 | `camera.home()` | `TriggerEffect::HomeCamera` target | v1? | A145 |
 | `sound.play(name)`, `sound.playAt(name, at)` | `src/audio/` (local) | v1 | RFC 10 |
 | `sound.speech(eva)` | EVA playback (local) | v1 | RFC 10 |
-| `storage.get(key: string): Uint8Array \| null` | **no owner yet** (G-C4); the store of the module's source: the mod's, or the map's own, also under a mod | v1 | RFC 10 |
+| `storage.get(key: string): Uint8Array \| null` | **no owner yet** (G-C4); the store of the module's source: the mod's (keyed by its `[Mod] Name`), or the map's own, also under a mod (keyed by `[VeraWasm] StorageId=`, default the map's file name, so a changed map keeps its store while the ID stays the same) | v1 | RFC 10 |
 | `storage.set(key: string, data: Uint8Array): Status` | **no owner yet**; `Refused` beyond the store's quota | v1 | RFC 10 |
 | `messages.show(csfOrText: string, color: i32)` | `src/ui/messages.rs` (unverified entry) | v1 | RFC 10 |
 | `ui.log(text: string)` | in-game console: **no owner yet** | v1 | RFC 10 |
@@ -1951,8 +2140,13 @@ The engine fills in the sender of every message and limits size and rate
 ### 11.6 Client queries
 
 The query functions of section 7 exist in the client with the same names and
-the same buffers, filtered as in 7.7. `ui.viewer()` names the local house,
-or is `NO_HANDLE` for a spectator (`ui.isSpectator()`). `Mark.id` in a client
+the same buffers. Each answers as its Client column says (`all`, `own`,
+`seen` or `sim`), under the rules of 7.7: a client query exposes only what the
+player's own interface could show, and the rest reaches a client module only
+through notifications. The other reads follow the same rules: `effects` and
+the reads of 5.1 are `own`, `marks` follow their visibility (section 6), and
+the AI reads of 9.1 are `sim`. `ui.viewer()` names the local house, or is
+`NO_HANDLE` for a spectator (`ui.isSpectator()`). `Mark.id` in a client
 module only looks names up ([IDs](#ids)).
 
 ## Gaps in the engine
@@ -1963,9 +2157,13 @@ implementation.
 
 ### Module host
 
-- **G-H1** Module loader, validation (shape limits, NaN canonicalization by
-  bytecode rewriting, `vera.actions` check), metering with the call-depth
-  limit, memory cap reserved at instantiation, and disable path (RFC 3, 4):
+- **G-H1** Module loader, validation (the Wasm feature allowlist, no `start`
+  section, shape limits, imports checked against `Api=`, format versions of
+  the `vera.*` custom sections, NaN canonicalization by bytecode rewriting,
+  `vera.actions` check), metering with the call-depth limit and the charge
+  of each host call kind, the init function, one-off budgets for the init
+  function, `onRules` and `onScenarioStart`, the memory cap allocated at
+  instantiation, the no re-entry rule, and the disable path (RFC 3, 4, 5):
   new, in core, outside `sim/` hot loops, reaching the Wasm runtime through
   one interface; the runtime is chosen per platform behind platform build
   features, so the core crate stays browser-compatible (RFC 14).
@@ -1973,26 +2171,39 @@ implementation.
   `src/sim/world/master_frame.rs` gains a phase that springs deferred chain
   triggers, then runs per module `onMessage`, `onEvents` and `onFrame`;
   `onFrame` scheduling.
-- **G-H3** Module memory in snapshots and in the periodic full state hash,
-  not in the per-frame multiplayer checksum (RFC 4, 15): save/load and
-  `hash_state` paths.
+- **G-H3** Module memory, globals and table (as function indices) in
+  snapshots, and a hash of module memory in the per-frame multiplayer
+  checksum every 15 frames (RFC 4, 15): save/load, checksum and `hash_state`
+  paths.
 - **G-H4** `ctx.log`, in-game failure messages and the error status of a
   failed atomic action run by a trigger (RFC 3, 14): a sim-side log line
   published as a `TriggerEffect`-like output, shown by the app.
 - **G-H5** Simulation-to-client notifications (`ctx.notify`,
-  `ctx.notifySpectators`, `onNotify`), delivered only to the player each is
-  for, or to the spectators; the content is the module's own bytes, which the
-  engine does not filter (RFC 11).
-- **G-H6** The periodic full state hash covers the whole module memory,
-  bounded by the memory cap, with the instrumentation counters and the
-  module's random stream (RFC 4, 15); its cost is part of open question 4.
-- **G-H7** Module call order: override calls and events raised inside
-  parallel engine code are collected and issued after it, and override calls
-  and delivered records are ordered by the subject's creation serial, then a
-  sequence per object, never by loop order (RFC 5).
+  `ctx.notifySpectators`, `onNotify`), delivered with their source only to
+  the player each is for, or to the spectators, and not during rejoin
+  catch-up, after which client modules get one `onStart`; the content is the
+  module's own bytes, which the engine does not filter (RFC 11).
+- **G-H6** The state hashes (the multiplayer checksum every 15 frames, the
+  replay log's diagnostic hash and the full state hash) cover the whole
+  module memory, bounded by the memory cap, with the instrumentation counters
+  and the module's random stream (RFC 4, 15); their cost is part of open
+  question 4.
+- **G-H7** Module call order: a batched or parallel section counts as one
+  calculation; the triggers of events raised in it spring after it ends, and
+  overrides reached in it are batched (one call per module, then the results
+  are applied); calls across objects are ordered by the subject's creation
+  serial, within one object by raise order, never by loop order (RFC 5).
 - **G-H8** Map minimum-version key (`[Basic] VeraMinVersion=`, name not
   final), read by the release before module support, which refuses a map that
   needs a later version with a message (RFC 11).
+- **G-H9** Module hashes and API versions in the lobby check, save headers
+  and replay headers, with refusal messages that name the modules or the
+  version (RFC 11).
+- **G-H10** Map embedding: decoding `[VeraWasmRulesPack]` and
+  `[VeraWasmUIPack]` with the declared sizes, and the `asset` commands that
+  embed, extract and validate modules (RFC 3, 13).
+- **G-H11** Marking mods and maps that contain modules in the Mods menu and
+  the map list, and the new sandbox text in `docs/modding.md` (RFC 3).
 
 ### Triggers, events and conditions
 
@@ -2010,7 +2221,7 @@ implementation.
 - **G-T3** Type tag bindings (`Wasm.Tags`, and `Trigger.bindType`,
   `bindWeaponType`, `bindWarheadType` and `bindProjectileType` from modules)
   kept outside the `AttachedTag` slot as subscriptions in a side table keyed
-  by handle (RFC 7, 15), and `Wasm.Tags` on weapon, warhead and projectile
+  by type (RFC 7, 15), and `Wasm.Tags` on weapon, warhead and projectile
   types for the weapon events (RFC 6a); one trigger instance per bound object
   with its own repeat state, the subject's owner as the trigger's house and
   the subject as tag holder.
@@ -2021,8 +2232,9 @@ implementation.
   objects spread over different frames by creation serial modulo the
   interval (RFC 15).
 - **G-T6** Raise hooks for each new delivered event of 2.3, at the owners
-  named there; raised only for bound types (G-T10); after `HouseTransfer`,
-  the transfer re-checks that it is still valid.
+  named there; raised only for bound types and tagged objects (G-T10); after
+  `HouseTransfer`, the transfer re-checks that it is still valid, and after
+  `FatalDamage`, the death chain re-checks that the damage is still fatal.
 - **G-T7** Event payload carried from the raise site into the module's
   `EventRecord` (section 2); today `dispatch_object_tag_event` carries actor
   and source only.
@@ -2033,19 +2245,23 @@ implementation.
   that sprang its trigger, written when a trigger with a module action
   springs, ordered by subject creation serial (G-H7), and
   handed over in one call per module per frame, before `onFrame`, up to a
-  per-frame cap beyond which records move to the next frame; it drops queued
-  actions whose trigger was disabled or removed, and every queued action once
-  the game has ended (RFC 5, 15).
+  per-frame cap beyond which records move to the next frame, saved and
+  hashed, with a backlog limit beyond which the module is disabled; it drops
+  queued actions whose trigger was disabled or removed, and every queued
+  action once the game has ended (RFC 5, 15).
 - **G-T10** Per-type module flag on object, weapon, warhead and projectile
-  types, set when a module binds the type, checked first at each event site
-  so that nothing else runs for unbound types (RFC 15).
+  types, set when a module binds the type, and a per-object flag, set when an
+  object gets a tag holding a module trigger or a trigger on an event VERA
+  adds; each event site checks them first so that nothing else runs for
+  unbound types and untagged objects (RFC 7, 15).
 - **G-T11** Per-frame chain depth counter in `TR`, where a trigger springs:
   counts the depth of a chain of triggers sprung at once within a frame when
   the chain includes a module trigger (one with an `Action.wasm` action, one
   created by a module, or one bound through `Wasm.Tags`), an event VERA adds
-  or an atomic action, and moves a trigger that would exceed the limit to
-  the start of the next frame's module phase, saved and hashed while it
-  waits; a chain of only original events and original actions is not
+  or an atomic action, and the total number of such chained firings per
+  frame, and moves a trigger that would exceed either limit to the start of
+  the next frame's module phase, saved and hashed while it waits, re-checking
+  its conditions when it springs; a chain of only original events and original actions is not
   limited and runs as in the original (RFC 5, Goal 5; the limit is open
   question 18).
 
@@ -2083,7 +2299,10 @@ implementation.
 - **G-E1** Move `src/sim/attach_effect.rs` and `src/rules/attach_effect.rs`
   from `cfg(feature = "phobos")` to a run-time switch (RFC 8).
 - **G-E2** Simulation-level "attach effect type to object" and "remove effect"
-  transactions; `remove_attach_effect_type` is private.
+  transactions; `remove_attach_effect_type` is private. Effect types defined
+  by modules (`rules.defineEffectType`), parsed by the same reader whether or
+  not Phobos is on, while the Phobos AttachEffect INI keys stay read only
+  with the Phobos switch.
 - **G-E3** New effect kinds without a Phobos key: transform, replace weapon,
   motion, teleport, immunity, no target search, target priority multiplier,
   damage modifier, cannot be selected, ignores orders, not a legal target,
@@ -2097,9 +2316,11 @@ implementation.
 
 ### Queries
 
-- **G-Q1** Creation serial: assigned to every object and projectile at
-  creation, saved, and used as the order of query results, override calls and
-  delivered records, and as the stagger of polled events (RFC 5, 6c, 15).
+- **G-Q1** Creation serial: a 64-bit number assigned to every object and
+  projectile at creation and never reused, saved, mapped to the object, and
+  used as the module handle, as the order of query results, override calls
+  and delivered records, and as the stagger of polled events (RFC 5, 6c,
+  15).
 - **G-Q2** Query entry points that write handles or IDs into a module buffer
   sorted by creation serial, return the count and page large results, with
   the result set fixed within a module call; nothing is allocated per query
@@ -2107,11 +2328,12 @@ implementation.
 
 ### Overrides
 
-- **G-O1** Call points and type bindings for each override of section 8
-  (damage in `receive_damage`, batched target choice in `scan_batch.rs`,
-  production in `can_build` with its per-frame result cached for the sidebar
-  and the AI, fire in the FireAt steps with the shot plan), called in
-  creation-serial order (G-H7).
+- **G-O1** Call points and type bindings, read per source, for each override
+  of section 8 (damage in `receive_damage`, batched target choice in
+  `scan_batch.rs`, production in `can_build` with its per-frame result cached
+  for the sidebar and the AI, fire in the FireAt steps with the shot plan,
+  command admission in `command.rs`, death in the death chain), batched in
+  batched sections and called in creation-serial order (G-H7).
 - **G-O2** Module projectile arm in `ProjectileTrajectory`, 16 bytes of
   module data per projectile in a side table keyed by handle, clamps (RFC 9,
   15).
@@ -2146,19 +2368,21 @@ implementation.
   properties, click and hover routing, batched per render frame, on top of the
   `veraui.ini` layout reader.
 - **G-C2** A module message variant in `src/sim/command.rs::Command`, with
-  sender, size and rate limits, recorded in replays.
-- **G-C3** Visibility filter for client queries: shroud, fog rule, cloak,
-  disguise (`cloak_disguise.rs` helpers exist).
-- **G-C4** Key-value store on the player's machine, one per mod and one per
-  map, with a quota.
+  sender, source module, size and rate limits, recorded in replays.
+- **G-C3** Visibility filter for client queries: the Client column of each
+  query (section 7), own house and objects, public house facts, shroud, fog
+  rule, cloak, disguise (`cloak_disguise.rs` helpers exist).
+- **G-C4** Key-value store on the player's machine, one per mod (keyed by
+  its `[Mod] Name`) and one per map (keyed by its `StorageId=`, default the
+  map's file name), with a quota.
 - **G-C5** Per-object display properties (image, palette, tint, extra
   animations, visibility, text, values, buttons).
 - **G-C6** In-game console for `log()`.
-- **G-C7** Client module time budget per render frame by the local clock,
-  skipping an overrunning call and disabling a module that overruns
-  persistently or traps on that machine only (RFC 3).
+- **G-C7** Client module budget per render frame in operation units, by the
+  same metering as simulation modules, stopping a call that exceeds it or
+  traps and disabling the module on that machine only (RFC 3).
 
-Total: 55 gaps (H 8, T 11, A 13, E/M 5, Q 2, O 2, AI 4, R 3, C 7). G-T8 is a
+Total: 58 gaps (H 11, T 11, A 13, E/M 5, Q 2, O 2, AI 4, R 3, C 7). G-T8 is a
 pre-existing gap of the original trigger system.
 
 ## Proposed RFC changes
@@ -2227,7 +2451,9 @@ proposal number.
   are added.
 - **P17 Fog rule for client queries.** *Adopted in 0.0.5.* Say what a client query returns for an
   enemy object under fog (absent or last seen), and whether a client module
-  sees allied houses' marks, values and production.
+  sees allied houses' marks, values and production. (Completed in 0.0.6:
+  client queries expose only what the player's own interface could show,
+  allied houses included; see 7.7 and the Client column of section 7.)
 - **P18 Error model.** *Adopted in 0.0.5.* Name which failures return a status (gone handle,
   unknown name, refused by an engine rule) and which disable the module
   (invalid argument, trap, budget).
