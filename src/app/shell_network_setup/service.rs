@@ -1768,20 +1768,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     seat_queue(state);
     point_out_briefing(state);
     let pings = super::wol::poll(state);
-    let balance = super::teams::poll_balance(state);
     let go = poll_go(state);
     let offer = poll_preview_offer(state);
     // A direct spawn's LAN service renews setup leases and waits for its
     // peers before GO; keep the frame loop servicing it.
     let direct = (super::external(state) && !super::dialog(state).wol())
         .then(|| Instant::now() + std::time::Duration::from_millis(16));
-    pings
-        .into_iter()
-        .chain(balance)
-        .chain(go)
-        .chain(offer)
-        .chain(direct)
-        .min()
+    pings.into_iter().chain(go).chain(offer).chain(direct).min()
 }
 
 /// VERA's game room (`SetupDialog::modern`) presses Accept for a guest
@@ -1812,7 +1805,7 @@ fn auto_accept(state: &mut AppState) {
 /// VERA's join queue in the host's game: each free seat goes to the queue's
 /// first spectator, as the host's Seat in its Player list does
 /// ([`move_player`]): on the team with the fewest players while Teams is
-/// set, where Balance automatically may move them next. A seat frees when a
+/// set. A seat frees when a
 /// player leaves or starts watching, or the host adds a seat or takes an AI
 /// out.
 fn seat_queue(state: &mut AppState) {

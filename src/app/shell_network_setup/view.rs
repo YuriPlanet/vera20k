@@ -294,10 +294,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
     let ai_allowed = !watched && mode.class.policy().lists_in_skirmish;
     let teams = session.network_teams();
-    let team_seats = session.network_team_seats();
-    // While the room balances itself, nobody picks a team: the Team lists and
-    // the headers' Join close for every seated player, the host too. A
-    // spectator's Join still asks to play, and the balance places it.
+    // While an older host's Balance automatically is on, nobody picks a team:
+    // the Team lists and the headers' Join close for every seated player. A
+    // spectator's Join still asks to play, and that host's balance places it.
     let auto_balance = session.network_auto_balance();
     let shown = |visible: usize| listing.shown(visible);
     // The local player's Join and Watch on the headers: a seated player
@@ -351,20 +350,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 };
                 let (caption, button) = match group {
                     SetupGroup::Team(team) => (
-                        match team_seats {
-                            Some(seats) => crate::i18n::tr_fill(
-                                "VERA:TeamSeatsGroup",
-                                &[
-                                    ("letter", &team_letter(state, team)),
-                                    ("count", &count),
-                                    ("seats", &seats),
-                                ],
-                            ),
-                            None => crate::i18n::tr_fill(
-                                "VERA:TeamGroup",
-                                &[("letter", &team_letter(state, team)), ("count", &count)],
-                            ),
-                        },
+                        crate::i18n::tr_fill(
+                            "VERA:TeamGroup",
+                            &[("letter", &team_letter(state, team))],
+                        ),
                         joins(LaunchTeam::Team(team))
                             .then(|| join(!session.network_team_full(team))),
                     ),
@@ -905,8 +894,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
-        auto_balance,
-        auto_balance_enabled: host && teams.is_some() && dialog.wol(),
         map_offer_open: state
             .frontend
             .multiplayer_setup

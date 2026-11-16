@@ -15,26 +15,9 @@ use crate::skirmish_launch::{
     LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession,
 };
 
-/// How long Balance automatically waits after who plays last changed, so a
-/// room filling up is balanced once it settles, not after every join.
-const BALANCE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
-
 /// The host sets the room's Teams, Off or a count, and the options carry it.
-/// Online, setting a count where Teams was Off turns Balance automatically
-/// on, so the new teams start out even.
 pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Result<()> {
-    let was_off = state.match_state.session.network_teams().is_none();
     state.match_state.session.set_network_teams(teams)?;
-    if was_off && teams.is_some() && dialog(state).wol() {
-        state.match_state.session.set_network_auto_balance(true)?;
-    }
-    actions::queue(state, NetworkSetupRequest::PublishOptions);
-    Ok(())
-}
-
-/// The host turns Balance automatically on or off, and the options carry it.
-pub(super) fn set_auto_balance(state: &mut AppState, on: bool) -> anyhow::Result<()> {
-    state.match_state.session.set_network_auto_balance(on)?;
     actions::queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())
 }
@@ -42,7 +25,7 @@ pub(super) fn set_auto_balance(state: &mut AppState, on: bool) -> anyhow::Result
 /// A lobby that cannot take the host's options refuses them while they carry
 /// a field it does not know: the room goes on without the newest one it
 /// carries, Superweapon Limit before the rest of the room's rules before the
-/// join queue before Balance automatically before Teams, and publishes again.
+/// join queue before Teams, and publishes again.
 /// Returns the line telling the host so, or `None` when none was set.
 ///
 /// A random map for more than eight players, which a lobby from before them
@@ -105,120 +88,18 @@ pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str>
         actions::queue(state, NetworkSetupRequest::PublishOptions);
         return Some("VERA:QueueNotTaken");
     }
-    let session = &state.match_state.session;
-    if session.network_auto_balance() {
-        return set_auto_balance(state, false)
-            .is_ok()
-            .then_some("VERA:AutoBalanceNotTaken");
-    }
-    let set = session
+    let set = state
+        .match_state
+        .session
         .network_setup()
         .is_some_and(|launch| launch.options.teams.is_some());
     (set && set_teams(state, None).is_ok()).then_some("VERA:TeamsNotTaken")
 }
 
-/// The host's Balance in the Teams box: `/balance` in the room's chat, as
+/// The host's Balance in the team bar: `/balance` in the room's chat, as
 /// if typed.
 pub(super) fn balance(state: &mut AppState) {
-    actions::queue(state, NetworkSetupRequest::Balance { automatic: false });
-}
-
-/// Balance automatically in the host's game: who plays in a room that
-/// balances itself, for [`NetworkSetupProtocol::time_balance`]. Returns when
-/// the next balance is due.
-pub(super) fn poll_balance(state: &mut AppState) -> Option<Instant> {
-    let automatic = state.match_state.session.host()
-        && state.match_state.session.network_auto_balance()
-        && dialog(state).wol()
-        && !quick_match(state)
-        && !external(state);
-    let session = &state.match_state.session;
-    let roster = session.network_setup().filter(|_| automatic).map(|launch| {
-        let playing: Vec<&str> = launch
-            .humans
-            .iter()
-            .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
-            .map(|human| human.name.as_str())
-            .collect();
-        let balanceable = launch.opponents.is_empty() && playing.len() >= 2;
-        (
-            session.network_teams().unwrap_or_default(),
-            playing,
-            balanceable,
-        )
-    });
-    state
-        .frontend
-        .network_setup_protocol
-        .as_mut()?
-        .time_balance(roster, Instant::now())
-}
-
-/// Whether a balance of Balance automatically is due or waits for the
-/// lobby's answer: the host's Start Game waits for it.
-pub(super) fn balance_waiting(state: &AppState) -> bool {
-    state
-        .frontend
-        .network_setup_protocol
-        .as_ref()
-        .is_some_and(NetworkSetupProtocol::balance_waiting)
-}
-
-impl NetworkSetupProtocol {
-    /// Balance automatically's timer. `roster` is the Teams count, the
-    /// playing humans by name and whether the room has anything to balance
-    /// (two or more players and no AI), or `None` while the room does not
-    /// balance itself. A change starts the 5 seconds again; when they are
-    /// up, the lobby's quiet `balance` command goes out, which says nothing
-    /// when nothing moves. Returns when the next balance is due.
-    fn time_balance(
-        &mut self,
-        roster: Option<(u8, Vec<&str>, bool)>,
-        now: Instant,
-    ) -> Option<Instant> {
-        let Some((teams, playing, balanceable)) = roster else {
-            self.balance_roster = None;
-            self.balance_due = None;
-            return None;
-        };
-        let same = self
-            .balance_roster
-            .as_ref()
-            .is_some_and(|(count, names, was)| {
-                (*count, *was) == (teams, balanceable)
-                    && names.iter().map(String::as_str).eq(playing.iter().copied())
-            });
-        if !same {
-            let names = playing.into_iter().map(str::to_owned).collect();
-            self.balance_roster = Some((teams, names, balanceable));
-            self.balance_due = balanceable.then(|| now + BALANCE_DELAY);
-        }
-        let due = self.balance_due?;
-        if now < due {
-            return Some(due);
-        }
-        // The lobby's answer or the start's end wakes the room again.
-        if self.balance_sent || self.wol_start_pending || self.locked {
-            return None;
-        }
-        self.balance_due = None;
-        self.balance_sent = true;
-        self.requests
-            .push(NetworkSetupRequest::Balance { automatic: true });
-        None
-    }
-
-    fn balance_waiting(&self) -> bool {
-        self.balance_due.is_some() || self.balance_sent
-    }
-}
-
-/// The lobby answered the host's automatic balance: its `balance` event,
-/// if any, came before.
-pub(crate) fn balance_answered(state: &mut AppState) {
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
-        protocol.balance_sent = false;
-    }
+    actions::queue(state, NetworkSetupRequest::Balance);
 }
 
 /// Team Starts in a room with Teams set: each player's start by team, on
@@ -341,17 +222,6 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     }
     state.match_state.session.set_network_seat_picks(&picks)?;
     Ok(true)
-}
-
-/// Each of `count` teams' own colour, as a colour choice: the one Team
-/// Colors gives a lone player on it, mid its range of hues
-/// ([`colors_by_team`]). The room's captions show each team in it.
-pub(super) fn team_swatches(rules: &RuleSet, count: u8) -> Vec<Option<usize>> {
-    let teams: Vec<u8> = (0..count).collect();
-    colors_by_team(&listed_hues(rules), &teams, count)
-        .into_iter()
-        .map(|color| color.map(usize::from))
-        .collect()
 }
 
 /// The colours a room lists ([`crate::rules::skirmish_colors::SkirmishColorMode`]),
@@ -524,48 +394,6 @@ mod tests {
     use super::*;
     use crate::rules::skirmish_colors::FIRST_EXTRA_PRIORITY;
 
-    /// Balance automatically asks the lobby 5 seconds after who plays last
-    /// changed, and the host's Start waits until the lobby answers. A room
-    /// with AI has nothing to balance and does not wait.
-    #[test]
-    fn balance_automatically_waits_five_seconds_and_holds_start_for_the_answer() {
-        let mut room = NetworkSetupProtocol::new(
-            SetupDialog {
-                host: true,
-                flavor: SetupFlavor::Wol,
-                modern: true,
-            },
-            false,
-        );
-        room.take_service_requests();
-        let two = || Some((2, vec!["Host", "Guest"], true));
-        let three = || Some((2, vec!["Host", "Guest", "Third"], true));
-        let opened = Instant::now();
-        assert_eq!(
-            room.time_balance(two(), opened),
-            Some(opened + BALANCE_DELAY)
-        );
-        // A join 3 seconds in starts the wait again.
-        let join = opened + std::time::Duration::from_secs(3);
-        assert_eq!(room.time_balance(three(), join), Some(join + BALANCE_DELAY));
-        assert!(room.balance_waiting() && room.take_service_requests().is_empty());
-
-        let due = join + BALANCE_DELAY;
-        assert_eq!(room.time_balance(three(), due), None);
-        assert_eq!(
-            room.take_service_requests(),
-            vec![NetworkSetupRequest::Balance { automatic: true }]
-        );
-        assert!(room.balance_waiting(), "Start waits for the lobby's answer");
-        room.balance_sent = false;
-        assert_eq!(room.time_balance(three(), due + BALANCE_DELAY), None);
-        assert!(!room.balance_waiting() && room.take_service_requests().is_empty());
-
-        let with_ai = Some((2, vec!["Host", "Guest", "Third"], false));
-        assert_eq!(room.time_balance(with_ai, due), None);
-        assert!(!room.balance_waiting());
-    }
-
     /// The `[Colors]` names of the colours Team Colors gives seats on
     /// `teams`.
     fn team_color_names(
@@ -582,28 +410,6 @@ mod tests {
                 rules.color_schemes[entry].name.clone()
             })
             .collect()
-    }
-
-    /// The room's two team captions show a warm and a cool colour.
-    #[test]
-    fn team_captions_show_two_teams_warm_against_cool() {
-        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
-            return;
-        };
-        let listed = listed_hues(&rules);
-        let warm = team_swatches(&rules, 2)
-            .into_iter()
-            .map(|color| {
-                let color = color.expect("a team's colour");
-                let (_, hue) = listed
-                    .iter()
-                    .find(|(listed, _)| usize::from(*listed) == color)
-                    .unwrap();
-                let hue = 2 * i32::from(*hue);
-                hue_gap(hue, 0) < hue_gap(hue, HUES)
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(warm, [true, false]);
     }
 
     /// Two teams of four get YR's eight, warm against cool, as a Random

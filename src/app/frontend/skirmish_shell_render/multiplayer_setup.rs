@@ -487,25 +487,6 @@ pub(crate) fn render_multiplayer_setup(
                     ROSTER_TEXT_SCALE,
                 ));
             }
-            if let Some(rect) = layout.auto_balance {
-                paint_control(
-                    &mut controls,
-                    &atlas.control_chrome(),
-                    ControlPaint::Checkbox {
-                        rect,
-                        checked: view.auto_balance,
-                    },
-                    small,
-                );
-                texts.push(sized(
-                    &crate::i18n::tr("VERA:BalanceAutomatically"),
-                    crate::ui::skirmish_shell::checkbox_text_rect(rect, small),
-                    ShellAlign::V_CENTER,
-                    ROOM_TEXT_RGB,
-                    SHELL_CONTROL_TEXT_DEPTH,
-                    ROSTER_TEXT_SCALE,
-                ));
-            }
         }
         // VERA's roster marks the local player's row with a dark band.
         if layout.roster {

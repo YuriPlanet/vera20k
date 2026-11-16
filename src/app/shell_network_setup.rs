@@ -19,7 +19,7 @@ pub(crate) use service::{
     refuse_local_acceptance, service_event, set_network_map_progress,
 };
 mod teams;
-pub(crate) use teams::{balance_answered, lobby_refused_option};
+pub(crate) use teams::lobby_refused_option;
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -110,12 +110,8 @@ pub(crate) enum NetworkSetupRequest {
     },
     /// `0078F000`: channel mode/topic/limit advertisement of this game.
     Advertise,
-    /// VERA's room: the host's Balance sends `/balance` as typed, and
-    /// Balance automatically the lobby's quiet `balance` command
-    /// (`teams::poll_balance`).
-    Balance {
-        automatic: bool,
-    },
+    /// VERA's room: the host's Balance sends `/balance` as typed.
+    Balance,
     /// C2 0x497 and timer 0x14AF8: one ping request per channel user
     /// (API2+0x18, 1000 ms timeout).
     RequestPings,
@@ -210,13 +206,6 @@ pub(crate) struct NetworkSetupProtocol {
     /// VERA's rooms: the local player's place in the join queue in the
     /// host's last options (`service::tell_moved`).
     queue_place: Option<usize>,
-    /// VERA's room Balance automatically (`teams::poll_balance`): the Teams
-    /// count, who played and whether there was anything to balance when it
-    /// last looked, when the next balance is due, and whether one waits for
-    /// the lobby's answer.
-    balance_roster: Option<(u8, Vec<String>, bool)>,
-    balance_due: Option<Instant>,
-    balance_sent: bool,
     /// VERA's rooms tell no join until then (`service::tell_joined`): a LAN
     /// guest first hears from everyone already there, and an online host's
     /// room seats the players back from a match again as joiners.
@@ -444,9 +433,6 @@ impl NetworkSetupProtocol {
             seat_place: None,
             asked_place: None,
             queue_place: None,
-            balance_roster: None,
-            balance_due: None,
-            balance_sent: false,
             quiet_joins_until: (!dialog.wol() && !host).then(|| Instant::now() + QUIET_JOINS),
             requests: if wol_host {
                 // C2 0x497: advertisement 78F000, then one ping per user.

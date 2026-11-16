@@ -288,16 +288,13 @@ team headers have Join too, takes a seat the same way. An older host still seats
 newcomer on no team; a newer guest lists that player under a No team header without
 Join. A rollback seats newcomers as before.
 
-Online, the host's Balance automatically travels the same way, as
-`launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every
-game in the room closes its seated players' Team lists and team headers' Join (a
-spectator's Join still asks to play, and the balance places it), and the host's game asks
-the lobby to balance 5 seconds after who plays or the Teams count last changed, holding
-its Start Game until the answer comes. An older guest cannot read those options either,
-as with Teams. A lobby from before Balance automatically refuses the field; the host's
-game turns it off, says so and sends its options again, and a rollback past Teams then
-turns Teams Off too. The lobby decides each player's team, as for `/balance`; the host's
-game applies it.
+Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
+`launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
+plays or the Teams count changed. Current games neither offer it nor send it. In a room
+whose older host has it on, a current guest still closes its seated players' Team lists
+and team headers' Join (a spectator's Join still asks to play, and that host's balance
+places it), as that host's own game does. A released guest in a current host's room
+sees the setting off; the host's Balance button still evens the teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
 is free, with a team header's Join Queue or, in a room without teams, as a newcomer who
@@ -311,7 +308,7 @@ waiting player's own game says its place and when a seat came free. As with Team
 older guest is refused at LAN's build check and online cannot read the options while
 anyone waits. A lobby from before the queue refuses the field; the host's game stops
 queueing in that room, says so and sends its options again, and its spectators keep
-watching. A rollback past Balance automatically and Teams then turns those off too.
+watching. A rollback past Teams then turns Teams Off too.
 
 A room's Create Random Map is Skirmish's whole generator: up to 30 players, the sizes
 past Very Large, the added landform and theaters, Advanced, Fair Starts, Extras, Presets

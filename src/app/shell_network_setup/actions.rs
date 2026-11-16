@@ -172,10 +172,6 @@ pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {
 fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
     let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
     anyhow::ensure!(current.enabled(control), "disabled checkbox");
-    if control == AUTO_BALANCE {
-        return super::teams::set_auto_balance(state, !current.auto_balance)
-            .and_then(|()| host_option_edited(state));
-    }
     let mut options = state
         .match_state
         .session

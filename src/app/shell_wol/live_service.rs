@@ -2198,11 +2198,8 @@ fn request_setup(
             }
         }
         NetworkSetupRequest::RequestPings => service.command("ping", json!({})),
-        // VERA's room: the host's Balance is `/balance` as typed, Balance
-        // automatically the lobby's quiet `balance` command
-        // (docs/lobby-protocol.md).
-        NetworkSetupRequest::Balance { automatic: true } => service.command("balance", json!({})),
-        NetworkSetupRequest::Balance { automatic: false } => {
+        // VERA's room: the host's Balance is `/balance` as typed.
+        NetworkSetupRequest::Balance => {
             service.command("chat", json!({"text":"/balance","to":[],"action":false}))
         }
         NetworkSetupRequest::WolChat(line) => send_chat(service, line, Vec::new()),
@@ -2357,7 +2354,6 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             "leave" => service.leave_completed(id),
             "logout" => service.logout_completed(id),
             "relay_ready" | "latency_ready" => service.report_completed(id),
-            "balance" => crate::app::shell_network_setup::balance_answered(state),
             _ => {}
         },
         http::Response::CommandFailed {
@@ -2387,16 +2383,13 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "options" if failure == http::CommandFailure::InvalidOptions => {
-                // A lobby from before Teams, Balance automatically or the
-                // join queue refuses the field: the room goes on without it
-                // and publishes its options again.
+                // A lobby from before Teams or the join queue refuses the
+                // field: the room goes on without it and publishes its
+                // options again.
                 let text = crate::app::shell_network_setup::lobby_refused_option(state)
                     .unwrap_or("VERA:OnlineRequestRefused");
                 notice(state, &tr(text));
             }
-            // The room no longer balances itself, or the lobby refused it:
-            // the next change of who plays asks again.
-            "balance" => crate::app::shell_network_setup::balance_answered(state),
             "choices"
                 if service
                     .pending_choices

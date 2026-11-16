@@ -443,18 +443,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     ))
                 };
                 cue = press.and_then(ComboPress::cue).map(LauncherCue::from);
-            } else if CHECKBOXES.contains(&control)
-                || ROOM_CHECKBOXES.contains(&control)
-                || control == AUTO_BALANCE
-            {
-                // The team bar's small Balance automatically toggles from
-                // its words too.
-                if control == AUTO_BALANCE
-                    || crate::ui::skirmish_shell::checkbox_icon_rect(
-                        layout.control_rect(control).expect("checkbox rect"),
-                        layout.page.scale,
-                    )
-                    .contains(x, y)
+            } else if CHECKBOXES.contains(&control) || ROOM_CHECKBOXES.contains(&control) {
+                if crate::ui::skirmish_shell::checkbox_icon_rect(
+                    layout.control_rect(control).expect("checkbox rect"),
+                    layout.page.scale,
+                )
+                .contains(x, y)
                 {
                     action = Some(SetupAction::Toggle { control });
                     cue = Some(LauncherCue::Checkbox);

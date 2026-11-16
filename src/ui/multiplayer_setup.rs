@@ -37,9 +37,8 @@ pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 pub(crate) const TEAM_COUNT: u16 = 0x7F0D;
 pub(crate) const TEAM_STARTS: u16 = 0x7F0E;
 pub(crate) const TEAM_COLORS: u16 = 0x7F11;
-/// VERA-only, online: the team bar's Balance and Balance automatically.
+/// VERA-only, online: the team bar's Balance.
 pub(crate) const BALANCE: u16 = 0x7F0F;
-pub(crate) const AUTO_BALANCE: u16 = 0x7F10;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x40 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7000;
@@ -101,8 +100,8 @@ const ROSTER_LIST_MIN_W: i32 = 143;
 /// VERA's team bar under the roster: groups of controls from left to right,
 /// each starting a new line of the bar where it does not fit beside the one
 /// before. They are the Teams count's label and trackbar, the host's Team
-/// Starts and Team Colors and, online, Balance and Balance automatically,
-/// each part from its group's top-left corner, their art at 78% of the
+/// Starts and Team Colors and, online, Balance, each part from its group's
+/// top-left corner, their art at 78% of the
 /// shell's size ([`MultiplayerSetupLayout::control_scale`]). The trackbar
 /// is the room's own 129x21 window at that size, so its frame art fits.
 const TEAM_BAR_H: i32 = 25;
@@ -113,7 +112,6 @@ const TEAM_BAR_COUNT: RectPx = RectPx::new(67, 4, 101, 17);
 const TEAM_BAR_STARTS: RectPx = RectPx::new(0, 3, 97, 19);
 const TEAM_BAR_COLORS: RectPx = RectPx::new(105, 3, 97, 19);
 const TEAM_BAR_BALANCE: RectPx = RectPx::new(0, 3, 97, 19);
-const TEAM_BAR_AUTO_BALANCE: RectPx = RectPx::new(109, 5, 234, 14);
 /// The chat's log ends here, its edit line under it.
 const CHAT_LOG_BOTTOM: i32 = 529;
 
@@ -504,7 +502,8 @@ pub(crate) const WOL_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
     back: WOL_BACK,
 };
 /// VERA's game room ([`SetupDialog::modern`]): Game Options takes a guest's
-/// Accept place and C2's Page place, and follows BC's Choose Map.
+/// Accept place and a host's Choose Map place, and Choose Map moves down a
+/// place, to C2's Page place on WOL.
 const GAME_OPTIONS_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
     id: GAME_OPTIONS,
     dlu_top: 0,
@@ -515,10 +514,13 @@ const GAME_OPTIONS_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
 const MODERN_HOST_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         HOST_PAGE.stacked[0],
-        HOST_PAGE.stacked[1],
+        MenuPageButtonSpec {
+            dlu_top: HOST_PAGE.stacked[1].dlu_top,
+            ..GAME_OPTIONS_BUTTON
+        },
         MenuPageButtonSpec {
             dlu_top: 2 * HOST_PAGE.stacked[1].dlu_top - HOST_PAGE.stacked[0].dlu_top,
-            ..GAME_OPTIONS_BUTTON
+            ..HOST_PAGE.stacked[1]
         },
     ],
     ..HOST_PAGE
@@ -540,10 +542,13 @@ const MODERN_WOL_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
 const MODERN_WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         WOL_HOST_PAGE.stacked[0],
-        WOL_HOST_PAGE.stacked[1],
+        MenuPageButtonSpec {
+            dlu_top: WOL_HOST_PAGE.stacked[1].dlu_top,
+            ..GAME_OPTIONS_BUTTON
+        },
         MenuPageButtonSpec {
             dlu_top: WOL_HOST_PAGE.stacked[2].dlu_top,
-            ..GAME_OPTIONS_BUTTON
+            ..WOL_HOST_PAGE.stacked[1]
         },
     ],
     ..WOL_HOST_PAGE
@@ -758,10 +763,6 @@ pub(crate) struct SetupView {
     pub(crate) team_colors_enabled: bool,
     /// Online, the host's Balance: the room's mode seats players on teams.
     pub(crate) balance_enabled: bool,
-    /// Online, Balance automatically's tick, and whether the host can
-    /// change it: Teams is set.
-    pub(crate) auto_balance: bool,
-    pub(crate) auto_balance_enabled: bool,
     /// VERA's missing-map offer is open over the room.
     pub(crate) map_offer_open: bool,
     pub(crate) mode_label: String,
@@ -810,7 +811,6 @@ impl SetupView {
             TEAM_STARTS => self.team_starts_enabled,
             TEAM_COLORS => self.team_colors_enabled,
             BALANCE => self.balance_enabled,
-            AUTO_BALANCE => self.auto_balance_enabled,
             PAGE => self.dialog.wol(),
             PREVIOUS_ROWS => self.first_row > 0,
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
@@ -1194,14 +1194,12 @@ pub(crate) struct MultiplayerSetupLayout {
     /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
     pub(crate) superweapon_limit_label: RectPx,
     /// VERA's team bar under the roster, with the Teams count's label, the
-    /// host's Team Starts and Team Colors and, online, Balance and Balance
-    /// automatically.
+    /// host's Team Starts and Team Colors and, online, Balance.
     pub(crate) team_bar: Option<RectPx>,
     pub(crate) teams_label: RectPx,
     pub(crate) team_starts: Option<RectPx>,
     pub(crate) team_colors: Option<RectPx>,
     pub(crate) balance: Option<RectPx>,
-    pub(crate) auto_balance: Option<RectPx>,
     pub(crate) trackbars: [(u16, RectPx); 6],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
@@ -1375,7 +1373,6 @@ impl MultiplayerSetupLayout {
             team_starts: None,
             team_colors: None,
             balance: None,
-            auto_balance: None,
             trackbars: [
                 (SPEED, rect(404, option_y[0], 129, 21)),
                 (CREDITS, rect(404, credit_y, 129, 21)),
@@ -1482,10 +1479,10 @@ impl MultiplayerSetupLayout {
         let (mx, my) = ROSTER_BOX_MARGIN;
         let columns = RosterColumns::new(RectPx::new(left, 0, roster_w, 0));
         let bar_w = columns.w + 2 * mx;
-        let groups = [
-            Some([TEAM_BAR_LABEL, TEAM_BAR_COUNT]),
-            host.then_some([TEAM_BAR_STARTS, TEAM_BAR_COLORS]),
-            online.then_some([TEAM_BAR_BALANCE, TEAM_BAR_AUTO_BALANCE]),
+        let groups: [Option<&[RectPx]>; 3] = [
+            Some(&[TEAM_BAR_LABEL, TEAM_BAR_COUNT]),
+            host.then_some(&[TEAM_BAR_STARTS, TEAM_BAR_COLORS]),
+            online.then_some(&[TEAM_BAR_BALANCE]),
         ];
         let inner = bar_w - 2 * TEAM_BAR_INSET;
         let (mut x, mut line) = (0, 0);
@@ -1498,15 +1495,18 @@ impl MultiplayerSetupLayout {
                 let (dx, dy) = (TEAM_BAR_INSET + x, line * TEAM_BAR_H);
                 x += w + TEAM_BAR_GAP;
                 // A group wider than the bar ends at its edge.
-                parts.map(|part| {
-                    let part = part.translate(dx, dy);
-                    RectPx::new(
-                        part.x,
-                        part.y,
-                        part.w.min(bar_w - TEAM_BAR_INSET - part.x),
-                        part.h,
-                    )
-                })
+                parts
+                    .iter()
+                    .map(|part| {
+                        let part = part.translate(dx, dy);
+                        RectPx::new(
+                            part.x,
+                            part.y,
+                            part.w.min(bar_w - TEAM_BAR_INSET - part.x),
+                            part.h,
+                        )
+                    })
+                    .collect::<Vec<_>>()
             })
         });
         let bar_h = (line + 1) * TEAM_BAR_H;
@@ -1534,7 +1534,7 @@ impl MultiplayerSetupLayout {
         let at = |part: RectPx| scale.scale_rect(part.translate(bar.x, bar.y));
         self.team_bar = Some(scale.scale_rect(bar));
         let [count, starts, balance] = groups;
-        if let Some([label, count]) = count {
+        if let Some(&[label, count]) = count.as_deref() {
             self.teams_label = at(label);
             let small = self.control_scale(TEAM_COUNT);
             if let Some((_, bar)) = self.trackbars.iter_mut().find(|(id, _)| *id == TEAM_COUNT) {
@@ -1542,13 +1542,12 @@ impl MultiplayerSetupLayout {
                 *bar = small.scale_rect(RectPx::new(corner.x, corner.y, 129, 21));
             }
         }
-        if let Some([starts, colors]) = starts {
+        if let Some(&[starts, colors]) = starts.as_deref() {
             self.team_starts = Some(at(starts));
             self.team_colors = Some(at(colors));
         }
-        if let Some([balance, auto]) = balance {
+        if let Some(&[balance]) = balance.as_deref() {
             self.balance = Some(at(balance));
-            self.auto_balance = Some(at(auto));
         }
         // The chat's column: the log from as high as the roster's area,
         // then the edit line, and online the emote button at its right end.
@@ -1573,7 +1572,6 @@ impl MultiplayerSetupLayout {
             self.team_starts = None;
             self.team_colors = None;
             self.balance = None;
-            self.auto_balance = None;
             self.roster_bottom = ROSTER_BOTTOM;
             let my = ROSTER_BOX_MARGIN.1;
             self.roster_area = self.page.scale.derive_rect(self.roster_area, |area| {
@@ -1700,7 +1698,6 @@ impl MultiplayerSetupLayout {
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
-            AUTO_BALANCE => self.auto_balance,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
             _ => self.page.button_rect(id),
@@ -1755,7 +1752,7 @@ impl MultiplayerSetupLayout {
             )
             .chain([CHAT, CHAT_LOG])
             .chain(
-                [TEAM_STARTS, TEAM_COLORS, BALANCE, AUTO_BALANCE]
+                [TEAM_STARTS, TEAM_COLORS, BALANCE]
                     .into_iter()
                     .filter(|_| view.team_bar()),
             )
@@ -1789,11 +1786,7 @@ impl MultiplayerSetupLayout {
     /// controls at 78% of the shell's.
     pub(crate) fn control_scale(&self, id: u16) -> ShellScale {
         let scale = self.page.scale;
-        if self.team_bar.is_some()
-            && matches!(
-                id,
-                TEAM_COUNT | TEAM_STARTS | TEAM_COLORS | BALANCE | AUTO_BALANCE
-            )
+        if self.team_bar.is_some() && matches!(id, TEAM_COUNT | TEAM_STARTS | TEAM_COLORS | BALANCE)
         {
             let window = scale.window();
             ShellScale::from_screen(window.w * 78 / 100, window.h * 78 / 100)
@@ -1963,8 +1956,6 @@ mod tests {
             team_starts_enabled: true,
             team_colors_enabled: true,
             balance_enabled: true,
-            auto_balance: true,
-            auto_balance_enabled: true,
             map_offer_open: false,
             mode_label: String::new(),
             map_label: String::new(),
@@ -2164,11 +2155,12 @@ mod tests {
         assert!(ui.accept_highlight(true, now + std::time::Duration::from_millis(2600)));
     }
 
-    /// VERA's game room trades a guest's Accept and C2's Page for Game
-    /// Options in their places, and BC adds it under Choose Map; the other
-    /// buttons keep their places, and native diagnostics keep all.
+    /// VERA's game room trades a guest's Accept for Game Options in its
+    /// place; a host's Game Options takes Choose Map's place over Choose Map,
+    /// which moves a place down, into C2's Page place. The other buttons keep
+    /// their places, and native diagnostics keep all.
     #[test]
-    fn game_room_trades_accept_and_page_for_game_options() {
+    fn game_room_puts_game_options_in_accept_or_choose_map_place() {
         let buttons = |host, flavor, modern| {
             MultiplayerSetupLayout::new(dialog(host, flavor, modern), 800, 600, false)
                 .page
@@ -2177,23 +2169,23 @@ mod tests {
                 .map(|button| (button.id, button.rect))
                 .collect::<std::collections::HashMap<_, _>>()
         };
-        for (host, flavor, replaced) in [
-            (false, SetupFlavor::Lan, ACCEPT),
-            (false, SetupFlavor::Wol, ACCEPT),
-            (true, SetupFlavor::Wol, PAGE),
-        ] {
-            let mut native = buttons(host, flavor, false);
-            let place = native.remove(&replaced).unwrap();
+        for flavor in [SetupFlavor::Lan, SetupFlavor::Wol] {
+            let mut native = buttons(false, flavor, false);
+            let accept = native.remove(&ACCEPT).unwrap();
             native.remove(&PAGE);
-            native.insert(GAME_OPTIONS, place);
-            let modern = buttons(host, flavor, true);
-            assert_eq!(modern, native, "{flavor:?} host {host}");
+            native.insert(GAME_OPTIONS, accept);
+            assert_eq!(buttons(false, flavor, true), native, "{flavor:?} guest");
+
+            let mut native = buttons(true, flavor, false);
+            let choose_map = native[&CHOOSE_MAP];
+            let step = choose_map.y - native[&START].y;
+            let below = native
+                .remove(&PAGE)
+                .unwrap_or(choose_map.translate(0, step));
+            native.insert(GAME_OPTIONS, choose_map);
+            native.insert(CHOOSE_MAP, below);
+            assert_eq!(buttons(true, flavor, true), native, "{flavor:?} host");
         }
-        let mut lan_host = buttons(true, SetupFlavor::Lan, true);
-        let options = lan_host.remove(&GAME_OPTIONS).unwrap();
-        assert_eq!(lan_host, buttons(true, SetupFlavor::Lan, false));
-        let choose_map = lan_host[&CHOOSE_MAP];
-        assert_eq!(options.y - choose_map.y, choose_map.y - lan_host[&START].y);
     }
 
     #[test]
@@ -2247,8 +2239,8 @@ mod tests {
         let (x, y) = center(popup_layout.chat);
         assert_eq!(popup_layout.control_at(&view, x, y), None);
         // The team bar under the roster holds the Teams count, the host's
-        // Team Starts and Team Colors and, online, Balance and Balance
-        // automatically; a LAN room has no Balance, a guest no Team Starts.
+        // Team Starts and Team Colors and, online, Balance; a LAN room has
+        // no Balance, a guest no Team Starts.
         view.open_box = None;
         view.trackbars.push(SetupTrackbar {
             id: TEAM_COUNT,
@@ -2266,7 +2258,7 @@ mod tests {
                 && bar.x + bar.w < chat_log.x
                 && chat_log.y < bar.y
         );
-        for id in [TEAM_COUNT, TEAM_STARTS, TEAM_COLORS, BALANCE, AUTO_BALANCE] {
+        for id in [TEAM_COUNT, TEAM_STARTS, TEAM_COLORS, BALANCE] {
             let rect = popup_layout.control_rect(id).unwrap();
             assert!(
                 rect.x >= bar.x
