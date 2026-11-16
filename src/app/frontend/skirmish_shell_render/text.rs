@@ -684,6 +684,23 @@ pub(super) fn build_shell_text_draws(
         );
     }
 
+    // VERA's Game Options, captioned as the Options pages' own buttons are.
+    push_button_label_draw(
+        &mut shell_draws,
+        state,
+        &localized_label(
+            state,
+            crate::ui::skirmish_shell::game_options::GAME_OPTIONS_LABEL,
+            "Game Options",
+        ),
+        layout.game_options_button,
+        shell.pressed_owner_draw_button
+            == Some(crate::ui::skirmish_shell::OwnerDrawButton::GameOptions),
+        false,
+        SHELL_CONTROL_TEXT_DEPTH,
+        scale,
+    );
+
     push_combo_face_label_draw(
         &mut shell_draws,
         state,

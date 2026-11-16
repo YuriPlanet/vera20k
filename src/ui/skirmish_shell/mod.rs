@@ -74,4 +74,5 @@ pub use state::{
     update_player_name_scroll_for_caret,
 };
 
+pub mod game_options;
 pub mod seed_list;

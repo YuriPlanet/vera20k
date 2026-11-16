@@ -1,6 +1,14 @@
 use super::*;
 use crate::ui::skirmish_shell::SkirmishShellDialog;
 
+/// The mouse event [`App::route_game_options_mouse`] hands the open box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GameOptionsMouse {
+    Down,
+    Up,
+    Move,
+}
+
 impl App {
     pub(super) fn native_skirmish_shell_active(state: &AppState) -> bool {
         state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.skirmish()
@@ -274,6 +282,7 @@ impl App {
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
+        state.frontend.skirmish_shell_state.game_options = None;
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
@@ -445,10 +454,90 @@ impl App {
                     drive.as_deref(),
                 );
             }
+            crate::ui::skirmish_shell::SkirmishShellAction::GameOptions => {
+                Self::open_skirmish_game_options(state);
+            }
             crate::ui::skirmish_shell::SkirmishShellAction::None
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectColor(_)
             | crate::ui::skirmish_shell::SkirmishShellAction::SelectMap(_) => {}
         }
+    }
+
+    /// VERA's Game Options over `0x102`, on the rules the profile keeps.
+    fn open_skirmish_game_options(state: &mut AppState) {
+        use crate::ui::skirmish_shell::game_options::{GameOptionsBox, MatchRules};
+        let profile = &state.persistence.options_profile;
+        let rules = MatchRules {
+            superweapon_limit: profile.superweapon_limit,
+            terrain_deformation: profile.terrain_deformation,
+        };
+        state.frontend.skirmish_shell_state.game_options = Some(GameOptionsBox::new(rules));
+        state.platform.window.request_redraw();
+    }
+
+    /// OK, Enter or Esc on the Game Options box: it closes, and the next
+    /// game's rules and VERA.INI take what it shows.
+    pub(super) fn close_skirmish_game_options(state: &mut AppState) {
+        let Some(open) = state.frontend.skirmish_shell_state.game_options.take() else {
+            return;
+        };
+        let rules = open.rules;
+        let profile = &mut state.persistence.options_profile;
+        if (profile.superweapon_limit, profile.terrain_deformation)
+            != (rules.superweapon_limit, rules.terrain_deformation)
+        {
+            profile.superweapon_limit = rules.superweapon_limit;
+            profile.terrain_deformation = rules.terrain_deformation;
+            // The next offline game reads them, and a room's host starts
+            // its room with them.
+            state
+                .process_assets
+                .set_superweapon_limit(i32::from(rules.superweapon_limit));
+            state
+                .process_assets
+                .set_terrain_deformation(rules.terrain_deformation);
+            crate::app::persistence::options::persist_options_profile(state);
+        }
+        state.platform.window.request_redraw();
+    }
+
+    /// What a press, move or release in the open box asks of the page.
+    fn answer_game_options_outcome(
+        state: &mut AppState,
+        outcome: crate::ui::skirmish_shell::game_options::GameOptionsOutcome,
+    ) {
+        use crate::ui::skirmish_shell::game_options::GameOptionsOutcome;
+        match outcome {
+            GameOptionsOutcome::Stay => return,
+            GameOptionsOutcome::OkPressed => Self::play_main_menu_button_sound(state),
+            GameOptionsOutcome::Changed(sound) => Self::play_skirmish_shell_ui_sound(state, sound),
+            GameOptionsOutcome::Close => Self::close_skirmish_game_options(state),
+        }
+        state.platform.window.request_redraw();
+    }
+
+    /// The open Game Options box takes every press, release and move over
+    /// the page; returns whether it is open.
+    fn route_game_options_mouse(state: &mut AppState, event: GameOptionsMouse) -> bool {
+        if state.frontend.skirmish_shell_state.game_options.is_none() {
+            return false;
+        }
+        let page = Self::skirmish_shell_layout(state);
+        let layout = crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(&page);
+        let (x, y) = state.match_state.input.cursor_px();
+        let Some(open) = state.frontend.skirmish_shell_state.game_options.as_mut() else {
+            return false;
+        };
+        let outcome = match event {
+            GameOptionsMouse::Down => open.mouse_down(&layout, x, y),
+            GameOptionsMouse::Up => open.mouse_up(&layout, x, y),
+            GameOptionsMouse::Move => open.mouse_move(&layout, x),
+        };
+        Self::answer_game_options_outcome(state, outcome);
+        if event != GameOptionsMouse::Down {
+            Self::update_skirmish_shell_status_help(state, &page, x, y);
+        }
+        true
     }
 
     /// Start Game on `0x102` (`0x006ACEE0` case `0x617`): validate and pack
@@ -1238,12 +1327,13 @@ impl App {
     }
 
     /// VERA's Esc menu (`app::shell_menu`): Esc stays with the seed browser,
-    /// a validation box and a chooser's prompt, and does nothing while a
-    /// random map generates.
+    /// a validation box, the Game Options box and a chooser's prompt, and
+    /// does nothing while a random map generates.
     pub(super) fn skirmish_leaves_escape(state: &AppState) -> bool {
         let shell = &state.frontend.skirmish_shell_state;
         shell.saved_seed_browser.is_none()
             && shell.validation_modal.is_none()
+            && shell.game_options.is_none()
             && shell
                 .choose_map_modal
                 .as_ref()
@@ -1374,7 +1464,10 @@ impl App {
     ) {
         // A trackbar holding the mouse keeps the dialog's hit test
         // (`WM_NCHITTEST`, `0x00622CCB`) from running until the release.
-        if state.frontend.skirmish_shell_state.trackbar_hold.is_some() {
+        let shell = &state.frontend.skirmish_shell_state;
+        if shell.trackbar_hold.is_some()
+            || shell.game_options.is_some_and(|open| open.hold.is_some())
+        {
             return;
         }
         let target = crate::ui::skirmish_shell::hovered_shell_control(
@@ -1619,6 +1712,9 @@ impl App {
             }
             None => return,
         }
+        if Self::route_game_options_mouse(state, GameOptionsMouse::Down) {
+            return;
+        }
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         if crate::ui::skirmish_shell::player_name_edit_rect_hit(&layout, x, y) {
@@ -1699,6 +1795,9 @@ impl App {
                 return;
             }
             None => return,
+        }
+        if Self::route_game_options_mouse(state, GameOptionsMouse::Up) {
+            return;
         }
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
@@ -1783,6 +1882,9 @@ impl App {
             }
             return;
         }
+        if Self::route_game_options_mouse(state, GameOptionsMouse::Move) {
+            return;
+        }
         let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         Self::update_skirmish_shell_status_help(state, &layout, x, y);
@@ -1821,6 +1923,7 @@ impl App {
             .skirmish_shell_state
             .validation_modal
             .is_some()
+            || state.frontend.skirmish_shell_state.game_options.is_some()
         {
             return true;
         }

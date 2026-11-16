@@ -1886,8 +1886,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         (
             "rules/personal_rules.rs",
             "set_terrain_deformation",
-            "VERA's own switch with no native member: the Options page's Terrain Deformation \
-             box, which the app passes in for the rules the next scenario reads",
+            "VERA's own switch with no native member: the skirmish Game Options' Terrain \
+             Deformation box, which the app passes in for the rules the next scenario reads",
         ),
         (
             "rules/superweapon_type.rs",

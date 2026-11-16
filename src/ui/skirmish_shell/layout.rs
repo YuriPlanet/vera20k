@@ -276,6 +276,9 @@ pub struct SkirmishShellLayout {
     pub trackbars: SkirmishTrackbarRects,
     pub trackbar_labels: SkirmishTrackbarLabelRects,
     pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
+    /// VERA's Game Options, under Build Off Ally ConYards
+    /// ([`super::game_options`]); gamemd's `0x102` has no such button.
+    pub game_options_button: RectPx,
     pub status_help: RectPx,
 }
 
@@ -562,6 +565,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     for rect in &mut layout.checkboxes {
         *rect = translate_checkbox(*rect, dx, dy);
     }
+    layout.game_options_button = layout.game_options_button.translate(dx, dy);
     layout.status_help = layout.status_help.translate(dx, dy);
     layout
 }
@@ -839,6 +843,11 @@ pub fn compute_layout_for_rows(
                 rect: checkbox_dlu_rect(201, 227, 166, 11),
             },
         ],
+        // Not retail: the right column has no tile left for it at 640x480,
+        // so it takes the row under Build Off Ally ConYards, the size of
+        // Sound Options' Play and Stop (`0xD6`, MNBTTN type 3), as the
+        // Options pages' own buttons do.
+        game_options_button: dlu_rect(201, 244, 83, 15),
         status_help: status_help_rect(screen_w, screen_h),
     }
     .with_rows(player_rows)
@@ -865,6 +874,7 @@ impl SkirmishShellLayout {
             &mut self.trackbar_labels.game_speed,
             &mut self.trackbar_labels.credits,
             &mut self.trackbar_labels.unit_count,
+            &mut self.game_options_button,
         ] {
             *rect = rect.translate(0, dy);
         }
@@ -1489,6 +1499,7 @@ impl ScaledRects for SkirmishShellLayout {
             trackbars: self.trackbars.scaled_rects(scale),
             trackbar_labels: self.trackbar_labels.scaled_rects(scale),
             checkboxes: self.checkboxes.scaled_rects(scale),
+            game_options_button: self.game_options_button.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
         }
     }
@@ -1810,6 +1821,25 @@ mod tests {
             .max()
             .unwrap();
         assert!(options_bottom < thirty.status_help.y);
+    }
+
+    /// VERA's Game Options sits under Build Off Ally ConYards, left of the
+    /// button column and above the status line: on the retail 640x480 page,
+    /// whose column has no tile left, and on a page grown to thirteen rows.
+    #[test]
+    fn game_options_sits_under_the_options_above_the_status_line() {
+        use super::compute_layout_for_rows;
+        for layout in [
+            compute_layout(640, 480),
+            compute_layout_for_rows(800, 600, 30),
+        ] {
+            let button = layout.game_options_button;
+            let build_off_ally = layout.checkboxes[4].rect;
+            assert_eq!(button.x, build_off_ally.x);
+            assert!(button.y >= build_off_ally.y + build_off_ally.h);
+            assert!(button.y + button.h < layout.status_help.y);
+            assert!(button.x + button.w < layout.back_button.x);
+        }
     }
 
     #[test]

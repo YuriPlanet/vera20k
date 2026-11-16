@@ -6,6 +6,7 @@
 mod chrome;
 mod controls;
 mod draw_order;
+mod game_options;
 #[cfg(test)]
 use draw_order::{
     SkirmishShellDrawRole, choose_map_modal_semantic_draw_order,
@@ -460,6 +461,25 @@ fn build_skirmish_shell_instances(
     push_combo_instances(&mut instances, atlas, rules, layout, shell, maps);
     push_checkbox_instances(&mut instances, atlas, layout, shell);
     push_trackbar_instances(&mut instances, atlas, layout, shell);
+    // VERA's Game Options under the options: owner-draw type 3, MNBTTN
+    // centred on the control as Sound Options' Play and Stop are
+    // (609FC7..609FE2), so it paints with the page's other controls.
+    instances.extend(crate::render::shell_paint::paint_modal_sprites(
+        None,
+        type3_button_frames(atlas),
+        layout.screen,
+        &[crate::render::shell_paint::ModalButton {
+            rect: layout.game_options_button,
+            pressed: shell.pressed_owner_draw_button == Some(OwnerDrawButton::GameOptions),
+            enabled: true,
+        }],
+        layout.scale,
+        crate::render::shell_paint::ModalDepths {
+            background: SHELL_CONTROL_DEPTH,
+            button: SHELL_CONTROL_DEPTH,
+            text: SHELL_CONTROL_TEXT_DEPTH,
+        },
+    ));
     push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
 
     if let Some(flag) = flag_name_for_country_choice(
@@ -799,8 +819,10 @@ fn render_skirmish_shell_with_atlas(
     let parent_showing = !message_box_up && choose_map_layout.is_none() && !leaving;
     // ComboDropWin is a popup over the dialog: its frame and rows go after
     // every dialog text, which this unbuffered pass paints in queue order.
+    // VERA's Game Options box takes the same place; the two never show at
+    // once, as each takes every press while it is open.
     let mut dropdown_instances = Vec::new();
-    let dropdown_text_draws = if parent_showing {
+    let mut dropdown_text_draws = if parent_showing {
         push_dropdown_instances(
             &mut dropdown_instances,
             atlas,
@@ -818,6 +840,17 @@ fn render_skirmish_shell_with_atlas(
     } else {
         Vec::new()
     };
+    if parent_showing && let Some(open) = state.frontend.skirmish_shell_state.game_options.as_ref()
+    {
+        game_options::push_game_options_box(
+            &mut dropdown_instances,
+            &mut dropdown_text_draws,
+            state,
+            atlas,
+            &crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(&layout),
+            open,
+        );
+    }
     let parent_statics = if parent_showing {
         text::paint_skirmish_statics(state, &layout, sliding)
     } else {

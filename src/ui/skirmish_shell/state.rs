@@ -92,6 +92,8 @@ pub enum OwnerDrawButton {
     LoadSetup,
     /// VERA's Team Starts ([`apply_team_starts`]).
     TeamStarts,
+    /// VERA's Game Options under the options ([`super::game_options`]).
+    GameOptions,
     Back0x5c0,
 }
 
@@ -104,6 +106,8 @@ pub enum SkirmishShellAction {
     SaveSetup,
     LoadSetup,
     TeamStarts,
+    /// The app opens the box on the rules the profile keeps.
+    GameOptions,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }
@@ -169,6 +173,8 @@ pub enum SkirmishHoverTarget {
     FlagPicture,
     GameTypeLabel0x6ec,
     ScenarioLabel0x5a8,
+    /// A control of the open Game Options box, which covers the page.
+    GameOptions(super::game_options::GameOptionsControl),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
