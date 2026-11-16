@@ -472,6 +472,23 @@ closes as before, so an older game never meets `host_changed`; a game that does 
 it would ignore it and leave the room once its host left. A rollback closes every such
 room again.
 
+In a VERA room before its start, the host and every guest can press Lobby to look round
+the public lobby while staying in the room, and Back to Room shows the room again
+(docs/lobby-protocol.md "Visiting the lobby"). The room goes on hidden: its chat, picks,
+readiness and newcomers keep reaching the visitor's game, and the host's game keeps
+seating newcomers. The room's start brings everyone back to it. The new commands are
+`visit_lobby` and `end_visit`, and the lobby marks the visited lobby's `joined`, `chat`,
+`member_joined` and `member_left` with `visit`. Released games never send the commands,
+and nobody else sees a difference: a visitor is a member of both channels, listed in the
+public lobby too. A lobby from before this lists no `visit_lobby` among the sign-in
+answer's `features`, so the game greys Lobby out. One rolled back after the sign-in
+refuses `visit_lobby`; the game then says it could not go to the lobby, and the player
+stays in the room. A rollback during a visit leaves the visitor in both channels: the
+older lobby sends the public lobby's events to their game unmarked, which shows them as
+the room's, and refuses Back to Room's `end_visit` and their lobby chat with a notice.
+The public lobby lists them until this lobby is back and they leave the room or sign
+out; it then also drops an entry whose session is gone.
+
 Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
 plays or the Teams count changed. Current games neither offer it nor send it. In a room

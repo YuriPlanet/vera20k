@@ -749,7 +749,7 @@ pub(crate) fn install_watch_setup(
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
     let text = crate::assets::csf_file::format_csf(&App::csf_label(state, key, key), args);
-    crate::app::shell_lan::append_chat(
+    crate::app::shell_lan::append_room_chat(
         state,
         crate::ui::lan_shell::LanChatLine {
             text: text.encode_utf16().collect(),
@@ -1104,15 +1104,7 @@ fn install_setup(
         state.platform.window.request_redraw();
         return Ok(());
     }
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::NetworkSetup;
-    state
-        .frontend
-        .shell_controller
-        .reset_to(dialog.page().dialog, false);
-    state.frontend.skirmish_shell_state.choose_map_modal = None;
-    state.frontend.skirmish_preview_texture = None;
-    shell_transition::invalidate_main_menu_dialog_instance(state);
-    state.platform.window.request_redraw();
+    show_dialog(state, dialog);
     Ok(())
 }
 
@@ -1257,6 +1249,35 @@ pub(crate) fn return_after_match(state: &mut AppState) {
         crate::app::lan_service::restart_lobby_visit(state);
         App::reopen_lan_room(state);
     }
+}
+
+/// VERA: the room goes on unshown while its player looks round the public
+/// lobby (docs/lobby-protocol.md "Visiting the lobby"); [`show_room`] shows
+/// it again and [`abandon_for_wol_runner`] ends it.
+pub(crate) fn hide_room(state: &mut AppState) {
+    state.frontend.skirmish_shell_state.choose_map_modal = None;
+    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+        ui.show_box(None);
+    }
+    state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+}
+
+/// The hidden room is back on screen as it is now.
+pub(crate) fn show_room(state: &mut AppState) {
+    show_dialog(state, dialog(state));
+}
+
+/// The setup's dialog on screen, newly installed or shown again.
+fn show_dialog(state: &mut AppState, dialog: SetupDialog) {
+    state.frontend.shell_route = crate::app::shell_route::ShellRoute::NetworkSetup;
+    state
+        .frontend
+        .shell_controller
+        .reset_to(dialog.page().dialog, false);
+    state.frontend.skirmish_shell_state.choose_map_modal = None;
+    state.frontend.skirmish_preview_texture = None;
+    shell_transition::invalidate_main_menu_dialog_instance(state);
+    state.platform.window.request_redraw();
 }
 
 /// Type8's synchronous native departure drain blocks further setup input.

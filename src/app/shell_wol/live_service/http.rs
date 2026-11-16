@@ -267,6 +267,8 @@ pub(super) enum Response {
         /// A password sign-in with `remember`: what signs this computer in
         /// next time.
         sign_in_token: Option<String>,
+        /// The lobby offers `visit_lobby`.
+        lobby_visits: bool,
     },
     LoginFailed {
         attempt: u64,
@@ -1227,6 +1229,7 @@ macro_rules! serial_driver {
                                 player_id: session.player_id,
                                 nickname: session.nickname,
                                 motd: session.motd,
+                                lobby_visits: session.features.iter().any(|feature| feature == "visit_lobby"),
                                 sign_in_token: session
                                     .sign_in_token
                                     .filter(|_| matches!(credential, Credential::Password { remember: true, .. })),

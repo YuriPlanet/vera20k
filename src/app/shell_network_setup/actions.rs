@@ -26,6 +26,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 | SetupAction::TeamStarts
                 | SetupAction::TeamColors
                 | SetupAction::Balance
+                | SetupAction::Lobby
         )
     {
         return;
@@ -117,6 +118,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
+        SetupAction::Lobby => {
+            crate::app::shell_wol::lobby::visit_lobby(state);
+            Ok(())
+        }
         SetupAction::MapOffer { download } => {
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
@@ -147,7 +152,7 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 .unwrap_or_default()
                 .to_owned();
             let display = format!("[{name}] {}", String::from_utf16_lossy(&text));
-            crate::app::shell_lan::append_chat(
+            crate::app::shell_lan::append_room_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {
                     text: display.encode_utf16().collect(),

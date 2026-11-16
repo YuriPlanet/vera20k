@@ -42,6 +42,9 @@ pub(crate) const BALANCE: u16 = 0x7F0F;
 /// VERA-only, the host's, in the team bar: Room size, the most people the
 /// room holds, spectators too.
 pub(crate) const ROOM_SIZE: u16 = 0x7F10;
+/// VERA-only, in an online room: Lobby, to the public lobby while the room
+/// goes on hidden (docs/lobby-protocol.md "Visiting the lobby").
+pub(crate) const LOBBY: u16 = 0x7F16;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x40 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7000;
@@ -544,11 +547,25 @@ const MODERN_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
     }],
     ..GUEST_PAGE
 };
+const LOBBY_BUTTON: MenuPageButtonSpec = MenuPageButtonSpec {
+    id: LOBBY,
+    dlu_top: 0,
+    csf_key: "VERA:Lobby",
+    tooltip_key: "",
+    result: None,
+};
+/// VERA's online room adds Lobby under its other buttons.
 const MODERN_WOL_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
-    stacked: &[MenuPageButtonSpec {
-        dlu_top: WOL_GUEST_PAGE.stacked[0].dlu_top,
-        ..GAME_OPTIONS_BUTTON
-    }],
+    stacked: &[
+        MenuPageButtonSpec {
+            dlu_top: WOL_GUEST_PAGE.stacked[0].dlu_top,
+            ..GAME_OPTIONS_BUTTON
+        },
+        MenuPageButtonSpec {
+            dlu_top: WOL_GUEST_PAGE.stacked[1].dlu_top,
+            ..LOBBY_BUTTON
+        },
+    ],
     ..WOL_GUEST_PAGE
 };
 const MODERN_WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
@@ -561,6 +578,10 @@ const MODERN_WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
         MenuPageButtonSpec {
             dlu_top: WOL_HOST_PAGE.stacked[2].dlu_top,
             ..WOL_HOST_PAGE.stacked[1]
+        },
+        MenuPageButtonSpec {
+            dlu_top: 2 * WOL_HOST_PAGE.stacked[2].dlu_top - WOL_HOST_PAGE.stacked[1].dlu_top,
+            ..LOBBY_BUTTON
         },
     ],
     ..WOL_HOST_PAGE
@@ -823,6 +844,8 @@ pub(crate) struct SetupView {
     pub(crate) team_colors_enabled: bool,
     /// Online, the host's Balance: the room's mode seats players on teams.
     pub(crate) balance_enabled: bool,
+    /// Online, Lobby: the lobby offers visits to the public lobby.
+    pub(crate) lobby_enabled: bool,
     /// The rows the host may drag to another box, in a room with teams.
     pub(crate) drag_rows: Vec<DragRow>,
     /// VERA's missing-map offer is open over the room.
@@ -883,6 +906,7 @@ impl SetupView {
         }
         match id {
             BACK | CHAT | CHAT_LOG | GAME_OPTIONS => true,
+            LOBBY => self.lobby_enabled,
             START | CHOOSE_MAP => self.host,
             TEAM_STARTS => self.team_starts_enabled,
             TEAM_COLORS => self.team_colors_enabled,
@@ -944,6 +968,9 @@ pub(crate) enum SetupAction {
     TeamColors,
     /// The host's Balance in the team bar, online.
     Balance,
+    /// Lobby in an online room: the public lobby, the room keeping this
+    /// player's place.
+    Lobby,
     /// The missing-map offer's answer: download the room's map, or leave.
     MapOffer {
         download: bool,
@@ -2116,6 +2143,7 @@ mod tests {
             team_starts_enabled: true,
             team_colors_enabled: true,
             balance_enabled: true,
+            lobby_enabled: false,
             drag_rows: Vec::new(),
             map_offer_open: false,
             mode_label: String::new(),
@@ -2126,6 +2154,16 @@ mod tests {
             cooperative: false,
             cooperative_description: None,
         }
+    }
+
+    /// Lobby stays off in a room whose lobby does not offer visits, as one
+    /// from before them does not.
+    #[test]
+    fn lobby_needs_a_lobby_that_offers_visits() {
+        let mut view = vera_room_view();
+        assert!(!view.enabled(LOBBY));
+        view.lobby_enabled = true;
+        assert!(view.enabled(LOBBY));
     }
 
     /// VERA's roster stacks its teams in one column, over the team bar. A
@@ -2376,7 +2414,8 @@ mod tests {
     /// VERA's game room trades a guest's Accept for Game Options in its
     /// place; a host's Game Options takes Choose Map's place over Choose Map,
     /// which moves a place down, into C2's Page place. The other buttons keep
-    /// their places, and native diagnostics keep all.
+    /// their places, an online room has its Lobby a place under them, and
+    /// native diagnostics keep all.
     #[test]
     fn game_room_puts_game_options_in_accept_or_choose_map_place() {
         let buttons = |host, flavor, modern| {
@@ -2392,6 +2431,9 @@ mod tests {
             let accept = native.remove(&ACCEPT).unwrap();
             native.remove(&PAGE);
             native.insert(GAME_OPTIONS, accept);
+            if flavor == SetupFlavor::Wol {
+                native.insert(LOBBY, accept.translate(0, accept.h));
+            }
             assert_eq!(buttons(false, flavor, true), native, "{flavor:?} guest");
 
             let mut native = buttons(true, flavor, false);
@@ -2402,6 +2444,9 @@ mod tests {
                 .unwrap_or(choose_map.translate(0, step));
             native.insert(GAME_OPTIONS, choose_map);
             native.insert(CHOOSE_MAP, below);
+            if flavor == SetupFlavor::Wol {
+                native.insert(LOBBY, below.translate(0, step));
+            }
             assert_eq!(buttons(true, flavor, true), native, "{flavor:?} host");
         }
     }
