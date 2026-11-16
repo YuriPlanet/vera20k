@@ -336,13 +336,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::PlayerChoices {
             index,
             mut choices,
-            observer,
+            mut observer,
         } => {
-            // A guest's own team pick keeps to the room's Teams.
-            let refused = state
-                .match_state
-                .session
-                .admit_network_team(index, &mut choices);
+            // A guest's own seat and team pick keep to the room's teams.
+            let refused =
+                state
+                    .match_state
+                    .session
+                    .admit_network_team(index, &mut choices, &mut observer);
             let mut change = accept_peer_choices(state, index, choices, observer)?;
             change.options |= refused;
             publish_choices(state, change);

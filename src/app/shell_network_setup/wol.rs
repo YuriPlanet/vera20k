@@ -168,7 +168,8 @@ pub(crate) fn send_first_choices(state: &mut AppState) {
 /// the first open observer row when no Open player row is left
 /// (`0x5E9510`); with neither (`0x5E9560`) the joiner is kicked
 /// (`0x7A6BC7`). VERA's room first frees the last AI's seat when every seat
-/// is taken, so it stays open until its host's Max players.
+/// is taken, so it stays open until its host's Max players, and one with
+/// teams lets the newcomer watch first (`MatchSession::network_join_row`).
 /// RESIDUAL: the host's node takes the mode's default country (mode
 /// vt+0x28) natively; it is unset here.
 pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<()> {
@@ -182,18 +183,21 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
         state.match_state.session.free_network_seat_for_newcomer()?;
     }
     let session = &state.match_state.session;
-    let row = if !session.host() {
-        Some(None)
-    } else if session.network_room_full() {
-        // VERA's room is at its host's Max players.
-        None
+    let place = if !session.host() {
+        Some((None, false))
+    } else if session.network_several_observers() {
+        // VERA's room, to its host's Max players.
+        session
+            .network_join_row(false)
+            .map(|(row, observer)| (Some(row), observer))
     } else if session.network_no_open_player_row() {
-        session.network_free_row(true).map(Some)
+        session.network_free_row(true).map(|row| (Some(row), true))
     } else {
-        session.network_free_row(false).map(Some)
+        session
+            .network_free_row(false)
+            .map(|row| (Some(row), false))
     };
-    let observer = session.host() && session.network_no_open_player_row();
-    let Some(row) = row.filter(|_| !pending) else {
+    let Some((row, observer)) = place.filter(|_| !pending) else {
         let sound = state
             .rules()
             .and_then(|rules| rules.general.player_joined_sound())

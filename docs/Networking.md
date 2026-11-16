@@ -279,6 +279,15 @@ that cannot start, since its players' versions differ. A lobby from before Teams
 refuses the field; the host's game then turns Teams Off, says so and sends its options
 again without it. A room has 2 to 15 teams, named A to O.
 
+In a VERA room whose mode has teams, people play only on a team, gamemd's A to D while
+Teams is Off. A newcomer comes in watching while a spectator seat is open and takes a
+seat with a team header's Join; a guest who picks no team watches instead. With no
+spectator seat open, the host seats a newcomer on the team with the fewest players.
+Nothing new travels: guests send their picks as before, and a released guest, whose
+team headers have Join too, takes a seat the same way. An older host still seats a
+newcomer on no team; a newer guest lists that player under a No team header without
+Join. A rollback seats newcomers as before.
+
 Online, the host's Balance automatically travels the same way, as
 `launch.options.auto_balance`; setting a Teams count turns it on. While it is on, every
 game in the room closes its seated players' Team lists and team headers' Join (a
@@ -291,8 +300,8 @@ turns Teams Off too. The lobby decides each player's team, as for `/balance`; th
 game applies it.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
-is free, with a team header's Join Queue or as a newcomer who prefers to play, joins the
-end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
+is free, with a team header's Join Queue or, in a room without teams, as a newcomer who
+prefers to play, joins the end of the host's join queue; Leave Queue, or picking to watch again, leaves it. The host's
 game owns the queue as it owns seating: when a seat frees (a player leaves or starts
 watching, or the host adds a slot or removes an AI), it seats the first spectator in the
 queue as its own Seat would and publishes its options. The queue's order travels online

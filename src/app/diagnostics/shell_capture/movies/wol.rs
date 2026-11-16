@@ -2563,6 +2563,28 @@ impl WolCapture {
                     use crate::ui::multiplayer_setup::{
                         BALANCE, RoomBox, SetupAction, SetupColumn, TEAM_COUNT, TEAMS,
                     };
+                    // A room with teams lets the guest in watching; the
+                    // guest takes a seat by picking Team B.
+                    let natasha = state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .and_then(|launch| {
+                            launch.humans.iter().find(|human| human.name == "Natasha")
+                        })
+                        .cloned()
+                        .context("Natasha")?;
+                    ensure!(natasha.is_observer(), "Natasha came in on a seat");
+                    let mut slot = natasha.slot;
+                    slot.team = crate::skirmish_launch::LaunchTeam::Team(1);
+                    crate::app::shell_wol::service_event(
+                        state,
+                        WolServiceEvent::PlayerChoices {
+                            from: "Natasha".into(),
+                            slot,
+                            observer: false,
+                        },
+                    );
                     setup_button(state, TEAMS)?;
                     ensure!(
                         setup_view(state)?.open_box == Some(RoomBox::Teams),
@@ -2695,7 +2717,10 @@ impl WolCapture {
                         "the room did not tell {left:?}"
                     );
                     crate::app::shell_network_setup::user_joined(state, "Natasha".into())?;
-                    ensure!(guest_row(state).is_some(), "Natasha did not come back");
+                    ensure!(
+                        guest_row(state).is_some_and(|human| human.is_observer()),
+                        "Natasha did not come back watching"
+                    );
                     // Teams goes up to 15: the Team list then runs from A
                     // to O, and the headers name the teams past D too.
                     crate::app::shell_network_setup::apply_action(

@@ -526,10 +526,7 @@ fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
             slot.team = LaunchTeam::Team(team);
             false
         }
-        SetupGroup::NoTeam => {
-            slot.team = LaunchTeam::None;
-            false
-        }
+        SetupGroup::NoTeam => anyhow::bail!("no team has no Join"),
         SetupGroup::ClosedSeats => anyhow::bail!("closed seats have no Join"),
         SetupGroup::Spectators => true,
     };

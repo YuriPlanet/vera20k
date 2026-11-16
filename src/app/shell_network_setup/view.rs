@@ -384,11 +384,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         joins(LaunchTeam::Team(team))
                             .then(|| join(!session.network_team_full(team))),
                     ),
-                    SetupGroup::NoTeam => (
-                        fill("VERA:NoTeamGroup"),
-                        (!mode.must_ally && teams.is_none() && joins(LaunchTeam::None))
-                            .then(|| join(true)),
-                    ),
+                    // Only an older host seats players on no team.
+                    SetupGroup::NoTeam => (fill("VERA:NoTeamGroup"), None),
                     SetupGroup::ClosedSeats => (fill("VERA:ClosedSeatsGroup"), None),
                     SetupGroup::Spectators => (
                         fill("VERA:SpectatorsGroup"),
@@ -666,8 +663,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             }
             countries = allowed;
         }
+        // A spectator in a room with teams plays by joining a team.
         let sides = if switching && observer {
-            !session.network_no_open_player_row()
+            !grouped && !session.network_no_open_player_row()
         } else {
             !observer
         };
@@ -747,7 +745,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             })
             .collect::<Vec<_>>();
         // With Teams set, the room's teams only; a guest's own list leaves
-        // out the full ones it is not on.
+        // out the full ones it is not on. A room with teams has no "no
+        // team": a player on none watches.
         let team_items = match teams {
             Some(count) => (0..count)
                 .filter(|team| {
@@ -756,7 +755,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 })
                 .map(|team| SkirmishComboItem::Team(i32::from(team)))
                 .collect(),
-            None => skirmish_shell::team_choices(mode.must_ally),
+            None => skirmish_shell::team_choices(mode.must_ally || grouped),
         };
         let team_items = team_items
             .into_iter()
@@ -1024,7 +1023,8 @@ fn listed_rows(
             .map_or(LaunchTeam::None, |slot| slot.team)
     };
     // The free seats show no group: players take them by their team's Join,
-    // and the host fills one with a team header's Add AI.
+    // and the host fills one with a team header's Add AI. Only an older
+    // host's room seats players on no team.
     let players: Vec<u8> = seated.filter(held).collect();
     let teams: Vec<u8> = match fixed {
         Some(count) => (0..count).collect(),
@@ -1122,16 +1122,13 @@ mod tests {
     }
 
     /// In a mode with teams each team in use and the next free letter head
-    /// their players, then come the players on no team and the spectators;
-    /// the free seats show no group. A guest who starts watching moves under Spectators.
+    /// their players, then the spectators; the free seats show no group. A
+    /// guest who starts watching moves under Spectators.
     #[test]
     fn a_room_with_teams_lists_its_players_under_team_headers() {
         use Listed::{Header, Row};
-        use SetupGroup::{NoTeam, Spectators, Team};
+        use SetupGroup::{Spectators, Team};
         let mut session = vera_room();
-        let mut host = session.network_row_choices(0).unwrap();
-        host.team = LaunchTeam::Team(0);
-        session.set_network_row_choices(0, host).unwrap();
         let limit = usize::from(session.network_player_row_limit());
         let teams = || Some(skirmish_shell::team_choices(false));
         assert_eq!(
@@ -1139,9 +1136,9 @@ mod tests {
             [
                 Header(Team(0), 1),
                 Row(0),
-                Header(Team(1), 0),
-                Header(NoTeam, 1),
+                Header(Team(1), 1),
                 Row(1),
+                Header(Team(2), 0),
                 Header(Spectators, 0),
             ]
         );

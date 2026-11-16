@@ -821,9 +821,9 @@ impl MatchSession {
         });
         launch.rebuild_house_roster();
         self.keep_spectator_row()?;
-        // A newcomer who gets a seat in a VERA room with Teams set joins the
+        // A newcomer who gets a seat in a VERA room with teams joins the
         // team with the fewest players.
-        if self.host && self.network_teams().is_some() {
+        if self.host && self.network_team_room() {
             self.editable_network_setup()?.humans[index].slot.team = LaunchTeam::None;
             self.keep_players_on_teams()?;
         }
@@ -2105,21 +2105,38 @@ impl MatchSession {
             .is_some_and(|seats| self.network_team_players(team) >= seats)
     }
 
-    /// A guest's own team pick in a VERA room with Teams set: no team, a
-    /// team past the room's count, a full team it is not on or, while the
-    /// room balances itself, any other team leaves it where it is, and a
+    /// A guest's own seat and team pick in a VERA room with teams. A person
+    /// plays only on a team: one asking to play on none watches instead,
+    /// while a spectator row is open. With Teams set, no team, a team past
+    /// the room's count, a full team it is not on or, while the room
+    /// balances itself, any other team leaves it where it is, and a
     /// spectator taking a seat then joins the team with the fewest players.
     /// The host's moves (`service::move_player`) skip this. Returns whether it
     /// changed the pick, so the host republishes the room and the guest's own
-    /// row shows its team again.
-    pub(crate) fn admit_network_team(&self, index: usize, choices: &mut SkirmishLocalSlot) -> bool {
-        let Some(teams) = self.network_teams() else {
+    /// row shows its place again.
+    pub(crate) fn admit_network_team(
+        &self,
+        index: usize,
+        choices: &mut SkirmishLocalSlot,
+        observer: &mut bool,
+    ) -> bool {
+        if !self.network_team_room() {
             return false;
-        };
+        }
         let Some(human) = self
             .network_setup()
             .and_then(|launch| launch.humans.get(index))
         else {
+            return false;
+        };
+        if !*observer
+            && choices.team == LaunchTeam::None
+            && (human.is_observer() || self.network_free_row(true).is_some())
+        {
+            *observer = true;
+            return true;
+        }
+        let Some(teams) = self.network_teams() else {
             return false;
         };
         let seated = !human.is_observer();
@@ -2143,17 +2160,18 @@ impl MatchSession {
         choices.team != picked
     }
 
-    /// A VERA room with Teams set keeps every seated player, person or AI,
-    /// on one of its teams: in row order, one on no team or past the count
-    /// joins the team with the fewest players, the first on a tie. Only the
-    /// host seats players. Returns whether anyone moved.
+    /// A VERA room with teams keeps every seated player, person or AI, on
+    /// one of its teams, gamemd's A to D while Teams is Off: in row order,
+    /// one on no team or past the count joins the team with the fewest
+    /// players, the first on a tie. Only the host seats players. Returns
+    /// whether anyone moved.
     fn keep_players_on_teams(&mut self) -> anyhow::Result<bool> {
-        if !self.host {
+        if !self.host || !self.network_team_room() {
             return Ok(false);
         }
-        let Some(teams) = self.network_teams() else {
-            return Ok(false);
-        };
+        let teams = self
+            .network_teams()
+            .unwrap_or(crate::skirmish_launch::NATIVE_TEAMS);
         let launch = self.editable_network_setup()?;
         let on_team = |team: LaunchTeam| match team {
             LaunchTeam::Team(team) if team < teams => Some(usize::from(team)),
@@ -2304,10 +2322,13 @@ impl MatchSession {
     /// when every seat is taken: the AI's on the last row. AI never fill a
     /// VERA room.
     pub(crate) fn network_newcomer_ai_seat(&self) -> Option<u8> {
+        // In a room with teams the newcomer watches first.
+        let watches = self.network_team_room() && self.network_free_row(true).is_some();
         if !self.host
             || !self.network_several_observers()
             || self.network_room_full()
             || !self.network_no_open_player_row()
+            || watches
         {
             return None;
         }
@@ -2908,14 +2929,17 @@ impl MatchSession {
         (0..rows).find(|row| self.network_vacancy(*row) == Some(wanted))
     }
 
-    /// A joining LAN node's row and role: [`Self::network_free_row`] for
-    /// what it asked. In a VERA room a player who finds every seat taken
-    /// watches while a spectator row is open, and one asking to watch where
-    /// no spectator row is open takes a free seat, as online joiners do.
+    /// A joining node's row and role: [`Self::network_free_row`] for what it
+    /// asked. In a VERA room a player who finds every seat taken watches
+    /// while a spectator row is open, and one asking to watch where no
+    /// spectator row is open takes a free seat. In one with teams everyone
+    /// comes in watching, while a spectator row is open, and takes a seat by
+    /// joining a team ([`Self::admit_network_team`]).
     pub(crate) fn network_join_row(&self, observer: bool) -> Option<(u8, bool)> {
         if self.network_room_full() {
             return None;
         }
+        let observer = observer || self.network_team_room();
         let other = || {
             self.network_several_observers()
                 .then(|| self.network_free_row(!observer))
@@ -4238,9 +4262,9 @@ mod tests {
         assert_eq!(teams(&session), [Team(0), Team(1), Team(0)]);
         assert_eq!(session.network_team_seats(), Some(2));
         let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
-        assert!(!session.admit_network_team(1, &mut pick));
+        assert!(!session.admit_network_team(1, &mut pick, &mut false));
         pick.team = Team(0);
-        assert!(session.admit_network_team(1, &mut pick));
+        assert!(session.admit_network_team(1, &mut pick, &mut false));
         assert_eq!(pick.team, Team(1));
         pick.team = Team(0);
         session
@@ -4250,22 +4274,53 @@ mod tests {
     }
 
     /// A VERA room has up to 15 teams, A to O, and a guest's online pick
-    /// past gamemd's D stays until Teams goes Off, back to A to D.
+    /// past gamemd's D stays until Teams goes Off, back to A to D: on the
+    /// team with the fewest players.
     #[test]
     fn a_vera_room_keeps_a_guest_past_d_until_teams_is_off() {
-        use crate::skirmish_launch::LaunchTeam::{self, Team};
+        use crate::skirmish_launch::LaunchTeam::Team;
         let mut session = vera_room();
         session.set_network_teams(Some(15)).unwrap();
         assert_eq!(teams(&session), [Team(0), Team(1)]);
         let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
         pick.team = Team(14);
-        assert!(!session.admit_network_team(1, &mut pick));
+        assert!(!session.admit_network_team(1, &mut pick, &mut false));
         session
             .accept_network_peer_choices(1, pick, false, None)
             .unwrap();
         assert_eq!(teams(&session), [Team(0), Team(14)]);
         session.set_network_teams(None).unwrap();
-        assert_eq!(teams(&session), [Team(0), LaunchTeam::None]);
+        assert_eq!(teams(&session), [Team(0), Team(1)]);
+    }
+
+    /// A VERA room with teams seats people only on a team, A to D while
+    /// Teams is Off: a newcomer comes in watching, a player picking no team
+    /// starts watching and a spectator asking to play on none keeps
+    /// watching, and a team's Join seats it on that team.
+    #[test]
+    fn a_vera_room_with_teams_seats_people_only_on_a_team() {
+        use crate::skirmish_launch::LaunchTeam::{self, Team};
+        let mut session = vera_room();
+        assert!(!teams(&session).contains(&LaunchTeam::None));
+        assert_eq!(session.network_join_row(false), Some((4, true)));
+        let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
+        pick.team = LaunchTeam::None;
+        for watching in [false, true] {
+            let mut observer = false;
+            assert!(session.admit_network_team(1, &mut pick, &mut observer));
+            assert!(observer);
+            session
+                .accept_network_peer_choices(1, pick.clone(), observer, None)
+                .unwrap();
+            assert_eq!(guest(&session), (true, Some(4)), "{watching}");
+        }
+        pick.team = Team(2);
+        let mut observer = false;
+        assert!(!session.admit_network_team(1, &mut pick, &mut observer));
+        session
+            .accept_network_peer_choices(1, pick, observer, None)
+            .unwrap();
+        assert_eq!((guest(&session).0, teams(&session)[1]), (false, Team(2)));
     }
 
     /// In a mode that must ally, a player who watched and is seated again
@@ -4298,7 +4353,7 @@ mod tests {
         assert_eq!(teams(&session), [Team(0), Team(1)]);
         let mut pick = session.network_setup().unwrap().humans[1].slot.clone();
         pick.team = Team(0);
-        assert!(session.admit_network_team(1, &mut pick));
+        assert!(session.admit_network_team(1, &mut pick, &mut false));
         assert_eq!(pick.team, Team(1));
         // Teams Off turns it off, and without Teams it stays off.
         session.set_network_teams(None).unwrap();
