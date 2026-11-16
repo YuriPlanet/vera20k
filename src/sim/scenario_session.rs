@@ -1585,6 +1585,21 @@ impl ScenarioSession {
             })
     }
 
+    /// The count `ScenarioClass::NumberStartingPoints` holds after
+    /// `Gather_Start_Positions`: the valid multiplayer start waypoints
+    /// (`0..=7`) VERA retained from the map. A VERA local scene has none,
+    /// which leaves the team-delay dynamic path dormant exactly as a one-player
+    /// start does in native.
+    pub fn multiplayer_start_count(&self) -> i32 {
+        i32::try_from(
+            self.waypoints
+                .range(crate::map::waypoints::MULTIPLAYER_START_WAYPOINTS)
+                .filter(|&(_, &(rx, ry))| (rx, ry) != (0, 0))
+                .count(),
+        )
+        .unwrap_or(i32::MAX)
+    }
+
     pub(crate) const fn computer_slot_has_team(&self) -> bool {
         self.computer_slot_has_team
     }

@@ -36,6 +36,8 @@
 //! that TeamTypeClass::Can_Recruit admits (the membership owner). The later
 //! TeamClass recruitment, script execution and cleanup keep their existing owners.
 
+use crate::rules::ini_value::PhobosDynamicTeamDelayType;
+use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::FrameEffects;
 use std::hash::{Hash, Hasher};
 
@@ -123,6 +125,79 @@ impl HouseTeamCreation {
     }
 }
 
+/// `HouseClass_Update_ResetTeamDelay @ 0x004F8ACC`: the delay Phobos' dynamic
+/// `[General] TeamDelays.DynamicType=` selects for `owner`, or `None` when the
+/// stock `[General] TeamDelays=` path keeps ownership.
+///
+/// Native starts from `ScenarioClass::NumberStartingPoints`, requires at least
+/// two and a non-campaign session, and for every type except `StartingPoint`
+/// recounts the House array: `Alive*` skips `Defeated`, every type skips
+/// observers and neutral houses, `Allies*` keeps `pThis != pHouse` allies and
+/// `Enemies*` keeps non-allies. A count outside `1..=8` or a non-positive
+/// X/Y/Z row returns to the stock path. The house's difficulty selects X, Y or
+/// Z from `TeamDelays.Count<count>` (`Ext/Rules/Body.cpp:606-613`).
+fn dynamic_team_delay(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Option<i32> {
+    let house = sim.houses.get(&owner)?;
+    if sim.session.game_mode() == ScenarioGameMode::Campaign {
+        return None;
+    }
+    let kind = rules.phobos_globals.team_delays_dynamic_type;
+    if kind == PhobosDynamicTeamDelayType::None {
+        return None;
+    }
+    let starting_points = sim.session.multiplayer_start_count();
+    if starting_points < 2 {
+        return None;
+    }
+
+    let count = if kind == PhobosDynamicTeamDelayType::StartingPoint {
+        starting_points
+    } else {
+        let check_alive = matches!(
+            kind,
+            PhobosDynamicTeamDelayType::AliveCount
+                | PhobosDynamicTeamDelayType::AliveAllies
+                | PhobosDynamicTeamDelayType::AliveEnemies
+        );
+        let check_allies = matches!(
+            kind,
+            PhobosDynamicTeamDelayType::Allies | PhobosDynamicTeamDelayType::AliveAllies
+        );
+        let check_enemies = matches!(
+            kind,
+            PhobosDynamicTeamDelayType::Enemies | PhobosDynamicTeamDelayType::AliveEnemies
+        );
+        let mut count = 0i32;
+        for (&id, candidate) in sim.houses.iter() {
+            if check_alive && candidate.is_defeated() {
+                continue;
+            }
+            // VERA has no separate `IsNeutral` flag; `MultiplayPassive=` is the
+            // house-level marker it shares with Neutral and Special.
+            if sim.session.is_observer_house(id) || candidate.multiplay_passive() {
+                continue;
+            }
+            let allied = sim.house_alliances.is_allied(&sim.interner, owner, id);
+            if check_allies && (id == owner || !allied) {
+                continue;
+            }
+            if check_enemies && allied {
+                continue;
+            }
+            count += 1;
+        }
+        count
+    };
+    if !(1..=8).contains(&count) {
+        return None;
+    }
+
+    let delay = house.difficulty_value(
+        &rules.phobos_globals.team_delays_count[usize::try_from(count - 1).ok()?],
+    );
+    (delay > 0).then_some(delay)
+}
+
 /// The team block of `HouseClass::Update` for house `owner` (see the module
 /// doc).
 pub(crate) fn update_team_creation(
@@ -146,18 +221,24 @@ pub(crate) fn update_team_creation(
     for team_type in team_types {
         sim.create_team(team_type, Some(owner), rules);
     }
-    if let Some(house) = sim.houses.get_mut(&owner) {
+    let fallback = {
+        let Some(house) = sim.houses.get(&owner) else {
+            return;
+        };
         let delay = house.difficulty_value(&rules.general.team_delays);
         // A commander's `TeamDelayPercent=` re-paces every round after the
         // first. Reading it here instead of caching it on the house keeps the
         // personality in rules, where every client already agrees on it, and
         // leaves `HouseTeamCreation` unchanged (no save-schema bump).
-        let delay = house
+        house
             .personality()
             .and_then(|index| rules.personalities().get(index))
             .map_or(delay, |definition| {
                 crate::rules::personality::scale_team_delay(delay, definition.team_delay_percent)
-            });
+            })
+    };
+    let delay = dynamic_team_delay(sim, rules, owner).unwrap_or(fallback);
+    if let Some(house) = sim.houses.get_mut(&owner) {
         house.team_creation_mut().restart(frame, delay);
     }
 }

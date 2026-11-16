@@ -741,6 +741,13 @@ pub struct PhobosGlobals {
     /// house's team delays.
     #[serde(default)]
     pub team_delays_dynamic_type: crate::rules::ini_value::PhobosDynamicTeamDelayType,
+    /// `[General] TeamDelays.Count1..Count8=`, each
+    /// `Valueable<Vector3D<int>>` (`Ext/Rules/Body.cpp:608-613`,
+    /// `Body.h:511,1008`): X/Y/Z delays for 1..8 counted players, selected
+    /// by the house's AI difficulty. The constructor default of every row is
+    /// `{0,0,0}`, which leaves the stock `[General] TeamDelays=` delay in place.
+    #[serde(default)]
+    pub team_delays_count: [[i32; 3]; 8],
     /// `[General] AircraftWeapon.KickOutPassengers=` (`Valueable<bool>`,
     /// true; `Ext/Rules/Body.cpp:272`, `Body.h:190,714`): the fallback for a
     /// weapon's `KickOutPassengers` in `AircraftClass::Fire_At`'s passenger
@@ -2066,6 +2073,7 @@ impl Default for PhobosGlobals {
             // `Ext/Rules/Body.cpp:606`, `Body.h:1007`.
             team_delays_dynamic_type:
                 crate::rules::ini_value::PhobosDynamicTeamDelayType::StartingPoint,
+            team_delays_count: [[0; 3]; 8],
             aircraft_weapon_kick_out_passengers: true,
             secondary_fire_sequence_land_only: true,
             damaged_speed: default_damaged_speed(),
@@ -2623,6 +2631,15 @@ impl PhobosGlobals {
             "TeamDelays.DynamicType",
             globals.team_delays_dynamic_type,
         );
+        // `Ext/Rules/Body.cpp:608-613`: eight `TeamDelays.Count<i>` rows, each
+        // the `Valueable<Vector3D<int>>` coordinate reader. A row keeps its
+        // constructor `{0,0,0}` when absent, which selects the stock delay.
+        for (index, row) in globals.team_delays_count.iter_mut().enumerate() {
+            let key = format!("TeamDelays.Count{}", index + 1);
+            *row = general
+                .read_phobos_nullable_vector3(&key, Some(*row))
+                .unwrap_or(*row);
+        }
         // `Ext/Rules/Body.cpp:370-375`: the placement switches live in `[AI]`,
         // not in `[General]`.
         let ai = ini.section_or_empty("AI");
