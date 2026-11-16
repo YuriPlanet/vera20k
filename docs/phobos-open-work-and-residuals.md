@@ -42,6 +42,10 @@ compile-disabled = 4）。本表是实机测试与后续修复的唯一入口；
   按开关把全部仍激活的 building/radiation 光源区域重新标脏并从当前
   `PointLight` 重算（等价 `Ext/TAction/Hooks.cpp:68-107` 的
   deactivate/reactivate）。
+- `ColorAddUse8BitRGB`（其余三色）：`TechnoExt::GetTintColor` 的类词替换钩子已接
+  ——建筑（普通铁幕）、单位体素（铁幕/狂暴）、步兵 SHP（狂暴）都改用
+  `GetColorFromColorAdd` 的单臂词（开关开启时按 8 位 RGB 收窄），与空袭激光色
+  共用 `ColorAddTable::phobos_word`；非 phobos 构建仍用原生 3 臂词。
 - `DisplayIncome`（含 `DisplayIncome.AllowAI`）：建筑 `AccumulatedIncome`
   在研磨退款（`DoGrindingExtras`）、精炼厂/奴隶卸矿入账（`pay_refinery_owner`
   余额差）、间谍渗透（`infiltrate_building` 受害者余额差）处累积；
@@ -134,13 +138,12 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
 | `JumpjetClimbWithoutCutOut` | `Ext/Rules/Body.cpp:337` | bool, no（`:243,767`） | `Ext/Unit/Hooks.Jumpjet.cpp` |
 | `VeinholeWarhead` | `Ext/Rules/Body.cpp:136` | `Nullable<WarheadTypeClass*>`, 未设（`:58,597`） | `Ext/Anim/Body.cpp`（veinhole 动画伤害）——VERA 是否已有 veinhole 机制需先查 |
 
-### 1.7 仍未实现的 5 项（6 键）与阻塞原因（2026-11-16）
+### 1.7 仍未实现的 4 项（5 键）与阻塞原因（2026-11-16）
 
 | 键 | 阻塞点 / 下一步 |
 |---|---|
 | `ExtendedPlayerRepair` | 整条“点击修理改为可切换自动修理”的玩家 UI/房态机制；VERA 只有 AI 的 `auto_repair_start`，需新增玩家开关、按钮/热键与停止逻辑。 |
 | `AircraftLevelLightMultiplier` / `JumpjetLevelLightMultiplier` | VERA 渲染器没有 `GetLevelIntensity`/`cellIntensity` 等价路径；需在 tint 路径引入 level/cell intensity 后才能用倍率。 |
-| `ColorAddUse8BitRGB` | `GetColorFromColorAdd` 已按开关（空袭激光色接线）；幕布/狂暴/力场三色走 `TechnoExt::GetTintColor` 的类词替换钩子（`Ext/Techno/Hooks.Tint.cpp:71-135`），需整族移植并用 Phobos 词替换原生 3 臂词。 |
 | `VoxelLightSource` | 仍阻塞于 `Matrix3D::VoxelDefaultMatrix`，见 §3。 |
 | `VeinholeWarhead` | 需先确认 VERA 是否已有 veinhole 动画伤害机制（`Ext/Anim/Body.cpp`）。 |
 
@@ -192,11 +195,6 @@ rules.ini，也不是按本仓库 rules 分层读取；VERA 需要先找到/建�
   `f64::cos/sin` 与原生 3D 距离核（同样的 `+0.5` 截断），仅在最末一位边界上
   理论上可能与 CRT 相差 1 lepton。触发：长距离斜向预测正落在格边界；频率：
   极低；风险：预测高度差 1，影响一帧爬升。
-- **`ColorAddUse8BitRGB` 的其余三色**：`GetColorFromColorAdd` 已按开关打包（空袭色
-  接线）；`TintColorIronCurtain/ForceShield/Berserk` 由 `TechnoExt::GetTintColor`
-  绘制钩子替换类词（`Ext/Techno/Hooks.Tint.cpp:71-135`），该钩子族未移植，VERA
-  仍用原生 3 臂词。触发：开关开启且幕布/狂暴/力场着色；频率：每次此类绘制；
-  风险：这三色与开关语义不一致（空袭色正确）。
 - **ToolTips 扩展文本电力行**：`GetPower` 的建筑臂需要实时
   `PowerPlantEnhancer` 结算、单位臂需要未移植的 `UnitPowerDrain`，扩展提示暂无
   电力段。触发：开启扩展提示；频率：每次悬停电力建筑/单位；风险：少一段文本。

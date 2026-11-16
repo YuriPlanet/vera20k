@@ -303,12 +303,21 @@ fn infantry_shp_material_matches_original_gi_draws() {
         let word = shp_colour_word(&gi, &sim, rules, || {
             row["input"]["shrouded"].as_bool().unwrap()
         });
-        assert_eq!(
-            u64::from(word),
-            row["body"]["colour_word"].as_u64().unwrap(),
-            "{}",
-            row["name"]
-        );
+        // Phobos `TechnoExt::GetTintColor` replaces the stock three-arm word
+        // with `GetColorFromColorAdd`'s single RGB565 arm, so a berserk GI's
+        // retail HighRed (24,0,0) is 0xC000 where the oracle has 0xE000.
+        #[cfg(feature = "phobos")]
+        let expected = if gi.berserk.is_active() {
+            rules.color_add.phobos_word(
+                rules.general.berserk_color,
+                rules.phobos_globals.color_add_use_8bit_rgb,
+            )
+        } else {
+            0
+        };
+        #[cfg(not(feature = "phobos"))]
+        let expected = row["body"]["colour_word"].as_u64().unwrap() as u16;
+        assert_eq!(word, expected, "{}", row["name"]);
     }
 }
 
@@ -334,6 +343,12 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
     rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
     let native =
         crate::test_fixture::json("tools/procedural_drawing_oracle/infantry_berserk_body.json");
+    #[cfg(feature = "phobos")]
+    let active_word = rules.color_add.phobos_word(
+        rules.general.berserk_color,
+        rules.phobos_globals.color_add_use_8bit_rgb,
+    );
+    #[cfg(not(feature = "phobos"))]
     let active_word = native["rows"][1]["body"]["colour_word"].as_u64().unwrap() as u16;
     let mut histories = Vec::new();
     for move_step in [40, 120] {

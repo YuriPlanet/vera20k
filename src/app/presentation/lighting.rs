@@ -298,6 +298,23 @@ fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
     (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
 }
 
+/// The class-word conversion Phobos' `TechnoExt::GetTintColor`
+/// (`Ext/Techno/Body.Internal.cpp:161-191`, cached at
+/// `Ext/Rules/Body.cpp:734-736`) applies for IronCurtain/ForceShield/Berserk:
+/// `GetColorFromColorAdd`'s single RGB565 arm, or `Drawing::RGB_To_Int` with
+/// `ColorAddUse8BitRGB`. Stock draws OR the native three-arm word instead.
+#[cfg(feature = "phobos")]
+fn class_tint_word(rules: &RuleSet, index: i32) -> u16 {
+    rules
+        .color_add
+        .phobos_word(index, rules.phobos_globals.color_add_use_8bit_rgb)
+}
+
+#[cfg(not(feature = "phobos"))]
+fn class_tint_word(rules: &RuleSet, index: i32) -> u16 {
+    rules.color_add.rgb565_word(index)
+}
+
 /// `TechnoExt::ApplyCustomTintValues`'s viewer bucket: the owner's own draw
 /// takes Owner, an ally's Allies and anyone else's Enemies.
 #[cfg(feature = "phobos")]
@@ -740,14 +757,12 @@ pub(crate) fn unit_voxel_effect_light(
                     entity.invulnerability.as_ref(),
                     frame,
                 ) {
-                    rules
-                        .color_add
-                        .rgb565_word(rules.general.iron_curtain_color)
+                    class_tint_word(rules, rules.general.iron_curtain_color)
                 } else {
                     0
                 };
                 let berserk = if entity.berserk.is_active() {
-                    rules.color_add.rgb565_word(rules.general.berserk_color)
+                    class_tint_word(rules, rules.general.berserk_color)
                 } else {
                     0
                 };
@@ -844,7 +859,7 @@ pub(crate) fn shp_colour_word(
     match entity.category() {
         crate::map::entities::EntityCategory::Infantry => {
             let berserk = if entity.berserk.is_active() && !shrouded() {
-                rules.color_add.rgb565_word(rules.general.berserk_color)
+                class_tint_word(rules, rules.general.berserk_color)
             } else {
                 0
             };
@@ -853,21 +868,31 @@ pub(crate) fn shp_colour_word(
         crate::map::entities::EntityCategory::Structure => {}
         _ => return custom_word,
     }
-    let shielded = entity.invulnerability.as_ref().is_some_and(|curtain| {
-        curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
-            && crate::sim::superweapon::invulnerability::is_invulnerable(
-                Some(curtain),
-                sim.session().binary_frame(),
-            )
+    let frame = sim.session().binary_frame();
+    let curtained = entity.invulnerability.as_ref().is_some_and(|curtain| {
+        crate::sim::superweapon::invulnerability::is_invulnerable(Some(curtain), frame)
     });
+    let force_shield = curtained
+        && entity.invulnerability.as_ref().is_some_and(|curtain| {
+            curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
+        });
     let marked = entity.has_airstrike_marker();
-    if !(shielded || marked) || shrouded() {
+    if !(curtained || marked) || shrouded() {
         return custom_word;
     }
-    let shield = if shielded {
-        rules
-            .color_add
-            .rgb565_word(rules.general.force_shield_color)
+    // Phobos `GetTintColor` picks the Force Shield or Iron Curtain word while
+    // `IsIronCurtained`; the stock arm only knows the Force Shield colour.
+    #[cfg(feature = "phobos")]
+    let shield = if force_shield {
+        class_tint_word(rules, rules.general.force_shield_color)
+    } else if curtained {
+        class_tint_word(rules, rules.general.iron_curtain_color)
+    } else {
+        0
+    };
+    #[cfg(not(feature = "phobos"))]
+    let shield = if force_shield {
+        class_tint_word(rules, rules.general.force_shield_color)
     } else {
         0
     };
