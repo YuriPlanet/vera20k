@@ -132,6 +132,7 @@ pub(crate) mod types;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod updater;
 pub(crate) mod web_link;
+mod window_background;
 mod window_icon;
 
 /// Main window title. The single-instance gate finds a running copy's window by
