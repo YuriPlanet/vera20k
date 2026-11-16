@@ -1734,6 +1734,7 @@ mod restore_tests {
             start_delay_ms: 0,
             started: true,
             feedback: Default::default(),
+            watch_sample: None,
         })
     }
 
@@ -1920,6 +1921,7 @@ mod stall_tests {
             start_delay_ms: 0,
             started: true,
             feedback: Default::default(),
+            watch_sample: None,
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
@@ -2076,6 +2078,7 @@ mod departure_tests {
             start_delay_ms: 0,
             started: false,
             feedback: Default::default(),
+            watch_sample: None,
         };
         session
             .receive(OrderEvent::Status(status), Instant::now())
