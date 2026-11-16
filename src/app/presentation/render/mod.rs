@@ -1002,6 +1002,10 @@ fn upload_to_gpu(
             None => ui.software_cursor.as_slice().into(),
         };
 
+    // BeaconClass::Draw's label boxes (`beacon_labels`), in frame pixels.
+    let (beacon_label_fill, beacon_label_outline, beacon_label_text) =
+        crate::app::presentation::beacon_labels::instances(state);
+
     #[cfg(feature = "ares")]
     let bounty_text = {
         let presentation = &state.match_state.match_presentation;
@@ -1080,6 +1084,9 @@ fn upload_to_gpu(
     for (house, beacons) in ui.beacons.iter().enumerate() {
         pool.upload_page("beacons", house, beacons);
     }
+    pool.upload("beacon_label_fill", &beacon_label_fill);
+    pool.upload("beacon_label_outline", &beacon_label_outline);
+    pool.upload("beacon_label_text", &beacon_label_text);
     pool.upload("drag", &ui.drag);
     pool.upload("ground_marks", &ui.ground_marks);
     pool.upload_strokes("ground_strokes", &ui.ground_strokes);

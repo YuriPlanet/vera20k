@@ -31,6 +31,10 @@
 //!   6. game mode 5 with flag 0x00A8ED91: `TMCJ4F.INI` Process (0x00687B76).
 //! - ART, SOUNDMD, EVAMD, THEMEMD are never layered; only ARTMD enters g_ArtINI
 //!   (0x0052D053, reload 0x00679EE0). A later `Image=` still redirects a type's art.
+//! - VERA's Original/No mod selection deliberately skips LANGRULE, including
+//!   a copy in a language archive, so installations share the same original
+//!   rules. Selected mods retain the native optional layer and Digest check
+//!   (`retail_sources::RetailRulesSources::select`).
 //!
 //! ### Parser: `INIClass::LoadFromStraw` 0x00525A60
 //! - Bytes, not text. LF ends a line, CR is dropped anywhere, 511 bytes are kept and the

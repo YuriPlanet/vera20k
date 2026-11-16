@@ -792,14 +792,12 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
     };
     let mut rules = retail.rules;
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
-    rules
-        .bind_scheduler_anim_assets(
-            &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
-            &assets,
-            "tem",
-            "TEMPERATE",
-        )
-        .expect("native-read slot names need their physical retail SHP bounds");
+    rules.bind_scheduler_anim_assets(
+        &["GAYARD_A".into(), "GAYARD_C".into(), "GAYARD_D".into()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
 
     let assert_boundary = |sim: &Simulation, yard: u64, expected: &Value| {
         let entity = sim.substrate.entities.get(yard).unwrap();

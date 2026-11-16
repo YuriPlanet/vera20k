@@ -576,6 +576,9 @@ impl ApplicationHandler for App {
                 .map(|request| request.retail_dir.as_path()),
             self.spawn_request.is_some() && Self::spawn_hidden_window_requested(),
             self.mod_switch.as_ref(),
+            self.spawn_request
+                .as_ref()
+                .and_then(|request| request.ares_setting),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)
@@ -2062,6 +2065,7 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_mods_scroll(state),
+                Self::poll_mod_files(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.

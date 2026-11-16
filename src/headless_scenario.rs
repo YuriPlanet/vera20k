@@ -299,8 +299,8 @@ fn load_with_assets(
         Some(&launch.session().mode.override_file),
     )?;
     // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
-    // It shares the process Rules owner (including LANGRULE Digest reads), but
-    // cannot admit Full_Init's mode-5 TMCJ4F route.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
     let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
@@ -420,14 +420,12 @@ fn load_with_assets(
     // synchronously before its native constructor spends an ID.
     let scheduler_roots =
         crate::map::resolved_terrain::scheduler_anim_roots(&rules, &overlay_registry, &[]);
-    rules
-        .bind_scheduler_anim_assets(
-            &scheduler_roots,
-            &assets,
-            theater.extension,
-            &map.header.theater,
-        )
-        .map_err(|error| format!("bind authoritative animation assets: {error}"))?;
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
     // Every other AnimClass producer and the building animations: tolerant pass,
     // after the strict one, which rewrites the scheduler-owned set wholesale.
     let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);

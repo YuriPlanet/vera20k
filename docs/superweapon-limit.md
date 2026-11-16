@@ -22,9 +22,8 @@ or `SuperWeapon2=` and a `BuildLimit=` of at least 1 and below the limit; `Build
 limit. `[VERA] SuperweaponLimit=` in VERA.INI keeps it, 0 for off. In the retail rules those are the six
 superweapons: the Nuclear Missile Silo, Iron Curtain, Weather Control Device, Chronosphere,
 Psychic Dominator and Genetic Mutator. Battle Labs, radars and other buildings that give a
-superweapon have no limit, so they keep the house's one charge. A mod, a map or your
-[personal rules](personal-rules.md) (`VERARULES.INI`) can set the keys as well, with any limit,
-and a map can switch them off for its own game:
+superweapon have no limit, so they keep the house's one charge. A mod or a map can set the
+keys as well, with any limit, and a map can switch them off for its own game:
 
 ```ini
 [NAMISL]

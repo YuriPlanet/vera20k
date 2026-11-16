@@ -137,7 +137,6 @@ fn raw_ini_walks_have_pinned_production_callers() {
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
-                ("rules/overlay_types.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
                 ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),

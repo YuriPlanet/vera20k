@@ -40,6 +40,10 @@ pub(crate) struct SpawnRequest {
     /// *(VERA)* Optional `[Settings] Expected*` values a launcher read from
     /// `vera20k --probe`; the launch is rejected at start when they differ.
     pub(crate) expected: SpawnExpectations,
+    /// *(VERA)* Optional `[Settings] Ares=Auto|On|Off`: the Ares setting this
+    /// launch plays instead of VERA.INI's (`util::ares_launch::AresSetting`).
+    /// An unknown value reads as Auto.
+    pub(crate) ares_setting: Option<crate::util::ares_launch::AresSetting>,
     /// The launch file, read again once the mode roster is loaded
     /// ([`SpawnRequest::admit_loaded_modes`]).
     text: String,
@@ -468,11 +472,21 @@ impl SpawnRequest {
                 },
             )?))
         };
+        let ares_setting = settings.is_present("Ares").then(|| {
+            let text = settings.read_string("Ares", "", 32);
+            crate::util::ares_launch::AresSetting::parse(&text).unwrap_or_else(|| {
+                log::warn!(
+                    "[Settings] Ares={text:?} is not Auto, On or Off; this launch plays Auto"
+                );
+                Default::default()
+            })
+        });
         Ok(Self {
             game,
             game_speed,
             seed,
             expected,
+            ares_setting,
             text: text.to_owned(),
         })
     }
@@ -707,17 +721,19 @@ fn skirmish(
     // Cooperative's AI rows come from its mode+68 (`0x005C30C0`), whose rows the
     // launcher writes here, so it admits them though setup offers none by hand.
     ensure!(
-        ai_count == 0 || mode.class.lists_in_skirmish() || mode.class.uses_cooperative_setup(),
+        ai_count == 0
+            || mode.class.policy().lists_in_skirmish
+            || mode.class.uses_cooperative_setup(),
         "GameMode={} cannot include AI players",
         mode.id
     );
     // Vtable+BC (`0x005C4F00`) and +98 (`0x005C42C0`).
     ensure!(
-        mode.class.allows_observers() || humans.iter().all(|human| !human.is_observer()),
+        mode.class.policy().observers_allowed || humans.iter().all(|human| !human.is_observer()),
         "GameMode={} cannot have spectators",
         mode.id
     );
-    if let Some(limit) = mode.class.setup_player_limit() {
+    if let Some(limit) = mode.class.policy().setup_player_limit {
         ensure!(
             humans.len() <= limit,
             "GameMode={} admits {limit} human players",

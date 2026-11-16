@@ -1,5 +1,5 @@
 //! VERA extension: the Extras of a random map, the opt-in choices the
-//! Generate Map dialog's Extras view offers (offline Skirmish only).
+//! Generate Map dialog's Extras view offers.
 //!
 //! Each [`Extra`] is a small number: `0` is the generator's own behaviour,
 //! so a map with every Extra at `0` generates exactly as it did before the

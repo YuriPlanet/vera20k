@@ -555,6 +555,18 @@ pub struct BuildingPart {
     /// [`BuildingLight`]: crate::sim::world::BuildingLight
     #[serde(default)]
     pub(crate) building_light: crate::sim::world::BuildingLight,
+    /// The `NaturalParticleSystem=` link (`TechnoClass+0x30C`, written only
+    /// by BuildingClass code): Unlimbo and the cloak's fade-in build it
+    /// ([`Simulation::construct_natural_particle_system`]), the fade-out
+    /// deletes it, and a yellow hit slows it.
+    ///
+    /// [`Simulation::construct_natural_particle_system`]: crate::sim::world::Simulation::construct_natural_particle_system
+    #[serde(default)]
+    pub(crate) natural_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
+    /// The destroy-smoke link (`TechnoClass+0x320`) DestructionEffects
+    /// fills once (`0x00441EF6`); nothing else reads it.
+    #[serde(default)]
+    pub(crate) destroy_smoke_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
     /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
     /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
     /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
@@ -2612,7 +2624,9 @@ impl GameEntity {
         self.fall.set_attached_anim_flag(attached);
     }
 
-    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+    /// Object+88, the held canopy identity published by Paradrop5F5AF1.
+    /// Presentation reads this identity with the object's other frame facts.
+    pub fn parachute_animation(&self) -> Option<u64> {
         self.fall.parachute_animation()
     }
 

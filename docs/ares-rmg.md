@@ -23,8 +23,7 @@ keys, so the defaults above apply.
 ## What it does
 
 - The landform list starts with Archipelago and the theater list gains
-  Desert after Snow, in every dialog (offline Skirmish keeps VERA's Urban
-  after them).
+  Desert after Snow; VERA's Urban follows them.
 - The Urban Areas box turns urban areas on. Surprise Me picks the landform,
   then the theater, from the listed entries, sets the box from the low bit of
   one raw Main draw, then draws the rest as stock does.

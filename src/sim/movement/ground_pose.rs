@@ -666,8 +666,18 @@ pub fn target_get_coords(
                 ))
             } else {
                 // Terrain7F522C+48 inherits Object5F65A0: its constructor's
-                // retained Location survives ground changes and expiry.
-                let coord = world.terrain_objects.objects().get(&id)?.world_coord();
+                // retained Location survives ground changes and expiry. So
+                // does VoxelAnim7F6318+48, an AttachedSystem's owner
+                // (`0x007498A5`): only its flight tail moves Location.
+                if let Some(terrain) = world.terrain_objects.objects().get(&id) {
+                    let coord = terrain.world_coord();
+                    return Some(DriveCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    });
+                }
+                let coord = world.substrate.voxel_anims.get(id)?.world_coord();
                 Some(DriveCoord {
                     x: coord.x,
                     y: coord.y,

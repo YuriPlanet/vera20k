@@ -1170,16 +1170,20 @@ impl IniSection {
 
     /// `0x00476340` (ParticleSystemType `SpawnDirection=`): ReadString into
     /// 0x200 bytes, then three `strtok(",")` tokens through CRT `atof`
-    /// ([`parse_leading_f64`]) into a float vector. Absent keeps `default`;
-    /// a missing token reads as 0 where native passes NULL to `atof`.
-    pub fn read_float_tokens(&self, key: &str, default: [f32; 3]) -> [f32; 3] {
+    /// ([`parse_leading_f64`]) into a float vector, each stored with `FSTP
+    /// float` (`0x004763A1`, `0x004763B7`, `0x004763D8`). Absent keeps
+    /// `default`; a missing token reads as 0 where native passes NULL to `atof`.
+    pub fn read_float_tokens(&self, key: &str, default: [NativeF32Bits; 3]) -> [NativeF32Bits; 3] {
         let Some(tokens) = self.read_list(key, 0x200) else {
             return default;
         };
         std::array::from_fn(|index| {
-            tokens
+            let value = tokens
                 .get(index)
-                .map_or(0.0, |token| parse_leading_f64(token) as f32)
+                .map_or(0.0, |token| parse_leading_f64(token));
+            MaskedX87Chop53::store_f32_masked_chop(MaskedX87Chop53::load_f64(
+                NativeF64Bits::from_bits(value.to_bits()),
+            ))
         })
     }
 
@@ -2093,6 +2097,7 @@ fn leading_float_token(s: &str) -> Option<&str> {
 mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
+    use crate::util::native_x87::NativeF32Bits;
 
     #[test]
     fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {
@@ -2469,11 +2474,15 @@ mod tests {
     /// `0x00476340` reads three `atof` tokens.
     #[test]
     fn read_float_tokens_atofs_three_tokens() {
-        let ini = sec("[S]\nV=0.5, -1,2e1\nShort=3\n");
+        let ini = sec("[S]\nV=0.5, -1,2e1\nShort=3\nChop=0.1\n");
         let s = ini.section("S").unwrap();
-        assert_eq!(s.read_float_tokens("V", [9.0; 3]), [0.5, -1.0, 20.0]);
-        assert_eq!(s.read_float_tokens("Short", [9.0; 3]), [3.0, 0.0, 0.0]);
-        assert_eq!(s.read_float_tokens("MISSING", [9.0; 3]), [9.0; 3]);
+        let read = |key| s.read_float_tokens(key, [NativeF32Bits::from_bits(9.0f32.to_bits()); 3]);
+        let floats = |values: [f32; 3]| values.map(|v| NativeF32Bits::from_bits(v.to_bits()));
+        assert_eq!(read("V"), floats([0.5, -1.0, 20.0]));
+        assert_eq!(read("Short"), floats([3.0, 0.0, 0.0]));
+        assert_eq!(read("MISSING"), floats([9.0; 3]));
+        // FSTP float chops: 0.1 stores 0x3DCCCCCC, not the nearest 0x3DCCCCCD.
+        assert_eq!(read("Chop")[0].bits(), 0x3DCC_CCCC);
     }
 
     /// `0x00476420` tokenizes where `read_coord3` scans: stock

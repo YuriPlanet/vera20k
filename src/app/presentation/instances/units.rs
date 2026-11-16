@@ -611,10 +611,11 @@ pub(crate) fn unit_visitor<'a>(
                     band,
                     sim.session().binary_frame(),
                     observer,
+                    cells.as_ref(),
                 ) else {
                     return None;
                 };
-                // Native admission/type/model choice is left unchanged.
+                // The actual object still owns locomotor pose and shadow admission.
                 let object_type = state
                     .rules()
                     .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
@@ -1265,7 +1266,8 @@ fn animation_frames_of(
     (body, turret)
 }
 
-/// The voxel model one Unit or Aircraft body is drawn from this frame.
+/// The ordinary Unit/Aircraft model, before Ares' WaterImage draw hook.
+/// DrawIt uses this choice for its SHP/VXL dispatch.
 ///
 /// `UnitClass::DrawVoxelBody` selects a deployed unit's `UnloadingClass=`
 /// after its disguise arm (`0x0073B4BC..0x0073B4D8`): Unit+0x6E0 therefore
@@ -1328,6 +1330,7 @@ fn unit_body_draw<'a>(
     band: EntityDrawBand,
     binary_frame: u32,
     observer: crate::render::draw_state::ObserverDrawContext,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<(Cow<'a, str>, BodyDraw)> {
     if entity.category() == EntityCategory::Unit && entity.unit_deploying() {
         return None;
@@ -1336,16 +1339,57 @@ fn unit_body_draw<'a>(
     if !super::helpers::drawn_type_uses_voxel(entity, &model, interner, rules) {
         return None;
     }
+    // DrawIt73D317 dispatches before Ares' WaterType hook73B4A0.
+    let model = water_image_type(entity, interner, rules, cells).map_or(model, Cow::Borrowed);
     let model_object = drawn_model_object(entity, &model, interner, rules);
     let tilt_crash_jumpjet = model_object.is_some_and(|object| object.tilt_crash_jumpjet);
+    // A RESIDUAL remains when actual and drawn types have different
+    // TurretCount or IsGattling modes. The helper selects the drawn type's
+    // mode. Native70DC60/717880 keeps actual-type
+    // admission, then reads the selected model's base/indexed slots. Such
+    // custom combinations can draw the wrong gun or omit it. The ordinary
+    // base pair serves the zero-count ROBO/MTNK water path.
     let turret_parts = object_draws_turret_parts(model_object, entity.current_turret_index());
     let body = body_draw(entity, band, tilt_crash_jumpjet, turret_parts);
     Some((model, body))
 }
 
-/// The rules record of the model `entity` draws ([`drawn_model_id`]): its own
-/// type through the bound handle when the model is that type, which is the
-/// common case, else the model looked up by name. Both answer as
+/// Ares UnitClass_DrawVXL_WaterType100481E0 in Ext/Techno/Hooks.Art.cpp
+/// calls GetUnitType10045340. Its hook73B4A0 replaces the original type
+/// selection and resumes73B4DA.
+/// WaterImage wins over deployed UnloadingClass and observer disguise. The
+/// miner's temporary Type swap73D29C..73D2C4 precedes this lookup. The live
+/// object's OnBridge and GetCell5F6960 decide admission, independently of Z
+/// or locomotor. The ordinary model already decided SHP/VXL dispatch.
+fn water_image_type<'a>(
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> Option<&'a str> {
+    let rules = rules.filter(|rules| rules.ares())?;
+    if entity.category() != EntityCategory::Unit || entity.on_bridge() {
+        return None;
+    }
+    let type_ref = entity
+        .display_type_override
+        .image()
+        .unwrap_or(entity.type_ref());
+    let object = interner.object_type_in_category(
+        type_ref,
+        crate::rules::object_type::ObjectCategory::Vehicle,
+        rules,
+    )?;
+    let image = object.water_image()?;
+    let cells = cells?;
+    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    (cells.land_type(cells.lookup_world(x, y))
+        == crate::rules::terrain_rules::LandType::Water.as_index() as i32)
+        .then_some(image)
+}
+
+/// Resolve a selected model through the object's bound handle when it is
+/// its own type, and through its name otherwise. Both answer as
 /// `rules.object(model)` would.
 pub(super) fn drawn_model_object<'r>(
     entity: &crate::app::presentation::frame::ObjectRecord,

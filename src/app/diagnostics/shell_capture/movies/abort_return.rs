@@ -216,24 +216,32 @@ impl AbortReturnInput {
                         == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet;
                     if internet {
                         // The menu opens on Game Controls; FF's group heads
-                        // the Game Options page, the first page tab.
-                        let tab = *layout
-                            .page_tabs()
-                            .first()
-                            .context("FF has no Game Options page tab")?;
-                        let point = set_window_pointer_to_rect_center(state, tab);
-                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                        for button_state in [ElementState::Pressed, ElementState::Released] {
-                            crate::app::input::dispatch::handle_mouse_input(
-                                state,
-                                MouseButton::Left,
-                                button_state,
-                            );
+                        // the Game Options page, which Options' column shows:
+                        // Keyboard, then a button per category.
+                        use crate::ui::main_menu_dialogs::options::Category;
+                        let game_options = 1 + Category::ALL
+                            .iter()
+                            .position(|category| *category == Category::Gameplay)
+                            .context("the column has no Game Options page")?;
+                        for (step, row) in [("Options", 0), ("Game Options page", game_options)] {
+                            let rect = *layout
+                                .page_column()
+                                .get(row)
+                                .with_context(|| format!("FF has no {step} button"))?;
+                            let point = set_window_pointer_to_rect_center(state, rect);
+                            crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+                            for button_state in [ElementState::Pressed, ElementState::Released] {
+                                crate::app::input::dispatch::handle_mouse_input(
+                                    state,
+                                    MouseButton::Left,
+                                    button_state,
+                                );
+                            }
+                            layout = crate::app::input::pause_menu::current_layout(state)
+                                .context("FF has no loaded hit geometry")?;
+                            route.push(json!({"frame": frame, "action": step,
+                                "dialog": dialog, "point": point}));
                         }
-                        layout = crate::app::input::pause_menu::current_layout(state)
-                            .context("FF has no loaded hit geometry")?;
-                        route.push(json!({"frame": frame, "action": "Game Options tab",
-                            "dialog": dialog, "point": point}));
                     }
                     if internet {
                         let internet = layout.internet.context(

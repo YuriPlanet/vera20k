@@ -1245,9 +1245,11 @@ impl UnitModel {
         }
         let count = crate::rules::voxel_frame_catalog::indexed_turret_count(type_id, rules);
         let guns = if count > 0 {
-            // The loader owns the bounded native slot array; never allocate
-            // arbitrary space from an unchecked authored TurretCount.
-            (0..(count as usize).min(model.indexed_count()))
+            // Unit73B8D9/70DCF0 uses a positive count to select indexed mode,
+            // then draws the retained current slot without a count comparison.
+            // ObjectType5F865F keeps earlier native slots after a count shrink.
+            // Allocation follows the loader's represented physical slots.
+            (0..model.indexed_count())
                 .map(|index| {
                     let (turret, barrel) = model.indexed_parts(index);
                     GunParts {

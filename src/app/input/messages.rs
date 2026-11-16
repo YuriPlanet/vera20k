@@ -1182,8 +1182,10 @@ fn message_instances(
     let mut texts = Vec::new();
     // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
     // is never set and the chat cursor character 0 draws no caret.
+    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
+        .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
     // The open composition follows the typed text (`app::input::ime`).
     let composition = edit.as_ref().zip(composition).map(|(row, units)| {

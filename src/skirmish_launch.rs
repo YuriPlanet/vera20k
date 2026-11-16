@@ -452,10 +452,9 @@ pub struct SkirmishLaunchOptions {
 }
 
 /// VERA: the rules a network room plays besides its options, which only its
-/// host sets: the host's Terrain Deformation box, Superweapon Limit and
-/// the host's VERARULES.INI when it changes the game and fits. Every player's
-/// match plays these instead of their own; offline games play the player's own
-/// (`ProcessAssets::use_personal_rules`).
+/// host sets: the host's Terrain Deformation box and Superweapon Limit.
+/// Every player's match plays these instead of their own; offline games play
+/// the player's own (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostRules {
@@ -468,46 +467,36 @@ pub struct HostRules {
     /// [`admitted_superweapon_limit`]: crate::rules::personal_rules::admitted_superweapon_limit
     #[serde(default, skip_serializing_if = "is_zero")]
     pub superweapon_limit: u8,
-    /// The host's VERARULES.INI in base64, at most
-    /// [`SHARE_LIMIT`](crate::rules::personal_rules::SHARE_LIMIT) bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub personal_rules: Option<String>,
+    /// The host's VERARULES.INI in base64, which games sent until the file
+    /// was retired for New Mod. Never sent now; read only so that a room or a
+    /// replay from such a game is refused by [`Self::personal_rules`] with a
+    /// reason rather than unread.
+    #[serde(rename = "personal_rules", default, skip_serializing)]
+    pub retired_personal_rules: Option<String>,
 }
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && self.superweapon_limit == 0 && self.personal_rules.is_none()
+        !self.terrain_deformation && self.superweapon_limit == 0
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
-    /// box and Superweapon Limit, and its VERARULES.INI when the file changes
-    /// the game and fits.
+    /// box and Superweapon Limit.
     pub fn from_own(own: &PersonalRules) -> Self {
-        let fits = own.source().len() <= crate::rules::personal_rules::SHARE_LIMIT;
         Self {
             terrain_deformation: own.terrain_deformation(),
             superweapon_limit: own.superweapon_limit(),
-            personal_rules: (!own.is_empty() && fits)
-                .then(|| crate::util::base64::base64_encode(own.source())),
+            retired_personal_rules: None,
         }
     }
 
     /// The rules every player's match plays. Another game sent them, so a
-    /// file that is not base64, is too long or does not read is refused.
+    /// room from a game that still shares VERARULES.INI is refused.
     pub fn personal_rules(&self) -> Result<PersonalRules, String> {
-        let mut rules = match self.personal_rules.as_deref() {
-            None => PersonalRules::default(),
-            Some(text) => {
-                if text.len() > crate::rules::personal_rules::SHARE_LIMIT.div_ceil(3) * 4 {
-                    return Err(format!("{} characters of personal rules", text.len()));
-                }
-                let bytes = crate::util::base64::base64_decode(text)?;
-                if bytes.len() > crate::rules::personal_rules::SHARE_LIMIT {
-                    return Err(format!("{} bytes of personal rules", bytes.len()));
-                }
-                PersonalRules::from_bytes(&bytes).map_err(|error| error.to_string())?
-            }
-        };
+        if self.retired_personal_rules.is_some() {
+            return Err("the host shares VERARULES.INI, which this version no longer plays".into());
+        }
+        let mut rules = PersonalRules::default();
         rules.set_terrain_deformation(self.terrain_deformation);
         rules.set_superweapon_limit(i32::from(self.superweapon_limit));
         Ok(rules)
@@ -1069,7 +1058,7 @@ impl SkirmishLaunchSession {
             .opponents
             .iter()
             .all(|ai| ai.team == LaunchTeam::Team(team));
-        same_humans && same_ai && !self.mode.class.permits_all_allied()
+        same_humans && same_ai && !self.mode.class.policy().permits_all_allied
     }
 
     /// FreeForAll5C5D40's roles: each non-observer node+6B is its source index.
@@ -1090,10 +1079,10 @@ impl SkirmishLaunchSession {
     }
 
     /// VERA shared control: the human whose House human `index` plays in.
-    /// Outside Cooperative, players who pick the same start share one House,
-    /// led by the first of them in row order; everyone else leads their own.
-    /// gamemd's setup refuses a taken start (`0x005E9720`), so it never sees
-    /// a shared one.
+    /// When [`crate::skirmish_modes::ModePolicy::shared_start_positions`] allows it, players who pick
+    /// the same start share one House, led by the first of them in row order;
+    /// everyone else leads their own. gamemd's setup refuses a taken start
+    /// (`0x005E9720`), so it never sees a shared one.
     pub fn house_leader(&self, index: usize) -> usize {
         let human = &self.humans[index];
         if !self.shares_start(human) {
@@ -1109,9 +1098,9 @@ impl SkirmishLaunchSession {
             .map_or(index, |(leader, _)| leader)
     }
 
-    /// A seated player's explicit start, outside Cooperative, can be shared.
+    /// A seated player's explicit start can be shared when the mode policy allows it.
     pub fn shares_start(&self, human: &SkirmishHumanSlot) -> bool {
-        self.mode.class != crate::skirmish_modes::MpModeClass::Cooperative
+        self.mode.class.policy().shared_start_positions
             && human.raw_slot_index.is_some()
             && !human.is_observer()
             && matches!(human.slot.start_position, LaunchStartPosition::Position(_))
@@ -1308,32 +1297,28 @@ pub enum LaunchValidationError {
 mod tests {
     use super::*;
 
+    /// A room shares its host's switches, and a room or replay from a game
+    /// that still shared VERARULES.INI is refused rather than played without
+    /// the host's file.
     #[test]
-    fn a_room_shares_its_hosts_rules_and_refuses_what_cannot_be_them() {
-        use crate::rules::personal_rules::{PersonalRules, SHARE_LIMIT};
-        let mut own = PersonalRules::from_bytes(b"[E1]\nCost=75\n").unwrap();
+    fn a_room_shares_its_hosts_switches_and_refuses_a_retired_file() {
+        use crate::rules::personal_rules::PersonalRules;
+        let mut own = PersonalRules::default();
         own.set_terrain_deformation(true);
         let played = HostRules::from_own(&own).personal_rules().unwrap();
         assert_eq!(played.compatibility_crc(), own.compatibility_crc());
-        // A file of comments has nothing to share, and a room sharing
-        // nothing sends the options as before.
-        let comments = PersonalRules::from_bytes(b"; [E1]\n; Cost=75\n").unwrap();
-        assert_eq!(HostRules::from_own(&comments), HostRules::default());
-        // A host's file past the limit stays home; its box still counts.
-        let mut big = b"[E1]\nCost=75\n".to_vec();
-        big.resize(SHARE_LIMIT + 1, b';');
-        let mut big = PersonalRules::from_bytes(&big).unwrap();
-        big.set_terrain_deformation(true);
-        let shared = HostRules::from_own(&big);
-        assert!(shared.terrain_deformation && shared.personal_rules.is_none());
         let options = serde_json::to_value(SkirmishLaunchOptions::default()).unwrap();
         assert!(options.get("host_rules").is_none());
-        // Another game's file past the limit is refused, not played.
-        let long = HostRules {
-            personal_rules: Some(crate::util::base64::base64_encode(&[b';'; SHARE_LIMIT + 1])),
-            ..HostRules::default()
-        };
-        assert!(long.personal_rules().is_err());
+        let older: HostRules = serde_json::from_value(serde_json::json!({
+            "terrain_deformation": true,
+            "personal_rules": "W0UxXQpDb3N0PTc1Cg==",
+        }))
+        .unwrap();
+        assert!(older.personal_rules().is_err());
+        assert_eq!(
+            serde_json::to_value(&older).unwrap(),
+            serde_json::json!({"terrain_deformation": true})
+        );
     }
 
     /// A room sends its host's Superweapon Limit as the number, and a guest
@@ -1919,5 +1904,16 @@ mod tests {
         let mut expected_rng = SimRng::new(seed);
         let _ = draw_collision_free_color(&mut expected_rng, &[1, 2], SkirmishColorMode::VANILLA);
         assert_eq!(rng.state(), expected_rng.state());
+    }
+
+    #[test]
+    fn shares_start_follows_mode_policy_shared_start_positions() {
+        let mut session = random_test_session();
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(2);
+        let battle_human = session.humans[0].clone();
+
+        assert!(session.shares_start(&battle_human));
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(!session.shares_start(&battle_human));
     }
 }

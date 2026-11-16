@@ -102,6 +102,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // strip policy; Options' accept writes it out.
         self.persistence.options_profile.health_bars = mode;
     }
+    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting) {
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with. Options' accept writes it out.
+        self.persistence.options_profile.ares = setting;
+    }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
         // frame is corrected; no atlas or ramp has to be rebuilt. Options'
@@ -589,7 +594,7 @@ impl App {
     /// failed IPX admission) at52E37D. Preferences stay in their process
     /// caches; the original reads INI8870C0, not disk.
     pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
-        // VERA: setup screens start from the player's own personal rules,
+        // VERA: setup screens start from the player's own Options switches,
         // which a previous room's replaced; a room's agreement plays its
         // host's.
         state.process_assets.use_own_personal_rules();
@@ -1727,6 +1732,22 @@ impl App {
                 Self::answer_mod_restart(
                     state,
                     folder,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModFiles(which) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_files(
+                    state,
+                    which,
+                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            ShellMessageBoxPurpose::ModMade(dir) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_made(
+                    state,
+                    &dir,
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
             }

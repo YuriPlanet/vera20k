@@ -54,6 +54,19 @@ pub(super) const RETAIL_CAMPAIGN_MAPS: [&str; 14] = [
     "SOV07TMD.MAP",
 ];
 
+/// What a Mods capture presses once the page has settled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ModsPress {
+    Nothing,
+    /// A row the run does not play, then Use This Mod.
+    Use,
+    /// A mod's row, then Check Files.
+    Check,
+    /// New Mod, which makes a folder in the run's `Mods`: run it from a
+    /// settings folder of its own.
+    New,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MoviesTarget {
     Page0x101,
@@ -72,10 +85,9 @@ pub(super) enum MoviesTarget {
     },
     /// Exit Game through the production teardown slide, then state 6.
     ExitConfirm,
-    /// Main Menu -> Options -> Mods: VERA's page settled; with `ask`, after a press on
-    /// a row the run does not play and on Use This Mod.
+    /// Main Menu -> Options -> Mods: VERA's page settled, then `press`.
     Mods {
-        ask: bool,
+        press: ModsPress,
     },
     /// A teardown slide held at `tick`: Exit Game on `0xE2` or Back on
     /// `0x129`.
@@ -317,7 +329,9 @@ impl MoviesCapture {
     /// Through the page's own pointer handlers: a press on the first row in
     /// view that the run does not play and can, then on Use This Mod, which
     /// asks.
-    fn press_mod_row_and_use(state: &mut AppState) -> Result<()> {
+    /// The Mods page's row and button for `press`, through the ordinary
+    /// pointer handlers. Check Files then waits for its reading thread.
+    fn press_mod_row_and(state: &mut AppState, press: ModsPress) -> Result<()> {
         let layout = crate::app::frontend::shell_layout::mods_layout(state);
         let mods = &state.frontend.mods;
         let page = mods.page.as_ref().context("the Mods page has no list")?;
@@ -326,18 +340,30 @@ impl MoviesCapture {
             crate::ui::shell::list::ListMetrics::scaled(layout.page.scale),
         );
         // The list opens with the row in use in view: pick from what shows.
-        let visible = page
-            .rows
-            .iter()
-            .skip(page.top)
-            .take(geometry.visible_rows)
-            .position(|row| !mods.in_use(row) && row.needs.is_none())
-            .context("the Mods list shows no other row to pick")?;
-        let use_button = layout
+        // New Mod needs no row.
+        let row = (press != ModsPress::New)
+            .then(|| {
+                page.rows
+                    .iter()
+                    .skip(page.top)
+                    .take(geometry.visible_rows)
+                    .position(|row| match press {
+                        ModsPress::Check => row.folder.is_some(),
+                        _ => !mods.in_use(row) && row.needs.is_none(),
+                    })
+                    .map(|visible| geometry.row(visible))
+                    .context("the Mods list shows no row to pick")
+            })
+            .transpose()?;
+        let button = layout
             .page
-            .button_rect(crate::ui::mods_shell::USE)
-            .context("the Mods page has no Use This Mod button")?;
-        for rect in [geometry.row(visible), use_button] {
+            .button_rect(match press {
+                ModsPress::Check => crate::ui::mods_shell::CHECK,
+                ModsPress::New => crate::ui::mods_shell::NEW,
+                _ => crate::ui::mods_shell::USE,
+            })
+            .context("the Mods page lacks the button to press")?;
+        for rect in row.into_iter().chain([button]) {
             state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
             state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
             App::handle_mods_mouse_down(state);
@@ -345,8 +371,29 @@ impl MoviesCapture {
         }
         ensure!(
             state.frontend.shell_message_box.is_some(),
-            "Use This Mod did not ask before restarting"
+            "the Mods page's button opened no box"
         );
+        if press == ModsPress::Check {
+            use crate::app::frontend::state::{ModFilesBox, ShellMessageBoxPurpose};
+            let reading = |state: &AppState| {
+                state
+                    .frontend
+                    .shell_message_box
+                    .as_ref()
+                    .is_some_and(|open| {
+                        matches!(
+                            open.purpose,
+                            ShellMessageBoxPurpose::ModFiles(ModFilesBox::Reading)
+                        )
+                    })
+            };
+            let started = std::time::Instant::now();
+            while reading(state) && started.elapsed() < std::time::Duration::from_secs(60) {
+                App::poll_mod_files(state);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            ensure!(!reading(state), "Check Files did not answer in a minute");
+        }
         Ok(())
     }
 
@@ -1052,11 +1099,14 @@ impl MoviesCapture {
             }
             (Phase::Mods, PresentedShell::Mods) => {
                 if Self::slide_settled(state, ShellSlideKind::Mods) {
-                    if self.target == (MoviesTarget::Mods { ask: true }) {
-                        Self::press_mod_row_and_use(state)?;
+                    if let MoviesTarget::Mods {
+                        press: press @ (ModsPress::Use | ModsPress::Check | ModsPress::New),
+                    } = self.target
+                    {
+                        Self::press_mod_row_and(state, press)?;
                         self.route
                             .push(json!({"dialog": crate::ui::mods_shell::DIALOG.0,
-                            "frame": frame, "action": "press a row, then Use This Mod"}));
+                            "frame": frame, "action": "press a row, then the page's button"}));
                         Self::restore_neutral_pointer(state);
                     } else {
                         // Hover over the list writes its status help.
@@ -1490,10 +1540,14 @@ impl MoviesCapture {
         // Steady page frames wait for the heading's and the status line's
         // kind-1 reveals to finish.
         let heading_settled = match self.target {
-            // The question's box covers the page's statics.
-            MoviesTarget::Mods { ask: true } => true,
+            // The box covers the page's statics.
+            MoviesTarget::Mods {
+                press: ModsPress::Use | ModsPress::Check | ModsPress::New,
+            } => true,
             MoviesTarget::Page0x101
-            | MoviesTarget::Mods { ask: false }
+            | MoviesTarget::Mods {
+                press: ModsPress::Nothing,
+            }
             | MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
             | MoviesTarget::FullList { .. }
@@ -1549,10 +1603,10 @@ impl MoviesCapture {
         }
         let expected = match self.target {
             MoviesTarget::Page0x101 => state.frontend.shell_route.movies_and_credits(),
-            MoviesTarget::Mods { ask } => {
+            MoviesTarget::Mods { press } => {
                 state.frontend.shell_route.mods()
                     && state.frontend.mods.page.is_some()
-                    && state.frontend.shell_message_box.is_some() == ask
+                    && state.frontend.shell_message_box.is_some() == (press != ModsPress::Nothing)
             }
             MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected

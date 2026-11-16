@@ -8,7 +8,7 @@ use crate::app::frontend::skirmish_shell_render::{
 use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::shell_wol::lobby::player_badge;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
-use crate::skirmish_modes::{MpModeClass, mode_by_id};
+use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
@@ -167,7 +167,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         .flatten();
     // The host keeps at least two seats.
     let may_remove = seats.filter(|row| !removed(row)).count() > 2;
-    let ai_allowed = !watched && mode.class.lists_in_skirmish();
+    let ai_allowed = !watched && mode.class.policy().lists_in_skirmish;
     // In a mode with teams, VERA's rooms group their rows under headers:
     // with Teams set, one for each of its teams.
     let grouped = several && session.network_team_room();
@@ -489,7 +489,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     swatch: None,
                 });
                 //5EB060 asks the same vtable+40 used by the Skirmish mode list.
-                if mode.class.lists_in_skirmish() && !observer_only {
+                if mode.class.policy().lists_in_skirmish && !observer_only {
                     for (value, key) in ai_choices {
                         players.push(SetupChoice {
                             value,
@@ -591,10 +591,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         .into_iter()
         .map(|item| choice(state, item))
         .collect::<Vec<_>>();
-        // VERA shared control: outside Cooperative a player may pick a start
-        // another player holds, which joins that player's House. Such starts
-        // stay listed, marked "+".
-        let shares = human.is_some() && mode.class != MpModeClass::Cooperative;
+        // VERA shared control: when the mode policy allows shared start
+        // positions, a player may pick a start another player holds to join
+        // that player's House. Such starts stay listed, marked "+".
+        let shares = human.is_some() && mode.class.policy().shared_start_positions;
         let human_starts = launch
             .humans
             .iter()

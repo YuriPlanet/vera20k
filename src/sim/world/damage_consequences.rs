@@ -168,7 +168,7 @@ impl DamageConsequences {
 
         world.finish_terrain_navigation_changes(rules, &terrain_navigation_changed_cells);
 
-        world.admit_death_debris(std::mem::take(&mut effects.voxel_debris));
+        world.admit_death_debris(std::mem::take(&mut effects.voxel_debris), rules);
         // Explicit callback-disabled fixtures retain their effect packets;
         // production death producers already admitted each birth inline.
         // Remaining effects are `AnimClass` instances, not legacy world effects: only the real

@@ -152,7 +152,10 @@ Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length
 Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
 `C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
 that carry it. Other modes omit the field.
-`start_staging` is the canonical 37-number native `W` record, bounded to512bytes;
+`start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
+and for a random map of 9 to 30 players four more for each start past the eighth,
+bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
+or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). `launch.options.teams`, a VERA room's
@@ -174,8 +177,9 @@ refuses it in the same way; the host's game then stops queueing in that room, sa
 and sends its options again, before it turns off Balance automatically and then Teams
 if the lobby still refuses. `launch.options.host_rules`, the rules a VERA room plays, is
 `{terrain_deformation?:true, superweapon_limit?:2..20, personal_rules?:<base64>}`: the host's
-Terrain Deformation, its Superweapon Limit and its `VERARULES.INI` in standard base64 of at
-most 8,192 bytes (10,924 characters). The game leaves each part out while it is off, and
+Terrain Deformation and its Superweapon Limit. `personal_rules`, the host's `VERARULES.INI`
+in standard base64 of at most 8,192 bytes (10,924 characters), came from games before the
+file was retired; current games never send it and refuse a room that has it. The game leaves each part out while it is off, and
 the object while all are; every player's match plays them in place of the player's own. A
 lobby from before the Superweapon Limit refuses options that carry `superweapon_limit`; the host's
 game then turns it off, says so and sends its options again, keeping the other rules. A
@@ -394,7 +398,7 @@ Generated maps transfer the `.SED` bytes as the map and the separate native PCX
 preview with `resource:"preview"` (512KiB maximum). Preview downloads use the
 selected seed's URL plus `&resource=preview`; response `digest` names the preview.
 Both resources use the same ownership, ordered chunk, hash and cleanup rules.
-Generated capacity equals the staged start count (2–8); observers consume only
+Generated capacity equals the staged start count (2–30); observers consume only
 transport slots. Start admission also compares the canonical staging digest, so clients cannot
 agree on seed bytes while using different generated start cells.
 

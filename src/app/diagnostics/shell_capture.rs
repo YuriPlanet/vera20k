@@ -49,6 +49,10 @@ const CHECKPOINT_MODS_STEADY: &str = "mods-steady";
 /// The same after a press on a row the run does not play and on Use This
 /// Mod: the restart question over the page.
 const CHECKPOINT_MODS_RESTART_QUESTION: &str = "mods-restart-question";
+/// The same after a press on a mod's row and on Check Files, once the files
+/// are read: what the check found, over the page.
+const CHECKPOINT_MODS_CHECK_FILES: &str = "mods-check-files";
+const CHECKPOINT_MODS_NEW_MOD: &str = "mods-new-mod";
 const CHECKPOINT_CAMPAIGN_0X94_STEADY: &str = "campaign-0x94-steady";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT: &str = "campaign-0x94-slider-left";
 const CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT: &str = "campaign-0x94-slider-right";
@@ -97,7 +101,7 @@ const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
     ("options-0xd5-settings-interface", Category::Interface),
     ("options-0xd5-settings-audio", Category::Audio),
     ("options-0xd5-settings-controls", Category::Controls),
-    ("options-0xd5-settings-developer", Category::Developer),
+    ("options-0xd5-settings-general", Category::General),
 ];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
@@ -115,12 +119,12 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
     (
         "options-0xd5-hover-difficulty",
         Category::Gameplay,
-        (224, 157),
+        (224, 97),
     ),
     (
         "options-0xd5-hover-tooltips",
         Category::Interface,
-        (160, 245),
+        (160, 206),
     ),
     ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
@@ -229,6 +233,9 @@ pub enum ShellCaptureCheckpoint {
     ModsSteady,
     /// The Mods page's restart question, after a row and Use This Mod.
     ModsRestartQuestion,
+    /// The Mods page's Check Files answer, after a mod's row and Check Files.
+    ModsCheckFiles,
+    ModsNewMod,
     /// Single Player -> New Campaign: campaign selection `0x94` settled.
     Campaign0x94Steady,
     /// The same after a press on the difficulty slider's left or right end.
@@ -621,6 +628,8 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME => Ok(Self::MovieList0x129BackFirstFrame),
             CHECKPOINT_MODS_STEADY => Ok(Self::ModsSteady),
             CHECKPOINT_MODS_RESTART_QUESTION => Ok(Self::ModsRestartQuestion),
+            CHECKPOINT_MODS_CHECK_FILES => Ok(Self::ModsCheckFiles),
+            CHECKPOINT_MODS_NEW_MOD => Ok(Self::ModsNewMod),
             CHECKPOINT_CAMPAIGN_0X94_STEADY => Ok(Self::Campaign0x94Steady),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT => Ok(Self::Campaign0x94SliderLeft),
             CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT => Ok(Self::Campaign0x94SliderRight),
@@ -803,6 +812,8 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129BackFirstFrame => CHECKPOINT_MOVIE_LIST_0X129_BACK_FIRST_FRAME,
             Self::ModsSteady => CHECKPOINT_MODS_STEADY,
             Self::ModsRestartQuestion => CHECKPOINT_MODS_RESTART_QUESTION,
+            Self::ModsCheckFiles => CHECKPOINT_MODS_CHECK_FILES,
+            Self::ModsNewMod => CHECKPOINT_MODS_NEW_MOD,
             Self::Campaign0x94Steady => CHECKPOINT_CAMPAIGN_0X94_STEADY,
             Self::Campaign0x94SliderLeft => CHECKPOINT_CAMPAIGN_0X94_SLIDER_LEFT,
             Self::Campaign0x94SliderRight => CHECKPOINT_CAMPAIGN_0X94_SLIDER_RIGHT,
@@ -1030,8 +1041,18 @@ impl ShellCaptureCheckpoint {
             Self::MovieList0x129Full => movies::MoviesTarget::FullList { down_presses: 0 },
             Self::MovieList0x129FullDown2 => movies::MoviesTarget::FullList { down_presses: 2 },
             Self::MovieList0x129BackFirstFrame => movies::MoviesTarget::ListBackFirstFrame,
-            Self::ModsSteady => movies::MoviesTarget::Mods { ask: false },
-            Self::ModsRestartQuestion => movies::MoviesTarget::Mods { ask: true },
+            Self::ModsSteady => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::Nothing,
+            },
+            Self::ModsRestartQuestion => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::Use,
+            },
+            Self::ModsCheckFiles => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::Check,
+            },
+            Self::ModsNewMod => movies::MoviesTarget::Mods {
+                press: movies::ModsPress::New,
+            },
             Self::Campaign0x94Steady => movies::MoviesTarget::Campaign0x94 {
                 press: None,
                 hold_over: None,
@@ -4244,6 +4265,25 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+        // Each point rests on the control its name gives.
+        use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
+        use crate::ui::main_menu_dialogs::options::{LauncherCheckboxId, LauncherTrackbarId};
+        let [difficulty, tooltips, music] = OPTIONS_0XD5_HOVER_CHECKPOINTS
+            .map(|(_, category, (x, y))| (LauncherOptionsLayout::new(800, 600, category), x, y));
+        let slider = |(layout, x, y): &(LauncherOptionsLayout, i32, i32), id| {
+            layout
+                .trackbar_rect(id)
+                .is_some_and(|rect| rect.contains(*x, *y))
+        };
+        assert!(slider(&difficulty, LauncherTrackbarId::Difficulty));
+        assert!(slider(&music, LauncherTrackbarId::Score));
+        let (layout, x, y) = &tooltips;
+        assert!(
+            layout
+                .checkboxes
+                .iter()
+                .any(|(id, rect)| { *id == LauncherCheckboxId::Tooltips && rect.contains(*x, *y) })
+        );
         for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
             assert_eq!(

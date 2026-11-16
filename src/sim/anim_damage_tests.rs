@@ -120,9 +120,7 @@ fn retail_scene(extra: &str) -> Option<Scene> {
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
-    rules
-        .bind_authored_load_anim("FIRE3", &assets, ".sno", "SNOW")
-        .unwrap();
+    rules.bind_authored_load_anim("FIRE3", &assets, ".sno", "SNOW");
     let registry = rules.overlay_registry().clone();
     let mut sim = Simulation::with_seed(0x424647);
     sim.session.set_map_width_for_test(64);

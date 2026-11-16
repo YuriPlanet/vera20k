@@ -134,27 +134,45 @@ fn inspection_reports_optional_corruption_and_both_cd_media_boundaries() {
     );
 }
 
-/// Startup mounting `ares.mix` (Load_Bootstrap_AresMIX, 0x0053029E) makes
-/// Ares play in every game (`rules::ares_switch`).
+/// With no mod selected, startup ignores an installation's Ares archive.
+/// A selected mod keeps Load_Bootstrap_AresMIX (0x0053029E), its own copy first.
 #[test]
-fn a_mounted_ares_mix_ships_ares() {
+fn only_a_selected_mod_mounts_ares_mix() {
     let directory = audio_test_install("ships-ares");
-    let assets = AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mode = MediaArchiveMode::STOCK_DIGITAL;
+    let assets = AssetManager::new(directory.path(), mode).unwrap();
     assert!(!assets.ships_ares());
     directory.write_mix("ares.mix", "probe.csf", b"ares");
-    let assets = AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let assets = AssetManager::new(directory.path(), mode).unwrap();
+    assert!(!assets.ships_ares());
+    assert!(assets.get_ref("probe.csf").is_none());
+    let (inspected, _) = AssetManager::inspect_install(directory.path(), mode).unwrap();
+    assert!(!inspected.ships_ares());
+
+    let mod_dir = super::test_support::TestDirectory::new("ares-mod");
+    let assets = AssetManager::with_mod(directory.path(), Some(mod_dir.path()), mode).unwrap();
     assert!(assets.ships_ares());
+    assert_eq!(assets.get_ref("probe.csf"), Some(&b"ares"[..]));
+    mod_dir.write_mix("ARES.MIX", "probe.csf", b"mod ares");
+    let assets = AssetManager::with_mod(directory.path(), Some(mod_dir.path()), mode).unwrap();
+    assert_eq!(assets.get_ref("probe.csf"), Some(&b"mod ares"[..]));
 }
 
 /// Ares Expand_MIX_Reorg (0x006BD7E3) runs Init_Base_Mix_Files ahead of
 /// LANGMD.MIX, and Load_Bootstrap_AresMIX (0x0053029E) registers ares.mix
-/// after the expansions and before RA2MD.MIX. A game without `ares.mix` keeps
-/// gamemd's order, LANGMD.MIX first.
+/// after the expansions and before RA2MD.MIX. With no mod selected, startup
+/// keeps gamemd's order, LANGMD.MIX first, even with an installed `ares.mix`.
 #[test]
 fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
     let directory = audio_test_install("ares-mix");
-    let source = |name: &str| {
-        let assets = AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mod_dir = super::test_support::TestDirectory::new("ares-order-mod");
+    let source = |name: &str, selected_mod: bool| {
+        let assets = AssetManager::with_mod(
+            directory.path(),
+            selected_mod.then_some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
         assets.resolve_ref(name).unwrap().source_archive.to_owned()
     };
     for archive in ["langmd.mix", "ra2md.mix"] {
@@ -162,7 +180,7 @@ fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
     }
     // A build with the `ares` feature takes Ares' order in every game.
     assert_eq!(
-        source("probe.csf"),
+        source("probe.csf", false),
         if cfg!(feature = "ares") {
             "ra2md.mix"
         } else {
@@ -170,9 +188,17 @@ fn a_game_with_ares_mix_resolves_base_mixes_and_ares_mix_ahead_of_langmd() {
         }
     );
     directory.write_mix("ares.mix", "other.csf", b"ares.mix");
-    assert_eq!(source("probe.csf"), "ra2md.mix");
+    assert_eq!(
+        source("probe.csf", false),
+        if cfg!(feature = "ares") {
+            "ra2md.mix"
+        } else {
+            "langmd.mix"
+        }
+    );
+    assert_eq!(source("probe.csf", true), "ra2md.mix");
     for archive in ["ares.mix", "expandmd00.mix"] {
         directory.write_mix(archive, "probe.csf", archive.as_bytes());
-        assert_eq!(source("probe.csf"), archive);
+        assert_eq!(source("probe.csf", true), archive);
     }
 }

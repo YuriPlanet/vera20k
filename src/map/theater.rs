@@ -701,8 +701,12 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
 /// numeric keys pass the field's current value as their own INI default, which
 /// for a freshly constructed tile type is 0 / 0 / -1 / 0.
 fn parse_tile_anim(section: &IniSection, tile_ordinal: u32) -> Option<TileAnimAttachment> {
-    // 0x80-byte ReadString at `0x00546524`, then `AnimTypeClass::Find`.
-    let anim_name = section.read_name(&format!("Tile{:02}Anim", tile_ordinal), 0x80)?;
+    // 0x80-byte ReadString at `0x00546524`, then `AnimTypeClass::FindOrAllocate`
+    // (`0x00546538`), which gives no type for `<none>` or `none`: the block is
+    // skipped (`JE 0x00546642`).
+    let anim_name = section
+        .read_name(&format!("Tile{:02}Anim", tile_ordinal), 0x80)
+        .filter(|name| !crate::rules::ini_parser::is_native_none_type_name(name))?;
     Some(TileAnimAttachment {
         anim_name: anim_name.to_string(),
         x_offset: section.read_int(
