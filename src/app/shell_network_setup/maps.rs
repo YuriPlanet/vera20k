@@ -3,6 +3,7 @@
 //! for decoding, effective rules, map identity and retained loading sources.
 
 use crate::app::AppState;
+use crate::app::match_runtime::session::{MatchSession, NetworkMapMetadata};
 use crate::map::source::{
     LoadedMapIni, LoadedMapSource, LoadedTransferAsset, TransferContent, TransferResource,
 };
@@ -52,15 +53,48 @@ pub(crate) fn checked_staging(
     Ok(staging)
 }
 
+/// Whether the room's map is a generated seed, whose transfer is the seed
+/// and a [`GeneratedMapManifest`]. LAN and online decide it by the loader's
+/// rule; gamemd's own `RandMap.Sed` name checks keep their name.
+pub(crate) fn generated_selection(session: &MatchSession) -> bool {
+    session
+        .network_setup()
+        .and_then(|launch| launch.selected_map_file.as_deref())
+        .is_some_and(crate::map::rmg::is_seed_selection)
+}
+
+/// A host's map name a room takes: a valid logical name, and no seed but
+/// `RandMap.Sed`, the only seed the catalog lists and the one name the
+/// guest's start staging (`AcceptedRmgStartStaging::from_retained_staging`)
+/// and map admission (`0x005E5500`) take. Any other seed would pass setup as
+/// a [`generated_selection`] and fail only at load.
+pub(crate) fn validate_room_map_name(file: &str) -> Result<()> {
+    crate::map::source::validate_network_map_name(file)?;
+    ensure!(
+        !crate::map::rmg::is_seed_selection(file)
+            || file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED),
+        "a room's random map is not {}",
+        crate::map::skirmish_scenarios::RANDMAP_SED
+    );
+    Ok(())
+}
+
+/// The selected map's byte length, once its identity is one a transfer can
+/// carry.
+pub(crate) fn transfer_length(metadata: &NetworkMapMetadata) -> Result<usize> {
+    let total = usize::try_from(metadata.byte_length)?;
+    ensure!(
+        crate::map::source::valid_source_sha256(&metadata.source_sha256)
+            && crate::map::source::valid_source_sha256(&metadata.effective_digest)
+            && total > 0
+            && total <= TransferResource::Map.limit(),
+        "invalid map transfer identity"
+    );
+    Ok(total)
+}
+
 pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<GeneratedMapManifest>> {
-    let Some(launch) = state.match_state.session.network_setup() else {
-        return Ok(None);
-    };
-    if !launch
-        .selected_map_file
-        .as_deref()
-        .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"))
-    {
+    if !generated_selection(&state.match_state.session) {
         return Ok(None);
     }
     let capacity = state
@@ -83,7 +117,8 @@ pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<Generat
         .paths
         .ra2_dir;
     let source = crate::map::source::transfer_file_source(
-        &crate::map::source::random_map_dir(root).join("RandMap.img"),
+        &crate::map::source::random_map_dir(root)
+            .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
         TransferResource::Preview,
     )?;
     let (length, digest) = source.physical_identity().expect("physical preview");
@@ -101,14 +136,8 @@ pub(crate) fn accept_generated_manifest(
     previous: Option<&GeneratedMapManifest>,
     generated: Option<&GeneratedMapManifest>,
 ) -> Result<()> {
-    let seed = state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|s| s.selected_map_file.as_deref())
-        .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"));
     ensure!(
-        seed == generated.is_some(),
+        generated_selection(&state.match_state.session) == generated.is_some(),
         "generated map manifest does not match selected map"
     );
     if let Some(manifest) = generated {
@@ -138,13 +167,7 @@ pub(crate) fn accept_generated_manifest(
 }
 
 pub(crate) fn staging_digest(state: &AppState) -> String {
-    if state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|s| s.selected_map_file.as_deref())
-        .is_some_and(|s| s.eq_ignore_ascii_case("RandMap.Sed"))
-    {
+    if generated_selection(&state.match_state.session) {
         crate::util::sha256::sha256_hex(
             state
                 .frontend
@@ -155,147 +178,6 @@ pub(crate) fn staging_digest(state: &AppState) -> String {
         )
     } else {
         String::new()
-    }
-}
-
-#[cfg(all(test, tests_app))]
-mod tests {
-    use super::*;
-    #[test]
-    fn verified_prefetch_preserves_local_preview_and_retires_legacy_waits() {
-        let dialog = crate::ui::multiplayer_setup::SetupDialog {
-            host: false,
-            flavor: crate::ui::multiplayer_setup::SetupFlavor::Lan,
-            modern: false,
-        };
-        let mut local = super::super::NetworkSetupProtocol::new(dialog, false);
-        local.local_map_verified = true;
-        local.transfer_progress = Some((0, 100));
-        local.awaiting_preview_file = true;
-        local.preview_offer = Some(super::super::PreviewOffer {
-            guests: vec!["Guest".into()],
-            acknowledged: Vec::new(),
-            preview: crate::map::preview::DecodedPreview {
-                width: 1,
-                height: 1,
-                rgba: vec![0, 0, 0, 255],
-            },
-            deadline: std::time::Instant::now(),
-        });
-        local.accept_verified_map_source();
-        assert!(
-            local.local_preview(),
-            "local catalog preview was incorrectly replaced by an absent received preview"
-        );
-        assert!(
-            local.transfer_progress.is_none()
-                && !local.awaiting_preview_file
-                && local.preview_offer.is_none()
-        );
-        let mut received = super::super::NetworkSetupProtocol::new(dialog, false);
-        received.accept_verified_map_source();
-        assert!(
-            !received.local_preview(),
-            "a received physical source must not borrow a stale chooser thumbnail"
-        );
-    }
-
-    #[test]
-    fn unchanged_host_map_selection_retains_verified_preview_bounds() {
-        use crate::app::match_runtime::session::{
-            MatchSession, NetworkMapMetadata, NetworkReturnContext,
-        };
-        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/map_observation.command-bar.example.json",
-        ))
-        .unwrap();
-        let launch: crate::skirmish_launch::SkirmishLaunchSession =
-            serde_json::from_value(fixture["launch"].clone()).unwrap();
-        let mut session = MatchSession::default();
-        session.enter_network(NetworkReturnContext::Wol);
-        session
-            .accept_network_setup(launch.clone(), true, None, false)
-            .unwrap();
-        let mut metadata = NetworkMapMetadata {
-            display_name: "Authored map".into(),
-            player_capacity: 8,
-            official: false,
-            byte_length: 1234,
-            digest: "native digest".into(),
-            source_sha256: "a".repeat(64),
-            effective_digest: "b".repeat(64),
-        };
-        session
-            .accept_network_map_metadata(metadata.clone(), None, true)
-            .unwrap();
-        let bounds = crate::map::preview::PreviewSourceBounds {
-            origin_x: 200,
-            origin_y: 10,
-            width: 80,
-            height: 90,
-            start_points: vec![crate::map::preview::PreviewStartPoint { x: 220, y: 30 }],
-        };
-        let mut protocol = super::super::NetworkSetupProtocol::new(
-            crate::ui::multiplayer_setup::SetupDialog {
-                host: true,
-                flavor: crate::ui::multiplayer_setup::SetupFlavor::Wol,
-                modern: false,
-            },
-            false,
-        );
-        protocol.received_preview = Some((
-            1,
-            crate::map::preview::DecodedPreview {
-                width: 1,
-                height: 1,
-                rgba: vec![0, 0, 0, 255],
-            },
-        ));
-        protocol.accept_preview_bounds(Some(bounds.clone()));
-        let mut selected = launch;
-        selected.options.short_game = !selected.options.short_game;
-        let changed = session
-            .network_map_requires_verification(&selected, &metadata)
-            .unwrap();
-        assert!(!changed);
-        protocol.invalidate_received_preview(changed);
-        assert_eq!(protocol.received_preview_bounds(), Some(&bounds));
-        assert!(
-            protocol.received_preview().is_some(),
-            "same-source Use Map lost the completed preview"
-        );
-        metadata.effective_digest = "c".repeat(64);
-        let changed = session
-            .network_map_requires_verification(&selected, &metadata)
-            .unwrap();
-        assert!(
-            changed,
-            "changed include closure must invalidate the image and markers"
-        );
-        protocol.invalidate_received_preview(changed);
-        assert!(
-            protocol.received_preview_bounds().is_none() && protocol.received_preview().is_none()
-        );
-    }
-
-    /// A room takes only a seed's complete canonical record, which for a
-    /// generated map for thirty (VERA) runs past the native 37 numbers and
-    /// 512 characters. The lobby checks the record with its own copy of
-    /// these rules, and its tests read the same cases.
-    #[test]
-    fn generated_staging_gives_the_shared_cases_their_answers() {
-        let cases = &crate::test_fixture::json("tests/fixtures/lobby/start_staging.json")["cases"];
-        for case in cases.as_array().unwrap() {
-            let text = case["start_staging"].as_str().unwrap();
-            let capacity = case["capacity"].as_i64().unwrap() as i32;
-            let accepted = checked_staging(text, capacity).is_ok();
-            assert_eq!(
-                Some(accepted),
-                case["accepted"].as_bool(),
-                "{}",
-                case["case"]
-            );
-        }
     }
 }
 
@@ -311,7 +193,8 @@ pub(crate) fn local_transfer_source(
     if resource == TransferResource::Preview {
         return if state.match_state.session.host() {
             Ok(Some(crate::map::source::transfer_file_source(
-                &crate::map::source::random_map_dir(&config.paths.ra2_dir).join("RandMap.img"),
+                &crate::map::source::random_map_dir(&config.paths.ra2_dir)
+                    .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
                 resource,
             )?))
         } else {
@@ -525,4 +408,177 @@ fn authored_preview_bounds(
         height: bounds.extent_y as u32,
         start_points,
     }))
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+    #[test]
+    fn verified_prefetch_preserves_local_preview_and_retires_legacy_waits() {
+        let dialog = crate::ui::multiplayer_setup::SetupDialog {
+            host: false,
+            flavor: crate::ui::multiplayer_setup::SetupFlavor::Lan,
+            modern: false,
+        };
+        let mut local = super::super::NetworkSetupProtocol::new(dialog, false);
+        local.local_map_verified = true;
+        local.transfer_progress = Some((0, 100));
+        local.awaiting_preview_file = true;
+        local.preview_offer = Some(super::super::PreviewOffer {
+            guests: vec!["Guest".into()],
+            acknowledged: Vec::new(),
+            preview: crate::map::preview::DecodedPreview {
+                width: 1,
+                height: 1,
+                rgba: vec![0, 0, 0, 255],
+            },
+            deadline: std::time::Instant::now(),
+        });
+        local.accept_verified_map_source();
+        assert!(
+            local.local_preview(),
+            "local catalog preview was incorrectly replaced by an absent received preview"
+        );
+        assert!(
+            local.transfer_progress.is_none()
+                && !local.awaiting_preview_file
+                && local.preview_offer.is_none()
+        );
+        let mut received = super::super::NetworkSetupProtocol::new(dialog, false);
+        received.accept_verified_map_source();
+        assert!(
+            !received.local_preview(),
+            "a received physical source must not borrow a stale chooser thumbnail"
+        );
+    }
+
+    #[test]
+    fn unchanged_host_map_selection_retains_verified_preview_bounds() {
+        use crate::app::match_runtime::session::{
+            MatchSession, NetworkMapMetadata, NetworkReturnContext,
+        };
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let launch: crate::skirmish_launch::SkirmishLaunchSession =
+            serde_json::from_value(fixture["launch"].clone()).unwrap();
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(launch.clone(), true, None, false)
+            .unwrap();
+        let mut metadata = NetworkMapMetadata {
+            display_name: "Authored map".into(),
+            player_capacity: 8,
+            official: false,
+            byte_length: 1234,
+            digest: "native digest".into(),
+            source_sha256: "a".repeat(64),
+            effective_digest: "b".repeat(64),
+        };
+        session
+            .accept_network_map_metadata(metadata.clone(), None, true)
+            .unwrap();
+        let bounds = crate::map::preview::PreviewSourceBounds {
+            origin_x: 200,
+            origin_y: 10,
+            width: 80,
+            height: 90,
+            start_points: vec![crate::map::preview::PreviewStartPoint { x: 220, y: 30 }],
+        };
+        let mut protocol = super::super::NetworkSetupProtocol::new(
+            crate::ui::multiplayer_setup::SetupDialog {
+                host: true,
+                flavor: crate::ui::multiplayer_setup::SetupFlavor::Wol,
+                modern: false,
+            },
+            false,
+        );
+        protocol.received_preview = Some((
+            1,
+            crate::map::preview::DecodedPreview {
+                width: 1,
+                height: 1,
+                rgba: vec![0, 0, 0, 255],
+            },
+        ));
+        protocol.accept_preview_bounds(Some(bounds.clone()));
+        let mut selected = launch;
+        selected.options.short_game = !selected.options.short_game;
+        let changed = session
+            .network_map_requires_verification(&selected, &metadata)
+            .unwrap();
+        assert!(!changed);
+        protocol.invalidate_received_preview(changed);
+        assert_eq!(protocol.received_preview_bounds(), Some(&bounds));
+        assert!(
+            protocol.received_preview().is_some(),
+            "same-source Use Map lost the completed preview"
+        );
+        metadata.effective_digest = "c".repeat(64);
+        let changed = session
+            .network_map_requires_verification(&selected, &metadata)
+            .unwrap();
+        assert!(
+            changed,
+            "changed include closure must invalidate the image and markers"
+        );
+        protocol.invalidate_received_preview(changed);
+        assert!(
+            protocol.received_preview_bounds().is_none() && protocol.received_preview().is_none()
+        );
+    }
+
+    /// VERA: a room's seed of any name is a generated map, as the loader and
+    /// the rules agreement read it, so LAN and online transfer it alike.
+    #[test]
+    fn every_seed_name_is_a_generated_selection() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let fixture = crate::test_fixture::json("tools/map_observation.command-bar.example.json");
+        for (file, generated) in [
+            ("RandMap.Sed", true),
+            ("Saved.sed", true),
+            ("Authored.map", false),
+        ] {
+            let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
+                serde_json::from_value(fixture["launch"].clone()).unwrap();
+            launch.selected_map_file = Some(file.into());
+            let mut session = MatchSession::default();
+            session.enter_network(NetworkReturnContext::Wol);
+            session
+                .accept_network_setup(launch, true, None, false)
+                .unwrap();
+            assert_eq!(generated_selection(&session), generated, "{file}");
+        }
+    }
+
+    /// A seed other than `RandMap.Sed` would pass setup as generated and
+    /// fail only at load, without the guest's start staging.
+    #[test]
+    fn a_room_takes_no_seed_but_randmap_sed() {
+        assert!(validate_room_map_name("randmap.sed").is_ok());
+        assert!(validate_room_map_name("Authored.map").is_ok());
+        assert!(validate_room_map_name("Saved.sed").is_err());
+    }
+
+    /// A room takes only a seed's complete canonical record, which for a
+    /// generated map for thirty (VERA) runs past the native 37 numbers and
+    /// 512 characters. The lobby checks the record with its own copy of
+    /// these rules, and its tests read the same cases.
+    #[test]
+    fn generated_staging_gives_the_shared_cases_their_answers() {
+        let cases = &crate::test_fixture::json("tests/fixtures/lobby/start_staging.json")["cases"];
+        for case in cases.as_array().unwrap() {
+            let text = case["start_staging"].as_str().unwrap();
+            let capacity = case["capacity"].as_i64().unwrap() as i32;
+            let accepted = checked_staging(text, capacity).is_ok();
+            assert_eq!(
+                Some(accepted),
+                case["accepted"].as_bool(),
+                "{}",
+                case["case"]
+            );
+        }
+    }
 }

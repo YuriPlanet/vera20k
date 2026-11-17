@@ -1,10 +1,7 @@
 use super::*;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
 
-/// The random-map seed file the `.SED` launch branch recognises. Written into
-/// VERA's folder for it (`map::source::random_map_dir`), where `map_load`
-/// reads it; gamemd keeps it in the game folder.
-pub(crate) const RANDMAP_SED_FILE: &str = "RandMap.Sed";
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
 pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION";
@@ -14,9 +11,6 @@ const SETUP_PLAYERS_ROW: usize = 5;
 /// Retail's `[General] CliffBackImpassability=`; the preview only needs it
 /// because terrain resolution takes it, not because cliffs affect the image.
 const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
-/// Where the generated preview is written. The chooser's sentinel row reads this
-/// back, so writing it is what makes the random-map thumbnail appear there.
-const RANDMAP_PREVIEW_FILE: &str = "RandMap.img";
 
 /// Native RMG map-storage identity used by its guarded Resize predicate.
 ///
@@ -361,9 +355,8 @@ impl AcceptedRmgStartStaging {
         staging: &crate::map::preview::ScenarioStartStaging,
         selected_map_file: Option<&str>,
     ) -> Option<Self> {
-        let random_map = selected_map_file.is_some_and(|file| {
-            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
-        });
+        let random_map =
+            selected_map_file.is_some_and(|file| file.eq_ignore_ascii_case(RANDMAP_SED));
         (random_map && staging.defined_cells().next().is_some())
             .then(|| Self::from_scenario_staging(staging))
     }
@@ -1094,7 +1087,7 @@ fn write_random_map_preview_to_dir(
         }
         image = std::borrow::Cow::Owned(image.halved());
     };
-    let path = dir.join(RANDMAP_PREVIEW_FILE);
+    let path = dir.join(RANDMAP_PREVIEW);
     if let Err(err) = crate::util::file_system::create_dir_all(dir)
         .and_then(|()| crate::util::file_system::write(&path, encoded))
     {
@@ -1185,7 +1178,7 @@ pub(super) fn accept_random_map_setup_owners(
     if retention.candidate.is_some() {
         runtime.stage_generated_starts(retention.generated_header());
     }
-    retention.accept_setup(RANDMAP_SED_FILE);
+    retention.accept_setup(RANDMAP_SED);
     dismiss_random_map_setup_owners(modal, retention, dir);
     Some(*options)
 }
@@ -1651,7 +1644,7 @@ impl App {
                 // not leave an accepted launch attached when the seed/options
                 // commit failed and no random-map selection was installed.
                 state.frontend.random_map_retention.cancel_setup();
-                log::error!("random map: could not write {RANDMAP_SED_FILE}: {err}");
+                log::error!("random map: could not write {RANDMAP_SED}: {err}");
                 if let Some(chooser) = state
                     .frontend
                     .skirmish_shell_state
@@ -1716,7 +1709,7 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate VERA's Maps folder"))?;
         let ares = state.process_assets.reads_ares_way();
         crate::util::file_system::create_dir_all(&dir)?;
-        crate::util::file_system::write(dir.join(RANDMAP_SED_FILE), options.to_sed_bytes(ares))?;
+        crate::util::file_system::write(dir.join(RANDMAP_SED), options.to_sed_bytes(ares))?;
 
         let description_text = options.description.display_text();
         let display = if options.description.is_empty() {
@@ -2243,8 +2236,7 @@ mod tests {
         );
         let empty = crate::map::preview::ScenarioStartStaging::default();
         assert!(
-            AcceptedRmgStartStaging::from_retained_staging(&empty, Some(RANDMAP_SED_FILE))
-                .is_none()
+            AcceptedRmgStartStaging::from_retained_staging(&empty, Some(RANDMAP_SED)).is_none()
         );
     }
 
@@ -2747,7 +2739,7 @@ mod tests {
         let mut retention = RandomMapGenerationRetention::default();
         dismiss_random_map_setup_owners(&mut modal, &mut retention, Some(dir.path()));
         assert!(modal.is_none());
-        let path = dir.path().join(RANDMAP_PREVIEW_FILE);
+        let path = dir.path().join(RANDMAP_PREVIEW);
         let pcx =
             crate::assets::pcx_file::PcxFile::from_bytes(&std::fs::read(&path).unwrap()).unwrap();
         let expected_rgb: Vec<u8> = preview
@@ -2783,14 +2775,14 @@ mod tests {
             rgba,
         };
         write_random_map_preview_to_dir(Some(dir.path()), &preview);
-        let bytes = std::fs::read(dir.path().join(RANDMAP_PREVIEW_FILE)).unwrap();
+        let bytes = std::fs::read(dir.path().join(RANDMAP_PREVIEW)).unwrap();
         assert!(bytes.len() <= crate::map::source::TransferResource::Preview.limit());
         let pcx = crate::assets::pcx_file::PcxFile::from_bytes(&bytes).unwrap();
         assert_eq!((pcx.width, pcx.height), (504, 256));
 
         let small = preview.halved().halved();
         write_random_map_preview_to_dir(Some(dir.path()), &small);
-        let bytes = std::fs::read(dir.path().join(RANDMAP_PREVIEW_FILE)).unwrap();
+        let bytes = std::fs::read(dir.path().join(RANDMAP_PREVIEW)).unwrap();
         let pcx = crate::assets::pcx_file::PcxFile::from_bytes(&bytes).unwrap();
         assert_eq!((pcx.width, pcx.height), (252, 128));
     }
@@ -2807,8 +2799,8 @@ mod tests {
         ));
         // VERA's Maps folder, which a new profile does not have yet.
         let base = profile.join("Maps");
-        let img_path = base.join(RANDMAP_PREVIEW_FILE);
-        let sed_path = base.join(RANDMAP_SED_FILE);
+        let img_path = base.join(RANDMAP_PREVIEW);
+        let sed_path = base.join(RANDMAP_SED);
         let options = crate::map::rmg::RmgOptions {
             seed: 0x412,
             ..Default::default()
@@ -3045,7 +3037,7 @@ mod tests {
             ));
             retention.finish_generation(generated_preview(0x401, 10));
             if accepted {
-                retention.accept_setup(RANDMAP_SED_FILE);
+                retention.accept_setup(RANDMAP_SED);
             } else {
                 retention.cancel_setup();
             }
@@ -3233,11 +3225,11 @@ mod tests {
                 0 => retention.begin_generation(),
                 1 => retention.cancel_setup(),
                 2 => {
-                    retention.accept_setup(RANDMAP_SED_FILE);
-                    let _ = retention.take_acceptance_for_loading(Some(RANDMAP_SED_FILE));
+                    retention.accept_setup(RANDMAP_SED);
+                    let _ = retention.take_acceptance_for_loading(Some(RANDMAP_SED));
                 }
                 3 => {
-                    retention.accept_setup(RANDMAP_SED_FILE);
+                    retention.accept_setup(RANDMAP_SED);
                     retention.select_map("OTHER.MAP");
                 }
                 4 => retention.destroy_map_storage(),

@@ -27,8 +27,8 @@ use crate::app::AppState;
 use crate::app::loading::campaign_presentation::CampaignLoadingPresentation;
 use crate::app::loading::composition::{
     LoadingCompositionSnapshot, LoadingParticipantId, LoadingStartAssignment,
-    RANDOM_MAP_PREVIEW_FILE, build_loading_composition, build_random_map_loading_composition,
-    loading_authored_size, loading_screen_scale,
+    build_loading_composition, build_random_map_loading_composition, loading_authored_size,
+    loading_screen_scale,
 };
 use crate::app::loading::fresh_scenario::FreshScenarioLoadContextDescriptor;
 use crate::app::loading::init::{self, MapLoadInitial, MapLoadResult};
@@ -2731,7 +2731,8 @@ fn decode_random_map_loading_preview(
 ) -> Option<DecodedPreview> {
     let path = match source {
         Some(crate::map::source::LoadedMapSource::Loose { path, .. }) => path.clone(),
-        _ => crate::map::source::random_map_dir(ra2_dir).join(RANDOM_MAP_PREVIEW_FILE),
+        _ => crate::map::source::random_map_dir(ra2_dir)
+            .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
     };
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,

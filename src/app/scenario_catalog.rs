@@ -130,7 +130,7 @@ impl ScenarioCatalog {
         root: &Path,
         assets: &AssetManager,
     ) -> Option<VerifiedNetworkMap<'_>> {
-        if file.eq_ignore_ascii_case("RandMap.Sed") {
+        if file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED) {
             return None;
         }
         for record in self

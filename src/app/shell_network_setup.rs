@@ -763,7 +763,7 @@ pub(crate) fn install_watch_setup(
         .selected_map_file
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("the match has no map"))?;
-    crate::map::source::validate_network_map_name(file)?;
+    maps::validate_room_map_name(file)?;
     let session = &mut state.match_state.session;
     session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     session.accept_network_setup(launch.clone(), false, observer_row, true)?;
