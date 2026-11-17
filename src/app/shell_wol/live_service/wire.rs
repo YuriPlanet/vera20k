@@ -467,3 +467,203 @@ impl From<&HighScoreRecord> for WolHighScoreRecord {
         }
     }
 }
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::app::shell_network_setup::maps::{AssetMetadata, GeneratedMapManifest};
+    use crate::map::source::TransferResource;
+    use crate::skirmish_launch::{
+        AiDifficulty, HostRules, LaunchCountry, LaunchHumanRole, LaunchStartPosition, LaunchTeam,
+        PreFillHouseRoster, ROOM_TEAMS, SkirmishAiSlot, SkirmishHumanSlot, SkirmishLaunchMode,
+        SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
+    };
+
+    fn human(row: u8, team: LaunchTeam) -> SkirmishHumanSlot {
+        SkirmishHumanSlot {
+            raw_slot_index: Some(row),
+            name: format!("Player{row}"),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::ALL[usize::from(row) % 10],
+                country_random: row % 4 == 3,
+                // The original eight colours, then the extra ones to the last, 30.
+                color_index: if row < 8 { row } else { row + 3 },
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team,
+            },
+            role: LaunchHumanRole::default(),
+        }
+    }
+
+    fn map(file: &str, player_capacity: i32, official: bool, digest: String) -> MapMetadata {
+        MapMetadata {
+            display_name: file.into(),
+            player_capacity,
+            official,
+            byte_length: TransferResource::Map.limit() as i32,
+            digest,
+            source_sha256: "5a".repeat(32),
+            effective_digest: "e7".repeat(32),
+        }
+    }
+
+    /// The host's options for stock mode `mode` on `map`, every row closed
+    /// and the game's own House roster for its people and AI.
+    fn room(
+        mode: i32,
+        map: MapMetadata,
+        humans: Vec<SkirmishHumanSlot>,
+        opponents: Vec<SkirmishAiSlot>,
+        options: SkirmishLaunchOptions,
+    ) -> Options {
+        let mut launch = SkirmishLaunchSession {
+            mode: SkirmishLaunchMode::stock(mode).unwrap(),
+            selected_map_file: Some(map.display_name.clone()),
+            humans,
+            local_player_index: 0,
+            ai_player_count: opponents.len() as i32,
+            opponents,
+            pre_fill_house_roster: PreFillHouseRoster::new(Vec::new(), Vec::new()),
+            options,
+        };
+        launch.rebuild_house_roster();
+        Options {
+            launch,
+            map_metadata: map,
+            random_map: None,
+            vacancies: [Vacancy::Closed; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
+            observer_row: None,
+            cooperative_difficulty: 1,
+            cooperative_campaign: None,
+            seed: Some(0),
+            watching: None,
+        }
+    }
+
+    /// The lobby checks the host's options against its own copy of their
+    /// shape and limits (docs/lobby-protocol.md), and its tests check that
+    /// copy against these rooms at the limits the game reaches.
+    #[test]
+    fn rooms_at_the_limits_send_the_pinned_options() {
+        // Thirty people: 28 play on all fifteen teams of a 15-start map and
+        // two spectators wait for a seat. Every option a room sends now is on.
+        let mut people: Vec<_> = (0..28)
+            .map(|row| human(row, LaunchTeam::Team(row % ROOM_TEAMS.end())))
+            .collect();
+        for row in 28..30 {
+            let mut spectator = human(row, LaunchTeam::None);
+            spectator.set_observer(true);
+            spectator.slot.color_index = crate::rules::skirmish_colors::OBSERVER_PRIORITY;
+            people.push(spectator);
+        }
+        let mut own = crate::rules::personal_rules::PersonalRules::default();
+        own.set_terrain_deformation(true);
+        own.set_superweapon_limit(i32::MAX);
+        let options = SkirmishLaunchOptions {
+            bans: crate::sim::game_options::RoomBans {
+                yuri: true,
+                france: true,
+                spy: true,
+                stolen_tech: true,
+            },
+            teams: Some(*ROOM_TEAMS.end()),
+            queue: vec!["Player28".into(), "Player29".into()],
+            host_rules: HostRules::from_own(&own),
+            ..SkirmishLaunchOptions::default()
+        };
+        // A map without a [Digest] sends the reader's default.
+        let digest = "No digest here mate. Nope.".to_owned();
+        let mut teams = room(
+            1,
+            map("Fifteen.map", 15, false, digest),
+            people,
+            vec![],
+            options,
+        );
+        teams.observer_row = Some(29);
+        teams.seed = Some(u32::MAX);
+        teams.watching = Some("live".into());
+
+        // A generated map for thirty: its seed, preview and thirty starts.
+        let mut stage = crate::map::preview::ScenarioStartStaging {
+            width: 150,
+            height: 150,
+            start_x: -75,
+            start_y: 0,
+            count: 30,
+            ..Default::default()
+        };
+        for start in 0..30 {
+            let at = start as i32 * 5;
+            stage.pairs[start] = (at, 150 - at);
+            stage.cells[start] = (10 + at as i16, 160 - at as i16);
+        }
+        let start_staging = stage.to_w_text();
+        assert!(crate::app::shell_network_setup::maps::checked_staging(&start_staging, 30).is_ok());
+        let seed = crate::map::rmg::RmgOptions {
+            num_players: 30,
+            ..Default::default()
+        };
+        let ai = SkirmishAiSlot {
+            raw_slot_index: 28,
+            country: LaunchCountry::Yuri,
+            country_random: false,
+            color_index: 30,
+            color_random: true,
+            start_position: LaunchStartPosition::Position(29),
+            team: LaunchTeam::None,
+            difficulty: AiDifficulty::Hard,
+        };
+        let seed_map = map(
+            crate::map::skirmish_scenarios::RANDMAP_SED,
+            30,
+            true,
+            seed.native_digest(),
+        );
+        let people = vec![human(0, LaunchTeam::None), human(1, LaunchTeam::None)];
+        let mut generated = room(1, seed_map, people, vec![ai], Default::default());
+        generated.random_map = Some(GeneratedMapManifest {
+            start_staging,
+            preview: AssetMetadata {
+                source_sha256: "b0".repeat(32),
+                byte_length: TransferResource::Preview.limit(),
+            },
+        });
+        generated.vacancies[2] = Vacancy::Waiting;
+        generated.vacancies[3..28].fill(Vacancy::Open);
+        generated.vacancies[29] = Vacancy::Observer;
+        generated.observer_row = Some(29);
+
+        // Cooperative: two players and the host's campaign record.
+        let people = vec![human(0, LaunchTeam::None), human(1, LaunchTeam::None)];
+        let digest = "2jmj7l5rSw0yVb/vlWAYkK/YBwk=".to_owned();
+        let mut cooperative = room(
+            3,
+            map("Coop.map", 2, true, digest),
+            people,
+            vec![],
+            Default::default(),
+        );
+        cooperative.cooperative_difficulty = 2;
+        cooperative.cooperative_campaign =
+            Some("C0,0,0,0,0,0,0,0,0,0,0,0,1,2,-1,Player0,Player1".into());
+
+        crate::test_fixture::assert_sent_json(
+            "tests/fixtures/lobby/options.json",
+            &json!({
+                "about": "The options a host's game sends (`options`, docs/lobby-protocol.md) \
+                    for rooms at the limits the game reaches, keyed by room. The game's \
+                    test in src/app/shell_wol/live_service/wire.rs writes this file; \
+                    a lobby accepts each room.",
+                "rooms": {
+                    "fifteen_teams_of_thirty": teams,
+                    "generated_map_for_thirty": generated,
+                    "cooperative": cooperative,
+                },
+            }),
+        );
+    }
+}

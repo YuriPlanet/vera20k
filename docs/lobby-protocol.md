@@ -165,7 +165,10 @@ bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 n
 or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
-its human rows, AI rows and launch options). `launch.options.game_speed` is a setup
+its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
+current: `options.json` holds rooms' options as the game sends them at the limits it
+reaches, and `start_staging.json` holds `W` records, each with whether the game takes it
+for its seed's capacity. `launch.options.game_speed` is a setup
 speed, 0 to 6 or VERA's 8; a guest's game refuses host options with any other speed
 and shows its invalid-update line. `launch.options.teams`, a VERA room's
 Teams count, is an optional integer from 2 to 15 that the game leaves out while Teams
@@ -558,7 +561,8 @@ of these three, so a service reads the report with or without them.
 A start cancelled before play and a match an external launcher formed send none. The
 service may keep reports for its operator without the player's name or address; one it
 cannot read is dropped and the match still finishes. A service that refuses the field
-gets the same finish again without it.
+gets the same finish again without it. `tests/fixtures/lobby/network_quality.json` is a
+report as the game sends it, every field filled, which the game's tests keep current.
 
 `POST /v1/translate` accepts exactly `{text,target}` from a v4 bearer and returns
 `{text}`: `text` translated into `target`, a language tag such as `en` or `zh-Hans`.
