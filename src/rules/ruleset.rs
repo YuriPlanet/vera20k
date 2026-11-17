@@ -8385,6 +8385,22 @@ impl RuleSet {
         self.terrain_object_types.get(&name.to_ascii_uppercase())
     }
 
+    /// Phobos `ConditionYellow_Terrain` (`Ext/Rules/Body.cpp:147`,
+    /// `[AudioVisual] ConditionYellow.Terrain`): the ratio at or below which a
+    /// `HasDamagedFrames=` terrain object shows its damaged frame. Its one
+    /// reader is `TerrainClass_Draw_PickFrame @ 0x71C1FE`
+    /// (`Ext/TerrainType/Hooks.cpp:106`), and
+    /// `TerrainClass_TakeDamage_RefreshDamageFrame @ 0x71B98B` (`:274`) asks
+    /// the same value; the override falls back to the shared
+    /// `[AudioVisual] ConditionYellow`.
+    pub fn terrain_condition_yellow(&self) -> f64 {
+        self.phobos_globals
+            .condition_yellow_terrain
+            .map_or(self.general.condition_yellow, |bits| {
+                f64::from_bits(bits.bits())
+            })
+    }
+
     /// Incremental projection of the retained FindOrAllocate71E2A0 result.
     /// Existing types keep their bound assets; no global Rules/ART rebuild.
     pub(crate) fn install_map_terrain_type(&mut self, mut terrain: TerrainObjectType) {

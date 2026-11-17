@@ -79,11 +79,11 @@ impl Simulation {
 
     /// `TerrainClass::Finish_Fire_Death @ 0x0071C6B0`, the tree's vt+0x17C
     /// that SetOwnerObject (`0x00424BB0`) calls when its last fire anim
-    /// leaves: IsOnFire clears. Its tail (`0x0071C6CD..0x0071C72B`) starts the
-    /// crumble of a tree left at zero Health; VERA ports only the lethal-arm
-    /// crumble (`commit_terrain`), so the fire-out start stays a recorded
-    /// residual (docs/phobos-crumbling-frames.md).
-    pub(crate) fn terrain_finish_fire_death(&mut self, terrain_id: u64) {
+    /// leaves: IsOnFire clears, then its zero-Health tail
+    /// (`0x0071C6CD..0x0071C72B`) starts the crumble of a tree left at zero
+    /// Health (`TerrainClass_FireOut_Crumbling @ 0x71C6EE`,
+    /// `Ext/TerrainType/Hooks.cpp:239-257`) instead of vanishing it.
+    pub(crate) fn terrain_finish_fire_death(&mut self, terrain_id: u64, rules: &RuleSet) {
         if self
             .terrain_objects
             .get(terrain_id)
@@ -91,6 +91,46 @@ impl Simulation {
         {
             self.terrain_objects.set_on_fire(terrain_id, false);
         }
+        #[cfg(feature = "phobos")]
+        self.terrain_fire_out_crumble(terrain_id, rules);
+        #[cfg(not(feature = "phobos"))]
+        let _ = rules;
+    }
+
+    /// `0x71C6EE`'s body: `!IsCrumbling && Type->HasCrumblingFrames` joins
+    /// Logic, plays `CrumblingSound` at the tree's coordinate and returns into
+    /// `Start_To_Crumble` (`0x71C6F8`, `0x0071C8E0`); every other case returns
+    /// to `0x71C72B`, the ordinary vanish (unported: it needs the Uninit
+    /// context this callback does not own, and VERA's `0x71BADC` on-fire
+    /// lethal arm retires that tree first). The hook address sits in
+    /// `Finish_Fire_Death`'s zero-Health arm, so the zero Health is explicit
+    /// here; `terrain_start_crumble` owns IsCrumbling, the Stage restart,
+    /// Logic membership and the sound.
+    #[cfg(feature = "phobos")]
+    fn terrain_fire_out_crumble(&mut self, terrain_id: u64, rules: &RuleSet) {
+        let Some((type_ref, health, crumbling, live)) =
+            self.terrain_objects.get(terrain_id).map(|terrain| {
+                (
+                    terrain.type_ref(),
+                    terrain.health(),
+                    terrain.is_crumbling(),
+                    terrain.is_live(),
+                )
+            })
+        else {
+            return;
+        };
+        if !live || crumbling || health > 0 {
+            return;
+        }
+        let name = self.interner.resolve(type_ref).to_string();
+        if !rules
+            .terrain_object_type_case_insensitive(&name)
+            .is_some_and(|terrain_type| terrain_type.has_crumbling_frames)
+        {
+            return;
+        }
+        self.terrain_start_crumble(terrain_id, rules);
     }
 
     /// Ares 3.0 TerrainClass_Update_ForestFire (1004F530, hook 0x71C7C2, in

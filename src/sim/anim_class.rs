@@ -3871,7 +3871,7 @@ impl Simulation {
             }
             let last = !self.substrate.anims.another_owned_by_terrain(id, terrain);
             if last {
-                self.terrain_finish_fire_death(terrain);
+                self.terrain_finish_fire_death(terrain, rules);
             }
             self.substrate.anims.set_owner_terrain(id, None);
             if marked {

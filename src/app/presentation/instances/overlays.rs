@@ -1423,18 +1423,12 @@ pub(crate) fn build_overlay_instances(
 /// The health ratio at or below which a `HasDamagedFrames` terrain object
 /// shows its damaged frame: `[AudioVisual] ConditionYellow.Terrain`, else
 /// the shared `ConditionYellow` (`Ext/TerrainType/Hooks.cpp:106`,
-/// `Ext/Rules/Body.cpp:147`). The `0x71B98B` redraw hack
-/// (`Hooks.cpp:268-283`) only forces a native redraw when the ratio is
-/// crossed; VERA re-derives the frame on every draw, so no retained flag is
-/// needed (residual).
+/// `Ext/Rules/Body.cpp:147`). The `0x71B98B` redraw latch lives in the
+/// simulation (`commit_terrain`); this delegates to the one rules owner so
+/// sim and draw cannot diverge.
 #[cfg(feature = "phobos")]
 pub(crate) fn terrain_condition_yellow(rules: &crate::rules::ruleset::RuleSet) -> f64 {
-    rules
-        .phobos_globals
-        .condition_yellow_terrain
-        .map_or(rules.general.condition_yellow, |bits| {
-            f64::from_bits(bits.bits())
-        })
+    rules.terrain_condition_yellow()
 }
 
 /// Terrain DrawIt (0x71C1B0) frame: an IsAnimated type's stage, else frame 1
