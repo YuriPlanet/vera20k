@@ -465,14 +465,16 @@ credentials.
 
 Host handover: when a game room's owner leaves before start (Leave, sign-out or an
 expired session), the player who has been in the room longest becomes its owner,
-provided every game still in it signed in with the header `Vera-Host-Handover: 1`,
-which games send on `POST /v1/sessions` once they take over a room. The lobby sends
+provided every game still in it signed in with the header `Vera-Host-Handover: 1`, which
+games send on `POST /v1/sessions` once they take over a room. The lobby sends
 `host_changed` with the new owner's member and the room's channel, then `member_left`
-for the old one, and clears every readiness; a room named `<old>'s_game` becomes
-`<new>'s_game` unless another open room has that name. The room's options, map upload
-and advertisement stay until the new owner's game publishes its own. A Quick Match
-room, or one with a game that did not send the header, closes with `error` `host_left`
-and `channel_left` as before. A lobby from before handover closes every such room that way. Membership,
+for the old one, and clears every readiness; a room named as games name rooms
+(`<name>'s_game`) becomes `<new>'s_game` unless another open room has that name. From
+then on the room is listed to the new owner's version, and it stays ranked or unranked
+as it was created. The room's options, map upload and advertisement stay until the new
+owner's game publishes its own. A Quick Match room, or one with a game that did not send
+the header, closes with `error` `host_left` and `channel_left` as before. A lobby from
+before handover closes every such room that way. Membership,
 authorization, readiness, sequence history and idle expiration are server-owned.
 Idle lobby visits expire after 120 seconds. An unfinished v4 playing membership
 survives that idle interval while another unfinished player of the match is online

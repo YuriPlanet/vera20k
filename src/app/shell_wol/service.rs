@@ -301,9 +301,10 @@ pub(crate) enum WolServiceEvent {
     /// VERA: the match ended and the lobby gave back the game room this
     /// player stayed in (`room_reopened`), owner first.
     RoomReopened(super::lobby::WolJoined),
-    /// VERA: the host left and the lobby made this user the game room's
-    /// host, with the room renamed for them where it was named for the old
-    /// host (`host_changed`, docs/lobby-protocol.md "Host handover").
+    /// VERA: the host left and the lobby made `name` the game room's host,
+    /// this user or another, with the room renamed for them where it was
+    /// named as games name rooms (`host_changed`, docs/lobby-protocol.md
+    /// "Host handover").
     HostChanged {
         name: String,
         channel: Option<WolChannel>,
