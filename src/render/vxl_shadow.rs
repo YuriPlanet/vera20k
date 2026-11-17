@@ -63,9 +63,19 @@ fn draw_rotation(vxl: &VxlFile, params: &VxlRenderParams) -> Option<super::Mat4>
     // product the body arm draws through. The other tilt arms keep the stock
     // slope/facing stencil matrix.
     Some(match params.body_tilt {
-        Some(super::BodyTilt::JumpjetTilt(angles)) => super::voxel_crash_rotation(step, angles),
+        Some(super::BodyTilt::JumpjetTilt(angles)) if tilt_is_active(angles) => {
+            super::voxel_crash_rotation(step, angles)
+        }
         _ => super::voxel_draw_rotation_for_state(params.slope_type, None, step),
     })
+}
+
+/// Phobos's shadow-matrix activity gate (`Ext/TechnoType/Hooks.MatrixOp.cpp:733`,
+/// `:768`): while both angles stay under 0.005 the native body leaves the
+/// `shadowMatrix` and the `vxlIndexKey` untouched, so such a pose draws the
+/// stock facing/slope stencil bit for bit and reuses the baked cache entry.
+pub(crate) fn tilt_is_active([sideways, forwards]: [f32; 2]) -> bool {
+    sideways.abs() >= 0.005 || forwards.abs() >= 0.005
 }
 
 /// `*pMat * hva->Matrixes[section + LayerCount * ChooseFrame()]`

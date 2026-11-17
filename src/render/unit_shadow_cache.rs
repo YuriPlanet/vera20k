@@ -5,7 +5,7 @@
 //! until the shared pool's flush ([`crate::render::voxel_image_cache`])
 //! frees it.
 
-use super::{PoseTilt, UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
+use super::{PoseTilt, ShadowStencil, UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
 
 /// The exact visible body's indexed source and placement in Unit's 256-square
 /// composite. Frame-local sources belong to VxlPoseFrameCache.
@@ -123,34 +123,69 @@ impl UnitAtlas {
         body_offset: [i32; 2],
         stamp: impl FnOnce(&mut [u8]) -> bool,
     ) -> Option<super::vxl_raster::VxlSprite> {
+        let stencil = self.baked_shadow_stencil(key)?;
+        self.mask_stencil(key, body_offset, &stencil, stamp)
+    }
+
+    /// The stencil `key`'s baked atlas sprite holds, as the source a masked
+    /// draw samples when the body carries no pose.
+    pub(crate) fn baked_shadow_stencil(&self, key: &UnitSpriteKey) -> Option<ShadowStencil> {
+        let template = self.rendered_by_key(key)?;
+        Some(ShadowStencil {
+            sprite: super::vxl_raster::VxlSprite {
+                palette_indices: template.pixels.clone(),
+                depth: Vec::new(),
+                width: template.width,
+                height: template.height,
+                offset_x: template.offset_x,
+                offset_y: template.offset_y,
+            },
+            center: template.shadow_center,
+        })
+    }
+
+    /// Compose `stamp`'s body mask over `stencil`, at `body_offset`'s mask
+    /// displacement: the baked template, or the per-frame re-raster a Phobos
+    /// airborne `JumpjetTilt` pose produces
+    /// (`Ext/TechnoType/Hooks.MatrixOp.cpp:768-773` invalidates the shadow
+    /// cache key, so native re-rasterizes instead of sampling the baked one).
+    pub(crate) fn mask_stencil(
+        &self,
+        key: &UnitSpriteKey,
+        body_offset: [i32; 2],
+        stencil: &ShadowStencil,
+        stamp: impl FnOnce(&mut [u8]) -> bool,
+    ) -> Option<super::vxl_raster::VxlSprite> {
         self.entries
             .get(key)
             .filter(|e| e.native_draw_bounds.is_some())?;
-        let template = self.rendered_by_key(key)?;
         let mut body = vec![0u8; 65536];
         if !stamp(&mut body) {
             return None;
         }
-        let mut pixels = template.pixels.clone();
+        let mut pixels = stencil.sprite.palette_indices.clone();
         let sample_offset = if body_offset == [0, 0] {
             [0, 0]
         } else {
-            super::vxl_raster::shadow::body_sample_offset(template.shadow_center?, body_offset)?
+            super::vxl_raster::shadow::body_sample_offset(stencil.center?, body_offset)?
         };
         super::vxl_raster::shadow::mask_body(
             &mut pixels,
-            template.width,
-            [template.offset_x as i32, template.offset_y as i32],
+            stencil.sprite.width,
+            [
+                stencil.sprite.offset_x as i32,
+                stencil.sprite.offset_y as i32,
+            ],
             &body,
             sample_offset,
         )?;
         Some(super::vxl_raster::VxlSprite {
             palette_indices: pixels,
             depth: Vec::new(),
-            width: template.width,
-            height: template.height,
-            offset_x: template.offset_x,
-            offset_y: template.offset_y,
+            width: stencil.sprite.width,
+            height: stencil.sprite.height,
+            offset_x: stencil.sprite.offset_x,
+            offset_y: stencil.sprite.offset_y,
         })
     }
 

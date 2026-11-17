@@ -41,6 +41,13 @@ impl VoxelPart {
         &self.vxl
     }
 
+    /// A part built from parsed bytes, for stencil tests that cannot reach
+    /// the match's `AssetManager`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_parts(vxl: VxlFile, hva: Option<HvaFile>) -> Self {
+        Self { vxl, hva }
+    }
+
     pub fn hva(&self) -> Option<&HvaFile> {
         self.hva.as_ref()
     }

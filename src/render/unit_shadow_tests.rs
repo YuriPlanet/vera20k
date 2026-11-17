@@ -1,5 +1,76 @@
-use super::super::{BatchRenderer, CachedUnitSprite, UnitAtlas, VxlLayer};
+use super::super::{BatchRenderer, CachedUnitSprite, UnitAtlas, UnitModel, VxlLayer};
 use super::*;
+
+/// Phobos `UnitClass_DrawAsVXL_Shadow` (`Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`)
+/// writes the airborne `JumpjetTilt` roll/pitch into the shadow matrix and
+/// invalidates `vxlIndexKey`, so native draws that frame from a fresh raster of
+/// the same sections rather than the baked atlas key. While both angles stay
+/// under the 0.005 activity gate (`:733`, `:768`) the matrix is untouched, so
+/// the stencil must reproduce the untilted template byte for byte.
+#[test]
+fn a_tilted_shadow_reprojects_its_template() {
+    use crate::assets::{hva_file::HvaFile, vxl_file::VxlFile};
+    use crate::render::vxl_raster::BodyTilt;
+    let fixture = crate::test_fixture::json("tools/voxel_oracle/shadow_fixtures.json");
+    let decode = |s: &str| {
+        s.as_bytes()
+            .chunks_exact(2)
+            .map(|p| u8::from_str_radix(std::str::from_utf8(p).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let vxl = VxlFile::from_bytes(&decode(fixture["vxl"].as_str().unwrap())).unwrap();
+    let hva = HvaFile::from_bytes(&decode(fixture["hva"].as_str().unwrap())).unwrap();
+    let model = UnitModel::from_test_shadow(vxl, Some(hva), 0);
+    let key = UnitSpriteKey {
+        type_id: "native-unit".into(),
+        turret_index: 0,
+        facing: 3 * 8,
+        layer: VxlLayer::Shadow,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    let untilted = model.shadow_stencil(&key, None).expect("baked stencil");
+    let tilted = model
+        .shadow_stencil(&key, Some(BodyTilt::JumpjetTilt([0.25, -0.35])))
+        .expect("reprojected stencil");
+    assert_ne!(
+        tilted.sprite.palette_indices, untilted.sprite.palette_indices,
+        "an active tilt must reproject the sections, not sample the baked key"
+    );
+    assert_ne!(
+        (
+            tilted.sprite.offset_x,
+            tilted.sprite.offset_y,
+            tilted.sprite.width,
+            tilted.sprite.height
+        ),
+        (
+            untilted.sprite.offset_x,
+            untilted.sprite.offset_y,
+            untilted.sprite.width,
+            untilted.sprite.height
+        ),
+        "the crop follows the reprojected sections"
+    );
+    let identity = model
+        .shadow_stencil(&key, Some(BodyTilt::JumpjetTilt([0.0, 0.0])))
+        .expect("the stock stencil");
+    assert_eq!(
+        identity.sprite.palette_indices, untilted.sprite.palette_indices,
+        "a pose under the 0.005 gate keeps the untilted stencil"
+    );
+    assert_eq!(
+        (identity.sprite.offset_x, identity.sprite.offset_y),
+        (untilted.sprite.offset_x, untilted.sprite.offset_y),
+        "a pose under the 0.005 gate keeps the untilted crop"
+    );
+    assert_eq!(
+        (identity.sprite.width, identity.sprite.height),
+        (untilted.sprite.width, untilted.sprite.height)
+    );
+    assert_eq!(identity.center, untilted.center);
+}
 
 #[test]
 #[ignore = "requires extracted original parts in VERA20K_SHADOW_PROBE_DIR"]
