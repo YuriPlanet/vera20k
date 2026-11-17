@@ -273,8 +273,6 @@ enum NetworkPhase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkLoadingRequest {
-    ///69AE90's effective display percent; random-map milestones are already halved.
-    ReportProgress(i32),
     /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
     ProposeKick { target_source: usize },
     /// The in-battle chat packet `0x0C` (`0x0055EDBF..0x0055F04E`) to these
@@ -314,6 +312,9 @@ struct NetworkSession {
     /// OnGameStart/Start Game Now for the accepted start.
     wol_start: WolStartTerms,
     loading_requests: Vec<NetworkLoadingRequest>,
+    /// 69AE90's effective display percents waiting for the LAN service;
+    /// random-map milestones are already halved.
+    loading_reports: Vec<i32>,
     /// Node addresses belong to the accepted participants, not discovery UI
     /// rows. Native node+28 is carried into697B70's House/connection binding.
     /// The IPv4 LAN adaptation uses the actual global-envelope source endpoint.
@@ -554,6 +555,7 @@ impl MatchSession {
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
             loading_requests: Vec::new(),
+            loading_reports: Vec::new(),
             endpoints: Default::default(),
             map_metadata: None,
             local_map_source: None,
@@ -3322,30 +3324,19 @@ impl MatchSession {
         })
     }
 
-    /// Borrowed synchronous loading drains only its own publications. All chat,
-    /// disconnect and other requests retain their existing FIFO/consumer.
+    /// Loading reports keep their own queue, so the held loader can send them
+    /// while the other requests wait for the ordinary service pass.
     pub(crate) fn take_network_loading_progress_reports(&mut self) -> Vec<i32> {
-        let mut reports = Vec::new();
-        if let Some(network) = self.network.as_mut() {
-            network.loading_requests.retain(|request| {
-                if let NetworkLoadingRequest::ReportProgress(percent) = request {
-                    reports.push(*percent);
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-        reports
+        self.network.as_mut().map_or_else(Vec::new, |network| {
+            std::mem::take(&mut network.loading_reports)
+        })
     }
 
     pub(crate) fn report_network_loading_progress(&mut self, percent: i32) {
         if let Some(network) = self.network.as_mut()
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
-            network
-                .loading_requests
-                .push(NetworkLoadingRequest::ReportProgress(percent));
+            network.loading_reports.push(percent);
         }
     }
 
@@ -3513,6 +3504,7 @@ impl MatchSession {
         network.phase = NetworkPhase::Lobby;
         network.endpoints.clear();
         network.loading_requests.clear();
+        network.loading_reports.clear();
         network.map_metadata = None;
         network.local_map_source = None;
         network.local_map_effective_digest = None;
@@ -4725,10 +4717,7 @@ mod tests {
                 2,
                 "historical launch stays immutable"
             );
-            assert_eq!(
-                session.take_network_loading_requests(),
-                vec![super::NetworkLoadingRequest::ReportProgress(100)]
-            );
+            assert_eq!(session.take_network_loading_progress_reports(), [100]);
             session.assert_network_start(prepared);
             assert_eq!(prepared.seed.value, 0x1234abcd);
             assert_eq!(prepared.launch_session().local_player_index, 1);

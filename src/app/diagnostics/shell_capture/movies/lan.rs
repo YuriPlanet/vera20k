@@ -1485,14 +1485,14 @@ impl LanCapture {
             && self.phase == LanPhase::Loading
             && state.frontend.screen == GameScreen::Loading
         {
-            let requests = state.match_state.session.take_network_loading_requests();
+            let reports = state
+                .match_state
+                .session
+                .take_network_loading_progress_reports();
             // The local terminal report is display100, including random maps
             // whose raw milestones were halved before publication. A peer
             // loading the same map reports the same terminal value.
-            if let Some(terminal) = requests.iter().find_map(|request| match request {
-                NetworkLoadingRequest::ReportProgress(percent) if *percent >= 100 => Some(*percent),
-                _ => None,
-            }) {
+            if let Some(&terminal) = reports.iter().find(|percent| **percent >= 100) {
                 let local = state
                     .match_state
                     .session
@@ -1517,19 +1517,18 @@ impl LanCapture {
                 }
                 self.route.push(json!({"frame":frame,
                     "action":"controlled remote loading completion after actual local report",
-                    "sources":peers,"percent":terminal,"requests":requests.iter().map(|r|format!("{r:?}")).collect::<Vec<_>>()}));
+                    "sources":peers,"percent":terminal,"reports":reports}));
             }
         }
         if self.target == LanTarget::LoadingTimeoutReturn
             && self.phase == LanPhase::Loading
             && state.frontend.screen == GameScreen::Loading
         {
-            let requests = state.match_state.session.take_network_loading_requests();
-            if self.loading_wait_reported_at.is_none()
-                && requests
-                    .iter()
-                    .any(|request| matches!(request, NetworkLoadingRequest::ReportProgress(100)))
-            {
+            let reports = state
+                .match_state
+                .session
+                .take_network_loading_progress_reports();
+            if self.loading_wait_reported_at.is_none() && reports.contains(&100) {
                 self.loading_wait_reported_at = Some(Instant::now());
                 self.event(
                     frame,

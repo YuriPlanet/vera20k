@@ -3665,49 +3665,19 @@ fn send_sources(state: &mut AppState, bytes: &[u8], sources: impl IntoIterator<I
 
 fn drain_match_requests(state: &mut AppState) {
     use super::match_runtime::session::NetworkLoadingRequest;
+    if let Some(service) = state.match_state.lan_service.as_mut()
+        && let Err(error) = service.drain_loading_reports(&mut state.match_state.session)
+    {
+        // The held loader fails its load on the same error.
+        log::warn!("Loading report failed: {error:#}");
+        super::loading::pump::cancel_network_loading(
+            state,
+            &format!("{}: {error:#}", crate::i18n::tr("VERA:LoadingFailed")),
+        );
+    }
     let requests = state.match_state.session.take_network_loading_requests();
     for request in requests {
         match request {
-            NetworkLoadingRequest::ReportProgress(percent) => {
-                if state.match_state.live_network.is_none() || percent >= 100 {
-                    if let Some(service) = state.match_state.lan_service.as_mut() {
-                        match service.queue_loading_progress(&state.match_state.session, percent) {
-                            Ok(true) => service.flush_setup(),
-                            Ok(false) => state
-                                .match_state
-                                .session
-                                .report_network_loading_progress(percent),
-                            Err(error) => {
-                                state
-                                    .match_state
-                                    .session
-                                    .report_network_loading_progress(percent);
-                                log::warn!("Loading report failed: {error:#}");
-                            }
-                        }
-                    }
-                } else {
-                    let scope = state
-                        .match_state
-                        .lan_service
-                        .as_ref()
-                        .and_then(LanService::setup_scope);
-                    match loading::progress_packets(&state.match_state.session, scope, percent) {
-                        Ok(packets) => {
-                            for (bytes, destination) in packets {
-                                send_bytes(state, &bytes, destination, false);
-                            }
-                        }
-                        Err(error) => {
-                            state
-                                .match_state
-                                .session
-                                .report_network_loading_progress(percent);
-                            log::warn!("Loading report failed: {error:#}");
-                        }
-                    }
-                }
-            }
             NetworkLoadingRequest::ProposeKick { target_source } => {
                 if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
