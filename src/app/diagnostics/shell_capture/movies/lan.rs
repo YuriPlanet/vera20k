@@ -6,7 +6,7 @@ use super::*;
 use crate::app::frontend::skirmish_session::cooperative::encode_name;
 use crate::app::input::multiplayer_setup as setup_input;
 use crate::app::match_runtime::session::{
-    NetworkLoadingRequest, NetworkMapMetadata, NetworkVacancy, SessionMode,
+    NetworkMapMetadata, NetworkSendRequest, NetworkVacancy, SessionMode,
 };
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
@@ -3486,10 +3486,10 @@ impl LanCapture {
                             squash(&listed.concat()).ends_with(&squash(&vote)),
                             "the vote line is missing from {listed:?}"
                         );
-                        let requests = state.match_state.session.take_network_loading_requests();
+                        let requests = state.match_state.session.take_network_send_requests();
                         ensure!(
                             requests
-                                .contains(&NetworkLoadingRequest::ProposeKick { target_source: 1 }),
+                                .contains(&NetworkSendRequest::ProposeKick { target_source: 1 }),
                             "no kick proposal was sent: {requests:?}"
                         );
                         self.route
@@ -3760,13 +3760,13 @@ impl LanCapture {
                         crate::app::input::coop_score::cursor_moved(state);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
-                        let requests = state.match_state.session.take_network_loading_requests();
+                        let requests = state.match_state.session.take_network_send_requests();
                         ensure!(
                             matches!(
                                 requests.as_slice(),
                                 [
-                                    NetworkLoadingRequest::CooperativeOptions(_),
-                                    NetworkLoadingRequest::CooperativeReady
+                                    NetworkSendRequest::CooperativeOptions(_),
+                                    NetworkSendRequest::CooperativeReady
                                 ]
                             ),
                             "the master's Continue sent {requests:?}"
@@ -3786,14 +3786,13 @@ impl LanCapture {
                             state,
                             CooperativeRoundEvent::PeerReady { source: 1 },
                         )?;
-                        let requests = state.match_state.session.take_network_loading_requests();
-                        let Some(NetworkLoadingRequest::CooperativeOptions(options)) =
-                            requests.get(1)
+                        let requests = state.match_state.session.take_network_send_requests();
+                        let Some(NetworkSendRequest::CooperativeOptions(options)) = requests.get(1)
                         else {
                             anyhow::bail!("the all-ready sent {requests:?}");
                         };
                         ensure!(
-                            requests.first() == Some(&NetworkLoadingRequest::CooperativeBegin),
+                            requests.first() == Some(&NetworkSendRequest::CooperativeBegin),
                             "the begin must precede the options: {requests:?}"
                         );
                         let ai: Vec<String> = options
@@ -3813,9 +3812,9 @@ impl LanCapture {
                             state,
                             CooperativeRoundEvent::Ack { source: 1 },
                         )?;
-                        let requests = state.match_state.session.take_network_loading_requests();
+                        let requests = state.match_state.session.take_network_send_requests();
                         ensure!(
-                            requests.contains(&NetworkLoadingRequest::CooperativeGo),
+                            requests.contains(&NetworkSendRequest::CooperativeGo),
                             "the master's last ack sent {requests:?}"
                         );
                         ensure!(
@@ -4215,11 +4214,11 @@ impl LanCapture {
                 );
                 // Enter: the chat-mask set, now empty of connected peers.
                 line(state, Key::Named(NamedKey::Enter), "hi", true);
-                let requests = state.match_state.session.take_network_loading_requests();
+                let requests = state.match_state.session.take_network_send_requests();
                 ensure!(
                     !requests
                         .iter()
-                        .any(|request| matches!(request, NetworkLoadingRequest::Chat { .. })),
+                        .any(|request| matches!(request, NetworkSendRequest::Chat { .. })),
                     "a line went to a cleared listener: {requests:?}"
                 );
                 let echo = format!("{host}:hi ");
@@ -4230,9 +4229,9 @@ impl LanCapture {
                 );
                 // `\`: everyone.
                 line(state, Key::Character("\\".into()), "all", true);
-                let requests = state.match_state.session.take_network_loading_requests();
+                let requests = state.match_state.session.take_network_send_requests();
                 ensure!(
-                    requests.contains(&NetworkLoadingRequest::Chat {
+                    requests.contains(&NetworkSendRequest::Chat {
                         recipients: vec![1],
                         text: "all ".into(),
                     }),
@@ -4241,9 +4240,9 @@ impl LanCapture {
                 // VERA's `/pause`: sent as chat like any line, then answered
                 // as a command; a LAN match has no shared pause.
                 line(state, Key::Character("\\".into()), "/pause", true);
-                let requests = state.match_state.session.take_network_loading_requests();
+                let requests = state.match_state.session.take_network_send_requests();
                 ensure!(
-                    requests.contains(&NetworkLoadingRequest::Chat {
+                    requests.contains(&NetworkSendRequest::Chat {
                         recipients: vec![1],
                         text: "/pause ".into(),
                     }),
@@ -4300,9 +4299,9 @@ impl LanCapture {
             state
                 .match_state
                 .session
-                .take_network_loading_requests()
+                .take_network_send_requests()
                 .into_iter()
-                .filter(|request| matches!(request, NetworkLoadingRequest::Taunt { .. }))
+                .filter(|request| matches!(request, NetworkSendRequest::Taunt { .. }))
                 .collect::<Vec<_>>()
         };
         match step {
@@ -4329,7 +4328,7 @@ impl LanCapture {
                 let sent = taunts(state);
                 let byte = ((country as u8) << 4) | 1;
                 ensure!(
-                    sent == [NetworkLoadingRequest::Taunt {
+                    sent == [NetworkSendRequest::Taunt {
                         recipients: vec![1],
                         byte
                     }],

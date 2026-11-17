@@ -271,8 +271,9 @@ enum NetworkPhase {
     },
 }
 
+/// A packet the battle or the co-op round asks the LAN service to send.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NetworkLoadingRequest {
+pub(crate) enum NetworkSendRequest {
     /// The kick proposal packet `0x1C` (0x0064AAE0) to every other node.
     ProposeKick { target_source: usize },
     /// The in-battle chat packet `0x0C` (`0x0055EDBF..0x0055F04E`) to these
@@ -311,7 +312,7 @@ struct NetworkSession {
     /// The WOL start's tournament value and clan lists, taken at
     /// OnGameStart/Start Game Now for the accepted start.
     wol_start: WolStartTerms,
-    loading_requests: Vec<NetworkLoadingRequest>,
+    send_requests: Vec<NetworkSendRequest>,
     /// 69AE90's effective display percents waiting for the LAN service;
     /// random-map milestones are already halved.
     loading_reports: Vec<i32>,
@@ -554,7 +555,7 @@ impl MatchSession {
         self.network = Some(NetworkSession {
             room: NetworkRoom::default(),
             wol_start: WolStartTerms::default(),
-            loading_requests: Vec::new(),
+            send_requests: Vec::new(),
             loading_reports: Vec::new(),
             endpoints: Default::default(),
             map_metadata: None,
@@ -3318,9 +3319,9 @@ impl MatchSession {
         assert_eq!(self.host, startup.host());
     }
 
-    pub(crate) fn take_network_loading_requests(&mut self) -> Vec<NetworkLoadingRequest> {
+    pub(crate) fn take_network_send_requests(&mut self) -> Vec<NetworkSendRequest> {
         self.network.as_mut().map_or_else(Vec::new, |network| {
-            std::mem::take(&mut network.loading_requests)
+            std::mem::take(&mut network.send_requests)
         })
     }
 
@@ -3347,8 +3348,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::ProposeKick { target_source });
+                .send_requests
+                .push(NetworkSendRequest::ProposeKick { target_source });
         }
     }
 
@@ -3361,8 +3362,8 @@ impl MatchSession {
             )
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Chat { recipients, text });
+                .send_requests
+                .push(NetworkSendRequest::Chat { recipients, text });
         }
     }
 
@@ -3374,8 +3375,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Beacon(record));
+                .send_requests
+                .push(NetworkSendRequest::Beacon(record));
         }
     }
 
@@ -3384,8 +3385,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::BeaconText { house, slot, text });
+                .send_requests
+                .push(NetworkSendRequest::BeaconText { house, slot, text });
         }
     }
 
@@ -3394,8 +3395,8 @@ impl MatchSession {
             && matches!(network.phase, NetworkPhase::Frozen { .. })
         {
             network
-                .loading_requests
-                .push(NetworkLoadingRequest::Taunt { recipients, byte });
+                .send_requests
+                .push(NetworkSendRequest::Taunt { recipients, byte });
         }
     }
 
@@ -3503,7 +3504,7 @@ impl MatchSession {
         let network = self.network.as_mut()?;
         network.phase = NetworkPhase::Lobby;
         network.endpoints.clear();
-        network.loading_requests.clear();
+        network.send_requests.clear();
         network.loading_reports.clear();
         network.map_metadata = None;
         network.local_map_source = None;

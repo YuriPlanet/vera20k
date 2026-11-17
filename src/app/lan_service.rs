@@ -3664,7 +3664,7 @@ fn send_sources(state: &mut AppState, bytes: &[u8], sources: impl IntoIterator<I
 }
 
 fn drain_match_requests(state: &mut AppState) {
-    use super::match_runtime::session::NetworkLoadingRequest;
+    use super::match_runtime::session::NetworkSendRequest;
     if let Some(service) = state.match_state.lan_service.as_mut()
         && let Err(error) = service.drain_loading_reports(&mut state.match_state.session)
     {
@@ -3675,10 +3675,10 @@ fn drain_match_requests(state: &mut AppState) {
             &format!("{}: {error:#}", crate::i18n::tr("VERA:LoadingFailed")),
         );
     }
-    let requests = state.match_state.session.take_network_loading_requests();
+    let requests = state.match_state.session.take_network_send_requests();
     for request in requests {
         match request {
-            NetworkLoadingRequest::ProposeKick { target_source } => {
+            NetworkSendRequest::ProposeKick { target_source } => {
                 if let Some(runtime) = state.match_state.sim_runtime.runtime()
                     && let Some(message) = super::match_runtime::network_match::encode_kick_proposal(
                         &state.match_state.session,
@@ -3700,7 +3700,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, &message, sources);
                 }
             }
-            NetworkLoadingRequest::Chat { recipients, text } => {
+            NetworkSendRequest::Chat { recipients, text } => {
                 // BC6's chat writes [0x7EEF2C] (0x0046E126).
                 let color = if state.match_state.session.cooperative_round().is_some() {
                     crate::ui::wol_chat::PUBLIC_COLOR as i32
@@ -3718,7 +3718,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), recipients);
                 }
             }
-            NetworkLoadingRequest::Taunt { recipients, byte } => {
+            NetworkSendRequest::Taunt { recipients, byte } => {
                 let color = state
                     .match_state
                     .session
@@ -3731,7 +3731,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), recipients);
                 }
             }
-            NetworkLoadingRequest::Beacon(record) => {
+            NetworkSendRequest::Beacon(record) => {
                 if let Ok(message) =
                     crate::net::lan_messages::ingame::BeaconMessage::new(&local_name(state), record)
                 {
@@ -3743,7 +3743,7 @@ fn drain_match_requests(state: &mut AppState) {
                     send_sources(state, message.as_bytes(), peers);
                 }
             }
-            NetworkLoadingRequest::BeaconText { house, slot, text } => {
+            NetworkSendRequest::BeaconText { house, slot, text } => {
                 if let Ok(message) = LanMessage::beacon_text(&local_name(state), house, slot, &text)
                 {
                     let peers: Vec<_> =

@@ -916,7 +916,7 @@ mod tests {
         session.report_network_loading_progress(100);
         host.drain_loading_reports(&mut session).unwrap();
         assert!(
-            session.take_network_loading_requests().is_empty(),
+            session.take_network_send_requests().is_empty(),
             "the in-match request drain must not take a held report"
         );
         assert_eq!(session.take_network_loading_progress_reports(), [100]);

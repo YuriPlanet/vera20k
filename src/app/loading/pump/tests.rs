@@ -2448,9 +2448,9 @@ fn held_network_sink_sends_rmg_display_progress_and_services_the_same_source_row
             .is_none()
     );
     assert_eq!(
-        host_session.take_network_loading_requests(),
+        host_session.take_network_send_requests(),
         vec![
-            crate::app::match_runtime::session::NetworkLoadingRequest::ProposeKick {
+            crate::app::match_runtime::session::NetworkSendRequest::ProposeKick {
                 target_source: 1
             },
         ],
