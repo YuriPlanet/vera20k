@@ -834,7 +834,7 @@ impl SuperWeaponInstance {
     /// house with charged shots waiting is ready again at once. Returns the
     /// frames the native timer restarts with.
     fn next_recharge(&mut self, sw: &SuperWeaponType) -> i32 {
-        let recharge = self.recharge_time(sw).max(0);
+        let recharge = self.recharge_time(sw);
         let Some(owner) = self.charge_owner else {
             return recharge;
         };
@@ -852,7 +852,7 @@ impl SuperWeaponInstance {
         self.charge_owner = Some(promoted.building);
         self.building_charges.push(BuildingCharge {
             building: owner,
-            left: recharge,
+            left: recharge.max(0),
         });
         promoted.left
     }
