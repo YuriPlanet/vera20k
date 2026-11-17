@@ -274,6 +274,9 @@ pub(super) struct LiveService {
     // Canonical received options only; MatchSession remains the editable owner.
     accepted_options: Option<Value>,
     start_preparation: Option<StartPreparation>,
+    /// The local reason was already shown. The ordered lobby stream will echo
+    /// the cancellation before announcing another match.
+    locally_refused_start: bool,
     last_ready_request: Option<(u64, u64)>,
     pending_choices: Option<PendingChoices>,
     player_id: String,
@@ -668,6 +671,7 @@ impl LiveService {
             revision: 0,
             accepted_options: None,
             start_preparation: None,
+            locally_refused_start: false,
             last_ready_request: None,
             pending_choices: None,
             player_id: String::new(),
@@ -807,6 +811,41 @@ impl LiveService {
     /// (`spawn_result.json`).
     fn match_unfinished(&self) -> bool {
         !self.spawned && self.match_id.is_some() && self.finishing.is_none()
+    }
+
+    /// A lobby `game_started` is already committed for every member. If this
+    /// game cannot adopt it, the existing authenticated `finish` cancels that
+    /// exact pending match for everyone. Leave targets a room, not a match.
+    fn receive_lobby_start(
+        &mut self,
+        payload: Value,
+        admit: impl FnOnce(&mut Self, wire::Start) -> Result<()>,
+    ) -> Result<()> {
+        if self.pending.is_some()
+            || self.match_id.is_some()
+            || self.watching.is_some()
+            || self.spawned
+            || self.admission_blocked()
+        {
+            return Ok(());
+        }
+        self.locally_refused_start = false;
+        let match_id = payload["match_id"]
+            .as_str()
+            .context("missing start match")?;
+        relay_uuid(match_id)?;
+        let match_id = match_id.to_owned();
+        let result = decode(payload).and_then(|start: wire::Start| {
+            ensure!(start.revision == self.revision, "stale options revision");
+            admit(self, start)
+        });
+        self.start_preparation = None;
+        if result.is_err() {
+            self.locally_refused_start = true;
+            self.hold_match(Some(match_id));
+            self.begin_finish(Instant::now());
+        }
+        result
     }
 
     /// Keep the network report of the lobby match whose transport just
@@ -956,6 +995,7 @@ impl LiveService {
     }
 
     fn clear_cleanup(&mut self) {
+        self.locally_refused_start = false;
         self.finishing = None;
         self.leaving = None;
         self.left_for_match = false;
@@ -3515,10 +3555,31 @@ fn apply_event(
             );
         }
         "game_started" => {
-            // The lobby ended a visit to the public lobby for the match.
-            super::lobby::visit_ends(state);
-            begin_start(state, service, decode(payload)?)?;
-            service.start_preparation = None;
+            let admitted = service.receive_lobby_start(payload, |service, start| {
+                // The lobby ended a visit to the public lobby for the match.
+                super::lobby::visit_ends(state);
+                begin_start(state, service, start)
+            });
+            if let Err(error) = admitted {
+                if !service.locally_refused_start {
+                    return Err(error);
+                }
+                log::warn!("Online match start refused locally: {error:#}");
+                let line = if error.is::<StartDataMismatch>() {
+                    "VERA:MatchStartMismatch"
+                } else if error.is::<std::io::Error>() {
+                    "VERA:RelayConnectionFailed"
+                } else {
+                    "VERA:StartRefusedSetup"
+                };
+                if state.frontend.network_setup_protocol.is_some() {
+                    fail_start(state, &tr(line));
+                } else {
+                    // A delayed callback after leaving its setup may finish
+                    // only its match. Never leave the player's current room.
+                    notice(state, &tr(line));
+                }
+            }
         }
         "start_confirmed" => {
             let id = payload["match_id"]
@@ -3570,6 +3631,11 @@ fn apply_event(
             enter_timed_start(state, service, timing.match_id, &timing.pings)?;
         }
         "start_rejected" => {
+            if std::mem::take(&mut service.locally_refused_start) {
+                // Our finish (or a simultaneous peer cancellation) released
+                // this start. Keep the reason this game already showed.
+                return Ok(());
+            }
             let reason = payload["message"].as_str().unwrap_or_default();
             let names = lobby_names(&payload);
             log::warn!(
@@ -3635,9 +3701,11 @@ fn enter_timed_start(
     Ok(())
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct StartDataMismatch(&'static str);
+
 fn begin_start(state: &mut AppState, service: &mut LiveService, start: wire::Start) -> Result<()> {
-    ensure!(service.pending.is_none(), "a start is already pending");
-    ensure!(start.revision == service.revision, "stale options revision");
     ensure!(
         !state.match_state.session.host()
             || service
@@ -3649,13 +3717,16 @@ fn begin_start(state: &mut AppState, service: &mut LiveService, start: wire::Sta
     let agreement = local_agreement(state, service.revision)?;
     ensure!(
         agreement["version"].as_str() == Some(&start.version),
-        "client version differs"
+        StartDataMismatch("client version differs")
     );
     ensure!(
         agreement["rules_digest"].as_str() == Some(&start.rules_digest),
-        "rules differ"
+        StartDataMismatch("rules differ")
     );
-    ensure!(local_map_status(state, service) == 1, "local map differs");
+    ensure!(
+        local_map_status(state, service) == 1,
+        StartDataMismatch("local map differs")
+    );
     let names = start
         .users
         .iter()
@@ -4372,6 +4443,7 @@ mod completion_tests {
             revision: 0,
             accepted_options: None,
             start_preparation: None,
+            locally_refused_start: false,
             last_ready_request: None,
             pending_choices: None,
             player_id: String::new(),
@@ -4403,6 +4475,48 @@ mod completion_tests {
             watching: None,
         };
         (service, input, output)
+    }
+
+    #[test]
+    fn a_locally_refused_lobby_start_finishes_only_the_announced_match() {
+        let (mut service, input, _output) = control_service(None);
+        let id = "11111111-1111-1111-1111-111111111111";
+        // The lobby has committed a room revision that this guest cannot
+        // adopt. It never opens the relay or reports relay_ready.
+        let start = json!({"match_id": id, "revision": 9, "version": "test", "rules_digest": "",
+            "seed": 1, "users": [], "relay": {"address":"127.0.0.1:4000", "source_index":0,
+            "packet_key":"", "payload_key":"", "ticket":"", "ordering_certificate":""}});
+        let error = service
+            .receive_lobby_start(start, |_, _| panic!("stale revision"))
+            .unwrap_err();
+        assert_eq!(error.to_string(), "stale options revision");
+        assert!(matches!(input.try_recv(), Ok(http::Request::HoldMatch(Some(held))) if held == id));
+        assert!(
+            matches!(input.try_recv(), Ok(http::Request::Command { operation: "finish", payload, .. }) if payload == json!({"match_id": id}))
+        );
+        assert!(service.locally_refused_start);
+        // A later callback cannot replace the identity under its finish.
+        service
+            .receive_lobby_start(
+                json!({"match_id": "22222222-2222-2222-2222-222222222222"}),
+                |_, _| panic!("already held"),
+            )
+            .unwrap();
+        assert!(input.try_recv().is_err());
+        assert_eq!(service.match_id.as_deref(), Some(id));
+    }
+
+    #[test]
+    fn a_game_started_without_a_match_identity_finishes_nothing() {
+        let (mut service, input, _output) = control_service(None);
+        assert!(
+            service
+                .receive_lobby_start(json!({"match_id": "other"}), |_, _| panic!("bad identity"))
+                .is_err()
+        );
+        assert!(service.match_id.is_none());
+        assert!(!service.locally_refused_start);
+        assert!(input.try_recv().is_err());
     }
 
     /// The remembered sign-in signs its name in, survives another name's
