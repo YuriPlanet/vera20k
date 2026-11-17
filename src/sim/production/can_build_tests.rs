@@ -892,3 +892,81 @@ fn build_limit_group_paired_nums_ands_and_releases() {
     // defect rather than the CanBuild answer.
     assert!(check_build_limit(&sim, &rules, owner, upgrade));
 }
+
+/// Phobos `BuildingTypeExt::CanUpgrade`
+/// (`Ext/BuildingType/Hooks.Upgrade.cpp:21-25`) walks every
+/// `PowersUp.Buildings` entry; Ares `HouseOwnsSpecific100082B0` asks it per
+/// building prerequisite. The legacy `PowersUpBuilding` string is not the
+/// whole set: here it names `HOST_A`, which the list puts second.
+#[test]
+#[cfg(all(feature = "ares", feature = "phobos"))]
+fn powers_up_buildings_prerequisite_accepts_any_declared_host() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
+         [HOST_A]\nStrength=100\nUpgrades=3\n\
+         [HOST_B]\nStrength=100\nUpgrades=3\n\
+         [UPGRADE]\nStrength=100\n\
+         PowersUpBuilding=HOST_A\nPowersUp.Buildings=HOST_B,HOST_A\n",
+    ))
+    .unwrap();
+    let index = rules.ares_find_building("UPGRADE").unwrap();
+    for (host, expected) in [
+        (None, false),
+        (Some("HOST_A"), true),
+        (Some("HOST_B"), true),
+    ] {
+        let (mut sim, owner) = sim_for(&json!({}), &rules);
+        if let Some(host) = host {
+            crate::sim::production::tests::spawn_structure(&mut sim, &rules, 1, "H0", host, 10, 10);
+            let upgrade = sim.interner.get("UPGRADE").unwrap();
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .set_building_upgrades_for_test(1, [None, None, Some(upgrade)]);
+        }
+        assert_eq!(
+            specific_prerequisite_on_map(&sim, &rules, sim.houses.get(&owner).unwrap(), index),
+            expected,
+            "host {host:?}"
+        );
+    }
+}
+
+/// Phobos `BuildingTypeExt::GetUpgradesAmount`
+/// (`Ext/BuildingType/Body.cpp:160-161`) sums the installed slots over every
+/// host, so Ares' `CountOwned10020AF0` build-limit census sees an upgrade
+/// installed on the second host too.
+#[test]
+#[cfg(all(feature = "ares", feature = "phobos"))]
+fn powers_up_buildings_build_limit_counts_every_host() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=HOST_A\n1=HOST_B\n2=UPGRADE\n\
+         [HOST_A]\nStrength=100\nUpgrades=3\n\
+         [HOST_B]\nStrength=100\nUpgrades=3\n\
+         [UPGRADE]\nStrength=100\nTechLevel=1\nBuildLimit=2\n\
+         PowersUpBuilding=HOST_A\nPowersUp.Buildings=HOST_B,HOST_A\n",
+    ))
+    .unwrap();
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    let upgrade = sim.interner.get("UPGRADE").unwrap();
+    for (id, host, x) in [(1, "HOST_A", 10), (2, "HOST_B", 14)] {
+        crate::sim::production::tests::spawn_structure(&mut sim, &rules, id, "H0", host, x, 10);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_building_upgrades_for_test(1, [None, None, Some(upgrade)]);
+    }
+    let upgrade_type = rules.object("UPGRADE").unwrap();
+    assert_eq!(
+        ares_owned_build_limit_count(&sim, &rules, sim.houses.get(&owner).unwrap(), upgrade_type),
+        2,
+        "one installed slot on each declared host"
+    );
+    assert_eq!(
+        can_build(&sim, &rules, owner, upgrade_type, true, true),
+        CanBuild::AtLimit,
+        "BuildLimit=2 is reached only when both hosts count"
+    );
+}

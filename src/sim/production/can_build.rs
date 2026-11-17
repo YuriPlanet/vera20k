@@ -394,35 +394,42 @@ fn specific_prerequisite_on_map(
         // count before PowersUpBuilding, including a separately on-map upgrade.
         return true;
     }
-    if building_type.building_upgrade().host().is_none() {
+    if building_type.building_upgrade().hosts().is_empty() {
         return !crate::rules::ARES_ENABLED && count != 0;
     }
     let Some(type_id) = sim.interner.get(&building_type.id) else {
         return false;
     };
     if crate::rules::ARES_ENABLED {
-        // Ares HouseOwnsSpecific100082B0 resolves the declared host, requires
+        // Ares HouseOwnsSpecific100082B0 resolves one declared host, requires
         // its active count>0, then scans every House+6C building of that type. It reads
         // all three installed slots and no HP/limbo/online/Selling/count gate.
-        let Some(host) = building_type
-            .building_upgrade()
-            .host()
-            .and_then(|name| rules.ares_find_building(name))
-            .and_then(|index| rules.building_type_at(index))
-            .and_then(|host| sim.interner.get(&host.id))
-        else {
-            return false;
-        };
-        if house
-            .tracking()
-            .active_count(EntityCategory::Structure, host)
-            <= 0
-        {
-            return false;
+        // Phobos `BuildingTypeExt::CanUpgrade` (`Ext/BuildingType/Hooks.Upgrade.cpp:
+        // 21-25`) walks every `PowersUp.Buildings` entry instead, so any
+        // declared host that resolves and carries the slot satisfies this.
+        for name in building_type.building_upgrade().hosts() {
+            let Some(host) = rules
+                .ares_find_building(name)
+                .and_then(|index| rules.building_type_at(index))
+                .and_then(|host| sim.interner.get(&host.id))
+            else {
+                continue;
+            };
+            if house
+                .tracking()
+                .active_count(EntityCategory::Structure, host)
+                <= 0
+            {
+                continue;
+            }
+            if matching_installed_upgrades(sim, house, host, type_id)
+                .next()
+                .is_some()
+            {
+                return true;
+            }
         }
-        return matching_installed_upgrades(sim, house, host, type_id)
-            .next()
-            .is_some();
+        return false;
     }
     // Steam gamemd:4F7DF8..4F7E4E walks House+6C backwards, skips only limbo,
     // offline and either Selling selector, then checks all three
@@ -492,19 +499,30 @@ fn ares_owned_build_limit_count(
             .get(id)
             .map_or(0, |id| house.tracking().owned_count(category, id))
     };
-    if obj.category == ObjectCategory::Building
-        && let Some(host) = obj.building_upgrade().host()
-    {
-        let Some((host, upgrade)) = rules
-            .ares_find_building(host)
-            .and_then(|index| rules.building_type_at(index))
-            .and_then(|host| sim.interner.get(&host.id))
-            .zip(sim.interner.get(&obj.id))
-        else {
+    if obj.category == ObjectCategory::Building && !obj.building_upgrade().hosts().is_empty() {
+        // Phobos `BuildingTypeExt::GetUpgradesAmount`
+        // (`Ext/BuildingType/Body.cpp:160-161`) sums the installed slots over
+        // every `PowersUp.Buildings` host; a name the reader left unresolved
+        // contributes nothing. The sum keeps `i32` wrapping semantics.
+        let Some(upgrade) = sim.interner.get(&obj.id) else {
             return 0;
         };
-        return matching_installed_upgrades(sim, house, host, upgrade)
-            .fold(0_i32, |count, _| count.wrapping_add(1));
+        return obj
+            .building_upgrade()
+            .hosts()
+            .into_iter()
+            .filter_map(|name: &str| {
+                rules
+                    .ares_find_building(name)
+                    .and_then(|index| rules.building_type_at(index))
+                    .and_then(|host| sim.interner.get(&host.id))
+            })
+            .fold(0_i32, |count, host| {
+                count.wrapping_add(
+                    matching_installed_upgrades(sim, house, host, upgrade)
+                        .fold(0_i32, |count, _| count.wrapping_add(1)),
+                )
+            });
     }
     // Ares CountOwned10020C23..10020C81 keeps the original Infantry
     // VehicleThief census. The existing Unit+338 owner supplies this count.
