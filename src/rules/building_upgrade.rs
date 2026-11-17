@@ -105,6 +105,30 @@ impl BuildingUpgradeRules {
         (!self.host.is_empty()).then_some(self.host.as_str())
     }
 
+    /// Phobos `BuildingTypeExt::CanUpgrade`
+    /// (`Ext/BuildingType/Hooks.Upgrade.cpp:21-25`) and
+    /// `BuildingTypeExt::GetUpgradesAmount` (`Ext/BuildingType/Body.cpp:
+    /// 160-161`) walk **every** `PowersUp.Buildings` entry, not only the
+    /// legacy `PowersUpBuilding` name; the reader keeps that legacy string
+    /// inside the list (`Body.cpp:270-277`), so this returns the native host
+    /// set with the legacy field first. A list name that repeats the legacy
+    /// host case-insensitively is not returned twice.
+    pub fn hosts(&self) -> Vec<&str> {
+        let legacy = self.host();
+        #[cfg(feature = "phobos")]
+        {
+            let mut hosts: Vec<&str> = legacy.into_iter().collect();
+            for name in &self.powers_up_buildings {
+                if !name.is_empty() && !hosts.iter().any(|host| host.eq_ignore_ascii_case(name)) {
+                    hosts.push(name);
+                }
+            }
+            hosts
+        }
+        #[cfg(not(feature = "phobos"))]
+        legacy.into_iter().collect()
+    }
+
     /// Phobos `PowersUp.Owner=`, the installing owner's relation to the host.
     #[cfg(feature = "phobos")]
     pub fn powers_up_owner(&self) -> crate::rules::phobos_shields::AffectedHouse {

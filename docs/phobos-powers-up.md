@@ -28,15 +28,32 @@ PowersUpBuilding=             ; legacy single host, kept in sync
 ## Where VERA20K owns it
 
 `rules::building_upgrade::BuildingUpgradeRules` reads both keys and performs
-the legacy sync in its per-pass reader. The single admission owner
+the legacy sync in its per-pass reader. `hosts()` is the single derivation of
+the native host set (legacy field first, then every other list entry once);
+`host()` keeps the native legacy string for the code that wants that field or
+a boolean upgrade test. The single admission owner
 `sim::building_upgrades::can_install_building_upgrade` uses the list and the
 `can_target_house` filter under `phobos`; stock builds keep the legacy
 `PowersUpBuilding` equality check.
 
+Every runtime consumer that asks "which host carries this upgrade" walks
+`hosts()`:
+
+- Ares `HouseOwnsSpecific100082B0` / `PrerequisitesMet10021CA0`
+  (`sim::production::can_build::specific_prerequisite_on_map`) admits the type
+  when **any** declared host is on the map and carries the upgrade in one of
+  its three slots.
+- Ares `CountOwned10020AF0` (`sim::production::can_build::
+  ares_owned_build_limit_count`) sums the upgrade's installed slots over every
+  declared host, so `BuildLimit=` sees all of them.
+- `Simulation::count_owned_building_upgrades` (Phobos
+  `BuildingTypeExt::GetUpgradesAmount`) already reads the whole list and feeds
+  the Phobos `BuildLimitGroup.*` census.
+- `sim::ai_build_need` reads no host name: it consumes the generic
+  prerequisite result, so it follows the same set.
+
 ## Residuals
 
-- AI and House consumers that look for an upgrade's single host name
-  (`sim/ai_build_need.rs`, `sim/production/can_build.rs`, and the Phobos House
-  upgrade scans) see only the first list entry, which the sync writes into the
-  legacy field; additional `PowersUp.Buildings` entries are considered only by
-  the player's installation admission.
+- None for host selection: installation, prerequisites, build limits and the
+  AI's prerequisite path all consult the same native host set. Stock (non-Ares)
+  gamemd keeps its own single-name `PowersUpBuilding` behaviour, as before.
