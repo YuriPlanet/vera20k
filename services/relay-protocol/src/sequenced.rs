@@ -456,8 +456,8 @@ pub(super) struct ClientOrdering {
     certificate: Vec<u8>,
     agreement: [u8; 32],
     // The four most recently sealed batches retain their exact bytes.
-    // Accepted entries stay cached until a new batch needs the slot, so a
-    // delayed app-side acceptance receipt can still retry immutable bytes.
+    // Accepted entries stay cached until a new batch needs the slot, so this
+    // source's batches in the stream are checked against what it sealed.
     pub(super) sealed: VecDeque<SealedBatch>,
     pub(super) next_batch: u64,
     pub(super) accepted_through: u64,
@@ -579,25 +579,16 @@ impl ClientSession {
         self.encode(CONTROL, &payload, out)
     }
 
-    /// Seals `batch_id` (the next ID) or checks a retained one has the same
-    /// plaintext, stable across retries and hop renewals.
-    pub(super) fn seal_batch(&mut self, batch_id: u64, plaintext: &[u8]) -> Result<(), RelayError> {
+    /// Seals `plaintext` as the next batch and returns its ID.
+    pub(super) fn seal_batch(&mut self, plaintext: &[u8]) -> Result<u64, RelayError> {
         if !self.ready {
             return Err(RelayError::Unregistered);
         }
-        if plaintext.is_empty() || plaintext.len() > ORDERING_BATCH_CAPACITY || batch_id == 0 {
+        if plaintext.is_empty() || plaintext.len() > ORDERING_BATCH_CAPACITY {
             return Err(RelayError::Malformed);
         }
         let ordering = self.ordering.as_mut().ok_or(RelayError::Unregistered)?;
-        if let Some(batch) = ordering.sealed.iter().find(|batch| batch.id == batch_id) {
-            if batch.opaque != plaintext {
-                return Err(RelayError::Authentication);
-            }
-            return Ok(());
-        }
-        if batch_id != ordering.next_batch {
-            return Err(RelayError::Replay);
-        }
+        let batch_id = ordering.next_batch;
         if batch_id - ordering.accepted_through - 1 >= Self::ORDERING_SUBMISSION_WINDOW as u64 {
             return Err(RelayError::Full);
         }
@@ -618,7 +609,7 @@ impl ClientSession {
             opaque,
         });
         ordering.next_batch = next_batch;
-        Ok(())
+        Ok(batch_id)
     }
 
     pub(super) fn pull_ordering(
@@ -677,6 +668,16 @@ impl ClientSession {
 
     pub fn ordering_is_configured(&self) -> bool {
         self.ordering.is_some()
+    }
+
+    /// The last of this source's batches the relay has accepted, from its
+    /// ACK, BatchGap and this source's own BATCH records (spec §6.1, §6.4);
+    /// while restoring, the replaced process's. `None` before ordering is
+    /// configured.
+    pub fn ordering_accepted_through(&self) -> Option<u64> {
+        self.ordering
+            .as_ref()
+            .map(|ordering| ordering.accepted_through)
     }
 
     pub(super) fn accepts_ordering_leave_ack(&self, sequence: u64) -> bool {
@@ -3866,12 +3867,7 @@ mod tests {
         back.ordering.as_mut().unwrap().accept_through(5).unwrap();
         back.set_ordering_restore(false);
 
-        let mut bytes = Vec::new();
-        assert!(matches!(
-            back.test_submit(5, b"late", &mut bytes),
-            Err(RelayError::Replay)
-        ));
-        back.test_submit(6, b"next", &mut bytes).unwrap();
+        assert_eq!(back.seal_batch(b"next"), Ok(6));
         // Once restored, a batch this process did not send is refused again.
         assert!(matches!(
             back.ordering.as_mut().unwrap().accept_through(7),
@@ -4775,7 +4771,7 @@ mod tests {
         }
         configure(&mut server, &mut first, &cert, 0);
         for (id, plaintext) in [(1, b"one"), (2, b"two"), (3, b"thr")] {
-            first.seal_batch(id, plaintext).unwrap();
+            assert_eq!(first.seal_batch(plaintext), Ok(id));
         }
         let batch = |client: &ClientSession, id: u64| {
             let ordering = client.ordering.as_ref().unwrap();
@@ -4862,7 +4858,7 @@ mod tests {
         );
         assert!(matches!(probe[..], [OrderEvent::Status(_)]));
         let mut bytes = Vec::new();
-        second.seal_batch(1, b"gone").unwrap();
+        assert_eq!(second.seal_batch(b"gone"), Ok(1));
         let gone = batch(&second, 1);
         second.leave_ordering(&mut bytes).unwrap();
         events(&mut server, &mut second, &bytes, 300);
@@ -4956,10 +4952,6 @@ mod tests {
             sender.test_submit(5, b"fifth", &mut bytes),
             Err(RelayError::Full)
         );
-        assert_eq!(
-            sender.test_submit(2, b"changed", &mut bytes),
-            Err(RelayError::Authentication)
-        );
         renew(&mut server, &mut sender, 1000);
         let mut final_ack = None;
         for id in 1..=4 {
@@ -4979,10 +4971,6 @@ mod tests {
             events(&mut server, &mut sender, &bytes, 1000)[0],
             OrderEvent::Ack { batch_id: 5, .. }
         ));
-        assert_eq!(
-            sender.test_submit(1, b"new old nonce", &mut bytes),
-            Err(RelayError::Replay)
-        );
         assert_eq!(sender.ordering.as_ref().unwrap().sealed.len(), 4);
     }
 
