@@ -144,6 +144,54 @@ fn a_digging_tunnel_neither_fires_nor_casts_a_shadow() {
     );
 }
 
+/// A unit that starts one level up sinks 256 below **that** height and comes
+/// back to it, not to zero: `ProcessDugIn` compares against the cell's ground
+/// (`0x578080`), which `PreDigOut` re-reads every frame.
+#[test]
+fn a_raised_cell_sinks_and_surfaces_relative_to_its_own_height() {
+    let mut runtime = TunnelRuntime::constructed();
+    let mut position = Position::new(
+        5,
+        5,
+        1,
+        Some(256),
+        SimFixed::from_num(128),
+        SimFixed::from_num(128),
+    );
+    let mut facing = crate::sim::movement::FacingClass::new(0, 0);
+    let from = position_world(&position);
+    let destination = Some(DriveCoord {
+        x: from.x,
+        y: from.y - 300,
+        z: from.z + UNDERGROUND_Z,
+    });
+
+    runtime.move_to(false);
+    let mut lowest = from.z;
+    let mut frame = 0u32;
+    for _ in 0..2000 {
+        frame += 1;
+        runtime.process(&mut position, &mut facing, destination, 5, frame);
+        let z = position_world(&position).z;
+        lowest = lowest.min(z);
+        if runtime.state() == TunnelState::Idle {
+            break;
+        }
+    }
+
+    assert_eq!(runtime.state(), TunnelState::Idle);
+    assert_eq!(
+        lowest,
+        from.z + UNDERGROUND_Z,
+        "the sink stopped at the wrong floor"
+    );
+    assert_eq!(
+        position_world(&position).z,
+        from.z,
+        "the unit did not return to its own ground height"
+    );
+}
+
 /// `Stop_Moving 0x728C00` state 4 -> `0x728C1E`: a travelling unit surfaces
 /// where it stands instead of staying underground.
 #[test]

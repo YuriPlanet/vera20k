@@ -64,10 +64,16 @@ The layer answer is what the package-93 `AU` chain consumes:
   `0x600` flags) are not created; only the timers that gate them are ported.
 - `ProcessPreDigOut 0x7298F0` raises Z to the cell's ground height (`0x578080`)
   by `max(5, round(rate * frame_scale))` and arms the dig-out timer with
-  `round(64.0 / Speed)` at `0x729A54`. VERA treats the surface as Z 0; a ramp
-  cell's own ground height is not queried.
-- `Can_Enter_Cell 0x72A090` (`0x486FF0` cell test) and `Z_Adjust 0x729E50`
-  are read only far enough to confirm they do not change the state chain.
+  `round(64.0 / Speed)` at `0x729A54`. VERA samples the entry cell's ground
+  height before the first sink frame and uses it for the floor
+  (`ground + 0xFFFFFF00`) and the surface; a ramp whose destination cell sits
+  at a different height than the entry cell is the remaining difference.
+- `Can_Enter_Cell 0x72A090` answers 7 only when `0x486FF0` rejects the cell —
+  that body tests `0x578540` (map validity), the overlay table `+0x305` and the
+  flags at `+0x11c`/`+0x140`, i.e. a void cell, not terrain, walls or
+  buildings. Nothing in VERA's tunnel chain calls it (the controller writes
+  coordinates directly), so it stays unported by design.
+- `Z_Adjust 0x729E50` is draw-only and belongs to the presentation layer.
 - `Stop_Moving 0x728C00`'s table `0x728E08` is ported by its targets: states
   1/2/3 abort the dig to Idle, state 4 (`0x728C1E`) surfaces in place, states
   5/6/7 finish surfacing. The bodies at `0x728DD0`, `0x728DD9` and `0x728DE0`

@@ -80,6 +80,11 @@ pub struct TunnelRuntime {
     timer_start: u32,
     /// `DigTimer.duration` (`+0x34`).
     timer_duration: u32,
+    /// The cell ground height the dig started from, in leptons
+    /// (`ProcessPreDigOut 0x7298F0`'s `0x578080(&coord)` answer for that cell).
+    /// The sink floor and the surfacing target are relative to it, not to 0.
+    #[serde(default)]
+    ground_z: i32,
 }
 
 impl TunnelRuntime {
@@ -160,7 +165,7 @@ impl TunnelRuntime {
         match self.state {
             TunnelState::Idle => false,
             TunnelState::PreDigIn => self.pre_dig_in(position, facing, destination, speed, frame),
-            TunnelState::DiggingIn => self.digging_in(frame),
+            TunnelState::DiggingIn => self.digging_in(position, frame),
             TunnelState::DugIn => self.dug_in(position, speed),
             TunnelState::Digging => self.digging(position, facing, destination, frame),
             TunnelState::PreDigOut => self.pre_dig_out(position, speed, frame),
@@ -200,11 +205,17 @@ impl TunnelRuntime {
     }
 
     /// `ProcessDiggingIn 0x729370`: `elapsed / duration == 1.0` (`0x7E1718`)
-    /// completes the dig-in.
-    fn digging_in(&mut self, frame: u32) -> bool {
+    /// completes the dig-in. The cell's ground height is sampled here, before
+    /// the first sink frame moves Z.
+    fn digging_in(
+        &mut self,
+        position: &mut crate::sim::movement::ground_pose::Position,
+        frame: u32,
+    ) -> bool {
         if !self.timer_elapsed(frame) {
             return false;
         }
+        self.ground_z = position_world(position).z;
         self.state = TunnelState::DugIn;
         false
     }
@@ -218,18 +229,16 @@ impl TunnelRuntime {
         speed: i32,
     ) -> bool {
         let coord = position_world(position);
-        if coord.z <= UNDERGROUND_Z {
-            position.put_location(DriveCoord {
-                z: UNDERGROUND_Z,
-                ..coord
-            });
+        let floor = self.ground_z + UNDERGROUND_Z;
+        if coord.z <= floor {
+            position.put_location(DriveCoord { z: floor, ..coord });
             self.state = TunnelState::Digging;
             return true;
         }
         let step = z_step(speed);
-        let z = (coord.z - step).max(UNDERGROUND_Z);
+        let z = (coord.z - step).max(floor);
         position.put_location(DriveCoord { z, ..coord });
-        if z <= UNDERGROUND_Z {
+        if z <= floor {
             self.state = TunnelState::Digging;
         }
         true
@@ -288,14 +297,17 @@ impl TunnelRuntime {
     ) -> bool {
         let coord = position_world(position);
         let step = z_step(speed);
-        if coord.z >= 0 {
-            position.put_location(DriveCoord { z: 0, ..coord });
+        if coord.z >= self.ground_z {
+            position.put_location(DriveCoord {
+                z: self.ground_z,
+                ..coord
+            });
             self.start_timer(dig_frames(speed), frame);
             self.state = TunnelState::DiggingOut;
             return true;
         }
         position.put_location(DriveCoord {
-            z: coord.z + step,
+            z: (coord.z + step).min(self.ground_z),
             ..coord
         });
         true
@@ -326,8 +338,13 @@ impl TunnelRuntime {
 
     /// The defined fields the world hash folds: `State`, `DigTimer.start` and
     /// `DigTimer.duration`.
-    pub(crate) fn hash_fields(&self) -> (u8, u32, u32) {
-        (self.state as u8, self.timer_start, self.timer_duration)
+    pub(crate) fn hash_fields(&self) -> (u8, u32, u32, i32) {
+        (
+            self.state as u8,
+            self.timer_start,
+            self.timer_duration,
+            self.ground_z,
+        )
     }
 
     /// `RateTimer` completion as `ProcessDiggingIn` reads it: the elapsed

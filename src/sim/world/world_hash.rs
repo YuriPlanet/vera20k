@@ -2873,10 +2873,11 @@ fn hash_locomotor_payload(
         // DigTimer.duration (`0x3C`-byte object, `+0x18/+0x28/+0x34`).
         LocomotorRuntimePayload::Tunnel(state) => {
             11u8.hash(hasher);
-            let (tunnel_state, timer_start, timer_duration) = state.hash_fields();
+            let (tunnel_state, timer_start, timer_duration, ground_z) = state.hash_fields();
             tunnel_state.hash(hasher);
             timer_start.hash(hasher);
             timer_duration.hash(hasher);
+            ground_z.hash(hasher);
         }
     }
 }
