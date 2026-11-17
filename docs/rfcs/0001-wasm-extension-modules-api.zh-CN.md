@@ -99,7 +99,7 @@ enum Status {
 
 | 取值 | 含义 |
 | --- | --- |
-| `module` | 模块自己的随机流（`random`） |
+| `module` | 模块自己的随机流（`random`；决定处理函数中为派生子流） |
 | `native` | 运行原生代码，按其原本方式从原生随机流取数 |
 | `none` | 不取随机数 |
 
@@ -138,7 +138,7 @@ struct EventRecord {      // 112 字节
 
 每条都填 `key`、`kind`、`trigger`、`holder`、`frame`；第 4 节未列出的引用字段为 0（`house` 除外，见上），整数字段为 −1。
 
-**决定记录**，在 `on_decide` 的批次中原地读写（[RFC 6f](0001-wasm-extension-modules.zh-CN.md#6f-可决定事件)）：
+**决定记录**，在 `on_decide` 中原地读写（[RFC 6f](0001-wasm-extension-modules.zh-CN.md#6f-可决定事件)）：
 
 ```rust
 struct DecideRecord {     // 152 字节
@@ -338,7 +338,7 @@ bytes: u32,               // 投递区的字节数
 | 地图 `[VeraWasm]` | `StorageId` | ASCII 名字 | 地图的文件名 |
 | 地图 `[VeraWasmRulesPack]`、`[VeraWasmUIPack]` | `1`、`2`…… | 标准 base64，每行一段；按编号从 1 起拼接后解码，再按 `IsoMapPack5` 的分块 LZO 格式解压 | — |
 | mod `rulesmd.ini` `[VeraWasm]` | `Api` | 同上 | 有模块时必需 |
-| mod `rulesmd.ini` `[VeraWasm]` | `Budget`、`MapBudget` | mod 模块、地图模块每帧的基础额度 | 引擎默认值；引擎设上限 |
+| mod `rulesmd.ini` `[VeraWasm]` | `Budget`、`MapBudget` | mod 模块、地图模块每帧的额度 | 引擎默认值；引擎设上限 |
 | mod `rulesmd.ini` `[VeraWasm]` | `MapWasm` | `yes`、`no` | `yes` |
 | mod `rulesmd.ini` `[VeraWasm]` | `MapUI` | `overlay`、`full`、`no` | `overlay` |
 | mod `rulesmd.ini` 的 TechnoType、Weapon、Warhead、Projectile 节 | `Wasm.Tags` | 逗号分隔的标签节名 | 没有 |
@@ -363,7 +363,7 @@ bytes: u32,               // 投递区的字节数
 | # | 函数 | 签名 | 语义 | 可用于 |
 | --- | --- | --- | --- | --- |
 | 1 | `frame` | `() -> i32` | 当前帧号 | all、decide |
-| 2 | `random` | `(lo: i32, hi: i32) -> i32` | 模块随机流中 `[lo, hi]` 的整数；`lo > hi` 为非法参数 | all、decide |
+| 2 | `random` | `(lo: i32, hi: i32) -> i32` | `[lo, hi]` 的整数，取自模块随机流；在 `on_decide` 中取自按（帧、主体的创建序号、事件种类）派生的子流，不改变主随机流；`lo > hi` 为非法参数 | all、decide |
 | 3 | `log` | `(ptr, len)` | 写一行游戏内日志 | init、rules、all、decide |
 | 4 | `last_status` | `() -> i32` | 上一次调用的 `Status` | init、rules、all、decide |
 | 5 | `has_kind` | `(table: i32, id: i32) -> i32` | 本引擎是否认识表 `table`（`Table`）中的 `id`：1 或 0 | init、rules、all、decide |
@@ -399,8 +399,8 @@ bytes: u32,               // 投递区的字节数
 | `on_rules` | `()` | 在模块所处的规则层位置一次 | v1 |
 | `on_scenario_start` | `()` | 场景开始时一次 | v1 |
 | `on_frame` | `()` | 每帧，模块阶段最后；SDK 运行 `onFrame(new Every(N), fn)` 注册的函数 | v1 |
-| `on_events` | `(ptr, count: i32)` | 每帧每个有排队记录的模块一次，在 `on_message` 之后；`count` 条 `EventRecord` | v1 |
-| `on_decide` | `(ptr, count: i32)` | 决策点同步调用；`count` 条 `DecideRecord` | v1? |
+| `on_events` | `(ptr, count: i32)` | 每帧在模块阶段、`on_message` 之后，按顺序分一次或几次调用投递排队的记录；`count` 条 `EventRecord` | v1 |
+| `on_decide` | `(ptr, count: i32)` | 引擎在决策点提交结果时同步调用；`count` 条 `DecideRecord`，通常为 1 | v1? |
 | `on_message` | `(sender: i64, ptr, len)` | 同一来源的客户端消息到达时，每条一次；`sender` 为发送者的所属方；`ptr` 位于投递区 | v1（阶段 2） |
 
 没有 `on_load`；抛射体弹道用可决定事件 `Launch`、`ProjectileFrame`（4.5），不增加导出。
@@ -593,15 +593,15 @@ bytes: u32,               // 投递区的字节数
 
 | 事件 | 字段 | 引发时机 | 绑定 | 可决定 | 结果槽 |
 | --- | --- | --- | --- | --- | --- |
-| `TakeDamage` | `other` 来源（可为 0），`value` 护甲结算后的伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 批量伤害提交结束后 | 对象 | 是：伤害提交前 | 最终伤害；批量提交时成批决定 |
+| `TakeDamage` | `other` 来源（可为 0），`value` 护甲结算后的伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 伤害提交后 | 对象 | 是：伤害提交前 | 最终伤害 |
 | `HitByWarhead` | `id` 弹头，`value` 最终伤害，`other` 来源，`x`、`y`、`z` 主体位置（lepton） | 伤害被接收后；免疫的命中不算 | 对象 | 否 | — |
 | `AttackedBy` | `other` 攻击者，`value` 武器槽位（−1 无），`projectile`（可为 0） | 开火步骤后，在目标上 | 对象 | 否 | — |
 | `FatalDamage` | `other` 攻击者（可为 0），`value` 伤害，`id` 弹头，`x`、`y`、`z` 主体位置（lepton） | 致命伤害提交后、死亡流程前；死亡流程重新检查 | 对象 | 是：死亡流程中 | 死亡方式：位 0–31 为死亡武器 ID 加 1（0 无），位 32 产生幸存者，位 33 留下残骸 |
 | `Killed` | `other` 击杀者（可为 0），`id` 致死弹头（无为 −1），`x`、`y`、`z` 死亡位置（lepton） | 击杀记录后 | 对象 | 否 | — |
 | `Fire` | `other` 目标（可为 0），`cell` 目标格子（总会填入），`value` 武器槽位，`id` 武器，`projectile`（可为 0） | 射击完成后 | 对象+武器 | 是：射出前 | 射击方案条数；方案是结果区中的 `ProjectileSpec` 数组（[RFC 9](0001-wasm-extension-modules.zh-CN.md#9-示例抛射体弹道)） |
 | `SpawnFire` | `other` 子机，`value` 武器槽位，`projectile`；目标在 `cell` 或子机的 `Target` 属性 | 子机射击后 | 对象 | 否 | — |
-| `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 批量伤害提交结束后，在开火者上 | 对象+武器 | 否 | — |
-| `TargetChanged` | `other` 新目标（清除时为 0） | 目标设定或清除后；并行扫描时在扫描结束后 | 对象 | 是：设定目标前 | 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读；并行扫描后成批决定 |
+| `HitTarget` | `other` 目标，`value` 伤害，`id` 武器，`projectile` | 伤害提交后，在开火者上 | 对象+武器 | 否 | — |
+| `TargetChanged` | `other` 新目标（清除时为 0） | 目标设定或清除后 | 对象 | 是：在对象的回合里设定目标前；并行的索敌预答不引发 | 选中的目标引用（0 不选）；不能攻击的目标用原生结果；候选用 `find` 读 |
 | `ProjectileIncoming` | `projectile`，`other` 发射者（可为 0） | 抛射体被接纳后 | 对象 | 否 | — |
 | `Detonated` | `projectile`（投递时读出为不存在），`cell`，`other` 来源（可为 0），`id` 弹头，`x`、`y`、`z` 引爆点（lepton） | 引爆后 | 对象+武器 | 否 | — |
 | `Birth` | `other` 生产者（可为 0），`value` 生产时间（−1 无） | 对象放置后（生产、增援、生成） | 对象 | 否 | — |
@@ -651,7 +651,7 @@ bytes: u32,               // 投递区的字节数
 | `Defeat` | `house` | 引擎的判负检查即将判定该所属方失败时；`EndFor` 和原版的胜负动作不经过它 | 全局 | 1 判负，0 否决：本次不判负，下次检查再问 | v1? |
 | `CommandAllowed` | `subject`，`value` 指令（`Command`），`other` 目标对象，`cell` 目标格子 | 模拟执行绑定对象的每条玩家或 AI 指令时；光标预览不引发 | 对象 | 1 允许，0 拒绝 | v1? |
 | `Launch` | `projectile`，`subject` 发射者，`other` 目标，`cell` 目标格子 | 绑定类型的每个抛射体射出时一次 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec` | later |
-| `ProjectileFrame` | `projectile`，`value` 已飞行帧数 | 每帧在引擎推进抛射体之前，每个绑定抛射体类型一批，含该类型全部抛射体 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按原生推进 | later |
+| `ProjectileFrame` | `projectile`，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在每个绑定的抛射体移动之前一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按原生推进 | later |
 
 ### 4.6 客户端事件种类
 
@@ -1012,7 +1012,7 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 - **值**：[值类型](#值)。
 - **读写**：`R` 只读；`W` 随时可写，经 owner；`W(rules)` 仅 `on_rules`（`rules_set`，或对类型和全局规则引用 `set`，等同于以值的 INI 文本调用 `rules_set`）；`W(白名单)` 对局中可写的白名单候选（待定问题 11），其他时候同 `W(rules)`；不可写时 `set` 为 `Refused`。
 - **客户端**（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)）：`all` 同模拟；`own` 只对本玩家所属方及其对象，其他为空值和 `Refused`；`seen` 自己的全部，其他所属方中当前能看到的对象按 RFC 10 的限制，其他对象不存在；`sim` 仅模拟，客户端为空值和 `Unsupported`。
-- **视点**属性取决于视点所属方（筛选子句：触发器所属方；搜索：`viewpoint`；客户端：本玩家），直接 `get` 为 `Unsupported`（[RFC 6c](0001-wasm-extension-modules.zh-CN.md#6c-对象属性与修饰器)）；**派生**属性由引擎算出，只读。
+- **视点**属性取决于视点所属方（筛选子句：触发器所属方；搜索：`viewpoint`；客户端：本玩家），直接 `get` 为 `Unsupported`（[RFC 6c](0001-wasm-extension-modules.zh-CN.md#6c-对象属性与修饰器)）；**派生**属性由引擎算出，只读；标为“派生，高”的需要搜索或射程判定，在筛选子句中求值时按费用计入所属模块的额度（[RFC 15](0001-wasm-extension-modules.zh-CN.md#15-性能)），其他派生属性的费用与读一个字段相同。
 
 ### 7.1 对象
 
@@ -1050,16 +1050,16 @@ INI，在 `on_rules` 中用 `rules_set` 写入，经原生读取器；这些节�
 | `Online` | bool | W | own | v1 | 建筑；同原版动作 61、62 |
 | `Selected` | bool | R | 客户端专用 | v1（阶段 2） | 本地选择；模拟中为 `Unsupported` |
 | `Relation` | enum `Relation` | R（视点） | own | v1 | 与视点所属方的关系 |
-| `NearbyEnemyCount` | int | R（派生） | own | v1? | 视野（`Sight`）内的敌方对象数 |
-| `TargetInRange` | bool | R（派生） | own | v1? | 当前目标在主武器射程内 |
-| `CanFireAtTarget` | bool | R（派生） | own | v1? | 现在能向当前目标开火 |
+| `NearbyEnemyCount` | int | R（派生，高） | own | v1? | 视野（`Sight`）内的敌方对象数 |
+| `TargetInRange` | bool | R（派生，高） | own | v1? | 当前目标在主武器射程内 |
+| `CanFireAtTarget` | bool | R（派生，高） | own | v1? | 现在能向当前目标开火 |
 | `DoorOpen` | bool | W | seen | v1? | 建筑：工厂出口的门开着；没有出口门的建筑和其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | `Animating` | bool | W | seen | v1? | 建筑：工作动画开着；其他对象为 `Unsupported`；写入只改引擎绘制的显示状态，不开始生产或出厂 |
 | 可修饰属性 | 见 7.2 | | | | 可修饰 |
 
 ### 7.2 可修饰属性
 
-基础值来自类型或默认值，有效值由修饰器算出（[RFC 6c](0001-wasm-extension-modules.zh-CN.md#6c-对象属性与修饰器)）；只能用 `modify` 写（`set` 为 `Refused`），客户端为 `own`，另注除外。
+基础值来自类型或默认值，有效值由修饰器算出（[RFC 6c](0001-wasm-extension-modules.zh-CN.md#6c-对象属性与修饰器)），Phobos 键不为 `—` 的属性按 Phobos 的算法合成；只能用 `modify` 写（`set` 为 `Refused`），客户端为 `own`，另注除外。
 
 | 属性 | 值 | 基础值 | 常用运算 | 含义 | Phobos 键 | 层级 |
 | --- | --- | --- | --- | --- | --- | --- |
