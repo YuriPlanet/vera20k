@@ -36,8 +36,10 @@ Failed requests return `{error:{code,message,phrases?}}`; messages must not echo
 credentials. A refusal a game shows its player (sign-in, accounts, versions, a full
 or busy lobby) also carries its message as `phrases`, as a lobby line does (`chat`).
 Clients show a 426 `message` (plain text, at most 160 characters) to the player with
-the releases link, so it should name the version players need; older clients show a
-fixed line.
+the download page's link (vera20k.org; older releases link GitHub's), so it should name
+the version players need; older clients show a fixed line. A 426 also makes a released
+game check for updates again and offer a newer release at its next idle main menu,
+even one the player skipped.
 While the operator has closed sign-ins for maintenance, `POST /v1/sessions` returns 503
 `maintenance` with the operator's one-line `message` (at most 160 characters), which
 clients show in place of their "could not connect" text; other 503s mean the lobby is
@@ -567,7 +569,8 @@ A session whose version is older than `version` in
 10 minutes, receives one such chat line per newer release, naming both versions,
 since a match starts only between equal versions (`ready`, `start`). It arrives
 as a notice does: at once in the public channel or a game room that has not started,
-otherwise on the next public-channel join.
+otherwise on the next public-channel join. Its phrase key `NewRelease` makes a game
+check for updates again, as a 426 does.
 A session that still joins a game room from another version, through a buddy's game or
 its name, makes every member hear a `chat` line from the notice sender naming both
 versions.

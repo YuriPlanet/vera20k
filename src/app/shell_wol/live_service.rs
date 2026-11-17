@@ -353,9 +353,6 @@ struct WatchStart {
     terms: crate::app::match_runtime::session::WolStartTerms,
 }
 
-/// Where players download a newer build (README "Download and play").
-pub(crate) const RELEASES_URL: &str = "https://github.com/YuriPlanet/vera20k/releases";
-
 /// The label of the login box's text for a lobby that did not answer,
 /// instead of retail TXT_CANT_CONNECT's "Westwood Online".
 const CANT_CONNECT_TEXT: &str = "VERA:OnlineCantConnect";
@@ -367,10 +364,20 @@ const LOBBY_LOST_TEXT: &str = "VERA:OnlineConnectionLost";
 /// The lobby's own 426 reason when it gave a plain one, then where to get a
 /// newer build; without one, VERA's own sentence with the link.
 fn update_required_text(message: Option<&str>) -> String {
+    use crate::app::web_link::DOWNLOAD_PAGE;
     match message {
-        Some(reason) => format!("{reason} {RELEASES_URL}"),
-        None => crate::i18n::tr_fill("VERA:OnlineUpdateRequired", &[("url", &RELEASES_URL)]),
+        Some(reason) => format!("{reason} {DOWNLOAD_PAGE}"),
+        None => crate::i18n::tr_fill("VERA:OnlineUpdateRequired", &[("url", &DOWNLOAD_PAGE)]),
     }
+}
+
+/// The lobby says this version is behind: the desktop updater checks again
+/// ([`crate::app::updater::lobby_outdated`]).
+fn lobby_says_outdated(state: &mut AppState) {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    crate::app::updater::lobby_outdated(state);
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let _ = state;
 }
 
 /// The external launch's online visit: once its match ends or admission
@@ -2419,10 +2426,12 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             if !super::service::replace_open_box_body(state, &text) {
                 notice(state, &text);
             }
+            lobby_says_outdated(state);
         }
         http::Response::Outdated { message } => {
             if let Some(text) = service.outdated_notice(message.as_deref()) {
                 notice(state, &text);
+                lobby_says_outdated(state);
             }
         }
         http::Response::Channels(list) => service_event(
@@ -2710,6 +2719,19 @@ impl Chat {
             Some((kind, _)) if self.ansi => format!("{kind} {said}"),
             _ => said,
         }
+    }
+
+    /// The lobby's line that a newer release is out (`NewRelease`), which a
+    /// game older than the newest release hears once per release. Only the
+    /// lobby's own lines carry `phrases`. Only their keys are read, so values
+    /// a newer lobby adds that this game cannot show still count.
+    fn announces_release(&self) -> bool {
+        #[derive(Deserialize)]
+        struct Said {
+            key: String,
+        }
+        Vec::<Said>::deserialize(&self.phrases)
+            .is_ok_and(|phrases| phrases.iter().any(|phrase| phrase.key == "NewRelease"))
     }
 
     /// The pairing of the matchbot's `Start` that `local` hosts; only its
@@ -3203,6 +3225,9 @@ fn apply_event(
             let options = p
                 .hosted_pairing(&local)
                 .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
+            if p.announces_release() {
+                lobby_says_outdated(state);
+            }
             let text = p.shown_text().encode_utf16().collect();
             service_event(
                 state,
@@ -4234,21 +4259,41 @@ mod completion_tests {
         assert_eq!(chat(false).hosted_pairing("Alpha"), None);
     }
 
+    /// The lobby's new-release line asks the updater, even with a value this
+    /// game cannot show; a player's line with the same words, or another
+    /// lobby line, does not.
+    #[test]
+    fn the_lobbys_new_release_line_announces_a_release() {
+        let line = |name: &str, phrases: Value| -> Chat {
+            decode(json!({
+                "from": {"player_id": "00000000-0000-0000-0000-000000000000", "name": name, "flags": 1},
+                "text": "VERA20k 0.3.7 is out, and you have 0.3.6.",
+                "private": false,
+                "action": false,
+                "sent_at": 1,
+                "phrases": phrases,
+            }))
+            .unwrap()
+        };
+        let release = json!([{"key": "NewRelease", "values": {"newest": "0.3.7", "later": true}}]);
+        assert!(line("VERA20k", release).announces_release());
+        assert!(!line("Tanya", Value::Null).announces_release());
+        assert!(!line("VERA20k", json!([{"key": "OnlyPlayerOnline"}])).announces_release());
+    }
+
     #[test]
     fn lobby_upgrade_notice_names_the_download_once_per_sign_in() {
         let (mut service, _input, _output) = control_service(None);
         let reason = "Online play needs VERA20k 0.3.0 or newer.";
         assert_eq!(
             service.outdated_notice(Some(reason)).as_deref(),
-            Some(format!("{reason} {RELEASES_URL}").as_str())
+            Some(format!("{reason} https://vera20k.org/").as_str())
         );
         assert_eq!(service.outdated_notice(Some(reason)), None);
         service.auth_attempt += 1;
         assert_eq!(
             service.outdated_notice(None).as_deref(),
-            Some(
-                format!("Update VERA20k to use secure online multiplayer. {RELEASES_URL}").as_str()
-            )
+            Some("Update VERA20k to use secure online multiplayer. https://vera20k.org/")
         );
     }
 

@@ -104,6 +104,16 @@ status page says the games differ (`VERA:MatchStartMismatch`), the log records b
 hashes, and the search goes on after the stage timeout; the host only times out. This
 adds nothing to what game, lobby and relay exchange.
 
+The lobby lists only rooms of the player's own version, and the matchbot pairs only
+equal versions, so a game the lobby calls old asks its player to update. A 426 at
+sign-in, the first 426 to a signed-in request (`Outdated`) and the lobby's
+new-release line (phrase `NewRelease`) make the desktop updater check again, and a
+newer release is offered at the next idle main menu, even a version the player
+skipped (`app::updater::lobby_outdated`). Every text that points to a download
+names vera20k.org (`web_link::DOWNLOAD_PAGE`), but a release signed by a new key
+still points to the GitHub releases. Nothing exchanged changes: a released game
+shows only the text with its link, and a rollback does the same.
+
 In network games, the trigger actions that only play audio (19, 20, 21, 98 and 99)
 keep the map's sound, EVA or theme name, or its numeric sound slot, until the local
 audio owner resolves it; offline games still resolve it when the map loads. A player
