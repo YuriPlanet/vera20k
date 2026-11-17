@@ -764,14 +764,19 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
 
 /// Warp-in weapon rules: a CLEG/CMON pair with `WARPWH` (30) and `MINWH` (11)
 /// over one `WARPH` warhead that admits its own source, so the arrived object
-/// takes the detonation's damage.
+/// takes the detonation's damage. `type_chrono_range_minimum` writes the
+/// TechnoType `ChronoRangeMinimum=` override (`None` leaves the type unset).
 #[cfg(feature = "phobos")]
 fn warp_weapon_rules(
     warp_in: &str,
     min_range: &str,
     use_distance_as_damage: bool,
     chrono_range_minimum: i32,
+    type_chrono_range_minimum: Option<i32>,
 ) -> RuleSet {
+    let type_chrono_line = type_chrono_range_minimum
+        .map(|value| format!("ChronoRangeMinimum={value}\n"))
+        .unwrap_or_default();
     let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nWarpOut=WARPOUT\nChronoRangeMinimum={chrono_range_minimum}\n\n\
          [InfantryTypes]\n0=CLEG\n\n\
@@ -784,10 +789,12 @@ fn warp_weapon_rules(
          [CLEG]\nStrength=100\nSpeed=4\nSensorsSight=1\nSpeedType=Foot\n\
          MovementZone=Infantry\nWarpInWeapon={warp_in}\n\
          WarpInMinRangeWeapon={min_range}\n\
-         WarpInWeapon.UseDistanceAsDamage={use_distance_as_damage}\n\n\
+         WarpInWeapon.UseDistanceAsDamage={use_distance_as_damage}\n\
+         {type_chrono_line}\n\
          [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\
          WarpInWeapon={warp_in}\nWarpInMinRangeWeapon={min_range}\n\
-         WarpInWeapon.UseDistanceAsDamage={use_distance_as_damage}\n\n\
+         WarpInWeapon.UseDistanceAsDamage={use_distance_as_damage}\n\
+         {type_chrono_line}\n\
          [Clear]\nFoot=100%\n"
     )))
     .unwrap();
@@ -801,6 +808,7 @@ fn warp_weapon_rules(
 
 /// One production object turn of a warp armed from cell 5,5 to 8,9 with the
 /// stored `LastWarpDistance`; the arrived object's health is the observable.
+/// `type_chrono_range_minimum` is the arriving type's own threshold override.
 #[cfg(feature = "phobos")]
 fn warp_in_health(
     warp_in: &str,
@@ -808,12 +816,14 @@ fn warp_in_health(
     use_distance_as_damage: bool,
     chrono_range_minimum: i32,
     distance_leptons: i32,
+    type_chrono_range_minimum: Option<i32>,
 ) -> i32 {
     let rules = warp_weapon_rules(
         warp_in,
         min_range,
         use_distance_as_damage,
         chrono_range_minimum,
+        type_chrono_range_minimum,
     );
     let mut sim = relocating_chrono_unit((8, 9));
     install_destination_cells(&mut sim, &rules);
@@ -844,22 +854,22 @@ fn warp_in_health(
 #[cfg(feature = "phobos")]
 fn warp_in_weapon_picks_the_min_range_weapon_by_last_warp_distance() {
     assert_eq!(
-        warp_in_health("WARPWH", "", false, 0, 1000),
+        warp_in_health("WARPWH", "", false, 0, 1000, None),
         70,
         "WarpInWeapon detonates its 30 damage at the object"
     );
     assert_eq!(
-        warp_in_health("WARPWH", "MINWH", false, 2000, 1000),
+        warp_in_health("WARPWH", "MINWH", false, 2000, 1000, None),
         89,
         "a short warp takes WarpInMinRangeWeapon's 11 damage"
     );
     assert_eq!(
-        warp_in_health("WARPWH", "", false, 2000, 1000),
+        warp_in_health("WARPWH", "", false, 2000, 1000, None),
         70,
         "an unset min-range weapon falls back to WarpInWeapon"
     );
     assert_eq!(
-        warp_in_health("WARPWH", "MINWH", false, 2000, 3000),
+        warp_in_health("WARPWH", "MINWH", false, 2000, 3000, None),
         70,
         "a warp at or above ChronoRangeMinimum keeps WarpInWeapon"
     );
@@ -871,14 +881,58 @@ fn warp_in_weapon_picks_the_min_range_weapon_by_last_warp_distance() {
 #[cfg(feature = "phobos")]
 fn warp_in_weapon_use_distance_as_damage_divides_by_256() {
     assert_eq!(
-        warp_in_health("WARPWH", "", true, 0, 1024),
+        warp_in_health("WARPWH", "", true, 0, 1024, None),
         96,
         "1024 leptons deal 4 damage, not the weapon's 30"
     );
     assert_eq!(
-        warp_in_health("WARPWH", "", true, 0, 255),
+        warp_in_health("WARPWH", "", true, 0, 255, None),
         100,
         "a fraction of a cell truncates to no damage"
+    );
+}
+
+/// Phobos `TeleportLocomotionClass_ILocomotion_Process_WarpInAnim @ 0x719742`
+/// (`Ext/TechnoType/Hooks.Teleport.cpp:88-95`): the arriving type's own
+/// `ChronoRangeMinimum=` (`Nullable<int>`, `Ext/TechnoType/Body.cpp:865`)
+/// overrides the `[General]` threshold in the min-range weapon split.
+#[test]
+#[cfg(feature = "phobos")]
+fn a_type_chrono_range_minimum_overrides_the_general_threshold() {
+    // Global 0 would keep `WARPWH`; the type's 2000 threshold puts the 1000
+    // lepton warp inside min range, so `MINWH` detonates.
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 0, 1000, Some(2000)),
+        89,
+        "the type threshold selects the min-range weapon"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 0, 1000, None),
+        70,
+        "without the type key the global 0 threshold keeps WarpInWeapon"
+    );
+}
+
+/// An absent type key falls back to the `[General]` threshold; a parsed
+/// `Some(0)` is a real override that never selects the min-range weapon, so
+/// absent and `Some(0)` are distinct.
+#[test]
+#[cfg(feature = "phobos")]
+fn an_absent_type_key_keeps_the_general_threshold() {
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 1000, None),
+        89,
+        "absent type key uses the global 2000 threshold"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 3000, None),
+        70,
+        "at or above the global threshold keeps WarpInWeapon"
+    );
+    assert_eq!(
+        warp_in_health("WARPWH", "MINWH", false, 2000, 1000, Some(0)),
+        70,
+        "Some(0) overrides the global 2000 and never selects min range"
     );
 }
 

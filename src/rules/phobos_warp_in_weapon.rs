@@ -28,6 +28,11 @@ pub struct WarpInWeaponRules {
     /// `false`: the copy deals `distance / 256` instead of the weapon's
     /// `Damage=`.
     pub use_distance_as_damage: bool,
+    /// `ChronoRangeMinimum=` (`Nullable<int>`,
+    /// `Ext/TechnoType/Body.cpp:865`, `Body.h:129`): the TechnoType's own
+    /// short-warp threshold for the `WarpInMinRangeWeapon` split. Unset
+    /// falls back to `[General] ChronoRangeMinimum` at the consumer.
+    pub chrono_range_minimum: Option<i32>,
     /// `WarpOutWeapon=` (`Valueable<WeaponTypeClass*>`, `Read<true>`,
     /// `Ext/TechnoType/Body.cpp:872`), default null: the departure of an
     /// ordinary self-teleport detonates it at the departing object
@@ -53,6 +58,9 @@ impl WarpInWeaponRules {
             // verdict; an absent or invalid value keeps the default.
             use_distance_as_damage: section
                 .read_ares_bool("WarpInWeapon.UseDistanceAsDamage", false),
+            // `Nullable<int>`: an absent, empty or rejected read keeps unset
+            // (the global fallback); a parsed zero is a real override.
+            chrono_range_minimum: section.read_phobos_nullable_int("ChronoRangeMinimum", None),
             warp_out_weapon: section
                 .read_type_name("WarpOutWeapon", 2048)
                 .map(str::to_owned),
