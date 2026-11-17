@@ -16,6 +16,23 @@ VERA20K is copyrighted software. You may copy, change and share its code only un
 - Official builds come only from the [releases page](https://github.com/YuriPlanet/vera20k/releases)
   and [vera20k.org](https://vera20k.org/). Anything else is unofficial and may contain malware.
 
+## Commercial use of the code
+
+**Do not use VERA20K code to make money or gain a commercial advantage.** We ask this of
+everyone who uses any part of the code, from a single function to the whole engine. It applies
+whether you copy, modify, translate or compile the code, whatever you call your product and
+whoever runs the servers.
+
+- Do not sell or rent a build, fork, library or plugin that contains the code.
+- Do not put the code into a paid product, a commercial service or an internal tool used to
+  run a business. This includes code used on your servers that customers never download.
+- Do not earn money from a product or service built with the code through ads, sponsorships,
+  subscriptions, in-app purchases or paid access, even if the download itself is free.
+
+Voluntary donations and payments for contributions made publicly available to the project
+are welcome. For code licensed under the [GPLv3](LICENSE-GPL), the noncommercial policy
+above is a project request. The GPLv3 permits commercial use and sale under its terms.
+
 ## The VERA20K name
 
 VERA20K™ is a trademark of Halvor Nikolai Rusten. The license lets you copy and change the code,
