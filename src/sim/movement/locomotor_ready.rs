@@ -59,6 +59,12 @@ pub(crate) enum LocomotorReadyState {
     Teleport {
         state: u8,
     },
+    /// `TunnelLocomotionClass::Is_Moving_Now 0x728A60` answers `State == 1`
+    /// only, which is `PreDigIn`; every other state (Idle, the dig-in timer,
+    /// underground travel, surfacing) answers false.
+    Tunnel {
+        state: u8,
+    },
     Jumpjet {
         state: i32,
     },
@@ -94,6 +100,7 @@ impl LocomotorReadyState {
                     && destination_nonnull
             }
             Self::Teleport { state } => state == 1,
+            Self::Tunnel { state } => state == 1,
             // `0x0054D0D0`: any state but ground (0) and hold (2), the
             // `jumpjet_flight` `STATE_GROUND` and `STATE_HOLD`.
             Self::Jumpjet { state } => state != 0 && state != 2,
@@ -238,6 +245,14 @@ mod tests {
                 expected
             );
         }
+        // `Is_Moving_Now 0x728A60`: `State == 1` is `PreDigIn`; the tunnel's
+        // defined states run 0..=7.
+        for state in 0u8..=7 {
+            assert_eq!(
+                LocomotorReadyState::Tunnel { state }.is_moving_now(),
+                state == 1,
+            );
+        }
         for (state, expected) in [(-1, true), (0, false), (1, true), (2, false), (3, true)] {
             assert_eq!(
                 LocomotorReadyState::Jumpjet { state }.is_moving_now(),
@@ -261,6 +276,7 @@ mod tests {
                 destination_nonnull: true,
             },
             LocomotorReadyState::Teleport { state: 255 },
+            LocomotorReadyState::Tunnel { state: 2 },
             LocomotorReadyState::Jumpjet { state: -1 },
         ];
 
