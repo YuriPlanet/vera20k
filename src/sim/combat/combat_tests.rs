@@ -9723,8 +9723,8 @@ fn buildings_take_no_rad_damage() {
 /// Phobos custom radiation: the stock scene plus a `[RadiationTypes]` entry
 /// with its own level cap, factor and warhead, bound by `RadType=`.
 #[cfg(feature = "phobos")]
-fn phobos_radiation_rules() -> RuleSet {
-    let ini = crate::sim::arena_fixture::clear_ground_ini(
+fn phobos_radiation_ini() -> crate::rules::ini_parser::IniFile {
+    crate::sim::arena_fixture::clear_ground_ini(
         "\
 [InfantryTypes]\n0=DESO\n1=E2\n\n\
 [DESO]\nStrength=200\nArmor=plate\nSpeed=4\nPrimary=RadBeamWeapon\nSecondary=RadEruptionWeapon\nDeployer=yes\nDeployFire=yes\nImmuneToRadiation=yes\n\n\
@@ -9748,10 +9748,12 @@ fn phobos_radiation_rules() -> RuleSet {
 [BlastRad]\nRadLevelFactor=1.0\nRadLevelMax=250\nRadSiteWarhead=RadSiteBlast\nRadSiteWarhead.Detonate=yes\nRadSiteWarhead.Detonate.Full=no\n\n\
 [RadSiteBlast]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\nCellSpread=3\n\n\
 [RadSiteToxic]\nVerses=100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%\nInfDeath=7\nRadiation=yes\n",
-    );
-    RuleSet::from_ini(&ini).expect("phobos radiation rules should parse")
+    )
 }
 
+fn phobos_radiation_rules() -> RuleSet {
+    RuleSet::from_ini(&phobos_radiation_ini()).expect("phobos radiation rules should parse")
+}
 /// A bound radiation type drives the site's level clamp, its damage factor
 /// and its own warhead; the default-type path on the same scene keeps the
 /// globals.
@@ -13668,6 +13670,73 @@ fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
         sim.substrate.entities.get(wood).unwrap().health.current(),
         750,
         "the type's warhead verses wood at 0%"
+    );
+}
+
+/// `RadBuildingDamageMaxCount` is read at both layers and projected into the
+/// effective type, but it caps nothing: Phobos' `BuildingClass_AI_Radiation`
+/// hook (`0x0043FB23`, `Ext/RadSite/Hooks.cpp:108-147`) declares its per-site
+/// `damageCounts` map at `:124` and reads it at `:147`, and nothing increments
+/// it, so `maxDamageCount > 0 && damageCounts[site] >= max` is `0 >= n` and
+/// never fires. This row pins that dormancy: with `1` on the global row and on
+/// the bound type, a building takes exactly the damage it takes without the
+/// key, so wiring a real cap has to come with a native body that increments.
+#[cfg(feature = "phobos")]
+#[test]
+fn dormant_building_damage_max_count_leaves_damage_unchanged() {
+    let mut ini = phobos_radiation_ini();
+    ini.merge(&crate::rules::ini_parser::IniFile::from_str(
+        "[Radiation]\nRadBuildingDamageMaxCount=1\n\
+         [ToxicField]\nRadBuildingDamageMaxCount=1\n",
+    ));
+    let capped = RuleSet::from_ini(&ini).expect("capped radiation rules should parse");
+    assert_eq!(
+        crate::rules::phobos_radiation::effective_radiation(&capped, Some("ToxicField"))
+            .building_damage_max_count,
+        1,
+        "the bound type's read resolves through the effective projection"
+    );
+
+    let mut capped_sim = radiation_scene(&capped);
+    let capped_building = capped_sim
+        .spawn_object("RADBLDG", "Americans", 5, 5, 0, &capped)
+        .expect("building spawns");
+    irradiate_bound(&mut capped_sim, &capped, (5, 5), 500, 2, Some("ToxicField"));
+    for frame in [16, 32] {
+        rad_frame(&mut capped_sim, &capped, frame);
+    }
+    let capped_health = capped_sim
+        .substrate
+        .entities
+        .get(capped_building)
+        .unwrap()
+        .health
+        .current();
+
+    let rules = phobos_radiation_rules();
+    let mut stock_sim = radiation_scene(&rules);
+    let stock_building = stock_sim
+        .spawn_object("RADBLDG", "Americans", 5, 5, 0, &rules)
+        .expect("building spawns");
+    irradiate_bound(&mut stock_sim, &rules, (5, 5), 500, 2, Some("ToxicField"));
+    for frame in [16, 32] {
+        rad_frame(&mut stock_sim, &rules, frame);
+    }
+    let stock_health = stock_sim
+        .substrate
+        .entities
+        .get(stock_building)
+        .unwrap()
+        .health
+        .current();
+
+    assert_eq!(
+        stock_health, 250,
+        "two building-delay boundaries deal 250 each from 750"
+    );
+    assert_eq!(
+        capped_health, stock_health,
+        "a positive RadBuildingDamageMaxCount must not change building damage"
     );
 }
 
