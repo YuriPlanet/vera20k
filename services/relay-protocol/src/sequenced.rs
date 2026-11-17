@@ -1120,6 +1120,7 @@ pub(super) struct OrderingRoom {
     // When `advance` first found the storage failure.
     failed_at: Option<u64>,
     finished_at: Option<u64>,
+    terminal: Option<federation::Terminal>,
     created_ms: u64,
     // Players' checksums by sampled frame, `(source, checksum)` in arrival
     // order, for the newest `CHECKSUM_FRAMES` sampled frames.
@@ -1181,6 +1182,7 @@ impl OrderingRoom {
             storage_failed: false,
             failed_at: None,
             finished_at: None,
+            terminal: None,
             created_ms: now_ms,
             checksums: BTreeMap::new(),
             desync_found: false,
@@ -1977,6 +1979,9 @@ impl OrderingRoom {
             self.failed_at.get_or_insert(now_ms);
             return;
         }
+        if self.terminal.is_some() {
+            return;
+        }
         self.retire_absent(now_ms);
         if self.paused_at.is_some() {
             return;
@@ -2330,6 +2335,9 @@ impl OrderingRoom {
             return Ok(error(OrderError::StorageUnavailable, self.next_seq));
         }
         self.authenticate_reader(ticket)?;
+        if let Some(reply) = self.federation_failure_reply(now_ms) {
+            return Ok(reply);
+        }
         if self.agreement_mismatch {
             return Ok(error(OrderError::AgreementMismatch, 0));
         }
@@ -6076,6 +6084,17 @@ impl RelayServer {
             // verified to expire within MAX_MATCH_SECONDS of now or earlier.
             self.ended_orderings
                 .insert(id, now.saturating_add(MAX_MATCH_SECONDS));
+            if let Some(receipt) = ordering
+                .terminal
+                .take()
+                .and_then(federation::Terminal::into_unsaved)
+            {
+                if self.retired_outcomes.len() < self.max_rooms && now <= receipt.expires_at() {
+                    self.retired_outcomes.insert(id, receipt);
+                } else {
+                    self.ordering_counts.outcome_handoff_drops += 1;
+                }
+            }
             room.ordering = None;
             if room.peers.is_empty() {
                 self.rooms.remove(&id);
@@ -6290,7 +6309,9 @@ impl RelayServer {
                 }
                 ordering
             });
-            if ordering.storage_failed {
+            if let Some(reply) = ordering.federation_failure_reply(now_ms) {
+                reply
+            } else if ordering.storage_failed {
                 error(OrderError::StorageUnavailable, ordering.next_seq)
             } else if ordering.agreement_mismatch
                 || ordering.certificate.room != certificate.room
@@ -6412,6 +6433,9 @@ impl RelayServer {
             return self.ordering_reply(ticket, replies, now, now_ms, crate::link::SEND_OTHER);
         }
         ordering.authenticate_reader(ticket)?;
+        if let Some(reply) = ordering.federation_failure_reply(now_ms) {
+            return self.ordering_reply(ticket, reply, now, now_ms, crate::link::SEND_OTHER);
+        }
         if ordering.agreement_mismatch {
             return self.ordering_reply(
                 ticket,

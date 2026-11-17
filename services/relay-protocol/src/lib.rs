@@ -27,16 +27,18 @@ pub mod netsim;
 mod sequenced;
 pub mod varint;
 pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
-pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
+pub use sequenced::federation::{
+    FEDERATION_LOST, FederationOutcome, MAX_FEDERATED_RELAYS, sign_federation_roster,
+};
 pub use sequenced::pack::{decode_pack_v2, encode_pack_v2};
 pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY, ORDERING_CERTIFICATE_LEN,
-    ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry, OrderError, OrderEvent,
-    OrderPace, OrderStatus, OrderingCertificate, is_ordering_certificate_len, paced_rates,
-    turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, ORDERING_BATCH_CAPACITY,
+    ORDERING_CERTIFICATE_LEN, ORDERING_CERTIFICATE_V2_LEN, ORDERING_PULL_LIMIT, OrderEntry,
+    OrderError, OrderEvent, OrderPace, OrderStatus, OrderingCertificate,
+    is_ordering_certificate_len, paced_rates, turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -851,6 +853,9 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Ended games whose receipt could not be saved or retained under the
+    /// bounded handoff budget. The lobby cannot rate one lacking evidence.
+    pub outcome_handoff_drops: u64,
     /// Startups this relay cancelled because a Ready, on it or on another
     /// relay of the match, proved a different initial world.
     pub start_mismatches: u64,
@@ -927,6 +932,11 @@ pub struct RelayServer {
     // it overcounts, and only an exact count refuses or evicts. Growth no
     // reservation covers, such as a federated frame, joins it at that pass.
     ordering_estimate: usize,
+    // An operational reporter owns durable delivery of marked VO1F outcomes.
+    federation_outcomes_enabled: bool,
+    // A retired room needs only its unacknowledged receipt until the writer
+    // can save it. At most one cohort of max_rooms, outside gameplay quotas.
+    retired_outcomes: HashMap<[u8; 16], FederationOutcome>,
     // Every live or leaving hop by its session (spec §6.2).
     sessions: HashMap<u32, SessionSlot>,
     // Released sessions until they may be assigned again (spec §6.2).
@@ -964,6 +974,8 @@ impl RelayServer {
             ended_orderings: HashMap::new(),
             ordering_counts: OrderingCounts::default(),
             ordering_estimate: 0,
+            federation_outcomes_enabled: false,
+            retired_outcomes: HashMap::new(),
             sessions: HashMap::new(),
             retired_sessions: HashMap::new(),
             mac_counts: MacFailureCounts::default(),
@@ -1254,6 +1266,8 @@ impl RelayServer {
         self.admissions
             .retain(|_, admission| admission.retain_until > now);
         self.ended_orderings.retain(|_, expires| *expires > now);
+        self.retired_outcomes
+            .retain(|_, receipt| now <= receipt.expires_at());
         self.unadmitted_handshakes.clear();
         self.ingress.allocate(
             now,
@@ -1389,6 +1403,7 @@ impl RelayServer {
                 &self.key,
                 roster,
                 &message.ticket,
+                self.federation_outcomes_enabled,
             )?),
         };
         let cost = envelope::OVERHEAD as u64;

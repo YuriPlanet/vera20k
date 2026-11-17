@@ -13,12 +13,17 @@
 
 use super::*;
 
+mod outcome;
+pub(super) use outcome::Terminal;
+pub use outcome::{FEDERATION_LOST, FederationOutcome};
+
 pub const MAX_FEDERATED_RELAYS: usize = 6;
 const ROSTER_MAGIC: &[u8; 4] = b"VO1F";
 const ROSTER_HEADER: usize = 21;
 const ROSTER_ENTRY: usize = 10;
 const ROSTER_WRAP: usize = 80;
 const WRAP_DOMAIN: &[u8] = b"VERA20k relay federation wrap v1\0";
+const ADJUDICATED_DOMAIN: &[u8] = b"VERA20k relay adjudicated federation roster v1\0";
 const ROSTER_DOMAIN: &[u8] = b"VERA20k relay federation roster v1\0";
 // The link version is the magic's digit, `VF<version>L`. Bump it whenever the
 // layout or meaning of an existing link kind changes: the FRAME header and its
@@ -33,6 +38,10 @@ const LINK_DOMAIN: &[u8] = b"VERA20k relay federation link v1\0";
 const LINK_MAGIC: &[u8; 4] = b"VF1L";
 const LINK_HEADER: usize = 32;
 const FRAME_KIND: u8 = 0;
+const CANCEL_START: u8 = 1;
+// VF2L FRAME flags. A pre-start or roomless link cannot renew a running match.
+const MATCH_FAILED: u8 = 2;
+const MATCH_STARTED: u8 = 4;
 // Link packets go out at least every 50 ms; a coordinator this quiet is gone.
 const COORDINATOR_SILENCE_MS: u64 = 10_000;
 const DATA_KIND: u8 = 1;
@@ -126,8 +135,15 @@ fn wrap_stream(key: &SecretKey, room: &[u8; 16], nonce: &[u8]) -> [u8; 32] {
     mac.finalize().into_bytes().into()
 }
 
-fn wrap_tag(key: &SecretKey, table: &[u8], index: u8, nonce: &[u8], wrapped: &[u8]) -> HmacSha256 {
-    let mut mac = key.mac(ROSTER_DOMAIN, table);
+fn wrap_tag(
+    key: &SecretKey,
+    domain: &[u8],
+    table: &[u8],
+    index: u8,
+    nonce: &[u8],
+    wrapped: &[u8],
+) -> HmacSha256 {
+    let mut mac = key.mac(domain, table);
     mac.update(&[index]);
     mac.update(nonce);
     mac.update(wrapped);
@@ -157,7 +173,7 @@ pub fn sign_federation_roster(
         getrandom::fill(&mut nonce).map_err(|_| RelayError::EntropyUnavailable)?;
         let stream = wrap_stream(key, &room, &nonce);
         let wrapped: Vec<u8> = link.0.iter().zip(stream).map(|(a, b)| a ^ b).collect();
-        let tag = wrap_tag(key, &table, index as u8, &nonce, &wrapped)
+        let tag = wrap_tag(key, ROSTER_DOMAIN, &table, index as u8, &nonce, &wrapped)
             .finalize()
             .into_bytes();
         bytes.extend_from_slice(&nonce);
@@ -173,6 +189,7 @@ pub(super) struct LinkView {
     pub ready: u32,
     pub agreement: [u8; 32],
     pub cancelled: bool,
+    pub adjudicated_flags: u8,
     pub starts_at: Option<u64>,
     pub sealed: u32,
     // A follower's forwarded pace reports, encoded.
@@ -205,6 +222,8 @@ struct Link {
     agreement: [u8; 32],
     cancelled: bool,
     start_at: u64,
+    // Local receipt time of VF2L proof the sender still has this started match.
+    heard_started: Option<u64>,
     // Their latest send time and when it arrived, echoed for clock samples.
     echo: Option<(u64, u64)>,
     // (round trip, their clock minus ours), best sample wins.
@@ -224,6 +243,9 @@ pub(crate) struct Federation {
     room: [u8; 16],
     own: u8,
     local: u32,
+    // VF2L is selected by the authenticated wrap tag, opaque to released games.
+    adjudicated: bool,
+    peer_failed: bool,
     link: SecretKey,
     links: Vec<Link>,
     // This relay's sealed contributions, (frame, encoded entry), from `outbox_base`.
@@ -243,6 +265,7 @@ impl Federation {
         key: &SecretKey,
         roster: &[u8],
         ticket: &Ticket,
+        outcomes_enabled: bool,
     ) -> Result<Self, RelayError> {
         let (room, relays) = roster_table(roster)?;
         if room != ticket.room {
@@ -252,17 +275,20 @@ impl Federation {
         let wraps = &roster[table.len()..];
         let mut own = None;
         for (index, wrap) in wraps.chunks_exact(ROSTER_WRAP).enumerate() {
-            if wrap_tag(key, table, index as u8, &wrap[..16], &wrap[16..48])
-                .verify_slice(&wrap[48..])
-                .is_ok()
-            {
+            let verifies = |domain| {
+                wrap_tag(key, domain, table, index as u8, &wrap[..16], &wrap[16..48])
+                    .verify_slice(&wrap[48..])
+                    .is_ok()
+            };
+            let adjudicated = outcomes_enabled && relays.len() >= 3 && verifies(ADJUDICATED_DOMAIN);
+            if adjudicated || verifies(ROSTER_DOMAIN) {
                 if own.is_some() {
                     return Err(RelayError::Authentication);
                 }
-                own = Some(index);
+                own = Some((index, adjudicated));
             }
         }
-        let own = own.ok_or(RelayError::Authentication)?;
+        let (own, adjudicated) = own.ok_or(RelayError::Authentication)?;
         if relays[own].1 & (1 << ticket.source) == 0 {
             return Err(RelayError::Authentication);
         }
@@ -293,6 +319,7 @@ impl Federation {
                 agreement: [0; 32],
                 cancelled: false,
                 start_at: 0,
+                heard_started: None,
                 echo: None,
                 samples: Vec::with_capacity(CLOCK_SAMPLES),
                 next_sample: 0,
@@ -304,6 +331,8 @@ impl Federation {
             room,
             own: own as u8,
             local: relays[own].1,
+            adjudicated,
+            peer_failed: false,
             link: SecretKey::new(link),
             links,
             outbox: VecDeque::new(),
@@ -317,6 +346,14 @@ impl Federation {
     /// Every admission to a room must carry the room's exact roster.
     pub(crate) fn admits(&self, roster: &[u8], source: u8) -> bool {
         self.roster == roster && self.local & (1 << source) != 0
+    }
+
+    fn link_magic(&self) -> &'static [u8; 4] {
+        if self.adjudicated {
+            b"VF2L"
+        } else {
+            LINK_MAGIC
+        }
     }
 
     pub(super) fn local(&self) -> u32 {
@@ -418,13 +455,14 @@ impl Federation {
         kind: u8,
         payload: &[u8],
     ) -> Result<ForwardDatagram, RelayError> {
+        let magic = self.link_magic();
         let link = &mut self.links[position];
         link.sent = link
             .sent
             .checked_add(1)
             .ok_or(RelayError::CounterExhausted)?;
         let mut bytes = Vec::with_capacity(LINK_HEADER + payload.len() + MAC_LEN);
-        bytes.extend_from_slice(LINK_MAGIC);
+        bytes.extend_from_slice(magic);
         bytes.extend_from_slice(&self.room);
         bytes.push(self.own);
         bytes.extend_from_slice(&link.sent.to_le_bytes());
@@ -501,7 +539,7 @@ impl Federation {
         // survivors would have to agree on that frame, which the link format
         // cannot carry, so such a room ends only once its own players have
         // left and every other relay has been silent that long.
-        if ordering.starts_at.is_some() && self.links.len() > 1 {
+        if ordering.starts_at.is_some() && self.links.len() > 1 && !self.adjudicated {
             if ordering.active & self.local == 0
                 && self.links.iter().all(|link| {
                     link.echo
@@ -511,7 +549,7 @@ impl Federation {
                 ordering.abandon(now_ms);
                 return;
             }
-        } else if ordering.starts_at.is_some() {
+        } else if ordering.starts_at.is_some() && self.links.len() == 1 {
             for link in &mut self.links {
                 let heard = link.echo.map_or(ordering.created_ms, |(_, heard)| heard);
                 if link.lost || now_ms.saturating_sub(heard) < super::ABSENT_MS {
@@ -675,7 +713,11 @@ impl Federation {
                 };
                 let mut payload = Vec::with_capacity(FRAME_HEADER + entries.len());
                 payload.extend_from_slice(&(view.ready & self.local).to_le_bytes());
-                payload.push(u8::from(view.cancelled));
+                let mut flags = if view.cancelled { CANCEL_START } else { 0 };
+                if self.adjudicated {
+                    flags |= view.adjudicated_flags;
+                }
+                payload.push(flags);
                 payload.extend_from_slice(&start_at.to_le_bytes());
                 payload.extend_from_slice(&now_ms.to_le_bytes());
                 payload.extend_from_slice(&echo_ms.to_le_bytes());
@@ -859,7 +901,14 @@ impl Federation {
         ordering: Option<&mut OrderingRoom>,
         now_ms: u64,
     ) -> Result<(), RelayError> {
-        if payload.len() < FRAME_HEADER || payload[4] > 1 {
+        if payload.len() < FRAME_HEADER
+            || payload[4]
+                > (if self.adjudicated {
+                    CANCEL_START | MATCH_FAILED | MATCH_STARTED
+                } else {
+                    CANCEL_START
+                })
+        {
             return Err(RelayError::Malformed);
         }
         let ack = read_u64(payload, 33);
@@ -912,7 +961,12 @@ impl Federation {
         }
         let link = &mut self.links[position];
         link.ready = read_u32(payload, 0) & sources;
-        link.cancelled |= payload[4] != 0;
+        let flags = payload[4];
+        link.cancelled |= flags & CANCEL_START != 0;
+        if flags & MATCH_STARTED != 0 {
+            link.heard_started = Some(now_ms);
+            self.peer_failed |= flags & MATCH_FAILED != 0;
+        }
         link.agreement = payload[53..85].try_into().unwrap();
         if link.index == 0 {
             link.start_at = read_u64(payload, 5);
@@ -994,7 +1048,7 @@ impl RelayServer {
         // Relays of two link versions cannot merge one stream, so each that
         // reads the other's version refuses the startup itself. No relay can
         // have started it: the coordinator never read the other's readiness.
-        if bytes[2] != LINK_MAGIC[2] {
+        if bytes[2] != federation.link_magic()[2] {
             match room.ordering.as_mut() {
                 Some(ordering) => {
                     if ordering.starts_at.is_none() && ordering.finished_at.is_none() {
@@ -1009,7 +1063,7 @@ impl RelayServer {
             FRAME_KIND => {
                 federation.receive_frame(position, payload, room.ordering.as_mut(), now_ms)?;
                 // Only the coordinator's cancel binds; it honours any request.
-                if payload[4] != 0
+                if payload[4] & CANCEL_START != 0
                     && room.ordering.is_none()
                     && (federation.own == 0 || federation.links[position].index == 0)
                 {
@@ -1089,9 +1143,11 @@ impl RelayServer {
             };
             if let Some(ordering) = room.ordering.as_mut() {
                 federation.coordinate(ordering, now_ms);
+                federation.settle(ordering, &self.key, now_ms, now);
             }
             let view = match room.ordering.as_mut() {
                 Some(ordering) => LinkView {
+                    adjudicated_flags: ordering.adjudicated_link_flags(now_ms),
                     ready: ordering.ready,
                     agreement: ordering.agreement,
                     cancelled: ordering.cancel_requested
@@ -1111,6 +1167,7 @@ impl RelayServer {
                     },
                 },
                 None => LinkView {
+                    adjudicated_flags: 0,
                     ready: 0,
                     agreement: [0; 32],
                     cancelled: room.ordering_cancelled,
